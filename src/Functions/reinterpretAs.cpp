@@ -47,7 +47,7 @@ class FunctionReinterpret : public IFunction
 public:
     static constexpr auto name = "reinterpret";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionReinterpret>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReinterpret>(); }
 
     String getName() const override { return name; }
 
@@ -259,9 +259,7 @@ private:
     {
         return type.isUInt() ||
             type.isInt() ||
-            type.isDate() ||
-            type.isDateTime() ||
-            type.isDateTime64() ||
+            type.isDateOrDateTime() ||
             type.isFloat() ||
             type.isUUID() ||
             type.isDecimal();
@@ -351,7 +349,7 @@ class FunctionReinterpretAs : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionReinterpretAs>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReinterpretAs>(); }
 
     String getName() const override { return name; }
 

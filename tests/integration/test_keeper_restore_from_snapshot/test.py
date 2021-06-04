@@ -25,6 +25,13 @@ def started_cluster():
 
 def get_fake_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
+    def reset_listener(state):
+        nonlocal _fake_zk_instance
+        print("Fake zk callback called for state", state)
+        if state != KazooState.CONNECTED:
+            _fake_zk_instance._reset()
+
+    _fake_zk_instance.add_listener(reset_listener)
     _fake_zk_instance.start()
     return _fake_zk_instance
 
@@ -70,7 +77,6 @@ def test_recover_from_snapshot(started_cluster):
     # stale node should recover from leader's snapshot
     # with some sanitizers can start longer than 5 seconds
     node3.start_clickhouse(20)
-    print("Restarted")
 
     try:
         node1_zk = node2_zk = node3_zk = None

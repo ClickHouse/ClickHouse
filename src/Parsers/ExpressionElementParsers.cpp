@@ -502,6 +502,9 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     // Variant 1:
     // function_name ( * ) OVER window_name
+    // FIXME doesn't work anyway for now -- never used anywhere, window names
+    // can't be defined, and TreeRewriter thinks the window name is a column so
+    // the query fails.
     if (pos->type != TokenType::OpeningRoundBracket)
     {
         ASTPtr window_name_ast;
@@ -659,10 +662,16 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     return true;
 }
 
-// All except parent window name.
-static bool parseWindowDefinitionParts(IParser::Pos & pos,
-    ASTWindowDefinition & node, Expected & expected)
+bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    auto result = std::make_shared<ASTWindowDefinition>();
+
+    ParserToken parser_openging_bracket(TokenType::OpeningRoundBracket);
+    if (!parser_openging_bracket.ignore(pos, expected))
+    {
+        return false;
+    }
+
     ParserKeyword keyword_partition_by("PARTITION BY");
     ParserNotEmptyExpressionList columns_partition_by(
         false /* we don't allow declaring aliases here*/);
@@ -674,8 +683,8 @@ static bool parseWindowDefinitionParts(IParser::Pos & pos,
         ASTPtr partition_by_ast;
         if (columns_partition_by.parse(pos, partition_by_ast, expected))
         {
-            node.children.push_back(partition_by_ast);
-            node.partition_by = partition_by_ast;
+            result->children.push_back(partition_by_ast);
+            result->partition_by = partition_by_ast;
         }
         else
         {
@@ -688,8 +697,8 @@ static bool parseWindowDefinitionParts(IParser::Pos & pos,
         ASTPtr order_by_ast;
         if (columns_order_by.parse(pos, order_by_ast, expected))
         {
-            node.children.push_back(order_by_ast);
-            node.order_by = order_by_ast;
+            result->children.push_back(order_by_ast);
+            result->order_by = order_by_ast;
         }
         else
         {
@@ -697,45 +706,9 @@ static bool parseWindowDefinitionParts(IParser::Pos & pos,
         }
     }
 
-    return tryParseFrameDefinition(&node, pos, expected);
-}
-
-bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto result = std::make_shared<ASTWindowDefinition>();
-
-    ParserToken parser_openging_bracket(TokenType::OpeningRoundBracket);
-    if (!parser_openging_bracket.ignore(pos, expected))
+    if (!tryParseFrameDefinition(result.get(), pos, expected))
     {
-        return false;
-    }
-
-    // We can have a parent window name specified before all other things. No
-    // easy way to distinguish identifier from keywords, so just try to parse it
-    // both ways.
-    if (parseWindowDefinitionParts(pos, *result, expected))
-    {
-        // Successfully parsed without parent window specifier. It can be empty,
-        // so check that it is followed by the closing bracket.
-        ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
-        if (parser_closing_bracket.ignore(pos, expected))
-        {
-            node = result;
-            return true;
-        }
-    }
-
-    // Try to parse with parent window specifier.
-    ParserIdentifier parser_parent_window;
-    ASTPtr window_name_identifier;
-    if (!parser_parent_window.parse(pos, window_name_identifier, expected))
-    {
-        return false;
-    }
-    result->parent_window_name = window_name_identifier->as<const ASTIdentifier &>().name();
-
-    if (!parseWindowDefinitionParts(pos, *result, expected))
-    {
+        /* Broken frame definition. */
         return false;
     }
 

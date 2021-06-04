@@ -110,7 +110,7 @@ protected:
     void runMainThread();
     void runCleanupThread();
 
-    ContextMutablePtr context;
+    ContextPtr context;
     Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name

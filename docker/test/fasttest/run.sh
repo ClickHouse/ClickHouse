@@ -73,7 +73,7 @@ function start_server
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
         --top_level_domains_path "$FASTTEST_DATA/top_level_domains"
-        --keeper_server.storage_path "$FASTTEST_DATA/coordination"
+        --keeper_server.log_storage_path "$FASTTEST_DATA/coordination"
     )
     clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
     server_pid=$!
@@ -374,20 +374,39 @@ function run_tests
         01801_s3_cluster
 
         # Depends on LLVM JIT
-        01072_nullable_jit
         01852_jit_if
         01865_jit_comparison_constant_result
-        01871_merge_tree_compile_expressions
-
         # needs psql
         01889_postgresql_protocol_null_fields
     )
 
-    time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
-            --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" \
-            -- "$FASTTEST_FOCUS" 2>&1 \
-        | ts '%Y-%m-%d %H:%M:%S' \
-        | tee "$FASTTEST_OUTPUT/test_log.txt"
+    (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
+
+    # substr is to remove semicolon after test name
+    readarray -t FAILED_TESTS < <(awk '/\[ FAIL|TIMEOUT|ERROR \]/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
+
+    # We will rerun sequentially any tests that have failed during parallel run.
+    # They might have failed because there was some interference from other tests
+    # running concurrently. If they fail even in seqential mode, we will report them.
+    # FIXME All tests that require exclusive access to the server must be
+    # explicitly marked as `sequential`, and `clickhouse-test` must detect them and
+    # run them in a separate group after all other tests. This is faster and also
+    # explicit instead of guessing.
+    if [[ -n "${FAILED_TESTS[*]}" ]]
+    then
+        stop_server ||:
+
+        # Clean the data so that there is no interference from the previous test run.
+        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files,coordination} ||:
+
+        start_server
+
+        echo "Going to run again: ${FAILED_TESTS[*]}"
+
+        clickhouse-test --hung-check --order=random --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
+    else
+        echo "No failed tests"
+    fi
 }
 
 case "$stage" in

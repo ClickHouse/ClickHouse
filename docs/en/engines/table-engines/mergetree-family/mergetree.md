@@ -45,10 +45,10 @@ ORDER BY expr
 [PARTITION BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr
+[TTL expr 
     [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
-    [WHERE conditions]
-    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ]
+    [WHERE conditions] 
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ] 
 [SETTINGS name=value, ...]
 ```
 
@@ -64,7 +64,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
     ClickHouse uses the sorting key as a primary key if the primary key is not defined obviously by the `PRIMARY KEY` clause.
 
-    Use the `ORDER BY tuple()` syntax, if you do not need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
+    Use the `ORDER BY tuple()` syntax, if you don’t need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
 
 -   `PARTITION BY` — The [partitioning key](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional.
 
@@ -105,7 +105,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 	-   `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. You can also specify this setting in the global settings (see [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
 	-   `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark. You can also specify this setting in the global settings (see [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
     -   `max_partitions_to_read` — Limits the maximum number of partitions that can be accessed in one query. You can also specify setting [max_partitions_to_read](../../../operations/settings/merge-tree-settings.md#max-partitions-to-read) in the global setting.
-
+    
 **Example of Sections Setting**
 
 ``` sql
@@ -158,11 +158,11 @@ When data is inserted in a table, separate data parts are created and each of th
 
 Data belonging to different partitions are separated into different parts. In the background, ClickHouse merges data parts for more efficient storage. Parts belonging to different partitions are not merged. The merge mechanism does not guarantee that all rows with the same primary key will be in the same data part.
 
-Data parts can be stored in `Wide` or `Compact` format. In `Wide` format each column is stored in a separate file in a filesystem, in `Compact` format all columns are stored in one file. `Compact` format can be used to increase performance of small and frequent inserts.
+Data parts can be stored in `Wide` or `Compact` format. In `Wide` format each column is stored in a separate file in a filesystem, in `Compact` format all columns are stored in one file. `Compact` format can be used to increase performance of small and frequent inserts. 
 
 Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the table engine. If the number of bytes or rows in a data part is less then the corresponding setting's value, the part is stored in `Compact` format. Otherwise it is stored in `Wide` format. If none of these settings is set, data parts are stored in `Wide` format.
 
-Each data part is logically divided into granules. A granule is the smallest indivisible data set that ClickHouse reads when selecting data. ClickHouse does not split rows or values, so each granule always contains an integer number of rows. The first row of a granule is marked with the value of the primary key for the row. For each data part, ClickHouse creates an index file that stores the marks. For each column, whether it’s in the primary key or not, ClickHouse also stores the same marks. These marks let you find data directly in column files.
+Each data part is logically divided into granules. A granule is the smallest indivisible data set that ClickHouse reads when selecting data. ClickHouse doesn’t split rows or values, so each granule always contains an integer number of rows. The first row of a granule is marked with the value of the primary key for the row. For each data part, ClickHouse creates an index file that stores the marks. For each column, whether it’s in the primary key or not, ClickHouse also stores the same marks. These marks let you find data directly in column files.
 
 The granule size is restricted by the `index_granularity` and `index_granularity_bytes` settings of the table engine. The number of rows in a granule lays in the `[1, index_granularity]` range, depending on the size of the rows. The size of a granule can exceed `index_granularity_bytes` if the size of a single row is greater than the value of the setting. In this case, the size of the granule equals the size of the row.
 
@@ -227,7 +227,7 @@ This feature is helpful when using the [SummingMergeTree](../../../engines/table
 
 In this case it makes sense to leave only a few columns in the primary key that will provide efficient range scans and add the remaining dimension columns to the sorting key tuple.
 
-[ALTER](../../../sql-reference/statements/alter/index.md) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts do not need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
+[ALTER](../../../sql-reference/statements/alter/index.md) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts don’t need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
 
 ### Use of Indexes and Partitions in Queries {#use-of-indexes-and-partitions-in-queries}
 
@@ -265,7 +265,7 @@ The key for partitioning by month allows reading only those data blocks which co
 
 Consider, for example, the days of the month. They form a [monotonic sequence](https://en.wikipedia.org/wiki/Monotonic_function) for one month, but not monotonic for more extended periods. This is a partially-monotonic sequence. If a user creates the table with partially-monotonic primary key, ClickHouse creates a sparse index as usual. When a user selects data from this kind of table, ClickHouse analyzes the query conditions. If the user wants to get data between two marks of the index and both these marks fall within one month, ClickHouse can use the index in this particular case because it can calculate the distance between the parameters of a query and index marks.
 
-ClickHouse cannot use an index if the values of the primary key in the query parameter range do not represent a monotonic sequence. In this case, ClickHouse uses the full scan method.
+ClickHouse cannot use an index if the values of the primary key in the query parameter range don’t represent a monotonic sequence. In this case, ClickHouse uses the full scan method.
 
 ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
@@ -457,10 +457,10 @@ ALTER TABLE example_table
 Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving feature, all rows of a part must satisfy the movement expression criteria.
 
 ``` sql
-TTL expr
+TTL expr 
     [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
-    [WHERE conditions]
-    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]
+    [WHERE conditions] 
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]   
 ```
 
 Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
@@ -472,7 +472,7 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 
 With `WHERE` clause you may specify which of the expired rows to delete or aggregate (it cannot be applied to moves).
 
-`GROUP BY` expression must be a prefix of the table primary key.
+`GROUP BY` expression must be a prefix of the table primary key. 
 
 If a column is not part of the `GROUP BY` expression and is not set explicitely in the `SET` clause, in result row it contains an occasional value from the grouped rows (as if aggregate function `any` is applied to it).
 
@@ -506,7 +506,7 @@ Creating a table, where the rows are expired after one month. The expired rows w
 ``` sql
 CREATE TABLE table_with_where
 (
-    d DateTime,
+    d DateTime, 
     a Int
 )
 ENGINE = MergeTree
@@ -520,10 +520,10 @@ Creating a table, where expired rows are aggregated. In result rows `x` contains
 ``` sql
 CREATE TABLE table_for_aggregation
 (
-    d DateTime,
-    k1 Int,
-    k2 Int,
-    x Int,
+    d DateTime, 
+    k1 Int, 
+    k2 Int, 
+    x Int, 
     y Int
 )
 ENGINE = MergeTree
@@ -657,7 +657,7 @@ Cofiguration examples:
             </volumes>
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
-
+		
 		<small_jbod_with_external_no_merges>
             <volumes>
                 <main>
@@ -748,7 +748,6 @@ Configuration markup:
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
             <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <cache_enabled>true</cache_enabled>
@@ -762,22 +761,21 @@ Configuration markup:
 
 Required parameters:
 -   `endpoint` — S3 endpoint url in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint url should contain bucket and root path to store data.
--   `access_key_id` — S3 access key id.
+-   `access_key_id` — S3 access key id. 
 -   `secret_access_key` — S3 secret access key.
 
-Optional parameters:
+Optional parameters:    
 -   `region` — S3 region name.
 -   `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
 -   `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
--   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.
--   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`.
--   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`.
--   `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`.
--   `single_read_retries` — Number of retry attempts in case of connection drop during read. Default value is `4`.
--   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
--   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
--   `cache_enabled` — Allows to cache mark and index files on local FS. Default value is `true`.
--   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`.
+-   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL. 
+-   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`. 
+-   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`. 
+-   `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`. 
+-   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`. 
+-   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`. 
+-   `cache_enabled` — Allows to cache mark and index files on local FS. Default value is `true`. 
+-   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`. 
 -   `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
 -   `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
 
@@ -818,6 +816,6 @@ S3 disk can be configured as `main` or `cold` storage:
 </storage_configuration>
 ```
 
-In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule.
+In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule. 
 
 [Original article](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->

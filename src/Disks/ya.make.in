@@ -7,7 +7,8 @@ PEERDIR(
 )
 
 
-<? find . -name '*.cpp' | grep -v -F tests | grep -v -F examples | grep -v -F 'S3|HDFS' | sed 's/^\.\//    /' | sort ?>
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F examples | grep -v -F S3 | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

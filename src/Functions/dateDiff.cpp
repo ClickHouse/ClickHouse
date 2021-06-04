@@ -47,7 +47,7 @@ class FunctionDateDiff : public IFunction
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
     static constexpr auto name = "dateDiff";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionDateDiff>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
 
     String getName() const override
     {
@@ -68,11 +68,11 @@ public:
             throw Exception("First argument for function " + getName() + " (unit) must be String",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isDate(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
+        if (!isDateOrDateTime(arguments[1]))
             throw Exception("Second argument for function " + getName() + " must be Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isDate(arguments[2]) && !isDateTime(arguments[2]) && !isDateTime64(arguments[2]))
+        if (!isDateOrDateTime(arguments[2]))
             throw Exception("Third argument for function " + getName() + " must be Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

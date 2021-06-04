@@ -15,6 +15,7 @@ public:
     {
         WITH,
         SELECT,
+        WHERE,
         GROUP_BY,
         ORDER_BY,
     };
@@ -24,10 +25,14 @@ public:
 
     ASTPtr clone() const override;
 
+    bool distinct = false;
+
     ASTPtr & refSelect() { return getExpression(Expression::SELECT); }
+    ASTPtr & refWhere() { return getExpression(Expression::WHERE); }
 
     const ASTPtr with() const { return getExpression(Expression::WITH); }
     const ASTPtr select() const { return getExpression(Expression::SELECT); }
+    const ASTPtr where() const { return getExpression(Expression::WHERE); }
     const ASTPtr groupBy() const { return getExpression(Expression::GROUP_BY); }
     const ASTPtr orderBy() const { return getExpression(Expression::ORDER_BY); }
 
@@ -41,6 +46,8 @@ public:
             return clone ? children[it->second]->clone() : children[it->second];
         return {};
     }
+
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 
     ASTPtr cloneToASTSelect() const;
 

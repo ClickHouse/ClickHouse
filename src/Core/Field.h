@@ -721,9 +721,6 @@ private:
 #undef DBMS_MIN_FIELD_SIZE
 
 
-using Row = std::vector<Field>;
-
-
 template <> struct Field::TypeToEnum<Null>    { static const Types::Which value = Types::Null; };
 template <> struct Field::TypeToEnum<UInt64>  { static const Types::Which value = Types::UInt64; };
 template <> struct Field::TypeToEnum<UInt128> { static const Types::Which value = Types::UInt128; };

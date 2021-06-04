@@ -13,9 +13,9 @@ class ASTFunction;
 class RemoveInjectiveFunctionsMatcher
 {
 public:
-    struct Data : public WithConstContext
+    struct Data : public WithContext
     {
-        explicit Data(ContextConstPtr context_) : WithConstContext(context_) {}
+        explicit Data(ContextPtr context_) : WithContext(context_) {}
     };
 
     static void visit(ASTPtr & ast, const Data & data);

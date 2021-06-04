@@ -40,7 +40,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.end_bytes = len(lines)
             self.size = self.end_bytes
             self.send_block_size = 256
-            self.stop_at = random.randint(900000, 1300000) // self.send_block_size # Block size is 1024**2.
+            self.stop_at = random.randint(900000, 1200000) // self.send_block_size # Block size is 1024**2.
 
             if "Range" in self.headers:
                 cr = self.headers["Range"]

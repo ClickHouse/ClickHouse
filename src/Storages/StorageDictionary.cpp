@@ -185,7 +185,7 @@ void StorageDictionary::startup()
     bool lazy_load = global_context->getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
     {
-        const auto & external_dictionaries_loader = global_context->getExternalDictionariesLoader();
+        auto & external_dictionaries_loader = global_context->getExternalDictionariesLoader();
 
         /// reloadConfig() is called here to force loading the dictionary.
         external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
@@ -220,7 +220,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
 
-        const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
+        auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
         external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
 
         auto result = external_dictionaries_loader.getLoadResult(getStorageID().getInternalDictionaryName());

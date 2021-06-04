@@ -155,13 +155,12 @@ public:
       */
     virtual bool isSuitableForConstantFolding() const { return true; }
 
-    /** If function isSuitableForConstantFolding then, this method will be called during query analyzis
-      * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
-      * return they result based on some constant arguments.
-      * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForConstants,
-      * useDefaultImplementationForLowCardinality are not applied.
+    /** Some functions like ignore(...) or toTypeName(...) always return constant result which doesn't depend on arguments.
+      * In this case we can calculate result and assume that it's constant in stream header.
+      * There is no need to implement function if it has zero arguments.
+      * Must return ColumnConst with single row or nullptr.
       */
-    virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const { return nullptr; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/) const { return nullptr; }
 
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...
@@ -301,7 +300,7 @@ protected:
         return getReturnTypeImpl(data_types);
     }
 
-    /** If useDefaultImplementationForNulls() is true, then change arguments for getReturnType() and build():
+    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and build():
       *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call build() with return_type = Nullable(Nothing),
       *  if some of arguments are Nullable, then:
       *   - Nullable types are substituted with nested types for getReturnType() function
@@ -311,7 +310,7 @@ protected:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
-    /** If useDefaultImplementationForNulls() is true, then change arguments for getReturnType() and build().
+    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and build().
       * If function arguments has low cardinality types, convert them to ordinary types.
       * getReturnType returns ColumnLowCardinality if at least one argument type is ColumnLowCardinality.
       */
@@ -378,7 +377,7 @@ public:
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }

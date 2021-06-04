@@ -31,7 +31,7 @@ static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_t
 }
 
 
-ContextMutablePtr StorageFactory::Arguments::getContext() const
+ContextPtr StorageFactory::Arguments::getContext() const
 {
     auto ptr = context.lock();
     if (!ptr)
@@ -39,7 +39,7 @@ ContextMutablePtr StorageFactory::Arguments::getContext() const
     return ptr;
 }
 
-ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
+ContextPtr StorageFactory::Arguments::getLocalContext() const
 {
     auto ptr = local_context.lock();
     if (!ptr)
@@ -59,8 +59,8 @@ void StorageFactory::registerStorage(const std::string & name, CreatorFn creator
 StoragePtr StorageFactory::get(
     const ASTCreateQuery & query,
     const String & relative_data_path,
-    ContextMutablePtr local_context,
-    ContextMutablePtr context,
+    ContextPtr local_context,
+    ContextPtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     bool has_force_restore_data_flag) const

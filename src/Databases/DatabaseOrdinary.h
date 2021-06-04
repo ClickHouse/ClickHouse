@@ -20,7 +20,7 @@ public:
 
     String getEngineName() const override { return "Ordinary"; }
 
-    void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach) override;
+    void loadStoredObjects(ContextPtr context, bool has_force_restore_data_flag, bool force_attach) override;
 
     void alterTable(
         ContextPtr context,

@@ -61,7 +61,7 @@ class FunctionBase64Conversion : public IFunction
 public:
     static constexpr auto name = Func::name;
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBase64Conversion>();
     }

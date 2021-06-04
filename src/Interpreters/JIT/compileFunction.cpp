@@ -87,7 +87,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     for (size_t i = 0; i <= arg_types.size(); ++i)
     {
         const auto & type = i == arg_types.size() ? function.getResultType() : arg_types[i];
-        auto * data = b.CreateLoad(data_type, b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
+        auto * data = b.CreateLoad(b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
         columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(type))->getPointerTo());
         columns[i].null_init = type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
     }
@@ -122,14 +122,14 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
         auto & column = columns[i];
         auto type = arg_types[i];
 
-        auto * value = b.CreateLoad(toNativeType(b, removeNullable(type)), column.data);
-        if (!type->isNullable())
+        auto * value = b.CreateLoad(column.data);
+        if (!column.null)
         {
             arguments.emplace_back(value);
             continue;
         }
 
-        auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), column.null), b.getInt8(0));
+        auto * is_null = b.CreateICmpNE(b.CreateLoad(column.null), b.getInt8(0));
         auto * nullable_unitilized = llvm::Constant::getNullValue(toNativeType(b, type));
         auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitilized, value, {0}), is_null, {1});
         arguments.emplace_back(nullable_value);

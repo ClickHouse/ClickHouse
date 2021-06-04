@@ -77,7 +77,7 @@ parts_to_merge:         ['20201130_121373_121378_1','20201130_121379_121379_0','
 is_detach:              0
 is_currently_executing: 0
 num_tries:              36
-last_exception:         Code: 226, e.displayText() = DB::Exception: Marks file '/opt/clickhouse/data/merge/visits_v2/tmp_fetch_20201130_121373_121384_2/CounterID.mrk' does not exist (version 20.8.7.15 (official build))
+last_exception:         Code: 226, e.displayText() = DB::Exception: Marks file '/opt/clickhouse/data/merge/visits_v2/tmp_fetch_20201130_121373_121384_2/CounterID.mrk' doesn't exist (version 20.8.7.15 (official build))
 last_attempt_time:      2020-12-08 17:35:54
 num_postponed:          0
 postpone_reason:

@@ -346,39 +346,4 @@ SELECT * FROM base.t1;
 └───┘
 ```
 
-## Секция COMMENT {#comment-table}
-
-Вы можете добавить комментарий к таблице при ее создании.
-
-!!!note "Замечание"
-    Комментарий поддерживается для всех движков таблиц, кроме [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) и [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
-	
-**Синтаксис**
-
-``` sql
-CREATE TABLE db.table_name
-(
-    name1 type1, name2 type2, ...
-)
-ENGINE = engine
-COMMENT 'Comment'
-```
-	
-**Пример**
-
-Запрос:
-
-``` sql
-CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
-SELECT name, comment FROM system.tables WHERE name = 't1';
-```
-
-Результат:
-
-```text
-┌─name─┬─comment─────────────┐
-│ t1   │ The temporary table │
-└──────┴─────────────────────┘
-```
-
 <!--hide-->

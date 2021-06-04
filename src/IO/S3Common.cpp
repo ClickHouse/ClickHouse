@@ -428,6 +428,8 @@ public:
                 /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
                 /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
                 aws_client_configuration.connectTimeoutMs = 1000;
+
+                /// FIXME. Somehow this timeout does not work in docker without --net=host.
                 aws_client_configuration.requestTimeoutMs = 1000;
 
                 aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);

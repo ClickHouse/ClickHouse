@@ -28,7 +28,7 @@ SELECT
     name,
     comment
 FROM system.tables
-WHERE name IN ('t1', 't2', 't3') AND database = currentDatabase() order by name;
+WHERE name IN ('t1', 't2', 't3') order by name;
 
 SHOW CREATE TABLE t1;
 

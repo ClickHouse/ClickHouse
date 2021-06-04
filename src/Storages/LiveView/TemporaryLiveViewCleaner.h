@@ -14,7 +14,7 @@ struct StorageID;
 
 /// This class removes temporary live views in the background thread when it's possible.
 /// There should only a single instance of this class.
-class TemporaryLiveViewCleaner : WithMutableContext
+class TemporaryLiveViewCleaner : WithContext
 {
 public:
     static TemporaryLiveViewCleaner & instance() { return *the_instance; }
@@ -23,7 +23,7 @@ public:
     void addView(const std::shared_ptr<StorageLiveView> & view);
 
     /// Should be called once.
-    static void init(ContextMutablePtr global_context_);
+    static void init(ContextPtr global_context_);
     static void shutdown();
 
     void startup();
@@ -31,7 +31,7 @@ public:
 private:
     friend std::unique_ptr<TemporaryLiveViewCleaner>::deleter_type;
 
-    TemporaryLiveViewCleaner(ContextMutablePtr global_context_);
+    TemporaryLiveViewCleaner(ContextPtr global_context_);
     ~TemporaryLiveViewCleaner();
 
     void backgroundThreadFunc();

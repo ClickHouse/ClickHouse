@@ -557,13 +557,13 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
 
-    explicit FunctionComparison(ContextConstPtr context_)
+    explicit FunctionComparison(ContextPtr context_)
         : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -1086,7 +1086,7 @@ public:
         if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
-            || ((left.isDate() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
+            || (left.isDateOrDateTime() && right.isDateOrDateTime() && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
@@ -1147,24 +1147,17 @@ public:
         /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
         if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
         {
-            ColumnPtr result_column;
-
             /// Always true: =, <=, >=
             if constexpr (IsOperation<Op>::equals
                 || IsOperation<Op>::less_or_equals
                 || IsOperation<Op>::greater_or_equals)
             {
-                result_column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
+                return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
             }
             else
             {
-                result_column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+                return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
             }
-
-            if (!isColumnConst(*col_left_untyped))
-                result_column = result_column->convertToFullColumnIfConst();
-
-            return result_column;
         }
 
         WhichDataType which_left{left_type};
@@ -1176,8 +1169,8 @@ public:
         const bool left_is_string = isStringOrFixedString(which_left);
         const bool right_is_string = isStringOrFixedString(which_right);
 
-        bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDateTime() || which_left.isDateTime64())
-            && (which_right.isDate() || which_right.isDateTime() || which_right.isDateTime64());
+        bool date_and_datetime = (which_left.idx != which_right.idx) &&
+            which_left.isDateOrDateTime() && which_right.isDateOrDateTime();
 
         ColumnPtr res;
         if (left_is_num && right_is_num && !date_and_datetime)

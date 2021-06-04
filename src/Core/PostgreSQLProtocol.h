@@ -803,7 +803,7 @@ protected:
     static void setPassword(
         const String & user_name,
         const String & password,
-        ContextMutablePtr context,
+        ContextPtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
@@ -822,7 +822,7 @@ protected:
 public:
     virtual void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        ContextPtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) = 0;
 
@@ -836,7 +836,7 @@ class NoPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        ContextPtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
@@ -854,7 +854,7 @@ class CleartextPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        ContextPtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
@@ -897,7 +897,7 @@ public:
 
     void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        ContextPtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {

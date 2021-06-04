@@ -68,7 +68,6 @@ class TableElementExpr : public INode
             COLUMN,
             CONSTRAINT,
             INDEX,
-            PROJECTION,
         };
 
         static PtrTo<TableElementExpr> createColumn(
@@ -83,9 +82,6 @@ class TableElementExpr : public INode
 
         static PtrTo<TableElementExpr>
         createIndex(PtrTo<Identifier> name, PtrTo<ColumnExpr> expr, PtrTo<ColumnTypeExpr> type, PtrTo<NumberLiteral> granularity);
-
-        static PtrTo<TableElementExpr>
-        createProjection(PtrTo<Identifier> name, PtrTo<ProjectionSelectStmt> query);
 
         auto getType() const { return expr_type; }
 
@@ -110,9 +106,6 @@ class TableElementExpr : public INode
             EXPR = 1,         // ColumnExpr
             INDEX_TYPE = 2,   // ColumnTypeExpr
             GRANULARITY = 3,  // NumberLiteral
-
-            // PROJECTION
-            QUERY = 1,         // ColumnExpr
         };
 
         const ExprType expr_type;

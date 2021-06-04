@@ -20,16 +20,16 @@ namespace
 
 /** Get scalar value of sub queries from query context via IAST::Hash.
   */
-class FunctionGetScalar : public IFunction, WithConstContext
+class FunctionGetScalar : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "__getScalar";
-    static FunctionPtr create(ContextConstPtr context_)
+    static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionGetScalar>(context_);
     }
 
-    explicit FunctionGetScalar(ContextConstPtr context_) : WithConstContext(context_) {}
+    explicit FunctionGetScalar(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override
     {
@@ -46,7 +46,7 @@ public:
         if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))
             throw Exception("Function " + getName() + " accepts one const string argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
-        ContextConstPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
+        ContextPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
         scalar = query_context->getScalar(scalar_name).getByPosition(0);
         return scalar.type;
     }

@@ -1,10 +1,9 @@
 #include <unistd.h>
 #include <iostream>
+#include <Poco/File.h>
+#include <Poco/Path.h>
 #include <Common/Exception.h>
-#include <Common/filesystemHelpers.h>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -17,15 +16,18 @@ namespace DB
 int main(int, char **)
 try
 {
-    fs::path dir("./test_dir/");
-    fs::create_directories(dir);
-    FS::createFile("./test_dir/file");
+    Poco::File dir("./test_dir/");
+    dir.createDirectories();
+
+    Poco::File("./test_dir/file").createFile();
 
     if (0 != symlink("./test_dir", "./test_link"))
         DB::throwFromErrnoWithPath("Cannot create symlink", "./test_link", DB::ErrorCodes::SYSTEM_ERROR);
 
-    fs::rename("./test_link", "./test_link2");
-    fs::remove_all("./test_link2");
+    Poco::File link("./test_link");
+    link.renameTo("./test_link2");
+
+    Poco::File("./test_link2").remove(true);
     return 0;
 }
 catch (...)
