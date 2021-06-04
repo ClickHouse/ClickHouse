@@ -2657,7 +2657,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
         if (!zookeeper->exists(source_path))
             throw Exception(
-                "Can not clone replica, because the " + source_replica + " was dropped", ErrorCodes::REPLICA_STATUS_CHANGED);
+                "Cannot clone replica, because the " + source_replica + " was dropped", ErrorCodes::REPLICA_STATUS_CHANGED);
 
         zkutil::EventPtr event = std::make_shared<Poco::Event>();
         if (zookeeper->exists(fs::path(source_path) / "columns", nullptr, event))
