@@ -196,7 +196,6 @@ void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts,
         LOG_INFO(log, "Waiting for {} setup jobs", thread_pool.active());
         thread_pool.wait();
     }
-    std::cout << "discoverTablePartitions  finished" << std::endl;
 }
 
 void ClusterCopier::uploadTaskDescription(const std::string & task_path, const std::string & task_file, const bool force)
@@ -582,6 +581,21 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
     {
         String start_state = TaskStateWithOwner::getData(TaskState::Started, host_id);
         zookeeper->create(current_partition_attach_is_done, start_state, zkutil::CreateMode::Persistent);
+    }
+
+
+    /// Try to drop destination partition in original table
+    if (task_table.allow_to_drop_target_partitions)
+    {
+        DatabaseAndTableName original_table = task_table.table_push;
+
+        WriteBufferFromOwnString ss;
+        ss << "ALTER TABLE " << getQuotedTable(original_table) << ((partition_name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ") << partition_name;
+
+        UInt64 num_shards_drop_partition = executeQueryOnCluster(task_table.cluster_push, ss.str(), task_cluster->settings_push, ClusterExecutionMode::ON_EACH_SHARD);
+
+        LOG_INFO(log, "Drop partition {} in original table {} have been executed successfully on {} shards of {}",
+            partition_name, getQuotedTable(original_table), num_shards_drop_partition, task_table.cluster_push->getShardCount());
     }
 
     /// Move partition to original destination table.
@@ -1359,21 +1373,6 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     }
 
 
-    /// Try to drop destination partition in original table
-    DatabaseAndTableName original_table = task_table.table_push;
-
-    if (task_table.allow_to_drop_target_partitions)
-    {
-        WriteBufferFromOwnString ss;
-        ss << "ALTER TABLE " << getQuotedTable(original_table) << ((task_partition.name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ") << task_partition.name;
-
-        UInt64 num_shards_drop_partition = executeQueryOnCluster(task_table.cluster_push, ss.str(), task_cluster->settings_push, ClusterExecutionMode::ON_EACH_SHARD);
-
-        LOG_INFO(log, "Drop partition {} in original table {} have been executed successfully on {} shards of {}",
-            task_partition.name, getQuotedTable(original_table), num_shards_drop_partition, task_table.cluster_push->getShardCount());
-    }
-
-
     /// Try create table (if not exists) on each shard
     /// We have to create this table even in case that partition piece is empty
     /// This is significant, because we will have simpler code
@@ -1543,11 +1542,6 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                 auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext()));
 
                 input = std::make_shared<ExpressionBlockInputStream>(pure_input, actions);
-
-                std::cout << "Input:" << std::endl;
-                std::cout << input->getHeader().dumpStructure() << std::endl;
-                std::cout << "Output:" << std::endl;
-                std::cout << output->getHeader().dumpStructure() << std::endl;
             }
 
             /// Fail-fast optimization to abort copying when the current clean state expires

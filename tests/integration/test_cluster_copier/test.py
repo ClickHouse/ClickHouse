@@ -4,6 +4,8 @@ import sys
 import time
 import kazoo
 import pytest
+import string
+import random
 from contextlib import contextmanager
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -17,6 +19,9 @@ COPYING_FAIL_PROBABILITY = 0.2
 MOVING_FAIL_PROBABILITY = 0.2
 
 cluster = ClickHouseCluster(__file__)
+
+def generateRandomString(count):
+    return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(count))
 
 
 def check_all_hosts_sucesfully_executed(tsv_content, num_hosts):
@@ -72,8 +77,13 @@ class Task1:
 
     def __init__(self, cluster):
         self.cluster = cluster
-        self.zk_task_path = "/clickhouse-copier/task_simple"
-        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task0_description.xml'), 'r').read()
+        self.zk_task_path = "/clickhouse-copier/task_simple_" + generateRandomString(5)
+        self.container_task_file = "/task0_description.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task0_description.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -112,9 +122,14 @@ class Task2:
 
     def __init__(self, cluster, unique_zk_path):
         self.cluster = cluster
-        self.zk_task_path = "/clickhouse-copier/task_month_to_week_partition"
-        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_month_to_week_description.xml'), 'r').read()
-        self.unique_zk_path = unique_zk_path
+        self.zk_task_path = "/clickhouse-copier/task_month_to_week_partition_" + generateRandomString(5)
+        self.unique_zk_path = generateRandomString(10)
+        self.container_task_file = "/task_month_to_week_description.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_month_to_week_description.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -163,9 +178,14 @@ class Task_test_block_size:
 
     def __init__(self, cluster):
         self.cluster = cluster
-        self.zk_task_path = "/clickhouse-copier/task_test_block_size"
-        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_test_block_size.xml'), 'r').read()
+        self.zk_task_path = "/clickhouse-copier/task_test_block_size_" + generateRandomString(5)
         self.rows = 1000000
+        self.container_task_file = "/task_test_block_size.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_test_block_size.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -192,9 +212,14 @@ class Task_no_index:
 
     def __init__(self, cluster):
         self.cluster = cluster
-        self.zk_task_path = "/clickhouse-copier/task_no_index"
-        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_no_index.xml'), 'r').read()
+        self.zk_task_path = "/clickhouse-copier/task_no_index_" + generateRandomString(5)
         self.rows = 1000000
+        self.container_task_file = "/task_no_index.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_no_index.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -214,8 +239,13 @@ class Task_no_arg:
     def __init__(self, cluster):
         self.cluster = cluster
         self.zk_task_path = "/clickhouse-copier/task_no_arg"
-        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_no_arg.xml'), 'r').read()
         self.rows = 1000000
+        self.container_task_file = "/task_no_arg.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_no_arg.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -235,8 +265,13 @@ class Task_non_partitioned_table:
     def __init__(self, cluster):
         self.cluster = cluster
         self.zk_task_path = "/clickhouse-copier/task_non_partitoned_table"
-        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_non_partitioned_table.xml'), 'r').read()
         self.rows = 1000000
+        self.container_task_file = "/task_non_partitioned_table.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_non_partitioned_table.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -256,7 +291,12 @@ class Task_self_copy:
     def __init__(self, cluster):
         self.cluster = cluster
         self.zk_task_path = "/clickhouse-copier/task_self_copy"
-        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_self_copy.xml'), 'r').read()
+        self.container_task_file = "/task_self_copy.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_self_copy.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -280,27 +320,22 @@ class Task_self_copy:
 def execute_task(started_cluster, task, cmd_options):
     task.start()
 
-    zk = started_cluster.get_kazoo_client('zoo1')
+    zk = cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
-    try:
-        zk.delete("/clickhouse-copier", recursive=True)
-    except kazoo.exceptions.NoNodeError:
-        print("No node /clickhouse-copier. It is Ok in first test.")
-
-    zk_task_path = task.zk_task_path
-    zk.ensure_path(zk_task_path)
-    zk.create(zk_task_path + "/description", task.copier_task_config.encode())
-
     # Run cluster-copier processes on each node
-    docker_api = started_cluster.docker_client.api
+    docker_api = docker.from_env().api
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
            '--config', '/etc/clickhouse-server/config-copier.xml',
-           '--task-path', zk_task_path,
+           '--task-path', task.zk_task_path,
+           '--task-file', task.container_task_file,
+           '--task-upload-force', 'true',
            '--base-dir', '/var/log/clickhouse-server/copier']
     cmd += cmd_options
+
+    print(cmd)
 
     copiers = random.sample(list(cluster.instances.keys()), 3)
 
@@ -330,18 +365,12 @@ def execute_task(started_cluster, task, cmd_options):
     try:
         task.check()
     finally:
-        zk.delete(zk_task_path, recursive=True)
+        zk.delete(task.zk_task_path, recursive=True)
 
 
 # Tests
 
-@pytest.mark.parametrize(
-    ('use_sample_offset'),
-    [
-        False,
-        True
-    ]
-)
+@pytest.mark.parametrize(('use_sample_offset'), [False, True])
 def test_copy_simple(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(started_cluster, Task1(started_cluster), ['--experimental-use-sample-offset', '1'])
@@ -349,13 +378,7 @@ def test_copy_simple(started_cluster, use_sample_offset):
         execute_task(started_cluster, Task1(started_cluster), [])
 
 
-@pytest.mark.parametrize(
-    ('use_sample_offset'),
-    [
-        False,
-        True
-    ]
-)
+@pytest.mark.parametrize(('use_sample_offset'),[False, True])
 def test_copy_with_recovering(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(started_cluster, Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
@@ -364,13 +387,7 @@ def test_copy_with_recovering(started_cluster, use_sample_offset):
         execute_task(started_cluster, Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 
-@pytest.mark.parametrize(
-    ('use_sample_offset'),
-    [
-        False,
-        True
-    ]
-)
+@pytest.mark.parametrize(('use_sample_offset'),[False, True])
 def test_copy_with_recovering_after_move_faults(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(started_cluster, Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
@@ -379,16 +396,19 @@ def test_copy_with_recovering_after_move_faults(started_cluster, use_sample_offs
         execute_task(started_cluster, Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 
+@pytest.mark.partition
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition(started_cluster):
     execute_task(started_cluster, Task2(started_cluster, "test1"), [])
 
 
+@pytest.mark.partition
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition_with_recovering(started_cluster):
     execute_task(started_cluster, Task2(started_cluster, "test2"), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 
+@pytest.mark.partition
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition_with_recovering_after_move_faults(started_cluster):
     execute_task(started_cluster, Task2(started_cluster, "test3"), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
