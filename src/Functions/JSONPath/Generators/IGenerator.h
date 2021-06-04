@@ -26,4 +26,4 @@ public:
     virtual ~IGenerator() = default;
 };
 
-} // namespace DB
+}

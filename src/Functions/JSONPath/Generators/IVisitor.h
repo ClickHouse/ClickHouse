@@ -2,12 +2,12 @@
 
 #include <Functions/JSONPath/Generators/VisitorStatus.h>
 
-namespace DB {
-
+namespace DB
+{
 template <typename JSONParser>
-class IVisitor {
+class IVisitor
+{
 public:
-
     virtual const char * getName() const = 0;
 
     /**
@@ -29,17 +29,14 @@ public:
 
     virtual void updateState() = 0;
 
-    bool isExhausted() {
-        return is_exhausted;
-    }
+    bool isExhausted() { return is_exhausted; }
 
-    void setExhausted(bool exhausted) {
-        is_exhausted = exhausted;
-    }
+    void setExhausted(bool exhausted) { is_exhausted = exhausted; }
 
     virtual ~IVisitor() = default;
+
 private:
     bool is_exhausted = false;
 };
 
-} // namespace DB
+}

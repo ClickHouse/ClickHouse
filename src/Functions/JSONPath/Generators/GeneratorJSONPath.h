@@ -100,4 +100,4 @@ private:
     VisitorList<JSONParser> visitors;
 };
 
-} // namespace DB
+}

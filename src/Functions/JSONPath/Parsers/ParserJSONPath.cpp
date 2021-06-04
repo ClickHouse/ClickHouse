@@ -1,11 +1,10 @@
+#include <Functions/JSONPath/ASTs/ASTJSONPath.h>
+#include <Functions/JSONPath/ASTs/ASTJSONPathMemberAccess.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPathQuery.h>
-#include <Functions/JSONPath/ASTs/ASTJSONPathMemberAccess.h>
-#include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 
 namespace DB
 {
-
 /**
  * Entry parser for JSONPath
  */
@@ -19,7 +18,8 @@ bool ParserJSONPath::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     bool res = parser_jsonpath_query.parse(pos, query, expected);
 
-    if (res) {
+    if (res)
+    {
         /// Set ASTJSONPathQuery of ASTJSONPath
         ast_jsonpath->set(ast_jsonpath->jsonpath_query, query);
     }
@@ -28,4 +28,4 @@ bool ParserJSONPath::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return res;
 }
 
-} // namespace DB
+}

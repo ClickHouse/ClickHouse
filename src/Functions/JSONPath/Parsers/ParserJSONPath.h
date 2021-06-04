@@ -5,7 +5,6 @@
 
 namespace DB
 {
-
 /**
  * Entry parser for JSONPath
  */

@@ -2,28 +2,34 @@
 #include <Functions/JSONPath/Generators/IVisitor.h>
 #include <Functions/JSONPath/Generators/VisitorStatus.h>
 
-namespace DB {
-
+namespace DB
+{
 template <typename JSONParser>
 class VisitorJSONPathRange : public IVisitor<JSONParser>
 {
 public:
-    VisitorJSONPathRange(ASTPtr range_ptr_) : range_ptr(range_ptr_) {
+    VisitorJSONPathRange(ASTPtr range_ptr_) : range_ptr(range_ptr_)
+    {
         const auto * range = range_ptr->as<ASTJSONPathRange>();
         current_range = 0;
-        if (range->is_star) {
+        if (range->is_star)
+        {
             current_index = 0;
-        } else {
+        }
+        else
+        {
             current_index = range->ranges[current_range].first;
         }
     }
 
     const char * getName() const override { return "VisitorJSONPathRange"; }
 
-    VisitorStatus apply(typename JSONParser::Element & element) const override {
+    VisitorStatus apply(typename JSONParser::Element & element) const override
+    {
         typename JSONParser::Element result;
         typename JSONParser::Array array = element.getArray();
-        if (current_index >= array.size()) {
+        if (current_index >= array.size())
+        {
             return VisitorStatus::Error;
         }
         result = array[current_index];
@@ -33,26 +39,35 @@ public:
 
     VisitorStatus visit(typename JSONParser::Element & element) override
     {
-        if (!element.isArray()) {
+        if (!element.isArray())
+        {
             this->setExhausted(true);
             return VisitorStatus::Error;
         }
 
         const auto * range = range_ptr->as<ASTJSONPathRange>();
         VisitorStatus status;
-        if (current_index < element.getArray().size()) {
+        if (current_index < element.getArray().size())
+        {
             apply(element);
             status = VisitorStatus::Ok;
-        } else if (!range->is_star) {
+        }
+        else if (!range->is_star)
+        {
             status = VisitorStatus::Ignore;
-        } else {
+        }
+        else
+        {
             status = VisitorStatus::Ignore;
             this->setExhausted(true);
         }
 
-        if (!range->is_star) {
-            if (current_index + 1 == range->ranges[current_range].second) {
-                if (current_range + 1 == range->ranges.size()) {
+        if (!range->is_star)
+        {
+            if (current_index + 1 == range->ranges[current_range].second)
+            {
+                if (current_range + 1 == range->ranges.size())
+                {
                     this->setExhausted(true);
                 }
             }
@@ -61,24 +76,31 @@ public:
         return status;
     }
 
-    void reinitialize() override {
+    void reinitialize() override
+    {
         const auto * range = range_ptr->as<ASTJSONPathRange>();
         current_range = 0;
-        if (range->is_star) {
+        if (range->is_star)
+        {
             current_index = 0;
-        } else {
+        }
+        else
+        {
             current_index = range->ranges[current_range].first;
         }
         this->setExhausted(false);
     }
 
-    void updateState() override {
+    void updateState() override
+    {
         const auto * range = range_ptr->as<ASTJSONPathRange>();
         current_index++;
-        if (range->is_star) {
+        if (range->is_star)
+        {
             return;
         }
-        if (current_index == range->ranges[current_range].second) {
+        if (current_index == range->ranges[current_range].second)
+        {
             current_range++;
             current_index = range->ranges[current_range].first;
         }
