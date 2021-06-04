@@ -17,6 +17,9 @@ SELECT count() FROM bftest WHERE hasAny(x, [1]) FORMAT Null;
 -- can't use bloom_filter with `hasAny` on non-constant arguments (just like `has`)
 SELECT count() FROM bftest WHERE hasAny(x, materialize([1,2,3])) FORMAT Null; -- { serverError 277 }
 
+SET force_data_skipping_indices='';
+SELECT count() FROM bftest WHERE hasAny(x, materialize([1,2,3])) FORMAT Null;
+
 -- NULLs are not Ok
 SELECT count() FROM bftest WHERE hasAny(x, [NULL,-42]) FORMAT Null; -- { serverError 43 }
 SELECT count() FROM bftest WHERE hasAny(x, [0,NULL]) FORMAT Null; -- { serverError 43 }
@@ -25,6 +28,6 @@ SELECT count() FROM bftest WHERE hasAny(x, [0,NULL]) FORMAT Null; -- { serverErr
 SELECT count() FROM bftest WHERE hasAny(x, [[123], -42]) FORMAT Null; -- { serverError 386 }
 SELECT count() FROM bftest WHERE hasAny(x, [toDecimal32(123, 3), 2]) FORMAT Null; -- { serverError 53 }
 
--- Bug discovered by AST fuzzier (shouldn't crash).
-SELECT count() FROM bftest WHERE has(x, -0.) OR 0 FORMAT Null;
-SELECT count() FROM bftest WHERE hasAny(x, [0, 1]) OR 0 FORMAT Null;
+-- Bug discovered by AST fuzzier (fixed, shouldn't crash).
+SELECT 1 FROM bftest WHERE has(x, -0.) OR 0. FORMAT Null;
+SELECT count() FROM bftest WHERE hasAny(x, [0, 1]) OR 0. FORMAT Null;
