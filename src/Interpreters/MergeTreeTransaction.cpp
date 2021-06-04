@@ -22,16 +22,16 @@ MergeTreeTransaction::State MergeTreeTransaction::getState() const
     return COMMITTED;
 }
 
-void MergeTreeTransaction::addNewPart(const DataPartPtr & new_part, MergeTreeTransaction * txn)
+void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPartPtr & new_part, MergeTreeTransaction * txn)
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
 
     new_part->versions.setMinTID(tid);
     if (txn)
-        txn->addNewPart(new_part);
+        txn->addNewPart(storage, new_part);
 }
 
-void MergeTreeTransaction::removeOldPart(const DataPartPtr & part_to_remove, MergeTreeTransaction * txn)
+void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn)
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
     String error_context = fmt::format("Table: {}, part name: {}",
@@ -39,16 +39,16 @@ void MergeTreeTransaction::removeOldPart(const DataPartPtr & part_to_remove, Mer
                                        part_to_remove->name);
     part_to_remove->versions.lockMaxTID(tid, error_context);
     if (txn)
-        txn->removeOldPart(part_to_remove);
+        txn->removeOldPart(storage, part_to_remove);
 }
 
-void MergeTreeTransaction::addNewPartAndRemoveCovered(const DataPartPtr & new_part, const DataPartsVector & covered_parts, MergeTreeTransaction * txn)
+void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts, MergeTreeTransaction * txn)
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
 
     new_part->versions.setMinTID(tid);
     if (txn)
-        txn->addNewPart(new_part);
+        txn->addNewPart(storage, new_part);
 
     String error_context = fmt::format("Table: {}, covering part name: {}",
                                        new_part->storage.getStorageID().getNameForLogs(),
@@ -58,19 +58,21 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const DataPartPtr & new_pa
     {
         covered->versions.lockMaxTID(tid, fmt::format(error_context, covered->name));
         if (txn)
-            txn->removeOldPart(covered);
+            txn->removeOldPart(storage, covered);
     }
 }
 
-void MergeTreeTransaction::addNewPart(const DataPartPtr & new_part)
+void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPartPtr & new_part)
 {
     assert(csn == Tx::UnknownCSN);
+    storages.insert(storage);
     creating_parts.push_back(new_part);
 }
 
-void MergeTreeTransaction::removeOldPart(const DataPartPtr & part_to_remove)
+void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove)
 {
     assert(csn == Tx::UnknownCSN);
+    storages.insert(storage);
     removing_parts.push_back(part_to_remove);
 }
 
@@ -100,8 +102,19 @@ void MergeTreeTransaction::rollback() noexcept
     csn = Tx::RolledBackCSN;
     for (const auto & part : creating_parts)
         part->versions.mincsn.store(Tx::RolledBackCSN);
+
     for (const auto & part : removing_parts)
         part->versions.unlockMaxTID(tid);
+
+    /// FIXME const_cast
+    for (const auto & part : creating_parts)
+        const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet({part}, true);
+
+    for (const auto & part : removing_parts)
+        if (part->versions.getMinTID() != tid)
+            const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
+
+    /// FIXME seems like session holds shared_ptr to Transaction and transaction holds shared_ptr to parts preventing cleanup
 }
 
 void MergeTreeTransaction::onException()

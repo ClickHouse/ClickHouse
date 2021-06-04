@@ -239,7 +239,7 @@ public:
     class Transaction : private boost::noncopyable
     {
     public:
-        Transaction(MergeTreeData & data_) : data(data_) {}
+        Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_) : data(data_), txn(txn_) {}
 
         DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
@@ -268,6 +268,7 @@ public:
         friend class MergeTreeData;
 
         MergeTreeData & data;
+        MergeTreeTransaction * txn;
         DataParts precommitted_parts;
 
         void clear() { precommitted_parts.clear(); }
@@ -502,6 +503,9 @@ public:
     /// Used in REPLACE PARTITION command;
     DataPartsVector removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
                                                      DataPartsLock & lock);
+
+    /// Restores Outdated part and adds it to working set
+    void restoreAndActivatePart(const DataPartPtr & part, DataPartsLock * acquired_lock = nullptr);
 
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.

@@ -54,7 +54,7 @@ function thread_optimize()
             optimize_query="$optimize_query FINAL"
         fi
         action="COMMIT"
-        if (( RANDOM % 2 )); then
+        if (( RANDOM % 4 )); then
             action="ROLLBACK"
         fi
 
@@ -62,7 +62,7 @@ function thread_optimize()
         BEGIN TRANSACTION;
         $optimize_query;
         $action;
-        "
+        " 2>&1| grep -Fv "already exists, but it will be deleted soon" | grep -F "Received from " ||:
         sleep 0.$RANDOM;
     done
 }
@@ -125,6 +125,9 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 BEGIN TRANSACTION;
 SELECT count(), sum(n), sum(m=1), sum(m=2), sum(m=3) FROM src;
 SELECT count(), sum(nm) FROM mv";
+
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(n), sum(m=1), sum(m=2), sum(m=3) FROM src"
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(nm) FROM mv"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE src";
 $CLICKHOUSE_CLIENT --query "DROP TABLE dst";

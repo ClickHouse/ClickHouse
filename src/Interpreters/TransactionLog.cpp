@@ -32,14 +32,16 @@ Snapshot TransactionLog::getLatestSnapshot() const
 
 MergeTreeTransactionPtr TransactionLog::beginTransaction()
 {
-    Snapshot snapshot = latest_snapshot.load();
-    LocalTID ltid = 1 + local_tid_counter.fetch_add(1);
-    auto txn = std::make_shared<MergeTreeTransaction>(snapshot, ltid, UUIDHelpers::Nil);
+    MergeTreeTransactionPtr txn;
     {
         std::lock_guard lock{running_list_mutex};
-        bool inserted = running_list.try_emplace(txn->tid.getHash(), txn).second;     /// Commit point
+        Snapshot snapshot = latest_snapshot.load();
+        LocalTID ltid = 1 + local_tid_counter.fetch_add(1);
+        txn = std::make_shared<MergeTreeTransaction>(snapshot, ltid, UUIDHelpers::Nil);
+        bool inserted = running_list.try_emplace(txn->tid.getHash(), txn).second;
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} exists", txn->tid.getHash(), txn->tid);
+        txn->snapshot_in_use_it = snapshots_in_use.insert(snapshots_in_use.end(), snapshot);
     }
     LOG_TRACE(log, "Beginning transaction {}", txn->tid);
     return txn;
@@ -76,6 +78,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
         bool removed = running_list.erase(txn->tid.getHash());
         if (!removed)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} doesn't exist", txn->tid.getHash(), txn->tid);
+        snapshots_in_use.erase(txn->snapshot_in_use_it);
     }
     return new_csn;
 }
@@ -89,6 +92,7 @@ void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) no
         bool removed = running_list.erase(txn->tid.getHash());
         if (!removed)
             abort();
+        snapshots_in_use.erase(txn->snapshot_in_use_it);
     }
 }
 
@@ -118,6 +122,14 @@ CSN TransactionLog::getCSN(const TIDHash & tid) const
     if (it == tid_to_csn.end())
         return Tx::UnknownCSN;
     return it->second;
+}
+
+Snapshot TransactionLog::getOldestSnapshot() const
+{
+    std::lock_guard lock{running_list_mutex};
+    if (snapshots_in_use.empty())
+        return getLatestSnapshot();
+    return snapshots_in_use.front();
 }
 
 }

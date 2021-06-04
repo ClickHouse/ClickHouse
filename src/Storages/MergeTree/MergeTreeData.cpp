@@ -23,6 +23,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -1208,6 +1209,10 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         {
             const DataPartPtr & part = *it;
 
+            /// Do not remove outdated part if it may be visible for some transaction
+            if (part->versions.isVisible(TransactionLog::instance().getOldestSnapshot()))
+                continue;
+
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
 
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
@@ -2157,7 +2162,6 @@ bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, MergeTreeTra
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
-        if (!renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts))
         if (!renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts, deduplication_log))
             return false;
     }
@@ -2225,10 +2229,6 @@ bool MergeTreeData::renameTempPartAndReplace(
         return false;
     }
 
-    /// FIXME Transactions: it's not the best place for checking and setting maxtid,
-    /// because it's too optimistic. We should lock maxtid of covered parts at the beginning of operation.
-    MergeTreeTransaction::addNewPartAndRemoveCovered(part, covered_parts, txn);
-
     /// Deduplication log used only from non-replicated MergeTree. Replicated
     /// tables have their own mechanism. We try to deduplicate at such deep
     /// level, because only here we know real part name which is required for
@@ -2255,6 +2255,9 @@ bool MergeTreeData::renameTempPartAndReplace(
     part->setState(DataPartState::PreCommitted);
     part->renameTo(part_name, true);
 
+    /// FIXME Transactions: it's not the best place for checking and setting maxtid,
+    /// because it's too optimistic. We should lock maxtid of covered parts at the beginning of operation.
+    MergeTreeTransaction::addNewPartAndRemoveCovered(shared_from_this(), part, covered_parts, txn);
     auto part_it = data_parts_indexes.insert(part).first;
 
     if (out_transaction)
@@ -2349,6 +2352,7 @@ void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(con
         if (it_part == data_parts_by_info.end())
             throw Exception("Part " + part->getNameWithState() + " not found in data_parts", ErrorCodes::LOGICAL_ERROR);
 
+        assert(part->getState() == IMergeTreeDataPart::State::PreCommitted);
         modifyPartState(part, IMergeTreeDataPart::State::Temporary);
         /// Erase immediately
         data_parts_indexes.erase(it_part);
@@ -2415,6 +2419,15 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
     removePartsFromWorkingSet(parts_to_remove, clear_without_timeout, lock);
 
     return parts_to_remove;
+}
+
+void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLock * acquired_lock)
+{
+    auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
+    assert(part->getState() != DataPartState::Committed);
+    addPartContributionToColumnSizes(part);
+    addPartContributionToDataVolume(part);
+    modifyPartState(part, DataPartState::Committed);
 }
 
 void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool
@@ -3761,6 +3774,18 @@ void MergeTreeData::Transaction::rollback()
             buf << " " << part->relative_path;
         buf << ".";
         LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
+
+        if (!txn)
+        {
+            auto lock = data.lockParts();
+            for (const auto & part : precommitted_parts)
+            {
+                DataPartPtr covering_part;
+                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, lock);
+                for (auto & covered : covered_parts)
+                    covered->versions.unlockMaxTID(Tx::PrehistoricTID);
+            }
+        }
 
         data.removePartsFromWorkingSet(
             DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),

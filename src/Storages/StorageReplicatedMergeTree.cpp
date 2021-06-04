@@ -1499,7 +1499,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         {
             LOG_TRACE(log, "Found valid part to attach from local data, preparing the transaction");
 
-            Transaction transaction(*this);
+            Transaction transaction(*this, nullptr);
 
             renameTempPartAndReplace(part, nullptr, nullptr, &transaction);
             checkPartChecksumsAndCommit(transaction, part);
@@ -1726,7 +1726,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     /// Add merge to list
     MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_merged_part);
 
-    Transaction transaction(*this);
+    Transaction transaction(*this, nullptr);
     MutableDataPartPtr part;
 
     Stopwatch stopwatch;
@@ -1859,7 +1859,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
 
     MutableDataPartPtr new_part;
-    Transaction transaction(*this);
+    Transaction transaction(*this, nullptr);
 
     FutureMergedMutatedPart future_mutated_part;
     future_mutated_part.name = entry.new_part_name;
@@ -2530,7 +2530,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     {
         /// Commit parts
         auto zookeeper = getZooKeeper();
-        Transaction transaction(*this);
+        Transaction transaction(*this, nullptr);
 
         Coordination::Requests ops;
         for (PartDescriptionPtr & part_desc : final_parts)
@@ -4044,7 +4044,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
         if (!to_detached)
         {
-            Transaction transaction(*this);
+            Transaction transaction(*this, nullptr);
             renameTempPartAndReplace(part, nullptr, nullptr, &transaction);
 
             replaced_parts = checkPartChecksumsAndCommit(transaction, part);
@@ -6465,7 +6465,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
         ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
 
-        Transaction transaction(*this);
+        Transaction transaction(*this, nullptr);
         {
             auto data_parts_lock = lockParts();
 
@@ -6655,7 +6655,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                                                    entry.toString(), zkutil::CreateMode::PersistentSequential));
 
         {
-            Transaction transaction(*dest_table_storage);
+            Transaction transaction(*dest_table_storage, nullptr);
 
             auto src_data_parts_lock = lockParts();
             auto dest_data_parts_lock = dest_table_storage->lockParts();
