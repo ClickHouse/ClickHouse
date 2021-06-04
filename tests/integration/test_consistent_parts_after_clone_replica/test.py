@@ -58,6 +58,8 @@ def test_inconsistent_parts_if_drop_while_replica_not_active(start_cluster):
         # DROP_RANGE will be removed from the replication log and the first replica will be lost
         for i in range(20):
             node2.query("INSERT INTO test_table VALUES ('2019-08-16', {})".format(20 + i))
+        
+        assert_eq_with_retry(node2, "SELECT value FROM system.zookeeper WHERE path='/clickhouse/tables/test1/replicated/replicas/node1' AND name='is_lost'", "1")
 
         # the first replica will be cloned from the second
         pm.heal_all()
