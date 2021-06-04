@@ -121,25 +121,25 @@ public:
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         DiskS3::Metadata metadata_,
-        size_t s3_max_single_read_retries_,
+        size_t max_single_read_retries_,
         size_t buf_size_)
         : ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>(metadata_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
-        , s3_max_single_read_retries(s3_max_single_read_retries_)
+        , max_single_read_retries(max_single_read_retries_)
         , buf_size(buf_size_)
     {
     }
 
     std::unique_ptr<ReadBufferFromS3> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, s3_max_single_read_retries, buf_size);
+        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, max_single_read_retries, buf_size);
     }
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     const String & bucket;
-    size_t s3_max_single_read_retries;
+    UInt64 max_single_read_retries;
     size_t buf_size;
 };
 
@@ -937,7 +937,7 @@ void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, 
 
 DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
-    size_t s3_max_single_read_retries_,
+    UInt64 s3_max_single_read_retries_,
     size_t s3_min_upload_part_size_,
     size_t s3_max_single_part_upload_size_,
     size_t min_bytes_for_seek_,
