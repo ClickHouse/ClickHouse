@@ -243,9 +243,23 @@ static bool modifyAST(String operator_name, std::shared_ptr<ASTFunction> & funct
         aggregate_function->name = type == SubqueryFunctionType::ANY ? "max" : "min";
         return true;
     }
+
+    // = ALL --> IN (SELECT singleValueOrNull(*) FROM subquery)
+    // != ANY --> NOT IN (SELECT singleValueOrNull(*) FROM subquery)
     if (operator_name == "equals" || operator_name == "notEquals")
     {
         aggregate_function->name = "singleValueOrNull";
+        function->name = "in";
+        if (operator_name == "notEquals")
+        {
+            auto function_not = std::make_shared<ASTFunction>();
+            auto exp_list_not = std::make_shared<ASTExpressionList>();
+            exp_list_not->children.push_back(function);
+            function_not->name = "not";
+            function_not->children.push_back(exp_list_not);
+            function_not->arguments = exp_list_not;
+            function = function_not;
+        }
         return true;
     }
     return false;
