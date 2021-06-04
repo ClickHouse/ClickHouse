@@ -495,16 +495,8 @@ DataTypes Block::getDataTypes() const
     return res;
 }
 
-static String getNameOfBaseColumn(const IColumn & column)
-{
-    // if (const auto * column_sparse = checkAndGetColumn<ColumnSparse>(&column))
-    //     return column_sparse->getValuesColumn().getName();
-
-    return column.getName();
-}
-
 template <typename ReturnType>
-static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description, bool allow_remove_constants)
+static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description, bool allow_materialize)
 {
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
@@ -538,14 +530,19 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
 
         const IColumn * actual_column = actual.column.get();
 
-        /// If we allow to remove constants, and expected column is not const, then unwrap actual constant column.
-        if (allow_remove_constants && !isColumnConst(*expected.column))
+        /// If we allow to materialize, and expected column is not const or sparse, then unwrap actual column.
+        if (allow_materialize)
         {
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
-                actual_column = &column_const->getDataColumn();
+            if (!isColumnConst(*expected.column))
+                if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
+                    actual_column = &column_const->getDataColumn();
+
+            if (!expected.column->isSparse())
+                if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(actual_column))
+                    actual_column = &column_sparse->getValuesColumn();
         }
 
-        if (getNameOfBaseColumn(*actual_column) != getNameOfBaseColumn(*expected.column))
+        if (actual_column->getName() != expected.column->getName())
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 

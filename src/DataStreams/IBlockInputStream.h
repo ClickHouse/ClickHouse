@@ -192,6 +192,10 @@ public:
         quota = new_quota;
     }
 
+    /// If true, columns with same name and type may have different representation (normal, const, sparse)
+    /// in different blocks, that was read during stream execution.
+    virtual bool columnsCanDifferInRepresentationAmongBlocks() const { return false; }
+
     /// Enable calculation of minimums and maximums by the result columns.
     void enableExtremes() { enabled_extremes = true; }
 

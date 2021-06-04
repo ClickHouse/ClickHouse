@@ -585,6 +585,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadUUID();
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
+    loadSerializationInfo();
     loadIndexGranularity();
     calculateColumnsSizesOnDisk();
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
@@ -598,8 +599,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
     if (check_consistency)
         checkConsistency(require_columns_checksums);
+
     loadDefaultCompressionCodec();
-    loadSerializationInfo();
 }
 
 void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency)

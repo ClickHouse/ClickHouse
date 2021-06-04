@@ -18,6 +18,7 @@ public:
 
     String getName() const override { return "PipelineExecuting"; }
     Block getHeader() const override;
+    bool columnsCanDifferInRepresentationAmongBlocks() const override { return true; }
 
     void cancel(bool kill) override;
 

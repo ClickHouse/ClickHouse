@@ -88,7 +88,13 @@ Block IBlockInputStream::read()
     {
         Block header = getHeader();
         if (header)
-            assertBlocksHaveEqualStructure(res, header, getName());
+        {
+            if (columnsCanDifferInRepresentationAmongBlocks())
+                assertCompatibleHeader(res, header, getName());
+            else
+                assertBlocksHaveEqualStructure(res, header, getName());
+        }
+
     }
 #endif
 
