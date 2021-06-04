@@ -360,13 +360,13 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
         case EntryState::DESTINATION_ATTACH:
         {
-            auto block_id_path = entry.to_shard + "/blocks/" + "move_part_between_shards_" + toString(entry.part_uuid);
+            String attach_log_entry_barrier_path = fs::path(entry.znode_path) / ("log_" + entry.state.toString());
 
             if (entry.rollback)
             {
                 Coordination::Stat attach_log_entry_stat;
                 String attach_log_entry_str;
-                if (!zk->tryGet(block_id_path, attach_log_entry_str, &attach_log_entry_stat))
+                if (!zk->tryGet(attach_log_entry_barrier_path, attach_log_entry_str, &attach_log_entry_stat))
                 {
                     // ATTACH_PART wasn't issued, nothing to revert.
                     entry.state = EntryState::DESTINATION_FETCH;
@@ -429,7 +429,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                 /// Allocating block number in other replicas zookeeper path
                 /// TODO Maybe we can do better.
-                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, block_id_path, entry.to_shard);
+                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, attach_log_entry_barrier_path, entry.to_shard);
 
                 ReplicatedMergeTreeLogEntryData log_entry;
 
@@ -449,7 +449,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     log_entry.create_time = std::time(nullptr);
                     log_entry.new_part_name = part_info.getPartName();
 
-                    ops.emplace_back(zkutil::makeCreateRequest(block_id_path, log_entry.toString(), -1));
+                    ops.emplace_back(zkutil::makeCreateRequest(attach_log_entry_barrier_path, log_entry.toString(), -1));
                     ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
                     ops.emplace_back(zkutil::makeCreateRequest(
                         entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
