@@ -38,6 +38,7 @@ void registerFunctionDecodeXMLComponent(FunctionFactory &);
 void registerFunctionExtractTextFromHTML(FunctionFactory &);
 void registerFunctionStem(FunctionFactory &);
 void registerFunctionTokenize(FunctionFactory &);
+void registerFunctionTokenizeWhitespace(FunctionFactory &);
 void registerFunctionSynonyms(FunctionFactory &);
 
 
@@ -80,6 +81,7 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionExtractTextFromHTML(factory);
     registerFunctionStem(factory);
     registerFunctionTokenize(factory);
+    registerFunctionTokenizeWhitespace(factory);
     registerFunctionSynonyms(factory);
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
