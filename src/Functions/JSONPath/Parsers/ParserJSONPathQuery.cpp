@@ -1,7 +1,7 @@
-#include <Functions/JSONPath/Parsers/ParserJSONPathQuery.h>
-#include <Functions/JSONPath/Parsers/ParserJSONPathMemberAccess.h>
-#include <Functions/JSONPath/Parsers/ParserJSONPathRange.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPathQuery.h>
+#include <Functions/JSONPath/Parsers/ParserJSONPathMemberAccess.h>
+#include <Functions/JSONPath/Parsers/ParserJSONPathQuery.h>
+#include <Functions/JSONPath/Parsers/ParserJSONPathRange.h>
 
 namespace DB
 
@@ -19,15 +19,16 @@ bool ParserJSONPathQuery::parseImpl(Pos & pos, ASTPtr & query, Expected & expect
     ParserJSONPathMemberAccess parser_jsonpath_member_access;
     ParserJSONPathRange parser_jsonpath_range;
 
-    if (pos->type != TokenType::DollarSign) {
+    if (pos->type != TokenType::DollarSign)
+    {
         return false;
     }
     ++pos;
 
     bool res = false;
     ASTPtr subquery;
-    while (parser_jsonpath_member_access.parse(pos, subquery, expected) ||
-        parser_jsonpath_range.parse(pos, subquery, expected))
+    while (parser_jsonpath_member_access.parse(pos, subquery, expected)
+           || parser_jsonpath_range.parse(pos, subquery, expected))
     {
         if (subquery)
         {

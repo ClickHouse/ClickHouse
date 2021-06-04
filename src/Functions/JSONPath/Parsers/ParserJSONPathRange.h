@@ -5,7 +5,6 @@
 
 namespace DB
 {
-
 class ParserJSONPathRange : public IParserBase
 {
 private:

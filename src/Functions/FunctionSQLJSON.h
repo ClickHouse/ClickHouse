@@ -1,14 +1,15 @@
 #pragma once
 
-#include <Functions/IFunction.h>
+#include <sstream>
 #include <type_traits>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/DummyJSONParser.h>
+#include <Functions/IFunction.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 #include <Functions/JSONPath/Generators/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
@@ -18,7 +19,6 @@
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
 #include <ext/range.h>
-#include <sstream>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_functions.h"
@@ -28,11 +28,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int ILLEGAL_COLUMN;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int BAD_ARGUMENTS;
 }
 
 class FunctionSQLJSONHelpers
@@ -159,7 +159,7 @@ class FunctionSQLJSON : public IFunction, WithConstContext
 {
 public:
     static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionSQLJSON>(context_); }
-    FunctionSQLJSON(ContextConstPtr context_) : WithConstContext(context_) {}
+    FunctionSQLJSON(ContextConstPtr context_) : WithConstContext(context_) { }
 
     static constexpr auto name = Name::name;
     String getName() const override { return Name::name; }
@@ -220,7 +220,8 @@ public:
         VisitorStatus status;
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
-            if (status == VisitorStatus::Ok) {
+            if (status == VisitorStatus::Ok)
+            {
                 break;
             }
             current_element = root;
@@ -229,9 +230,12 @@ public:
         /// insert result, status can be either Ok (if we found the item)
         /// or Exhausted (if we never found the item)
         ColumnUInt8 & col_bool = assert_cast<ColumnUInt8 &>(dest);
-        if (status == VisitorStatus::Ok) {
+        if (status == VisitorStatus::Ok)
+        {
             col_bool.insert(1);
-        } else {
+        }
+        else
+        {
             col_bool.insert(0);
         }
         return true;
@@ -256,17 +260,22 @@ public:
         Element res;
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
-            if (status == VisitorStatus::Ok) {
-                if (!(current_element.isArray() || current_element.isObject())) {
+            if (status == VisitorStatus::Ok)
+            {
+                if (!(current_element.isArray() || current_element.isObject()))
+                {
                     break;
                 }
-            } else if (status == VisitorStatus::Error) {
+            }
+            else if (status == VisitorStatus::Error)
+            {
                 /// ON ERROR
             }
             current_element = root;
         }
 
-        if (status == VisitorStatus::Exhausted) {
+        if (status == VisitorStatus::Exhausted)
+        {
             return false;
         }
 
@@ -304,19 +313,24 @@ public:
         bool success = false;
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
-            if (status == VisitorStatus::Ok) {
-                if (success) {
+            if (status == VisitorStatus::Ok)
+            {
+                if (success)
+                {
                     out << ", ";
                 }
                 success = true;
                 out << current_element.getElement();
-            } else if (status == VisitorStatus::Error) {
+            }
+            else if (status == VisitorStatus::Error)
+            {
                 /// ON ERROR
             }
             current_element = root;
         }
         out << "]";
-        if (!success) {
+        if (!success)
+        {
             return false;
         }
         ColumnString & col_str = assert_cast<ColumnString &>(dest);

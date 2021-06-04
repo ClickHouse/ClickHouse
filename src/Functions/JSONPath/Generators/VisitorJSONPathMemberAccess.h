@@ -12,7 +12,8 @@ public:
 
     const char * getName() const override { return "VisitorJSONPathMemberAccess"; }
 
-    VisitorStatus apply(typename JSONParser::Element & element) const override {
+    VisitorStatus apply(typename JSONParser::Element & element) const override
+    {
         const auto * member_access = member_access_ptr->as<ASTJSONPathMemberAccess>();
         typename JSONParser::Element result;
         element.getObject().find(std::string_view(member_access->member_name), result);
@@ -22,13 +23,15 @@ public:
 
     VisitorStatus visit(typename JSONParser::Element & element) override
     {
-        if (!element.isObject()) {
+        if (!element.isObject())
+        {
             this->setExhausted(true);
             return VisitorStatus::Error;
         }
         const auto * member_access = member_access_ptr->as<ASTJSONPathMemberAccess>();
         typename JSONParser::Element result;
-        if (!element.getObject().find(std::string_view(member_access->member_name), result)) {
+        if (!element.getObject().find(std::string_view(member_access->member_name), result))
+        {
             this->setExhausted(true);
             return VisitorStatus::Error;
         }
@@ -37,14 +40,12 @@ public:
         return VisitorStatus::Ok;
     }
 
-    void reinitialize() override {
-        this->setExhausted(false);
-    }
+    void reinitialize() override { this->setExhausted(false); }
 
-    void updateState() override {}
+    void updateState() override { }
 
 private:
     ASTPtr member_access_ptr;
 };
 
-} // namespace DB
+}
