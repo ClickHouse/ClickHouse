@@ -29,6 +29,8 @@ public:
 
     MergeTreeTransactionPtr tryGetRunningTransaction(const TIDHash & tid);
 
+    Snapshot getOldestSnapshot() const;
+
 private:
     Poco::Logger * log;
 
@@ -42,6 +44,7 @@ private:
 
     mutable std::mutex running_list_mutex;
     std::unordered_map<TIDHash, MergeTreeTransactionPtr> running_list;
+    std::list<Snapshot> snapshots_in_use;
 };
 
 }

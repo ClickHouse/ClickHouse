@@ -32,7 +32,7 @@ TIDHash TransactionID::getHash() const
     return hash.get64();
 }
 
-/// It can be used fro introspection purposes only
+/// It can be used for introspection purposes only
 TransactionID VersionMetadata::getMaxTID() const
 {
     TIDHash max_lock = maxtid_lock.load();
@@ -40,6 +40,8 @@ TransactionID VersionMetadata::getMaxTID() const
     {
         if (auto txn = TransactionLog::instance().tryGetRunningTransaction(max_lock))
             return txn->tid;
+        if (max_lock == Tx::PrehistoricTID.getHash())
+            return Tx::PrehistoricTID;
     }
 
     if (maxcsn.load(std::memory_order_relaxed))
@@ -53,6 +55,7 @@ TransactionID VersionMetadata::getMaxTID() const
 
 void VersionMetadata::lockMaxTID(const TransactionID & tid, const String & error_context)
 {
+    assert(tid);
     TIDHash max_lock_value = tid.getHash();
     TIDHash expected_max_lock_value = 0;
     bool locked = maxtid_lock.compare_exchange_strong(expected_max_lock_value, max_lock_value);
@@ -69,6 +72,7 @@ void VersionMetadata::lockMaxTID(const TransactionID & tid, const String & error
 
 void VersionMetadata::unlockMaxTID(const TransactionID & tid)
 {
+    assert(tid);
     TIDHash max_lock_value = tid.getHash();
     TIDHash locked_by = maxtid_lock.load();
 
@@ -88,6 +92,11 @@ void VersionMetadata::unlockMaxTID(const TransactionID & tid)
         throw_cannot_unlock();
 }
 
+bool VersionMetadata::isMaxTIDLocked() const
+{
+    return maxtid_lock.load() != 0;
+}
+
 void VersionMetadata::setMinTID(const TransactionID & tid)
 {
     /// TODO Transactions: initialize it in constructor on part creation and remove this method
@@ -98,7 +107,11 @@ void VersionMetadata::setMinTID(const TransactionID & tid)
 
 bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
 {
-    Snapshot snapshot_version = txn.getSnapshot();
+    return isVisible(txn.getSnapshot(), txn.tid);
+}
+
+bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current_tid)
+{
     assert(mintid);
     CSN min = mincsn.load(std::memory_order_relaxed);
     TIDHash max_lock = maxtid_lock.load(std::memory_order_relaxed);
@@ -120,7 +133,7 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
         return false;
     if (max && max <= snapshot_version)
         return false;
-    if (max_lock && max_lock == txn.tid.getHash())
+    if (current_tid && max_lock && max_lock == current_tid.getHash())
         return false;
 
     /// Otherwise, part is definitely visible if:
@@ -131,7 +144,7 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
         return true;
     if (min && min <= snapshot_version && max && snapshot_version < max)
         return true;
-    if (mintid == txn.tid)
+    if (current_tid && mintid == current_tid)
         return true;
 
     /// End of fast path.
@@ -140,7 +153,7 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
     /// It means that some transaction is creating/removing the part right now or has done it recently
     /// and we don't know if it was already committed ot not.
     assert(!had_mincsn || (had_maxtid && !had_maxcsn));
-    assert(mintid != txn.tid && max_lock != txn.tid.getHash());
+    assert(!current_tid || (mintid != current_tid && max_lock != current_tid.getHash()));
 
     /// Before doing CSN lookup, let's check some extra conditions.
     /// If snapshot_version <= some_tid.start_csn, then changes of transaction with some_tid

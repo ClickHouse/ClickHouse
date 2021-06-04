@@ -382,7 +382,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         /// Information about the part.
         storage.getCommitPartOps(ops, part, block_id_path);
 
-        MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.
+        MergeTreeData::Transaction transaction(storage, nullptr); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
         try
         {
