@@ -34,11 +34,7 @@ private:
 
 public:
     FunctionSynonyms(SynonymsExtensions & extensions_)
-        : extensions(extensions_)
-    {
-        // if (!owned_dict)
-        //     throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
-    }
+        : extensions(extensions_) {}
 
     String getName() const override { return name; }
 
