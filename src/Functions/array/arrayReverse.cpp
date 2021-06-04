@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -24,7 +24,7 @@ class FunctionArrayReverse : public IFunction
 {
 public:
     static constexpr auto name = "arrayReverse";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionArrayReverse>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReverse>(); }
 
     String getName() const override { return name; }
 

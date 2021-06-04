@@ -227,8 +227,8 @@ def optimize_with_retry(node, table_name, retry=20):
             time.sleep(0.5)
 
 @pytest.mark.parametrize("name,engine", [
-    pytest.param("test_ttl_alter_delete", "MergeTree()", id="test_ttl_alter_delete"),
-    pytest.param("test_replicated_ttl_alter_delete", "ReplicatedMergeTree('/clickhouse/test_replicated_ttl_alter_delete', '1')", id="test_ttl_alter_delete_replicated"),
+    ("test_ttl_alter_delete", "MergeTree()"),
+    ("test_replicated_ttl_alter_delete", "ReplicatedMergeTree('/clickhouse/test_replicated_ttl_alter_delete', '1')"),
 ])
 def test_ttl_alter_delete(started_cluster, name, engine):
     """Copyright 2019, Altinity LTD

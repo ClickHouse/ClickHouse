@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_DIFFERS_TOO_MUCH;
-    extern const int LOGICAL_ERROR;
 }
 
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
@@ -368,8 +367,8 @@ void ReplicatedMergeTreePartCheckThread::run()
             {
                 if (!parts_set.empty())
                 {
+                    LOG_ERROR(log, "Non-empty parts_set with empty parts_queue. This is a bug.");
                     parts_set.clear();
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty parts_set with empty parts_queue. This is a bug.");
                 }
             }
             else
@@ -402,7 +401,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
             if (parts_queue.empty())
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone erased checking part from parts_queue. This is a bug.");
+                LOG_ERROR(log, "Someone erased checking part from parts_queue. This is a bug.");
             }
             else
             {

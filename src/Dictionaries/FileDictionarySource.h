@@ -17,7 +17,7 @@ class FileDictionarySource final : public IDictionarySource
 {
 public:
     FileDictionarySource(const std::string & filepath_, const std::string & format_,
-        Block & sample_block_, ContextConstPtr context_, bool created_from_ddl);
+        Block & sample_block_, ContextPtr context_, bool check_config);
 
     FileDictionarySource(const FileDictionarySource & other);
 
@@ -61,7 +61,7 @@ private:
     const std::string filepath;
     const std::string format;
     Block sample_block;
-    ContextConstPtr context;
+    ContextPtr context;
     Poco::Timestamp last_modification;
 };
 

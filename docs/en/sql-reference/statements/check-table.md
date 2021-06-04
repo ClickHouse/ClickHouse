@@ -28,7 +28,7 @@ The `CHECK TABLE` query supports the following table engines:
 
 Performed over the tables with another table engines causes an exception.
 
-Engines from the `*Log` family do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
+Engines from the `*Log` family don’t provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
 ## Checking the MergeTree Family Tables {#checking-mergetree-tables}
 

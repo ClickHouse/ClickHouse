@@ -18,8 +18,8 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-bool decimalCheckComparisonOverflow(ContextConstPtr context);
-bool decimalCheckArithmeticOverflow(ContextConstPtr context);
+bool decimalCheckComparisonOverflow(ContextPtr context);
+bool decimalCheckArithmeticOverflow(ContextPtr context);
 
 inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 {
@@ -76,7 +76,7 @@ public:
             throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
-    TypeIndex getTypeId() const override { return TypeId<T>; }
+    TypeIndex getTypeId() const override { return TypeId<T>::value; }
 
     Field getDefault() const override;
     MutableColumnPtr createColumn() const override;
@@ -113,15 +113,15 @@ public:
 
     T maxWholeValue() const { return getScaleMultiplier(precision - scale) - T(1); }
 
-    template <typename U>
+    template<typename U>
     bool canStoreWhole(U x) const
     {
-        static_assert(is_signed_v<typename T::NativeType>);
+        static_assert(std::is_signed_v<typename T::NativeType>);
         T max = maxWholeValue();
-        if constexpr (is_signed_v<U>)
-            return -max.value <= x && x <= max.value;
+        if constexpr (std::is_signed_v<U>)
+            return -max <= x && x <= max;
         else
-            return x <= static_cast<make_unsigned_t<typename T::NativeType>>(max.value);
+            return x <= static_cast<std::make_unsigned_t<typename T::NativeType>>(max.value);
     }
 
     /// @returns multiplier for U to become T with correct scale

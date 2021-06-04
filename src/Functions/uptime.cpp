@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -13,7 +13,7 @@ class FunctionUptime : public IFunction
 {
 public:
     static constexpr auto name = "uptime";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionUptime>(context->getUptimeSeconds());
     }

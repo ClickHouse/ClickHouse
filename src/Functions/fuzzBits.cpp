@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 #include <common/arithmeticOverflow.h>
@@ -53,7 +53,7 @@ class FunctionFuzzBits : public IFunction
 public:
     static constexpr auto name = "fuzzBits";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionFuzzBits>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFuzzBits>(); }
 
     String getName() const override { return name; }
 

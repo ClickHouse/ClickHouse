@@ -31,7 +31,7 @@ static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_t
 }
 
 
-ContextMutablePtr StorageFactory::Arguments::getContext() const
+ContextPtr StorageFactory::Arguments::getContext() const
 {
     auto ptr = context.lock();
     if (!ptr)
@@ -39,7 +39,7 @@ ContextMutablePtr StorageFactory::Arguments::getContext() const
     return ptr;
 }
 
-ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
+ContextPtr StorageFactory::Arguments::getLocalContext() const
 {
     auto ptr = local_context.lock();
     if (!ptr)
@@ -59,13 +59,13 @@ void StorageFactory::registerStorage(const std::string & name, CreatorFn creator
 StoragePtr StorageFactory::get(
     const ASTCreateQuery & query,
     const String & relative_data_path,
-    ContextMutablePtr local_context,
-    ContextMutablePtr context,
+    ContextPtr local_context,
+    ContextPtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     bool has_force_restore_data_flag) const
 {
-    String name, comment;
+    String name;
     ASTStorage * storage_def = query.storage;
 
     bool has_engine_args = false;
@@ -79,17 +79,11 @@ StoragePtr StorageFactory::get(
     }
     else if (query.is_live_view)
     {
+
         if (query.storage)
             throw Exception("Specifying ENGINE is not allowed for a LiveView", ErrorCodes::INCORRECT_QUERY);
 
         name = "LiveView";
-    }
-    else if (query.is_dictionary)
-    {
-        if (query.storage)
-            throw Exception("Specifying ENGINE is not allowed for a Dictionary", ErrorCodes::INCORRECT_QUERY);
-
-        name = "Dictionary";
     }
     else
     {
@@ -146,9 +140,6 @@ StoragePtr StorageFactory::get(
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
 
-            if (storage_def->comment)
-                comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
-
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
                 if (!feature_matcher_fn(it->second.features))
@@ -186,16 +177,12 @@ StoragePtr StorageFactory::get(
                 check_feature(
                     "skipping indices",
                     [](StorageFeatures features) { return features.supports_skipping_indices; });
-
-            if (query.columns_list && query.columns_list->projections && !query.columns_list->projections->children.empty())
-                check_feature(
-                    "projections",
-                    [](StorageFeatures features) { return features.supports_projections; });
         }
     }
 
     ASTs empty_engine_args;
-    Arguments arguments{
+    Arguments arguments
+    {
         .engine_name = name,
         .engine_args = has_engine_args ? storage_def->engine->arguments->children : empty_engine_args,
         .storage_def = storage_def,
@@ -207,13 +194,12 @@ StoragePtr StorageFactory::get(
         .columns = columns,
         .constraints = constraints,
         .attach = query.attach,
-        .has_force_restore_data_flag = has_force_restore_data_flag,
-        .comment = comment};
-
+        .has_force_restore_data_flag = has_force_restore_data_flag
+    };
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
     auto res = storages.at(name).creator_fn(arguments);
-    if (!empty_engine_args.empty()) //-V547
+    if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query
         assert(storage_def && storage_def->engine && !storage_def->engine->arguments);

@@ -71,13 +71,6 @@ struct MergeTreePartInfo
             || max_block < rhs.min_block;
     }
 
-    bool isFakeDropRangePart() const
-    {
-        /// Another max level was previously used for REPLACE/MOVE PARTITION
-        auto another_max_level = std::numeric_limits<decltype(level)>::max();
-        return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
-    }
-
     String getPartName() const;
     String getPartNameV0(DayNum left_date, DayNum right_date) const;
     UInt64 getBlocksCount() const

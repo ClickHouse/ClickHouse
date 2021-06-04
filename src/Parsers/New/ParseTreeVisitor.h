@@ -19,21 +19,15 @@ public:
     // AlterTableQuery
     antlrcpp::Any visitAlterTableClauseAddColumn(ClickHouseParser::AlterTableClauseAddColumnContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseAddIndex(ClickHouseParser::AlterTableClauseAddIndexContext * ctx) override;
-    antlrcpp::Any visitAlterTableClauseAddProjection(ClickHouseParser::AlterTableClauseAddProjectionContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseAttach(ClickHouseParser::AlterTableClauseAttachContext * ctx) override;
-    antlrcpp::Any visitAlterTableClauseClearColumn(ClickHouseParser::AlterTableClauseClearColumnContext * ctx) override;
-    antlrcpp::Any visitAlterTableClauseClearIndex(ClickHouseParser::AlterTableClauseClearIndexContext * ctx) override;
-    antlrcpp::Any visitAlterTableClauseClearProjection(ClickHouseParser::AlterTableClauseClearProjectionContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseClear(ClickHouseParser::AlterTableClauseClearContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseComment(ClickHouseParser::AlterTableClauseCommentContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseDelete(ClickHouseParser::AlterTableClauseDeleteContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseDetach(ClickHouseParser::AlterTableClauseDetachContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseDropColumn(ClickHouseParser::AlterTableClauseDropColumnContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseDropIndex(ClickHouseParser::AlterTableClauseDropIndexContext * ctx) override;
-    antlrcpp::Any visitAlterTableClauseDropProjection(ClickHouseParser::AlterTableClauseDropProjectionContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseDropPartition(ClickHouseParser::AlterTableClauseDropPartitionContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseFreezePartition(ClickHouseParser::AlterTableClauseFreezePartitionContext * ctx) override;
-    antlrcpp::Any visitAlterTableClauseMaterializeIndex(ClickHouseParser::AlterTableClauseMaterializeIndexContext * ctx) override;
-    antlrcpp::Any visitAlterTableClauseMaterializeProjection(ClickHouseParser::AlterTableClauseMaterializeProjectionContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseModify(ClickHouseParser::AlterTableClauseModifyContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseModifyCodec(ClickHouseParser::AlterTableClauseModifyCodecContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseModifyComment(ClickHouseParser::AlterTableClauseModifyCommentContext * ctx) override;
@@ -168,7 +162,6 @@ public:
     antlrcpp::Any visitRenameStmt(ClickHouseParser::RenameStmtContext * ctx) override;
 
     // SelectUnionQuery
-    antlrcpp::Any visitProjectionSelectStmt(ClickHouseParser::ProjectionSelectStmtContext * ctx) override;
     antlrcpp::Any visitSelectStmt(ClickHouseParser::SelectStmtContext * ctx) override;
     antlrcpp::Any visitSelectStmtWithParens(ClickHouseParser::SelectStmtWithParensContext * ctx) override;
     antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext * ctx) override;
@@ -197,9 +190,7 @@ public:
     antlrcpp::Any visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext * ctx) override;
     antlrcpp::Any visitTableElementExprConstraint(ClickHouseParser::TableElementExprConstraintContext * ctx) override;
     antlrcpp::Any visitTableElementExprIndex(ClickHouseParser::TableElementExprIndexContext * ctx) override;
-    antlrcpp::Any visitTableElementExprProjection(ClickHouseParser::TableElementExprProjectionContext * ctx) override;
     antlrcpp::Any visitTableIndexDfnt(ClickHouseParser::TableIndexDfntContext * ctx) override;
-    antlrcpp::Any visitTableProjectionDfnt(ClickHouseParser::TableProjectionDfntContext * ctx) override;
 
     // TableExpr
     antlrcpp::Any visitTableArgExpr(ClickHouseParser::TableArgExprContext * ctx) override;
@@ -245,7 +236,6 @@ public:
     antlrcpp::Any visitGroupByClause(ClickHouseParser::GroupByClauseContext *ctx) override;
     antlrcpp::Any visitHavingClause(ClickHouseParser::HavingClauseContext *ctx) override;
     antlrcpp::Any visitOrderByClause(ClickHouseParser::OrderByClauseContext *ctx) override;
-    antlrcpp::Any visitProjectionOrderByClause(ClickHouseParser::ProjectionOrderByClauseContext *ctx) override;
     antlrcpp::Any visitLimitByClause(ClickHouseParser::LimitByClauseContext *ctx) override;
     antlrcpp::Any visitLimitClause(ClickHouseParser::LimitClauseContext *ctx) override;
     antlrcpp::Any visitSettingsClause(ClickHouseParser::SettingsClauseContext *ctx) override;

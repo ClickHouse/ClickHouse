@@ -3,7 +3,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <Common/escapeForFileName.h>
 
 namespace DB
 {
@@ -394,9 +393,8 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type.getName());
 
     auto disk = data_part->volume->getDisk();
-    String escaped_name = escapeForFileName(name);
-    String mrk_path = fullPath(disk, part_path + escaped_name + marks_file_extension);
-    String bin_path = fullPath(disk, part_path + escaped_name + DATA_FILE_EXTENSION);
+    String mrk_path = fullPath(disk, part_path + name + marks_file_extension);
+    String bin_path = fullPath(disk, part_path + name + DATA_FILE_EXTENSION);
     DB::ReadBufferFromFile mrk_in(mrk_path);
     DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0, nullptr);
     bool must_be_last = false;
@@ -559,10 +557,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
 
 void MergeTreeDataPartWriterWide::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    // If we don't have anything to write, skip finalization.
-    if (!columns_list.empty())
-        finishDataSerialization(checksums, sync);
-
+    finishDataSerialization(checksums, sync);
     if (settings.rewrite_primary_key)
         finishPrimaryIndexSerialization(checksums, sync);
 

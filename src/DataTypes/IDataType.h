@@ -177,7 +177,7 @@ public:
       */
     virtual bool canBeComparedWithCollation() const { return false; }
 
-    /** If the type is totally comparable (Ints, Date, DateTime, DateTime64, not nullable, not floats)
+    /** If the type is totally comparable (Ints, Date, DateTime, not nullable, not floats)
       *  and "simple" enough (not String, FixedString) to be used as version number
       *  (to select rows with maximum version).
       */
@@ -324,6 +324,7 @@ struct WhichDataType
     constexpr bool isDate() const { return idx == TypeIndex::Date; }
     constexpr bool isDateTime() const { return idx == TypeIndex::DateTime; }
     constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
+    constexpr bool isDateOrDateTime() const { return isDate() || isDateTime() || isDateTime64(); }
 
     constexpr bool isString() const { return idx == TypeIndex::String; }
     constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
@@ -340,12 +341,16 @@ struct WhichDataType
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
+
+    constexpr bool IsBigIntOrDeimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
 
 template <typename T>
 inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }
+template <typename T>
+inline bool isDateOrDateTime(const T & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
 template <typename T>
 inline bool isDateTime(const T & data_type) { return WhichDataType(data_type).isDateTime(); }
 template <typename T>
@@ -410,7 +415,7 @@ template <typename T>
 inline bool isColumnedAsNumber(const T & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt() || which.isFloat() || which.isDate() || which.isDateTime() || which.isDateTime64() || which.isUUID();
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDateTime() || which.isUUID();
 }
 
 template <typename T>
@@ -425,7 +430,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>::value;
 }
 
 template <typename T>
@@ -462,6 +467,19 @@ inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 inline bool isCompilableType(const DataTypePtr & data_type)
 {
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
+}
+
+template <TypeIndex TYPE_IDX, typename DataType>
+inline bool isDataType(const DataType & data_type)
+{
+    WhichDataType which(data_type);
+    return which.idx == TYPE_IDX;
+}
+
+template <typename ExpectedDataType, typename DataType>
+inline bool isDataType(const DataType & data_type)
+{
+    return isDataType<ExpectedDataType::type_id>(data_type);
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

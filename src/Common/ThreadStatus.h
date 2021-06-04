@@ -71,7 +71,7 @@ public:
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
-    UInt64 normalized_query_hash = 0;
+    UInt64 normalized_query_hash;
 };
 
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;

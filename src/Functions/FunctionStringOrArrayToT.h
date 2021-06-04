@@ -1,7 +1,7 @@
 #pragma once
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
@@ -25,7 +25,7 @@ class FunctionStringOrArrayToT : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionStringOrArrayToT>();
     }

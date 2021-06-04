@@ -11,7 +11,7 @@
 #include <Core/Block.h>
 #include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
-#include <Storages/PostgreSQL/PoolWithFailover.h>
+#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
 #include <pqxx/pqxx>
 
 
@@ -24,7 +24,6 @@ class PostgreSQLDictionarySource final : public IDictionarySource
 public:
     PostgreSQLDictionarySource(
         const DictionaryStructure & dict_struct_,
-        postgres::PoolWithFailoverPtr pool_,
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix,
         const Block & sample_block_);
@@ -46,22 +45,21 @@ public:
     std::string toString() const override;
 
 private:
-    String getUpdateFieldAndDate();
-    String doInvalidateQuery(const std::string & request) const;
+    std::string getUpdateFieldAndDate();
+    std::string doInvalidateQuery(const std::string & request) const;
     BlockInputStreamPtr loadBase(const String & query);
 
     const DictionaryStructure dict_struct;
     Block sample_block;
-    postgres::PoolWithFailoverPtr pool;
+    postgres::PoolWithFailoverPtr connection;
     Poco::Logger * log;
 
-    const String db;
-    String schema;
-    String table;
-    const String where;
+    const std::string db;
+    const std::string table;
+    const std::string where;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    String invalidate_query;
+    std::string invalidate_query;
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const std::string update_field;
     mutable std::string invalidate_query_response;

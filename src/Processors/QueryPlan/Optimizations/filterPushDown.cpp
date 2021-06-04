@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
@@ -73,8 +72,8 @@ static size_t tryAddNewFilterStep(
     /// Add new Filter step before Aggregating.
     /// Expression/Filter -> Aggregating -> Something
     auto & node = nodes.emplace_back();
-    node.children.emplace_back(&node);
-    std::swap(node.children[0], child_node->children[0]);
+    node.children.swap(child_node->children);
+    child_node->children.emplace_back(&node);
     /// Expression/Filter -> Aggregating -> Filter -> Something
 
     /// New filter column is the first one.

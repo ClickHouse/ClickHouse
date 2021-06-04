@@ -1,6 +1,10 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+
+#include <Poco/File.h>
+#include <Poco/Path.h>
+
 #include <common/logger_useful.h>
 
 #include <atomic>
@@ -53,7 +57,6 @@ public:
         std::string compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
-        const String & comment;
     };
 
     NamesAndTypesList getVirtuals() const override;

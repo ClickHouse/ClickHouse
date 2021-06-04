@@ -14,14 +14,14 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/escapeForFileName.h>
+
 #include <common/logger_useful.h>
+#include <Poco/DirectoryIterator.h>
+
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
-#include <filesystem>
-#include <Common/filesystemHelpers.h>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
@@ -45,7 +46,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
     const String & table_data_path_relative,
-    ContextMutablePtr context,
+    ContextPtr context,
     bool has_force_restore_data_flag)
 {
     ast_create_query.attach = true;
@@ -62,21 +63,14 @@ std::pair<String, StoragePtr> createTableFromAST(
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.table, storage};
     }
+    /// We do not directly use `InterpreterCreateQuery::execute`, because
+    /// - the database has not been loaded yet;
+    /// - the code is simpler, since the query is already brought to a suitable form.
+    if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
+        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    ColumnsDescription columns;
-    ConstraintsDescription constraints;
-
-    if (!ast_create_query.is_dictionary)
-    {
-        /// We do not directly use `InterpreterCreateQuery::execute`, because
-        /// - the database has not been loaded yet;
-        /// - the code is simpler, since the query is already brought to a suitable form.
-        if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
-            throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-
-        columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
-        constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
-    }
+    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
+    ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
 
     return
     {
@@ -148,12 +142,10 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
     ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
-    ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
-    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
 
     if (metadata.select.select_query)
     {
@@ -201,8 +193,8 @@ DatabaseOnDisk::DatabaseOnDisk(
     , metadata_path(metadata_path_)
     , data_path(data_path_)
 {
-    fs::create_directories(local_context->getPath() + data_path);
-    fs::create_directories(metadata_path);
+    Poco::File(local_context->getPath() + data_path).createDirectories();
+    Poco::File(metadata_path).createDirectories();
 }
 
 
@@ -228,6 +220,10 @@ void DatabaseOnDisk::createTable(
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
+    if (isDictionaryExist(table_name))
+        throw Exception(
+            ErrorCodes::DICTIONARY_ALREADY_EXISTS, "Dictionary {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
+
     if (isTableExist(table_name, getContext()))
         throw Exception(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
@@ -245,7 +241,7 @@ void DatabaseOnDisk::createTable(
     if (!create.attach)
         checkMetadataFilenameAvailability(table_name);
 
-    if (create.attach && fs::exists(table_metadata_path))
+    if (create.attach && Poco::File(table_metadata_path).exists())
     {
         ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, table_metadata_path);
         auto & create_detached = ast_detached->as<ASTCreateQuery &>();
@@ -285,10 +281,10 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
 {
     try
     {
-        fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
+        auto detached_permanently_flag = Poco::File(table_metadata_path + detached_suffix);
 
-        if (fs::exists(detached_permanently_flag))
-            fs::remove(detached_permanently_flag);
+        if (detached_permanently_flag.exists())
+            detached_permanently_flag.remove();
     }
     catch (Exception & e)
     {
@@ -308,11 +304,11 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
-        fs::rename(table_metadata_tmp_path, table_metadata_path);
+        Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
     }
     catch (...)
     {
-        fs::remove(table_metadata_tmp_path);
+        Poco::File(table_metadata_tmp_path).remove();
         throw;
     }
 }
@@ -321,10 +317,10 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr, const String & table_nam
 {
     auto table = detachTable(table_name);
 
-    fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
+    Poco::File detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
     try
     {
-        FS::createFile(detached_permanently_flag);
+        detached_permanently_flag.createFile();
     }
     catch (Exception & e)
     {
@@ -350,25 +346,25 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     bool renamed = false;
     try
     {
-        fs::rename(table_metadata_path, table_metadata_path_drop);
+        Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);
         renamed = true;
         table->drop();
         table->is_dropped = true;
 
-        fs::path table_data_dir(local_context->getPath() + table_data_path_relative);
-        if (fs::exists(table_data_dir))
-            fs::remove_all(table_data_dir);
+        Poco::File table_data_dir{local_context->getPath() + table_data_path_relative};
+        if (table_data_dir.exists())
+            table_data_dir.remove(true);
     }
     catch (...)
     {
         LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
         attachTable(table_name, table, table_data_path_relative);
         if (renamed)
-            fs::rename(table_metadata_path_drop, table_metadata_path);
+            Poco::File(table_metadata_path_drop).renameTo(table_metadata_path);
         throw;
     }
 
-    fs::remove(table_metadata_path_drop);
+    Poco::File(table_metadata_path_drop).remove();
 }
 
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
@@ -381,11 +377,11 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
 {
     String table_metadata_path = getObjectMetadataPath(to_table_name);
 
-    if (fs::exists(table_metadata_path))
+    if (Poco::File(table_metadata_path).exists())
     {
-        fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
+        auto detached_permanently_flag = Poco::File(table_metadata_path + detached_suffix);
 
-        if (fs::exists(detached_permanently_flag))
+        if (detached_permanently_flag.exists())
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)", backQuote(database_name), backQuote(to_table_name));
         else
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)", backQuote(database_name), backQuote(to_table_name));
@@ -463,7 +459,7 @@ void DatabaseOnDisk::renameTable(
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
     to_database.createTable(local_context, to_table_name, table, attach_query);
 
-    fs::remove(table_metadata_path);
+    Poco::File(table_metadata_path).remove();
 
     if (from_atomic_to_ordinary)
     {
@@ -528,8 +524,8 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 void DatabaseOnDisk::drop(ContextPtr local_context)
 {
     assert(tables.empty());
-    fs::remove(local_context->getPath() + getDataPath());
-    fs::remove(getMetadataPath());
+    Poco::File(local_context->getPath() + getDataPath()).remove(false);
+    Poco::File(getMetadataPath()).remove(false);
 }
 
 String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
@@ -540,9 +536,10 @@ String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
 time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_name) const
 {
     String table_metadata_path = getObjectMetadataPath(object_name);
+    Poco::File meta_file(table_metadata_path);
 
-    if (fs::exists(table_metadata_path))
-        return FS::getModificationTime(table_metadata_path);
+    if (meta_file.exists())
+        return meta_file.getLastModified().epochTime();
     else
         return static_cast<time_t>(0);
 }
@@ -554,57 +551,56 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
         assert(getUUID() == UUIDHelpers::Nil);
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
-
-        if (fs::exists(local_context->getPath() + getDataPath() + '/' + object_name))
+        if (Poco::File(local_context->getPath() + getDataPath() + '/' + object_name).exists())
         {
-            fs::rename(getMetadataPath() + file_name, getMetadataPath() + object_name + ".sql");
+            Poco::File(getMetadataPath() + file_name).renameTo(getMetadataPath() + object_name + ".sql");
             LOG_WARNING(log, "Object {} was not dropped previously and will be restored", backQuote(object_name));
             process_metadata_file(object_name + ".sql");
         }
         else
         {
             LOG_INFO(log, "Removing file {}", getMetadataPath() + file_name);
-            fs::remove(getMetadataPath() + file_name);
+            Poco::File(getMetadataPath() + file_name).remove();
         }
     };
 
     /// Metadata files to load: name and flag for .tmp_drop files
     std::set<std::pair<String, bool>> metadata_files;
 
-    fs::directory_iterator dir_end;
-    for (fs::directory_iterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
-        String file_name = dir_it->path().filename();
         /// For '.svn', '.gitignore' directory and similar.
-        if (file_name.at(0) == '.')
+        if (dir_it.name().at(0) == '.')
             continue;
 
         /// There are .sql.bak files - skip them.
-        if (endsWith(file_name, ".sql.bak"))
+        if (endsWith(dir_it.name(), ".sql.bak"))
             continue;
 
         /// Permanently detached table flag
-        if (endsWith(file_name, ".sql.detached"))
+        if (endsWith(dir_it.name(), ".sql.detached"))
             continue;
 
-        if (endsWith(file_name, ".sql.tmp_drop"))
+        if (endsWith(dir_it.name(), ".sql.tmp_drop"))
         {
             /// There are files that we tried to delete previously
-            metadata_files.emplace(file_name, false);
+            metadata_files.emplace(dir_it.name(), false);
         }
-        else if (endsWith(file_name, ".sql.tmp"))
+        else if (endsWith(dir_it.name(), ".sql.tmp"))
         {
             /// There are files .sql.tmp - delete
-            LOG_INFO(log, "Removing file {}", dir_it->path().string());
-            fs::remove(dir_it->path());
+            LOG_INFO(log, "Removing file {}", dir_it->path());
+            Poco::File(dir_it->path()).remove();
         }
-        else if (endsWith(file_name, ".sql"))
+        else if (endsWith(dir_it.name(), ".sql"))
         {
             /// The required files have names like `table_name.sql`
-            metadata_files.emplace(file_name, true);
+            metadata_files.emplace(dir_it.name(), true);
         }
         else
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Incorrect file extension: {} in metadata directory {}", file_name, getMetadataPath());
+            throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + getMetadataPath(),
+                ErrorCodes::INCORRECT_FILE_NAME);
     }
 
     /// Read and parse metadata in parallel
@@ -651,7 +647,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     {
         if (logger)
             LOG_ERROR(logger, "File {} is empty. Removing.", metadata_file_path);
-        fs::remove(metadata_file_path);
+        Poco::File(metadata_file_path).remove();
         return nullptr;
     }
 
@@ -670,7 +666,8 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     auto & create = ast->as<ASTCreateQuery &>();
     if (!create.table.empty() && create.uuid != UUIDHelpers::Nil)
     {
-        String table_name = unescapeForFileName(fs::path(metadata_file_path).stem());
+        String table_name = Poco::Path(metadata_file_path).makeFile().getBaseName();
+        table_name = unescapeForFileName(table_name);
 
         if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
             LOG_WARNING(
