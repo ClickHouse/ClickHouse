@@ -388,7 +388,7 @@ void StorageAggregatingMemory::lazyInit()
                               true);
 
     aggregator_transform = std::make_shared<AggregatingTransformParams>(params, false);
-    
+
     initState(constructor_context);
 
     is_initialized = true;
@@ -472,7 +472,7 @@ void StorageAggregatingMemory::drop()
 void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
 {
     lazyInit();
-    
+
     /// Assign fresh state.
     initState(context);
 }
