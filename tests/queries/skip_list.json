@@ -722,6 +722,7 @@
         "01684_ssd_cache_dictionary_simple_key",
         "01685_ssd_cache_dictionary_complex_key",
         "01737_clickhouse_server_wait_server_pool_long", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
+        "01594_too_low_memory_limits", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
         "01760_system_dictionaries",
         "01760_polygon_dictionaries",
         "01778_hierarchical_dictionaries",
