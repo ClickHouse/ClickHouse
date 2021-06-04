@@ -234,6 +234,7 @@
 01801_distinct_group_by_shard
 01804_dictionary_decimal256_type
 01801_s3_distributed
+01814_distributed_push_down_limit
 01833_test_collation_alvarotuso
 01850_dist_INSERT_preserve_error
 01870_modulo_partition_key
