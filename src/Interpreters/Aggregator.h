@@ -1083,7 +1083,9 @@ private:
     /// For external aggregation.
     TemporaryFiles temporary_files;
 
+#if USE_EMBEDDED_COMPILER
     std::optional<CompiledAggregateFunctions> compiled_functions;
+#endif
 
     /** Try to compile aggregate functions.
       */

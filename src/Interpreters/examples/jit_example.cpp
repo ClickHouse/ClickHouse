@@ -1,5 +1,11 @@
 #include <iostream>
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_EMBEDDED_COMPILER
+
 #include <llvm/IR/IRBuilder.h>
 
 #include <Interpreters/JIT/CHJIT.h>
@@ -56,3 +62,14 @@ int main(int argc, char **argv)
 
     return 0;
 }
+
+#else
+
+int main(int argc, char **argv)
+{
+    (void)(argc);
+    (void)(argv);
+    return 0;
+}
+
+#endif
