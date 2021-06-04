@@ -3,6 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
+import time
 
 
 def fill_nodes(nodes, shard):
@@ -59,9 +60,15 @@ def test_inconsistent_parts_if_drop_while_replica_not_active(start_cluster):
         for i in range(20):
             node2.query("INSERT INTO test_table VALUES ('2019-08-16', {})".format(20 + i))
 
+        for i in range(30):
+            if node2.contains_in_log("Will mark replica node1 as lost"):
+                break
+            time.sleep(0.5)
+
         # the first replica will be cloned from the second
         pm.heal_all()
         assert_eq_with_retry(node1, "SELECT count(*) FROM test_table", node2.query("SELECT count(*) FROM test_table"))
+
         # ensure replica was cloned
         assert node1.contains_in_log("Will mimic node2")
         # queue must be empty (except some merges that are possibly executing right now)
