@@ -103,13 +103,9 @@ StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & comment,
-    const String & source_database_,
-    const Strings & source_tables_,
+    const std::unordered_map<String, std::unordered_set<String>> & source_databases_and_tables_,
     ContextPtr context_)
-    : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
-    , source_database(source_database_)
-    , source_tables(std::in_place, source_tables_.begin(), source_tables_.end())
+    : IStorage(table_id_), WithContext(context_->getGlobalContext()), source_databases_and_tables(source_databases_and_tables_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -121,12 +117,12 @@ StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & comment,
-    const String & source_database_,
+    const String & source_database_regexp_,
     const String & source_table_regexp_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , source_database(source_database_)
+    , source_database_regexp(source_database_regexp_)
     , source_table_regexp(source_table_regexp_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -624,10 +620,11 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[0] = evaluateConstantExpressionForDatabaseName(engine_args[0], args.getLocalContext());
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
 
-        String source_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        String source_database_regexp = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageMerge::create(args.table_id, args.columns, args.comment, source_database, table_name_regexp, args.getContext());
+        return StorageMerge::create(
+            args.table_id, args.columns, args.comment, source_database_regexp, table_name_regexp, args.getContext());
     });
 }
 
