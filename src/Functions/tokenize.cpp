@@ -1,24 +1,15 @@
-#include <Functions/FunctionStringToString.h>
-#include <Functions/FunctionFactory.h>
-//#include <Poco/Unicode.h>
-
-
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <Columns/ColumnArray.h>
 #include <boost/tokenizer.hpp>
-//#include <string_view>
 #include <boost/range/iterator_range.hpp>
-
-//Debug
 
 
 namespace DB
@@ -30,16 +21,27 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_LANGUAGE;
 }
 
+using BoostTokenizerSep = boost::tokenizer<boost::char_separator<UInt8>, const UInt8 *>;
+using BoostTokenizerDel = boost::tokenizer<boost::char_delimiters_separator<UInt8>, const UInt8 *>;
+using BoostIteratorRange = boost::iterator_range<const UInt8*>;
+
+struct StandartTokenizer
+{
+    static constexpr auto name = "tokenize";
+    static BoostTokenizerDel tokenizer(const BoostIteratorRange & text) { return {text}; }
+};
+
+struct WhitespaceTokenizer
+{
+    static constexpr auto name = "tokenizeWhitespace";
+    static BoostTokenizerSep tokenizer(const BoostIteratorRange & text) { return {text, boost::char_separator<UInt8>(u8" \t\n")}; }
+};
+
+template<typename Type>
 class FunctionTokenize : public IFunction
 {
-    template <typename F>
-    static bool castType(const IDataType * type, F && f)
-    {
-        return castTypeToEither<DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64>(type, std::forward<F>(f));
-    }
-
 public:
-    static constexpr auto name = "tokenize";
+    static constexpr auto name = Type::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokenize>(); }
 
     String getName() const override { return name; }
@@ -54,7 +56,6 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    // Is it?
     bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -78,11 +79,11 @@ public:
             IColumn::Offset current_offset = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
             {
-                /// Doing boost::tokenize
                 UInt64 num_elements = 0;
-                boost::iterator_range<const UInt8*> text(data.data() + offsets[i - 1],
-                                                         data.data() + offsets[i] - 1);
-                boost::tokenizer<boost::char_delimiters_separator<UInt8>, const UInt8 *> tokenizer(text);
+                BoostIteratorRange text(data.data() + offsets[i - 1],
+                                        data.data() + offsets[i] - 1);
+                auto tokenizer = Type::tokenizer(text);
+
                 for (const auto &token : tokenizer) {
                     out_data.insert(Field(token.data(), token.length()));
                     num_elements++;
@@ -103,7 +104,12 @@ public:
 
 void registerFunctionTokenize(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionTokenize>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionTokenize<StandartTokenizer>>(FunctionFactory::CaseInsensitive);
+}
+
+void registerFunctionTokenizeWhitespace(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionTokenize<WhitespaceTokenizer>>(FunctionFactory::CaseInsensitive);
 }
 
 }
