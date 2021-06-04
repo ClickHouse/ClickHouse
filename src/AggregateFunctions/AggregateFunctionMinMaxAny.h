@@ -5,8 +5,10 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <common/StringRef.h>
 #include <Common/assert_cast.h>
 
@@ -628,6 +630,60 @@ struct AggregateFunctionAnyLastData : Data
     static const char * name() { return "anyLast"; }
 };
 
+template <typename Data>
+struct AggregateFunctionSingleValueOrNullData : Data
+{
+    using Self = AggregateFunctionSingleValueOrNullData;
+
+    bool first_value = true;
+    bool is_null = false;
+
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
+    {
+        if (first_value)
+        {
+            first_value = false;
+            this->change(column, row_num, arena);
+            return true;
+        }
+        else if (!this->isEqualTo(column, row_num))
+        {
+            is_null = true;
+        }
+        return false;
+    }
+
+    bool changeIfBetter(const Self & to, Arena * arena)
+    {
+        if (first_value)
+        {
+            first_value = false;
+            this->change(to, arena);
+            return true;
+        }
+        else if (!this->isEqualTo(to))
+        {
+            is_null = true;
+        }
+        return false;
+    }
+
+    void insertResultInto(IColumn & to) const
+    {
+        if (is_null || first_value)
+        {
+            to.insertDefault();
+        }
+        else
+        {
+            ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
+            col.getNullMapColumn().insertDefault();
+            this->Data::insertResultInto(col.getNestedColumn());
+        }
+    }
+
+    static const char * name() { return "singleValueOrNull"; }
+};
 
 /** Implement 'heavy hitters' algorithm.
   * Selects most frequent value if its frequency is more than 50% in each thread of execution.
@@ -722,7 +778,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return type;
+        return Data::name() == "singleValueOrNull" ? std::make_shared<DataTypeNullable>(type) : type;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
