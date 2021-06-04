@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_)
@@ -184,10 +185,10 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 return true;
             }
 
-            // Hack: Block for at most one minute, abort afterwards and let this be retried.
-            // How to fix: Persist "a reference" to the log entry that we can use later
-            //  for checking the status.
-            //  TODO(nv)
+            // Block for at most one minute, abort afterwards and let this be retried.
+            // We could always return true to stop waiting but there are still operations
+            // that need to be refactored to support waiting on an already sent event
+            // eg: SYNC_SOURCE, DROP...
             if (watch->elapsedSeconds() > 60)
             {
                 LOG_DEBUG(log, "Timeout for waiting exceeded.");
@@ -250,7 +251,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 /// function when all replicated will finish. TODO.
                 Strings unwaited = storage.waitForAllReplicasToProcessLogEntry(log_entry, true, make_stop_wait_cond());
                 if (!unwaited.empty())
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
 
                 entry.state = EntryState::SYNC_DESTINATION;
                 return entry;
@@ -290,7 +291,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                 Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true, make_stop_wait_cond());
                 if (!unwaited.empty())
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
 
                 entry.state = EntryState::DESTINATION_FETCH;
                 return entry;
@@ -350,7 +351,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                 Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, fetch_log_entry, true, make_stop_wait_cond());
                 if (!unwaited.empty())
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
 
                 entry.state = EntryState::DESTINATION_ATTACH;
                 return entry;
@@ -411,7 +412,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                     Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true, make_stop_wait_cond());
                     if (!unwaited.empty())
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
+                        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
 
                     entry.state = EntryState::DESTINATION_FETCH;
                     return entry;
@@ -463,14 +464,14 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 else
                 {
                     Coordination::Stat stat;
-                    String log_entry_str = zk->get(block_id_path, &stat);
+                    String log_entry_str = zk->get(attach_log_entry_barrier_path, &stat);
                     log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, stat);
                     log_entry.znode_name = "queue--fake-name";
                 }
 
                 Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true, make_stop_wait_cond());
                 if (!unwaited.empty())
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
 
 
                 entry.dst_part_name = log_entry.new_part_name;
@@ -505,7 +506,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 {
                     Strings unwaited = storage.waitForAllReplicasToProcessLogEntry(log_entry, true, make_stop_wait_cond());
                     if (!unwaited.empty())
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
+                        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
                 }
                 entry.state = EntryState::SOURCE_DROP_POST_DELAY;
                 return entry;
