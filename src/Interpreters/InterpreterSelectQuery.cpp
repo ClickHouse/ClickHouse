@@ -632,7 +632,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     /// Running on the initiating server during distributed processing or if query is not distributed.
     ///
     /// Also note that with distributed_group_by_no_merge=2 (i.e. when optimize_distributed_group_by_sharding_key takes place)
-    /// the query on the remote server will be processed up to WithMergeableStateAfterAggregation,
+    /// the query on the remote server will be processed up to WithMergeableStateAfterAggregationAndLimit,
     /// So it will do partial second stage (second_stage=true), and initiator will do the final part.
     bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
         && options.to_stage > QueryProcessingStage::WithMergeableState;
@@ -704,7 +704,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         return res;
     }
 
-    if (options.to_stage == QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
+    if (options.to_stage >= QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
     {
         // It's different from selected_columns, see the comment above for
         // WithMergeableState stage.
@@ -1011,10 +1011,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
         /// Support optimize_distributed_group_by_sharding_key
         /// Is running on the initiating server during distributed processing?
-        if (from_stage == QueryProcessingStage::WithMergeableStateAfterAggregation)
+        if (from_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation)
             from_aggregation_stage = true;
         /// Is running on remote servers during distributed processing?
-        if (options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregation)
+        if (options.to_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation)
             to_aggregation_stage = true;
 
         /// Read the data from Storage. from_stage - to what stage the request was completed in Storage.
@@ -1300,7 +1300,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                   *  but there is no aggregation, then on the remote servers ORDER BY was made
                   *  - therefore, we merge the sorted streams from remote servers.
                   *
-                  * Also in case of remote servers was process the query up to WithMergeableStateAfterAggregation
+                  * Also in case of remote servers was process the query up to WithMergeableStateAfterAggregationAndLimit
                   * (distributed_group_by_no_merge=2 or optimize_distributed_group_by_sharding_key=1 takes place),
                   * then merge the sorted streams is enough, since remote servers already did full ORDER BY.
                   */
@@ -1334,13 +1334,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                     }
             }
 
+            bool apply_limit = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregation;
+            bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
             bool has_prelimit = false;
-            if (!to_aggregation_stage &&
+            if (apply_limit &&
                 query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
                 !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes &&
                 !has_withfill)
             {
-                executePreLimit(query_plan, false);
+                executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
                 has_prelimit = true;
             }
 
@@ -1367,7 +1369,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
 
             /// Projection not be done on the shards, since then initiator will not find column in blocks.
-            /// (significant only for WithMergeableStateAfterAggregation).
+            /// (significant only for WithMergeableStateAfterAggregation/WithMergeableStateAfterAggregationAndLimit).
             if (!to_aggregation_stage)
             {
                 /// We must do projection after DISTINCT because projection may remove some columns.
@@ -1378,10 +1380,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             executeExtremes(query_plan);
 
             /// Limit is no longer needed if there is prelimit.
-            if (!to_aggregation_stage && !has_prelimit)
+            if (apply_limit && !has_prelimit)
                 executeLimit(query_plan);
 
-            if (!to_aggregation_stage)
+            if (apply_offset)
                 executeOffset(query_plan);
         }
     }

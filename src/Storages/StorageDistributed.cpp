@@ -288,6 +288,7 @@ void replaceConstantExpressions(
 /// is one of the following:
 /// - QueryProcessingStage::Complete
 /// - QueryProcessingStage::WithMergeableStateAfterAggregation
+/// - QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit
 /// - none (in this case regular WithMergeableState should be used)
 std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, bool extremes, const Block & sharding_key_block)
 {
@@ -349,13 +350,13 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
     // ORDER BY
     const ASTPtr order_by = select.orderBy();
     if (order_by)
-        return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     // LIMIT BY
     // LIMIT
     // OFFSET
     if (select.limitBy() || select.limitLength() || select.limitOffset())
-        return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
     return QueryProcessingStage::Complete;
@@ -514,10 +515,22 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     if (settings.distributed_group_by_no_merge)
     {
         if (settings.distributed_group_by_no_merge == DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION)
-            return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        {
+            if (settings.distributed_push_down_limit)
+                return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+            else
+                return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        }
         else
+        {
+            /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
+            /// (since in this case queries processed separatelly and the initiator is just a proxy in this case).
             return QueryProcessingStage::Complete;
+        }
     }
+
+    if (settings.distributed_push_down_limit)
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.

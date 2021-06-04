@@ -69,6 +69,7 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
         case QueryProcessingStage::WithMergeableStateAfterAggregation:
+        case QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit:
         case QueryProcessingStage::MAX:
         {
             auto query = query_info.query->clone();

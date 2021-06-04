@@ -1578,6 +1578,18 @@ FORMAT PrettyCompactMonoBlock
 
 Default value: 0
 
+## distributed_push_down_limit (#distributed-push-down-limit}
+
+LIMIT will be applied on each shard separatelly. Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
+
+Possible values:
+
+-  0 - Disabled
+-  1 - Enabled
+
+!!! note "Note"
+    That with this setting the result of the query may be inaccurate.
+
 ## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
 
 Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.

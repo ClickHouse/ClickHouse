@@ -20,6 +20,7 @@ CLICKHOUSE_QueryProcessingStage=(
     fetch_columns
     with_mergeable_state
     with_mergeable_state_after_aggregation
+    with_mergeable_state_after_aggregation_and_limit
 )
 
 CLICKHOUSE_Format=(
