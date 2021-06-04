@@ -354,10 +354,17 @@ ColumnPtr getColumnAsMask(const Block & block, const String & column_name)
     if (column_name.empty())
         return nullptr;
 
+    DataTypePtr col_type = block.getByName(column_name).type;
+    if (isNothing(col_type))
+        return ColumnUInt8::create(block.rows(), 0);
+
     const auto & join_condition_col = JoinCommon::materializeColumn(block, column_name);
 
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
     {
+        if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))
+            return ColumnUInt8::create(block.rows(), 0);
+
         /// Return nested column with NULL set to false
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(nullable_col->getNestedColumn());
         const auto & null_map = nullable_col->getNullMapColumn();
