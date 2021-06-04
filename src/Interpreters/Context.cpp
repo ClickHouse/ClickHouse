@@ -1449,7 +1449,7 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
         std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
 }
 
-SynonymsExtensions & Context::getSynonymsExtensions()
+SynonymsExtensions & Context::getSynonymsExtensions() const
 {
     auto lock = getLock();
     

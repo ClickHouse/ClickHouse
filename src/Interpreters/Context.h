@@ -516,7 +516,7 @@ public:
     void tryCreateEmbeddedDictionaries() const;
     void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
 
-    SynonymsExtensions & getSynonymsExtensions();
+    SynonymsExtensions & getSynonymsExtensions() const;
 
     void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
