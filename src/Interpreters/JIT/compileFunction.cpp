@@ -329,21 +329,18 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
     std::vector<ColumnDataPlaceholder> columns;
     size_t previous_columns_size = 0;
 
-    for (size_t i = 0; i < functions.size(); ++i)
+    for (const auto & function : functions)
     {
-        auto argument_types = functions[i].function->getArgumentTypes();
+        auto argument_types = function.function->getArgumentTypes();
 
         ColumnDataPlaceholder data_placeholder;
-
-        std::cerr << "Function " << functions[i].function->getName() << std::endl;
 
         size_t function_arguments_size = argument_types.size();
 
         for (size_t column_argument_index = 0; column_argument_index < function_arguments_size; ++column_argument_index)
         {
-            const auto & argument_type = argument_types[previous_columns_size + column_argument_index];
-            auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, column_argument_index));
-            std::cerr << "Argument type " << argument_type->getName() << std::endl;
+            const auto & argument_type = argument_types[column_argument_index];
+            auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, previous_columns_size + column_argument_index));
             data_placeholder.data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(argument_type))->getPointerTo());
             columns.emplace_back(data_placeholder);
         }
