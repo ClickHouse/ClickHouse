@@ -1,5 +1,4 @@
-#include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
@@ -8,6 +7,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// If value is not Nullable or NULL, wraps it to Nullable.
 class FunctionToNullable : public IFunction
@@ -15,7 +16,7 @@ class FunctionToNullable : public IFunction
 public:
     static constexpr auto name = "toNullable";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionToNullable>();
     }
@@ -34,12 +35,13 @@ public:
         return makeNullable(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        block.getByPosition(result).column = makeNullable(block.getByPosition(arguments[0]).column);
+        return makeNullable(arguments[0].column);
     }
 };
 
+}
 
 void registerFunctionToNullable(FunctionFactory & factory)
 {

@@ -5,8 +5,10 @@
 #include <Formats/FormatFactory.h>
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>
+#include <arrow/result.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
+
 
 namespace DB
 {
@@ -35,31 +37,40 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     auto status = writer->WriteTable(*arrow_table, format_settings.arrow.row_group_size);
 
     if (!status.ok())
-        throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+            "Error while writing a table: {}", status.ToString());
 }
 
 void ArrowBlockOutputFormat::finalize()
 {
-    if (writer)
+    if (!writer)
     {
-        auto status = writer->Close();
-        if (!status.ok())
-            throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+        const Block & header = getPort(PortKind::Main).getHeader();
+
+        consume(Chunk(header.getColumns(), 0));
     }
+
+    auto status = writer->Close();
+    if (!status.ok())
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+            "Error while closing a table: {}", status.ToString());
 }
 
 void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> & schema)
 {
-    arrow::Status status;
+    arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
 
     // TODO: should we use arrow::ipc::IpcOptions::alignment?
     if (stream)
-        status = arrow::ipc::RecordBatchStreamWriter::Open(arrow_ostream.get(), schema, &writer);
+        writer_status = arrow::ipc::MakeStreamWriter(arrow_ostream.get(), schema);
     else
-        status = arrow::ipc::RecordBatchFileWriter::Open(arrow_ostream.get(), schema, &writer);
+        writer_status = arrow::ipc::MakeFileWriter(arrow_ostream.get(), schema);
 
-    if (!status.ok())
-        throw Exception{"Error while opening a table writer: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+    if (!writer_status.ok())
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+            "Error while opening a table writer: {}", writer_status.status().ToString());
+
+    writer = *writer_status;
 }
 
 void registerOutputFormatProcessorArrow(FormatFactory & factory)
@@ -68,7 +79,7 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
-           FormatFactory::WriteCallback,
+           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
@@ -78,7 +89,7 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
-           FormatFactory::WriteCallback,
+           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);

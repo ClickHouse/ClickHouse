@@ -24,7 +24,7 @@ If dictionary is configured using xml-file, the configuration looks like this:
 </yandex>
 ```
 
-In case of [DDL-query](../../statements/create.md#create-dictionary-query), equal configuration will looks like:
+In case of [DDL-query](../../../sql-reference/statements/create/dictionary.md), equal configuration will looks like:
 
 ``` sql
 CREATE DICTIONARY dict_name (...)
@@ -53,7 +53,7 @@ optional settings are available:
 or
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
@@ -65,9 +65,12 @@ Types of sources (`source_type`):
 -   DBMS
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
     -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
+    -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
 
 ## Local File {#dicts-external_dicts_dict_sources-local_file}
 
@@ -85,7 +88,7 @@ Example of settings:
 or
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 ```
 
 Setting fields:
@@ -93,9 +96,15 @@ Setting fields:
 -   `path` – The absolute path to the file.
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 
+When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
+
+**See Also**
+
+-   [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
+
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 
-Working with executable files depends on [how the dictionary is stored in memory](external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
+Working with executable files depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
 
 Example of settings:
 
@@ -108,20 +117,16 @@ Example of settings:
 </source>
 ```
 
-or
-
-``` sql
-SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
-```
-
 Setting fields:
 
 -   `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 
+That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
+
 ## Http(s) {#dicts-external_dicts_dict_sources-http}
 
-Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+Working with an HTTP(s) server depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
@@ -162,12 +167,14 @@ Setting fields:
 -   `url` – The source URL.
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 -   `credentials` – Basic HTTP authentication. Optional parameter.
-    -   `user` – Username required for the authentication.
-    -   `password` – Password required for the authentication.
+-   `user` – Username required for the authentication.
+-   `password` – Password required for the authentication.
 -   `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
-    -   `header` – Single HTTP header entry.
-    -   `name` – Identifiant name used for the header send on the request.
-    -   `value` – Value set for a specific identifiant name.
+-   `header` – Single HTTP header entry.
+-   `name` – Identifiant name used for the header send on the request.
+-   `value` – Value set for a specific identifiant name.
+
+When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
@@ -202,11 +209,11 @@ Setting fields:
 -   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
 -   `table` – Name of the table and schema if exists.
 -   `connection_string` – Connection string.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external-dicts-dict-lifetime.md).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
 
-If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../../faq/general.md#oracle-odbc-encodings) article.
+If you have a problems with encodings when using Oracle, see the corresponding [F.A.Q.](../../../faq/integration/oracle-odbc.md) item.
 
 ### Known Vulnerability of the ODBC Dictionary Functionality {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
@@ -246,7 +253,7 @@ Installing unixODBC and the ODBC driver for PostgreSQL:
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ```
 
-Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
+Configuring `/etc/odbc.ini` (or `~/.odbc.ini` if you signed in under a user that runs ClickHouse):
 
 ``` text
     [DEFAULT]
@@ -321,7 +328,7 @@ You may need to edit `odbc.ini` to specify the full path to the library with the
 
 Ubuntu OS.
 
-Installing the driver: :
+Installing the ODBC driver for connecting to MS SQL:
 
 ``` bash
 $ sudo apt-get install tdsodbc freetds-bin sqsh
@@ -329,7 +336,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 
 Configuring the driver:
 
-``` bash
+```bash
     $ cat /etc/freetds/freetds.conf
     ...
 
@@ -339,8 +346,11 @@ Configuring the driver:
     tds version = 7.0
     client charset = UTF-8
 
+    # test TDS connection
+    $ sqsh -S MSSQL -D database -U user -P password
+
+
     $ cat /etc/odbcinst.ini
-    ...
 
     [FreeTDS]
     Description     = FreeTDS
@@ -349,8 +359,8 @@ Configuring the driver:
     FileUsage       = 1
     UsageCount      = 5
 
-    $ cat ~/.odbc.ini
-    ...
+    $ cat /etc/odbc.ini
+    # $ cat ~/.odbc.ini # if you signed in under a user that runs ClickHouse
 
     [MSSQL]
     Description     = FreeTDS
@@ -360,7 +370,14 @@ Configuring the driver:
     UID             = test
     PWD             = test
     Port            = 1433
+
+
+    # (optional) test ODBC connection (to use isql-tool install the [unixodbc](https://packages.debian.org/sid/unixodbc)-package)
+    $ isql -v MSSQL "user" "password"
 ```
+
+Remarks:
+- to determine the earliest TDS version that is supported by a particular SQL Server version, refer to the product documentation or look at [MS-TDS Product Behavior](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/135d0ebe-5c4c-4a94-99bf-1811eccb9f4a)
 
 Configuring the dictionary in ClickHouse:
 
@@ -474,7 +491,7 @@ Setting fields:
 
 -   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
 
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external-dicts-dict-lifetime.md).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
@@ -551,7 +568,7 @@ Setting fields:
 -   `db` – Name of the database.
 -   `table` – Name of the table.
 -   `where` – The selection criteria. May be omitted.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external-dicts-dict-lifetime.md).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
 ### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
 
@@ -573,7 +590,7 @@ Example of settings:
 or
 
 ``` sql
-SOURCE(MONGO(
+SOURCE(MONGODB(
     host 'localhost'
     port 27017
     user ''
@@ -629,7 +646,7 @@ Setting fields:
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <cassandra>
         <host>localhost</host>
@@ -648,20 +665,67 @@ Example of settings:
 ```
 
 Setting fields:
--   `host` – The Cassandra host or comma-separated list of hosts.
--   `port` – The port on the Cassandra servers. If not specified, default port is used.
--   `user` – Name of the Cassandra user.
--   `password` – Password of the Cassandra user.
--   `keyspace` – Name of the keyspace (database).
--   `column_family` – Name of the column family (table).
--   `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
--   `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table.
-        Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra.
-        Default value is 1 (the first key column is a partition key and other key columns are clustering key).
--   `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`,
-        `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default is `One`.
--   `where` – Optional selection criteria.
--   `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
+- `host` – The Cassandra host or comma-separated list of hosts.
+- `port` – The port on the Cassandra servers. If not specified, default port 9042 is used.
+- `user` – Name of the Cassandra user.
+- `password` – Password of the Cassandra user.
+- `keyspace` – Name of the keyspace (database).
+- `column_family` – Name of the column family (table).
+- `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
+- `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table.
+Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra.
+Default value is 1 (the first key column is a partition key and other key columns are clustering key).
+- `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`,
+`All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default is `One`.
+- `where` – Optional selection criteria.
+- `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
 
+### PosgreSQL {#dicts-external_dicts_dict_sources-postgresql}
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
+Example of settings:
+
+``` xml
+<source>
+  <postgresql>
+      <port>5432</port>
+      <user>clickhouse</user>
+      <password>qwerty</password>
+      <db>db_name</db>
+      <table>table_name</table>
+      <where>id=10</where>
+      <invalidate_query>SQL_QUERY</invalidate_query>
+  </postgresql>
+</source>
+```
+
+or
+
+``` sql
+SOURCE(POSTGRESQL(
+    port 5432
+    host 'postgresql-hostname'
+    user 'postgres_user'
+    password 'postgres_password'
+    db 'db_name'
+    table 'table_name'
+    replica(host 'example01-1' port 5432 priority 1)
+    replica(host 'example01-2' port 5432 priority 2)
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+))
+```
+
+Setting fields:
+
+-   `host` – The host on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `port` – The port on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `replica` – Section of replica configurations. There can be multiple sections.
+        - `replica/host` – The PostgreSQL host.
+        - `replica/port` – The PostgreSQL port.
+        - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+-   `db` – Name of the database.
+-   `table` – Name of the table.
+-   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL, for example, `id > 10 AND id < 20`. Optional parameter.
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).

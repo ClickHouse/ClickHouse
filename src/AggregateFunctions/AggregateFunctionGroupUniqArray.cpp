@@ -9,6 +9,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -72,7 +73,7 @@ inline AggregateFunctionPtr createAggregateFunctionGroupUniqArrayImpl(const std:
 
 }
 
-AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
 
@@ -110,7 +111,9 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & n
 
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("groupUniqArray", createAggregateFunctionGroupUniqArray);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+
+    factory.registerFunction("groupUniqArray", { createAggregateFunctionGroupUniqArray, properties });
 }
 
 }

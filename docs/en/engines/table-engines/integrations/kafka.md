@@ -1,5 +1,5 @@
 ---
-toc_priority: 32
+toc_priority: 8
 toc_title: Kafka
 ---
 
@@ -32,24 +32,26 @@ SETTINGS
     [kafka_num_consumers = N,]
     [kafka_max_block_size = 0,]
     [kafka_skip_broken_messages = N,]
-    [kafka_commit_every_batch = 0]
+    [kafka_commit_every_batch = 0,]
+    [kafka_thread_per_consumer = 0]
 ```
 
 Required parameters:
 
--   `kafka_broker_list` – A comma-separated list of brokers (for example, `localhost:9092`).
--   `kafka_topic_list` – A list of Kafka topics.
--   `kafka_group_name` – A group of Kafka consumers. Reading margins are tracked for each group separately. If you don’t want messages to be duplicated in the cluster, use the same group name everywhere.
--   `kafka_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
+-   `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
+-   `kafka_topic_list` — A list of Kafka topics.
+-   `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
+-   `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
 
 Optional parameters:
 
--   `kafka_row_delimiter` – Delimiter character, which ends the message.
--   `kafka_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
--   `kafka_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
--   `kafka_max_block_size` - The maximum batch size (in messages) for poll (default: `max_block_size`).
--   `kafka_skip_broken_messages` – Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data).
--   `kafka_commit_every_batch` - Commit every consumed and handled batch instead of a single commit after writing a whole block (default: `0`).
+-   `kafka_row_delimiter` — Delimiter character, which ends the message.
+-   `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+-   `kafka_num_consumers` — The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
+-   `kafka_max_block_size` — The maximum batch size (in messages) for poll (default: `max_block_size`).
+-   `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data).
+-   `kafka_commit_every_batch` — Commit every consumed and handled batch instead of a single commit after writing a whole block (default: `0`).
+-   `kafka_thread_per_consumer` — Provide independent thread for each consumer (default: `0`). When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block).
 
 Examples:
 
@@ -132,7 +134,7 @@ Example:
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-To improve performance, received messages are grouped into blocks the size of [max\_insert\_block\_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream\_flush\_interval\_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -163,6 +165,22 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
 
+### Kerberos support {#kafka-kerberos-support}
+
+To deal with Kerberos-aware Kafka, add `security_protocol` child element with `sasl_plaintext` value. It is enough if Kerberos ticket-granting ticket is obtained and cached by OS facilities.
+ClickHouse is able to maintain Kerberos credentials using a keytab file. Consider `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` and `sasl.kerberos.kinit.cmd` child elements.
+
+Example:
+
+``` xml
+  <!-- Kerberos-aware Kafka -->
+  <kafka>
+    <security_protocol>SASL_PLAINTEXT</security_protocol>
+	<sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+	<sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+  </kafka>
+```
+
 ## Virtual Columns {#virtual-columns}
 
 -   `_topic` — Kafka topic.
@@ -173,7 +191,7 @@ For a list of possible configuration options, see the [librdkafka configuration 
 
 **See Also**
 
--   [Virtual columns](../index.md#table_engines-virtual_columns)
+-   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 -   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/kafka/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/kafka/) <!--hide-->

@@ -20,10 +20,10 @@ ClickHouse 允许向服务器发送处理查询所需的数据以及 SELECT 查�
 **–file** – 带有表存储的文件的路径，或者，它指的是STDIN。
 只能从 stdin 中检索单个表。
 
-以下的参数是可选的：**–name** – 表的名称，如果省略，则采用 \_data。
+以下的参数是可选的：**–name** – 表的名称，如果省略，则采用 _data。
 **–format** – 文件中的数据格式。 如果省略，则使用 TabSeparated。
 
-以下的参数必选一个：**–types** – 逗号分隔列类型的列表。例如：`UInt64,String`。列将被命名为 \_1，\_2，…
+以下的参数必选一个：**–types** – 逗号分隔列类型的列表。例如：`UInt64,String`。列将被命名为 _1，_2，…
 **–structure**– 表结构的格式 `UserID UInt64`，`URL String`。定义列的名字以及类型。
 
 在 «file» 中指定的文件将由 «format» 中指定的格式解析，使用在 «types» 或 «structure» 中指定的数据类型。该表将被上传到服务器，并在作为名称为 «name»临时表。
@@ -41,7 +41,7 @@ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, coun
 /bin/sync       1
 ```
 
-当使用HTTP接口时，外部数据以 multipart/form-data 格式传递。每个表作为一个单独的文件传输。表名取自文件名。«query\_string» 传递参数 «name\_format»、«name\_types»和«name\_structure»，其中 «name» 是这些参数对应的表的名称。参数的含义与使用命令行客户端时的含义相同。
+当使用HTTP接口时，外部数据以 multipart/form-data 格式传递。每个表作为一个单独的文件传输。表名取自文件名。«query_string» 传递参数 «name_format»、«name_types»和«name_structure»，其中 «name» 是这些参数对应的表的名称。参数的含义与使用命令行客户端时的含义相同。
 
 示例：
 

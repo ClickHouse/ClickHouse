@@ -8,8 +8,7 @@ toc_title: User Settings
 The `users` section of the `user.xml` configuration file contains user settings.
 
 !!! note "Information"
-    ClickHouse also supports [SQL-driven workflow](../access-rights.md#access-control) for managing users. We recommend using it.
-
+    ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing users. We recommend using it.
 
 Structure of the `users` section:
 
@@ -42,7 +41,7 @@ Structure of the `users` section:
 </users>
 ```
 
-### user\_name/password {#user-namepassword}
+### user_name/password {#user-namepassword}
 
 Password can be specified in plaintext or in SHA256 (hex format).
 
@@ -76,16 +75,16 @@ Password can be specified in plaintext or in SHA256 (hex format).
 
 ### access_management {#access_management-user-setting}
 
-This setting enables or disables using of SQL-driven [access control and account management](../access-rights.md#access-control) for the user.
+This setting enables or disables using of SQL-driven [access control and account management](../../operations/access-rights.md#access-control) for the user.
 
 Possible values:
 
-- 0 — Disabled.
-- 1 — Enabled.
+-   0 — Disabled.
+-   1 — Enabled.
 
 Default value: 0.
 
-### user\_name/networks {#user-namenetworks}
+### user_name/networks {#user-namenetworks}
 
 List of networks from which the user can connect to the ClickHouse server.
 
@@ -127,20 +126,20 @@ To open access only from localhost, specify:
 <ip>127.0.0.1</ip>
 ```
 
-### user\_name/profile {#user-nameprofile}
+### user_name/profile {#user-nameprofile}
 
-You can assign a settings profile for the user. Settings profiles are configured in a separate section of the `users.xml` file. For more information, see [Profiles of Settings](settings-profiles.md).
+You can assign a settings profile for the user. Settings profiles are configured in a separate section of the `users.xml` file. For more information, see [Profiles of Settings](../../operations/settings/settings-profiles.md).
 
-### user\_name/quota {#user-namequota}
+### user_name/quota {#user-namequota}
 
 Quotas allow you to track or limit resource usage over a period of time. Quotas are configured in the `quotas`
 section of the `users.xml` configuration file.
 
-You can assign a quotas set for the user. For a detailed description of quotas configuration, see [Quotas](../quotas.md#quotas).
+You can assign a quotas set for the user. For a detailed description of quotas configuration, see [Quotas](../../operations/quotas.md#quotas).
 
-### user\_name/databases {#user-namedatabases}
+### user_name/databases {#user-namedatabases}
 
-In this section, you can you can limit rows that are returned by ClickHouse for `SELECT` queries made by the current user, thus implementing basic row-level security.
+In this section, you can limit rows that are returned by ClickHouse for `SELECT` queries made by the current user, thus implementing basic row-level security.
 
 **Example**
 

@@ -2,15 +2,17 @@
 #include <AggregateFunctions/AggregateFunctionTopK.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include "registerAggregateFunctions.h"
+
 
 #define TOP_K_MAX_SIZE 0xFFFFFF
 
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -57,7 +59,7 @@ static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_ty
 
 
 template <bool is_weighted>
-AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const DataTypes & argument_types, const Array & params)
+AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     if (!is_weighted)
     {
@@ -85,12 +87,12 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
             load_factor = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
 
             if (load_factor < 1)
-                throw Exception("Too small parameter for aggregate function " + name + ". Minimum: 1",
+                throw Exception("Too small parameter 'load_factor' for aggregate function " + name + ". Minimum: 1",
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
-        if (k > TOP_K_MAX_SIZE)
-            throw Exception("Too large parameter for aggregate function " + name + ". Maximum: " + toString(TOP_K_MAX_SIZE),
+        if (k > TOP_K_MAX_SIZE || load_factor > TOP_K_MAX_SIZE || k * load_factor > TOP_K_MAX_SIZE)
+            throw Exception("Too large parameter(s) for aggregate function " + name + ". Maximum: " + toString(TOP_K_MAX_SIZE),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (k == 0)
@@ -100,7 +102,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
         threshold = k;
     }
 
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(*argument_types[0], threshold, load_factor, argument_types, params));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(
+        *argument_types[0], threshold, load_factor, argument_types, params));
 
     if (!res)
         res = AggregateFunctionPtr(createWithExtraTypes<is_weighted>(argument_types[0], threshold, load_factor, params));
@@ -116,8 +119,10 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("topK", createAggregateFunctionTopK<false>);
-    factory.registerFunction("topKWeighted", createAggregateFunctionTopK<true>);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+
+    factory.registerFunction("topK", { createAggregateFunctionTopK<false>, properties });
+    factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true>, properties });
 }
 
 }

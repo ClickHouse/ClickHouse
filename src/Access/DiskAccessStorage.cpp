@@ -33,6 +33,9 @@
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -47,7 +50,6 @@ namespace ErrorCodes
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int FILE_DOESNT_EXIST;
     extern const int INCORRECT_ACCESS_ENTITY_DEFINITION;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -86,7 +88,7 @@ namespace
 
 
     /// Reads a file containing ATTACH queries and then parses it to build an access entity.
-    AccessEntityPtr readEntityFile(const std::filesystem::path & file_path)
+    AccessEntityPtr readEntityFile(const String & file_path)
     {
         /// Read the file.
         ReadBufferFromFile in{file_path};
@@ -119,42 +121,42 @@ namespace
             if (auto * create_user_query = query->as<ASTCreateUserQuery>())
             {
                 if (res)
-                    throw Exception("Two access entities in one file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                    throw Exception("Two access entities in one file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 res = user = std::make_unique<User>();
                 InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query);
             }
             else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
             {
                 if (res)
-                    throw Exception("Two access entities in one file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                    throw Exception("Two access entities in one file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 res = role = std::make_unique<Role>();
                 InterpreterCreateRoleQuery::updateRoleFromQuery(*role, *create_role_query);
             }
             else if (auto * create_policy_query = query->as<ASTCreateRowPolicyQuery>())
             {
                 if (res)
-                    throw Exception("Two access entities in one file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                    throw Exception("Two access entities in one file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 res = policy = std::make_unique<RowPolicy>();
                 InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(*policy, *create_policy_query);
             }
             else if (auto * create_quota_query = query->as<ASTCreateQuotaQuery>())
             {
                 if (res)
-                    throw Exception("Two access entities are attached in the same file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                    throw Exception("Two access entities are attached in the same file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 res = quota = std::make_unique<Quota>();
                 InterpreterCreateQuotaQuery::updateQuotaFromQuery(*quota, *create_quota_query);
             }
             else if (auto * create_profile_query = query->as<ASTCreateSettingsProfileQuery>())
             {
                 if (res)
-                    throw Exception("Two access entities are attached in the same file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                    throw Exception("Two access entities are attached in the same file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 res = profile = std::make_unique<SettingsProfile>();
                 InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(*profile, *create_profile_query);
             }
             else if (auto * grant_query = query->as<ASTGrantQuery>())
             {
                 if (!user && !role)
-                    throw Exception("A user or role should be attached before grant in file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                    throw Exception("A user or role should be attached before grant in file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 if (user)
                     InterpreterGrantQuery::updateUserFromQuery(*user, *grant_query);
                 else
@@ -165,13 +167,13 @@ namespace
         }
 
         if (!res)
-            throw Exception("No access entities attached in file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+            throw Exception("No access entities attached in file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
 
         return res;
     }
 
 
-    AccessEntityPtr tryReadEntityFile(const std::filesystem::path & file_path, Poco::Logger & log)
+    AccessEntityPtr tryReadEntityFile(const String & file_path, Poco::Logger & log)
     {
         try
         {
@@ -179,14 +181,14 @@ namespace
         }
         catch (...)
         {
-            tryLogCurrentException(&log, "Could not parse " + file_path.string());
+            tryLogCurrentException(&log, "Could not parse " + file_path);
             return nullptr;
         }
     }
 
 
     /// Writes ATTACH queries for building a specified access entity to a file.
-    void writeEntityFile(const std::filesystem::path & file_path, const IAccessEntity & entity)
+    void writeEntityFile(const String & file_path, const IAccessEntity & entity)
     {
         /// Build list of ATTACH queries.
         ASTs queries;
@@ -195,10 +197,13 @@ namespace
             boost::range::push_back(queries, InterpreterShowGrantsQuery::getAttachGrantQueries(entity));
 
         /// Serialize the list of ATTACH queries to a string.
-        std::stringstream ss;
+        WriteBufferFromOwnString buf;
         for (const ASTPtr & query : queries)
-            ss << *query << ";\n";
-        String file_contents = std::move(ss).str();
+        {
+            formatAST(*query, buf, false, true);
+            buf.write(";\n", 2);
+        }
+        String file_contents = buf.str();
 
         /// First we save *.tmp file and then we rename if everything's ok.
         auto tmp_file_path = std::filesystem::path{file_path}.replace_extension(".tmp");
@@ -212,6 +217,7 @@ namespace
         /// Write the file.
         WriteBufferFromFile out{tmp_file_path.string()};
         out.write(file_contents.data(), file_contents.size());
+        out.close();
 
         /// Rename.
         std::filesystem::rename(tmp_file_path, file_path);
@@ -219,15 +225,25 @@ namespace
     }
 
 
-    /// Calculates the path to a file named <id>.sql for saving an access entity.
-    std::filesystem::path getEntityFilePath(const String & directory_path, const UUID & id)
+    /// Converts a path to an absolute path and append it with a separator.
+    String makeDirectoryPathCanonical(const String & directory_path)
     {
-        return std::filesystem::path(directory_path).append(toString(id)).replace_extension(".sql");
+        auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
+        if (canonical_directory_path.has_filename())
+            canonical_directory_path += std::filesystem::path::preferred_separator;
+        return canonical_directory_path;
+    }
+
+
+    /// Calculates the path to a file named <id>.sql for saving an access entity.
+    String getEntityFilePath(const String & directory_path, const UUID & id)
+    {
+        return directory_path + toString(id) + ".sql";
     }
 
 
     /// Reads a map of name of access entity to UUID for access entities of some type from a file.
-    std::vector<std::pair<UUID, String>> readListFile(const std::filesystem::path & file_path)
+    std::vector<std::pair<UUID, String>> readListFile(const String & file_path)
     {
         ReadBufferFromFile in(file_path);
 
@@ -250,7 +266,7 @@ namespace
 
 
     /// Writes a map of name of access entity to UUID for access entities of some type to a file.
-    void writeListFile(const std::filesystem::path & file_path, const std::vector<std::pair<UUID, std::string_view>> & id_name_pairs)
+    void writeListFile(const String & file_path, const std::vector<std::pair<UUID, std::string_view>> & id_name_pairs)
     {
         WriteBufferFromFile out(file_path);
         writeVarUInt(id_name_pairs.size(), out);
@@ -259,24 +275,24 @@ namespace
             writeStringBinary(name, out);
             writeUUIDText(id, out);
         }
+        out.close();
     }
 
 
     /// Calculates the path for storing a map of name of access entity to UUID for access entities of some type.
-    std::filesystem::path getListFilePath(const String & directory_path, EntityType type)
+    String getListFilePath(const String & directory_path, EntityType type)
     {
         String file_name = EntityTypeInfo::get(type).plural_raw_name;
         boost::to_lower(file_name);
-        file_name += ".list";
-        return std::filesystem::path(directory_path).append(file_name);
+        return directory_path + file_name + ".list";
     }
 
 
     /// Calculates the path to a temporary file which existence means that list files are corrupted
     /// and need to be rebuild.
-    std::filesystem::path getNeedRebuildListsMarkFilePath(const String & directory_path)
+    String getNeedRebuildListsMarkFilePath(const String & directory_path)
     {
-        return std::filesystem::path(directory_path).append("need_rebuild_lists.mark");
+        return directory_path + "need_rebuild_lists.mark";
     }
 
 
@@ -295,46 +311,22 @@ namespace
 }
 
 
-DiskAccessStorage::DiskAccessStorage()
-    : IAccessStorage("disk")
+DiskAccessStorage::DiskAccessStorage(const String & directory_path_, bool readonly_)
+    : DiskAccessStorage(STORAGE_TYPE, directory_path_, readonly_)
 {
 }
 
-
-DiskAccessStorage::~DiskAccessStorage()
+DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_)
+    : IAccessStorage(storage_name_)
 {
-    stopListsWritingThread();
-    writeLists();
-}
+    directory_path = makeDirectoryPathCanonical(directory_path_);
+    readonly = readonly_;
 
+    std::error_code create_dir_error_code;
+    std::filesystem::create_directories(directory_path, create_dir_error_code);
 
-void DiskAccessStorage::setDirectory(const String & directory_path_)
-{
-    Notifications notifications;
-    SCOPE_EXIT({ notify(notifications); });
-
-    std::lock_guard lock{mutex};
-    initialize(directory_path_, notifications);
-}
-
-
-void DiskAccessStorage::initialize(const String & directory_path_, Notifications & notifications)
-{
-    auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path_);
-
-    if (initialized)
-    {
-        if (directory_path == canonical_directory_path)
-            return;
-        throw Exception("Storage " + getStorageName() + " already initialized with another directory", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    std::filesystem::create_directories(canonical_directory_path);
-    if (!std::filesystem::exists(canonical_directory_path) || !std::filesystem::is_directory(canonical_directory_path))
-        throw Exception("Couldn't create directory " + canonical_directory_path.string(), ErrorCodes::DIRECTORY_DOESNT_EXIST);
-
-    directory_path = canonical_directory_path;
-    initialized = true;
+    if (!std::filesystem::exists(directory_path) || !std::filesystem::is_directory(directory_path) || create_dir_error_code)
+        throw Exception("Couldn't create directory " + directory_path + " reason: '" + create_dir_error_code.message() + "'", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
     bool should_rebuild_lists = std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path));
     if (!should_rebuild_lists)
@@ -348,9 +340,34 @@ void DiskAccessStorage::initialize(const String & directory_path_, Notifications
         rebuildLists();
         writeLists();
     }
+}
 
-    for (const auto & [id, entry] : entries_by_id)
-        prepareNotifications(id, entry, false, notifications);
+
+DiskAccessStorage::~DiskAccessStorage()
+{
+    stopListsWritingThread();
+    writeLists();
+}
+
+
+String DiskAccessStorage::getStorageParamsJSON() const
+{
+    std::lock_guard lock{mutex};
+    Poco::JSON::Object json;
+    json.set("path", directory_path);
+    bool readonly_loaded = readonly;
+    if (readonly_loaded)
+        json.set("readonly", Poco::Dynamic::Var{true});
+    std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+    return oss.str();
+}
+
+
+bool DiskAccessStorage::isPathEqual(const String & directory_path_) const
+{
+    return getPath() == makeDirectoryPathCanonical(directory_path_);
 }
 
 
@@ -373,7 +390,7 @@ bool DiskAccessStorage::readLists()
         auto file_path = getListFilePath(directory_path, type);
         if (!std::filesystem::exists(file_path))
         {
-            LOG_WARNING(getLogger(), "File {} doesn't exist", file_path.string());
+            LOG_WARNING(getLogger(), "File {} doesn't exist", file_path);
             ok = false;
             break;
         }
@@ -391,7 +408,7 @@ bool DiskAccessStorage::readLists()
         }
         catch (...)
         {
-            tryLogCurrentException(getLogger(), "Could not read " + file_path.string());
+            tryLogCurrentException(getLogger(), "Could not read " + file_path);
             ok = false;
             break;
         }
@@ -426,7 +443,7 @@ bool DiskAccessStorage::writeLists()
         }
         catch (...)
         {
-            tryLogCurrentException(getLogger(), "Could not write " + file_path.string());
+            tryLogCurrentException(getLogger(), "Could not write " + file_path);
             failed_to_write_lists = true;
             types_of_lists_to_write.clear();
             return false;
@@ -443,33 +460,41 @@ bool DiskAccessStorage::writeLists()
 void DiskAccessStorage::scheduleWriteLists(EntityType type)
 {
     if (failed_to_write_lists)
-        return;
+        return; /// We don't try to write list files after the first fail.
+                /// The next restart of the server will invoke rebuilding of the list files.
 
-    bool already_scheduled = !types_of_lists_to_write.empty();
     types_of_lists_to_write.insert(type);
 
-    if (already_scheduled)
-        return;
+    if (lists_writing_thread_is_waiting)
+        return; /// If the lists' writing thread is still waiting we can update `types_of_lists_to_write` easily,
+                /// without restarting that thread.
+
+    if (lists_writing_thread.joinable())
+        lists_writing_thread.join();
 
     /// Create the 'need_rebuild_lists.mark' file.
     /// This file will be used later to find out if writing lists is successful or not.
     std::ofstream{getNeedRebuildListsMarkFilePath(directory_path)};
 
-    startListsWritingThread();
+    lists_writing_thread = ThreadFromGlobalPool{&DiskAccessStorage::listsWritingThreadFunc, this};
+    lists_writing_thread_is_waiting = true;
 }
 
 
-void DiskAccessStorage::startListsWritingThread()
+void DiskAccessStorage::listsWritingThreadFunc()
 {
-    if (lists_writing_thread.joinable())
+    std::unique_lock lock{mutex};
+
     {
-        if (!lists_writing_thread_exited)
-            return;
-        lists_writing_thread.detach();
+        /// It's better not to write the lists files too often, that's why we need
+        /// the following timeout.
+        const auto timeout = std::chrono::minutes(1);
+        SCOPE_EXIT({ lists_writing_thread_is_waiting = false; });
+        if (lists_writing_thread_should_exit.wait_for(lock, timeout) != std::cv_status::timeout)
+            return; /// The destructor requires us to exit.
     }
 
-    lists_writing_thread_exited = false;
-    lists_writing_thread = ThreadFromGlobalPool{&DiskAccessStorage::listsWritingThreadFunc, this};
+    writeLists();
 }
 
 
@@ -480,21 +505,6 @@ void DiskAccessStorage::stopListsWritingThread()
         lists_writing_thread_should_exit.notify_one();
         lists_writing_thread.join();
     }
-}
-
-
-void DiskAccessStorage::listsWritingThreadFunc()
-{
-    std::unique_lock lock{mutex};
-    SCOPE_EXIT({ lists_writing_thread_exited = true; });
-
-    /// It's better not to write the lists files too often, that's why we need
-    /// the following timeout.
-    const auto timeout = std::chrono::minutes(1);
-    if (lists_writing_thread_should_exit.wait_for(lock, timeout) != std::cv_status::timeout)
-        return; /// The destructor requires us to exit.
-
-    writeLists();
 }
 
 
@@ -596,7 +606,7 @@ String DiskAccessStorage::readNameImpl(const UUID & id) const
 
 bool DiskAccessStorage::canInsertImpl(const AccessEntityPtr &) const
 {
-    return initialized;
+    return !readonly;
 }
 
 
@@ -607,7 +617,7 @@ UUID DiskAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool repl
 
     UUID id = generateRandomID();
     std::lock_guard lock{mutex};
-    insertNoLock(generateRandomID(), new_entity, replace_if_exists, notifications);
+    insertNoLock(id, new_entity, replace_if_exists, notifications);
     return id;
 }
 
@@ -616,11 +626,9 @@ void DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
 {
     const String & name = new_entity->getName();
     EntityType type = new_entity->getType();
-    if (!initialized)
-        throw Exception(
-            "Cannot insert " + new_entity->outputTypeAndName() + " to storage [" + getStorageName()
-                + "] because the output directory is not set",
-            ErrorCodes::LOGICAL_ERROR);
+
+    if (readonly)
+        throwReadonlyCannotInsert(type, name);
 
     /// Check that we can insert.
     auto it_by_id = entries_by_id.find(id);
@@ -673,6 +681,9 @@ void DiskAccessStorage::removeNoLock(const UUID & id, Notifications & notificati
     Entry & entry = it->second;
     EntityType type = entry.type;
 
+    if (readonly)
+        throwReadonlyCannotRemove(type, entry.name);
+
     scheduleWriteLists(type);
     deleteAccessEntityOnDisk(id);
 
@@ -701,6 +712,8 @@ void DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
         throwNotFound(id);
 
     Entry & entry = it->second;
+    if (readonly)
+        throwReadonlyCannotUpdate(entry.type, entry.name);
     if (!entry.entity)
         entry.entity = readAccessEntityFromDisk(id);
     auto old_entity = entry.entity;
@@ -755,7 +768,7 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 {
     auto file_path = getEntityFilePath(directory_path, id);
     if (!std::filesystem::remove(file_path))
-        throw Exception("Couldn't delete " + file_path.string(), ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("Couldn't delete " + file_path, ErrorCodes::FILE_DOESNT_EXIST);
 }
 
 

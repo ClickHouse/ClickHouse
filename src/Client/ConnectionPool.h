@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/PoolBase.h>
-
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -26,13 +26,15 @@ public:
     using Entry = PoolBase<Connection>::Entry;
 
 public:
-    virtual ~IConnectionPool() {}
+    virtual ~IConnectionPool() = default;
 
     /// Selects the connection to work.
     /// If force_connected is false, the client must manually ensure that returned connection is good.
     virtual Entry get(const ConnectionTimeouts & timeouts,
                       const Settings * settings = nullptr,
                       bool force_connected = true) = 0;
+
+    virtual Int64 getPriority() const { return 1; }
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -52,9 +54,12 @@ public:
             const String & default_database_,
             const String & user_,
             const String & password_,
-            const String & client_name_ = "client",
-            Protocol::Compression compression_ = Protocol::Compression::Enable,
-            Protocol::Secure secure_ = Protocol::Secure::Disable)
+            const String & cluster_,
+            const String & cluster_secret_,
+            const String & client_name_,
+            Protocol::Compression compression_,
+            Protocol::Secure secure_,
+            Int64 priority_ = 1)
        : Base(max_connections_,
         &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_),
@@ -62,9 +67,12 @@ public:
         default_database(default_database_),
         user(user_),
         password(password_),
+        cluster(cluster_),
+        cluster_secret(cluster_secret_),
         client_name(client_name_),
         compression(compression_),
-        secure{secure_}
+        secure(secure_),
+        priority(priority_)
     {
     }
 
@@ -93,6 +101,11 @@ public:
         return host + ":" + toString(port);
     }
 
+    Int64 getPriority() const override
+    {
+        return priority;
+    }
+
 protected:
     /** Creates a new object to put in the pool. */
     ConnectionPtr allocObject() override
@@ -100,6 +113,7 @@ protected:
         return std::make_shared<Connection>(
             host, port,
             default_database, user, password,
+            cluster, cluster_secret,
             client_name, compression, secure);
     }
 
@@ -110,9 +124,14 @@ private:
     String user;
     String password;
 
+    /// For inter-server authorization
+    String cluster;
+    String cluster_secret;
+
     String client_name;
-    Protocol::Compression compression;        /// Whether to compress data when interacting with the server.
-    Protocol::Secure secure;          /// Whether to encrypt data when interacting with the server.
+    Protocol::Compression compression; /// Whether to compress data when interacting with the server.
+    Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
+    Int64 priority;                    /// priority from <remote_servers>
 
 };
 

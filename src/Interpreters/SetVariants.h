@@ -8,7 +8,6 @@
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/HashTable/FixedClearableHashSet.h>
 #include <Common/HashTable/FixedHashSet.h>
-#include <Common/UInt128.h>
 
 
 namespace DB

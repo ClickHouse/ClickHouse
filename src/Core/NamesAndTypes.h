@@ -15,11 +15,19 @@ namespace DB
 
 struct NameAndTypePair
 {
-    String name;
-    DataTypePtr type;
+public:
+    NameAndTypePair() = default;
+    NameAndTypePair(const String & name_, const DataTypePtr & type_)
+        : name(name_), type(type_), type_in_storage(type_) {}
 
-    NameAndTypePair() {}
-    NameAndTypePair(const String & name_, const DataTypePtr & type_) : name(name_), type(type_) {}
+    NameAndTypePair(const String & name_in_storage_, const String & subcolumn_name_,
+        const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_);
+
+    String getNameInStorage() const;
+    String getSubcolumnName() const;
+
+    bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
+    DataTypePtr getTypeInStorage() const { return type_in_storage; }
 
     bool operator<(const NameAndTypePair & rhs) const
     {
@@ -30,14 +38,32 @@ struct NameAndTypePair
     {
         return name == rhs.name && type->equals(*rhs.type);
     }
+
+    String name;
+    DataTypePtr type;
+
+private:
+    DataTypePtr type_in_storage;
+    std::optional<size_t> subcolumn_delimiter_position;
 };
+
+/// This needed to use structured bindings for NameAndTypePair
+/// const auto & [name, type] = name_and_type
+template <int I>
+decltype(auto) get(const NameAndTypePair & name_and_type)
+{
+    if constexpr (I == 0)
+        return name_and_type.name;
+    else if constexpr (I == 1)
+        return name_and_type.type;
+}
 
 using NamesAndTypes = std::vector<NameAndTypePair>;
 
 class NamesAndTypesList : public std::list<NameAndTypePair>
 {
 public:
-    NamesAndTypesList() {}
+    NamesAndTypesList() = default;
 
     NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : std::list<NameAndTypePair>(init) {}
 
@@ -80,4 +106,11 @@ public:
     std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
 };
 
+}
+
+namespace std
+{
+    template <> struct tuple_size<DB::NameAndTypePair> : std::integral_constant<size_t, 2> {};
+    template <> struct tuple_element<0, DB::NameAndTypePair> { using type = DB::String; };
+    template <> struct tuple_element<1, DB::NameAndTypePair> { using type = DB::DataTypePtr; };
 }

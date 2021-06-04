@@ -6,6 +6,8 @@
 namespace DB
 {
 
+struct ASTTableJoin;
+
 /** List of single or multiple JOIN-ed tables or subqueries in SELECT query, with ARRAY JOINs and SAMPLE, FINAL modifiers.
   */
 class ParserTablesInSelectQuery : public IParserBase
@@ -27,6 +29,8 @@ protected:
 
 private:
     bool is_first;
+
+    static void parseJoinStrictness(Pos & pos, ASTTableJoin & table_join);
 };
 
 

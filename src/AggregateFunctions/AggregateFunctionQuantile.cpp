@@ -8,6 +8,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -25,6 +26,11 @@ template <typename Value, bool float_return> using FuncQuantilesDeterministic = 
 
 template <typename Value, bool _> using FuncQuantileExact = AggregateFunctionQuantile<Value, QuantileExact<Value>, NameQuantileExact, false, void, false>;
 template <typename Value, bool _> using FuncQuantilesExact = AggregateFunctionQuantile<Value, QuantileExact<Value>, NameQuantilesExact, false, void, true>;
+
+template <typename Value, bool _> using FuncQuantileExactLow = AggregateFunctionQuantile<Value, QuantileExactLow<Value>, NameQuantileExactLow, false, void, false>;
+template <typename Value, bool _> using FuncQuantilesExactLow = AggregateFunctionQuantile<Value, QuantileExactLow<Value>, NameQuantilesExactLow, false, void, true>;
+template <typename Value, bool _> using FuncQuantileExactHigh = AggregateFunctionQuantile<Value, QuantileExactHigh<Value>, NameQuantileExactHigh, false, void, false>;
+template <typename Value, bool _> using FuncQuantilesExactHigh = AggregateFunctionQuantile<Value, QuantileExactHigh<Value>, NameQuantilesExactHigh, false, void, true>;
 
 template <typename Value, bool _> using FuncQuantileExactExclusive = AggregateFunctionQuantile<Value, QuantileExactExclusive<Value>, NameQuantileExactExclusive, false, Float64, false>;
 template <typename Value, bool _> using FuncQuantilesExactExclusive = AggregateFunctionQuantile<Value, QuantileExactExclusive<Value>, NameQuantilesExactExclusive, false, Float64, true>;
@@ -47,9 +53,27 @@ template <typename Value, bool float_return> using FuncQuantilesTDigest = Aggreg
 template <typename Value, bool float_return> using FuncQuantileTDigestWeighted = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantileTDigestWeighted, true, std::conditional_t<float_return, Float32, void>, false>;
 template <typename Value, bool float_return> using FuncQuantilesTDigestWeighted = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantilesTDigestWeighted, true, std::conditional_t<float_return, Float32, void>, true>;
 
+template <typename Value, bool float_return> using FuncQuantileBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantileBFloat16, false, std::conditional_t<float_return, Float64, void>, false>;
+template <typename Value, bool float_return> using FuncQuantilesBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantilesBFloat16, false, std::conditional_t<float_return, Float64, void>, true>;
+
 
 template <template <typename, bool> class Function>
 static constexpr bool supportDecimal()
+{
+    return std::is_same_v<Function<Float32, false>, FuncQuantile<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantiles<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantileExact<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantileExactLow<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantileExactHigh<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantilesExact<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantilesExactLow<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantilesExactHigh<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantileExactWeighted<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantilesExactWeighted<Float32, false>>;
+}
+
+template <template <typename, bool> class Function>
+static constexpr bool supportBigInt()
 {
     return std::is_same_v<Function<Float32, false>, FuncQuantile<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantiles<Float32, false>> ||
@@ -59,9 +83,8 @@ static constexpr bool supportDecimal()
         std::is_same_v<Function<Float32, false>, FuncQuantilesExactWeighted<Float32, false>>;
 }
 
-
 template <template <typename, bool> class Function>
-AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params)
+AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     /// Second argument type check doesn't depend on the type of the first one.
     Function<void, true>::assertSecondArg(argument_types);
@@ -71,7 +94,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
 
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) return std::make_shared<Function<TYPE, true>>(argument_types, params);
-    FOR_NUMERIC_TYPES(DISPATCH)
+    FOR_BASIC_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
     if (which.idx == TypeIndex::Date) return std::make_shared<Function<DataTypeDate::FieldType, false>>(argument_types, params);
     if (which.idx == TypeIndex::DateTime) return std::make_shared<Function<DataTypeDateTime::FieldType, false>>(argument_types, params);
@@ -81,6 +104,16 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
         if (which.idx == TypeIndex::Decimal32) return std::make_shared<Function<Decimal32, false>>(argument_types, params);
         if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64, false>>(argument_types, params);
         if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128, false>>(argument_types, params);
+        if (which.idx == TypeIndex::Decimal256) return std::make_shared<Function<Decimal256, false>>(argument_types, params);
+        if (which.idx == TypeIndex::DateTime64) return std::make_shared<Function<DateTime64, false>>(argument_types, params);
+    }
+
+    if constexpr (supportBigInt<Function>())
+    {
+        if (which.idx == TypeIndex::Int128) return std::make_shared<Function<Int128, true>>(argument_types, params);
+        if (which.idx == TypeIndex::UInt128) return std::make_shared<Function<Int128, true>>(argument_types, params);
+        if (which.idx == TypeIndex::Int256) return std::make_shared<Function<Int256, true>>(argument_types, params);
+        if (which.idx == TypeIndex::UInt256) return std::make_shared<Function<UInt256, true>>(argument_types, params);
     }
 
     throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,
@@ -99,6 +132,12 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 
     factory.registerFunction(NameQuantileExact::name, createAggregateFunctionQuantile<FuncQuantileExact>);
     factory.registerFunction(NameQuantilesExact::name, createAggregateFunctionQuantile<FuncQuantilesExact>);
+
+    factory.registerFunction(NameQuantileExactLow::name, createAggregateFunctionQuantile<FuncQuantileExactLow>);
+    factory.registerFunction(NameQuantilesExactLow::name, createAggregateFunctionQuantile<FuncQuantilesExactLow>);
+
+    factory.registerFunction(NameQuantileExactHigh::name, createAggregateFunctionQuantile<FuncQuantileExactHigh>);
+    factory.registerFunction(NameQuantilesExactHigh::name, createAggregateFunctionQuantile<FuncQuantilesExactHigh>);
 
     factory.registerFunction(NameQuantileExactExclusive::name, createAggregateFunctionQuantile<FuncQuantileExactExclusive>);
     factory.registerFunction(NameQuantilesExactExclusive::name, createAggregateFunctionQuantile<FuncQuantilesExactExclusive>);
@@ -121,15 +160,21 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     factory.registerFunction(NameQuantileTDigestWeighted::name, createAggregateFunctionQuantile<FuncQuantileTDigestWeighted>);
     factory.registerFunction(NameQuantilesTDigestWeighted::name, createAggregateFunctionQuantile<FuncQuantilesTDigestWeighted>);
 
+    factory.registerFunction(NameQuantileBFloat16::name, createAggregateFunctionQuantile<FuncQuantileBFloat16>);
+    factory.registerFunction(NameQuantilesBFloat16::name, createAggregateFunctionQuantile<FuncQuantilesBFloat16>);
+
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("median", NameQuantile::name);
     factory.registerAlias("medianDeterministic", NameQuantileDeterministic::name);
     factory.registerAlias("medianExact", NameQuantileExact::name);
+    factory.registerAlias("medianExactLow", NameQuantileExactLow::name);
+    factory.registerAlias("medianExactHigh", NameQuantileExactHigh::name);
     factory.registerAlias("medianExactWeighted", NameQuantileExactWeighted::name);
     factory.registerAlias("medianTiming", NameQuantileTiming::name);
     factory.registerAlias("medianTimingWeighted", NameQuantileTimingWeighted::name);
     factory.registerAlias("medianTDigest", NameQuantileTDigest::name);
     factory.registerAlias("medianTDigestWeighted", NameQuantileTDigestWeighted::name);
+    factory.registerAlias("medianBFloat16", NameQuantileBFloat16::name);
 }
 
 }

@@ -1,11 +1,14 @@
 #include "ConfigReloader.h"
 
 #include <Poco/Util/Application.h>
-#include <Poco/File.h>
 #include <common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include "ConfigProcessor.h"
+#include <filesystem>
+#include <Common/filesystemHelpers.h>
 
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -27,7 +30,7 @@ ConfigReloader::ConfigReloader(
     , updater(std::move(updater_))
 {
     if (!already_loaded)
-        reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true);
+        reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true);
 }
 
 
@@ -66,7 +69,7 @@ void ConfigReloader::run()
             if (quit)
                 return;
 
-            reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false);
+            reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false, /* initial_loading = */ false);
         }
         catch (...)
         {
@@ -76,7 +79,7 @@ void ConfigReloader::run()
     }
 }
 
-void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
+void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading)
 {
     std::lock_guard lock(reload_mutex);
 
@@ -116,7 +119,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
 
-        /** We should remember last modification time if and only if config was sucessfully loaded
+        /** We should remember last modification time if and only if config was successfully loaded
          * Otherwise a race condition could occur during config files update:
          *  File is contain raw (and non-valid) data, therefore config is not applied.
          *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
@@ -131,13 +134,14 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
 
         try
         {
-            updater(loaded_config.configuration);
+            updater(loaded_config.configuration, initial_loading);
         }
         catch (...)
         {
             if (throw_on_error)
                 throw;
             tryLogCurrentException(log, "Error updating configuration from '" + path + "' config.");
+            return;
         }
 
         LOG_DEBUG(log, "Loaded config '{}', performed update on configuration", path);
@@ -166,8 +170,8 @@ struct ConfigReloader::FileWithTimestamp
 
 void ConfigReloader::FilesChangesTracker::addIfExists(const std::string & path_to_add)
 {
-    if (!path_to_add.empty() && Poco::File(path_to_add).exists())
-        files.emplace(path_to_add, Poco::File(path_to_add).getLastModified().epochTime());
+    if (!path_to_add.empty() && fs::exists(path_to_add))
+        files.emplace(path_to_add, FS::getModificationTime(path_to_add));
 }
 
 bool ConfigReloader::FilesChangesTracker::isDifferOrNewerThan(const FilesChangesTracker & rhs)

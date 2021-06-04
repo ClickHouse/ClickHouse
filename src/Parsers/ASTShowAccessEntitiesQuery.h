@@ -31,7 +31,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override { return std::make_shared<ASTShowAccessEntitiesQuery>(*this); }
 
-    void replaceEmptyDatabaseWithCurrent(const String & current_database);
+    void replaceEmptyDatabase(const String & current_database);
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

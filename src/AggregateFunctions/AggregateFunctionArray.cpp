@@ -5,12 +5,16 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 class AggregateFunctionCombinatorArray final : public IAggregateFunctionCombinator
 {
@@ -44,6 +48,8 @@ public:
         return std::make_shared<AggregateFunctionArray>(nested_function, arguments);
     }
 };
+
+}
 
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory & factory)
 {

@@ -2,6 +2,7 @@
 
 #include <Common/Elf.h>
 #include <Common/Exception.h>
+#include <common/unaligned.h>
 
 #include <string.h>
 
@@ -128,14 +129,19 @@ String Elf::getBuildID() const
     return {};
 }
 
-
+#if defined(OS_SUNOS)
+String Elf::getBuildID(const char * nhdr_pos, size_t size)
+{
+    return {};
+}
+#else
 String Elf::getBuildID(const char * nhdr_pos, size_t size)
 {
     const char * nhdr_end = nhdr_pos + size;
 
     while (nhdr_pos < nhdr_end)
     {
-        const ElfNhdr & nhdr = *reinterpret_cast<const ElfNhdr *>(nhdr_pos);
+        ElfNhdr nhdr = unalignedLoad<ElfNhdr>(nhdr_pos);
 
         nhdr_pos += sizeof(ElfNhdr) + nhdr.n_namesz;
         if (nhdr.n_type == NT_GNU_BUILD_ID)
@@ -147,6 +153,16 @@ String Elf::getBuildID(const char * nhdr_pos, size_t size)
     }
 
     return {};
+}
+#endif // OS_SUNOS
+
+
+String Elf::getBinaryHash() const
+{
+    if (auto section = findSectionByName(".note.ClickHouse.hash"))
+        return {section->begin(), section->end()};
+    else
+        return {};
 }
 
 

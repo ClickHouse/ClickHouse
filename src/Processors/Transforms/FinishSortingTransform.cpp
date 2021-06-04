@@ -25,37 +25,16 @@ FinishSortingTransform::FinishSortingTransform(
     const SortDescription & description_to_sort_,
     size_t max_merged_block_size_, UInt64 limit_)
     : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_)
-    , description_sorted(description_sorted_)
 {
-    const auto & sample = inputs.front().getHeader();
-
-    /// Replace column names to column position in description_sorted.
-    for (auto & column_description : description_sorted)
-    {
-        if (!column_description.column_name.empty())
-        {
-            column_description.column_number = sample.getPositionByName(column_description.column_name);
-            column_description.column_name.clear();
-        }
-    }
-
-    if (!isPrefix(description_sorted, description))
-        throw Exception("Can`t finish sorting. SortDescription of already sorted stream is not prefix of "
+    /// Check for sanity non-modified descriptions
+    if (!isPrefix(description_sorted_, description_to_sort_))
+        throw Exception("Can't finish sorting. SortDescription of already sorted stream is not prefix of "
             "SortDescription needed to sort", ErrorCodes::LOGICAL_ERROR);
-}
 
-static bool less(const Columns & lhs, const Columns & rhs, size_t i, size_t j, const SortDescription & descr)
-{
-    for (const auto & elem : descr)
-    {
-        size_t ind = elem.column_number;
-        int res = elem.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.nulls_direction);
-        if (res < 0)
-            return true;
-        else if (res > 0)
-            return false;
-    }
-    return false;
+    /// The target description is modified in SortingTransform constructor.
+    /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
+    size_t prefix_size = description_sorted_.size();
+    description_sorted.assign(description.begin(), description.begin() + prefix_size);
 }
 
 void FinishSortingTransform::consume(Chunk chunk)

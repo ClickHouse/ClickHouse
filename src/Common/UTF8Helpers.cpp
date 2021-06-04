@@ -95,7 +95,7 @@ namespace
 
 enum ComputeWidthMode
 {
-    Width,              /// Calcualte and return visible width
+    Width,              /// Calculate and return visible width
     BytesBeforLimit     /// Calculate and return the maximum number of bytes when substring fits in visible width.
 };
 

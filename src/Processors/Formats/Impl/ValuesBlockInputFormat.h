@@ -1,20 +1,18 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
-
+#include <Interpreters/Context.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 
 namespace DB
 {
 
-class Context;
 class ReadBuffer;
-
 
 /** Stream to read data in VALUES format (as in INSERT query).
   */
@@ -36,7 +34,7 @@ public:
     void resetParser() override;
 
     /// TODO: remove context somehow.
-    void setContext(const Context & context_) { context = std::make_unique<Context>(context_); }
+    void setContext(ContextConstPtr context_) { context = Context::createCopy(context_); }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
@@ -48,7 +46,7 @@ private:
         SingleExpressionEvaluation
     };
 
-    typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
+    using ConstantExpressionTemplates = std::vector<std::optional<ConstantExpressionTemplate>>;
 
     Chunk generate() override;
 
@@ -63,19 +61,19 @@ private:
 
     bool shouldDeduceNewTemplate(size_t column_idx);
 
+    void readPrefix();
     void readSuffix();
 
     bool skipToNextRow(size_t min_chunk_bytes = 0, int balance = 0);
 
-private:
     PeekableReadBuffer buf;
 
-    RowInputFormatParams params;
+    const RowInputFormatParams params;
 
-    std::unique_ptr<Context> context;   /// pimpl
+    ContextPtr context;   /// pimpl
     const FormatSettings format_settings;
 
-    size_t num_columns;
+    const size_t num_columns;
     size_t total_rows = 0;
 
     std::vector<ParserType> parser_type_for_column;
@@ -87,7 +85,8 @@ private:
     ConstantExpressionTemplates templates;
     ConstantExpressionTemplate::Cache templates_cache;
 
-    DataTypes types;
+    const DataTypes types;
+    Serializations serializations;
 
     BlockMissingValues block_missing_values;
 };

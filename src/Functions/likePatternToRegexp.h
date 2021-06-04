@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 
 namespace DB
 {
-/// Transforms the LIKE expression into regexp re2. For example, abc%def -> ^abc.*def$
+
+/// Transforms the [I]LIKE expression into regexp re2. For example, abc%def -> ^abc.*def$
 inline String likePatternToRegexp(const String & pattern)
 {
     String res;
@@ -35,18 +36,21 @@ inline String likePatternToRegexp(const String & pattern)
                 res += ".";
                 break;
             case '\\':
-                ++pos;
-                if (pos == end)
+                /// Known escape sequences.
+                if (pos + 1 != end && (pos[1] == '%' || pos[1] == '_'))
+                {
+                    res += pos[1];
+                    ++pos;
+                }
+                else if (pos + 1 != end && pos[1] == '\\')
+                {
                     res += "\\\\";
+                    ++pos;
+                }
                 else
                 {
-                    if (*pos == '%' || *pos == '_')
-                        res += *pos;
-                    else
-                    {
-                        res += '\\';
-                        res += *pos;
-                    }
+                    /// Unknown escape sequence treated literally: as backslash and the following character.
+                    res += "\\\\";
                 }
                 break;
             default:

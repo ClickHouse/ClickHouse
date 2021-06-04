@@ -13,28 +13,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 
 ExternalQueryBuilder::ExternalQueryBuilder(
     const DictionaryStructure & dict_struct_,
     const std::string & db_,
+    const std::string & schema_,
     const std::string & table_,
     const std::string & where_,
     IdentifierQuotingStyle quoting_style_)
-    : dict_struct(dict_struct_), db(db_), where(where_), quoting_style(quoting_style_)
-{
-    if (auto pos = table_.find('.'); pos != std::string::npos)
-    {
-        schema = table_.substr(0, pos);
-        table = table_.substr(pos + 1);
-    }
-    else
-    {
-        schema = "";
-        table = table_;
-    }
-}
+    : dict_struct(dict_struct_), db(db_), schema(schema_), table(table_), where(where_), quoting_style(quoting_style_)
+{}
 
 
 void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out) const
@@ -169,7 +160,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
     else
         writeString(" WHERE ", out);
 
-    writeQuoted(update_field, out);
+    writeString(update_field, out);
     writeString(" >= '", out);
     writeString(time_point, out);
     writeChar('\'', out);
@@ -182,7 +173,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
 std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
-        throw Exception{"Simple key required for method", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Simple key required for method");
 
     WriteBufferFromOwnString out;
     writeString("SELECT ", out);
@@ -249,11 +240,14 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 }
 
 
-std::string
-ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix)
+std::string ExternalQueryBuilder::composeLoadKeysQuery(
+    const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix)
 {
     if (!dict_struct.key)
-        throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Composite key required for method");
+
+    if (key_columns.size() != dict_struct.key->size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
 
     WriteBufferFromOwnString out;
     writeString("SELECT ", out);
@@ -364,7 +358,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
         /// key_i=value_i
         writeQuoted(key_description.name, out);
         writeString("=", out);
-        key_description.type->serializeAsTextQuoted(*key_columns[i], row, out, format_settings);
+        key_description.serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
     }
 }
 
@@ -392,7 +386,7 @@ void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, cons
 void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out, size_t beg, size_t end) const
 {
     if (!dict_struct.key)
-        throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Composite key required for method");
 
     writeChar('(', out);
 
@@ -421,7 +415,7 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const si
             writeString(", ", out);
 
         first = false;
-        (*dict_struct.key)[i].type->serializeAsTextQuoted(*key_columns[i], row, out, format_settings);
+        (*dict_struct.key)[i].serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
     }
 
     writeString(")", out);

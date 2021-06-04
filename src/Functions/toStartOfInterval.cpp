@@ -6,7 +6,8 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
+#include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -35,10 +36,15 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 years, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfYearInterval(DayNum(d), years);
+            return time_zone.toStartOfYearInterval(ExtendedDayNum(d), years);
         }
 
         static UInt16 execute(UInt32 t, UInt64 years, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfYearInterval(time_zone.toDayNum(t), years);
+        }
+
+        static UInt16 execute(Int64 t, UInt64 years, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t), years);
         }
@@ -51,10 +57,15 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 quarters, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfQuarterInterval(DayNum(d), quarters);
+            return time_zone.toStartOfQuarterInterval(ExtendedDayNum(d), quarters);
         }
 
         static UInt16 execute(UInt32 t, UInt64 quarters, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t), quarters);
+        }
+
+        static UInt16 execute(Int64 t, UInt64 quarters, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t), quarters);
         }
@@ -67,10 +78,15 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 months, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfMonthInterval(DayNum(d), months);
+            return time_zone.toStartOfMonthInterval(ExtendedDayNum(d), months);
         }
 
         static UInt16 execute(UInt32 t, UInt64 months, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t), months);
+        }
+
+        static UInt16 execute(Int64 t, UInt64 months, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t), months);
         }
@@ -83,10 +99,15 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 weeks, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfWeekInterval(DayNum(d), weeks);
+            return time_zone.toStartOfWeekInterval(ExtendedDayNum(d), weeks);
         }
 
         static UInt16 execute(UInt32 t, UInt64 weeks, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
+        }
+
+        static UInt16 execute(Int64 t, UInt64 weeks, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
         }
@@ -99,10 +120,15 @@ namespace
 
         static UInt32 execute(UInt16 d, UInt64 days, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfDayInterval(DayNum(d), days);
+            return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
         }
 
         static UInt32 execute(UInt32 t, UInt64 days, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days);
+        }
+
+        static UInt32 execute(Int64 t, UInt64 days, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days);
         }
@@ -114,8 +140,8 @@ namespace
         static constexpr auto name = function_name;
 
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
-
         static UInt32 execute(UInt32 t, UInt64 hours, const DateLUTImpl & time_zone) { return time_zone.toStartOfHourInterval(t, hours); }
+        static UInt32 execute(Int64 t, UInt64 hours, const DateLUTImpl & time_zone) { return time_zone.toStartOfHourInterval(t, hours); }
     };
 
     template <>
@@ -126,6 +152,11 @@ namespace
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 minutes, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfMinuteInterval(t, minutes);
+        }
+
+        static UInt32 execute(Int64 t, UInt64 minutes, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfMinuteInterval(t, minutes);
         }
@@ -142,14 +173,18 @@ namespace
         {
             return time_zone.toStartOfSecondInterval(t, seconds);
         }
+
+        static Int64 execute(Int64 t, UInt64 seconds, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfSecondInterval(t, seconds);
+        }
     };
-}
 
 
 class FunctionToStartOfInterval : public IFunction
 {
 public:
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToStartOfInterval>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
 
     static constexpr auto name = function_name;
     String getName() const override { return name; }
@@ -162,7 +197,7 @@ public:
         bool first_argument_is_date = false;
         auto check_first_argument = [&]
         {
-            if (!isDateOrDateTime(arguments[0].type))
+            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -227,13 +262,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
     {
-        const auto & time_column = block.getByPosition(arguments[0]);
-        const auto & interval_column = block.getByPosition(arguments[1]);
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+        const auto & time_column = arguments[0];
+        const auto & interval_column = arguments[1];
+        const auto & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         auto result_column = dispatchForColumns(time_column, interval_column, time_zone);
-        block.getByPosition(result).column = std::move(result_column);
+        return result_column;
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -248,7 +283,7 @@ public:
 
 private:
     ColumnPtr dispatchForColumns(
-        const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
+        const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone) const
     {
         const auto & from_datatype = *time_column.type.get();
         const auto which_type = WhichDataType(from_datatype);
@@ -277,7 +312,7 @@ private:
 
     template <typename ColumnType, typename FromDataType>
     ColumnPtr dispatchForIntervalColumn(
-        const FromDataType & from, const ColumnType & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
+        const FromDataType & from, const ColumnType & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone) const
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
@@ -317,7 +352,7 @@ private:
 
 
     template <typename FromDataType, typename ToType, IntervalKind::Kind unit, typename ColumnType>
-    ColumnPtr execute(const FromDataType & from_datatype, const ColumnType & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
+    ColumnPtr execute(const FromDataType & from_datatype, const ColumnType & time_column, UInt64 num_units, const DateLUTImpl & time_zone) const
     {
         const auto & time_data = time_column.getData();
         size_t size = time_column.size();
@@ -340,6 +375,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionToStartOfInterval(FunctionFactory & factory)
 {

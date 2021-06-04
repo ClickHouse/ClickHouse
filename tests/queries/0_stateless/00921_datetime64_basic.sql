@@ -13,6 +13,11 @@ SELECT toDateTime64('2019-09-16 19:20:11.234', 3, 'qqq'); -- { serverError 1000 
 SELECT ignore(now64(gccMurmurHash())); -- { serverError 43 } # Illegal argument type
 SELECT ignore(now64('abcd')); -- { serverError 43 } # Illegal argument type
 SELECT ignore(now64(number)) FROM system.numbers LIMIT 10; -- { serverError 43 } # Illegal argument type
+SELECT ignore(now64(3, 'invalid timezone')); -- { serverError 1000 }
+SELECT ignore(now64(3, 1111)); -- { serverError 44 } # invalid timezone parameter type
+
+WITH 'UTC' as timezone SELECT timezone, timeZoneOf(now64(3, timezone)) == timezone;
+WITH 'Europe/Minsk' as timezone SELECT timezone, timeZoneOf(now64(3, timezone)) == timezone;
 
 SELECT toDateTime64('2019-09-16 19:20:11', 3, 'UTC'); -- this now works OK and produces timestamp with no subsecond part
 

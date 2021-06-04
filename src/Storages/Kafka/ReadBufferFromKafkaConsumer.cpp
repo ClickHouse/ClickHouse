@@ -4,6 +4,8 @@
 
 #include <cppkafka/cppkafka.h>
 #include <boost/algorithm/string/join.hpp>
+#include <fmt/ostream.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -15,6 +17,7 @@ namespace ErrorCodes
 
 using namespace std::chrono_literals;
 const auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
+const std::size_t POLL_TIMEOUT_WO_ASSIGNMENT_MS = 50;
 const auto DRAIN_TIMEOUT_MS = 5000ms;
 
 
@@ -36,14 +39,14 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     , current(messages.begin())
     , topics(_topics)
 {
-    // called (synchroniously, during poll) when we enter the consumer group
+    // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
         LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
         assignment = topic_partitions;
     });
 
-    // called (synchroniously, during poll) when we leave the consumer group
+    // called (synchronously, during poll) when we leave the consumer group
     consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
         // Rebalance is happening now, and now we have a chance to finish the work
@@ -57,12 +60,11 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
         //     * clean buffered non-commited messages
         //     * set flag / flush
 
-        messages.clear();
-        current = messages.begin();
-        BufferBase::set(nullptr, 0, 0);
+        cleanUnprocessed();
 
-        rebalance_happened = true;
+        stalled_status = REBALANCE_HAPPENED;
         assignment.clear();
+        waited_for_assignment = 0;
 
         // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
         // try
@@ -192,9 +194,9 @@ void ReadBufferFromKafkaConsumer::commit()
         // in a controlled manner (i.e. we don't know the offsets to commit then)
 
         size_t max_retries = 5;
-        bool commited = false;
+        bool committed = false;
 
-        while (!commited && max_retries > 0)
+        while (!committed && max_retries > 0)
         {
             try
             {
@@ -203,7 +205,7 @@ void ReadBufferFromKafkaConsumer::commit()
                 // there were not enough replicas available for the __consumer_offsets topic.
                 // also some other temporary issues like client-server connectivity problems are possible
                 consumer->commit();
-                commited = true;
+                committed = true;
                 print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
             }
             catch (const cppkafka::HandleException & e)
@@ -213,10 +215,10 @@ void ReadBufferFromKafkaConsumer::commit()
             --max_retries;
         }
 
-        if (!commited)
+        if (!committed)
         {
-            // TODO: insert atomicity / transactions is needed here (possibility to rollback, ot 2 phase commits)
-            throw Exception("All commit attempts failed. Last block was already written to target table(s), but was not commited to Kafka.", ErrorCodes::CANNOT_COMMIT_OFFSET);
+            // TODO: insert atomicity / transactions is needed here (possibility to rollback, on 2 phase commits)
+            throw Exception("All commit attempts failed. Last block was already written to target table(s), but was not committed to Kafka.", ErrorCodes::CANNOT_COMMIT_OFFSET);
         }
     }
     else
@@ -225,7 +227,6 @@ void ReadBufferFromKafkaConsumer::commit()
     }
 
     offsets_stored = 0;
-    stalled = false;
 }
 
 void ReadBufferFromKafkaConsumer::subscribe()
@@ -252,18 +253,26 @@ void ReadBufferFromKafkaConsumer::subscribe()
         }
     }
 
-    stalled = false;
-    rebalance_happened = false;
+    cleanUnprocessed();
+    allowed = false;
+
+    // we can reset any flags (except of CONSUMER_STOPPED) before attempt of reading new block of data
+    if (stalled_status != CONSUMER_STOPPED)
+        stalled_status = NO_MESSAGES_RETURNED;
+}
+
+void ReadBufferFromKafkaConsumer::cleanUnprocessed()
+{
+    messages.clear();
+    current = messages.begin();
+    BufferBase::set(nullptr, 0, 0);
     offsets_stored = 0;
 }
 
 void ReadBufferFromKafkaConsumer::unsubscribe()
 {
     LOG_TRACE(log, "Re-joining claimed consumer after failure");
-
-    messages.clear();
-    current = messages.begin();
-    BufferBase::set(nullptr, 0, 0);
+    cleanUnprocessed();
 
     // it should not raise exception as used in destructor
     try
@@ -284,12 +293,6 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
 }
 
 
-bool ReadBufferFromKafkaConsumer::hasMorePolledMessages() const
-{
-    return (!stalled) && (current != messages.end());
-}
-
-
 void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
 {
     if (assignment.empty())
@@ -302,102 +305,145 @@ void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
     LOG_TRACE(log, "{} Returned to committed position: {}", msg, committed_offset);
 }
 
-/// Do commit messages implicitly after we processed the previous batch.
-bool ReadBufferFromKafkaConsumer::nextImpl()
+// it do the poll when needed
+bool ReadBufferFromKafkaConsumer::poll()
 {
+    resetIfStopped();
 
-    /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
-    ///       If we failed to poll any message once - don't try again.
-    ///       Otherwise, the |poll_timeout| expectations get flawn.
-
-    // we can react on stop only during fetching data
-    // after block is formed (i.e. during copying data to MV / commiting)  we ignore stop attempts
-    if (stopped)
-    {
-        was_stopped = true;
-        offsets_stored = 0;
+    if (polledDataUnusable())
         return false;
+
+    if (hasMorePolledMessages())
+    {
+        allowed = true;
+        return true;
     }
 
-    if (stalled || was_stopped || !allowed || rebalance_happened)
-        return false;
+    if (intermediate_commit)
+        commit();
 
-
-    if (current == messages.end())
+    while (true)
     {
-        if (intermediate_commit)
-            commit();
+        stalled_status = NO_MESSAGES_RETURNED;
 
-        size_t waited_for_assignment = 0;
-        while (true)
+        // we already wait enough for assignment in the past,
+        // let's make polls shorter and not block other consumer
+        // which can work successfully in parallel
+        // POLL_TIMEOUT_WO_ASSIGNMENT_MS (50ms) is 100% enough just to check if we got assignment
+        //  (see https://github.com/ClickHouse/ClickHouse/issues/11218)
+        auto actual_poll_timeout_ms = (waited_for_assignment >= MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
+                        ? std::min(POLL_TIMEOUT_WO_ASSIGNMENT_MS,poll_timeout)
+                        : poll_timeout;
+
+        /// Don't drop old messages immediately, since we may need them for virtual columns.
+        auto new_messages = consumer->poll_batch(batch_size,
+                            std::chrono::milliseconds(actual_poll_timeout_ms));
+
+        resetIfStopped();
+        if (stalled_status == CONSUMER_STOPPED)
         {
-            /// Don't drop old messages immediately, since we may need them for virtual columns.
-            auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
-
-            if (stopped)
+            return false;
+        }
+        else if (stalled_status == REBALANCE_HAPPENED)
+        {
+            if (!new_messages.empty())
             {
-                was_stopped = true;
-                offsets_stored = 0;
-                return false;
+                // we have polled something just after rebalance.
+                // we will not use current batch, so we need to return to last committed position
+                // otherwise we will continue polling from that position
+                resetToLastCommitted("Rewind last poll after rebalance.");
             }
-            else if (rebalance_happened)
+            return false;
+        }
+
+        if (new_messages.empty())
+        {
+            // While we wait for an assignment after subscription, we'll poll zero messages anyway.
+            // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
+            if (assignment.empty())
             {
-                if (!new_messages.empty())
+                waited_for_assignment += poll_timeout; // slightly innaccurate, but rough calculation is ok.
+                if (waited_for_assignment < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
                 {
-                    // we have polled something just after rebalance.
-                    // we will not use current batch, so we need to return to last commited position
-                    // otherwise we will continue polling from that position
-                    resetToLastCommitted("Rewind last poll after rebalance.");
-                }
-
-                offsets_stored = 0;
-                return false;
-            }
-
-            if (new_messages.empty())
-            {
-                // While we wait for an assignment after subscription, we'll poll zero messages anyway.
-                // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
-                if (assignment.empty())
-                {
-                    waited_for_assignment += poll_timeout; // slightly innaccurate, but rough calculation is ok.
-                    if (waited_for_assignment < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        LOG_TRACE(log, "Can't get assignment");
-                        stalled = true;
-                        return false;
-                    }
-
+                    continue;
                 }
                 else
                 {
-                    LOG_TRACE(log, "Stalled");
-                    stalled = true;
+                    LOG_WARNING(log, "Can't get assignment. It can be caused by some issue with consumer group (not enough partitions?). Will keep trying.");
+                    stalled_status = NO_ASSIGNMENT;
                     return false;
                 }
+
             }
             else
             {
-                messages = std::move(new_messages);
-                current = messages.begin();
-                LOG_TRACE(log, "Polled batch of {} messages. Offset position: {}", messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
-                break;
+                LOG_TRACE(log, "Stalled");
+                return false;
             }
+        }
+        else
+        {
+            messages = std::move(new_messages);
+            current = messages.begin();
+            LOG_TRACE(log, "Polled batch of {} messages. Offsets position: {}",
+                messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
+            break;
         }
     }
 
-    if (auto err = current->get_error())
+    filterMessageErrors();
+    if (current == messages.end())
     {
-        ++current;
-
-        // TODO: should throw exception instead
-        LOG_ERROR(log, "Consumer error: {}", err);
+        LOG_ERROR(log, "Only errors left");
+        stalled_status = ERRORS_RETURNED;
         return false;
     }
+
+    stalled_status = NOT_STALLED;
+    allowed = true;
+    return true;
+}
+
+size_t ReadBufferFromKafkaConsumer::filterMessageErrors()
+{
+    assert(current == messages.begin());
+
+    auto new_end = std::remove_if(messages.begin(), messages.end(), [this](auto & message)
+    {
+        if (auto error = message.get_error())
+        {
+            LOG_ERROR(log, "Consumer error: {}", error);
+            return true;
+        }
+        return false;
+    });
+
+    size_t skipped = std::distance(new_end, messages.end());
+    if (skipped)
+    {
+        LOG_ERROR(log, "There were {} messages with an error", skipped);
+        messages.erase(new_end, messages.end());
+    }
+
+    return skipped;
+}
+
+void ReadBufferFromKafkaConsumer::resetIfStopped()
+{
+    // we can react on stop only during fetching data
+    // after block is formed (i.e. during copying data to MV / committing)  we ignore stop attempts
+    if (stopped)
+    {
+        stalled_status = CONSUMER_STOPPED;
+        cleanUnprocessed();
+    }
+}
+
+/// Do commit messages implicitly after we processed the previous batch.
+bool ReadBufferFromKafkaConsumer::nextImpl()
+{
+    if (!allowed || !hasMorePolledMessages())
+        return false;
 
     // XXX: very fishy place with const casting.
     auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
@@ -411,7 +457,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
 
 void ReadBufferFromKafkaConsumer::storeLastReadMessageOffset()
 {
-    if (!stalled && !was_stopped && !rebalance_happened)
+    if (!isStalled())
     {
         consumer->store_offset(*(current - 1));
         ++offsets_stored;

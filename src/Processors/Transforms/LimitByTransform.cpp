@@ -5,7 +5,7 @@
 namespace DB
 {
 
-LimitByTransform::LimitByTransform(const Block & header, size_t group_length_, size_t group_offset_, const Names & columns)
+LimitByTransform::LimitByTransform(const Block & header, UInt64 group_length_, UInt64 group_offset_, const Names & columns)
     : ISimpleTransform(header, header, true)
     , group_length(group_length_)
     , group_offset(group_offset_)
@@ -25,26 +25,27 @@ LimitByTransform::LimitByTransform(const Block & header, size_t group_length_, s
 
 void LimitByTransform::transform(Chunk & chunk)
 {
-    size_t num_rows = chunk.getNumRows();
+    UInt64 num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
     IColumn::Filter filter(num_rows);
-    size_t inserted_count = 0;
+    UInt64 inserted_count = 0;
 
-    for (size_t row = 0; row < num_rows; ++row)
+    for (UInt64 row = 0; row < num_rows; ++row)
     {
-        UInt128 key(0, 0);
+        UInt128 key{};
         SipHash hash;
 
         for (auto position : key_positions)
             columns[position]->updateHashWithValue(row, hash);
 
-        hash.get128(key.low, key.high);
+        hash.get128(key);
 
         auto count = keys_counts[key]++;
-        if (count >= group_offset && count < group_length + group_offset)
+        if (count >= group_offset
+            && (group_length > std::numeric_limits<UInt64>::max() - group_offset || count < group_length + group_offset))
         {
-            inserted_count++;
+            ++inserted_count;
             filter[row] = 1;
         }
         else

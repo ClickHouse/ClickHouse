@@ -163,7 +163,7 @@ Mode引数は、toWeek()のmode引数とまったく同じように動作しま�
 
 日付を時刻とともに切り捨てて、十分間隔の開始まで切り捨てます。
 
-## トスタートオフインターバル(time\_or\_data,区間x単位\[,time\_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
+## トスタートオフインターバル(time_or_data,区間x単位\[,time_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
 
 これは、名前付きの他の関数の一般化です `toStartOf*`. 例えば,
 `toStartOfInterval(t, INTERVAL 1 year)` と同じを返します `toStartOfYear(t)`,

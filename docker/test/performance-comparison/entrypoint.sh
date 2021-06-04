@@ -1,38 +1,25 @@
 #!/bin/bash
 set -ex
 
-chown nobody workspace output
-chgrp nogroup workspace output
-chmod 777 workspace output
-
-cd workspace
-
-# Fetch the repository to find and describe the compared revisions.
-rm -rf ch ||:
-time git clone --depth 50 --bare https://github.com/ClickHouse/ClickHouse ch
-git -C ch fetch origin "$SHA_TO_TEST"
-
+# Use the packaged repository to find the revision we will compare to.
 function find_reference_sha
 {
-    # If not master, try to fetch pull/.../{head,merge}
-    if [ "$PR_TO_TEST" != "0" ]
-    then
-        git -C ch fetch origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*"
-    fi
-
+    git -C right/ch log -1 origin/master
+    git -C right/ch log -1 pr
     # Go back from the revision to be tested, trying to find the closest published
-    # testing release.
-    start_ref="$SHA_TO_TEST"~
-    # If we are testing a PR, and it merges with master successfully, we are
-    # building and testing not the nominal last SHA specified by pull/.../head
-    # and SHA_TO_TEST, but a revision that is merged with recent master, given
-    # by pull/.../merge ref.
-    # Master is the first parent of the pull/.../merge.
-    if git -C ch rev-parse "pull/$PR_TO_TEST/merge"
+    # testing release. The PR branch may be either pull/*/head which is the
+    # author's branch, or pull/*/merge, which is head merged with some master
+    # automatically by Github. We will use a merge base with master as a reference
+    # for tesing (or some older commit). A caveat is that if we're testing the
+    # master, the merge base is the tested commit itself, so we have to step back
+    # once.
+    start_ref=$(git -C right/ch merge-base origin/master pr)
+    if [ "$PR_TO_TEST" == "0" ]
     then
-        start_ref="pull/$PR_TO_TEST/merge~"
+        start_ref=$start_ref~
     fi
 
+    # Loop back to find a commit that actually has a published perf test package.
     while :
     do
         # FIXME the original idea was to compare to a closest testing tag, which
@@ -46,20 +33,46 @@ function find_reference_sha
         echo Reference tag is "$ref_tag"
         # We use annotated tags which have their own shas, so we have to further
         # dereference the tag to get the commit it points to, hence the '~0' thing.
-        REF_SHA=$(git -C ch rev-parse "$ref_tag~0")
+        REF_SHA=$(git -C right/ch rev-parse "$ref_tag~0")
 
-        # FIXME sometimes we have testing tags on commits without published builds --
-        # normally these are documentation commits. Loop to skip them.
-        if curl --fail --head "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/performance/performance.tgz"
-        then
-            break
-        fi
+        # FIXME sometimes we have testing tags on commits without published builds.
+        # Normally these are documentation commits. Loop to skip them.
+        # Historically there were various path for the performance test package,
+        # test all of them.
+        unset found
+        for path in "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/"{,clickhouse_build_check/}"performance/performance.tgz"
+        do
+            if curl --fail --head "$path"
+            then
+                found="$path"
+                break
+            fi
+        done
+        if [ -n "$found" ] ; then break; fi
 
         start_ref="$REF_SHA~"
     done
 
     REF_PR=0
 }
+
+chown nobody workspace output
+chgrp nogroup workspace output
+chmod 777 workspace output
+
+cd workspace
+
+# Download the package for the version we are going to test
+for path in "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/"{,clickhouse_build_check/}"performance/performance.tgz"
+do
+    if curl --fail --head "$path"
+    then
+        right_path="$path"
+    fi
+done
+
+mkdir right
+wget -nv -nd -c "$right_path" -O- | tar -C right --strip-components=1 -zxv
 
 # Find reference revision if not specified explicitly
 if [ "$REF_SHA" == "" ]; then find_reference_sha; fi
@@ -68,17 +81,14 @@ if [ "$REF_PR" == "" ]; then echo Reference PR is not specified ; exit 1 ; fi
 
 # Show what we're testing
 (
-    git -C ch log -1 --decorate "$REF_SHA" ||:
+    git -C right/ch log -1 --decorate "$REF_SHA" ||:
 ) | tee left-commit.txt
 
 (
-    git -C ch log -1 --decorate "$SHA_TO_TEST" ||:
-    if git -C ch rev-parse "pull/$PR_TO_TEST/merge" &> /dev/null
-    then
-        echo
-        echo Real tested commit is:
-        git -C ch log -1 --decorate "pull/$PR_TO_TEST/merge"
-    fi
+    git -C right/ch log -1 --decorate "$SHA_TO_TEST" ||:
+    echo
+    echo Real tested commit is:
+    git -C right/ch log -1 --decorate "pr"
 ) | tee right-commit.txt
 
 if [ "$PR_TO_TEST" != "0" ]
@@ -86,14 +96,11 @@ then
     # If the PR only changes the tests and nothing else, prepare a list of these
     # tests for use by compare.sh. Compare to merge base, because master might be
     # far in the future and have unrelated test changes.
-    base=$(git -C ch merge-base "$SHA_TO_TEST" master)
-    git -C ch diff --name-only "$base" "$SHA_TO_TEST" | tee changed-tests.txt
-    if grep -vq '^tests/performance' changed-tests.txt
-    then
-        # Have some other changes besides the tests, so truncate the test list,
-        # meaning, run all tests.
-        : > changed-tests.txt
-    fi
+    base=$(git -C right/ch merge-base pr origin/master)
+    git -C right/ch diff --name-only "$base" pr -- . | tee all-changed-files.txt
+    git -C right/ch diff --name-only "$base" pr -- tests/performance | tee changed-test-definitions.txt
+    git -C right/ch diff --name-only "$base" pr -- docker/test/performance-comparison | tee changed-test-scripts.txt
+    git -C right/ch diff --name-only "$base" pr -- :!tests/performance :!docker/test/performance-comparison | tee other-changed-files.txt
 fi
 
 # Set python output encoding so that we can print queries with Russian letters.
@@ -114,6 +121,9 @@ set +e
 PATH="$(readlink -f right/)":"$PATH"
 export PATH
 
+export REF_PR
+export REF_SHA
+
 # Start the main comparison script.
 { \
     time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
@@ -131,5 +141,8 @@ done
 
 dmesg -T > dmesg.log
 
-7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} {right,left}/{performance,db/preprocessed_configs,scripts} report analyze benchmark
+7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
+    {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
+    report analyze benchmark metrics
+
 cp compare.log /output

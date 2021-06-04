@@ -1,3 +1,8 @@
+---
+toc_priority: 44
+toc_title: "Математические функции"
+---
+
 # Математические функции {#matematicheskie-funktsii}
 
 Все функции возвращают число типа Float64. Точность результата близка к максимально возможной, но результат может не совпадать с наиболее близким к соответствующему вещественному числу машинно представимым числом.
@@ -49,7 +54,7 @@
 Пример (правило трёх сигм):
 
 ``` sql
-SELECT erf(3 / sqrt(2))
+SELECT erf(3 / sqrt(2));
 ```
 
 ``` text
@@ -98,4 +103,368 @@ SELECT erf(3 / sqrt(2))
 
 Принимает два числовых аргумента x и y. Возвращает число типа Float64, близкое к x в степени y.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/math_functions/) <!--hide-->
+## cosh(x) {#coshx}
+
+[Гиперболический косинус](https://help.scilab.org/docs/5.4.0/ru_RU/cosh.html).
+
+**Синтаксис**
+
+``` sql
+cosh(x)
+```
+
+**Аргументы**
+
+-   `x` — угол в радианах. Значения из интервала: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Возвращаемое значение**
+
+-   Значения из интервала: `1 <= cosh(x) < +∞`.
+
+Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT cosh(0);
+```
+
+Результат:
+
+``` text
+┌─cosh(0)──┐
+│        1 │
+└──────────┘
+```
+
+## acosh(x) {#acoshx}
+
+[Обратный гиперболический косинус](https://help.scilab.org/docs/5.4.0/ru_RU/acosh.html).
+
+**Синтаксис**
+
+``` sql
+acosh(x)
+```
+
+**Аргументы**
+
+-   `x` — гиперболический косинус угла. Значения из интервала: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Возвращаемое значение**
+
+-   Угол в радианах. Значения из интервала: `0 <= acosh(x) < +∞`.
+
+Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT acosh(1);
+```
+
+Результат:
+
+``` text
+┌─acosh(1)─┐
+│        0 │
+└──────────┘
+```
+
+**Смотрите также**
+
+-   [cosh(x)](../../sql-reference/functions/math-functions.md#coshx)
+
+## sinh(x) {#sinhx}
+
+[Гиперболический синус](https://help.scilab.org/docs/5.4.0/ru_RU/sinh.html).
+
+**Синтаксис**
+
+``` sql
+sinh(x)
+```
+
+**Аргументы**
+
+-   `x` — угол в радианах. Значения из интервала: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Возвращаемое значение**
+
+-   Значения из интервала: `-∞ < sinh(x) < +∞`.
+
+Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT sinh(0);
+```
+
+Результат:
+
+``` text
+┌─sinh(0)──┐
+│        0 │
+└──────────┘
+```
+
+## asinh(x) {#asinhx}
+
+[Обратный гиперболический синус](https://help.scilab.org/docs/5.4.0/ru_RU/asinh.html).
+
+**Синтаксис**
+
+``` sql
+asinh(x)
+```
+
+**Аргументы**
+
+-   `x` — гиперболический синус угла. Значения из интервала: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Возвращаемое значение**
+
+-   Угол в радианах. Значения из интервала: `-∞ < asinh(x) < +∞`.
+
+Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT asinh(0);
+```
+
+Результат:
+
+``` text
+┌─asinh(0)─┐
+│        0 │
+└──────────┘
+```
+
+**Смотрите также**
+
+-   [sinh(x)](../../sql-reference/functions/math-functions.md#sinhx)
+
+## atanh(x) {#atanhx}
+
+[Обратный гиперболический тангенс](https://help.scilab.org/docs/5.4.0/ru_RU/atanh.html).
+
+**Синтаксис**
+
+``` sql
+atanh(x)
+```
+
+**Аргументы**
+
+-   `x` — гиперболический тангенс угла. Значения из интервала: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Возвращаемое значение**
+
+-   Угол в радианах. Значения из интервала: `-∞ < atanh(x) < +∞`.
+
+Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT atanh(0);
+```
+
+Результат:
+
+``` text
+┌─atanh(0)─┐
+│        0 │
+└──────────┘
+```
+
+## atan2(y, x) {#atan2yx}
+
+[Функция](https://msoffice-prowork.com/ref/excel/excelfunc/math/atan2/) вычисляет угол в радианах между положительной осью x и линией, проведенной из начала координат в точку `(x, y) ≠ (0, 0)`.
+
+**Синтаксис**
+
+``` sql
+atan2(y, x)
+```
+
+**Аргументы**
+
+-   `y` — координата y точки, в которую проведена линия. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — координата х точки, в которую проведена линия. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Возвращаемое значение**
+
+-   Угол `θ` в радианах из интервала: `−π < θ ≤ π`.
+
+Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT atan2(1, 1);
+```
+
+Результат:
+
+``` text
+┌────────atan2(1, 1)─┐
+│ 0.7853981633974483 │
+└────────────────────┘
+```
+
+## hypot(x, y) {#hypotxy}
+
+Вычисляет длину гипотенузы прямоугольного треугольника. При использовании этой [функции](https://php.ru/manual/function.hypot.html) не возникает проблем при возведении в квадрат очень больших или очень малых чисел.
+
+**Синтаксис**
+
+``` sql
+hypot(x, y)
+```
+
+**Аргументы**
+
+-   `x` — первый катет прямоугольного треугольника. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `y` — второй катет прямоугольного треугольника. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Возвращаемое значение**
+
+-   Длина гипотенузы прямоугольного треугольника.
+
+Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT hypot(1, 1);
+```
+
+Результат:
+
+``` text
+┌────────hypot(1, 1)─┐
+│ 1.4142135623730951 │
+└────────────────────┘
+```
+
+## log1p(x) {#log1px}
+
+Вычисляет `log(1+x)`. [Функция](https://help.scilab.org/docs/6.0.1/ru_RU/log1p.html) `log1p(x)` является более точной, чем функция `log(1+x)` для малых значений x.
+
+**Синтаксис**
+
+``` sql
+log1p(x)
+```
+
+**Аргументы**
+
+-   `x` — значения из интервала: `-1 < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Возвращаемое значение**
+
+-   Значения из интервала: `-∞ < log1p(x) < +∞`.
+
+Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT log1p(0);
+```
+
+Результат:
+
+``` text
+┌─log1p(0)─┐
+│        0 │
+└──────────┘
+```
+
+**Смотрите также**
+
+-   [log(x)](../../sql-reference/functions/math-functions.md#logx)
+
+## sign(x) {#signx}
+
+Возвращает знак действительного числа.
+
+**Синтаксис**
+
+``` sql
+sign(x)
+```
+
+**Аргумент**
+
+-   `x` — Значения от  `-∞` до `+∞`. Любой числовой тип, поддерживаемый ClickHouse.
+
+**Возвращаемое значение**
+
+- -1 если `x < 0`
+-  0 если `x = 0`
+-  1 если `x > 0`
+
+**Примеры**
+
+Результат sign() для нуля:
+
+``` sql
+SELECT sign(0);
+```
+Результат:
+
+``` text
+┌─sign(0)─┐
+│       0 │
+└─────────┘
+```
+
+Результат sign() для положительного аргумента:
+
+``` sql
+SELECT sign(1);
+```
+
+Результат:
+
+``` text
+┌─sign(1)─┐
+│       1 │
+└─────────┘
+```
+
+Результат sign() для отрицательного аргумента:
+
+``` sql
+SELECT sign(-1);
+```
+
+Результат:
+
+``` text
+┌─sign(-1)─┐
+│       -1 │
+└──────────┘
+```
+

@@ -13,6 +13,7 @@
 
 namespace DB
 {
+struct Settings;
 
 template <typename T = UInt64>
 class AggregateFunctionCategoricalIV final : public IAggregateFunctionHelper<AggregateFunctionCategoricalIV<T>>
@@ -33,7 +34,9 @@ public:
         return "categoricalInformationValue";
     }
 
-    void create(AggregateDataPtr place) const override
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void create(AggregateDataPtr __restrict place) const override
     {
         memset(place, 0, sizeOfData());
     }
@@ -119,8 +122,8 @@ public:
 
     void insertResultInto(
         AggregateDataPtr place,
-        IColumn & to
-    ) const override
+        IColumn & to,
+        Arena *) const override
     {
         auto & col = static_cast<ColumnArray &>(to);
         auto & data_col = static_cast<ColumnFloat64 &>(col.getData());

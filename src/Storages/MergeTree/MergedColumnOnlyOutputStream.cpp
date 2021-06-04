@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -10,48 +11,46 @@ namespace ErrorCodes
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeDataPartPtr & data_part,
+    const StorageMetadataPtr & metadata_snapshot_,
     const Block & header_,
     CompressionCodecPtr default_codec,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+    const MergeTreeIndices & indices_to_recalc,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part), header(header_)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
+    , header(header_)
 {
-    const auto & global_settings = data_part->storage.global_context.getSettings();
+    const auto & global_settings = data_part->storage.getContext()->getSettings();
+    const auto & storage_settings = data_part->storage.getSettings();
+
     MergeTreeWriterSettings writer_settings(
         global_settings,
+        storage_settings,
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
-        global_settings.min_bytes_to_use_direct_io);
+        /* rewrite_primary_key = */false);
 
     writer = data_part->getWriter(
         header.getNamesAndTypesList(),
+        metadata_snapshot_,
         indices_to_recalc,
         default_codec,
         std::move(writer_settings),
         index_granularity);
 
-    writer->setWrittenOffsetColumns(offset_columns_);
-    writer->initSkipIndices();
+    auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
+    if (!writer_on_disk)
+        throw Exception("MergedColumnOnlyOutputStream supports only parts stored on disk", ErrorCodes::NOT_IMPLEMENTED);
+
+    writer_on_disk->setWrittenOffsetColumns(offset_columns_);
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
 {
-    std::unordered_set<String> skip_indexes_column_names_set;
-    for (const auto & index : writer->getSkipIndices())
-        std::copy(index->index.column_names.cbegin(), index->index.column_names.cend(),
-                  std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
-    Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
-
-    Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, nullptr);
-
-    size_t rows = block.rows();
-    if (!rows)
+    if (!block.rows())
         return;
 
-    writer->write(block);
-    writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);
-    writer->next();
+    writer->write(block, nullptr);
 }
 
 void MergedColumnOnlyOutputStream::writeSuffix()
@@ -60,12 +59,20 @@ void MergedColumnOnlyOutputStream::writeSuffix()
 }
 
 MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums)
+MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
+    MergeTreeData::MutableDataPartPtr & new_part,
+    MergeTreeData::DataPart::Checksums & all_checksums,
+    bool sync)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->finishDataSerialization(checksums);
-    writer->finishSkipIndicesSerialization(checksums);
+    writer->finish(checksums, sync);
+
+    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
+        checksums.addFile(
+            projection_name + ".proj",
+            projection_part->checksums.getTotalSizeOnDisk(),
+            projection_part->checksums.getTotalChecksumUInt128());
 
     auto columns = new_part->getColumns();
 

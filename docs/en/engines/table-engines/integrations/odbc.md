@@ -1,5 +1,5 @@
 ---
-toc_priority: 35
+toc_priority: 2
 toc_title: ODBC
 ---
 
@@ -23,12 +23,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE = ODBC(connection_settings, external_database, external_table)
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 The table structure can differ from the source table structure:
 
 -   Column names should be the same as in the source table, but you can use just some of these columns and in any order.
 -   Column types may differ from those in the source table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   Setting `external_table_functions_use_nulls` defines how to handle Nullable columns. Default is true, if false - table function will not make nullable columns and will insert default values instead of nulls. This is also applicable for null values inside array data types.
 
 **Engine Parameters**
 
@@ -127,4 +128,4 @@ SELECT * FROM odbc_t
 -   [ODBC external dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
 -   [ODBC table function](../../../sql-reference/table-functions/odbc.md)
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/odbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/odbc/) <!--hide-->

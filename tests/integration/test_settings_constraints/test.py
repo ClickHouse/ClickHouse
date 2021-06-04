@@ -2,10 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance',
-                                config_dir="configs")
-
-
+instance = cluster.add_instance('instance', user_configs=["configs/users.xml"])
 
 
 @pytest.fixture(scope="module")
@@ -19,13 +16,15 @@ def started_cluster():
 
 
 def test_system_settings(started_cluster):
-    assert instance.query("SELECT name, value, min, max, readonly from system.settings WHERE name = 'force_index_by_date'") ==\
+    assert instance.query(
+        "SELECT name, value, min, max, readonly from system.settings WHERE name = 'force_index_by_date'") == \
            "force_index_by_date\t0\t\\N\t\\N\t1\n"
 
-    assert instance.query("SELECT name, value, min, max, readonly from system.settings WHERE name = 'max_memory_usage'") ==\
+    assert instance.query(
+        "SELECT name, value, min, max, readonly from system.settings WHERE name = 'max_memory_usage'") == \
            "max_memory_usage\t10000000000\t5000000000\t20000000000\t0\n"
 
-    assert instance.query("SELECT name, value, min, max, readonly from system.settings WHERE name = 'readonly'") ==\
+    assert instance.query("SELECT name, value, min, max, readonly from system.settings WHERE name = 'readonly'") == \
            "readonly\t0\t\\N\t\\N\t0\n"
 
 
@@ -117,7 +116,7 @@ def assert_query_settings(instance, query, settings, result=None, exception=None
     # session level settings
     queries = ""
 
-    for k, v in settings.items():
+    for k, v in list(settings.items()):
         queries += "SET {}={};\n".format(k, v)
 
     queries += query

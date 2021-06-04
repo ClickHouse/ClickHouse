@@ -1,10 +1,10 @@
 DROP DATABASE IF EXISTS test_01109;
-SET allow_experimental_database_atomic=1;
 CREATE DATABASE test_01109 ENGINE=Atomic;
 
 USE test_01109;
 
 CREATE TABLE t0 ENGINE=MergeTree() ORDER BY tuple() AS SELECT rowNumberInAllBlocks(), * FROM (SELECT toLowCardinality(arrayJoin(['exchange', 'tables'])));
+-- NOTE: database = currentDatabase() is not mandatory
 CREATE TABLE t1 ENGINE=Log() AS SELECT * FROM system.tables AS t JOIN system.databases AS d ON t.database=d.name;
 CREATE TABLE t2 ENGINE=MergeTree() ORDER BY tuple() AS SELECT rowNumberInAllBlocks() + (SELECT count() FROM t0), * FROM (SELECT arrayJoin(['hello', 'world']));
 

@@ -2,18 +2,18 @@
 
 #include <Core/Names.h>
 #include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
 {
 
-class Context;
-
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
-struct ArrayJoinAction
+class ArrayJoinAction
 {
+public:
     NameSet columns;
     bool is_left = false;
     bool is_unaligned = false;
@@ -26,10 +26,11 @@ struct ArrayJoinAction
     /// For LEFT ARRAY JOIN.
     FunctionOverloadResolverPtr function_builder;
 
-    ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, const Context & context);
-    void prepare(Block & sample_block);
-    void execute(Block & block, bool dry_run);
-    void finalize(NameSet & needed_columns, NameSet & unmodified_columns, NameSet & final_columns);
+    ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, ContextPtr context);
+    void prepare(ColumnsWithTypeAndName & sample) const;
+    void execute(Block & block);
 };
+
+using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
 }

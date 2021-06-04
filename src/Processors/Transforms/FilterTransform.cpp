@@ -27,13 +27,13 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
     }
 }
 
-static Block transformHeader(
+Block FilterTransform::transformHeader(
     Block header,
-    const ExpressionActionsPtr & expression,
+    const ActionsDAG & expression,
     const String & filter_column_name,
     bool remove_filter_column)
 {
-    expression->execute(header);
+    header = expression.updateHeader(std::move(header));
 
     if (remove_filter_column)
         header.erase(filter_column_name);
@@ -49,7 +49,10 @@ FilterTransform::FilterTransform(
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_)
-    : ISimpleTransform(header_, transformHeader(header_, expression_, filter_column_name_, remove_filter_column_), true)
+    : ISimpleTransform(
+            header_,
+            transformHeader(header_, expression_->getActionsDAG(), filter_column_name_, remove_filter_column_),
+            true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
@@ -96,19 +99,15 @@ void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
 
 void FilterTransform::transform(Chunk & chunk)
 {
-    size_t num_rows_before_filtration;
+    size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
 
-        if (on_totals)
-            expression->executeOnTotals(block);
-        else
-            expression->execute(block);
+        expression->execute(block, num_rows_before_filtration);
 
-        num_rows_before_filtration = block.rows();
         columns = block.getColumns();
     }
 

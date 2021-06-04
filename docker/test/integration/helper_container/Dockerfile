@@ -1,3 +1,4 @@
+# docker build -t yandex/clickhouse-integration-helper .
 # Helper docker container to run iptables without sudo
 
 FROM alpine

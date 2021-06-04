@@ -8,6 +8,9 @@ macro(find_contrib_lib LIB_NAME)
 
     if (NOT USE_INTERNAL_${LIB_NAME_UC}_LIBRARY)
         find_package ("${LIB_NAME}")
+        if (NOT ${LIB_NAME_UC}_FOUND)
+            message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use system ${LIB_NAME}")
+        endif()
     endif ()
 
     if (NOT ${LIB_NAME_UC}_FOUND)
@@ -17,5 +20,4 @@ macro(find_contrib_lib LIB_NAME)
     endif ()
 
     message (STATUS "Using ${LIB_NAME}: ${${LIB_NAME_UC}_INCLUDE_DIR} : ${${LIB_NAME_UC}_LIBRARIES}")
-
 endmacro()

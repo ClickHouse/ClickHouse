@@ -17,33 +17,38 @@
 #include <Common/escapeForFileName.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
 
 static void executeCreateQuery(
     const String & query,
-    Context & context,
+    ContextMutablePtr context,
     const String & database,
     const String & file_name,
     bool has_force_restore_data_flag)
 {
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context.getSettingsRef().max_parser_depth);
+    ASTPtr ast = parseQuery(
+        parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context->getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.database = database;
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
+    interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
     interpreter.execute();
 }
 
 
 static void loadDatabase(
-    Context & context,
+    ContextMutablePtr context,
     const String & database,
     const String & database_path,
     bool force_restore_data)
@@ -51,13 +56,13 @@ static void loadDatabase(
     String database_attach_query;
     String database_metadata_file = database_path + ".sql";
 
-    if (Poco::File(database_metadata_file).exists())
+    if (fs::exists(fs::path(database_metadata_file)))
     {
         /// There is .sql file with database creation statement.
         ReadBufferFromFile in(database_metadata_file, 1024);
         readStringUntilEOF(database_attach_query, in);
     }
-    else if (Poco::File(database_path).exists())
+    else if (fs::exists(fs::path(database_path)))
     {
         /// Database exists, but .sql file is absent. It's old-style Ordinary database (e.g. system or default)
         database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database) + " ENGINE = Ordinary";
@@ -69,42 +74,77 @@ static void loadDatabase(
         database_attach_query = "CREATE DATABASE " + backQuoteIfNeed(database);
     }
 
-    executeCreateQuery(database_attach_query, context, database,
-                       database_metadata_file, force_restore_data);
+    try
+    {
+        executeCreateQuery(database_attach_query, context, database, database_metadata_file, force_restore_data);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("while loading database {} from path {}", backQuote(database), database_path));
+        throw;
+    }
 }
 
 
-#define SYSTEM_DATABASE "system"
-
-
-void loadMetadata(Context & context, const String & default_database_name)
+void loadMetadata(ContextMutablePtr context, const String & default_database_name)
 {
-    String path = context.getPath() + "metadata";
+    Poco::Logger * log = &Poco::Logger::get("loadMetadata");
+
+    String path = context->getPath() + "metadata";
 
     /** There may exist 'force_restore_data' file, that means,
       *  skip safety threshold on difference of data parts while initializing tables.
       * This file is deleted after successful loading of tables.
       * (flag is "one-shot")
       */
-    Poco::File force_restore_data_flag_file(context.getFlagsPath() + "force_restore_data");
-    bool has_force_restore_data_flag = force_restore_data_flag_file.exists();
+    auto force_restore_data_flag_file = fs::path(context->getFlagsPath()) / "force_restore_data";
+    bool has_force_restore_data_flag = fs::exists(force_restore_data_flag_file);
 
     /// Loop over databases.
     std::map<String, String> databases;
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
-        if (!it->isDirectory())
+        if (it->is_symlink())
             continue;
+
+        const auto current_file = it->path().filename().string();
+        if (!it->is_directory())
+        {
+            /// TODO: DETACH DATABASE PERMANENTLY ?
+            if (fs::path(current_file).extension() == ".sql")
+            {
+                String db_name = fs::path(current_file).stem();
+                if (db_name != DatabaseCatalog::SYSTEM_DATABASE)
+                    databases.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
+            }
+
+            /// Temporary fails may be left from previous server runs.
+            if (fs::path(current_file).extension() == ".tmp")
+            {
+                LOG_WARNING(log, "Removing temporary file {}", it->path().string());
+                try
+                {
+                    fs::remove(it->path());
+                }
+                catch (...)
+                {
+                    /// It does not prevent server to startup.
+                    tryLogCurrentException(log);
+                }
+            }
+
+            continue;
+        }
 
         /// For '.svn', '.gitignore' directory and similar.
-        if (it.name().at(0) == '.')
+        if (current_file.at(0) == '.')
             continue;
 
-        if (it.name() == SYSTEM_DATABASE)
+        if (current_file == DatabaseCatalog::SYSTEM_DATABASE)
             continue;
 
-        databases.emplace(unescapeForFileName(it.name()), it.path().toString());
+        databases.emplace(unescapeForFileName(current_file), it->path().string());
     }
 
     /// clickhouse-local creates DatabaseMemory as default database by itself
@@ -121,7 +161,7 @@ void loadMetadata(Context & context, const String & default_database_name)
     {
         try
         {
-            force_restore_data_flag_file.remove();
+            fs::remove(force_restore_data_flag_file);
         }
         catch (...)
         {
@@ -131,23 +171,22 @@ void loadMetadata(Context & context, const String & default_database_name)
 }
 
 
-void loadMetadataSystem(Context & context)
+void loadMetadataSystem(ContextMutablePtr context)
 {
-    String path = context.getPath() + "metadata/" SYSTEM_DATABASE;
-    if (Poco::File(path).exists())
+    String path = context->getPath() + "metadata/" + DatabaseCatalog::SYSTEM_DATABASE;
+    String metadata_file = path + ".sql";
+    if (fs::exists(fs::path(path)) || fs::exists(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        loadDatabase(context, SYSTEM_DATABASE, path, true);
+        loadDatabase(context, DatabaseCatalog::SYSTEM_DATABASE, path, true);
     }
     else
     {
         /// Initialize system database manually
-        String global_path = context.getPath();
-        Poco::File(global_path + "data/" SYSTEM_DATABASE).createDirectories();
-        Poco::File(global_path + "metadata/" SYSTEM_DATABASE).createDirectories();
-
-        auto system_database = std::make_shared<DatabaseOrdinary>(SYSTEM_DATABASE, global_path + "metadata/" SYSTEM_DATABASE "/", context);
-        DatabaseCatalog::instance().attachDatabase(SYSTEM_DATABASE, system_database);
+        String database_create_query = "CREATE DATABASE ";
+        database_create_query += DatabaseCatalog::SYSTEM_DATABASE;
+        database_create_query += " ENGINE=Atomic";
+        executeCreateQuery(database_create_query, context, DatabaseCatalog::SYSTEM_DATABASE, "<no file>", true);
     }
 
 }

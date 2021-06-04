@@ -1,6 +1,7 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/SymbolIndex.h>
+#include <Common/hex.h>
 
 #include <algorithm>
 #include <optional>
@@ -32,9 +33,9 @@ But because ClickHouse is linked with most of the symbols exported (-rdynamic fl
 3. DWARF debug info. It contains the most detailed information about symbols and everything else.
 It allows to get source file names and line numbers from addresses. Only available if you use -g option for compiler.
 It is also used by default for ClickHouse builds, but because of its weight (about two gigabytes)
-it is splitted to separate binary and provided in clickhouse-common-static-dbg package.
+it is split to separate binary and provided in clickhouse-common-static-dbg package.
 This separate binary is placed in /usr/lib/debug/usr/bin/clickhouse and is loaded automatically by tools like gdb, addr2line.
-When you build ClickHouse by yourself, debug info is not splitted and present in a single huge binary.
+When you build ClickHouse by yourself, debug info is not split and present in a single huge binary.
 
 What ClickHouse is using to provide good stack traces?
 
@@ -52,6 +53,19 @@ Otherwise you will get only symbol names. If your binary contains symbol table i
 Otherwise you will get only exported symbols from program headers.
 
 */
+
+#if defined(__clang__)
+#   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   pragma clang diagnostic ignored "-Wunused-macros"
+#endif
+
+#define __msan_unpoison_string(X) // NOLINT
+#if defined(ch_has_feature)
+#    if ch_has_feature(memory_sanitizer)
+#        undef __msan_unpoison_string
+#        include <sanitizer/msan_interface.h>
+#    endif
+#endif
 
 
 namespace DB
@@ -276,15 +290,24 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
 
 void collectSymbolsFromELF(dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
-    std::vector<SymbolIndex::Object> & objects)
+    std::vector<SymbolIndex::Object> & objects,
+    String & build_id)
 {
+    /// MSan does not know that the program segments in memory are initialized.
+    __msan_unpoison_string(info->dlpi_name);
+
     std::string object_name = info->dlpi_name;
 
-    /// If the name is empty - it's main executable.
-    /// Find a elf file for the main executable.
+    String our_build_id = getBuildIDFromProgramHeaders(info);
 
+    /// If the name is empty and there is a non-empty build-id - it's main executable.
+    /// Find a elf file for the main executable and set the build-id.
     if (object_name.empty())
+    {
         object_name = "/proc/self/exe";
+        if (build_id.empty())
+            build_id = our_build_id;
+    }
 
     std::error_code ec;
     std::filesystem::path canonical_path = std::filesystem::canonical(object_name, ec);
@@ -292,13 +315,40 @@ void collectSymbolsFromELF(dl_phdr_info * info,
     if (ec)
         return;
 
-    /// Debug info and symbol table sections may be splitted to separate binary.
+    /// Debug info and symbol table sections may be split to separate binary.
+    std::filesystem::path local_debug_info_path = canonical_path.parent_path() / canonical_path.stem();
+    local_debug_info_path += ".debug";
     std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path.relative_path();
 
-    object_name = std::filesystem::exists(debug_info_path) ? debug_info_path : canonical_path;
+    if (std::filesystem::exists(local_debug_info_path))
+        object_name = local_debug_info_path;
+    else if (std::filesystem::exists(debug_info_path))
+        object_name = debug_info_path;
+    else if (build_id.size() >= 2)
+    {
+        // Check if there is a .debug file in .build-id folder. For example:
+        // /usr/lib/debug/.build-id/e4/0526a12e9a8f3819a18694f6b798f10c624d5c.debug
+        String build_id_hex;
+        build_id_hex.resize(build_id.size() * 2);
+
+        char * pos = build_id_hex.data();
+        for (auto c : build_id)
+        {
+            writeHexByteLowercase(c, pos);
+            pos += 2;
+        }
+
+        std::filesystem::path build_id_debug_info_path(
+            fmt::format("/usr/lib/debug/.build-id/{}/{}.debug", build_id_hex.substr(0, 2), build_id_hex.substr(2)));
+        if (std::filesystem::exists(build_id_debug_info_path))
+            object_name = build_id_debug_info_path;
+        else
+            object_name = canonical_path;
+    }
+    else
+        object_name = canonical_path;
 
     /// But we have to compare Build ID to check that debug info corresponds to the same executable.
-    String our_build_id = getBuildIDFromProgramHeaders(info);
 
     SymbolIndex::Object object;
     object.elf = std::make_unique<Elf>(object_name);
@@ -343,7 +393,7 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
     collectSymbolsFromProgramHeaders(info, data.symbols);
-    collectSymbolsFromELF(info, data.symbols, data.objects);
+    collectSymbolsFromELF(info, data.symbols, data.objects, data.build_id);
 
     /* Continue iterations */
     return 0;
@@ -396,10 +446,28 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
     return find(address, data.objects);
 }
 
-SymbolIndex & SymbolIndex::instance()
+String SymbolIndex::getBuildIDHex() const
 {
-    static SymbolIndex instance;
-    return instance;
+    String build_id_binary = getBuildID();
+    String build_id_hex;
+    build_id_hex.resize(build_id_binary.size() * 2);
+
+    char * pos = build_id_hex.data();
+    for (auto c : build_id_binary)
+    {
+        writeHexByteUppercase(c, pos);
+        pos += 2;
+    }
+
+    return build_id_hex;
+}
+
+MultiVersion<SymbolIndex>::Version SymbolIndex::instance(bool reload)
+{
+    static MultiVersion<SymbolIndex> instance(std::unique_ptr<SymbolIndex>(new SymbolIndex));
+    if (reload)
+        instance.set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
+    return instance.get();
 }
 
 }

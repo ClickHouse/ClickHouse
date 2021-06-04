@@ -18,9 +18,12 @@ struct PartLogElement
         MOVE_PART = 6,
     };
 
+    String query_id;
+
     Type event_type = NEW_PART;
 
     time_t event_time = 0;
+    Decimal64 event_time_microseconds = 0;
     UInt64 duration_ms = 0;
 
     String database_name;
@@ -66,9 +69,9 @@ class PartLog : public SystemLog<PartLogElement>
 
 public:
     /// Add a record about creation of new part.
-    static bool addNewPart(Context & context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
+    static bool addNewPart(ContextPtr context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
                            const ExecutionStatus & execution_status = {});
-    static bool addNewParts(Context & context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
+    static bool addNewParts(ContextPtr context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
                             const ExecutionStatus & execution_status = {});
 };
 

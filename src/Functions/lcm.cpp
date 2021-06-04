@@ -1,35 +1,65 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <numeric>
+#include <Functions/GCDLCMImpl.h>
+
+#include <boost/integer/common_factor.hpp>
+
+
+namespace
+{
+
+template <typename T>
+constexpr T abs(T value) noexcept
+{
+    if constexpr (std::is_signed_v<T>)
+    {
+        if (value >= 0 || value == std::numeric_limits<T>::min())
+            return value;
+        return -value;
+    }
+    else
+        return value;
+}
+
+}
 
 
 namespace DB
 {
 
-template <typename A, typename B>
-struct LCMImpl
+namespace
 {
-    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
-    static const constexpr bool allow_fixed_string = false;
-
-
-    template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
-    {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
-        return std::lcm(
-            typename NumberTraits::ToInteger<Result>::Type(a),
-            typename NumberTraits::ToInteger<Result>::Type(b));
-    }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// exceptions (and a non-trivial algorithm)
-#endif
-};
 
 struct NameLCM { static constexpr auto name = "lcm"; };
-using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM, false>;
+
+template <typename A, typename B>
+struct LCMImpl : public GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>
+{
+    using ResultType = typename GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>::ResultType;
+
+    static ResultType applyImpl(A a, B b)
+    {
+        using Int = typename NumberTraits::ToInteger<ResultType>::Type;
+        using Unsigned = make_unsigned_t<Int>;
+
+        /** It's tempting to use std::lcm function.
+          * But it has undefined behaviour on overflow.
+          * And assert in debug build.
+          * We need some well defined behaviour instead
+          * (example: throw an exception or overflow in implementation specific way).
+          */
+
+        Unsigned val1 = abs<Int>(a) / boost::integer::gcd(Int(a), Int(b));
+        Unsigned val2 = abs<Int>(b);
+
+        /// Overflow in implementation specific way.
+        return ResultType(val1 * val2);
+    }
+};
+
+using FunctionLCM = BinaryArithmeticOverloadResolver<LCMImpl, NameLCM, false, false>;
+
+}
 
 void registerFunctionLCM(FunctionFactory & factory)
 {

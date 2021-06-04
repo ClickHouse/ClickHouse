@@ -16,12 +16,14 @@
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/KeyHolderHelpers.h>
 
 #define AGGREGATE_FUNCTION_GROUP_ARRAY_UNIQ_MAX_SIZE 0xFFFFFF
 
 
 namespace DB
 {
+struct Settings;
 
 
 template <typename T>
@@ -55,17 +57,19 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
+        return std::make_shared<DataTypeArray>(this->argument_types[0]);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
             return;
         this->data(place).value.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (!limit_num_elems)
             this->data(place).value.merge(this->data(rhs).value);
@@ -83,7 +87,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         auto & set = this->data(place).value;
         size_t size = set.size();
@@ -92,12 +96,12 @@ public:
             writeIntBinary(elem, buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).value.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -147,26 +151,6 @@ class AggregateFunctionGroupUniqArrayGeneric
 
     using State = AggregateFunctionGroupUniqArrayGenericData;
 
-    static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
-    {
-        if constexpr (is_plain_column)
-        {
-            return ArenaKeyHolder{column.getDataAt(row_num), arena};
-        }
-        else
-        {
-            const char * begin = nullptr;
-            StringRef serialized = column.serializeValueIntoArena(row_num, arena, begin);
-            assert(serialized.data != nullptr);
-            return SerializedKeyHolder{serialized, arena};
-        }
-    }
-
-    static void deserializeAndInsert(StringRef str, IColumn & data_to)
-    {
-        return deserializeAndInsertImpl<is_plain_column>(str, data_to);
-    }
-
 public:
     AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
         : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type_}, {})
@@ -185,7 +169,7 @@ public:
         return true;
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         auto & set = this->data(place).value;
         writeVarUInt(set.size(), buf);
@@ -196,7 +180,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         size_t size;
@@ -207,7 +191,7 @@ public:
             set.insert(readStringBinaryInto(*arena, buf));
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         if (limit_num_elems && set.size() >= max_elems)
@@ -215,11 +199,11 @@ public:
 
         bool inserted;
         State::Set::LookupResult it;
-        auto key_holder = getKeyHolder(*columns[0], row_num, *arena);
+        auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
         set.emplace(key_holder, it, inserted);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_set = this->data(place).value;
         auto & rhs_set = this->data(rhs).value;
@@ -237,7 +221,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -247,21 +231,9 @@ public:
         offsets_to.push_back(offsets_to.back() + set.size());
 
         for (auto & elem : set)
-            deserializeAndInsert(elem.getValue(), data_to);
+            deserializeAndInsert<is_plain_column>(elem.getValue(), data_to);
     }
 };
-
-template <>
-inline void deserializeAndInsertImpl<false>(StringRef str, IColumn & data_to)
-{
-    data_to.deserializeAndInsertFromArena(str.data);
-}
-
-template <>
-inline void deserializeAndInsertImpl<true>(StringRef str, IColumn & data_to)
-{
-    data_to.insertData(str.data, str.size);
-}
 
 #undef AGGREGATE_FUNCTION_GROUP_ARRAY_UNIQ_MAX_SIZE
 

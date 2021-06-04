@@ -14,6 +14,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
@@ -32,9 +33,20 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
         || code == ErrorCodes::CANNOT_PARSE_NUMBER
         || code == ErrorCodes::CANNOT_PARSE_UUID
+        || code == ErrorCodes::CANNOT_READ_ALL_DATA
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE
         || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
         || code == ErrorCodes::INCORRECT_DATA;             /// For some ReadHelpers
+}
+
+IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
+    : IInputFormat(std::move(header), in_), params(params_)
+{
+    const auto & port_header = getPort().getHeader();
+    size_t num_columns = port_header.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = port_header.getByPosition(i).type->getDefaultSerialization();
 }
 
 
@@ -51,20 +63,20 @@ Chunk IRowInputFormat::generate()
     ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
     block_missing_values.clear();
 
+    size_t num_rows = 0;
+
     try
     {
         RowReadExtension info;
-        for (size_t rows = 0; rows < params.max_block_size; ++rows)
+        bool continue_reading = true;
+        for (size_t rows = 0; rows < params.max_block_size && continue_reading; ++rows)
         {
             try
             {
                 ++total_rows;
 
                 info.read_columns.clear();
-                if (!readRow(columns, info))
-                    break;
-                if (params.callback)
-                    params.callback();
+                continue_reading = readRow(columns, info);
 
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
@@ -76,6 +88,18 @@ Chunk IRowInputFormat::generate()
                         block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }
+
+                /// Some formats may read row AND say the read is finished.
+                /// For such a case, get the number or rows from first column.
+                if (!columns.empty())
+                    num_rows = columns.front()->size();
+
+                if (!continue_reading)
+                    break;
+
+                /// The case when there is no columns. Just count rows.
+                if (columns.empty())
+                    ++num_rows;
             }
             catch (Exception & e)
             {
@@ -107,20 +131,36 @@ Chunk IRowInputFormat::generate()
 
                 syncAfterError();
 
-                /// Truncate all columns in block to minimal size (remove values, that was appended to only part of columns).
-
-                size_t min_size = std::numeric_limits<size_t>::max();
-                for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                    min_size = std::min(min_size, columns[column_idx]->size());
+                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
 
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
                 {
                     auto & column = columns[column_idx];
-                    if (column->size() > min_size)
-                        column->popBack(column->size() - min_size);
+                    if (column->size() > num_rows)
+                        column->popBack(column->size() - num_rows);
                 }
             }
         }
+    }
+    catch (ParsingException & e)
+    {
+        String verbose_diagnostic;
+        try
+        {
+            verbose_diagnostic = getDiagnosticInfo();
+        }
+        catch (const Exception & exception)
+        {
+            verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
+        }
+        catch (...)
+        {
+            /// Error while trying to obtain verbose diagnostic. Ok to ignore.
+        }
+
+        e.setLineNumber(total_rows);
+        e.addMessage(verbose_diagnostic);
+        throw;
     }
     catch (Exception & e)
     {
@@ -150,14 +190,13 @@ Chunk IRowInputFormat::generate()
         if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
             Poco::Logger * log = &Poco::Logger::get("IRowInputFormat");
-            LOG_TRACE(log, "Skipped {} rows with errors while reading the input stream", num_errors);
+            LOG_DEBUG(log, "Skipped {} rows with errors while reading the input stream", num_errors);
         }
 
         readSuffix();
         return {};
     }
 
-    auto num_rows = columns.front()->size();
     Chunk chunk(std::move(columns), num_rows);
     //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;

@@ -1,0 +1,14 @@
+version: '2.3'
+services:
+    hdfs1:
+        image: sequenceiq/hadoop-docker:2.7.0
+        hostname: hdfs1
+        restart: always
+        ports:
+            - ${HDFS_NAME_EXTERNAL_PORT}:${HDFS_NAME_INTERNAL_PORT} #50070
+            - ${HDFS_DATA_EXTERNAL_PORT}:${HDFS_DATA_INTERNAL_PORT} #50075
+        entrypoint: /etc/bootstrap.sh -d
+        volumes:
+            - type: ${HDFS_FS:-tmpfs}
+              source: ${HDFS_LOGS:-}
+              target: /usr/local/hadoop/logs

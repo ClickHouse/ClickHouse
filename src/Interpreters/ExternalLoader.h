@@ -3,7 +3,7 @@
 #include <chrono>
 #include <functional>
 #include <unordered_map>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>
@@ -27,6 +27,7 @@ struct ExternalLoaderConfigSettings
     std::string external_config;
     std::string external_name;
     std::string external_database;
+    std::string external_uuid;
 };
 
 /** Interface for manage user-defined objects.
@@ -194,6 +195,9 @@ public:
     /// The function throws an exception if it's failed to load or reload something.
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType reloadAllTriedToLoad() const;
+
+    /// Check if object with name exists in configuration
+    bool has(const String & name) const;
 
     /// Reloads all config repositories.
     void reloadConfig() const;

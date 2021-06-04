@@ -121,6 +121,8 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     time_t time_of_move = time(nullptr);
 
+    auto metadata_snapshot = data->getInMemoryMetadataPtr();
+
     for (const auto & part : data_parts)
     {
         String reason;
@@ -128,14 +130,15 @@ bool MergeTreePartsMover::selectPartsForMove(
         if (!can_move(part, &reason))
             continue;
 
-        auto ttl_entry = data->selectTTLEntryForTTLInfos(part->ttl_infos, time_of_move);
+        auto ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), part->ttl_infos.moves_ttl, time_of_move, true);
+
         auto to_insert = need_to_move.find(part->volume->getDisk());
         ReservationPtr reservation;
         if (ttl_entry)
         {
-            auto destination = data->getDestinationForTTL(*ttl_entry);
+            auto destination = data->getDestinationForMoveTTL(*ttl_entry);
             if (destination && !data->isPartInTTLDestination(*ttl_entry, *part))
-                reservation = data->tryReserveSpace(part->getBytesOnDisk(), data->getDestinationForTTL(*ttl_entry));
+                reservation = data->tryReserveSpace(part->getBytesOnDisk(), data->getDestinationForMoveTTL(*ttl_entry));
         }
 
         if (reservation) /// Found reservation by TTL rule.
@@ -179,7 +182,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     if (!parts_to_move.empty())
     {
-        LOG_TRACE(log, "Selected {} parts to move according to storage policy rules and {} parts according to TTL rules, {} total", parts_to_move_by_policy_rules, parts_to_move_by_ttl_rules, ReadableSize(parts_to_move_total_size_bytes));
+        LOG_DEBUG(log, "Selected {} parts to move according to storage policy rules and {} parts according to TTL rules, {} total", parts_to_move_by_policy_rules, parts_to_move_by_ttl_rules, ReadableSize(parts_to_move_total_size_bytes));
         return true;
     }
     else
@@ -191,13 +194,40 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     if (moves_blocker.isCancelled())
         throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
-    LOG_TRACE(log, "Cloning part {}", moving_part.part->name);
-    moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
+    auto settings = data->getSettings();
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk());
+    auto part = moving_part.part;
+    LOG_TRACE(log, "Cloning part {}", part->name);
+
+    auto disk = moving_part.reserved_space->getDisk();
+    const String directory_to_move = "moving";
+    if (settings->allow_s3_zero_copy_replication)
+    {
+        /// Try to fetch part from S3 without copy and fallback to default copy
+        /// if it's not possible
+        moving_part.part->assertOnDisk();
+        String path_to_clone = fs::path(data->getRelativeDataPath()) / directory_to_move / "";
+        String relative_path = part->relative_path;
+        if (disk->exists(path_to_clone + relative_path))
+        {
+            LOG_WARNING(log, "Path " + fullPath(disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
+            disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
+        }
+        disk->createDirectories(path_to_clone);
+        bool is_fetched = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+        if (!is_fetched)
+            part->volume->getDisk()->copy(fs::path(data->getRelativeDataPath()) / relative_path / "", disk, path_to_clone);
+        part->volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    }
+    else
+    {
+        part->makeCloneOnDisk(disk, directory_to_move);
+    }
+
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part->name, moving_part.reserved_space->getDisk(), 0);
     MergeTreeData::MutableDataPartPtr cloned_part =
-        data->createPart(moving_part.part->name, single_disk_volume, "detached/" + moving_part.part->name);
-    LOG_TRACE(log, "Part {} was cloned to {}", moving_part.part->name, cloned_part->getFullPath());
+        data->createPart(part->name, single_disk_volume, fs::path(directory_to_move) / part->name);
+    LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
     return cloned_part;

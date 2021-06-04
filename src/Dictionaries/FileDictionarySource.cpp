@@ -1,13 +1,15 @@
 #include "FileDictionarySource.h"
+#include <common/logger_useful.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/filesystemHelpers.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
-#include <Poco/File.h>
-#include <Common/StringUtils/StringUtils.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
+
 
 namespace DB
 {
@@ -22,18 +24,14 @@ namespace ErrorCodes
 
 FileDictionarySource::FileDictionarySource(
     const std::string & filepath_, const std::string & format_,
-    Block & sample_block_, const Context & context_, bool check_config)
+    Block & sample_block_, ContextConstPtr context_, bool created_from_ddl)
     : filepath{filepath_}
     , format{format_}
     , sample_block{sample_block_}
     , context(context_)
 {
-    if (check_config)
-    {
-        const String user_files_path = context.getUserFilesPath();
-        if (!startsWith(filepath, user_files_path))
-            throw Exception("File path " + filepath + " is not inside " + user_files_path, ErrorCodes::PATH_ACCESS_DENIED);
-    }
+    if (created_from_ddl && !pathStartsWith(filepath, context->getUserFilesPath()))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, context->getUserFilesPath());
 }
 
 
@@ -41,7 +39,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
     : filepath{other.filepath}
     , format{other.format}
     , sample_block{other.sample_block}
-    , context(other.context)
+    , context(Context::createCopy(other.context))
     , last_modification{other.last_modification}
 {
 }
@@ -51,7 +49,7 @@ BlockInputStreamPtr FileDictionarySource::loadAll()
 {
     LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
-    auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
+    auto stream = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
     last_modification = getLastModification();
 
     return std::make_shared<OwningBlockInputStream<ReadBuffer>>(stream, std::move(in_ptr));
@@ -60,14 +58,15 @@ BlockInputStreamPtr FileDictionarySource::loadAll()
 
 std::string FileDictionarySource::toString() const
 {
-    return "File: " + filepath + ' ' + format;
+    return fmt::format("File: {}, {}", filepath, format);
 }
 
 
 Poco::Timestamp FileDictionarySource::getLastModification() const
 {
-    return Poco::File{filepath}.getLastModified();
+    return FS::getModificationTimestamp(filepath);
 }
+
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
@@ -75,18 +74,19 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context,
-                                 bool check_config) -> DictionarySourcePtr
+                                 ContextConstPtr context,
+                                 const std::string & /* default_database */,
+                                 bool created_from_ddl) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception{"Dictionary source of type `file` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `file` does not support attribute expressions");
 
         const auto filepath = config.getString(config_prefix + ".file.path");
         const auto format = config.getString(config_prefix + ".file.format");
 
-        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+        auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
-        return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context_local_copy, check_config);
+        return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context_local_copy, created_from_ddl);
     };
 
     factory.registerSource("file", create_table_source);

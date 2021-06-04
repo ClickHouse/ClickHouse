@@ -1,29 +1,40 @@
+---
+toc_priority: 41
+toc_title: "Функции поиска в строках"
+---
+
 # Функции поиска в строках {#funktsii-poiska-v-strokakh}
 
 Во всех функциях, поиск регистрозависимый по умолчанию. Существуют варианты функций для регистронезависимого поиска.
 
-## position(haystack, needle) {#position}
+## position(haystack, needle), locate(haystack, needle) {#position}
 
 Поиск подстроки `needle` в строке `haystack`.
 
 Возвращает позицию (в байтах) найденной подстроки в строке, начиная с 1, или 0, если подстрока не найдена.
-
-Работает при допущении, что строка содержит набор байт, представляющий текст в однобайтовой кодировке. Если допущение не выполнено — то возвращает неопределенный результат (не кидает исключение). Если символ может быть представлен с помощью двух байтов, он будет представлен двумя байтами и так далее.
 
 Для поиска без учета регистра используйте функцию [positionCaseInsensitive](#positioncaseinsensitive).
 
 **Синтаксис**
 
 ``` sql
-position(haystack, needle)
+position(haystack, needle[, start_pos])
 ```
 
-Алиас: `locate(haystack, needle)`.
+``` sql
+position(needle IN haystack)
+``` 
 
-**Параметры**
+Алиас: `locate(haystack, needle[, start_pos])`.
+
+!!! note "Примечание"
+    Синтаксис `position(needle IN haystack)` обеспечивает совместимость с SQL, функция работает так же, как `position(haystack, needle)`.
+
+**Аргументы**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -39,10 +50,10 @@ position(haystack, needle)
 Запрос:
 
 ``` sql
-SELECT position('Hello, world!', '!')
+SELECT position('Hello, world!', '!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─position('Hello, world!', '!')─┐
@@ -55,15 +66,45 @@ SELECT position('Hello, world!', '!')
 Запрос:
 
 ``` sql
-SELECT position('Привет, мир!', '!')
+SELECT position('Привет, мир!', '!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─position('Привет, мир!', '!')─┐
 │                            21 │
 └───────────────────────────────┘
+```
+
+**Примеры работы функции с синтаксисом POSITION(needle IN haystack)**
+
+Запрос:
+
+```sql
+SELECT 1 = position('абв' IN 'абв');
+```
+
+Результат:
+
+```text
+┌─equals(1, position('абв', 'абв'))─┐
+│                                 1 │
+└───────────────────────────────────┘
+```
+
+Запрос: 
+
+```sql
+SELECT 0 = position('абв' IN '');
+```
+
+Результат:
+
+```text
+┌─equals(0, position('', 'абв'))─┐
+│                              1 │
+└────────────────────────────────┘
 ```
 
 ## positionCaseInsensitive {#positioncaseinsensitive}
@@ -75,13 +116,14 @@ SELECT position('Привет, мир!', '!')
 **Синтаксис**
 
 ``` sql
-positionCaseInsensitive(haystack, needle)
+positionCaseInsensitive(haystack, needle[, start_pos])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -95,10 +137,10 @@ positionCaseInsensitive(haystack, needle)
 Запрос:
 
 ``` sql
-SELECT positionCaseInsensitive('Hello, world!', 'hello')
+SELECT positionCaseInsensitive('Hello, world!', 'hello');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─positionCaseInsensitive('Hello, world!', 'hello')─┐
@@ -117,13 +159,14 @@ SELECT positionCaseInsensitive('Hello, world!', 'hello')
 **Синтаксис**
 
 ``` sql
-positionUTF8(haystack, needle)
+positionUTF8(haystack, needle[, start_pos])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -139,10 +182,10 @@ positionUTF8(haystack, needle)
 Запрос:
 
 ``` sql
-SELECT positionUTF8('Привет, мир!', '!')
+SELECT positionUTF8('Привет, мир!', '!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─positionUTF8('Привет, мир!', '!')─┐
@@ -155,7 +198,7 @@ SELECT positionUTF8('Привет, мир!', '!')
 Запрос для символа `é`, который представлен одной кодовой точкой `U+00E9`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!')
+SELECT positionUTF8('Salut, étudiante!', '!');
 ```
 
 Result:
@@ -169,10 +212,10 @@ Result:
 Запрос для символа `é`, который представлен двумя кодовыми точками `U+0065U+0301`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!')
+SELECT positionUTF8('Salut, étudiante!', '!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─positionUTF8('Salut, étudiante!', '!')─┐
@@ -189,13 +232,14 @@ SELECT positionUTF8('Salut, étudiante!', '!')
 **Синтаксис**
 
 ``` sql
-positionCaseInsensitiveUTF8(haystack, needle)
+positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -209,10 +253,10 @@ positionCaseInsensitiveUTF8(haystack, needle)
 Запрос:
 
 ``` sql
-SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')
+SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')─┐
@@ -250,7 +294,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 Query:
 
 ``` sql
-SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
+SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
 ```
 
 Result:
@@ -337,6 +381,91 @@ Result:
 
 Извлечение всех фрагментов строки по регулярному выражению. Если haystack не соответствует регулярному выражению pattern, то возвращается пустая строка. Возвращается массив строк, состоящий из всех соответствий регулярному выражению. В остальном, поведение аналогично функции extract (по прежнему, вынимается первый subpattern, или всё выражение, если subpattern-а нет).
 
+## extractAllGroupsHorizontal {#extractallgroups-horizontal}
+
+Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где первый массив содержит все фрагменты, соответствующие первой группе регулярного выражения, второй массив - соответствующие второй группе, и т.д.  
+
+!!! note "Замечание"
+    Функция `extractAllGroupsHorizontal` работает медленнее, чем функция [extractAllGroupsVertical](#extractallgroups-vertical).
+
+**Синтаксис** 
+
+``` sql
+extractAllGroupsHorizontal(haystack, pattern)
+```
+
+**Аргументы** 
+
+-   `haystack` — строка для разбора. Тип: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md). 
+
+**Возвращаемое значение**
+
+-   Тип: [Array](../../sql-reference/data-types/array.md).
+
+Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается массив пустых массивов. 
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
+```
+
+Результат:
+
+``` text
+┌─extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
+│ [['abc','def','ghi'],['111','222','333']]                                                │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Смотрите также**
+
+-   Функция [extractAllGroupsVertical](#extractallgroups-vertical)
+
+## extractAllGroupsVertical {#extractallgroups-vertical}
+
+Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где каждый массив содержит по одному фрагменту, соответствующему каждой группе регулярного выражения. Фрагменты группируются в массивы в соответствии с порядком появления в исходной строке.
+
+**Синтаксис** 
+
+``` sql
+extractAllGroupsVertical(haystack, pattern)
+```
+
+**Аргументы** 
+
+-   `haystack` — строка для разбора. Тип: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Тип: [Array](../../sql-reference/data-types/array.md).
+
+Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается пустой массив. 
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
+```
+
+Результат:
+
+``` text
+┌─extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
+│ [['abc','111'],['def','222'],['ghi','333']]                                            │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Смотрите также**
+
+-   Функция [extractAllGroupsHorizontal](#extractallgroups-horizontal)
+
 ## like(haystack, pattern), оператор haystack LIKE pattern {#function-like}
 
 Проверка строки на соответствие простому регулярному выражению.
@@ -355,6 +484,66 @@ Result:
 
 То же, что like, но с отрицанием.
 
+## ilike {#ilike}
+
+Нечувствительный к регистру вариант функции [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like). Вы можете использовать оператор `ILIKE` вместо функции `ilike`.
+
+**Синтаксис**
+
+``` sql
+ilike(haystack, pattern)
+```
+
+**Аргументы**
+
+-   `haystack` — входная строка. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `pattern` — если `pattern` не содержит процента или нижнего подчеркивания, тогда `pattern` представляет саму строку. Нижнее подчеркивание (`_`) в `pattern` обозначает любой отдельный символ. Знак процента (`%`) соответствует последовательности из любого количества символов: от нуля и более.
+
+Некоторые примеры `pattern`:
+
+``` text
+'abc' ILIKE 'abc'    true
+'abc' ILIKE 'a%'     true
+'abc' ILIKE '_b_'    true
+'abc' ILIKE 'c'      false
+```
+
+**Возвращаемые значения**
+
+-   Правда, если строка соответствует `pattern`.
+-   Ложь, если строка не соответствует `pattern`.
+
+**Пример**
+
+Входная таблица:
+
+``` text
+┌─id─┬─name─────┬─days─┐
+│  1 │ January  │   31 │
+│  2 │ February │   29 │
+│  3 │ March    │   31 │
+│  4 │ April    │   30 │
+└────┴──────────┴──────┘
+```
+
+Запрос:
+
+``` sql
+SELECT * FROM Months WHERE ilike(name, '%j%');
+```
+
+Результат:
+
+``` text
+┌─id─┬─name────┬─days─┐
+│  1 │ January │   31 │
+└────┴─────────┴──────┘
+```
+
+**Смотрите также**
+
+-   [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+
 ## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 
 Вычисление 4-граммного расстояния между `haystack` и `needle`: считается симметрическая разность между двумя мультимножествами 4-грамм и нормализуется на сумму их мощностей. Возвращает число float от 0 до 1 – чем ближе к нулю, тем больше строки похожи друг на друга. Если константный `needle` или `haystack` больше чем 32КБ, кидается исключение. Если некоторые строки из неконстантного `haystack` или `needle` больше 32КБ, расстояние всегда равно единице.
@@ -369,5 +558,240 @@ Result:
 
 !!! note "Примечание"
     Для случая UTF-8 мы используем триграммное расстояние. Вычисление n-граммного расстояния не совсем честное. Мы используем 2-х байтные хэши для хэширования n-грамм, а затем вычисляем (не)симметрическую разность между хэш таблицами – могут возникнуть коллизии. В формате UTF-8 без учета регистра мы не используем честную функцию `tolower` – мы обнуляем 5-й бит (нумерация с нуля) каждого байта кодовой точки, а также первый бит нулевого байта, если байтов больше 1 – это работает для латиницы и почти для всех кириллических букв.
+	
+## countMatches(haystack, pattern) {#countmatcheshaystack-pattern}
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_search_functions/) <!--hide-->
+Возвращает количество совпадений, найденных в строке `haystack`, для регулярного выражения `pattern`.
+
+**Синтаксис**
+
+``` sql
+countMatches(haystack, pattern)
+```
+
+**Аргументы**
+
+-   `haystack` — строка, по которой выполняется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Количество совпадений.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT countMatches('foobar.com', 'o+');
+```
+
+Результат:
+
+``` text
+┌─countMatches('foobar.com', 'o+')─┐
+│                                2 │
+└──────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT countMatches('aaaa', 'aa');
+```
+
+Результат:
+
+``` text
+┌─countMatches('aaaa', 'aa')────┐
+│                             2 │
+└───────────────────────────────┘
+```
+
+## countSubstrings {#countSubstrings}
+
+Возвращает количество вхождений подстроки.
+
+Для поиска без учета регистра, используйте функции [countSubstringsCaseInsensitive](../../sql-reference/functions/string-search-functions.md#countSubstringsCaseInsensitive) или [countSubstringsCaseInsensitiveUTF8](../../sql-reference/functions/string-search-functions.md#countSubstringsCaseInsensitiveUTF8)
+
+**Синтаксис**
+
+``` sql
+countSubstrings(haystack, needle[, start_pos])
+```
+
+**Аргументы**
+
+-   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-   Число вхождений.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT countSubstrings('foobar.com', '.');
+```
+
+Результат:
+
+``` text
+┌─countSubstrings('foobar.com', '.')─┐
+│                                  1 │
+└────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT countSubstrings('aaaa', 'aa');
+```
+
+Результат:
+
+``` text
+┌─countSubstrings('aaaa', 'aa')─┐
+│                             2 │
+└───────────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT countSubstrings('abc___abc', 'abc', 4);
+```
+
+Результат:
+
+``` text
+┌─countSubstrings('abc___abc', 'abc', 4)─┐
+│                                      1 │
+└────────────────────────────────────────┘
+```
+
+## countSubstringsCaseInsensitive {#countSubstringsCaseInsensitive}
+
+Возвращает количество вхождений подстроки без учета регистра.
+
+**Синтаксис**
+
+``` sql
+countSubstringsCaseInsensitive(haystack, needle[, start_pos])
+```
+
+**Аргументы**
+
+-   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-   Число вхождений.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+select countSubstringsCaseInsensitive('aba', 'B');
+```
+
+Результат:
+
+``` text
+┌─countSubstringsCaseInsensitive('aba', 'B')─┐
+│                                          1 │
+└────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT countSubstringsCaseInsensitive('foobar.com', 'CoM');
+```
+
+Результат:
+
+``` text
+┌─countSubstringsCaseInsensitive('foobar.com', 'CoM')─┐
+│                                                   1 │
+└─────────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT countSubstringsCaseInsensitive('abC___abC', 'aBc', 2);
+```
+
+Результат:
+
+``` text
+┌─countSubstringsCaseInsensitive('abC___abC', 'aBc', 2)─┐
+│                                                     1 │
+└───────────────────────────────────────────────────────┘
+```
+
+## countSubstringsCaseInsensitiveUTF8 {#countSubstringsCaseInsensitiveUTF8}
+
+Возвращает количество вхождений подстроки в `UTF-8` без учета регистра.
+
+**Синтаксис**
+
+``` sql
+SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
+```
+
+**Аргументы**
+
+-   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-   Число вхождений.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT countSubstringsCaseInsensitiveUTF8('абв', 'A');
+```
+
+Результат:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('абв', 'A')─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв');
+```
+
+Результат:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв')─┐
+│                                                          3 │
+└────────────────────────────────────────────────────────────┘
+```

@@ -22,7 +22,7 @@ using MergeTreeBlockSizePredictorPtr = std::unique_ptr<MergeTreeBlockSizePredict
   * so that you can calculate the DEFAULT expression for these columns.
   * Adds them to the `columns`.
   */
-NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & part, Names & columns);
+NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::DataPartPtr & part, Names & columns);
 
 
 /// A batch of work for MergeTreeThreadSelectBlockInputStream
@@ -73,8 +73,13 @@ struct MergeTreeReadTaskColumns
     bool should_reorder;
 };
 
-MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & data_part,
-    const Names & required_columns, const PrewhereInfoPtr & prewhere_info, bool check_columns);
+MergeTreeReadTaskColumns getReadTaskColumns(
+    const MergeTreeData & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData::DataPartPtr & data_part,
+    const Names & required_columns,
+    const PrewhereInfoPtr & prewhere_info,
+    bool check_columns);
 
 struct MergeTreeBlockSizePredictor
 {

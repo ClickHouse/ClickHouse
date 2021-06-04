@@ -11,7 +11,7 @@ Reading is automatically parallelized. Writing to a table is not supported. When
 
 The `Merge` engine accepts parameters: the database name and a regular expression for tables.
 
-## Examples
+## Examples {#examples}
 
 Example 1:
 
@@ -33,7 +33,7 @@ The typical way to use the `Merge` engine is for working with a large number of 
 
 Example 2:
 
-Let’s say you have a old table (WatchLog\_old) and decided to change partitioning without moving data to a new table (WatchLog\_new) and you need to see data from both tables.
+Let’s say you have a old table (WatchLog_old) and decided to change partitioning without moving data to a new table (WatchLog_new) and you need to see data from both tables.
 
 ``` sql
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
@@ -67,6 +67,6 @@ FROM WatchLog
 
 **See Also**
 
--   [Virtual columns](index.md#table_engines-virtual_columns)
+-   [Virtual columns](../../../engines/table-engines/special/index.md#table_engines-virtual_columns)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/merge/) <!--hide-->

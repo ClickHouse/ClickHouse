@@ -1,5 +1,5 @@
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -7,8 +7,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -52,55 +50,48 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
 }
 
 
-static Block createBlockWithNestedColumnsImpl(const Block & block, const std::unordered_set<size_t> & args)
+ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns)
 {
-    Block res;
-    size_t columns = block.columns();
-
-    for (size_t i = 0; i < columns; ++i)
+    ColumnsWithTypeAndName res;
+    for (const auto & col : columns)
     {
-        const auto & col = block.getByPosition(i);
-
-        if (args.count(i) && col.type->isNullable())
+        if (col.type->isNullable())
         {
             const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(*col.type).getNestedType();
 
             if (!col.column)
             {
-                res.insert({nullptr, nested_type, col.name});
+                res.emplace_back(ColumnWithTypeAndName{nullptr, nested_type, col.name});
             }
             else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col.column))
             {
                 const auto & nested_col = nullable->getNestedColumnPtr();
-                res.insert({nested_col, nested_type, col.name});
+                res.emplace_back(ColumnWithTypeAndName{nested_col, nested_type, col.name});
             }
             else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
             {
-                const auto & nested_col = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn())->getNestedColumnPtr();
-                res.insert({ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
+                const auto * nullable_column = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn());
+
+                ColumnPtr nullable_res;
+                if (nullable_column)
+                {
+                    const auto & nested_col = nullable_column->getNestedColumnPtr();
+                    nullable_res = ColumnConst::create(nested_col, col.column->size());
+                }
+                else
+                {
+                    nullable_res = makeNullable(col.column);
+                }
+                res.emplace_back(ColumnWithTypeAndName{ nullable_res, nested_type, col.name });
             }
             else
                 throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
         }
         else
-            res.insert(col);
+            res.emplace_back(col);
     }
 
     return res;
-}
-
-
-Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args)
-{
-    std::unordered_set<size_t> args_set(args.begin(), args.end());
-    return createBlockWithNestedColumnsImpl(block, args_set);
-}
-
-Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result)
-{
-    std::unordered_set<size_t> args_set(args.begin(), args.end());
-    args_set.insert(result);
-    return createBlockWithNestedColumnsImpl(block, args_set);
 }
 
 void validateArgumentType(const IFunction & func, const DataTypes & arguments,
@@ -138,7 +129,7 @@ void validateArgumentsImpl(const IFunction & func,
         const auto & arg = arguments[i + argument_offset];
         const auto descriptor = descriptors[i];
         if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
-            throw Exception("Illegal type of argument #" + std::to_string(i)
+            throw Exception("Illegal type of argument #" + std::to_string(argument_offset + i + 1) // +1 is for human-friendly 1-based indexing
                             + (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{})
                             + " of function " + func.getName()
                             + (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{})
@@ -230,6 +221,85 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
             throw Exception("Lengths of all arrays passed to aggregate function must be equal.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
     }
     return {nested_columns, offsets->data()};
+}
+
+bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    const auto & lhs_name = lhs->getName();
+    const auto & rhs_name = rhs->getName();
+
+    return lhs_name == rhs_name;
+}
+
+ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
+{
+    ColumnPtr result_null_map_column;
+
+    /// If result is already nullable.
+    ColumnPtr src_not_nullable = src;
+
+    if (src->onlyNull())
+        return src;
+    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
+    {
+        src_not_nullable = nullable->getNestedColumnPtr();
+        result_null_map_column = nullable->getNullMapColumnPtr();
+    }
+
+    for (const auto & elem : args)
+    {
+        if (!elem.type->isNullable())
+            continue;
+
+        /// Const Nullable that are NULL.
+        if (elem.column->onlyNull())
+        {
+            assert(result_type->isNullable());
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        }
+
+        if (isColumnConst(*elem.column))
+            continue;
+
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        {
+            const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
+            if (!result_null_map_column) //-V1051
+            {
+                result_null_map_column = null_map_column;
+            }
+            else
+            {
+                MutableColumnPtr mutable_result_null_map_column = IColumn::mutate(std::move(result_null_map_column));
+
+                NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
+                const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+
+                for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
+                    result_null_map[i] |= src_null_map[i];
+
+                result_null_map_column = std::move(mutable_result_null_map_column);
+            }
+        }
+    }
+
+    if (!result_null_map_column)
+        return makeNullable(src);
+
+    return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
+}
+
+NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
+{
+    NullPresence res;
+
+    for (const auto & elem : args)
+    {
+        res.has_nullable |= elem.type->isNullable();
+        res.has_null_constant |= elem.type->onlyNull();
+    }
+
+    return res;
 }
 
 }

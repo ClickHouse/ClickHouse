@@ -3,7 +3,6 @@
 #include <Columns/IColumnUnique.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include "ColumnsNumber.h"
 
 
@@ -15,6 +14,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/**
+ * How data is stored (in a nutshell):
+ * we have a dictionary @e reverse_index in ColumnUnique that holds pairs (DataType, UIntXX) and a column
+ * with UIntXX holding actual data indices.
+ * To obtain the value's index, call #getOrFindIndex.
+ * To operate on the data (so called indices column), call #getIndexes.
+ *
+ * @note The indices column always contains the default value (empty StringRef) with the first index.
+ */
 class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>
 {
     friend class COWHelper<IColumn, ColumnLowCardinality>;
@@ -86,12 +94,16 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
     void updateWeakHash32(WeakHash32 & hash) const override;
+
+    void updateHashFast(SipHash &) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
@@ -114,9 +126,17 @@ public:
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
 
+    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
+
+    bool hasEqualValues() const override;
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const override;
+
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+
+    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
@@ -135,6 +155,7 @@ public:
     void reserve(size_t n) override { idx.reserve(n); }
 
     size_t byteSize() const override { return idx.getPositions()->byteSize() + getDictionary().byteSize(); }
+    size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
     void forEachSubcolumn(ColumnCallback callback) override
@@ -159,7 +180,14 @@ public:
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
-    bool isNullable() const override { return isColumnNullable(*dictionary.getColumnUniquePtr()); }
+    bool isCollationSupported() const override { return getDictionary().getNestedColumn()->isCollationSupported(); }
+
+    /**
+     * Checks if the dictionary column is Nullable(T).
+     * So LC(Nullable(T)) would return true, LC(U) -- false.
+     */
+    bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
+    void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
@@ -293,6 +321,13 @@ private:
 
     void compactInplace();
     void compactIfSharedDictionary();
+
+    int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
+
+    void getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+
+    template <typename Cmp>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const;
 };
 
 

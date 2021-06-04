@@ -1,5 +1,6 @@
 #include <Client/MultiplexedConnections.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/Operators.h>
 #include <Common/thread_local_rng.h>
 
 
@@ -12,6 +13,7 @@ namespace ErrorCodes
     extern const int MISMATCH_REPLICAS_DATA_SOURCES;
     extern const int NO_AVAILABLE_REPLICA;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
 
@@ -139,10 +141,34 @@ void MultiplexedConnections::sendQuery(
     sent_query = true;
 }
 
+void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (sent_query)
+        throw Exception("Cannot send uuids after query is sent.", ErrorCodes::LOGICAL_ERROR);
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendIgnoredPartUUIDs(uuids);
+    }
+}
+
+
+void MultiplexedConnections::sendReadTaskResponse(const String & response)
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+    current_connection->sendReadTaskResponse(response);
+}
+
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    Packet packet = receivePacketUnlocked();
+    Packet packet = receivePacketUnlocked({});
     return packet;
 }
 
@@ -190,10 +216,12 @@ Packet MultiplexedConnections::drain()
 
     while (hasActiveConnections())
     {
-        Packet packet = receivePacketUnlocked();
+        Packet packet = receivePacketUnlocked({});
 
         switch (packet.type)
         {
+            case Protocol::Server::ReadTaskRequest:
+            case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
@@ -222,21 +250,21 @@ std::string MultiplexedConnections::dumpAddresses() const
 std::string MultiplexedConnections::dumpAddressesUnlocked() const
 {
     bool is_first = true;
-    std::ostringstream os;
+    WriteBufferFromOwnString buf;
     for (const ReplicaState & state : replica_states)
     {
         const Connection * connection = state.connection;
         if (connection)
         {
-            os << (is_first ? "" : "; ") << connection->getDescription();
+            buf << (is_first ? "" : "; ") << connection->getDescription();
             is_first = false;
         }
     }
 
-    return os.str();
+    return buf.str();
 }
 
-Packet MultiplexedConnections::receivePacketUnlocked()
+Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
     if (!sent_query)
         throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
@@ -248,10 +276,31 @@ Packet MultiplexedConnections::receivePacketUnlocked()
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    Packet packet = current_connection->receivePacket();
+    Packet packet;
+    {
+        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+
+        try
+        {
+            packet = current_connection->receivePacket();
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
+            {
+                /// Exception may happen when packet is received, e.g. when got unknown packet.
+                /// In this case, invalidate replica, so that we would not read from it anymore.
+                current_connection->disconnect();
+                invalidateReplica(state);
+            }
+            throw;
+        }
+    }
 
     switch (packet.type)
     {
+        case Protocol::Server::ReadTaskRequest:
+        case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:
         case Protocol::Server::Progress:
         case Protocol::Server::ProfileInfo:

@@ -1,20 +1,14 @@
-#include <iostream>
-
-#include <sstream>
-#include <Core/Types.h>
-#include <Poco/Util/XMLConfiguration.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDropQuery.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserDictionary.h>
-#include <Parsers/ParserDropQuery.h>
-#include <Parsers/ParserTablePropertiesQuery.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/DumpASTNode.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Poco/Util/XMLConfiguration.h>
+#include <Common/tests/gtest_global_context.h>
+#include <common/types.h>
 
 #include <gtest/gtest.h>
 
@@ -25,9 +19,10 @@ static bool registered = false;
 #pragma GCC diagnostic ignored "-Wunused-function"
 static std::string configurationToString(const DictionaryConfigurationPtr & config)
 {
-    const Poco::Util::XMLConfiguration * xml_config = dynamic_cast<const Poco::Util::XMLConfiguration *>(config.get());
-    std::ostringstream oss;
-    xml_config->save(oss);
+    const Poco::Util::XMLConfiguration & xml_config = dynamic_cast<const Poco::Util::XMLConfiguration &>(*config);
+    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    xml_config.save(oss);
     return oss.str();
 }
 
@@ -54,7 +49,7 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
 
     /// name
     EXPECT_EQ(config->getString("dictionary.database"), "test");
@@ -122,7 +117,7 @@ TEST(ConvertDictionaryAST, TrickyAttributes)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config->keys("dictionary.structure", keys);
@@ -167,7 +162,7 @@ TEST(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config->keys("dictionary.structure.key", keys);
@@ -218,7 +213,7 @@ TEST(ConvertDictionaryAST, ComplexSource)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
     /// source
     EXPECT_EQ(config->getString("dictionary.source.mysql.host"), "localhost");
     EXPECT_EQ(config->getInt("dictionary.source.mysql.port"), 9000);

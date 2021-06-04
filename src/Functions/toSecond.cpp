@@ -1,4 +1,3 @@
-#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionDateOrDateTimeToSomething.h>
@@ -13,6 +12,8 @@ using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToSeco
 void registerFunctionToSecond(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToSecond>();
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToSecond>("SECOND", FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -1,6 +1,6 @@
 ---
-toc_priority: 8
-toc_title: "\u91C7\u7528\u8005"
+toc_priority: 5
+toc_title: "ClickHouse用户"
 ---
 
 # ClickHouse用户 {#clickhouse-adopters}
@@ -64,6 +64,7 @@ toc_title: "\u91C7\u7528\u8005"
 | [Splunk](https://www.splunk.com/)                               | 业务分析         | 主要产品       | —                                                 | —                                                                    | [英文幻灯片，2018年1月](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup12/splunk.pdf)                                                                                                   |
 | [Spotify](https://www.spotify.com)                              | 音乐             | 实验           | —                                                 | —                                                                    | [幻灯片，七月2018](https://www.slideshare.net/glebus/using-clickhouse-for-experimentation-104247173)                                                                                                              |
 | [腾讯](https://www.tencent.com)                                 | 大数据           | 数据处理       | —                                                 | —                                                                    | [中文幻灯片，2018年10月](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/5.%20ClickHouse大数据集群应用_李俊飞腾讯网媒事业部.pdf)                                                      |
+| <a href="https://www.tencentmusic.com/" class="favicon">腾讯QQ音乐(TME)</a>                                  | 大数据                       | 数据处理               | —                                                          | —                                                                            | [博客文章，2020年6月](https://cloud.tencent.com/developer/article/1637840) 
 | [优步](https://www.uber.com)                                    | 出租车           | 日志记录       | —                                                 | —                                                                    | [幻灯片，二月2020](https://presentations.clickhouse.tech/meetup40/uber.pdf)                                                                                                                                       |
 | [VKontakte](https://vk.com)                                     | 社交网络         | 统计，日志记录 | —                                                 | —                                                                    | [俄文幻灯片，八月2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup17/3_vk.pdf)                                                                                                      |
 | [Wisebits](https://wisebits.com/)                               | IT解决方案       | 分析           | —                                                 | —                                                                    | [俄文幻灯片，2019年5月](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup22/strategies.pdf)                                                                                               |

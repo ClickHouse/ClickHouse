@@ -40,6 +40,20 @@
             </volumes>
         </jbods_with_external>
 
+        <default_with_small_jbod_with_external>
+            <volumes>
+                <default>
+                    <disk>default</disk>
+                </default>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                </external>
+            </volumes>
+        </default_with_small_jbod_with_external>
+
         <small_jbod_with_external>
             <volumes>
                 <main>
@@ -69,6 +83,18 @@
                 </main>
             </volumes>
         </only_jbod2>
+
+        <jbod_without_instant_ttl_move>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                    <perform_ttl_move_on_insert>false</perform_ttl_move_on_insert>
+                </external>
+            </volumes>
+        </jbod_without_instant_ttl_move>
     </policies>
 
 </storage_configuration>

@@ -14,6 +14,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -29,7 +30,7 @@ namespace
   * It differs, for example, in that it uses a trivial hash function, since `uniq` of many arguments first hashes them out itself.
   */
 template <typename Data, typename DataForVariadic>
-AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params)
+AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     assertNoParameters(name, params);
 
@@ -73,7 +74,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 }
 
 template <bool is_exact, template <typename> class Data, typename DataForVariadic>
-AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params)
+AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     assertNoParameters(name, params);
 
@@ -122,14 +123,22 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 
 void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 {
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+
     factory.registerFunction("uniq",
-        {createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>, {true}});
+        {createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>, properties});
 
     factory.registerFunction("uniqHLL12",
-        {createAggregateFunctionUniq<false, AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12DataForVariadic>, {true}});
+        {createAggregateFunctionUniq<false, AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12DataForVariadic>, properties});
 
     factory.registerFunction("uniqExact",
-        {createAggregateFunctionUniq<true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>, {true}});
+        {createAggregateFunctionUniq<true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>, properties});
+
+#if USE_DATASKETCHES
+    factory.registerFunction("uniqTheta",
+        {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaData>, properties});
+#endif
+
 }
 
 }

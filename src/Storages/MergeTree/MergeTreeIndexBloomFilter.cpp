@@ -1,8 +1,8 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <ext/bit_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
@@ -35,6 +35,8 @@ MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
     , bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
 {
+    assert(bits_per_row != 0);
+    assert(hash_functions != 0);
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
@@ -65,7 +67,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
     return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const SelectQueryInfo & query_info, const Context & context) const
+MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const SelectQueryInfo & query_info, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(query_info, context, index.sample_block, hash_functions);
 }
@@ -83,7 +85,7 @@ static void assertIndexColumnsType(const Block & header)
         WhichDataType which(actual_type);
 
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
-            !which.isDateOrDateTime() && !which.isEnum())
+            !which.isDate() && !which.isDateTime() && !which.isDateTime64() && !which.isEnum() && !which.isUUID())
             throw Exception("Unexpected type " + type->getName() + " of bloom filter index.",
                             ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -92,7 +94,6 @@ static void assertIndexColumnsType(const Block & header)
 MergeTreeIndexPtr bloomFilterIndexCreatorNew(
     const IndexDescription & index)
 {
-
     double max_conflict_probability = 0.025;
 
     if (!index.arguments.empty())

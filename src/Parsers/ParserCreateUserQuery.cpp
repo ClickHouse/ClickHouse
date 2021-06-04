@@ -49,6 +49,8 @@ namespace
             std::optional<Authentication::Type> type;
             bool expect_password = false;
             bool expect_hash = false;
+            bool expect_ldap_server_name = false;
+            bool expect_kerberos_realm = false;
 
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
@@ -57,7 +59,14 @@ namespace
                     if (ParserKeyword{Authentication::TypeInfo::get(check_type).raw_name}.ignore(pos, expected))
                     {
                         type = check_type;
-                        expect_password = (check_type != Authentication::NO_PASSWORD);
+
+                        if (check_type == Authentication::LDAP)
+                            expect_ldap_server_name = true;
+                        else if (check_type == Authentication::KERBEROS)
+                            expect_kerberos_realm = true;
+                        else if (check_type != Authentication::NO_PASSWORD)
+                            expect_password = true;
+
                         break;
                     }
                 }
@@ -85,21 +94,44 @@ namespace
                 expect_password = true;
             }
 
-            String password;
+            String value;
             if (expect_password || expect_hash)
             {
                 ASTPtr ast;
                 if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
                     return false;
 
-                password = ast->as<const ASTLiteral &>().value.safeGet<String>();
+                value = ast->as<const ASTLiteral &>().value.safeGet<String>();
+            }
+            else if (expect_ldap_server_name)
+            {
+                ASTPtr ast;
+                if (!ParserKeyword{"SERVER"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
+                    return false;
+
+                value = ast->as<const ASTLiteral &>().value.safeGet<String>();
+            }
+            else if (expect_kerberos_realm)
+            {
+                if (ParserKeyword{"REALM"}.ignore(pos, expected))
+                {
+                    ASTPtr ast;
+                    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                        return false;
+
+                    value = ast->as<const ASTLiteral &>().value.safeGet<String>();
+                }
             }
 
             authentication = Authentication{*type};
             if (expect_password)
-                authentication.setPassword(password);
+                authentication.setPassword(value);
             else if (expect_hash)
-                authentication.setPasswordHashHex(password);
+                authentication.setPasswordHashHex(value);
+            else if (expect_ldap_server_name)
+                authentication.setLDAPServerName(value);
+            else if (expect_kerberos_realm)
+                authentication.setKerberosRealm(value);
 
             return true;
         });
@@ -214,12 +246,12 @@ namespace
 
             ASTPtr ast;
             ParserRolesOrUsersSet default_roles_p;
-            default_roles_p.allowAll().allowRoleNames().useIDMode(id_mode);
+            default_roles_p.allowAll().allowRoles().useIDMode(id_mode);
             if (!default_roles_p.parse(pos, ast, expected))
                 return false;
 
             default_roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
-            default_roles->allow_user_names = false;
+            default_roles->allow_users = false;
             return true;
         });
     }
@@ -239,6 +271,24 @@ namespace
                 return false;
 
             settings = std::move(new_settings_ast->as<const ASTSettingsProfileElements &>().elements);
+            return true;
+        });
+    }
+
+    bool parseGrantees(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & grantees)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"GRANTEES"}.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast;
+            ParserRolesOrUsersSet grantees_p;
+            grantees_p.allowAny().allowUsers().allowCurrentUser().allowRoles().useIDMode(id_mode);
+            if (!grantees_p.parse(pos, ast, expected))
+                return false;
+
+            grantees = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
             return true;
         });
     }
@@ -298,6 +348,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> remove_hosts;
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
+    std::shared_ptr<ASTRolesOrUsersSet> grantees;
     String cluster;
 
     while (true)
@@ -334,6 +385,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+            continue;
+
+        if (!grantees && parseGrantees(pos, expected, attach_mode, grantees))
             continue;
 
         if (alter)
@@ -390,6 +444,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->remove_hosts = std::move(remove_hosts);
     query->default_roles = std::move(default_roles);
     query->settings = std::move(settings);
+    query->grantees = std::move(grantees);
 
     return true;
 }

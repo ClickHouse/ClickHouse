@@ -5,7 +5,7 @@ CREATE TABLE alter_default
   date Date,
   key UInt64
 )
-ENGINE ReplicatedMergeTree('/clickhouse/tables/alter_default', '1')
+ENGINE ReplicatedMergeTree('/clickhouse/tables/test_01079/alter_default', '1')
 ORDER BY key;
 
 INSERT INTO alter_default select toDate('2020-01-05'), number from system.numbers limit 100;

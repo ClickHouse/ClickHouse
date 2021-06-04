@@ -7,10 +7,12 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <IO/UncompressedCache.h>
+#include <IO/MMappedFileCache.h>
 #include <Databases/IDatabase.h>
 #include <chrono>
 
@@ -43,7 +45,8 @@ AsynchronousMetrics::~AsynchronousMetrics()
         }
 
         wait_cond.notify_one();
-        thread.join();
+        if (thread)
+            thread->join();
     }
     catch (...)
     {
@@ -58,20 +61,46 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
     return values;
 }
 
+static auto get_next_update_time(std::chrono::seconds update_period)
+{
+    using namespace std::chrono;
+
+    const auto now = time_point_cast<seconds>(system_clock::now());
+
+    // Use seconds since the start of the hour, because we don't know when
+    // the epoch started, maybe on some weird fractional time.
+    const auto start_of_hour = time_point_cast<seconds>(time_point_cast<hours>(now));
+    const auto seconds_passed = now - start_of_hour;
+
+    // Rotate time forward by half a period -- e.g. if a period is a minute,
+    // we'll collect metrics on start of minute + 30 seconds. This is to
+    // achieve temporal separation with MetricTransmitter. Don't forget to
+    // rotate it back.
+    const auto rotation = update_period / 2;
+
+    const auto periods_passed = (seconds_passed + rotation) / update_period;
+    const auto seconds_next = (periods_passed + 1) * update_period - rotation;
+    const auto time_next = start_of_hour + seconds_next;
+
+    return time_next;
+}
 
 void AsynchronousMetrics::run()
 {
     setThreadName("AsyncMetrics");
 
-    /// Next minute + 30 seconds. To be distant with moment of transmission of metrics, see MetricsTransmitter.
-    const auto get_next_minute = []
-    {
-        return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
-            std::chrono::system_clock::now() + std::chrono::minutes(1)) + std::chrono::seconds(30);
-    };
-
     while (true)
     {
+        {
+            // Wait first, so that the first metric collection is also on even time.
+            std::unique_lock lock{mutex};
+            if (wait_cond.wait_until(lock, get_next_update_time(update_period),
+                [this] { return quit; }))
+            {
+                break;
+            }
+        }
+
         try
         {
             update();
@@ -80,10 +109,6 @@ void AsynchronousMetrics::run()
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-
-        std::unique_lock lock{mutex};
-        if (wait_cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
-            break;
     }
 }
 
@@ -103,13 +128,51 @@ static void calculateMaxAndSum(Max & max, Sum & sum, T x)
         max = x;
 }
 
+#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+uint64_t updateJemallocEpoch()
+{
+    uint64_t value = 0;
+    size_t size = sizeof(value);
+    mallctl("epoch", &value, &size, &value, size);
+    return value;
+}
+
+template <typename Value>
+static void saveJemallocMetricImpl(AsynchronousMetricValues & values,
+    const std::string & jemalloc_full_name,
+    const std::string & clickhouse_full_name)
+{
+    Value value{};
+    size_t size = sizeof(value);
+    mallctl(jemalloc_full_name.c_str(), &value, &size, nullptr, 0);
+    values[clickhouse_full_name] = value;
+}
+
+template<typename Value>
+static void saveJemallocMetric(AsynchronousMetricValues & values,
+    const std::string & metric_name)
+{
+    saveJemallocMetricImpl<Value>(values,
+        fmt::format("stats.{}", metric_name),
+        fmt::format("jemalloc.{}", metric_name));
+}
+
+template<typename Value>
+static void saveAllArenasMetric(AsynchronousMetricValues & values,
+    const std::string & metric_name)
+{
+    saveJemallocMetricImpl<Value>(values,
+        fmt::format("stats.arenas.{}.{}", MALLCTL_ARENAS_ALL, metric_name),
+        fmt::format("jemalloc.arenas.all.{}", metric_name));
+}
+#endif
 
 void AsynchronousMetrics::update()
 {
     AsynchronousMetricValues new_values;
 
     {
-        if (auto mark_cache = context.getMarkCache())
+        if (auto mark_cache = getContext()->getMarkCache())
         {
             new_values["MarkCacheBytes"] = mark_cache->weight();
             new_values["MarkCacheFiles"] = mark_cache->count();
@@ -117,21 +180,31 @@ void AsynchronousMetrics::update()
     }
 
     {
-        if (auto uncompressed_cache = context.getUncompressedCache())
+        if (auto uncompressed_cache = getContext()->getUncompressedCache())
         {
             new_values["UncompressedCacheBytes"] = uncompressed_cache->weight();
             new_values["UncompressedCacheCells"] = uncompressed_cache->count();
         }
     }
 
+    {
+        if (auto mmap_cache = getContext()->getMMappedFileCache())
+        {
+            new_values["MMapCacheCells"] = mmap_cache->count();
+        }
+    }
+
 #if USE_EMBEDDED_COMPILER
     {
-        if (auto compiled_expression_cache = context.getCompiledExpressionCache())
+        if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+        {
+            new_values["CompiledExpressionCacheBytes"] = compiled_expression_cache->weight();
             new_values["CompiledExpressionCacheCount"]  = compiled_expression_cache->count();
+        }
     }
 #endif
 
-    new_values["Uptime"] = context.getUptimeSeconds();
+    new_values["Uptime"] = getContext()->getUptimeSeconds();
 
     /// Process memory usage according to OS
 #if defined(OS_LINUX)
@@ -147,8 +220,22 @@ void AsynchronousMetrics::update()
         /// We must update the value of total_memory_tracker periodically.
         /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
         /// See https://github.com/ClickHouse/ClickHouse/issues/10293
-        total_memory_tracker.set(data.resident);
-        CurrentMetrics::set(CurrentMetrics::MemoryTracking, data.resident);
+        {
+            Int64 amount = total_memory_tracker.get();
+            Int64 peak = total_memory_tracker.getPeak();
+            Int64 new_amount = data.resident;
+
+            LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"),
+                "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
+                ReadableSize(amount),
+                ReadableSize(peak),
+                ReadableSize(new_amount),
+                ReadableSize(new_amount - amount)
+            );
+
+            total_memory_tracker.set(new_amount);
+            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
+        }
     }
 #endif
 
@@ -171,12 +258,16 @@ void AsynchronousMetrics::update()
         size_t number_of_databases = databases.size();
         size_t total_number_of_tables = 0;
 
+        size_t total_number_of_bytes = 0;
+        size_t total_number_of_rows = 0;
+        size_t total_number_of_parts = 0;
+
         for (const auto & db : databases)
         {
-            /// Lazy database can not contain MergeTree tables
-            if (db.second->getEngineName() == "Lazy")
+            /// Check if database can contain MergeTree tables
+            if (!db.second->canContainMergeTreeTables())
                 continue;
-            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
                 const auto & table = iterator->table();
@@ -219,6 +310,17 @@ void AsynchronousMetrics::update()
                 if (table_merge_tree)
                 {
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
+                    const auto & settings = getContext()->getSettingsRef();
+                    total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
+                    total_number_of_rows += table_merge_tree->totalRows(settings).value();
+                    total_number_of_parts += table_merge_tree->getPartsCount();
+                }
+                if (table_replicated_merge_tree)
+                {
+                    const auto & settings = getContext()->getSettingsRef();
+                    total_number_of_bytes += table_replicated_merge_tree->totalBytes(settings).value();
+                    total_number_of_rows += table_replicated_merge_tree->totalRows(settings).value();
+                    total_number_of_parts += table_replicated_merge_tree->getPartsCount();
                 }
             }
         }
@@ -238,42 +340,124 @@ void AsynchronousMetrics::update()
 
         new_values["NumberOfDatabases"] = number_of_databases;
         new_values["NumberOfTables"] = total_number_of_tables;
+
+        new_values["TotalBytesOfMergeTreeTables"] = total_number_of_bytes;
+        new_values["TotalRowsOfMergeTreeTables"] = total_number_of_rows;
+        new_values["TotalPartsOfMergeTreeTables"] = total_number_of_parts;
+
+        auto get_metric_name = [](const String & name) -> const char *
+        {
+            static std::map<String, const char *> metric_map = {
+                {"tcp_port", "TCPThreads"},
+                {"tcp_port_secure", "TCPSecureThreads"},
+                {"http_port", "HTTPThreads"},
+                {"https_port", "HTTPSecureThreads"},
+                {"interserver_http_port", "InterserverThreads"},
+                {"interserver_https_port", "InterserverSecureThreads"},
+                {"mysql_port", "MySQLThreads"},
+                {"postgresql_port", "PostgreSQLThreads"},
+                {"grpc_port", "GRPCThreads"},
+                {"prometheus.port", "PrometheusThreads"}
+            };
+            auto it = metric_map.find(name);
+            if (it == metric_map.end())
+                return nullptr;
+            else
+                return it->second;
+        };
+
+        if (servers_to_start_before_tables)
+        {
+            for (const auto & server : *servers_to_start_before_tables)
+            {
+                if (const auto * name = get_metric_name(server.getPortName()))
+                    new_values[name] = server.currentThreads();
+            }
+        }
+
+        if (servers)
+        {
+            for (const auto & server : *servers)
+            {
+                if (const auto * name = get_metric_name(server.getPortName()))
+                    new_values[name] = server.currentThreads();
+            }
+        }
     }
 
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+    // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
+    // the following calls will return stale values. It increments and returns
+    // the current epoch number, which might be useful to log as a sanity check.
+    auto epoch = updateJemallocEpoch();
+    new_values["jemalloc.epoch"] = epoch;
+
+    // Collect the statistics themselves.
+    saveJemallocMetric<size_t>(new_values, "allocated");
+    saveJemallocMetric<size_t>(new_values, "active");
+    saveJemallocMetric<size_t>(new_values, "metadata");
+    saveJemallocMetric<size_t>(new_values, "metadata_thp");
+    saveJemallocMetric<size_t>(new_values, "resident");
+    saveJemallocMetric<size_t>(new_values, "mapped");
+    saveJemallocMetric<size_t>(new_values, "retained");
+    saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
+    saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
+    saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
+    saveAllArenasMetric<size_t>(new_values, "pactive");
+    saveAllArenasMetric<size_t>(new_values, "pdirty");
+    saveAllArenasMetric<size_t>(new_values, "pmuzzy");
+    saveAllArenasMetric<size_t>(new_values, "dirty_purged");
+    saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
+#endif
+
+#if defined(OS_LINUX)
+    // Try to add processor frequencies, ignoring errors.
+    try
     {
-#    define FOR_EACH_METRIC(M) \
-        M("allocated", size_t) \
-        M("active", size_t) \
-        M("metadata", size_t) \
-        M("metadata_thp", size_t) \
-        M("resident", size_t) \
-        M("mapped", size_t) \
-        M("retained", size_t) \
-        M("background_thread.num_threads", size_t) \
-        M("background_thread.num_runs", uint64_t) \
-        M("background_thread.run_interval", uint64_t)
+        ReadBufferFromFile buf("/proc/cpuinfo", 32768 /* buf_size */);
 
-#    define GET_METRIC(NAME, TYPE) \
-        do \
-        { \
-            TYPE value{}; \
-            size_t size = sizeof(value); \
-            mallctl("stats." NAME, &value, &size, nullptr, 0); \
-            new_values["jemalloc." NAME] = value; \
-        } while (false);
+        // We need the following lines:
+        // processor : 4
+        // cpu MHz : 4052.941
+        // They contain tabs and are interspersed with other info.
+        int core_id = 0;
+        while (!buf.eof())
+        {
+            std::string s;
+            // We don't have any backslash escape sequences in /proc/cpuinfo, so
+            // this function will read the line until EOL, which is exactly what
+            // we need.
+            readEscapedStringUntilEOL(s, buf);
+            // It doesn't read the EOL itself.
+            ++buf.position();
 
-        FOR_EACH_METRIC(GET_METRIC)
-
-#    undef GET_METRIC
-#    undef FOR_EACH_METRIC
+            if (s.rfind("processor", 0) == 0)
+            {
+                if (auto colon = s.find_first_of(':'))
+                {
+                    core_id = std::stoi(s.substr(colon + 2));
+                }
+            }
+            else if (s.rfind("cpu MHz", 0) == 0)
+            {
+                if (auto colon = s.find_first_of(':'))
+                {
+                    auto mhz = std::stod(s.substr(colon + 2));
+                    new_values[fmt::format("CPUFrequencyMHz_{}", core_id)] = mhz;
+                }
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 #endif
 
     /// Add more metrics as you wish.
 
     // Log the new metrics.
-    if (auto log = context.getAsynchronousMetricLog())
+    if (auto log = getContext()->getAsynchronousMetricLog())
     {
         log->addValues(new_values);
     }

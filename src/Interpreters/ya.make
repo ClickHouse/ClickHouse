@@ -1,3 +1,6 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 ADDINCL(
@@ -13,54 +16,58 @@ PEERDIR(
 
 NO_COMPILER_WARNINGS()
 
+
 SRCS(
     ActionLocksManager.cpp
+    ActionsDAG.cpp
     ActionsVisitor.cpp
-    addMissingDefaults.cpp
-    addTypeConversionToAST.cpp
+    AggregateDescription.cpp
     Aggregator.cpp
+    ApplyWithAliasVisitor.cpp
+    ApplyWithGlobalVisitor.cpp
+    ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
-    ArithmeticOperationsInAgrFuncOptimize.h
     ArrayJoinAction.cpp
+    AsynchronousMetricLog.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
-    castColumn.cpp
     CatBoostModel.cpp
     ClientInfo.cpp
     Cluster.cpp
-    ClusterProxy/executeQuery.cpp
     ClusterProxy/SelectStreamFactory.cpp
+    ClusterProxy/executeQuery.cpp
     CollectJoinOnKeysVisitor.cpp
+    ColumnAliasesVisitor.cpp
     Context.cpp
-    convertFieldToType.cpp
-    createBlockSelector.cpp
+    ConvertStringsToEnumVisitor.cpp
+    CrashLog.cpp
     CrossToInnerJoinVisitor.cpp
+    DDLTask.cpp
+    DDLWorker.cpp
+    DNSCacheUpdater.cpp
     DatabaseAndTableWithAlias.cpp
     DatabaseCatalog.cpp
-    DDLWorker.cpp
     DictionaryReader.cpp
-    DNSCacheUpdater.cpp
     EmbeddedDictionaries.cpp
-    evaluateConstantExpression.cpp
-    executeQuery.cpp
     ExecuteScalarSubqueriesVisitor.cpp
     ExpressionActions.cpp
+    ExpressionActionsSettings.cpp
     ExpressionAnalyzer.cpp
     ExternalDictionariesLoader.cpp
     ExternalLoader.cpp
-    ExternalLoaderDatabaseConfigRepository.cpp
+    ExternalLoaderDictionaryStorageConfigRepository.cpp
     ExternalLoaderTempConfigRepository.cpp
     ExternalLoaderXMLConfigRepository.cpp
     ExternalModelsLoader.cpp
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
-    getClusterName.cpp
-    getTableExpressions.cpp
+    FunctionNameNormalizer.cpp
     HashJoin.cpp
-    IdentifierSemantic.cpp
     IExternalLoadable.cpp
+    IInterpreter.cpp
+    IInterpreterUnionOrSelectQuery.cpp
+    IdentifierSemantic.cpp
     InJoinSubqueriesPreprocessor.cpp
-    inplaceBlockConversions.cpp
     InternalTextLogsQueue.cpp
     InterpreterAlterQuery.cpp
     InterpreterCheckQuery.cpp
@@ -75,6 +82,7 @@ SRCS(
     InterpreterDropQuery.cpp
     InterpreterExistsQuery.cpp
     InterpreterExplainQuery.cpp
+    InterpreterExternalDDLQuery.cpp
     InterpreterFactory.cpp
     InterpreterGrantQuery.cpp
     InterpreterInsertQuery.cpp
@@ -85,8 +93,8 @@ SRCS(
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
     InterpreterSetRoleQuery.cpp
-    InterpreterShowAccessQuery.cpp
     InterpreterShowAccessEntitiesQuery.cpp
+    InterpreterShowAccessQuery.cpp
     InterpreterShowCreateAccessEntityQuery.cpp
     InterpreterShowCreateQuery.cpp
     InterpreterShowGrantsQuery.cpp
@@ -96,21 +104,22 @@ SRCS(
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
     InterpreterWatchQuery.cpp
-    interpretSubquery.cpp
-    join_common.cpp
-    JoinedTables.cpp
+    InterserverCredentials.cpp
     JoinSwitcher.cpp
     JoinToSubqueryTransformVisitor.cpp
-    loadMetadata.cpp
+    JoinedTables.cpp
     LogicalExpressionsOptimizer.cpp
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
     MetricLog.cpp
-    AsynchronousMetricLog.cpp
     MutationsInterpreter.cpp
+    MySQL/InterpretersMySQLDDLQuery.cpp
+    NormalizeSelectWithUnionQueryVisitor.cpp
     NullableUtils.cpp
+    OpenTelemetrySpanLog.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
+    OptimizeShardingKeyRewriteInVisitor.cpp
     PartLog.cpp
     PredicateExpressionsOptimizer.cpp
     PredicateRewriteVisitor.cpp
@@ -119,19 +128,22 @@ SRCS(
     QueryAliasesVisitor.cpp
     QueryLog.cpp
     QueryNormalizer.cpp
+    QueryParameterVisitor.cpp
     QueryThreadLog.cpp
+    RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp
     ReplaceQueryParameterVisitor.cpp
     RequiredSourceColumnsData.cpp
     RequiredSourceColumnsVisitor.cpp
+    RewriteAnyFunctionVisitor.cpp
+    RewriteCountVariantsVisitor.cpp
+    RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp
     SetVariants.cpp
-    sortBlock.cpp
     SortedBlocksWriter.cpp
     StorageID.cpp
     SubqueryForSet.cpp
-    SyntaxAnalyzer.cpp
     SystemLog.cpp
     TableJoin.cpp
     TablesStatus.cpp
@@ -140,6 +152,28 @@ SRCS(
     ThreadStatusExt.cpp
     TraceLog.cpp
     TranslateQualifiedNamesVisitor.cpp
+    TreeOptimizer.cpp
+    TreeRewriter.cpp
+    WindowDescription.cpp
+    addMissingDefaults.cpp
+    addTypeConversionToAST.cpp
+    castColumn.cpp
+    convertFieldToType.cpp
+    createBlockSelector.cpp
+    evaluateConstantExpression.cpp
+    executeDDLQueryOnCluster.cpp
+    executeQuery.cpp
+    getClusterName.cpp
+    getHeaderForProcessingStage.cpp
+    getTableExpressions.cpp
+    inplaceBlockConversions.cpp
+    interpretSubquery.cpp
+    join_common.cpp
+    loadMetadata.cpp
+    processColumnTransformers.cpp
+    replaceAliasColumnsInQuery.cpp
+    sortBlock.cpp
+
 )
 
 END()

@@ -1,3 +1,8 @@
+---
+toc_priority: 38
+toc_title: GRANT
+---
+
 # GRANT
 
 - Присваивает [привилегии](#grant-privileges) пользователям или ролям ClickHouse.
@@ -79,6 +84,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
             - `ALTER RENAME COLUMN`
         - `ALTER INDEX`
             - `ALTER ORDER BY`
+            - `ALTER SAMPLE BY`			
             - `ALTER ADD INDEX`
             - `ALTER DROP INDEX`
             - `ALTER MATERIALIZE INDEX`
@@ -87,7 +93,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
             - `ALTER ADD CONSTRAINT`
             - `ALTER DROP CONSTRAINT`
         - `ALTER TTL`
-        - `ALTER MATERIALIZE TTL`
+            - `ALTER MATERIALIZE TTL`
         - `ALTER SETTINGS`
         - `ALTER MOVE PARTITION`
         - `ALTER FETCH PARTITION`
@@ -98,9 +104,9 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 - [CREATE](#grant-create)
     - `CREATE DATABASE`
     - `CREATE TABLE`
+        - `CREATE TEMPORARY TABLE`
     - `CREATE VIEW`
     - `CREATE DICTIONARY`
-    - `CREATE TEMPORARY TABLE`
 - [DROP](#grant-drop)
     - `DROP DATABASE`
     - `DROP TABLE`
@@ -146,7 +152,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
     - `SYSTEM RELOAD`
         - `SYSTEM RELOAD CONFIG`
         - `SYSTEM RELOAD DICTIONARY`
-        - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+            - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
     - `SYSTEM MERGES`
     - `SYSTEM TTL MERGES`
     - `SYSTEM FETCHES`
@@ -168,7 +174,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
     - `FILE`
     - `URL`
     - `REMOTE`
-    - `YSQL`
+    - `MYSQL`
     - `ODBC`
     - `JDBC`
     - `HDFS`
@@ -249,7 +255,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### ALTER {#grant-alter}
 
-Разрешает выполнять запросы [ALTER](alter.md) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять запросы [ALTER](alter/index.md) в соответствии со следующей иерархией привилегий:
 
 - `ALTER`. Уровень: `COLUMN`. 
     - `ALTER TABLE`. Уровень: `GROUP`
@@ -264,6 +270,7 @@ GRANT INSERT(x,y) ON db.table TO john
             - `ALTER RENAME COLUMN`. Уровень: `COLUMN`. Алиасы: `RENAME COLUMN`
         - `ALTER INDEX`. Уровень: `GROUP`. Алиасы: `INDEX`
             - `ALTER ORDER BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
+            - `ALTER SAMPLE BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`			
             - `ALTER ADD INDEX`. Уровень: `TABLE`. Алиасы: `ADD INDEX`
             - `ALTER DROP INDEX`. Уровень: `TABLE`. Алиасы: `DROP INDEX`
             - `ALTER MATERIALIZE INDEX`. Уровень: `TABLE`. Алиасы: `MATERIALIZE INDEX`
@@ -272,7 +279,7 @@ GRANT INSERT(x,y) ON db.table TO john
             - `ALTER ADD CONSTRAINT`. Уровень: `TABLE`. Алиасы: `ADD CONSTRAINT`
             - `ALTER DROP CONSTRAINT`. Уровень: `TABLE`. Алиасы: `DROP CONSTRAINT`
         - `ALTER TTL`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY TTL`, `MODIFY TTL`
-        - `ALTER MATERIALIZE TTL`. Уровень: `TABLE`. Алиасы: `MATERIALIZE TTL`
+            - `ALTER MATERIALIZE TTL`. Уровень: `TABLE`. Алиасы: `MATERIALIZE TTL`
         - `ALTER SETTINGS`. Уровень: `TABLE`. Алиасы: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
         - `ALTER MOVE PARTITION`. Уровень: `TABLE`. Алиасы: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
         - `ALTER FETCH PARTITION`. Уровень: `TABLE`. Алиасы: `FETCH PARTITION`
@@ -291,18 +298,18 @@ GRANT INSERT(x,y) ON db.table TO john
 - Привилегия `MODIFY SETTING` позволяет изменять настройки движков таблиц. Не влияет на настройки или конфигурационные параметры сервера.
 - Операция `ATTACH` требует наличие привилегии [CREATE](#grant-create).
 - Операция `DETACH` требует наличие привилегии [DROP](#grant-drop).
-- Для остановки мутации с помощью [KILL MUTATION](misc.md#kill-mutation-statement), необходима привилегия на выполнение данной мутации. Например, чтобы остановить запрос `ALTER UPDATE`, необходима одна из привилегий: `ALTER UPDATE`, `ALTER TABLE` или `ALTER`.
+- Для остановки мутации с помощью [KILL MUTATION](../../sql-reference/statements/kill.md#kill-mutation), необходима привилегия на выполнение данной мутации. Например, чтобы остановить запрос `ALTER UPDATE`, необходима одна из привилегий: `ALTER UPDATE`, `ALTER TABLE` или `ALTER`.
 
 ### CREATE {#grant-create}
 
-Разрешает выполнять DDL-запросы [CREATE](create.md) и [ATTACH](misc.md#attach) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять DDL-запросы [CREATE](../../sql-reference/statements/create/index.md) и [ATTACH](misc.md#attach) в соответствии со следующей иерархией привилегий:
 
 - `CREATE`. Уровень: `GROUP`
     - `CREATE DATABASE`. Уровень: `DATABASE`
     - `CREATE TABLE`. Уровень: `TABLE`
+        - `CREATE TEMPORARY TABLE`. Уровень: `GLOBAL`
     - `CREATE VIEW`. Уровень: `VIEW`
     - `CREATE DICTIONARY`. Уровень: `DICTIONARY`
-    - `CREATE TEMPORARY TABLE`. Уровень: `GLOBAL`
 
 **Дополнительно**
 
@@ -321,7 +328,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### TRUNCATE {#grant-truncate}
 
-Разрешает выполнять запросы [TRUNCATE](misc.md#truncate-statement).
+Разрешает выполнять запросы [TRUNCATE](../../sql-reference/statements/truncate.md).
 
 Уровень: `TABLE`.
 
@@ -348,7 +355,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### KILL QUERY {#grant-kill-query}
 
-Разрешает выполнять запросы [KILL](misc.md#kill-query-statement) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять запросы [KILL](../../sql-reference/statements/kill.md#kill-query) в соответствии со следующей иерархией привилегий:
 
 Уровень: `GLOBAL`.
 
@@ -400,7 +407,7 @@ GRANT INSERT(x,y) ON db.table TO john
     - `SYSTEM RELOAD`. Уровень: `GROUP`
         - `SYSTEM RELOAD CONFIG`. Уровень: `GLOBAL`. Алиасы: `RELOAD CONFIG`
         - `SYSTEM RELOAD DICTIONARY`. Уровень: `GLOBAL`. Алиасы: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
-        - `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Уровень: `GLOBAL`. Алиасы: `RELOAD EMBEDDED DICTIONARIES`
+            - `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Уровень: `GLOBAL`. Алиасы: `RELOAD EMBEDDED DICTIONARIES`
     - `SYSTEM MERGES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
     - `SYSTEM TTL MERGES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
     - `SYSTEM FETCHES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
@@ -476,4 +483,3 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Привилегия `ADMIN OPTION` разрешает пользователю назначать свои роли другому пользователю.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/grant/) <!--hide-->

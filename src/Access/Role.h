@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <Access/GrantedAccess.h>
+#include <Access/AccessRights.h>
 #include <Access/GrantedRoles.h>
 #include <Access/SettingsProfileElement.h>
 
@@ -11,7 +11,7 @@ namespace DB
 
 struct Role : public IAccessEntity
 {
-    GrantedAccess access;
+    AccessRights access;
     GrantedRoles granted_roles;
     SettingsProfileElements settings;
 

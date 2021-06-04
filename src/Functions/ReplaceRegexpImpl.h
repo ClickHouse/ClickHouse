@@ -164,12 +164,15 @@ struct ReplaceRegexpImpl
         size_t size = offsets.size();
         res_offsets.resize(size);
 
-        re2_st::RE2 searcher(needle);
+        typename re2_st::RE2::Options regexp_options;
+        /// Never write error messages to stderr. It's ignorant to do it from library code.
+        regexp_options.set_log_errors(false);
+        re2_st::RE2 searcher(needle, regexp_options);
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
         Instructions instructions = createInstructions(replacement, num_captures);
 
-        /// Cannot perform search for whole block. Will process each string separately.
+        /// Cannot perform search for whole columns. Will process each string separately.
         for (size_t i = 0; i < size; ++i)
         {
             int from = i > 0 ? offsets[i - 1] : 0;
@@ -193,7 +196,10 @@ struct ReplaceRegexpImpl
         res_data.reserve(data.size());
         res_offsets.resize(size);
 
-        re2_st::RE2 searcher(needle);
+        typename re2_st::RE2::Options regexp_options;
+        /// Never write error messages to stderr. It's ignorant to do it from library code.
+        regexp_options.set_log_errors(false);
+        re2_st::RE2 searcher(needle, regexp_options);
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
         Instructions instructions = createInstructions(replacement, num_captures);

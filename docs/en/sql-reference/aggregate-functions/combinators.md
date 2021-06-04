@@ -25,15 +25,49 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘a
 
 -If and -Array can be combined. However, ‘Array’ must come first, then ‘If’. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the ‘cond’ argument won’t be an array.
 
+## -SimpleState {#agg-functions-combinator-simplestate}
+
+If you apply this combinator, the aggregate function returns the same value but with a different type. This is a [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md) that can be stored in a table to work with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) tables.
+
+**Syntax**
+
+``` sql
+<aggFunction>SimpleState(x)
+```
+
+**Arguments**
+
+-   `x` — Aggregate function parameters.
+
+**Returned values**
+
+The value of an aggregate function with the `SimpleAggregateFunction(...)` type.
+
+**Example**
+
+Query:
+
+``` sql
+WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
+```
+
+Result:
+
+``` text
+┌─toTypeName(c)────────────────────────┬─c─┐
+│ SimpleAggregateFunction(any, UInt64) │ 0 │
+└──────────────────────────────────────┴───┘
+```
+
 ## -State {#agg-functions-combinator-state}
 
-If you apply this combinator, the aggregate function doesn’t return the resulting value (such as the number of unique values for the [uniq](reference.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
+If you apply this combinator, the aggregate function does not return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
 
 To work with these states, use:
 
 -   [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
 -   [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
--   [runningAccumulate](../../sql-reference/functions/other-functions.md#function-runningaccumulate) function.
+-   [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
 -   [-Merge](#aggregate_functions_combinators-merge) combinator.
 -   [-MergeState](#aggregate_functions_combinators-mergestate) combinator.
 
@@ -43,32 +77,37 @@ If you apply this combinator, the aggregate function takes the intermediate aggr
 
 ## -MergeState {#aggregate_functions_combinators-mergestate}
 
-Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it doesn’t return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
+Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it does not return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
 
 ## -ForEach {#agg-functions-combinator-foreach}
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
 
+## -Distinct {#agg-functions-combinator-distinct}
+
+Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
+Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` and so on.
+
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
 Changes behavior of an aggregate function.
 
-If an aggregate function doesn't have input values, with this combinator it returns the default value for its return data type. Applies to the aggregate functions that can take empty input data.
+If an aggregate function does not have input values, with this combinator it returns the default value for its return data type. Applies to the aggregate functions that can take empty input data.
 
 `-OrDefault` can be used with other combinators.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 <aggFunction>OrDefault(x)
 ```
 
-**Parameters**
+**Arguments**
 
-- `x` — Aggregate function parameters.
+-   `x` — Aggregate function parameters.
 
-**Returned values** 
- 
+**Returned values**
+
 Returns the default value of an aggregate function’s return type if there is nothing to aggregate.
 
 Type depends on the aggregate function used.
@@ -109,29 +148,28 @@ Result:
 └───────────────────────────────────┘
 ```
 
-
 ## -OrNull {#agg-functions-combinator-ornull}
 
 Changes behavior of an aggregate function.
 
-This combinator converts a result of an aggregate function to the [Nullable](../data-types/nullable.md) data type. If the aggregate function does not have values to calculate it returns [NULL](../syntax.md#null-literal).
+This combinator converts a result of an aggregate function to the [Nullable](../../sql-reference/data-types/nullable.md) data type. If the aggregate function does not have values to calculate it returns [NULL](../../sql-reference/syntax.md#null-literal).
 
 `-OrNull` can be used with other combinators.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 <aggFunction>OrNull(x)
 ```
 
-**Parameters**
+**Arguments**
 
-- `x` — Aggregate function parameters.
- 
-**Returned values** 
+-   `x` — Aggregate function parameters.
 
-- The result of the aggregate function, converted to the `Nullable` data type.
-- `NULL`, if there is nothing to aggregate.
+**Returned values**
+
+-   The result of the aggregate function, converted to the `Nullable` data type.
+-   `NULL`, if there is nothing to aggregate.
 
 Type: `Nullable(aggregate function return type)`.
 
@@ -181,10 +219,10 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `start` — Starting value of the whole required interval for `resampling_key` values.
--   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.
+-   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
 -   `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
 -   `resampling_key` — Column whose values are used for separating data into intervals.
 -   `aggFunction_params` — `aggFunction` parameters.
@@ -210,7 +248,7 @@ Consider the `people` table with the following data:
 
 Let’s get the names of the people whose age lies in the intervals of `[30,60)` and `[60,75)`. Since we use integer representation for age, we get ages in the `[30, 59]` and `[60,74]` intervals.
 
-To aggregate names in an array, we use the [groupArray](reference.md#agg_function-grouparray) aggregate function. It takes one argument. In our case, it’s the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
+To aggregate names in an array, we use the [groupArray](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray) aggregate function. It takes one argument. In our case, it’s the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
 
 ``` sql
 SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
@@ -241,4 +279,3 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->

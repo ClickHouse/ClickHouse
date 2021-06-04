@@ -14,7 +14,6 @@ def started_cluster():
         cluster.start()
 
         for node in (node1, node2):
-
             node.query('''
             CREATE TABLE default.t1_local
             (

@@ -3,7 +3,6 @@
 
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -22,12 +21,12 @@ static DataTypePtr createNumericDataType(const ASTPtr & arguments)
         if (std::is_integral_v<T>)
         {
             if (arguments->children.size() > 1)
-                throw Exception(String(TypeName<T>::get()) + " data type family must not have more than one argument - display width", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} data type family must not have more than one argument - display width", TypeName<T>);
         }
         else
         {
             if (arguments->children.size() > 2)
-                throw Exception(String(TypeName<T>::get()) + " data type family must not have more than two arguments - total number of digits and number of digits following the decimal point", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} data type family must not have more than two arguments - total number of digits and number of digits following the decimal point", TypeName<T>);
         }
     }
     return std::make_shared<DataTypeNumber<T>>();
@@ -36,17 +35,24 @@ static DataTypePtr createNumericDataType(const ASTPtr & arguments)
 
 void registerDataTypeNumbers(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("UInt8", [] { return DataTypePtr(std::make_shared<DataTypeUInt8>()); });
-    factory.registerSimpleDataType("UInt16", [] { return DataTypePtr(std::make_shared<DataTypeUInt16>()); });
-    factory.registerSimpleDataType("UInt32", [] { return DataTypePtr(std::make_shared<DataTypeUInt32>()); });
-    factory.registerSimpleDataType("UInt64", [] { return DataTypePtr(std::make_shared<DataTypeUInt64>()); });
+    factory.registerDataType("UInt8", createNumericDataType<UInt8>);
+    factory.registerDataType("UInt16", createNumericDataType<UInt16>);
+    factory.registerDataType("UInt32", createNumericDataType<UInt32>);
+    factory.registerDataType("UInt64", createNumericDataType<UInt64>);
 
     factory.registerDataType("Int8", createNumericDataType<Int8>);
     factory.registerDataType("Int16", createNumericDataType<Int16>);
     factory.registerDataType("Int32", createNumericDataType<Int32>);
     factory.registerDataType("Int64", createNumericDataType<Int64>);
+
     factory.registerDataType("Float32", createNumericDataType<Float32>);
     factory.registerDataType("Float64", createNumericDataType<Float64>);
+
+    factory.registerSimpleDataType("UInt128", [] { return DataTypePtr(std::make_shared<DataTypeUInt128>()); });
+    factory.registerSimpleDataType("UInt256", [] { return DataTypePtr(std::make_shared<DataTypeUInt256>()); });
+
+    factory.registerSimpleDataType("Int128", [] { return DataTypePtr(std::make_shared<DataTypeInt128>()); });
+    factory.registerSimpleDataType("Int256", [] { return DataTypePtr(std::make_shared<DataTypeInt256>()); });
 
     /// These synonyms are added for compatibility.
 
@@ -63,6 +69,25 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("REAL", "Float32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("SINGLE", "Float32", DataTypeFactory::CaseInsensitive);   /// MS Access
     factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("MEDIUMINT", "Int32", DataTypeFactory::CaseInsensitive);    /// MySQL
+
+    factory.registerAlias("DOUBLE PRECISION", "Float64", DataTypeFactory::CaseInsensitive);
+
+    /// MySQL
+    factory.registerAlias("TINYINT SIGNED", "Int8", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INT1 SIGNED", "Int8", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("SMALLINT SIGNED", "Int16", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("MEDIUMINT SIGNED", "Int32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INT SIGNED", "Int32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INTEGER SIGNED", "Int32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BIGINT SIGNED", "Int64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TINYINT UNSIGNED", "UInt8", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INT1 UNSIGNED", "UInt8", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("SMALLINT UNSIGNED", "UInt16", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("MEDIUMINT UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INT UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INTEGER UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BIGINT UNSIGNED", "UInt64", DataTypeFactory::CaseInsensitive);
 }
 
 }

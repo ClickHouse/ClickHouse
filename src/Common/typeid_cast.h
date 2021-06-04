@@ -47,7 +47,7 @@ std::enable_if_t<std::is_pointer_v<To>, To> typeid_cast(From * from)
 {
     try
     {
-        if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (typeid(*from) == typeid(std::remove_pointer_t<To>)))
+        if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (from && typeid(*from) == typeid(std::remove_pointer_t<To>)))
             return static_cast<To>(from);
         else
             return nullptr;
@@ -64,7 +64,7 @@ std::enable_if_t<ext::is_shared_ptr_v<To>, To> typeid_cast(const std::shared_ptr
 {
     try
     {
-        if ((typeid(From) == typeid(typename To::element_type)) || (typeid(*from) == typeid(typename To::element_type)))
+        if ((typeid(From) == typeid(typename To::element_type)) || (from && typeid(*from) == typeid(typename To::element_type)))
             return std::static_pointer_cast<typename To::element_type>(from);
         else
             return nullptr;

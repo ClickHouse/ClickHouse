@@ -30,3 +30,5 @@ SELECT count() FROM minmax_compact WHERE i64 = 2; -- { serverError 158 }
 
 set max_rows_to_read = 10;
 SELECT count() FROM minmax_compact WHERE i64 = 2;
+
+DROP TABLE minmax_compact;

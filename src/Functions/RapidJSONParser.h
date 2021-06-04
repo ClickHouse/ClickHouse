@@ -5,10 +5,8 @@
 #endif
 
 #if USE_RAPIDJSON
-#    include <Core/Types.h>
-#    include <Common/Exception.h>
-#    include <common/StringRef.h>
-
+#    include <common/types.h>
+#    include <common/defines.h>
 #    include <rapidjson/document.h>
 
 
@@ -19,197 +17,142 @@ namespace DB
 /// It provides ability to parse JSONs using rapidjson library.
 struct RapidJSONParser
 {
-    static constexpr bool need_preallocate = false;
-    void preallocate(size_t) {}
+    class Array;
+    class Object;
 
-    bool parse(const StringRef & json)
-    {
-        rapidjson::MemoryStream ms(json.data, json.size);
-        rapidjson::EncodedInputStream<rapidjson::UTF8<>, rapidjson::MemoryStream> is(ms);
-        document.ParseStream(is);
-        return !document.HasParseError() && (ms.Tell() == json.size);
-    }
-
-    struct Iterator
+    /// References an element in a JSON document, representing a JSON null, boolean, string, number,
+    /// array or object.
+    class Element
     {
     public:
-        Iterator() {}
-        Iterator(const rapidjson::Document & document_) : value(&document_) {}
-        Iterator(const Iterator & src)
-            : value(src.value)
-            , is_object_member(src.is_object_member)
-            , current_in_array(src.current_in_array)
-            , end_of_array(src.end_of_array) {}
+        ALWAYS_INLINE Element() {}
+        ALWAYS_INLINE Element(const rapidjson::Value & value_) : ptr(&value_) {}
 
-        Iterator & operator =(const Iterator & src)
+        ALWAYS_INLINE bool isInt64() const { return ptr->IsInt64(); }
+        ALWAYS_INLINE bool isUInt64() const { return ptr->IsUint64(); }
+        ALWAYS_INLINE bool isDouble() const { return ptr->IsDouble(); }
+        ALWAYS_INLINE bool isString() const { return ptr->IsString(); }
+        ALWAYS_INLINE bool isArray() const { return ptr->IsArray(); }
+        ALWAYS_INLINE bool isObject() const { return ptr->IsObject(); }
+        ALWAYS_INLINE bool isBool() const { return ptr->IsBool(); }
+        ALWAYS_INLINE bool isNull() const { return ptr->IsNull(); }
+
+        ALWAYS_INLINE Int64 getInt64() const { return ptr->GetInt64(); }
+        ALWAYS_INLINE UInt64 getUInt64() const { return ptr->GetUint64(); }
+        ALWAYS_INLINE double getDouble() const { return ptr->GetDouble(); }
+        ALWAYS_INLINE bool getBool() const { return ptr->GetBool(); }
+        ALWAYS_INLINE std::string_view getString() const { return {ptr->GetString(), ptr->GetStringLength()}; }
+        Array getArray() const;
+        Object getObject() const;
+
+    private:
+        const rapidjson::Value * ptr = nullptr;
+    };
+
+    /// References an array in a JSON document.
+    class Array
+    {
+    public:
+        class Iterator
         {
-            value = src.value;
-            is_object_member = src.is_object_member;
-            current_in_array = src.current_in_array;
-            end_of_array = src.end_of_array;
-            return *this;
-        }
+        public:
+            ALWAYS_INLINE Iterator(const rapidjson::Value::ConstValueIterator & it_) : it(it_) {}
+            ALWAYS_INLINE Element operator*() const { return *it; }
+            ALWAYS_INLINE Iterator & operator ++() { ++it; return *this; }
+            ALWAYS_INLINE Iterator operator ++(int) { auto res = *this; ++it; return res; }
+            ALWAYS_INLINE friend bool operator ==(const Iterator & left, const Iterator & right) { return left.it == right.it; }
+            ALWAYS_INLINE friend bool operator !=(const Iterator & left, const Iterator & right) { return !(left == right); }
+        private:
+            rapidjson::Value::ConstValueIterator it;
+        };
 
-        bool isInt64() const { return value->IsInt64(); }
-        bool isUInt64() const { return value->IsUint64(); }
-        bool isDouble() const { return value->IsDouble(); }
-        bool isBool() const { return value->IsBool(); }
-        bool isString() const { return value->IsString(); }
-        bool isArray() const { return value->IsArray(); }
-        bool isObject() const { return value->IsObject(); }
-        bool isNull() const { return value->IsNull(); }
+        ALWAYS_INLINE Array(const rapidjson::Value & value_) : ptr(&value_) {}
+        ALWAYS_INLINE Iterator begin() const { return ptr->Begin(); }
+        ALWAYS_INLINE Iterator end() const { return ptr->End(); }
+        ALWAYS_INLINE size_t size() const { return ptr->Size(); }
+        ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return *(ptr->Begin() + index); }
 
-        Int64 getInt64() const { return value->GetInt64(); }
-        UInt64 getUInt64() const { return value->GetUint64(); }
-        double getDouble() const { return value->GetDouble(); }
-        bool getBool() const { return value->GetBool(); }
-        StringRef getString() const { return {value->GetString(), value->GetStringLength()}; }
+    private:
+        const rapidjson::Value * ptr = nullptr;
+    };
 
-        size_t sizeOfArray() const { return value->Size(); }
+    using KeyValuePair = std::pair<std::string_view, Element>;
 
-        bool arrayElementByIndex(size_t index)
+    /// References an object in a JSON document.
+    class Object
+    {
+    public:
+        class Iterator
         {
-            if (index >= value->Size())
+        public:
+            ALWAYS_INLINE Iterator(const rapidjson::Value::ConstMemberIterator & it_) : it(it_) {}
+            ALWAYS_INLINE KeyValuePair operator *() const { std::string_view key{it->name.GetString(), it->name.GetStringLength()}; return {key, it->value}; }
+            ALWAYS_INLINE Iterator & operator ++() { ++it; return *this; }
+            ALWAYS_INLINE Iterator operator ++(int) { auto res = *this; ++it; return res; }
+            ALWAYS_INLINE friend bool operator ==(const Iterator & left, const Iterator & right) { return left.it == right.it; }
+            ALWAYS_INLINE friend bool operator !=(const Iterator & left, const Iterator & right) { return !(left == right); }
+        private:
+            rapidjson::Value::ConstMemberIterator it;
+        };
+
+        ALWAYS_INLINE Object(const rapidjson::Value & value_) : ptr(&value_) {}
+        ALWAYS_INLINE Iterator begin() const { return ptr->MemberBegin(); }
+        ALWAYS_INLINE Iterator end() const { return ptr->MemberEnd(); }
+        ALWAYS_INLINE size_t size() const { return ptr->MemberCount(); }
+
+        bool find(const std::string_view & key, Element & result) const
+        {
+            auto it = ptr->FindMember(rapidjson::StringRef(key.data(), key.length()));
+            if (it == ptr->MemberEnd())
                 return false;
-            setRange(value->Begin() + index, value->End());
-            value = current_in_array++;
+
+            result = it->value;
             return true;
         }
 
-        bool nextArrayElement()
+        /// Optional: Provides access to an object's element by index.
+        ALWAYS_INLINE KeyValuePair operator[](size_t index) const
         {
-            if (current_in_array == end_of_array)
-                return false;
-            value = current_in_array++;
-            return true;
-        }
-
-        size_t sizeOfObject() const { return value->MemberCount(); }
-
-        bool objectMemberByIndex(size_t index)
-        {
-            if (index >= value->MemberCount())
-                return false;
-            setRange(value->MemberBegin() + index, value->MemberEnd());
-            value = &(current_in_object++)->value;
-            return true;
-        }
-
-        bool objectMemberByIndex(size_t index, StringRef & key)
-        {
-            if (index >= value->MemberCount())
-                return false;
-            setRange(value->MemberBegin() + index, value->MemberEnd());
-            key = getKeyImpl(current_in_object);
-            value = &(current_in_object++)->value;
-            return true;
-        }
-
-        bool objectMemberByName(const StringRef & name)
-        {
-            auto it = value->FindMember(name.data);
-            if (it == value->MemberEnd())
-                return false;
-            setRange(it, value->MemberEnd());
-            value = &(current_in_object++)->value;
-            return true;
-        }
-
-        bool nextObjectMember()
-        {
-            if (current_in_object == end_of_object)
-                return false;
-            value = &(current_in_object++)->value;
-            return true;
-        }
-
-        bool nextObjectMember(StringRef & key)
-        {
-            if (current_in_object == end_of_object)
-                return false;
-            key = getKeyImpl(current_in_object);
-            value = &(current_in_object++)->value;
-            return true;
-        }
-
-        bool isObjectMember() const { return is_object_member; }
-
-        StringRef getKey() const
-        {
-            return getKeyImpl(current_in_object - 1);
+            assert (index < size());
+            auto it = ptr->MemberBegin() + index;
+            std::string_view key{it->name.GetString(), it->name.GetStringLength()};
+            return {key, it->value};
         }
 
     private:
-        void setRange(rapidjson::Value::ConstValueIterator current, rapidjson::Value::ConstValueIterator end)
-        {
-            current_in_array = &*current;
-            end_of_array = &*end;
-            is_object_member = false;
-        }
-
-        void setRange(rapidjson::Value::ConstMemberIterator current, rapidjson::Value::ConstMemberIterator end)
-        {
-            current_in_object = &*current;
-            end_of_object = &*end;
-            is_object_member = true;
-        }
-
-        static StringRef getKeyImpl(const rapidjson::GenericMember<rapidjson::UTF8<>, rapidjson::MemoryPoolAllocator<>> * member)
-        {
-            const auto & name = member->name;
-            return {name.GetString(), name.GetStringLength()};
-        }
-
-        const rapidjson::Value * value = nullptr;
-        bool is_object_member = false;
-
-        union
-        {
-            const rapidjson::GenericMember<rapidjson::UTF8<>, rapidjson::MemoryPoolAllocator<>> * current_in_object;
-            const rapidjson::Value * current_in_array;
-        };
-        union
-        {
-            const rapidjson::GenericMember<rapidjson::UTF8<>, rapidjson::MemoryPoolAllocator<>> * end_of_object;
-            const rapidjson::Value * end_of_array;
-        };
+        const rapidjson::Value * ptr = nullptr;
     };
 
-    Iterator getRoot() { return Iterator{document}; }
+    /// Parses a JSON document, returns the reference to its root element if succeeded.
+    bool parse(const std::string_view & json, Element & result)
+    {
+        rapidjson::MemoryStream ms(json.data(), json.size());
+        rapidjson::EncodedInputStream<rapidjson::UTF8<>, rapidjson::MemoryStream> is(ms);
+        document.ParseStream(is);
+        if (document.HasParseError() || (ms.Tell() != json.size()))
+            return false;
+        result = document;
+        return true;
+    }
 
-    static bool isInt64(const Iterator & it) { return it.isInt64(); }
-    static bool isUInt64(const Iterator & it) { return it.isUInt64(); }
-    static bool isDouble(const Iterator & it) { return it.isDouble(); }
-    static bool isBool(const Iterator & it) { return it.isBool(); }
-    static bool isString(const Iterator & it) { return it.isString(); }
-    static bool isArray(const Iterator & it) { return it.isArray(); }
-    static bool isObject(const Iterator & it) { return it.isObject(); }
-    static bool isNull(const Iterator & it) { return it.isNull(); }
-
-    static Int64 getInt64(const Iterator & it) { return it.getInt64(); }
-    static UInt64 getUInt64(const Iterator & it) { return it.getUInt64(); }
-    static double getDouble(const Iterator & it) { return it.getDouble(); }
-    static bool getBool(const Iterator & it) { return it.getBool(); }
-    static StringRef getString(const Iterator & it) { return it.getString(); }
-
-    static size_t sizeOfArray(const Iterator & it) { return it.sizeOfArray(); }
-    static bool firstArrayElement(Iterator & it) { return it.arrayElementByIndex(0); }
-    static bool arrayElementByIndex(Iterator & it, size_t index) { return it.arrayElementByIndex(index); }
-    static bool nextArrayElement(Iterator & it) { return it.nextArrayElement(); }
-
-    static size_t sizeOfObject(const Iterator & it) { return it.sizeOfObject(); }
-    static bool firstObjectMember(Iterator & it) { return it.objectMemberByIndex(0); }
-    static bool firstObjectMember(Iterator & it, StringRef & first_key) { return it.objectMemberByIndex(0, first_key); }
-    static bool objectMemberByIndex(Iterator & it, size_t index) { return it.objectMemberByIndex(index); }
-    static bool objectMemberByName(Iterator & it, const StringRef & name) { return it.objectMemberByName(name); }
-    static bool nextObjectMember(Iterator & it) { return it.nextObjectMember(); }
-    static bool nextObjectMember(Iterator & it, StringRef & next_key) { return it.nextObjectMember(next_key); }
-    static bool isObjectMember(const Iterator & it) { return it.isObjectMember(); }
-    static StringRef getKey(const Iterator & it) { return it.getKey(); }
+#if 0
+    /// Optional: Allocates memory to parse JSON documents faster.
+    void reserve(size_t max_size);
+#endif
 
 private:
     rapidjson::Document document;
 };
+
+inline ALWAYS_INLINE RapidJSONParser::Array RapidJSONParser::Element::getArray() const
+{
+    return *ptr;
+}
+
+inline ALWAYS_INLINE RapidJSONParser::Object RapidJSONParser::Element::getObject() const
+{
+    return *ptr;
+}
 
 }
 #endif

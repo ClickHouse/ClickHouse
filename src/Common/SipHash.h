@@ -19,6 +19,7 @@
 #include <type_traits>
 #include <Core/Defines.h>
 
+
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
 
 #define SIPROUND                                                  \
@@ -134,9 +135,8 @@ public:
         }
     }
 
-    /// NOTE: std::has_unique_object_representations is only available since clang 6. As of Mar 2017 we still use clang 5 sometimes.
     template <typename T>
-    std::enable_if_t<std::/*has_unique_object_representations_v*/is_standard_layout_v<T>, void> update(const T & x)
+    void update(const T & x)
     {
         update(reinterpret_cast<const char *>(&x), sizeof(x));
     }
@@ -155,7 +155,6 @@ public:
         unalignedStore<UInt64>(out + 8, v2 ^ v3);
     }
 
-    /// template for avoiding 'unsigned long long' vs 'unsigned long' problem on old poco in macos
     template <typename T>
     ALWAYS_INLINE void get128(T & lo, T & hi)
     {
@@ -163,6 +162,13 @@ public:
         finalize();
         lo = v0 ^ v1;
         hi = v2 ^ v3;
+    }
+
+    template <typename T>
+    ALWAYS_INLINE void get128(T & dst)
+    {
+        static_assert(sizeof(T) == 16);
+        get128(reinterpret_cast<char *>(&dst));
     }
 
     UInt64 get64()
@@ -193,7 +199,7 @@ inline UInt64 sipHash64(const char * data, const size_t size)
 }
 
 template <typename T>
-std::enable_if_t<std::/*has_unique_object_representations_v*/is_standard_layout_v<T>, UInt64> sipHash64(const T & x)
+UInt64 sipHash64(const T & x)
 {
     SipHash hash;
     hash.update(x);

@@ -76,6 +76,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         TextLogElement elem;
 
         elem.event_time = msg_ext.time_seconds;
+        elem.event_time_microseconds = msg_ext.time_in_microseconds;
         elem.microseconds = msg_ext.time_microseconds;
 
         elem.thread_name = getThreadName();
@@ -91,10 +92,13 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
             elem.source_file = msg.getSourceFile();
 
         elem.source_line = msg.getSourceLine();
-
-        std::lock_guard<std::mutex> lock(text_log_mutex);
-        if (auto log = text_log.lock())
-            log->add(elem);
+        std::shared_ptr<TextLog> text_log_locked{};
+        {
+            std::lock_guard<std::mutex> lock(text_log_mutex);
+            text_log_locked = text_log.lock();
+        }
+        if (text_log_locked)
+            text_log_locked->add(elem);
     }
 }
 

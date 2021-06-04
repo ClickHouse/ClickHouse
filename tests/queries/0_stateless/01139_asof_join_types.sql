@@ -13,6 +13,6 @@ select * from (select 0 as k, toDecimal64(1, 0) as v) t1 asof join (select 0 as 
 select * from (select 0 as k, toDecimal128(1, 0) as v) t1 asof join (select 0 as k, toDecimal128(0, 0) as v) t2 using(k, v);
 
 select * from (select 0 as k, toDate(0) as v) t1 asof join (select 0 as k, toDate(0) as v) t2 using(k, v);
-select * from (select 0 as k, toDateTime(0) as v) t1 asof join (select 0 as k, toDateTime(0) as v) t2 using(k, v);
+select * from (select 0 as k, toDateTime(0, 'UTC') as v) t1 asof join (select 0 as k, toDateTime(0, 'UTC') as v) t2 using(k, v);
 
 select * from (select 0 as k, 'x' as v) t1 asof join (select 0 as k, 'x' as v) t2 using(k, v); -- { serverError 169 }

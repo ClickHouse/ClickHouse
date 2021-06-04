@@ -1,5 +1,6 @@
 #include <Parsers/ASTNameTypePair.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -12,7 +13,7 @@ ASTPtr ASTNameTypePair::clone() const
 
     if (type)
     {
-        res->type = type;
+        res->type = type->clone();
         res->children.push_back(res->type);
     }
 

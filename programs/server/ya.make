@@ -1,3 +1,5 @@
+OWNER(g:clickhouse)
+
 PROGRAM(clickhouse-server)
 
 PEERDIR(
@@ -7,6 +9,8 @@ PEERDIR(
     clickhouse/src
     contrib/libs/poco/NetSSL_OpenSSL
 )
+
+CFLAGS(-g0)
 
 SRCS(
     clickhouse-server.cpp

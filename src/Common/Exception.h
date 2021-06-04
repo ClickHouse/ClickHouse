@@ -4,11 +4,16 @@
 #include <vector>
 #include <memory>
 
+#include <Poco/Version.h>
 #include <Poco/Exception.h>
 
 #include <Common/StackTrace.h>
 
 #include <fmt/format.h>
+
+#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+#define ABORT_ON_LOGICAL_ERROR
+#endif
 
 namespace Poco { class Logger; }
 
@@ -19,13 +24,20 @@ namespace DB
 class Exception : public Poco::Exception
 {
 public:
+    using FramePointers = std::vector<void *>;
+
     Exception() = default;
-    Exception(const std::string & msg, int code);
+    Exception(const std::string & msg, int code, bool remote_ = false);
+    Exception(const std::string & msg, const Exception & nested, int code);
+
+    Exception(int code, const std::string & message)
+        : Exception(message, code)
+    {}
 
     // Format message with fmt::format, like the logging functions.
-    template <typename ...Fmt>
-    Exception(int code, Fmt&&... fmt)
-        : Exception(fmt::format(std::forward<Fmt>(fmt)...), code)
+    template <typename ...Args>
+    Exception(int code, const std::string & fmt, Args&&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
     {}
 
     struct CreateFromPocoTag {};
@@ -40,14 +52,30 @@ public:
     const char * what() const throw() override { return message().data(); }
 
     /// Add something to the existing message.
-    void addMessage(const std::string & arg) { extendedMessage(arg); }
+    template <typename ...Args>
+    void addMessage(const std::string& format, Args&&... args)
+    {
+        extendedMessage(fmt::format(format, std::forward<Args>(args)...));
+    }
+
+    void addMessage(const std::string& message)
+    {
+        extendedMessage(message);
+    }
+
+    /// Used to distinguish local exceptions from the one that was received from remote node.
+    void setRemoteException(bool remote_ = true) { remote = remote_; }
+    bool isRemoteException() const { return remote; }
 
     std::string getStackTraceString() const;
+    /// Used for system.errors
+    FramePointers getStackFramePointers() const;
 
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
 #endif
+    bool remote = false;
 
     const char * className() const throw() override { return "DB::Exception"; }
 };
@@ -75,6 +103,40 @@ private:
 
     const char * name() const throw() override { return "DB::ErrnoException"; }
     const char * className() const throw() override { return "DB::ErrnoException"; }
+};
+
+
+/// Special class of exceptions, used mostly in ParallelParsingInputFormat for
+/// more convenient calculation of problem line number.
+class ParsingException : public Exception
+{
+public:
+    ParsingException();
+    ParsingException(const std::string & msg, int code);
+    ParsingException(int code, const std::string & message);
+
+    // Format message with fmt::format, like the logging functions.
+    template <typename ...Args>
+    ParsingException(int code, const std::string & fmt, Args&&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+    {}
+
+
+    std::string displayText() const
+#if defined(POCO_CLICKHOUSE_PATCH)
+    override
+#endif
+    ;
+
+    int getLineNumber() { return line_number_; }
+    void setLineNumber(int line_number) { line_number_ = line_number;}
+
+private:
+    ssize_t line_number_{-1};
+    mutable std::string formatted_message_;
+
+    const char * name() const throw() override { return "DB::ParsingException"; }
+    const char * className() const throw() override { return "DB::ParsingException"; }
 };
 
 

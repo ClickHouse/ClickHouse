@@ -1,11 +1,14 @@
 #include <unistd.h>
 #include <errno.h>
 #include <cassert>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
+#include <Common/MemoryTracker.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
@@ -33,6 +36,7 @@ namespace ErrorCodes
     extern const int CANNOT_FSYNC;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int CANNOT_FSTAT;
 }
 
 
@@ -87,17 +91,15 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
-    try
+    if (fd < 0)
     {
-        if (fd >= 0)
-            next();
-        else
-            assert(!offset() && "attempt to write after close");
+        assert(!offset() && "attempt to write after close");
+        return;
     }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    next();
 }
 
 
@@ -128,6 +130,16 @@ void WriteBufferFromFileDescriptor::truncate(off_t length)
     int res = ftruncate(fd, length);
     if (-1 == res)
         throwFromErrnoWithPath("Cannot truncate file " + getFileName(), getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
+}
+
+
+off_t WriteBufferFromFileDescriptor::size()
+{
+    struct stat buf;
+    int res = fstat(fd, &buf);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
+    return buf.st_size;
 }
 
 }

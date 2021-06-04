@@ -1,3 +1,8 @@
+---
+toc_priority: 61
+toc_title: Interval
+---
+
 # Interval {#data-type-interval}
 
 Семейство типов данных, представляющих интервалы дат и времени. Оператор [INTERVAL](../../../sql-reference/data-types/special-data-types/interval.md#operator-interval) возвращает значения этих типов.
@@ -74,5 +79,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## Смотрите также {#smotrite-takzhe}
 
--   Оператор[INTERVAL](../../../sql-reference/data-types/special-data-types/interval.md#operator-interval)
+-   Оператор [INTERVAL](../../../sql-reference/data-types/special-data-types/interval.md#operator-interval)
 -   Функция приведения типа [toInterval](../../../sql-reference/data-types/special-data-types/interval.md#function-tointerval)

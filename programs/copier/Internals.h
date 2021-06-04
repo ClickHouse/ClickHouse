@@ -8,7 +8,6 @@
 #include <Poco/FormattingChannel.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/UUIDGenerator.h>
-#include <Poco/File.h>
 #include <Poco/Process.h>
 #include <Poco/FileChannel.h>
 #include <Poco/SplitterChannel.h>
@@ -40,6 +39,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/NestedUtils.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -66,7 +66,6 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Databases/DatabaseMemory.h>
-#include <Common/StatusFile.h>
 
 #include "Aliases.h"
 
@@ -198,11 +197,9 @@ ASTPtr extractPrimaryKey(const ASTPtr & storage_ast);
 
 ASTPtr extractOrderBy(const ASTPtr & storage_ast);
 
-String createCommaSeparatedStringFrom(const Names & names);
-
 Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast);
 
-String extractReplicatedTableZookeeperPath(const ASTPtr & storage_ast);
+bool isReplicatedTableEngine(const ASTPtr & storage_ast);
 
 ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random);
 

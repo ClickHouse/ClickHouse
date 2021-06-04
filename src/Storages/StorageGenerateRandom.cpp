@@ -38,6 +38,8 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -63,7 +65,7 @@ ColumnPtr fillColumnWithRandomData(
     UInt64 max_array_length,
     UInt64 max_string_length,
     pcg64 & rng,
-    const Context & context)
+    ContextPtr context)
 {
     TypeIndex idx = type->getTypeId();
 
@@ -211,10 +213,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnUInt16::create();
             column->getData().resize(limit);
-
-            for (size_t i = 0; i < limit; ++i)
-                column->getData()[i] = rng() % (DATE_LUT_MAX_DAY_NUM + 1);   /// Slow
-
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt16), rng);
             return column;
         }
         case TypeIndex::UInt32: [[fallthrough]];
@@ -232,12 +231,26 @@ ColumnPtr fillColumnWithRandomData(
             fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt64), rng);
             return column;
         }
-        case TypeIndex::UInt128: [[fallthrough]];
-        case TypeIndex::UUID:
+        case TypeIndex::UInt128:
         {
             auto column = ColumnUInt128::create();
             column->getData().resize(limit);
             fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt128), rng);
+            return column;
+        }
+        case TypeIndex::UInt256:
+        {
+            auto column = ColumnUInt256::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt256), rng);
+            return column;
+        }
+        case TypeIndex::UUID:
+        {
+            auto column = ColumnUUID::create();
+            column->getData().resize(limit);
+            /// NOTE This is slightly incorrect as random UUIDs should have fixed version 4.
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UUID), rng);
             return column;
         }
         case TypeIndex::Int8:
@@ -266,6 +279,20 @@ ColumnPtr fillColumnWithRandomData(
             auto column = ColumnInt64::create();
             column->getData().resize(limit);
             fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int64), rng);
+            return column;
+        }
+        case TypeIndex::Int128:
+        {
+            auto column = ColumnInt128::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int128), rng);
+            return column;
+        }
+        case TypeIndex::Int256:
+        {
+            auto column = ColumnInt256::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int256), rng);
             return column;
         }
         case TypeIndex::Float32:
@@ -306,6 +333,14 @@ ColumnPtr fillColumnWithRandomData(
             fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal128), rng);
             return column;
         }
+        case TypeIndex::Decimal256:
+        {
+            auto column = type->createColumn();
+            auto & column_concrete = typeid_cast<ColumnDecimal<Decimal256> &>(*column);
+            column_concrete.getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal256), rng);
+            return column;
+        }
         case TypeIndex::FixedString:
         {
             size_t n = typeid_cast<const DataTypeFixedString &>(*type).getN();
@@ -317,7 +352,7 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::DateTime64:
         {
             auto column = type->createColumn();
-            auto & column_concrete = typeid_cast<ColumnDecimal<Decimal64> &>(*column);
+            auto & column_concrete = typeid_cast<ColumnDecimal<DateTime64> &>(*column);
             column_concrete.getData().resize(limit);
 
             UInt64 range = (1ULL << 32) * intExp10(typeid_cast<const DataTypeDateTime64 &>(*type).getScale());
@@ -337,7 +372,7 @@ ColumnPtr fillColumnWithRandomData(
 class GenerateSource : public SourceWithProgress
 {
 public:
-    GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, const Context & context_)
+    GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
         : SourceWithProgress(Nested::flatten(prepareBlockToFill(block_header_)))
         , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
         , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
@@ -365,7 +400,7 @@ private:
 
     pcg64 rng;
 
-    const Context & context;
+    ContextPtr context;
 
     static Block & prepareBlockToFill(Block & block)
     {
@@ -383,12 +418,30 @@ private:
 }
 
 
-StorageGenerateRandom::StorageGenerateRandom(const StorageID & table_id_, const ColumnsDescription & columns_,
-    UInt64 max_array_length_, UInt64 max_string_length_, std::optional<UInt64> random_seed_)
+StorageGenerateRandom::StorageGenerateRandom(
+    const StorageID & table_id_,
+    const ColumnsDescription & columns_,
+    const String & comment,
+    UInt64 max_array_length_,
+    UInt64 max_string_length_,
+    std::optional<UInt64> random_seed_)
     : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
+    static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
+    static constexpr size_t MAX_STRING_SIZE = 1 << 30;
+
+    if (max_array_length > MAX_ARRAY_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in GenerateRandom: {}, maximum: {}",
+                        max_array_length, MAX_ARRAY_SIZE);
+    if (max_string_length > MAX_STRING_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in GenerateRandom: {}, maximum: {}",
+                        max_string_length, MAX_STRING_SIZE);
+
     random_seed = random_seed_ ? sipHash64(*random_seed_) : randomSeed();
-    setColumns(columns_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
+    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -420,25 +473,25 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         if (engine_args.size() == 3)
             max_array_length = engine_args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
-
-        return StorageGenerateRandom::create(args.table_id, args.columns, max_array_length, max_string_length, random_seed);
+        return StorageGenerateRandom::create(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });
 }
 
-Pipes StorageGenerateRandom::read(
+Pipe StorageGenerateRandom::read(
     const Names & column_names,
-    const SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    check(column_names, true);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const ColumnsDescription & our_columns = getColumns();
+    const ColumnsDescription & our_columns = metadata_snapshot->getColumns();
     Block block_header;
     for (const auto & name : column_names)
     {
@@ -453,7 +506,7 @@ Pipes StorageGenerateRandom::read(
     for (UInt64 i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header, context));
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 }

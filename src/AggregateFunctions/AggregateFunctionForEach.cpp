@@ -6,11 +6,15 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 class AggregateFunctionCombinatorForEach final : public IAggregateFunctionCombinator
 {
@@ -41,6 +45,8 @@ public:
         return std::make_shared<AggregateFunctionForEach>(nested_function, arguments);
     }
 };
+
+}
 
 void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFactory & factory)
 {

@@ -11,6 +11,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -60,7 +61,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void create(AggregateDataPtr place) const override
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void create(AggregateDataPtr __restrict place) const override
     {
         if (std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= throw_probability)
             throw Exception("Aggregate function " + getName() + " has thrown exception successfully", ErrorCodes::AGGREGATE_FUNCTION_THROW);
@@ -68,7 +71,7 @@ public:
         new (place) Data;
     }
 
-    void destroy(AggregateDataPtr place) const noexcept override
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         data(place).~Data();
     }
@@ -93,7 +96,7 @@ public:
         buf.read(c);
     }
 
-    void insertResultInto(AggregateDataPtr, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr, IColumn & to, Arena *) const override
     {
         to.insertDefault();
     }
@@ -103,7 +106,7 @@ public:
 
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("aggThrow", [](const std::string & name, const DataTypes & argument_types, const Array & parameters)
+    factory.registerFunction("aggThrow", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         Float64 throw_probability = 1.0;
         if (parameters.size() == 1)

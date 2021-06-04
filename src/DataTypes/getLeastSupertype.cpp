@@ -8,11 +8,14 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 
@@ -160,6 +163,69 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         }
     }
 
+    /// For maps
+    {
+        bool have_maps = false;
+        bool all_maps = true;
+        DataTypes key_types;
+        DataTypes value_types;
+        key_types.reserve(types.size());
+        value_types.reserve(types.size());
+
+        for (const auto & type : types)
+        {
+            if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+            {
+                have_maps = true;
+                key_types.emplace_back(type_map->getKeyType());
+                value_types.emplace_back(type_map->getValueType());
+            }
+            else
+                all_maps = false;
+        }
+
+        if (have_maps)
+        {
+            if (!all_maps)
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+
+            return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
+        }
+    }
+
+    /// For LowCardinality. This is above Nullable, because LowCardinality can contain Nullable but cannot be inside Nullable.
+    {
+        bool have_low_cardinality = false;
+        bool have_not_low_cardinality = false;
+
+        DataTypes nested_types;
+        nested_types.reserve(types.size());
+
+        for (const auto & type : types)
+        {
+            if (const DataTypeLowCardinality * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            {
+                have_low_cardinality = true;
+                nested_types.emplace_back(type_low_cardinality->getDictionaryType());
+            }
+            else
+            {
+                have_not_low_cardinality = true;
+                nested_types.emplace_back(type);
+            }
+        }
+
+        /// All LowCardinality gives LowCardinality.
+        /// LowCardinality with high cardinality gives high cardinality.
+        if (have_low_cardinality)
+        {
+            if (have_not_low_cardinality)
+                return getLeastSupertype(nested_types);
+            else
+                return std::make_shared<DataTypeLowCardinality>(getLeastSupertype(nested_types));
+        }
+    }
+
     /// For Nullable
     {
         bool have_nullable = false;
@@ -208,7 +274,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         }
     }
 
-    /// For Date and DateTime, the common type is DateTime. No other types are compatible.
+    /// For Date and DateTime/DateTime64, the common type is DateTime/DateTime64. No other types are compatible.
     {
         UInt32 have_date = type_ids.count(TypeIndex::Date);
         UInt32 have_datetime = type_ids.count(TypeIndex::DateTime);
@@ -218,40 +284,25 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         {
             bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime + have_datetime64);
             if (!all_date_or_datetime)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime/DateTime64 and some of them are not",
+                    ErrorCodes::NO_COMMON_TYPE);
 
             if (have_datetime64 == 0)
-            {
                 return std::make_shared<DataTypeDateTime>();
-            }
 
-            // When DateTime64 involved, make sure that supertype has whole-part precision
-            // big enough to hold max whole-value of any type from `types`.
-            // That would sacrifice scale when comparing DateTime64 of different scales.
+            UInt8 max_scale = 0;
 
-            UInt32 max_datetime64_whole_precision = 0;
             for (const auto & t : types)
             {
                 if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
                 {
-                    const auto whole_precision = dt64->getPrecision() - dt64->getScale();
-                    max_datetime64_whole_precision = std::max(whole_precision, max_datetime64_whole_precision);
+                    const auto scale = dt64->getScale();
+                    if (scale > max_scale)
+                        max_scale = scale;
                 }
             }
 
-            UInt32 least_decimal_precision = 0;
-            if (have_datetime)
-            {
-                least_decimal_precision = leastDecimalPrecisionFor(TypeIndex::UInt32);
-            }
-            else if (have_date)
-            {
-                least_decimal_precision = leastDecimalPrecisionFor(TypeIndex::UInt16);
-            }
-            max_datetime64_whole_precision = std::max(least_decimal_precision, max_datetime64_whole_precision);
-
-            const UInt32 scale = DataTypeDateTime64::maxPrecision() - max_datetime64_whole_precision;
-            return std::make_shared<DataTypeDateTime64>(scale);
+            return std::make_shared<DataTypeDateTime64>(max_scale);
         }
     }
 
@@ -280,7 +331,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
 
             if (num_supported != type_ids.size())
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless convertion to Decimal",
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless conversion to Decimal",
                                 ErrorCodes::NO_COMMON_TYPE);
 
             UInt32 max_scale = 0;
@@ -339,14 +390,22 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 maximize(max_bits_of_unsigned_integer, 32);
             else if (typeid_cast<const DataTypeUInt64 *>(type.get()))
                 maximize(max_bits_of_unsigned_integer, 64);
-            else if (typeid_cast<const DataTypeInt8 *>(type.get()))
+            else if (typeid_cast<const DataTypeUInt128 *>(type.get()))
+                maximize(max_bits_of_unsigned_integer, 128);
+            else if (typeid_cast<const DataTypeUInt256 *>(type.get()))
+                maximize(max_bits_of_unsigned_integer, 256);
+            else if (typeid_cast<const DataTypeInt8 *>(type.get()) || typeid_cast<const DataTypeEnum8 *>(type.get()))
                 maximize(max_bits_of_signed_integer, 8);
-            else if (typeid_cast<const DataTypeInt16 *>(type.get()))
+            else if (typeid_cast<const DataTypeInt16 *>(type.get()) || typeid_cast<const DataTypeEnum16 *>(type.get()))
                 maximize(max_bits_of_signed_integer, 16);
             else if (typeid_cast<const DataTypeInt32 *>(type.get()))
                 maximize(max_bits_of_signed_integer, 32);
             else if (typeid_cast<const DataTypeInt64 *>(type.get()))
                 maximize(max_bits_of_signed_integer, 64);
+            else if (typeid_cast<const DataTypeInt128 *>(type.get()))
+                maximize(max_bits_of_signed_integer, 128);
+            else if (typeid_cast<const DataTypeInt256 *>(type.get()))
+                maximize(max_bits_of_signed_integer, 256);
             else if (typeid_cast<const DataTypeFloat32 *>(type.get()))
                 maximize(max_mantissa_bits_of_floating, 24);
             else if (typeid_cast<const DataTypeFloat64 *>(type.get()))
@@ -366,8 +425,19 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             size_t min_bit_width_of_integer = std::max(max_bits_of_signed_integer, max_bits_of_unsigned_integer);
 
             /// If unsigned is not covered by signed.
-            if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer)
-                ++min_bit_width_of_integer;
+            if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer) //-V1051
+            {
+                // Because 128 and 256 bit integers are significantly slower, we should not promote to them.
+                // But if we already have wide numbers, promotion is necessary.
+                if (min_bit_width_of_integer != 64)
+                    ++min_bit_width_of_integer;
+                else
+                    throw Exception(
+                        getExceptionMessagePrefix(types)
+                            + " because some of them are signed integers and some are unsigned integers,"
+                              " but there is no signed integer type, that can exactly represent all required unsigned integer values",
+                        ErrorCodes::NO_COMMON_TYPE);
+            }
 
             /// If the result must be floating.
             if (max_mantissa_bits_of_floating)
@@ -394,6 +464,10 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     return std::make_shared<DataTypeInt32>();
                 else if (min_bit_width_of_integer <= 64)
                     return std::make_shared<DataTypeInt64>();
+                else if (min_bit_width_of_integer <= 128)
+                    return std::make_shared<DataTypeInt128>();
+                else if (min_bit_width_of_integer <= 256)
+                    return std::make_shared<DataTypeInt256>();
                 else
                     throw Exception(getExceptionMessagePrefix(types)
                         + " because some of them are signed integers and some are unsigned integers,"
@@ -410,6 +484,10 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     return std::make_shared<DataTypeUInt32>();
                 else if (min_bit_width_of_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
+                else if (min_bit_width_of_integer <= 128)
+                    return std::make_shared<DataTypeUInt128>();
+                else if (min_bit_width_of_integer <= 256)
+                    return std::make_shared<DataTypeUInt256>();
                 else
                     throw Exception("Logical error: " + getExceptionMessagePrefix(types)
                         + " but as all data types are unsigned integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);

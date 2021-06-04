@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <common/getFQDNOrHostName.h>
@@ -12,7 +12,7 @@ class FunctionFQDN : public IFunction
 {
 public:
     static constexpr auto name = "FQDN";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionFQDN>();
     }
@@ -34,9 +34,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
+        return result_type->createColumnConst(
             input_rows_count, getFQDNOrHostName())->convertToFullColumnIfConst();
     }
 };

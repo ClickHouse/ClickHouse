@@ -1,11 +1,10 @@
+#pragma once
 /**
   * This file implements template methods of IColumn that depend on other types
   * we don't want to include.
   * Currently, this is only the scatterImpl method that depends on PODArray
   * implementation.
   */
-
-#pragma once
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
@@ -126,6 +125,18 @@ void IColumn::doCompareColumn(const Derived & rhs, size_t rhs_row_num,
         else
             compareImpl<Derived, false, false>(rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
     }
+}
+
+template <typename Derived>
+bool IColumn::hasEqualValuesImpl() const
+{
+    size_t num_rows = size();
+    for (size_t i = 1; i < num_rows; ++i)
+    {
+        if (compareAt(i, 0, static_cast<const Derived &>(*this), false) != 0)
+            return false;
+    }
+    return true;
 }
 
 }

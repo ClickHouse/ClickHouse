@@ -22,18 +22,27 @@ struct PairNoInit
     First first;
     Second second;
 
-    PairNoInit() {}
+    PairNoInit() {} /// NOLINT
 
-    template <typename First_>
-    PairNoInit(First_ && first_, NoInitTag) : first(std::forward<First_>(first_))
+    template <typename FirstValue>
+    PairNoInit(FirstValue && first_, NoInitTag)
+        : first(std::forward<FirstValue>(first_))
     {
     }
 
-    template <typename First_, typename Second_>
-    PairNoInit(First_ && first_, Second_ && second_) : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_))
+    template <typename FirstValue, typename SecondValue>
+    PairNoInit(FirstValue && first_, SecondValue && second_)
+        : first(std::forward<FirstValue>(first_))
+        , second(std::forward<SecondValue>(second_))
     {
     }
 };
+
+template <typename First, typename Second>
+PairNoInit<std::decay_t<First>, std::decay_t<Second>> makePairNoInit(First && first, Second && second)
+{
+    return PairNoInit<std::decay_t<First>, std::decay_t<Second>>(std::forward<First>(first), std::forward<Second>(second));
+}
 
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
@@ -48,7 +57,7 @@ struct HashMapCell
 
     value_type value;
 
-    HashMapCell() {}
+    HashMapCell() = default;
     HashMapCell(const Key & key_, const State &) : value(key_, NoInitTag()) {}
     HashMapCell(const value_type & value_, const State &) : value(value_) {}
 
@@ -61,9 +70,9 @@ struct HashMapCell
     /// Get the key (internally).
     static const Key & getKey(const value_type & value) { return value.first; }
 
-    bool keyEquals(const Key & key_) const { return value.first == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return value.first == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return value.first == key_; }
+    bool keyEquals(const Key & key_) const { return bitEquals(value.first, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(value.first, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(value.first, key_); }
 
     void setHash(size_t /*hash_value*/) {}
     size_t getHash(const Hash & hash) const { return hash(value.first); }
@@ -76,9 +85,6 @@ struct HashMapCell
 
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
-
-    /// Whether the cell was deleted.
-    bool isDeleted() const { return false; }
 
     void setMapped(const value_type & value_) { value.second = value_.second; }
 
@@ -109,7 +115,43 @@ struct HashMapCell
         DB::assertChar(',', rb);
         DB::readDoubleQuoted(value.second, rb);
     }
+
+    static bool constexpr need_to_notify_cell_during_move = false;
+
+    static void move(HashMapCell * /* old_location */, HashMapCell * /* new_location */) {}
+
+    template <size_t I>
+    auto & get() & {
+        if constexpr (I == 0) return value.first;
+        else if constexpr (I == 1) return value.second;
+    }
+
+    template <size_t I>
+    auto const & get() const & {
+        if constexpr (I == 0) return value.first;
+        else if constexpr (I == 1) return value.second;
+    }
+
+    template <size_t I>
+    auto && get() && {
+        if constexpr (I == 0) return std::move(value.first);
+        else if constexpr (I == 1) return std::move(value.second);
+    }
+
 };
+
+namespace std
+{
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_size<HashMapCell<Key, TMapped, Hash, TState>> : std::integral_constant<size_t, 2> { };
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_element<0, HashMapCell<Key, TMapped, Hash, TState>> { using type = Key; };
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_element<1, HashMapCell<Key, TMapped, Hash, TState>> { using type = TMapped; };
+}
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
 struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
@@ -120,8 +162,8 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 
     using Base::Base;
 
-    bool keyEquals(const Key & key_) const { return this->value.first == key_; }
-    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.first == key_; }
+    bool keyEquals(const Key & key_) const { return bitEquals(this->value.first, key_); }
+    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->value.first, key_); }
     bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }
@@ -221,6 +263,19 @@ public:
         return it->getMapped();
     }
 };
+
+namespace std
+{
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_size<HashMapCellWithSavedHash<Key, TMapped, Hash, TState>> : std::integral_constant<size_t, 2> { };
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_element<0, HashMapCellWithSavedHash<Key, TMapped, Hash, TState>> { using type = Key; };
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_element<1, HashMapCellWithSavedHash<Key, TMapped, Hash, TState>> { using type = TMapped; };
+}
 
 
 template <

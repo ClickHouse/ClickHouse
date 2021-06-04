@@ -1,5 +1,6 @@
 import collections
 import datetime
+import hashlib
 import logging
 import os
 
@@ -30,7 +31,16 @@ def build_nav_entry(root, args):
                 result_items.append((prio, title, payload))
         elif filename.endswith('.md'):
             path = os.path.join(root, filename)
-            meta, content = util.read_md_file(path)
+
+            meta = ''
+            content = ''
+
+            try:
+                meta, content = util.read_md_file(path)
+            except:
+                print('Error in file: {}'.format(path))
+                raise
+
             path = path.split('/', 2)[-1]
             title = meta.get('toc_title', find_first_header(content))
             if title:
@@ -39,13 +49,17 @@ def build_nav_entry(root, args):
                 title = meta.get('toc_folder_title', 'hidden')
             prio = meta.get('toc_priority', 9999)
             logging.debug(f'Nav entry: {prio}, {title}, {path}')
-            if not content.strip():
+            if meta.get('toc_hidden') or not content.strip():
                 title = 'hidden'
+            if title == 'hidden':
+                title = 'hidden-' + hashlib.sha1(content.encode('utf-8')).hexdigest()
             if args.nav_limit and len(result_items) >= args.nav_limit:
                 break
             result_items.append((prio, title, path))
     result_items = sorted(result_items, key=lambda x: (x[0], x[1]))
     result = collections.OrderedDict([(item[1], item[2]) for item in result_items])
+    if index_meta.get('toc_hidden_folder'):
+        current_title += '|hidden-folder'
     return index_meta.get('toc_priority', 10000), current_title, result
 
 
@@ -54,7 +68,7 @@ def build_docs_nav(lang, args):
     _, _, nav = build_nav_entry(docs_dir, args)
     result = []
     index_key = None
-    for key, value in nav.items():
+    for key, value in list(nav.items()):
         if key and value:
             if value == 'index.md':
                 index_key = key
@@ -82,7 +96,10 @@ def build_blog_nav(lang, args):
         posts = []
         post_meta_items = []
         for post in os.listdir(year_dir):
-            meta, _ = util.read_md_file(os.path.join(year_dir, post))
+            post_path = os.path.join(year_dir, post)
+            if not post.endswith('.md'):
+                raise RuntimeError(f'Unexpected non-md file in posts folder: {post_path}')
+            meta, _ = util.read_md_file(post_path)
             post_date = meta['date']
             post_title = meta['title']
             if datetime.date.fromisoformat(post_date) > datetime.date.today():

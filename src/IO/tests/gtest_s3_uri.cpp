@@ -30,6 +30,13 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
     {
+        S3::URI uri(Poco::URI("https://bucketname.cos.ap-beijing.myqcloud.com/data"));
+        ASSERT_EQ("https://cos.ap-beijing.myqcloud.com", uri.endpoint);
+        ASSERT_EQ("bucketname", uri.bucket);
+        ASSERT_EQ("data", uri.key);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
+    {
         S3::URI uri(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data"));
         ASSERT_EQ("https://s3.us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);

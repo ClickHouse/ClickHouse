@@ -13,6 +13,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -168,10 +169,12 @@ public:
         );
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void insertResultInto(
         AggregateDataPtr place,
-        IColumn & to
-    ) const override
+        IColumn & to,
+        Arena *) const override
     {
         Ret k = this->data(place).getK();
         Ret b = this->data(place).getB(k);

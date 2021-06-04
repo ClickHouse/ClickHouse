@@ -1,6 +1,8 @@
 ---
-toc_priority: 33
-toc_title: SELECT
+title: "Синтаксис запросов SELECT"
+toc_folder_title: SELECT
+toc_priority: 32
+toc_title: "Обзор"
 ---
 
 # Синтаксис запросов SELECT {#select-queries-syntax}
@@ -13,14 +15,15 @@ SELECT [DISTINCT] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
 [SAMPLE sample_coeff]
 [ARRAY JOIN ...]
-[GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table (ON <expr_list>)|(USING <column_list>)
 [PREWHERE expr]
 [WHERE expr]
-[GROUP BY expr_list] [WITH TOTALS]
+[GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
 [HAVING expr]
-[ORDER BY expr_list]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] 
 [LIMIT [offset_value, ]n BY columns]
-[LIMIT [n, ]m]
+[LIMIT [n, ]m] [WITH TIES]
+[SETTINGS ...]
 [UNION ALL ...]
 [INTO OUTFILE filename]
 [FORMAT format]
@@ -42,7 +45,8 @@ SELECT [DISTINCT] expr_list
 -   [Секция SELECT](#select-clause)
 -   [Секция DISTINCT](distinct.md)
 -   [Секция LIMIT](limit.md)
--   [Секция UNION ALL](union-all.md)
+    [Секция OFFSET](offset.md)
+-   [Секция UNION ALL](union.md)
 -   [Секция INTO OUTFILE](into-outfile.md)
 -   [Секция FORMAT](format.md)
 
@@ -159,4 +163,121 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 Подробнее смотрите в разделе «Настройки». Присутствует возможность использовать внешнюю сортировку (с сохранением временных данных на диск) и внешнюю агрегацию.
 
-{## [Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/statements/select/) ##}
+## Модификаторы запроса SELECT {#select-modifiers}
+
+Вы можете использовать следующие модификаторы в запросах `SELECT`.
+
+### APPLY {#apply-modifier}
+
+Вызывает указанную функцию для каждой строки, возвращаемой внешним табличным выражением запроса. 
+
+**Синтаксис:**
+
+``` sql
+SELECT <expr> APPLY( <func> ) FROM [db.]table_name
+```
+
+**Пример:** 
+
+``` sql
+CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
+INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
+SELECT * APPLY(sum) FROM columns_transformers;
+```
+
+```
+┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
+│    220 │     18 │    347 │
+└────────┴────────┴────────┘
+```
+
+### EXCEPT {#except-modifier}
+
+Исключает из результата запроса один или несколько столбцов.
+
+**Синтаксис:**
+
+``` sql
+SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
+```
+
+**Пример:**
+
+``` sql
+SELECT * EXCEPT (i) from columns_transformers;
+```
+
+```
+┌──j─┬───k─┐
+│ 10 │ 324 │
+│  8 │  23 │
+└────┴─────┘
+```
+
+### REPLACE {#replace-modifier}
+
+Определяет одно или несколько [выражений алиасов](../../../sql-reference/syntax.md#syntax-expression_aliases). Каждый алиас должен соответствовать имени столбца из запроса `SELECT *`. В списке столбцов результата запроса имя столбца, соответствующее алиасу, заменяется выражением в модификаторе `REPLACE`.
+
+Этот модификатор не изменяет имена или порядок столбцов. Однако он может изменить значение и тип значения.
+
+**Синтаксис:**
+
+``` sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
+```
+
+**Пример:**
+
+``` sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```
+
+### Комбинации модификаторов {#modifier-combinations}
+
+Вы можете использовать каждый модификатор отдельно или комбинировать их.
+
+**Примеры:**
+
+Использование одного и того же модификатора несколько раз.
+
+``` sql
+SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_transformers;
+```
+
+```
+┌─max(length(toString(j)))─┬─max(length(toString(k)))─┐
+│                        2 │                        3 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+Использование нескольких модификаторов в одном запросе.
+
+``` sql
+SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
+```
+
+```
+┌─sum(plus(i, 1))─┬─sum(k)─┐
+│             222 │    347 │
+└─────────────────┴────────┘
+```
+
+## SETTINGS в запросе SELECT {#settings-in-select}
+
+Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию. 
+
+Другие способы задания настроек описаны [здесь](../../../operations/settings/index.md). 
+
+**Пример**
+
+``` sql
+SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
+```
+

@@ -1,3 +1,8 @@
+---
+toc_priority: 61
+toc_title: "Профили настроек"
+---
+
 # Профили настроек {#settings-profiles}
 
 Профиль настроек — это набор настроек, сгруппированных под одним именем.
@@ -72,4 +77,3 @@ SET profile = 'web'
 
 Профиль `web` — обычный профиль, который может быть установлен с помощью запроса `SET` или параметра URL при запросе по HTTP.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings_profiles/) <!--hide-->

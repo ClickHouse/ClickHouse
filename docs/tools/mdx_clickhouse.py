@@ -1,6 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 import datetime
 import os
@@ -14,9 +14,6 @@ import macros.plugin
 
 import slugify as slugify_impl
 
-import amp
-import website
-
 
 def slugify(value, separator):
     return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
@@ -26,6 +23,7 @@ MARKDOWN_EXTENSIONS = [
     'mdx_clickhouse',
     'admonition',
     'attr_list',
+    'def_list',
     'codehilite',
     'nl2br',
     'sane_lists',
@@ -118,6 +116,7 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
         ])
 
     def on_env(self, env, config, files):
+        import util
         env.add_extension('jinja2.ext.i18n')
         dirname = os.path.join(config.data['theme'].dirs[0], 'locale')
         lang = config.data['theme']['language']
@@ -125,10 +124,7 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
             get_translations(dirname, lang),
             newstyle=True
         )
-        chunk_size = 10240
-        env.filters['chunks'] = lambda line: [line[i:i+chunk_size] for i in range(0, len(line), chunk_size)]
-        env.filters['html_to_amp'] = amp.html_to_amp
-        env.filters['adjust_markdown_html'] = website.adjust_markdown_html
+        util.init_jinja2_filters(env)
         return env
 
     def render(self, markdown):
@@ -149,24 +145,9 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
         if self.skip_git_log:
             return markdown
         src_path = page.file.abs_src_path
-        try:
-            git_log = subprocess.check_output(f'git log --follow --date=iso8601 "{src_path}"', shell=True)
-        except subprocess.CalledProcessError:
-            return markdown
-        max_date = None
-        min_date = None
-        for line in git_log.decode('utf-8').split('\n'):
-            if line.startswith('Date:'):
-                line = line.replace('Date:', '').strip().replace(' ', 'T', 1).replace(' ', '')
-                current_date = datetime.datetime.fromisoformat(line[:-2] + ':' + line[-2:])
-                if (not max_date) or current_date > max_date:
-                    max_date = current_date
-                if (not min_date) or current_date < min_date:
-                    min_date = current_date
-        if min_date:
-            page.meta['published_date'] = min_date
-        if max_date:
-            page.meta['modified_date'] = max_date
+
+        # There was a code that determined the minimum and maximum modification dates for a page.
+        # It was removed due to being obnoxiously slow.
         return markdown
 
     def render_impl(self, markdown):

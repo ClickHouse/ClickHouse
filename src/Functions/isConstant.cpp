@@ -1,10 +1,12 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 
 
 namespace DB
+{
+namespace
 {
 
 /// Returns 1 if and only if the argument is constant expression.
@@ -13,7 +15,7 @@ class FunctionIsConstant : public IFunction
 {
 public:
     static constexpr auto name = "isConstant";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionIsConstant>();
     }
@@ -35,13 +37,14 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto & elem = block.getByPosition(arguments[0]);
-        block.getByPosition(result).column = ColumnUInt8::create(input_rows_count, isColumnConst(*elem.column));
+        const auto & elem = arguments[0];
+        return ColumnUInt8::create(input_rows_count, isColumnConst(*elem.column));
     }
 };
 
+}
 
 void registerFunctionIsConstant(FunctionFactory & factory)
 {

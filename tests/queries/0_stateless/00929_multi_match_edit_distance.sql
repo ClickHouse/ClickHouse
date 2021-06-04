@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 select 0 = multiFuzzyMatchAny('abc', 0, ['a1c']) from system.numbers limit 5;
 select 1 = multiFuzzyMatchAny('abc', 1, ['a1c']) from system.numbers limit 5;

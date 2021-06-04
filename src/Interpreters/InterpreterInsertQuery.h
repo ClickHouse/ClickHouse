@@ -4,21 +4,19 @@
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
 
-class Context;
-
-
 /** Interprets the INSERT query.
   */
-class InterpreterInsertQuery : public IInterpreter
+class InterpreterInsertQuery : public IInterpreter, WithContext
 {
 public:
     InterpreterInsertQuery(
         const ASTPtr & query_ptr_,
-        const Context & context_,
+        ContextPtr context_,
         bool allow_materialized_ = false,
         bool no_squash_ = false,
         bool no_destination_ = false);
@@ -32,12 +30,13 @@ public:
 
     StorageID getDatabaseTable() const;
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
+
 private:
     StoragePtr getTable(ASTInsertQuery & query);
-    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const;
+    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
 
     ASTPtr query_ptr;
-    const Context & context;
     const bool allow_materialized;
     const bool no_squash;
     const bool no_destination;

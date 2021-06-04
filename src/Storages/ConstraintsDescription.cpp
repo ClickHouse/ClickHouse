@@ -1,5 +1,8 @@
 #include <Storages/ConstraintsDescription.h>
 
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+
 #include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -38,18 +41,18 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
     return res;
 }
 
-ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::Context & context,
+ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
                                                               const DB::NamesAndTypesList & source_columns_) const
 {
     ConstraintsExpressions res;
     res.reserve(constraints.size());
     for (const auto & constraint : constraints)
     {
-        // SyntaxAnalyzer::analyze has query as non-const argument so to avoid accidental query changes we clone it
+        // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
         auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
         ASTPtr expr = constraint_ptr->expr->clone();
-        auto syntax_result = SyntaxAnalyzer(context).analyze(expr, source_columns_);
-        res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false));
+        auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
+        res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false, true, CompileExpressions::yes));
     }
     return res;
 }

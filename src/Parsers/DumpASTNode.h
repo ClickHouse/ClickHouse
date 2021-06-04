@@ -1,8 +1,8 @@
 #pragma once
 
-#include <sstream>
 #include <common/logger_useful.h>
 #include <Poco/Util/Application.h>
+#include <IO/Operators.h>
 
 #include <Parsers/IAST.h>
 
@@ -10,11 +10,11 @@ namespace DB
 {
 
 /// If output stream set dumps node with indents and some additional info. Do nothing otherwise.
-/// Allow to print kay-value pairs inside of tree dump.
+/// Allow to print key-value pairs inside of tree dump.
 class DumpASTNode
 {
 public:
-    DumpASTNode(const IAST & ast_, std::ostream * ostr_, size_t & depth, const char * label_ = nullptr)
+    DumpASTNode(const IAST & ast_, WriteBuffer * ostr_, size_t & depth, const char * label_ = nullptr)
         : ast(ast_),
         ostr(ostr_),
         indent(depth),
@@ -24,12 +24,12 @@ public:
         if (!ostr)
             return;
         if (label && visit_depth == 0)
-            (*ostr) << "-- " << label << std::endl;
+            (*ostr) << "-- " << label << '\n';
         ++visit_depth;
 
         (*ostr) << String(indent, ' ');
         printNode();
-        (*ostr) << std::endl;
+        (*ostr) << '\n';
     }
 
     ~DumpASTNode()
@@ -38,7 +38,7 @@ public:
             return;
         --visit_depth;
         if (label && visit_depth == 0)
-            (*ostr) << "--" << std::endl;
+            (*ostr) << "--\n";
     }
 
     template <typename T, typename U>
@@ -50,14 +50,14 @@ public:
         (*ostr) << (str_indent ? String(str_indent) : String(indent, ' '));
         (*ostr) << '(' << name << ' ' << value << ')';
         if (!str_indent)
-            (*ostr) << std::endl;
+            (*ostr) << '\n';
     }
 
     size_t & getDepth() { return visit_depth; }
 
 private:
     const IAST & ast;
-    std::ostream * ostr;
+    WriteBuffer * ostr;
     size_t indent;
     size_t & visit_depth; /// shared with children
     const char * label;
@@ -77,7 +77,7 @@ private:
     }
 };
 
-inline void dumpAST(const IAST & ast, std::ostream & ostr, DumpASTNode * parent = nullptr)
+inline void dumpAST(const IAST & ast, WriteBuffer & ostr, DumpASTNode * parent = nullptr)
 {
     size_t depth = 0;
     DumpASTNode dump(ast, &ostr, (parent ? parent->getDepth() : depth));
@@ -102,14 +102,14 @@ public:
     ~DebugASTLog()
     {
         if constexpr (_enable)
-            LOG_DEBUG(log, ss.str());
+            LOG_DEBUG(log, buf.str());
     }
 
-    std::ostream * stream() { return (_enable ? &ss : nullptr); }
+    WriteBuffer * stream() { return (_enable ? &buf : nullptr); }
 
 private:
     Poco::Logger * log;
-    std::stringstream ss;
+    WriteBufferFromOwnString buf;
 };
 
 

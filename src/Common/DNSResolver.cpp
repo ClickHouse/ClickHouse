@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Names.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>
@@ -80,22 +80,27 @@ static void splitHostAndPort(const std::string & host_and_port, std::string & ou
         out_port = static_cast<UInt16>(port);
     }
     else
-    {
-        struct servent * se = getservbyname(port_str.c_str(), nullptr);
-        if (se)
-            out_port = ntohs(static_cast<UInt16>(se->s_port));
-        else
-            throw Exception("Service not found", ErrorCodes::BAD_ARGUMENTS);
-    }
+        throw Exception("Port must be numeric", ErrorCodes::BAD_ARGUMENTS);
 }
 
 static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 {
     Poco::Net::IPAddress ip;
 
-    /// NOTE: Poco::Net::DNS::resolveOne(host) doesn't work for IP addresses like 127.0.0.2
-    if (Poco::Net::IPAddress::tryParse(host, ip))
-        return DNSResolver::IPAddresses(1, ip);
+    /// NOTE:
+    /// - Poco::Net::DNS::resolveOne(host) doesn't work for IP addresses like 127.0.0.2
+    /// - Poco::Net::IPAddress::tryParse() expect hex string for IPv6 (w/o brackets)
+    if (host.starts_with('['))
+    {
+        assert(host.ends_with(']'));
+        if (Poco::Net::IPAddress::tryParse(host.substr(1, host.size() - 2), ip))
+            return DNSResolver::IPAddresses(1, ip);
+    }
+    else
+    {
+        if (Poco::Net::IPAddress::tryParse(host, ip))
+            return DNSResolver::IPAddresses(1, ip);
+    }
 
     /// Family: AF_UNSPEC
     /// AI_ALL is required for checking if client is allowed to connect from an address
@@ -269,6 +274,8 @@ bool DNSResolver::updateCache()
     LOG_DEBUG(log, "Updating DNS cache");
 
     {
+        String updated_host_name = Poco::Net::DNS::hostName();
+
         std::lock_guard lock(impl->drop_mutex);
 
         for (const auto & host : impl->new_hosts)
@@ -279,10 +286,10 @@ bool DNSResolver::updateCache()
             impl->known_addresses.insert(address);
         impl->new_addresses.clear();
 
-        impl->host_name.emplace(Poco::Net::DNS::hostName());
+        impl->host_name.emplace(updated_host_name);
     }
 
-    /// FIXME Updating may take a long time becouse we cannot manage timeouts of getaddrinfo(...) and getnameinfo(...).
+    /// FIXME Updating may take a long time because we cannot manage timeouts of getaddrinfo(...) and getnameinfo(...).
     /// DROP DNS CACHE will wait on update_mutex (possibly while holding drop_mutex)
     std::lock_guard lock(impl->update_mutex);
 

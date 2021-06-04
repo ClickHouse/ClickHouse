@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/AggregationCommon.h>
@@ -86,34 +87,61 @@ public:
     bool isInserted() const { return inserted; }
 };
 
-template <typename Mapped>
-class FindResultImpl
+/// FindResult optionally may contain pointer to value and offset in hashtable buffer.
+/// Only bool found is required.
+/// So we will have 4 different specializations for FindResultImpl
+class FindResultImplBase
 {
-    Mapped * value;
     bool found;
 
 public:
-    FindResultImpl(Mapped * value_, bool found_) : value(value_), found(found_) {}
+    explicit FindResultImplBase(bool found_) : found(found_) {}
     bool isFound() const { return found; }
-    Mapped & getMapped() const { return *value; }
+};
+
+template <bool need_offset = false>
+class FindResultImplOffsetBase
+{
+public:
+    constexpr static bool has_offset = need_offset;
+    explicit FindResultImplOffsetBase(size_t /* off */) {}
 };
 
 template <>
-class FindResultImpl<void>
+class FindResultImplOffsetBase<true>
 {
-    bool found;
-
+    size_t offset;
 public:
-    explicit FindResultImpl(bool found_) : found(found_) {}
-    bool isFound() const { return found; }
+    constexpr static bool has_offset = true;
+
+    explicit FindResultImplOffsetBase(size_t off) : offset(off) {}
+    ALWAYS_INLINE size_t getOffset() const { return offset; }
 };
 
-template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization>
+template <typename Mapped, bool need_offset = false>
+class FindResultImpl : public FindResultImplBase, public FindResultImplOffsetBase<need_offset>
+{
+    Mapped * value;
+
+public:
+    FindResultImpl(Mapped * value_, bool found_, size_t off)
+        : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off), value(value_) {}
+    Mapped & getMapped() const { return *value; }
+};
+
+template <bool need_offset>
+class FindResultImpl<void, need_offset> : public FindResultImplBase, public FindResultImplOffsetBase<need_offset>
+{
+public:
+    FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
+};
+
+template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false>
 class HashMethodBase
 {
 public:
     using EmplaceResult = EmplaceResultImpl<Mapped>;
-    using FindResult = FindResultImpl<Mapped>;
+    using FindResult = FindResultImpl<Mapped, need_offset>;
     static constexpr bool has_mapped = !std::is_same<Mapped, void>::value;
     using Cache = LastElementCache<Value, consecutive_keys_optimization>;
 
@@ -216,12 +244,15 @@ protected:
     {
         if constexpr (Cache::consecutive_keys_optimization)
         {
+            /// It's possible to support such combination, but code will became more complex.
+            /// Now there's not place where we need this options enabled together
+            static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
             if (cache.check(key))
             {
                 if constexpr (has_mapped)
-                    return FindResult(&cache.value.second, cache.found);
+                    return FindResult(&cache.value.second, cache.found, 0);
                 else
-                    return FindResult(cache.found);
+                    return FindResult(cache.found, 0);
             }
         }
 
@@ -246,10 +277,15 @@ protected:
             }
         }
 
+        size_t offset = 0;
+        if constexpr (FindResult::has_offset)
+        {
+            offset = it ? data.offsetInternal(it) : 0;
+        }
         if constexpr (has_mapped)
-            return FindResult(it ? &it->getMapped() : nullptr, it != nullptr);
+            return FindResult(it ? &it->getMapped() : nullptr, it != nullptr, offset);
         else
-            return FindResult(it != nullptr);
+            return FindResult(it != nullptr, offset);
     }
 };
 

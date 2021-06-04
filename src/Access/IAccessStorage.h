@@ -11,9 +11,14 @@
 
 
 namespace Poco { class Logger; }
+namespace Poco::Net { class IPAddress; }
 
 namespace DB
 {
+struct User;
+class Credentials;
+class ExternalAuthenticators;
+
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
 /// The implementations of this class MUST be thread-safe.
 class IAccessStorage
@@ -24,6 +29,10 @@ public:
 
     /// Returns the name of this storage.
     const String & getStorageName() const { return storage_name; }
+    virtual const char * getStorageType() const = 0;
+
+    /// Returns a JSON with the parameters of the storage. It's up to the storage type to fill the JSON.
+    virtual String getStorageParamsJSON() const { return "{}"; }
 
     using EntityType = IAccessEntity::Type;
     using EntityTypeInfo = IAccessEntity::TypeInfo;
@@ -34,7 +43,7 @@ public:
     template <typename EntityClassT>
     std::vector<UUID> findAll() const { return findAll(EntityClassT::TYPE); }
 
-    /// Searchs for an entity with specified type and name. Returns std::nullopt if not found.
+    /// Searches for an entity with specified type and name. Returns std::nullopt if not found.
     std::optional<UUID> find(EntityType type, const String & name) const;
 
     template <typename EntityClassT>
@@ -45,7 +54,7 @@ public:
     template <typename EntityClassT>
     std::vector<UUID> find(const Strings & names) const { return find(EntityClassT::TYPE, names); }
 
-    /// Searchs for an entity with specified name and type. Throws an exception if not found.
+    /// Searches for an entity with specified name and type. Throws an exception if not found.
     UUID getID(EntityType type, const String & name) const;
 
     template <typename EntityClassT>
@@ -134,6 +143,14 @@ public:
     bool hasSubscription(EntityType type) const;
     bool hasSubscription(const UUID & id) const;
 
+    /// Finds a user, check the provided credentials and returns the ID of the user if they are valid.
+    /// Throws an exception if no such user or credentials are invalid.
+    UUID login(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
+
+    /// Returns the ID of a user who has logged in (maybe on another node).
+    /// The function assumes that the password has been already checked somehow, so we can skip checking it now.
+    UUID getIDOfLoggedUser(const String & user_name) const;
+
 protected:
     virtual std::optional<UUID> findImpl(EntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(EntityType type) const = 0;
@@ -148,6 +165,10 @@ protected:
     virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const = 0;
     virtual bool hasSubscriptionImpl(const UUID & id) const = 0;
     virtual bool hasSubscriptionImpl(EntityType type) const = 0;
+    virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
+    virtual bool areCredentialsValidImpl(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
+    virtual bool isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const;
+    virtual UUID getIDOfLoggedUserImpl(const String & user_name) const;
 
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
@@ -162,6 +183,9 @@ protected:
     [[noreturn]] void throwReadonlyCannotInsert(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotUpdate(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotRemove(EntityType type, const String & name) const;
+    [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
+    [[noreturn]] static void throwInvalidCredentials();
+    [[noreturn]] static void throwCannotAuthenticate(const String & user_name);
 
     using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;
     using Notifications = std::vector<Notification>;

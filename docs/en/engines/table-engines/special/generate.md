@@ -25,7 +25,7 @@ Generate table engine supports only `SELECT` queries.
 
 It supports all [DataTypes](../../../sql-reference/data-types/index.md) that can be stored in a table except `LowCardinality` and `AggregateFunction`.
 
-## Example
+## Example {#example}
 
 **1.** Set up the `generate_engine_table` table:
 

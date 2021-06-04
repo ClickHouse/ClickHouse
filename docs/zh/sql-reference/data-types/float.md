@@ -29,7 +29,7 @@ SELECT 1 - 0.9
 
 -   当一行行阅读浮点数的时候，浮点数的结果可能不是机器最近显示的数值。
 
-## 南和Inf {#data_type-float-nan-inf}
+## NaN和Inf {#data_type-float-nan-inf}
 
 与标准SQL相比，ClickHouse 支持以下类别的浮点数：
 

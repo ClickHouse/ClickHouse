@@ -9,7 +9,7 @@ The HTTP interface lets you use ClickHouse on any platform from any programming 
 
 By default, clickhouse-server listens for HTTP on port 8123 (this can be changed in the config).
 
-If you make a GET / request without parameters, it returns 200 response code and the string which defined in [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) default value “Ok.” (with a line feed at the end)
+If you make a GET / request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) default value “Ok.” (with a line feed at the end)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -36,7 +36,7 @@ Examples:
 $ curl 'http://localhost:8123/?query=SELECT%201'
 1
 
-$ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
+$ wget -nv -O- 'http://localhost:8123/?query=SELECT 1'
 1
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
@@ -52,7 +52,7 @@ X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","writ
 ```
 
 As you can see, curl is somewhat inconvenient in that spaces must be URL escaped.
-Although wget escapes everything itself, we don’t recommend using it because it doesn’t work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
+Although wget escapes everything itself, we do not recommend using it because it does not work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
 
 ``` bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/' --data-binary @-
@@ -76,7 +76,10 @@ ECT 1
 ```
 
 By default, data is returned in TabSeparated format (for more information, see the “Formats” section).
+
 You use the FORMAT clause of the query to request any other format.
+
+Also, you can use the ‘default_format’ URL parameter or the ‘X-ClickHouse-Format’ header to specify a default format other than TabSeparated.
 
 ``` bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -143,31 +146,51 @@ Deleting the table.
 $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-For successful requests that don’t return a data table, an empty response body is returned.
+For successful requests that do not return a data table, an empty response body is returned.
 
-You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you will need to use the special `clickhouse-compressor` program to work with it (it is installed with the `clickhouse-client` package). To increase the efficiency of data insertion, you can disable server-side checksum verification by using the [http\_native\_compression\_disable\_checksumming\_on\_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) setting.
 
-If you specified `compress=1` in the URL, the server compresses the data it sends you.
-If you specified `decompress=1` in the URL, the server decompresses the same data that you pass in the `POST` method.
+## Compression {#compression}
 
-You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`. In order for ClickHouse to compress the response, you must append `Accept-Encoding: compression_method`. ClickHouse supports `gzip`, `br`, and `deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). To enable HTTP compression, you must use the ClickHouse [enable\_http\_compression](../operations/settings/settings.md#settings-enable_http_compression) setting. You can configure the data compression level in the [http\_zlib\_compression\_level](#settings-http_zlib_compression_level) setting for all the compression methods.
+You can use compression to reduce network traffic when transmitting a large amount of data or for creating dumps that are immediately compressed.
 
-You can use this to reduce network traffic when transmitting a large amount of data, or for creating dumps that are immediately compressed.
+You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you need `clickhouse-compressor` program to work with it. It is installed with the `clickhouse-client` package. To increase the efficiency of data insertion, you can disable server-side checksum verification by using the [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) setting.
 
-Examples of sending data with compression:
+If you specify `compress=1` in the URL, the server will compress the data it sends to you. If you specify `decompress=1` in the URL, the server will decompress the data which you pass in the `POST` method.
 
-``` bash
-#Sending data to the server:
-$ curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
+You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). ClickHouse supports the following [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens):
 
-#Sending data to the client:
-$ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
-```
+- `gzip`
+- `br`
+- `deflate`
+- `xz`
+
+To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
+In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
 
 !!! note "Note"
     Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
 
-You can use the ‘database’ URL parameter to specify the default database.
+**Examples**
+
+``` bash
+# Sending compressed data to the server
+$ echo "SELECT 1" | gzip -c | \
+  curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
+```
+
+``` bash
+# Receiving compressed data from the server
+$ curl -vsS "http://localhost:8123/?enable_http_compression=1" \
+    -H 'Accept-Encoding: gzip' --output result.gz -d 'SELECT number FROM system.numbers LIMIT 3'
+$ zcat result.gz
+0
+1
+2
+```
+
+## Default Database {#default-database}
+
+You can use the ‘database’ URL parameter or the ‘X-ClickHouse-Database’ header to specify the default database.
 
 ``` bash
 $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?database=system' --data-binary @-
@@ -212,7 +235,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 ```
 
 If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.
-You can also use the URL parameters to specify any settings for processing a single query or entire profiles of settings. Example:http://localhost:8123/?profile=web&max\_rows\_to\_read=1000000000&query=SELECT+1
+You can also use the URL parameters to specify any settings for processing a single query or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
 For more information, see the [Settings](../operations/settings/index.md) section.
 
@@ -234,7 +257,7 @@ For information about other parameters, see the section “SET”.
 
 Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout, modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
-You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send\_progress\_in\_http\_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Example of the header sequence:
+You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Example of the header sequence:
 
 ``` text
 X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
@@ -250,10 +273,10 @@ Possible header fields:
 -   `written_rows` — Number of rows written.
 -   `written_bytes` — Volume of data written in bytes.
 
-Running requests don’t stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
-The optional ‘query\_id’ parameter can be passed as the query ID (any string). For more information, see the section “Settings, replace\_running\_query”.
+Running requests do not stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
+The optional ‘query_id’ parameter can be passed as the query ID (any string). For more information, see the section “Settings, replace_running_query”.
 
-The optional ‘quota\_key’ parameter can be passed as the quota key (any string). For more information, see the section “Quotas”.
+The optional ‘quota_key’ parameter can be passed as the quota key (any string). For more information, see the section “Quotas”.
 
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see the section “External data for query processing”.
 
@@ -275,7 +298,7 @@ Use buffering to avoid situations where a query processing error occurred after 
 
 ### Queries with Parameters {#cli-queries-with-parameters}
 
-You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](cli.md#cli-queries-with-parameters).
+You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](../interfaces/cli.md#cli-queries-with-parameters).
 
 ### Example {#example}
 
@@ -291,7 +314,7 @@ ClickHouse supports specific queries through the HTTP interface. For example, yo
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-ClickHouse also supports Predefined HTTP Interface which can help you more easy integration with third party tools like [Prometheus exporter](https://github.com/percona-lab/clickhouse_exporter).
+ClickHouse also supports Predefined HTTP Interface which can help you more easily integrate with third-party tools like [Prometheus exporter](https://github.com/percona-lab/clickhouse_exporter).
 
 Example:
 
@@ -314,7 +337,7 @@ Example:
 </http_handlers>
 ```
 
--   You can now request the url directly for data in the Prometheus format:
+-   You can now request the URL directly for data in the Prometheus format:
 
 <!-- -->
 
@@ -361,41 +384,40 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 * Connection #0 to host localhost left intact
 
-
 * Connection #0 to host localhost left intact
 ```
 
-As you can see from the example, if `<http_handlers>` is configured in the config.xml file and `<http_handlers>` can contain many `<rule>s`. ClickHouse will match the HTTP requests received to the predefined type in `<rule>` and the first matched runs the handler. Then ClickHouse will execute the corresponding predefined query if the match is successful.
+As you can see from the example if `http_handlers` is configured in the config.xml file and `http_handlers` can contain many `rules`. ClickHouse will match the HTTP requests received to the predefined type in `rule` and the first matched runs the handler. Then ClickHouse will execute the corresponding predefined query if the match is successful.
 
-> Now `<rule>` can configure `<method>`, `<headers>`, `<url>`,`<handler>`:
-> `<method>` is responsible for matching the method part of the HTTP request. `<method>` fully conforms to the definition of [method](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) in the HTTP protocol. It is an optional configuration. If it is not defined in the configuration file, it does not match the method portion of the HTTP request.
->
-> `<url>` is responsible for matching the url part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the url portion of the HTTP request.
->
-> `<headers>` is responsible for matching the header part of the HTTP request. It is compatible with RE2’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
->
-> `<handler>` contains the main processing part. Now `<handler>` can configure `<type>`, `<status>`, `<content_type>`, `<response_content>`, `<query>`, `<query_param_name>`.
-> \> `<type>` currently supports three types: **predefined\_query\_handler**, **dynamic\_query\_handler**, **static**.
-> \>
-> \> `<query>` - use with predefined\_query\_handler type, executes query when the handler is called.
-> \>
-> \> `<query_param_name>` - use with dynamic\_query\_handler type, extracts and executes the value corresponding to the `<query_param_name>` value in HTTP request params.
-> \>
-> \> `<status>` - use with static type, response status code.
-> \>
-> \> `<content_type>` - use with static type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
-> \>
-> \> `<response_content>` - use with static type, Response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration send to client.
+Now `rule` can configure `method`, `headers`, `url`, `handler`:
+- `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [method](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) in the HTTP protocol. It is an optional configuration. If it is not defined in the configuration file, it does not match the method portion of the HTTP request.
 
-Next are the configuration methods for the different `<type>`.
+-   `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP request.
 
-## predefined\_query\_handler {#predefined_query_handler}
+-   `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
-`<predefined_query_handler>` supports setting Settings and query\_params values. You can configure `<query>` in the type of `<predefined_query_handler>`.
+-   `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `response_content`, `query`, `query_param_name`.
+    `type` currently supports three types: [predefined_query_handler](#predefined_query_handler), [dynamic_query_handler](#dynamic_query_handler), [static](#static).
 
-`<query>` value is a predefined query of `<predefined_query_handler>`, which is executed by ClickHouse when an HTTP request is matched and the result of the query is returned. It is a must configuration.
+    -   `query` — use with `predefined_query_handler` type, executes query when the handler is called.
 
-The following example defines the values of `max_threads` and `max_alter_threads` settings, then queries the system table to check whether these settings were set successfully.
+    -   `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in HTTP request params.
+
+    -   `status` — use with `static` type, response status code.
+
+    -   `content_type` — use with `static` type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+
+    -   `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
+
+Next are the configuration methods for different `type`.
+
+### predefined_query_handler {#predefined_query_handler}
+
+`predefined_query_handler` supports setting `Settings` and `query_params` values. You can configure `query` in the type of `predefined_query_handler`.
+
+`query` value is a predefined query of `predefined_query_handler`, which is executed by ClickHouse when an HTTP request is matched and the result of the query is returned. It is a must configuration.
+
+The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_alter_threads` settings, then queries the system table to check whether these settings were set successfully.
 
 Example:
 
@@ -424,15 +446,15 @@ max_alter_threads   2
 ```
 
 !!! note "caution"
-    In one `<predefined_query_handler>` only supports one `<query>` of an insert type.
+    In one `predefined_query_handler` only supports one `query` of an insert type.
 
-## dynamic\_query\_handler {#dynamic_query_handler}
+### dynamic_query_handler {#dynamic_query_handler}
 
-In `<dynamic_query_handler>`, query is written in the form of param of the HTTP request. The difference is that in `<predefined_query_handler>`, query is wrote in the configuration file. You can configure `<query_param_name>` in `<dynamic_query_handler>`.
+In `dynamic_query_handler`, the query is written in the form of param of the HTTP request. The difference is that in `predefined_query_handler`, the query is written in the configuration file. You can configure `query_param_name` in `dynamic_query_handler`.
 
-ClickHouse extracts and executes the value corresponding to the `<query_param_name>` value in the url of the HTTP request. The default value of `<query_param_name>` is `/query` . It is an optional configuration. If there is no definition in the configuration file, the param is not passed in.
+ClickHouse extracts and executes the value corresponding to the `query_param_name` value in the URL of the HTTP request. The default value of `query_param_name` is `/query` . It is an optional configuration. If there is no definition in the configuration file, the param is not passed in.
 
-To experiment with this functionality, the example defines the values of max\_threads and max\_alter\_threads and queries whether the Settings were set successfully.
+To experiment with this functionality, the example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_alter_threads` and `queries` whether the settings were set successfully.
 
 Example:
 
@@ -455,9 +477,9 @@ max_threads 1
 max_alter_threads   2
 ```
 
-## static {#static}
+### static {#static}
 
-`<static>` can return [content\_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) and response\_content. response\_content can return the specified content
+`static` can return [content_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) and `response_content`. `response_content` can return the specified content.
 
 Example:
 

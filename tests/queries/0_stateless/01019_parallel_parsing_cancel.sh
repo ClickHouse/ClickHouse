@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS a;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS b;"
@@ -11,7 +12,7 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE b (x UInt64) ENGINE = Memory;"
 
 function thread1()
 {
-        for attempt_thread1 in {1..10}
+        for _ in {1..10}
         do
                 seq 1 500000 | $CLICKHOUSE_CLIENT --query_id=11 --query="INSERT INTO a FORMAT TSV" &
                 while true; do
@@ -25,7 +26,7 @@ function thread1()
 
 function thread2()
 {
-        for attempt_thread2 in {1..10}
+        for _ in {1..10}
         do
                 seq 1 500000 | $CLICKHOUSE_CLIENT --query_id=22 --query="INSERT INTO b FORMAT TSV" &
                 while true; do

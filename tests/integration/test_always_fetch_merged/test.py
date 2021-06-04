@@ -1,13 +1,14 @@
-import pytest
 import time
+
+import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-
 
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', with_zookeeper=True)
 node2 = cluster.add_instance('node2', with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -21,15 +22,15 @@ def started_cluster():
 
 
 def test_replica_always_download(started_cluster):
-    node1.query("""
-        CREATE TABLE test_table(
+    node1.query_with_retry("""
+        CREATE TABLE IF NOT EXISTS test_table(
             key UInt64,
             value String
         ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table/replicated', '1')
         ORDER BY tuple()
     """)
-    node2.query("""
-        CREATE TABLE test_table(
+    node2.query_with_retry("""
+        CREATE TABLE IF NOT EXISTS test_table(
             key UInt64,
             value String
         ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table/replicated', '2')
@@ -41,27 +42,23 @@ def test_replica_always_download(started_cluster):
     node1.query("SYSTEM STOP MERGES")
 
     for i in range(0, 10):
-        node1.query("INSERT INTO test_table VALUES ({}, '{}')".format(i, i))
+        node1.query_with_retry("INSERT INTO test_table VALUES ({}, '{}')".format(i, i))
 
     assert node1.query("SELECT COUNT() FROM test_table") == "10\n"
     assert_eq_with_retry(node2, "SELECT COUNT() FROM test_table", "10\n")
 
-    time.sleep(3)
+    time.sleep(5)
 
     # Nothing is merged
     assert node1.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1") == "10\n"
-
     assert node2.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1") == "10\n"
 
     node1.query("SYSTEM START MERGES")
+    node1.query("OPTIMIZE TABLE test_table")
+    node2.query("SYSTEM SYNC REPLICA test_table")
 
-    for i in range(30):
-        node1_parts = node1.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1").strip()
-        node2_parts = node2.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1").strip()
-        if int(node1_parts) < 10 and int(node2_parts) < 10:
-            break
-        else:
-            time.sleep(0.5)
-    else:
-        assert int(node1_parts) < 10
-        assert int(node2_parts) < 10
+    node1_parts = node1.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1").strip()
+    node2_parts = node2.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1").strip()
+
+    assert int(node1_parts) < 10
+    assert int(node2_parts) < 10

@@ -18,7 +18,6 @@ EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFDIR=/etc/$PROGRAM
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
-CLICKHOUSE_DATADIR_OLD=/opt/clickhouse
 CLICKHOUSE_DATADIR=/var/lib/clickhouse
 if [ -d "/var/lock" ]; then
     LOCALSTATEDIR=/var/lock
@@ -34,7 +33,6 @@ CLICKHOUSE_BINDIR=/usr/bin
 CLICKHOUSE_CRONFILE=/etc/cron.d/clickhouse-server
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 LOCKFILE=$LOCALSTATEDIR/$PROGRAM
-RETVAL=0
 CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
 CLICKHOUSE_PIDFILE="$CLICKHOUSE_PIDDIR/$PROGRAM.pid"
 # CLICKHOUSE_STOP_TIMEOUT=60 # Disabled by default. Place to /etc/default/clickhouse if you need.
@@ -69,33 +67,6 @@ if uname -mpi | grep -q 'x86_64'; then
 fi
 
 
-SUPPORTED_COMMANDS="{start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
-is_supported_command()
-{
-    echo "$SUPPORTED_COMMANDS" | grep -E "(\{|\|)$1(\||})" &> /dev/null
-}
-
-
-is_running()
-{
-    [ -r "$CLICKHOUSE_PIDFILE" ] && pgrep -s $(cat "$CLICKHOUSE_PIDFILE") 1> /dev/null 2> /dev/null
-}
-
-
-wait_for_done()
-{
-    timeout=$1
-    attempts=0
-    while is_running; do
-        attempts=$(($attempts + 1))
-        if [ -n "$timeout" ] && [ $attempts -gt $timeout ]; then
-            return 1
-        fi
-        sleep 1
-    done
-}
-
-
 die()
 {
     echo $1 >&2
@@ -114,146 +85,31 @@ check_config()
 
 initdb()
 {
-    if [ -x "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG" ]; then
-        CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
-        if [ "(" "$?" -ne "0" ")" -o "(" -z "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ")" ]; then
-            die "Cannot obtain value of path from config file: ${CLICKHOUSE_CONFIG}";
-        fi
-        echo "Path to data directory in ${CLICKHOUSE_CONFIG}: ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
-    else
-        CLICKHOUSE_DATADIR_FROM_CONFIG=$CLICKHOUSE_DATADIR
-    fi
-
-    if ! getent group ${CLICKHOUSE_USER} >/dev/null; then
-        echo "Can't chown to non-existing user ${CLICKHOUSE_USER}"
-        return
-    fi
-    if ! getent passwd ${CLICKHOUSE_GROUP} >/dev/null; then
-        echo "Can't chown to non-existing group ${CLICKHOUSE_GROUP}"
-        return
-    fi
-
-    if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -r ${CLICKHOUSE_CONFIG}"); then
-        echo "Warning! clickhouse config [${CLICKHOUSE_CONFIG}] not readable by user [${CLICKHOUSE_USER}]"
-    fi
-
-    if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -O \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\" && test -G \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\""); then
-        if [ $(dirname "${CLICKHOUSE_DATADIR_FROM_CONFIG}") = "/" ]; then
-            echo "Directory ${CLICKHOUSE_DATADIR_FROM_CONFIG} seems too dangerous to chown."
-        else
-            if [ ! -e "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ]; then
-                echo "Creating directory ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
-                mkdir -p "${CLICKHOUSE_DATADIR_FROM_CONFIG}"
-            fi
-
-            echo "Changing owner of [${CLICKHOUSE_DATADIR_FROM_CONFIG}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
-            chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} "${CLICKHOUSE_DATADIR_FROM_CONFIG}"
-        fi
-    fi
-
-    if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}"); then
-        echo "Changing owner of [${CLICKHOUSE_LOGDIR}/*] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
-        chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}/*
-        echo "Changing owner of [${CLICKHOUSE_LOGDIR}] to [${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP}]"
-        chown ${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
-    fi
+    ${CLICKHOUSE_GENERIC_PROGRAM} install --user "${CLICKHOUSE_USER}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}"
 }
 
 
 start()
 {
-    [ -x $CLICKHOUSE_BINDIR/$PROGRAM ] || exit 0
-    local EXIT_STATUS
-    EXIT_STATUS=0
-
-    echo -n "Start $PROGRAM service: "
-
-    if is_running; then
-        echo -n "already running "
-        EXIT_STATUS=1
-    else
-        ulimit -n 262144
-        mkdir -p $CLICKHOUSE_PIDDIR
-        chown -R $CLICKHOUSE_USER:$CLICKHOUSE_GROUP $CLICKHOUSE_PIDDIR
-        initdb
-        if ! is_running; then
-            # Lock should not be held while running child process, so we release the lock. Note: obviously, there is race condition.
-            # But clickhouse-server has protection from simultaneous runs with same data directory.
-            su -s $SHELL ${CLICKHOUSE_USER} -c "$FLOCK -u 9; $CLICKHOUSE_PROGRAM_ENV exec -a \"$PROGRAM\" \"$CLICKHOUSE_BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\""
-            EXIT_STATUS=$?
-            if [ $EXIT_STATUS -ne 0 ]; then
-                break
-            fi
-        fi
-    fi
-
-    if [ $EXIT_STATUS -eq 0 ]; then
-        attempts=0
-        while ! is_running && [ $attempts -le ${CLICKHOUSE_START_TIMEOUT:=10} ]; do
-            attempts=$(($attempts + 1))
-            sleep 1
-        done
-        if is_running; then
-            echo "DONE"
-        else
-            echo "UNKNOWN"
-        fi
-    else
-        echo "FAILED"
-    fi
-
-    return $EXIT_STATUS
+    ${CLICKHOUSE_GENERIC_PROGRAM} start --user "${CLICKHOUSE_USER}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}"
 }
 
 
 stop()
 {
-    #local EXIT_STATUS
-    EXIT_STATUS=0
-
-    if [ -f $CLICKHOUSE_PIDFILE ]; then
-
-        echo -n "Stop $PROGRAM service: "
-
-        kill -TERM $(cat "$CLICKHOUSE_PIDFILE")
-
-        if ! wait_for_done ${CLICKHOUSE_STOP_TIMEOUT}; then
-            EXIT_STATUS=2
-            echo "TIMEOUT"
-        else
-            echo "DONE"
-        fi
-
-    fi
-    return $EXIT_STATUS
+    ${CLICKHOUSE_GENERIC_PROGRAM} stop --pid-path "${CLICKHOUSE_PIDDIR}"
 }
 
 
 restart()
 {
-    check_config
-    if stop; then
-        if start; then
-            return 0
-        fi
-    fi
-    return 1
+    ${CLICKHOUSE_GENERIC_PROGRAM} restart --user "${CLICKHOUSE_USER}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}"
 }
 
 
 forcestop()
 {
-    local EXIT_STATUS
-    EXIT_STATUS=0
-
-    echo -n "Stop forcefully $PROGRAM service: "
-
-    kill -KILL $(cat "$CLICKHOUSE_PIDFILE")
-
-    wait_for_done
-
-    echo "DONE"
-    return $EXIT_STATUS
+    ${CLICKHOUSE_GENERIC_PROGRAM} stop --force --pid-path "${CLICKHOUSE_PIDDIR}"
 }
 
 
@@ -285,13 +141,12 @@ use_cron()
     fi
     return 0
 }
-
+# returns false if cron disabled (with systemd)
 enable_cron()
 {
     use_cron && sed -i 's/^#*//' "$CLICKHOUSE_CRONFILE"
 }
-
-
+# returns false if cron disabled (with systemd)
 disable_cron()
 {
     use_cron && sed -i 's/^#*/#/' "$CLICKHOUSE_CRONFILE"
@@ -314,15 +169,14 @@ main()
     EXIT_STATUS=0
     case "$1" in
     start)
-        start && enable_cron
+        service_or_func start && enable_cron
         ;;
     stop)
-        # disable_cron returns false if cron disabled (with systemd) - not checking return status
         disable_cron
-        stop
+        service_or_func stop
         ;;
     restart)
-        restart && enable_cron
+        service_or_func restart && enable_cron
         ;;
     forcestop)
         disable_cron
@@ -332,19 +186,19 @@ main()
         forcerestart && enable_cron
         ;;
     reload)
-        restart
+        service_or_func restart
         ;;
     condstart)
-        is_running || service_or_func start
+        service_or_func start
         ;;
     condstop)
-        is_running && service_or_func stop
+        service_or_func stop
         ;;
     condrestart)
-        is_running && service_or_func restart
+        service_or_func restart
         ;;
     condreload)
-        is_running && service_or_func restart
+        service_or_func restart
         ;;
     initdb)
         initdb
@@ -356,7 +210,7 @@ main()
         disable_cron
         ;;
     *)
-        echo "Usage: $0 $SUPPORTED_COMMANDS"
+        echo "Usage: $0 {start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
         exit 2
         ;;
     esac
@@ -367,17 +221,7 @@ main()
 
 status()
 {
-    if is_running; then
-        echo "$PROGRAM service is running"
-        exit 0
-    else
-        if is_cron_disabled; then
-            echo "$PROGRAM service is stopped";
-        else
-            echo "$PROGRAM: process unexpectedly terminated"
-        fi
-        exit 3
-    fi
+    ${CLICKHOUSE_GENERIC_PROGRAM} status --pid-path "${CLICKHOUSE_PIDDIR}"
 }
 
 

@@ -1,11 +1,12 @@
 #pragma once
+#if defined(OS_LINUX)
 #include <cstdint>
 
 
 namespace DB
 {
 
-/** Opens a file /proc/self/mstat. Keeps it open and reads memory statistics via 'pread'.
+/** Opens a file /proc/self/statm. Keeps it open and reads memory statistics via 'pread'.
   * This is Linux specific.
   * See: man procfs
   *
@@ -38,3 +39,5 @@ private:
 };
 
 }
+
+#endif

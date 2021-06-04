@@ -1,8 +1,6 @@
 SELECT toTypeName((1,)), (1,);
 
-SET enable_debug_queries = 1;
-
-ANALYZE SELECT (1,);
+EXPLAIN SYNTAX SELECT (1,);
 
 DROP TABLE IF EXISTS tuple_values;
 

@@ -4,10 +4,12 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/assert_cast.h>
+#include <common/arithmeticOverflow.h>
 
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -18,7 +20,8 @@ template <typename Key>
 class AggregateFunctionResample final : public IAggregateFunctionHelper<AggregateFunctionResample<Key>>
 {
 private:
-    const size_t MAX_ELEMENTS = 4096;
+    /// Sanity threshold to avoid creation of too large arrays. The choice of this number is arbitrary.
+    const size_t MAX_ELEMENTS = 1048576;
 
     AggregateFunctionPtr nested_function;
 
@@ -59,7 +62,18 @@ public:
         if (end < begin)
             total = 0;
         else
-            total = (end - begin + step - 1) / step;
+        {
+            Key dif;
+            size_t sum;
+            if (common::subOverflow(end, begin, dif)
+                || common::addOverflow(static_cast<size_t>(dif), step, sum))
+            {
+                throw Exception("Overflow in internal computations in function " + getName()
+                    + ". Too large arguments", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            }
+
+            total = (sum - 1) / step; // total = (end - begin + step - 1) / step
+        }
 
         if (total > MAX_ELEMENTS)
             throw Exception("The range given in function "
@@ -97,7 +111,7 @@ public:
         return align_of_data;
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr __restrict place) const override
     {
         for (size_t i = 0; i < total; ++i)
         {
@@ -114,7 +128,7 @@ public:
         }
     }
 
-    void destroy(AggregateDataPtr place) const noexcept override
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->destroy(place + i * size_of_data);
@@ -174,16 +188,19 @@ public:
 
     void insertResultInto(
         AggregateDataPtr place,
-        IColumn & to) const override
+        IColumn & to,
+        Arena * arena) const override
     {
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < total; ++i)
-            nested_function->insertResultInto(place + i * size_of_data, col.getData());
+            nested_function->insertResultInto(place + i * size_of_data, col.getData(), arena);
 
         col_offsets.getData().push_back(col.getData().size());
     }
+
+    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
 }

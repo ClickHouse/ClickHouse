@@ -1,0 +1,1 @@
+SELECT hostname() = hostName();

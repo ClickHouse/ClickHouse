@@ -1,4 +1,3 @@
-#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionDateOrDateTimeToSomething.h>
@@ -13,6 +12,9 @@ using FunctionToDayOfYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, To
 void registerFunctionToDayOfYear(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToDayOfYear>();
+
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToDayOfYear>("DAYOFYEAR", FunctionFactory::CaseInsensitive);
 }
 
 }

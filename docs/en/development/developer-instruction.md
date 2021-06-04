@@ -3,7 +3,7 @@ toc_priority: 61
 toc_title: For Beginners
 ---
 
-# The Beginner ClickHouse Developer Instruction
+# The Beginner ClickHouse Developer Instruction {#the-beginner-clickhouse-developer-instruction}
 
 Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
@@ -15,7 +15,7 @@ ClickHouse cannot work or build on a 32-bit system. You should acquire access to
 
 To start working with ClickHouse repository you will need a GitHub account.
 
-You probably already have one, but if you don’t, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
+You probably already have one, but if you do not, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
 
 Create a fork of ClickHouse repository. To do that please click on the “fork” button in the upper right corner at https://github.com/ClickHouse/ClickHouse. It will fork your own copy of ClickHouse/ClickHouse to your account.
 
@@ -28,7 +28,7 @@ To do that in Ubuntu you would run in the command line terminal:
     sudo apt update
     sudo apt install git
 
-A brief manual on using Git can be found here: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+A brief manual on using Git can be found here: https://education.github.com/git-cheat-sheet-education.pdf.
 For a detailed manual on Git see https://git-scm.com/book/en/v2.
 
 ## Cloning a Repository to Your Development Machine {#cloning-a-repository-to-your-development-machine}
@@ -40,7 +40,7 @@ In the command line terminal run:
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Note: please, substitute *your\_github\_username* with what is appropriate!
+Note: please, substitute *your_github_username* with what is appropriate!
 
 This command will create a directory `ClickHouse` containing the working copy of the project.
 
@@ -131,17 +131,18 @@ ClickHouse uses several external libraries for building. All of them do not need
 
 ## C++ Compiler {#c-compiler}
 
-Compilers GCC starting from version 9 and Clang version 8 or above are supported for building ClickHouse.
+Compilers Clang starting from version 11 is supported for building ClickHouse.
 
-Official Yandex builds currently use GCC because it generates machine code of slightly better performance (yielding a difference of up to several percent according to our benchmarks). And Clang is more convenient for development usually. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
+Clang should be used instead of gcc. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
-To install GCC on Ubuntu run: `sudo apt install gcc g++`
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
-Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/#install-gcc-9.
+```bash
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+```
 
-Mac OS X build is supported only for Clang. Just run `brew install llvm`
+Mac OS X build is also supported. Just run `brew install llvm`
 
-If you decide to use Clang, you can also install `libc++` and `lld`, if you know what it is. Using `ccache` is also recommended.
 
 ## The Building Process {#the-building-process}
 
@@ -150,16 +151,9 @@ Now that you are ready to build ClickHouse we recommend you to create a separate
     mkdir build
     cd build
 
-You can have several different directories (build\_release, build\_debug, etc.) for different types of build.
+You can have several different directories (build_release, build_debug, etc.) for different types of build.
 
-While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 9 gcc compiler in this example).
-
-Linux:
-
-    export CC=gcc-9 CXX=g++-9
-    cmake ..
-
-Mac OS X:
+While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler.
 
     export CC=clang CXX=clang++
     cmake ..
@@ -208,7 +202,7 @@ To run the server under the current user you need to navigate to `ClickHouse/pro
 
 In this case, ClickHouse will use config files located in the current directory. You can run `clickhouse server` from any directory specifying the path to a config file as a command-line parameter `--config-file`.
 
-To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `clickhouse client`.
+To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `./clickhouse client`.
 
 If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying host address 127.0.0.1:
 
@@ -245,7 +239,7 @@ The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
 Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/contribute
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 ## Test Data {#test-data}
 
@@ -253,8 +247,8 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
 
     sudo apt install wget xz-utils
 
-    wget https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz
-    wget https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

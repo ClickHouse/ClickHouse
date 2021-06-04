@@ -11,7 +11,7 @@ namespace DB
 class DelayedPortsProcessor : public IProcessor
 {
 public:
-    DelayedPortsProcessor(const Block & header, size_t num_ports, const PortNumbers & delayed_ports);
+    DelayedPortsProcessor(const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty = false);
 
     String getName() const override { return "DelayedPorts"; }
 
@@ -28,10 +28,15 @@ private:
     };
 
     std::vector<PortsPair> port_pairs;
-    size_t num_delayed;
-    size_t num_finished = 0;
+    const size_t num_delayed_ports;
+    size_t num_finished_pairs = 0;
+    size_t num_finished_outputs = 0;
+
+    std::vector<size_t> output_to_pair;
+    bool are_inputs_initialized = false;
 
     bool processPair(PortsPair & pair);
+    void finishPair(PortsPair & pair);
 };
 
 }

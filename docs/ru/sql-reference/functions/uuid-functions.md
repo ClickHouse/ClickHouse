@@ -1,3 +1,8 @@
+---
+toc_priority: 53
+toc_title: "Функции для работы с UUID"
+---
+
 # Функции для работы с UUID {#funktsii-dlia-raboty-s-uuid}
 
 ## generateUUIDv4 {#uuid-function-generate}
@@ -51,6 +56,54 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ``` text
 ┌─────────────────────────────────uuid─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
+└──────────────────────────────────────┘
+```
+
+## toUUIDOrNull (x) {#touuidornull-x}
+
+Принимает строку, и пытается преобразовать в тип UUID. При неудаче возвращает NULL.
+
+``` sql
+toUUIDOrNull(String)
+```
+
+**Возвращаемое значение**
+
+Значение типа Nullable(UUID).
+
+**Пример использования**
+
+``` sql
+SELECT toUUIDOrNull('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
+```
+
+``` text
+┌─uuid─┐
+│ ᴺᵁᴸᴸ │
+└──────┘
+```
+
+## toUUIDOrZero (x) {#touuidorzero-x}
+
+Принимает строку, и пытается преобразовать в тип UUID. При неудаче возвращает нулевой UUID.
+
+``` sql
+toUUIDOrZero(String)
+```
+
+**Возвращаемое значение**
+
+Значение типа UUID.
+
+**Пример использования**
+
+``` sql
+SELECT toUUIDOrZero('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
+```
+
+``` text
+┌─────────────────────────────────uuid─┐
+│ 00000000-0000-0000-0000-000000000000 │
 └──────────────────────────────────────┘
 ```
 

@@ -12,7 +12,7 @@ class ASTRolesOrUsersSet;
 
 /** CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name
   *      [KEYED BY {none | user_name | ip_address | client_key | client_key, user_name | client_key, ip_address} | NOT KEYED]
-  *      [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day}
+  *      [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
   *       {MAX {{queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number} [,...] |
   *        NO LIMITS | TRACKING ONLY} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
@@ -20,7 +20,7 @@ class ASTRolesOrUsersSet;
   * ALTER QUOTA [IF EXISTS] name
   *      [RENAME TO new_name]
   *      [KEYED BY {none | user_name | ip_address | client_key | client_key, user_name | client_key, ip_address} | NOT KEYED]
-  *      [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day}
+  *      [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
   *       {MAX {{queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number} [,...] |
   *        NO LIMITS | TRACKING ONLY} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
@@ -56,7 +56,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    void replaceCurrentUserTagWithName(const String & current_user_name) const;
+    void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateQuotaQuery>(clone()); }
 };
 }

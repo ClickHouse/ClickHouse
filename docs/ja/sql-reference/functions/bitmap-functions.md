@@ -35,7 +35,7 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
 
 ``` text
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
-│     │ AggregateFunction(groupBitmap, UInt8)    │
+│     │ AggregateFunction(groupBitmap, UInt8)        │
 └─────┴──────────────────────────────────────────────┘
 ```
 
@@ -65,7 +65,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapSubsetInRange {#bitmap-functions-bitmapsubsetinrange}
 
-指定された範囲のサブセットを返します(range\_endは含まれません)。
+指定された範囲のサブセットを返します(range_endは含まれません)。
 
 ``` sql
 bitmapSubsetInRange(bitmap, range_start, range_end)
@@ -241,7 +241,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapMin {#bitmapmin}
 
-セット内のUInt64型の最小値を再実行し、セットが空の場合はUINT32\_MAX。
+セット内のUInt64型の最小値を再実行し、セットが空の場合はUINT32_MAX。
 
     bitmapMin(bitmap)
 
@@ -288,8 +288,8 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
 **パラメータ**
 
 -   `bitmap` – bitmap object.
--   `from_array` – UInt32 array. For idx in range \[0, from\_array.size()), if bitmap contains from\_array\[idx\], then replace it with to\_array\[idx\]. Note that the result depends on array ordering if there are common elements between from\_array and to\_array.
--   `to_array` – UInt32 array, its size shall be the same to from\_array.
+-   `from_array` – UInt32 array. For idx in range \[0, from_array.size()), if bitmap contains from_array\[idx\], then replace it with to_array\[idx\]. Note that the result depends on array ordering if there are common elements between from_array and to_array.
+-   `to_array` – UInt32 array, its size shall be the same to from_array.
 
 **例**
 
