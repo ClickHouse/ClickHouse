@@ -1995,7 +1995,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                         if (code == Coordination::Error::ZOK)
                         {
                             LOG_DEBUG(log, "Marked quorum for part {} as failed.", entry.new_part_name);
-                            queue.removeFromVirtualParts(part_info);
+                            queue.removeFailedQuorumPart(part_info);
                             return true;
                         }
                         else if (code == Coordination::Error::ZBADVERSION || code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
@@ -2007,7 +2007,10 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                     }
                     else
                     {
-                        LOG_WARNING(log, "No active replica has part {}, but that part needs quorum and /quorum/status contains entry about another part {}. It means that part was successfully written to {} replicas, but then all of them goes offline. Or it is a bug.", entry.new_part_name, quorum_entry.part_name, entry.quorum);
+                        LOG_WARNING(log, "No active replica has part {}, "
+                                         "but that part needs quorum and /quorum/status contains entry about another part {}. "
+                                         "It means that part was successfully written to {} replicas, but then all of them goes offline. "
+                                         "Or it is a bug.", entry.new_part_name, quorum_entry.part_name, entry.quorum);
                     }
                 }
             }
@@ -2642,7 +2645,6 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     {
         if (active_parts_set.getContainingPart(part).empty())
         {
-            queue.remove(zookeeper, part);
             parts_to_remove_from_zk.emplace_back(part);
             LOG_WARNING(log, "Source replica does not have part {}. Removing it from ZooKeeper.", part);
         }
@@ -2887,6 +2889,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
     /// Clear obsolete queue that we no longer need.
     zookeeper->removeChildren(replica_path + "/queue");
+    queue.clear();
 
     /// Will do repair from the selected replica.
     cloneReplica(source_replica, source_is_lost_stat, zookeeper);
