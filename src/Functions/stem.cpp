@@ -44,7 +44,9 @@ struct StemImpl
         {
             /// Note that accessing -1th element is valid for PaddedPODArray.
             size_t original_size = offsets[i] - offsets[i - 1];
-            const sb_symbol * result = sb_stemmer_stem(stemmer, reinterpret_cast<const unsigned char *>(data.data() + offsets[i - 1]), original_size - 1);
+            const sb_symbol * result = sb_stemmer_stem(stemmer,
+                                                       reinterpret_cast<const unsigned char *>(data.data() + offsets[i - 1]),
+                                                       original_size - 1);
             size_t new_size = sb_stemmer_length(stemmer) + 1;
 
             memcpy(res_data.data() + data_size, result, new_size);
