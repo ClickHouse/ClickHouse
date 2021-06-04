@@ -51,9 +51,10 @@ ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const Stri
 
     if (!src_column_name.empty())
     {
-        const auto * mask_col = JoinCommon::getColumnAsMask(block, src_column_name);
+        auto mask_col = ColumnUInt8::create();
+        const auto * mask_data = JoinCommon::getColumnAsMask(block, src_column_name, mask_col);
         for (size_t i = 0; i < res_size; ++i)
-            null_map->getData()[i] = !(*mask_col)[i];
+            null_map->getData()[i] = !(*mask_data)[i];
     }
 
     ColumnPtr res_col = ColumnNullable::create(std::move(data_col), std::move(null_map));

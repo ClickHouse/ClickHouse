@@ -636,7 +636,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    UInt8ColumnDataPtr join_mask = JoinCommon::getColumnAsMask(block, condition_mask_column_name_right);
+    ColumnUInt8::MutablePtr mask_col;
+    UInt8ColumnDataPtr join_mask = JoinCommon::getColumnAsMask(block, condition_mask_column_name_right, mask_col);
 
     /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
     UInt8 save_nullmap = 0;
@@ -660,7 +661,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             if ((*join_mask)[i])
                 continue;
 
-            /// NULL key will saved anyway because, do not save twice
+            /// NULL key will be saved anyway because, do not save twice
             if (save_nullmap && (*null_map)[i])
                 continue;
 
@@ -1110,7 +1111,8 @@ void HashJoin::joinBlockImpl(
       */
 
     /// Only rows where mask == true can be joined
-    UInt8ColumnDataPtr join_mask_column = JoinCommon::getColumnAsMask(block, condition_mask_column_name_left);
+    ColumnUInt8::MutablePtr mask_col;
+    UInt8ColumnDataPtr join_mask_column = JoinCommon::getColumnAsMask(block, condition_mask_column_name_left, mask_col);
 
     AddedColumns added_columns(
         block_with_columns_to_add,
