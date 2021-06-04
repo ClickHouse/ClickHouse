@@ -5,7 +5,7 @@ toc_title: intervalLengthSum
 
 # intervalLengthSum {#agg_function-intervallengthsum}
 
-Calculates the sum of the length of all ranges (segments on numeric axis) excluding intersections.
+Calculates the total length of union of all ranges (segments on numeric axis).
 
 **Syntax**
 
@@ -23,7 +23,7 @@ intervalLengthSum(start, end)
 
 **Returned value**
 
--   Sum of the length of all ranges (segments on numeric axis) excluding intersections. Depending on the type of the argument, the return value may be [UInt64](../../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64) type.
+-   Total length of union of all ranges (segments on numeric axis). Depending on the type of the argument, the return value may be [UInt64](../../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64) type.
 
 **Examples**
 
@@ -31,12 +31,15 @@ intervalLengthSum(start, end)
 
 ``` text
 ┌─id─┬─start─┬─end─┐
-│ a  │   1.1 │ 3.2 │
+│ a  │   1.1 │ 2.9 │
+│ a  │   2.5 │ 3.2 │
 │ a  │     4 │   5 │
 └────┴───────┴─────┘
 ```
 
 In this example, the arguments of the Float32 type are used. The function returns a value of the Float64 type.
+
+Result is the sum of lengths of intervals `[1.1, 3.2]` (union of `[1.1, 2.9]` and `[2.5, 3.2]`) and `[4, 5]`
 
 Query:
 
@@ -47,16 +50,17 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
 Result:
 
 ``` text
-┌─id─┬─segmentLengthSum(start, end)─┬─toTypeName(segmentLengthSum(start, end))─┐
-│ a  │                          3.1 │ Float64                                  │
-└────┴──────────────────────────────┴──────────────────────────────────────────┘
+┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
+│ a  │                           3.1 │ Float64                                   │
+└────┴───────────────────────────────┴───────────────────────────────────────────┘
 ```
 
 2. Input table:
 
 ``` text
 ┌─id─┬───────────────start─┬─────────────────end─┐
-│ a  │ 2020-01-01 01:12:30 │ 2020-01-01 02:50:31 │
+│ a  │ 2020-01-01 01:12:30 │ 2020-01-01 02:10:10 │
+│ a  │ 2020-01-01 02:05:30 │ 2020-01-01 02:50:31 │
 │ a  │ 2020-01-01 03:11:22 │ 2020-01-01 03:23:31 │
 └────┴─────────────────────┴─────────────────────┘
 ```
