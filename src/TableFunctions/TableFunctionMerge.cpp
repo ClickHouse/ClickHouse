@@ -52,20 +52,22 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
     args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
 
-    source_database = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    source_database_regexp = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     source_table_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
 
-const Strings & TableFunctionMerge::getSourceTables(ContextPtr context) const
+const std::unordered_map<String, std::unordered_set<String>> & TableFunctionMerge::getSourceDatabasesAndTables(ContextPtr context) const
 {
-    if (source_tables)
-        return *source_tables;
+    if (source_databases_and_tables)
+        return *source_databases_and_tables;
 
-    auto database = DatabaseCatalog::instance().getDatabase(source_database);
+    // auto database = DatabaseCatalog::instance().getDatabase(source_database);
 
-    OptimizedRegularExpression re(source_table_regexp);
-    auto table_name_match = [&](const String & table_name_) { return re.match(table_name_); };
+    OptimizedRegularExpression database_re(source_database_regexp);
+    OptimizedRegularExpression table_re(source_table_regexp);
+    auto database_name_match = [&](const String & database_name_) { return database_re.match(database_name_); };
+    auto table_name_match = [&](const String & table_name_) { return table_re.match(table_name_); };
 
     auto access = context->getAccess();
     bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, source_database);
@@ -110,8 +112,7 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
         StorageID(getDatabaseName(), table_name),
         getActualTableStructure(context),
         String{},
-        source_database,
-        getSourceTables(context),
+        getSourceDatabasesAndTables(context),
         context);
 
     res->startup();

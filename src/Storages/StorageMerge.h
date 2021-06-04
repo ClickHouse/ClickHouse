@@ -49,9 +49,9 @@ public:
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
 private:
-    String source_database;
-    std::optional<std::unordered_set<String>> source_tables;
+    std::optional<OptimizedRegularExpression> source_database_regexp;
     std::optional<OptimizedRegularExpression> source_table_regexp;
+    std::optional<std::unordered_map<String, std::unordered_set<String>>> source_databases_and_tables;
 
     using StorageWithLockAndName = std::tuple<StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
@@ -72,15 +72,14 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & comment,
-        const String & source_database_,
-        const Strings & source_tables_,
+        const std::unordered_map<String, std::unordered_set<String>> & source_databases_and_tables_,
         ContextPtr context_);
 
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & comment,
-        const String & source_database_,
+        const String & source_database_regexp_,
         const String & source_table_regexp_,
         ContextPtr context_);
 
