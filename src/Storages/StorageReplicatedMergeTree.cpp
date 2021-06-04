@@ -2647,28 +2647,6 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 {
     String source_path = fs::path(zookeeper_path) / "replicas" / source_replica;
 
-    /** TODO: it will be deleted! (It is only to support old version of CH server).
-      * In current code, the replica is created in single transaction.
-      * If the reference/master replica is not yet fully created, let's wait.
-      */
-    while (!zookeeper->exists(fs::path(source_path) / "columns"))
-    {
-        LOG_INFO(log, "Waiting for replica {} to be fully created", source_path);
-
-        if (!zookeeper->exists(source_path))
-            throw Exception(
-                "Cannot clone replica, because the " + source_replica + " was dropped", ErrorCodes::REPLICA_STATUS_CHANGED);
-
-        zkutil::EventPtr event = std::make_shared<Poco::Event>();
-        if (zookeeper->exists(fs::path(source_path) / "columns", nullptr, event))
-        {
-            LOG_WARNING(log, "Oops, a watch has leaked");
-            break;
-        }
-
-        event->tryWait(3000);
-    }
-
     /// The order of the following three actions is important.
 
     Strings source_queue_names;
