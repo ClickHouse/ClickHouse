@@ -235,7 +235,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     # Normalize randomized database names in stdout, stderr files.
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
-    if not args.show_db_name:
+    if args.hide_db_name:
         os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
     if args.replicated_database:
         os.system("LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {file}".format(file=stdout_file))
@@ -1045,7 +1045,7 @@ if __name__ == '__main__':
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')
     parser.add_argument('--no-drop-if-fail', action='store_true', help='Do not drop database for test if test has failed')
-    parser.add_argument('--show-db-name', action='store_true', help='Do not replace random database name with "default"')
+    parser.add_argument('--hide-db-name', action='store_true', help='Replace random database name with "default" in stderr')
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
     parser.add_argument('--test-runs', default=1, nargs='?', type=int, help='Run each test many times (useful for e.g. flaky check)')
