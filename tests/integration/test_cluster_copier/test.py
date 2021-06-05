@@ -324,7 +324,7 @@ def execute_task(started_cluster, task, cmd_options):
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
     # Run cluster-copier processes on each node
-    docker_api = docker.from_env().api
+    docker_api = started_cluster.docker_client.api
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
