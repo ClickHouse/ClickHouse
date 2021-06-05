@@ -1,0 +1,6 @@
+SELECT * FROM mv1
+1	2
+2	3
+SELECT * FROM mv2
+1	2
+2	3
