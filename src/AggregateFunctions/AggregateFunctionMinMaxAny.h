@@ -191,6 +191,29 @@ public:
 
     static constexpr bool is_compilable = true;
 
+    static llvm::Value * getValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
+
+        auto * type = toNativeType<T>(builder);
+        auto * value_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, value_offset_from_structure);
+        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
+
+        return value_ptr;
+    }
+
+    static llvm::Value * getValueFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * type = toNativeType<T>(builder);
+        auto * value_ptr = getValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
+
+        return b.CreateLoad(type, value_ptr);
+    }
+
     static void compileChange(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
@@ -198,24 +221,13 @@ public:
         auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
         b.CreateStore(b.getInt1(true), has_value_ptr);
 
-        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
-
-        auto * type = toNativeType<T>(builder);
-        auto * value_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, value_offset_from_structure);
-        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
+        auto * value_ptr = getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr);
         b.CreateStore(value_to_check, value_ptr);
     }
 
     static void compileChangeMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
     {
-        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
-        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
-
-        auto * type = toNativeType<T>(b);
-        auto * value_src_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_src_ptr, value_offset_from_structure);
-        auto * value_src_ptr = b.CreatePointerCast(value_src_ptr_with_offset, type->getPointerTo());
-        auto * value_src = b.CreateLoad(type, value_src_ptr);
+        auto * value_src = getValueFromAggregateDataPtr(builder, aggregate_data_src_ptr);
 
         compileChange(builder, aggregate_data_dst_ptr, value_src);
     }
@@ -230,15 +242,15 @@ public:
         auto * head = b.GetInsertBlock();
 
         auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
-        auto * if_has = llvm::BasicBlock::Create(head->getContext(), "if_has", head->getParent());
-        auto * if_has_not = llvm::BasicBlock::Create(head->getContext(), "if_has_not", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
 
-        b.CreateCondBr(has_value_value, if_has, if_has_not);
+        b.CreateCondBr(has_value_value, if_should_not_change, if_should_change);
 
-        b.SetInsertPoint(if_has);
+        b.SetInsertPoint(if_should_not_change);
         b.CreateBr(join_block);
 
-        b.SetInsertPoint(if_has_not);
+        b.SetInsertPoint(if_should_change);
         compileChange(builder, aggregate_data_ptr, value_to_check);
         b.CreateBr(join_block);
 
@@ -249,14 +261,28 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
+        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
 
-        auto * type = toNativeType<T>(b);
-        auto * value_src_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_src_ptr, value_offset_from_structure);
-        auto * value_src_ptr = b.CreatePointerCast(value_src_ptr_with_offset, type->getPointerTo());
-        auto * value_src = b.CreateLoad(type, value_src_ptr);
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
-        compileChangeFirstTime(builder, aggregate_data_dst_ptr, value_src);
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        b.CreateCondBr(b.CreateAnd(b.CreateNot(has_value_dst), has_value_src), if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChangeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
     }
 
     static void compileChangeEveryTime(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
@@ -268,26 +294,30 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
-        auto * type = toNativeType<T>(b);
-        auto * value_src_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_src_ptr, value_offset_from_structure);
-        auto * value_src_ptr = b.CreatePointerCast(value_src_ptr_with_offset, type->getPointerTo());
-        auto * value_src = b.CreateLoad(type, value_src_ptr);
+        auto * head = b.GetInsertBlock();
 
-        compileChangeEveryTime(builder, aggregate_data_dst_ptr, value_src);
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        b.CreateCondBr(has_value_src, if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChangeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
     }
 
     static llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
     {
-        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
-        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
-
-        auto * type = toNativeType<T>(builder);
-        auto * value_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, value_offset_from_structure);
-        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
-        return b.CreateLoad(type, value_ptr);
+        return getValueFromAggregateDataPtr(builder, aggregate_data_ptr);
     }
 
 #endif
