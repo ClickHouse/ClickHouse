@@ -4,7 +4,6 @@
 #include <boost/algorithm/string/join.hpp>
 
 #include <Common/Exception.h>
-#include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
@@ -19,9 +18,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Common/TerminalSize.h>
 #include <Core/Defines.h>
-
-#include <sys/times.h>
-#include <sys/time.h>
 
 
 namespace DB
@@ -81,7 +77,6 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         ("block-size,b", po::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
         ("hc", "use LZ4HC instead of LZ4")
         ("zstd", "use ZSTD instead of LZ4")
-        ("param", po::value<std::string>(), "extra params for compression algorithm")
         ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
         ("level", po::value<int>(), "compression level for codecs specified via flags")
         ("none", "use no compression instead of LZ4")
