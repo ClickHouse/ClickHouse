@@ -1,13 +1,14 @@
-#include <Functions/JSONPath/Parsers/ParserJSONPathMemberAccess.h>
-#include <Functions/JSONPath/ASTs/ASTJSONPathMemberAccess.h>
+#pragma once
 
-#include <Parsers/Lexer.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Functions/JSONPath/ASTs/ASTJSONPathMemberAccess.h>
+#include <Functions/JSONPath/Parsers/ParserJSONPathMemberAccess.h>
+
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/Lexer.h>
 
 namespace DB
 {
-
 /**
  *
  * @param pos token iterator
@@ -17,24 +18,28 @@ namespace DB
  */
 bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (pos->type != TokenType::Dot) {
+    if (pos->type != TokenType::Dot)
+    {
         return false;
     }
     ++pos;
 
-    if (pos->type != TokenType::BareWord) {
+    if (pos->type != TokenType::BareWord)
+    {
         return false;
     }
 
     ParserIdentifier name_p;
     ASTPtr member_name;
-    if (!name_p.parse(pos, member_name, expected)) {
+    if (!name_p.parse(pos, member_name, expected))
+    {
         return false;
     }
 
     auto member_access = std::make_shared<ASTJSONPathMemberAccess>();
     node = member_access;
-    if (!tryGetIdentifierNameInto(member_name, member_access->member_name)) {
+    if (!tryGetIdentifierNameInto(member_name, member_access->member_name))
+    {
         return false;
     }
     return true;
