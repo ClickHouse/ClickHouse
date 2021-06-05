@@ -6,9 +6,18 @@
 #include <Common/assert_cast.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
 
 namespace DB
 {
@@ -226,6 +235,125 @@ public:
             if (!memoryIsByte(null_map, batch_size, 1))
                 this->setFlag(place);
     }
+
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        return this->nested_function->isCompilable();
+    }
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        if constexpr (result_is_nullable)
+        {
+            auto alignemnt = llvm::assumeAligned(this->alignOfData());
+            b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->prefix_size, alignemnt);
+        }
+
+        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, this->prefix_size);
+        this->nested_function->compileCreate(b, aggregate_data_ptr_with_prefix_size_offset);
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
+    {
+
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        const auto & nullable_type = arguments_types[0];
+        const auto & nullable_value = argument_values[0];
+
+        auto * wrapped_value = b.CreateExtractValue(nullable_value, {0});
+        auto * is_null_value = b.CreateExtractValue(nullable_value, {1});
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_null = llvm::BasicBlock::Create(head->getContext(), "if_null", head->getParent());
+        auto * if_not_null = llvm::BasicBlock::Create(head->getContext(), "if_not_null", head->getParent());
+
+        b.CreateCondBr(is_null_value, if_null, if_not_null);
+
+        b.SetInsertPoint(if_null);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_not_null);
+        b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, this->prefix_size);
+        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, { removeNullable(nullable_type) }, { wrapped_value });
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+
+    }
+
+    void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        if constexpr (result_is_nullable)
+        {
+            auto alignment = llvm::assumeAligned(this->alignOfData());
+            b.CreateMemCpy(aggregate_data_dst_ptr, alignment, aggregate_data_src_ptr, alignment, this->prefix_size);
+        }
+
+        auto * aggregate_data_dst_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_dst_ptr, this->prefix_size);
+        auto * aggregate_data_src_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_src_ptr, this->prefix_size);
+
+        this->nested_function->compileMerge(b, aggregate_data_dst_ptr_with_prefix_size_offset, aggregate_data_src_ptr_with_prefix_size_offset);
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * return_type = toNativeType(b, this->getReturnType());
+
+        llvm::Value * result = nullptr;
+
+        if constexpr (result_is_nullable)
+        {
+            auto * place = b.CreateLoad(b.getInt8Ty(), aggregate_data_ptr);
+
+            auto * head = b.GetInsertBlock();
+
+            auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+            auto * if_null = llvm::BasicBlock::Create(head->getContext(), "if_null", head->getParent());
+            auto * if_not_null = llvm::BasicBlock::Create(head->getContext(), "if_not_null", head->getParent());
+
+            auto * nullable_value_ptr = b.CreateAlloca(return_type);
+            b.CreateStore(llvm::ConstantInt::getNullValue(return_type), nullable_value_ptr);
+            auto * nullable_value = b.CreateLoad(return_type, nullable_value_ptr);
+
+            b.CreateCondBr(nativeBoolCast(b, std::make_shared<DataTypeUInt8>(), place), if_not_null, if_null);
+
+            b.SetInsertPoint(if_null);
+            b.CreateStore(b.CreateInsertValue(nullable_value, b.getInt1(true), {1}), nullable_value_ptr);
+            b.CreateBr(join_block);
+
+            b.SetInsertPoint(if_not_null);
+            auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, this->prefix_size);
+            auto * nested_result = this->nested_function->compileGetResult(builder, aggregate_data_ptr_with_prefix_size_offset);
+            b.CreateStore(b.CreateInsertValue(nullable_value, nested_result, {0}), nullable_value_ptr);
+            b.CreateBr(join_block);
+
+            b.SetInsertPoint(join_block);
+
+            result = b.CreateLoad(return_type, nullable_value_ptr);
+        }
+        else
+        {
+            result = this->nested_function->compileGetResult(b, aggregate_data_ptr);
+        }
+
+        return result;
+    }
+
+#endif
+
 };
 
 

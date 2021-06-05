@@ -342,6 +342,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
             const auto & argument_type = argument_types[column_argument_index];
             auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, previous_columns_size + column_argument_index));
             data_placeholder.data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(argument_type))->getPointerTo());
+            data_placeholder.null_init = argument_type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
             columns.emplace_back(data_placeholder);
         }
 
@@ -364,6 +365,12 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
     {
         col.data = b.CreatePHI(col.data_init->getType(), 2);
         col.data->addIncoming(col.data_init, entry);
+
+        if (col.null_init)
+        {
+            col.null = b.CreatePHI(col.null_init->getType(), 2);
+            col.null->addIncoming(col.null_init, entry);
+        }
     }
 
     auto * aggregation_place = b.CreateCall(get_place_func_declaration, get_place_function_arg, { get_place_function_context_arg, counter_phi });
@@ -383,7 +390,21 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
         for (size_t column_argument_index = 0; column_argument_index < function_arguments_size; ++column_argument_index)
         {
             auto * column_argument_data = columns[previous_columns_size + column_argument_index].data;
-            arguments_values[column_argument_index] = b.CreateLoad(toNativeType(b, arguments_types[column_argument_index]), column_argument_data);
+            auto * column_argument_null_data = columns[previous_columns_size + column_argument_index].null;
+
+            auto & argument_type = arguments_types[column_argument_index];
+
+            auto * value = b.CreateLoad(toNativeType(b, removeNullable(argument_type)), column_argument_data);
+            if (!argument_type->isNullable())
+            {
+                arguments_values[column_argument_index] = value;
+                continue;
+            }
+
+            auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), column_argument_null_data), b.getInt8(0));
+            auto * nullable_unitilized = llvm::Constant::getNullValue(toNativeType(b, argument_type));
+            auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitilized, value, {0}), is_null, {1});
+            arguments_values[column_argument_index] = nullable_value;
         }
 
         auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregation_place, aggregate_function_offset);
@@ -468,6 +489,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
         auto return_type = functions[i].function->getReturnType();
         auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, i));
         columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(return_type))->getPointerTo());
+        columns[i].null_init = return_type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
     }
 
     auto * end = llvm::BasicBlock::Create(b.getContext(), "end", aggregate_loop_func);
@@ -487,6 +509,12 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     {
         col.data = b.CreatePHI(col.data_init->getType(), 2);
         col.data->addIncoming(col.data_init, entry);
+
+        if (col.null_init)
+        {
+            col.null = b.CreatePHI(col.null_init->getType(), 2);
+            col.null->addIncoming(col.null_init, entry);
+        }
     }
 
     for (size_t i = 0; i < functions.size(); ++i)
@@ -499,7 +527,16 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
 
         auto column_type = functions[i].function->getArgumentTypes()[0];
         auto * final_value = aggregate_function_ptr->compileGetResult(b, aggregation_place_with_offset);
-        b.CreateStore(final_value, columns[i].data);
+
+        if (columns[i].null_init)
+        {
+            b.CreateStore(b.CreateExtractValue(final_value, {0}), columns[i].data);
+            b.CreateStore(b.CreateSelect(b.CreateExtractValue(final_value, {1}), b.getInt8(1), b.getInt8(0)), columns[i].null);
+        }
+        else
+        {
+            b.CreateStore(final_value, columns[i].data);
+        }
     }
 
     /// End of loop
@@ -508,14 +545,15 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     for (auto & col : columns)
     {
         col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
+
         if (col.null)
             col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
     }
 
     auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1), "", true, true);
-    counter_phi->addIncoming(value, loop);
+    counter_phi->addIncoming(value, cur_block);
 
-    aggregate_data_place_phi->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_phi, 1), loop);
+    aggregate_data_place_phi->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_phi, 1), cur_block);
 
     b.CreateCondBr(b.CreateICmpEQ(value, rows_count_arg), end, loop);
 
