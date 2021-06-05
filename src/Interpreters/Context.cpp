@@ -76,6 +76,7 @@
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Functions/SynonymsExtensions.h>
+#include <Functions/Lemmatizers.h>
 #include <filesystem>
 
 
@@ -349,6 +350,7 @@ struct ContextSharedPart
     ext::scope_guard dictionaries_xmls;
 
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
+    mutable std::optional<Lemmatizers> lemmatizers;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -1457,6 +1459,16 @@ SynonymsExtensions & Context::getSynonymsExtensions() const
         shared->synonyms_extensions.emplace(getConfigRef());
 
     return *shared->synonyms_extensions;    
+}
+
+Lemmatizers & Context::getLemmatizers() const
+{
+    auto lock = getLock();
+    
+    if(!shared->lemmatizers)
+        shared->lemmatizers.emplace(getConfigRef());
+
+    return *shared->lemmatizers;    
 }
 
 void Context::setProgressCallback(ProgressCallback callback)
