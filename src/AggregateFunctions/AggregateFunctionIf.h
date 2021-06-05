@@ -195,15 +195,15 @@ public:
 
         b.SetInsertPoint(if_true);
 
-        size_t arguments_size = arguments_types.size();
+        size_t arguments_size_without_predicate = arguments_types.size() - 1;
 
         DataTypes argument_types_without_predicate;
         std::vector<llvm::Value *> argument_values_without_predicate;
 
-        argument_types_without_predicate.resize(arguments_size - 1);
-        argument_values_without_predicate.resize(arguments_size - 1);
+        argument_types_without_predicate.resize(arguments_size_without_predicate);
+        argument_values_without_predicate.resize(arguments_size_without_predicate);
 
-        for (size_t i = 0; i < arguments_types.size() - 1; ++i)
+        for (size_t i = 0; i < arguments_size_without_predicate; ++i)
         {
             argument_types_without_predicate[i] = arguments_types[i];
             argument_values_without_predicate[i] = argument_values[i];
