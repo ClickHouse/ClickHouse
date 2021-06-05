@@ -259,6 +259,25 @@ public:
         compileChangeFirstTime(builder, aggregate_data_dst_ptr, value_src);
     }
 
+    static void compileChangeEveryTime(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        compileChange(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeEveryTimeMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
+
+        auto * type = toNativeType<T>(b);
+        auto * value_src_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_src_ptr, value_offset_from_structure);
+        auto * value_src_ptr = b.CreatePointerCast(value_src_ptr_with_offset, type->getPointerTo());
+        auto * value_src = b.CreateLoad(type, value_src_ptr);
+
+        compileChangeEveryTime(builder, aggregate_data_dst_ptr, value_src);
+    }
+
     static llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
@@ -767,7 +786,17 @@ struct AggregateFunctionAnyLastData : Data
 
 #if USE_EMBEDDED_COMPILER
 
-    static constexpr bool is_compilable = false;
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeEveryTime(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeEveryTimeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
 
 #endif
 };
