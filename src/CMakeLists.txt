@@ -380,18 +380,6 @@ if (XZ_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${XZ_INCLUDE_DIR})
 endif()
 
-if (USE_LIZARD)
-    dbms_target_link_libraries(PRIVATE lizard)
-endif()
-
-if (USE_DENSITY)
-    dbms_target_link_libraries(PRIVATE density)
-endif()
-
-if (USE_LZSSE)
-    dbms_target_link_libraries(PRIVATE lzsse)
-endif()
-
 if (USE_ICU)
     dbms_target_link_libraries (PRIVATE ${ICU_LIBRARIES})
     dbms_target_include_directories (SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})
