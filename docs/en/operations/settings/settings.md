@@ -3065,4 +3065,48 @@ SELECT
 FROM fuse_tbl
 ```
 
+## allow_experimental_database_replicated {#allow_experimental_database_replicated}
+
+Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
+
+How long initial DDL query should wait for Replicated database to precess previous DDL queue entries.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Disabled or unlimited or something else.
+
+Default value: `300`.
+
+## database_replicated_ddl_output {#database_replicated_ddl_output}
+
+Return table with query execution status as a result of DDL query.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+## background_replicated_schedule_pool_size {#background_replicated_schedule_pool_size}
+
+Number of threads performing background tasks in replicated databases. One task corresponds to one replicated database replica. Only has meaning at server startup.
+
+Possible values:
+
+-   Any positive integer.
+-   0 — Disabled or unlimited or something else.
+
+Default value: 4.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
