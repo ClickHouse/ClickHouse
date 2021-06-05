@@ -28,7 +28,7 @@ class FunctionIsDecimalOverflow : public IFunction
 public:
     static constexpr auto name = "isDecimalOverflow";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionIsDecimalOverflow>();
     }

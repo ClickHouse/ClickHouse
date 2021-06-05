@@ -16,10 +16,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+struct Settings;
+
 namespace
 {
     template <template <typename> class Data>
-    AggregateFunctionPtr createAggregateFunctionSegmentLengthSum(const std::string & name, const DataTypes & arguments, const Array &)
+    AggregateFunctionPtr
+    createAggregateFunctionSegmentLengthSum(const std::string & name, const DataTypes & arguments, const Array &, const Settings *)
     {
         if (arguments.size() != 2)
             throw Exception(
@@ -35,7 +38,7 @@ namespace
 
         for (const auto & arg : args)
         {
-            if (!isNativeNumber(arg) && !isDateOrDateTime(arg))
+            if (!isNativeNumber(arg) && !isDate(arg) && !isDateTime(arg) && !isDateTime64(arg))
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument of aggregate function " + name
                         + ", must be Number, Date, DateTime or DateTime64",

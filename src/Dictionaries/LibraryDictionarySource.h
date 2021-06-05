@@ -39,8 +39,8 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix_,
         Block & sample_block_,
-        ContextPtr context_,
-        bool check_config);
+        ContextConstPtr context_,
+        bool created_from_ddl);
 
     LibraryDictionarySource(const LibraryDictionarySource & other);
     LibraryDictionarySource & operator=(const LibraryDictionarySource &) = delete;
@@ -86,7 +86,7 @@ private:
     const Field dictionary_id;
 
     Block sample_block;
-    ContextPtr context;
+    ContextConstPtr context;
 
     LibraryBridgeHelperPtr bridge_helper;
     ExternalResultDescription description;
