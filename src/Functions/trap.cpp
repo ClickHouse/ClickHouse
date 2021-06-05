@@ -32,16 +32,16 @@ namespace ErrorCodes
 class FunctionTrap : public IFunction
 {
 private:
-    ContextPtr context;
+    ContextConstPtr context;
 
 public:
     static constexpr auto name = "trap";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionTrap>(context);
     }
 
-    FunctionTrap(ContextPtr context_) : context(context_) {}
+    FunctionTrap(ContextConstPtr context_) : context(context_) {}
 
     String getName() const override
     {

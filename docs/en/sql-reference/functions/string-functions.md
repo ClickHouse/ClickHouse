@@ -29,17 +29,17 @@ The function also works for arrays.
 
 ## lengthUTF8 {#lengthutf8}
 
-Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it does not throw an exception).
 The result type is UInt64.
 
 ## char_length, CHAR_LENGTH {#char-length}
 
-Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it does not throw an exception).
 The result type is UInt64.
 
 ## character_length, CHARACTER_LENGTH {#character-length}
 
-Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it does not throw an exception).
 The result type is UInt64.
 
 ## lower, lcase {#lower}
@@ -53,14 +53,14 @@ Converts ASCII Latin symbols in a string to uppercase.
 ## lowerUTF8 {#lowerutf8}
 
 Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-It doesn’t detect the language. So for Turkish the result might not be exactly correct.
+It does not detect the language. So for Turkish the result might not be exactly correct.
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
 
 ## upperUTF8 {#upperutf8}
 
 Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-It doesn’t detect the language. So for Turkish the result might not be exactly correct.
+It does not detect the language. So for Turkish the result might not be exactly correct.
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
 
@@ -139,7 +139,7 @@ Reverses the string (as a sequence of bytes).
 
 ## reverseUTF8 {#reverseutf8}
 
-Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn’t throw an exception).
+Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it does not throw an exception).
 
 ## format(pattern, s0, s1, …) {#format}
 
@@ -264,7 +264,7 @@ Returns a substring starting with the byte from the ‘offset’ index that is �
 
 ## substringUTF8(s, offset, length) {#substringutf8}
 
-The same as ‘substring’, but for Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
+The same as ‘substring’, but for Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it does not throw an exception).
 
 ## appendTrailingCharIfAbsent(s, c) {#appendtrailingcharifabsent}
 
@@ -305,7 +305,7 @@ SELECT startsWith('Spider-Man', 'Spi');
 **Returned values**
 
 -   1, if the string starts with the specified prefix.
--   0, if the string doesn’t start with the specified prefix.
+-   0, if the string does not start with the specified prefix.
 
 **Example**
 
@@ -363,7 +363,7 @@ Result:
 
 ## trimLeft {#trimleft}
 
-Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn’t remove other kinds of whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It does not remove other kinds of whitespace characters (tab, no-break space, etc.).
 
 **Syntax**
 
@@ -401,7 +401,7 @@ Result:
 
 ## trimRight {#trimright}
 
-Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It doesn’t remove other kinds of whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It does not remove other kinds of whitespace characters (tab, no-break space, etc.).
 
 **Syntax**
 
@@ -439,7 +439,7 @@ Result:
 
 ## trimBoth {#trimboth}
 
-Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It doesn’t remove other kinds of whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It does not remove other kinds of whitespace characters (tab, no-break space, etc.).
 
 **Syntax**
 

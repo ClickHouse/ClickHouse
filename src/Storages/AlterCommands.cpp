@@ -542,7 +542,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == DROP_PROJECTION)
     {
         if (!partition && !clear)
-            metadata.projections.remove(projection_name);
+            metadata.projections.remove(projection_name, if_exists);
     }
     else if (type == MODIFY_TTL)
     {
