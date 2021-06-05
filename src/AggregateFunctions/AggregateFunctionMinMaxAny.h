@@ -315,7 +315,8 @@ public:
         b.SetInsertPoint(join_block);
     }
 
-    static void compileChangeIfLess(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    template <bool is_less>
+    static void compileChangeComparison(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -332,14 +333,24 @@ public:
 
         auto is_signed = std::numeric_limits<T>::is_signed;
 
-        llvm::Value * is_current_value_less = nullptr;
+        llvm::Value * should_change_after_comparison = nullptr;
 
-        if (value_to_check->getType()->isIntegerTy())
-            is_current_value_less = is_signed ? b.CreateICmpSLT(value_to_check, value) : b.CreateICmpULT(value_to_check, value);
+        if constexpr (is_less)
+        {
+            if (value_to_check->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_to_check, value) : b.CreateICmpULT(value_to_check, value);
+            else
+                should_change_after_comparison = b.CreateFCmpOLT(value_to_check, value);
+        }
         else
-            is_current_value_less = b.CreateFCmpOLT(value_to_check, value);
+        {
+            if (value_to_check->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_to_check, value) : b.CreateICmpUGT(value_to_check, value);
+            else
+                should_change_after_comparison = b.CreateFCmpOGT(value_to_check, value);
+        }
 
-        b.CreateCondBr(b.CreateOr(b.CreateNot(has_value_value), is_current_value_less), if_should_change, if_should_not_change);
+        b.CreateCondBr(b.CreateOr(b.CreateNot(has_value_value), should_change_after_comparison), if_should_change, if_should_not_change);
 
         b.SetInsertPoint(if_should_change);
         compileChange(builder, aggregate_data_ptr, value_to_check);
@@ -351,9 +362,10 @@ public:
         b.SetInsertPoint(join_block);
     }
 
-    static void compileChangeIfLessMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    template <bool is_less>
+    static void compileChangeComparisonMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
     {
-         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
@@ -373,14 +385,24 @@ public:
 
         auto is_signed = std::numeric_limits<T>::is_signed;
 
-        llvm::Value * is_current_value_less = nullptr;
+        llvm::Value * should_change_after_comparison = nullptr;
 
-        if (value_src->getType()->isIntegerTy())
-            is_current_value_less = is_signed ? b.CreateICmpSLT(value_dst, value_src) : b.CreateICmpULT(value_dst, value_src);
+        if constexpr (is_less)
+        {
+            if (value_src->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_dst, value_src) : b.CreateICmpULT(value_dst, value_src);
+            else
+                should_change_after_comparison = b.CreateFCmpOLT(value_dst, value_src);
+        }
         else
-            is_current_value_less = b.CreateFCmpOLT(value_dst, value_src);
+        {
+            if (value_src->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_dst, value_src) : b.CreateICmpUGT(value_dst, value_src);
+            else
+                should_change_after_comparison = b.CreateFCmpOGT(value_dst, value_src);
+        }
 
-        b.CreateCondBr(b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), is_current_value_less)), if_should_change, if_should_not_change);
+        b.CreateCondBr(b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), should_change_after_comparison)), if_should_change, if_should_not_change);
 
         b.SetInsertPoint(if_should_change);
         compileChangeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
@@ -390,6 +412,30 @@ public:
         b.CreateBr(join_block);
 
         b.SetInsertPoint(join_block);
+    }
+
+    static void compileChangeIfLess(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        static constexpr bool is_less = true;
+        compileChangeComparison<is_less>(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfLessMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        static constexpr bool is_less = true;
+        compileChangeComparisonMerge<is_less>(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+    static void compileChangeIfGreater(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        static constexpr bool is_less = false;
+        compileChangeComparison<is_less>(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfGreaterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        static constexpr bool is_less = false;
+        compileChangeComparisonMerge<is_less>(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
     }
 
     static llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
@@ -859,7 +905,17 @@ struct AggregateFunctionMaxData : Data
 
 #if USE_EMBEDDED_COMPILER
 
-    static constexpr bool is_compilable = false;
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeIfGreater(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeIfGreaterMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
 
 #endif
 };
