@@ -8,6 +8,7 @@
 #include <Poco/NullChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
+#include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
@@ -189,6 +190,18 @@ static void attachSystemTables(const Context & context)
     attachSystemTablesLocal(*system_database);
 }
 
+static void attachInformationSchema(const Context & context)
+{
+    DatabasePtr informatinSchema = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::INFORMATION_SCHEMA_DATABASE);
+    if (!informatinSchema)
+    {
+        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
+        informatinSchema = std::make_shared<DatabaseMemory>(DatabaseCatalog::INFORMATION_SCHEMA_DATABASE, context);
+        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::INFORMATION_SCHEMA_DATABASE, informatinSchema);
+    }
+
+    attachInformationSchemaLocal(*informatinSchema);
+}
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
@@ -290,6 +303,7 @@ try
         Poco::File(path + "metadata/").createDirectories();
         loadMetadataSystem(*global_context);
         attachSystemTables(*global_context);
+        attachInformationSchema(*global_context);
         loadMetadata(*global_context);
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
@@ -297,6 +311,7 @@ try
     else if (!config().has("no-system-tables"))
     {
         attachSystemTables(*global_context);
+        attachInformationSchema(*global_context);
     }
 
     processQueries();

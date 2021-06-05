@@ -454,6 +454,11 @@ DatabasePtr DatabaseCatalog::getSystemDatabase() const
     return getDatabase(SYSTEM_DATABASE);
 }
 
+DatabasePtr DatabaseCatalog::getInformationSchemaDatabase() const
+{
+    return getDatabase(INFORMATION_SCHEMA_DATABASE);
+}
+
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
 {
     addUUIDMapping(uuid, nullptr, nullptr);

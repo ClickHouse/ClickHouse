@@ -10,7 +10,8 @@ class Context;
 /// You should first load system database, then attach system tables that you need into it, then load other databases.
 void loadMetadataSystem(Context & context);
 
-/// Load tables from databases and add them to context. Database 'system' is ignored. Use separate function to load system tables.
+/// Load tables from databases and add them to context. Database 'system' and 'information_schema' is ignored. 
+/// Use separate function to load system tables.
 void loadMetadata(Context & context, const String & default_database_name = {});
 
 }

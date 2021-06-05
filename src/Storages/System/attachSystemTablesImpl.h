@@ -7,7 +7,7 @@ namespace DB
 {
 
 template<typename StorageT, typename... StorageArgs>
-void attach(IDatabase & system_database, const String & table_name, StorageArgs && ... args)
+void attachSystemTable(IDatabase & system_database, const String & table_name, StorageArgs && ... args)
 {
     if (system_database.getUUID() == UUIDHelpers::Nil)
     {
@@ -24,6 +24,23 @@ void attach(IDatabase & system_database, const String & table_name, StorageArgs 
         String path = "store/" + DatabaseCatalog::getPathForUUID(table_id.uuid);
         system_database.attachTable(table_name, StorageT::create(table_id, std::forward<StorageArgs>(args)...), path);
     }
+}
+
+template<typename StorageT, typename... StorageArgs>
+void attachInformationSchemaTable(IDatabase & information_schema_table, const String & table_name, StorageArgs && ... args)
+{
+        if (system_database.getUUID() == UUIDHelpers::Nil)
+        {
+            /// Attach to Ordinary database
+            auto table_id = StorageID(DatabaseCatalog::INFORMATION_SCHEMA_DATABASE, table_name);
+            system_database.attachTable(table_name, StorageT::create(table_id, std::forward<StorageArgs>(args)...));
+        }
+        else
+        {
+            auto table_id = StorageID(DatabaseCatalog::INFORMATION_SCHEMA_DATABASE, table_name, UUIDHelpers::generateV4());
+            String path = "store/" + DatabaseCatalog::getPathForUUID(table_id.uuid);
+            information_schema_table.attachTable(table_name, StorageT::create(table_id, std::forward<StorageArgs>(args)...), path);
+        }
 }
 
 }

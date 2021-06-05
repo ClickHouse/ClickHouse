@@ -26,7 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int TABLE_IS_DROPPED;
+    extern const int TABLE_IS_DROPPED;
 }
 
 
@@ -35,29 +35,32 @@ StorageSystemTablesIS::StorageSystemTablesIS(const StorageID & table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
-        {
-            {"database", std::make_shared<DataTypeString>()},
-            {"name", std::make_shared<DataTypeString>()},
-            {"uuid", std::make_shared<DataTypeUUID>()},
-            {"engine", std::make_shared<DataTypeString>()},
-            {"is_temporary", std::make_shared<DataTypeUInt8>()},
-            {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-            {"metadata_path", std::make_shared<DataTypeString>()},
-            {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
-            {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-            {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-            {"create_table_query", std::make_shared<DataTypeString>()},
-            {"engine_full", std::make_shared<DataTypeString>()},
-            {"partition_key", std::make_shared<DataTypeString>()},
-            {"sorting_key", std::make_shared<DataTypeString>()},
-            {"primary_key", std::make_shared<DataTypeString>()},
-            {"sampling_key", std::make_shared<DataTypeString>()},
-            {"storage_policy", std::make_shared<DataTypeString>()},
-            {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-            {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-            {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-            /{"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        }));
+    {
+        {"table_catalog",                   std::make_shared<DataTypeString>()},
+//      {"table_schema",                    std::make_shared<DataTypeString>()},
+        {"table_name",                      std::make_shared<DataTypeString>()},
+        {"table_type",                      std::make_shared<DataTypeString>()},
+//      {"self_referencing_column_name",    std::make_shared<DataTypeString>()}, not avialable in clickhouse?
+        {"uuid",                            std::make_shared<DataTypeUUID>()},
+        {"engine",                          std::make_shared<DataTypeString>()},
+        {"is_temporary",                    std::make_shared<DataTypeUInt8>()},
+        {"data_paths",                      std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"metadata_path",                   std::make_shared<DataTypeString>()},
+        {"metadata_modification_time",      std::make_shared<DataTypeDateTime>()},
+        {"dependencies_database",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"dependencies_table",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"create_table_query",              std::make_shared<DataTypeString>()},
+        {"engine_full",                     std::make_shared<DataTypeString>()},
+        {"partition_key",                   std::make_shared<DataTypeString>()},
+        {"sorting_key",                     std::make_shared<DataTypeString>()},
+        {"primary_key",                     std::make_shared<DataTypeString>()},
+        {"sampling_key",                    std::make_shared<DataTypeString>()},
+        {"storage_policy",                  std::make_shared<DataTypeString>()},
+        {"total_rows",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"total_bytes",                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"lifetime_rows",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"lifetime_bytes",                  std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+    }));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -96,10 +99,10 @@ static bool needLockStructure(const DatabasePtr & database, const Block & header
     return false;
 }
 
-class TablesBlockSource : public SourceWithProgress
+class TablesISBlockSource : public SourceWithProgress
 {
 public:
-    TablesBlockSource(
+    TablesISBlockSource(
         std::vector<UInt8> columns_mask_,
         Block header,
         UInt64 max_block_size_,
@@ -164,6 +167,10 @@ protected:
                         // name
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.first);
+                        
+                        // type
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert("LOCAL TEMPORARY");
 
                         // uuid
                         if (columns_mask[src_index++])
@@ -298,6 +305,15 @@ protected:
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(table_name);
+
+                if (columns_mask[src_index++]) 
+                {
+                    assert(table != nullptr);
+                    if (table->isView())
+                        res_columns[res_index++]->insert("VIEW");
+                    else
+                        res_columns[res_index++]->insert("BASE TABLE");
+                }
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(tables_it->uuid());
@@ -527,7 +543,7 @@ Pipe StorageSystemTablesIS::read(
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info, context);
 
-    return Pipe(std::make_shared<TablesBlockSource>(
+    return Pipe(std::make_shared<TablesISBlockSource>(
         std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));
 }
 

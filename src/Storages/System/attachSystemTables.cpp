@@ -36,8 +36,6 @@
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
-#include <Storages/System/StorageSystemISTables.h>
-#include <Storages/System/StorageSystemTablesIS.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
@@ -77,86 +75,83 @@ namespace DB
 
 void attachSystemTablesLocal(IDatabase & system_database)
 {
-    attach<StorageSystemOne>(system_database, "one");
-    attach<StorageSystemNumbers>(system_database, "numbers", false);
-    attach<StorageSystemNumbers>(system_database, "numbers_mt", true);
-    attach<StorageSystemZeros>(system_database, "zeros", false);
-    attach<StorageSystemZeros>(system_database, "zeros_mt", true);
-    attach<StorageSystemDatabases>(system_database, "databases");
-    attach<StorageSystemTables>(system_database, "tables");
-    attach<StorageSystemColumns>(system_database, "columns");
-    attach<StorageSystemFunctions>(system_database, "functions");
-    attach<StorageSystemEvents>(system_database, "events");
-    attach<StorageSystemSettings>(system_database, "settings");
-    attach<SystemMergeTreeSettings<false>>(system_database, "merge_tree_settings");
-    attach<SystemMergeTreeSettings<true>>(system_database, "replicated_merge_tree_settings");
-    attach<StorageSystemBuildOptions>(system_database, "build_options");
-    attach<StorageSystemFormats>(system_database, "formats");
-    attach<StorageSystemTableFunctions>(system_database, "table_functions");
-    attach<StorageSystemAggregateFunctionCombinators>(system_database, "aggregate_function_combinators");
-    attach<StorageSystemDataTypeFamilies>(system_database, "data_type_families");
-    attach<StorageSystemCollations>(system_database, "collations");
-    attach<StorageSystemTableEngines>(system_database, "table_engines");
-    attach<StorageSystemContributors>(system_database, "contributors");
-    attach<StorageSystemUsers>(system_database, "users");
-    attach<StorageSystemRoles>(system_database, "roles");
-    attach<StorageSystemGrants>(system_database, "grants");
-    attach<StorageSystemRoleGrants>(system_database, "role_grants");
-    attach<StorageSystemCurrentRoles>(system_database, "current_roles");
-    attach<StorageSystemEnabledRoles>(system_database, "enabled_roles");
-    attach<StorageSystemSettingsProfiles>(system_database, "settings_profiles");
-    attach<StorageSystemSettingsProfileElements>(system_database, "settings_profile_elements");
-    attach<StorageSystemRowPolicies>(system_database, "row_policies");
-    attach<StorageSystemQuotas>(system_database, "quotas");
-    attach<StorageSystemQuotaLimits>(system_database, "quota_limits");
-    attach<StorageSystemQuotaUsage>(system_database, "quota_usage");
-    attach<StorageSystemQuotasUsage>(system_database, "quotas_usage");
-    attach<StorageSystemUserDirectories>(system_database, "user_directories");
-    attach<StorageSystemPrivileges>(system_database, "privileges");
-    attach<StorageSystemErrors>(system_database, "errors");
+    attachSystemTable<StorageSystemOne>(system_database, "one");
+    attachSystemTable<StorageSystemNumbers>(system_database, "numbers", false);
+    attachSystemTable<StorageSystemNumbers>(system_database, "numbers_mt", true);
+    attachSystemTable<StorageSystemZeros>(system_database, "zeros", false);
+    attachSystemTable<StorageSystemZeros>(system_database, "zeros_mt", true);
+    attachSystemTable<StorageSystemDatabases>(system_database, "databases");
+    attachSystemTable<StorageSystemTables>(system_database, "tables");
+    attachSystemTable<StorageSystemColumns>(system_database, "columns");
+    attachSystemTable<StorageSystemFunctions>(system_database, "functions");
+    attachSystemTable<StorageSystemEvents>(system_database, "events");
+    attachSystemTable<StorageSystemSettings>(system_database, "settings");
+    attachSystemTable<SystemMergeTreeSettings<false>>(system_database, "merge_tree_settings");
+    attachSystemTable<SystemMergeTreeSettings<true>>(system_database, "replicated_merge_tree_settings");
+    attachSystemTable<StorageSystemBuildOptions>(system_database, "build_options");
+    attachSystemTable<StorageSystemFormats>(system_database, "formats");
+    attachSystemTable<StorageSystemTableFunctions>(system_database, "table_functions");
+    attachSystemTable<StorageSystemAggregateFunctionCombinators>(system_database, "aggregate_function_combinators");
+    attachSystemTable<StorageSystemDataTypeFamilies>(system_database, "data_type_families");
+    attachSystemTable<StorageSystemCollations>(system_database, "collations");
+    attachSystemTable<StorageSystemTableEngines>(system_database, "table_engines");
+    attachSystemTable<StorageSystemContributors>(system_database, "contributors");
+    attachSystemTable<StorageSystemUsers>(system_database, "users");
+    attachSystemTable<StorageSystemRoles>(system_database, "roles");
+    attachSystemTable<StorageSystemGrants>(system_database, "grants");
+    attachSystemTable<StorageSystemRoleGrants>(system_database, "role_grants");
+    attachSystemTable<StorageSystemCurrentRoles>(system_database, "current_roles");
+    attachSystemTable<StorageSystemEnabledRoles>(system_database, "enabled_roles");
+    attachSystemTable<StorageSystemSettingsProfiles>(system_database, "settings_profiles");
+    attachSystemTable<StorageSystemSettingsProfileElements>(system_database, "settings_profile_elements");
+    attachSystemTable<StorageSystemRowPolicies>(system_database, "row_policies");
+    attachSystemTable<StorageSystemQuotas>(system_database, "quotas");
+    attachSystemTable<StorageSystemQuotaLimits>(system_database, "quota_limits");
+    attachSystemTable<StorageSystemQuotaUsage>(system_database, "quota_usage");
+    attachSystemTable<StorageSystemQuotasUsage>(system_database, "quotas_usage");
+    attachSystemTable<StorageSystemUserDirectories>(system_database, "user_directories");
+    attachSystemTable<StorageSystemPrivileges>(system_database, "privileges");
+    attachSystemTable<StorageSystemErrors>(system_database, "errors");
 #if !defined(ARCADIA_BUILD)
-    attach<StorageSystemLicenses>(system_database, "licenses");
-    attach<StorageSystemTimeZones>(system_database, "time_zones");
+    attachSystemTable<StorageSystemLicenses>(system_database, "licenses");
+    attachSystemTable<StorageSystemTimeZones>(system_database, "time_zones");
 #endif
 #ifdef OS_LINUX
-    attach<StorageSystemStackTrace>(system_database, "stack_trace");
+    attachSystemTable<StorageSystemStackTrace>(system_database, "stack_trace");
 #endif
-
-    attach<StorageSystemISTables>(system_database, "is_tables");
-    attach<StorageSystemTablesIS>(system_database, "tables_is");
 }
 
 void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
 {
     attachSystemTablesLocal(system_database);
 
-    attach<StorageSystemParts>(system_database, "parts");
-    attach<StorageSystemDetachedParts>(system_database, "detached_parts");
-    attach<StorageSystemPartsColumns>(system_database, "parts_columns");
-    attach<StorageSystemDisks>(system_database, "disks");
-    attach<StorageSystemStoragePolicies>(system_database, "storage_policies");
-    attach<StorageSystemProcesses>(system_database, "processes");
-    attach<StorageSystemMetrics>(system_database, "metrics");
-    attach<StorageSystemMerges>(system_database, "merges");
-    attach<StorageSystemMutations>(system_database, "mutations");
-    attach<StorageSystemReplicas>(system_database, "replicas");
-    attach<StorageSystemReplicationQueue>(system_database, "replication_queue");
-    attach<StorageSystemDDLWorkerQueue>(system_database, "distributed_ddl_queue");
-    attach<StorageSystemDistributionQueue>(system_database, "distribution_queue");
-    attach<StorageSystemDictionaries>(system_database, "dictionaries");
-    attach<StorageSystemModels>(system_database, "models");
-    attach<StorageSystemClusters>(system_database, "clusters");
-    attach<StorageSystemGraphite>(system_database, "graphite_retentions");
-    attach<StorageSystemMacros>(system_database, "macros");
-    attach<StorageSystemReplicatedFetches>(system_database, "replicated_fetches");
+    attachSystemTable<StorageSystemParts>(system_database, "parts");
+    attachSystemTable<StorageSystemDetachedParts>(system_database, "detached_parts");
+    attachSystemTable<StorageSystemPartsColumns>(system_database, "parts_columns");
+    attachSystemTable<StorageSystemDisks>(system_database, "disks");
+    attachSystemTable<StorageSystemStoragePolicies>(system_database, "storage_policies");
+    attachSystemTable<StorageSystemProcesses>(system_database, "processes");
+    attachSystemTable<StorageSystemMetrics>(system_database, "metrics");
+    attachSystemTable<StorageSystemMerges>(system_database, "merges");
+    attachSystemTable<StorageSystemMutations>(system_database, "mutations");
+    attachSystemTable<StorageSystemReplicas>(system_database, "replicas");
+    attachSystemTable<StorageSystemReplicationQueue>(system_database, "replication_queue");
+    attachSystemTable<StorageSystemDDLWorkerQueue>(system_database, "distributed_ddl_queue");
+    attachSystemTable<StorageSystemDistributionQueue>(system_database, "distribution_queue");
+    attachSystemTable<StorageSystemDictionaries>(system_database, "dictionaries");
+    attachSystemTable<StorageSystemModels>(system_database, "models");
+    attachSystemTable<StorageSystemClusters>(system_database, "clusters");
+    attachSystemTable<StorageSystemGraphite>(system_database, "graphite_retentions");
+    attachSystemTable<StorageSystemMacros>(system_database, "macros");
+    attachSystemTable<StorageSystemReplicatedFetches>(system_database, "replicated_fetches");
 
     if (has_zookeeper)
-        attach<StorageSystemZooKeeper>(system_database, "zookeeper");
+        attachSystemTable<StorageSystemZooKeeper>(system_database, "zookeeper");
 }
 
 void attachSystemTablesAsync(IDatabase & system_database, AsynchronousMetrics & async_metrics)
 {
-    attach<StorageSystemAsynchronousMetrics>(system_database, "asynchronous_metrics", async_metrics);
+    attachSystemTable<StorageSystemAsynchronousMetrics>(system_database, "asynchronous_metrics", async_metrics);
 }
 
 }

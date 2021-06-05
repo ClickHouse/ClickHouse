@@ -51,6 +51,7 @@
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
+#include <Storages/System/attachInformationSchemaTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -960,6 +961,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
+        attachInformationSchemaLocal(*database_catalog.getInformationSchemaDatabase());
         /// Then, load remaining databases
         loadMetadata(*global_context, default_database);
         database_catalog.loadDatabases();

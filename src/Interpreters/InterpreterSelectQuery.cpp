@@ -254,7 +254,7 @@ static void checkAccessRightsForSelect(
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
 static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 {
-    if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+    if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE || table_id.database_name == DatabaseCatalog::INFORMATION_SCHEMA_DATABASE)
     {
         static const boost::container::flat_set<String> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
         if (tables_ignoring_quota.count(table_id.table_name))

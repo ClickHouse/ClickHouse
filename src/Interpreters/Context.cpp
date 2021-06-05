@@ -1938,7 +1938,7 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
-    if (part_database == DatabaseCatalog::SYSTEM_DATABASE)
+    if (part_database == DatabaseCatalog::SYSTEM_DATABASE || part_database == DatabaseCatalog::INFORMATION_SCHEMA_DATABASE)
         return {};
 
     return shared->system_logs->part_log;

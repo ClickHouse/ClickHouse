@@ -45,6 +45,7 @@ StorageView::StorageView(
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
+    std::cerr << std::endl << "Hooray!" << " " << description.inner_query->dumpTree() << std::endl;
     storage_metadata.setSelectQuery(description);
     setInMemoryMetadata(storage_metadata);
 }

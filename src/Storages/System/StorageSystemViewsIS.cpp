@@ -29,7 +29,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int VIEW_IS_DROPPED;
+    extern const int TABLE_IS_DROPPED;
 }
 
 static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, const Context & context)
@@ -75,7 +75,7 @@ StorageSystemViewsIS::StorageSystemViewsIS(const StorageID & table_id_)
         {"table_catalog",                   std::make_shared<DataTypeString>()},
         {"table_name",                      std::make_shared<DataTypeString>()},
         {"view_definition",                 std::make_shared<DataTypeString>()},
-        {"check_option",                    std::make_shared<DataTypeString>()},
+        {"check_option",                    std::make_shared<DataTypeUInt8>()},
         {"is_updatable",                    std::make_shared<DataTypeUInt8>()},
         {"is_insertable",                   std::make_shared<DataTypeUInt8>()},
         {"is_temporary",                    std::make_shared<DataTypeUInt8>()},
@@ -149,7 +149,7 @@ protected:
 
                     for (auto & table : external_tables)
                     {
-                        if (!table.second->isView()) { // ???
+                        if (!table.second->isView()) {
                             continue;
                         }
                         
@@ -197,6 +197,10 @@ protected:
                             res_columns[res_index++]->insertDefault();
                     }
                 }
+
+                UInt64 num_rows = res_columns.at(0)->size();
+                done = true;
+                return Chunk(std::move(res_columns), num_rows);
             }
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
@@ -229,47 +233,85 @@ protected:
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() == ErrorCodes::VIEW_IS_DROPPED)
+                        if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
                             continue;
                         throw;
                     }
                 }
 
+                if (!table->isView())
+                    continue;
+
+                std::string view_definition;
                 auto metadata_snapshot = table->getInMemoryMetadataPtr();
-                std::string view_definition = metadata_snapshot->getSelectQuery().select_query->dumpTree();
+
+                if (metadata_snapshot->hasSelectQuery())
+                {
+                    size_t buffer_size = 1000;
+                    char *str = new char[buffer_size];
+                    WriteBuffer buffer(str, buffer_size);
+                    const DB::IAST::FormatSettings settings(buffer, true);
+                    metadata_snapshot->getSelectQuery().select_query->format(settings);
+                    view_definition = str;
+                    delete[] str;
+                } 
+                else 
+                {
+                    size_t buffer_size = 1000;
+                    char *str = new char[buffer_size];
+                    WriteBuffer buffer(str, buffer_size);
+                    const DB::IAST::FormatSettings settings(buffer, true);
+                    metadata_snapshot->getSelectQuery().inner_query->format(settings);
+                    view_definition = str;
+                    delete[] str;
+
+                    IdentifierNameSet identifiers;
+                    metadata_snapshot->getSelectQuery().inner_query->collectIdentifierNames(identifiers);
+                    for (const auto & identifier : identifiers)
+                    {
+                        std::cerr << "KEK! " << identifier << std::endl;
+                    }
+                    std::cerr << "end" << std::endl;
+                }
+
+                ++rows_count;
+                size_t src_index = 0;
+                size_t res_index = 0;
+
+
+                bool check_option;
                 bool is_updatable;
                 bool is_insertable;
                 bool is_trigger_updatable;
                 bool is_trigger_deletable;
                 bool is_trigger_insertable_into;
-
-                if (std::dynamic_pointer_cast<StorageView>(table)) {
+                if (table->getName() == "View") 
+                {
+                    check_option = false;
                     is_updatable = false;
                     is_insertable = false;
                     is_trigger_updatable = false;
                     is_trigger_deletable = false;
                     is_trigger_insertable_into = false;
                 }
-                else if (std::dynamic_pointer_cast<StorageMaterializedView>(table)) 
+                else if (table->getName() == "MaterializedView") 
                 {
+                    check_option = true;
                     is_updatable = true;
                     is_insertable = true;
                     is_trigger_updatable = false;
                     is_trigger_deletable = false;
                     is_trigger_insertable_into = true;
                 }
-                else if (std::dynamic_pointer_cast<StorageLiveView>(table)) 
+                else if (table->getName() == "LiveView") 
                 {
+                    check_option = true;
                     is_updatable = true;
                     is_insertable = true;
                     is_trigger_updatable = true;
                     is_trigger_deletable = true;
                     is_trigger_insertable_into = true;
                 }
-                
-
-                size_t src_index = 0;
-                size_t res_index = 0;
 
                 // table_catalog
                 if (columns_mask[src_index++])
@@ -285,7 +327,7 @@ protected:
 
                 // check_option
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(false);
+                    res_columns[res_index++]->insert(check_option);
 
                 // is_updatable
                 if (columns_mask[src_index++])
@@ -311,7 +353,6 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(is_trigger_insertable_into);
             }
-
         }
 
         UInt64 num_rows = res_columns.at(0)->size();

@@ -114,6 +114,7 @@ class DatabaseCatalog : boost::noncopyable
 public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
+    static constexpr const char * INFORMATION_SCHEMA_DATABASE = "information_schema";
 
     static DatabaseCatalog & init(Context & global_context_);
     static DatabaseCatalog & instance();
@@ -132,6 +133,7 @@ public:
 
     DatabasePtr getDatabaseForTemporaryTables() const;
     DatabasePtr getSystemDatabase() const;
+    DatabasePtr getInformationSchemaDatabase() const;
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(const String & database_name, bool drop = false, bool check_empty = true);

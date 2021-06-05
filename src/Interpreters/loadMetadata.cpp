@@ -112,7 +112,7 @@ void loadMetadata(Context & context, const String & default_database_name)
             if (endsWith(it.name(), ".sql"))
             {
                 String db_name = it.name().substr(0, it.name().size() - 4);
-                if (db_name != DatabaseCatalog::SYSTEM_DATABASE)
+                if (db_name != DatabaseCatalog::SYSTEM_DATABASE && db_name != DatabaseCatalog::INFORMATION_SCHEMA_DATABASE)
                     databases.emplace(unescapeForFileName(db_name), path + "/" + db_name);
             }
 
@@ -138,7 +138,7 @@ void loadMetadata(Context & context, const String & default_database_name)
         if (it.name().at(0) == '.')
             continue;
 
-        if (it.name() == DatabaseCatalog::SYSTEM_DATABASE)
+        if (it.name() == DatabaseCatalog::SYSTEM_DATABASE || it.name() == DatabaseCatalog::INFORMATION_SCHEMA_DATABASE)
             continue;
 
         databases.emplace(unescapeForFileName(it.name()), it.path().toString());
@@ -186,6 +186,13 @@ void loadMetadataSystem(Context & context)
         executeCreateQuery(database_create_query, context, DatabaseCatalog::SYSTEM_DATABASE, "<no file>", true);
     }
 
+    // Loading information schema database
+    {
+        String database_create_query = "CREATE DATABASE ";
+        database_create_query += DatabaseCatalog::INFORMATION_SCHEMA_DATABASE;
+        database_create_query += " ENGINE=Atomic";
+        executeCreateQuery(database_create_query, context, DatabaseCatalog::INFORMATION_SCHEMA_DATABASE, "<no file>", false);
+    }
 }
 
 }
