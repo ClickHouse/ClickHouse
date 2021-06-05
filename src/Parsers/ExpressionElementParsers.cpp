@@ -1697,6 +1697,8 @@ const char * ParserAlias::restricted_keywords[] =
     "WHERE",
     "WINDOW",
     "WITH",
+    "INTERSECT",
+    "EXCEPT",
     nullptr
 };
 

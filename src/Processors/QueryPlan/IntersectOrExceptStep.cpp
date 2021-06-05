@@ -15,7 +15,7 @@ IntersectOrExceptStep::IntersectOrExceptStep(bool is_except_, DataStreams input_
     output_stream = DataStream{.header = header};
 }
 
-QueryPipelinePtr IntersectOrExceptStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & )
+QueryPipelinePtr IntersectOrExceptStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &)
 {
     auto pipeline = std::make_unique<QueryPipeline>();
     QueryPipelineProcessorsCollector collector(*pipeline, this);
