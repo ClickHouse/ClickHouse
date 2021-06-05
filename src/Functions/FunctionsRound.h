@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
-#include "IFunctionImpl.h"
+#include "IFunction.h"
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
@@ -444,13 +444,7 @@ public:
         }
         else
         {
-            if constexpr (!is_big_int_v<NativeType>)
-                memcpy(out.data(), in.data(), in.size() * sizeof(T));
-            else
-            {
-                for (size_t i = 0; i < in.size(); i++)
-                    out[i] = in[i];
-            }
+            memcpy(out.data(), in.data(), in.size() * sizeof(T));
         }
     }
 };
@@ -511,7 +505,7 @@ class Dispatcher
 public:
     static ColumnPtr apply(const IColumn * column, Scale scale_arg)
     {
-        if constexpr (IsNumber<T>)
+        if constexpr (is_arithmetic_v<T>)
             return apply(checkAndGetColumn<ColumnVector<T>>(column), scale_arg);
         else if constexpr (IsDecimalNumber<T>)
             return apply(checkAndGetColumn<ColumnDecimal<T>>(column), scale_arg);
@@ -526,7 +520,7 @@ class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRounding>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionRounding>(); }
 
     String getName() const override
     {
@@ -635,7 +629,7 @@ class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRoundDown>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionRoundDown>(); }
 
     String getName() const override { return name; }
 

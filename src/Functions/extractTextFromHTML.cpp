@@ -1,7 +1,7 @@
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <common/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 
@@ -296,7 +296,7 @@ class FunctionExtractTextFromHTML : public IFunction
 public:
     static constexpr auto name = "extractTextFromHTML";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractTextFromHTML>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionExtractTextFromHTML>(); }
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }

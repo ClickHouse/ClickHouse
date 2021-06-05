@@ -36,13 +36,19 @@ KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
     return request_for_session;
 }
 
-KeeperStateMachine::KeeperStateMachine(ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_)
+    KeeperStateMachine::KeeperStateMachine(
+        ResponsesQueue & responses_queue_,
+        SnapshotsQueue & snapshots_queue_,
+        const std::string & snapshots_path_,
+        const CoordinationSettingsPtr & coordination_settings_,
+        const std::string & superdigest_)
     : coordination_settings(coordination_settings_)
-    , snapshot_manager(snapshots_path_, coordination_settings->snapshots_to_keep, coordination_settings->dead_session_check_period_ms.totalMicroseconds())
+    , snapshot_manager(snapshots_path_, coordination_settings->snapshots_to_keep, superdigest_, coordination_settings->dead_session_check_period_ms.totalMicroseconds())
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
     , log(&Poco::Logger::get("KeeperStateMachine"))
+    , superdigest(superdigest_)
 {
 }
 
@@ -85,7 +91,7 @@ void KeeperStateMachine::init()
     }
 
     if (!storage)
-        storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds());
+        storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
@@ -267,12 +273,15 @@ int KeeperStateMachine::read_logical_snp_obj(
     {
         std::lock_guard lock(snapshots_lock);
         if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to apply snapshot with last log index {}, but our last log index is {}",
+        {
+            LOG_WARNING(log, "Required to apply snapshot with last log index {}, but our last log index is {}. Will ignore this one and retry",
                             s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
+            return -1;
+        }
         data_out = nuraft::buffer::clone(*latest_snapshot_buf);
         is_last_obj = true;
     }
-    return 0;
+    return 1;
 }
 
 void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSession & request_for_session)

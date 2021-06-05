@@ -17,7 +17,7 @@ using Time = std::chrono::time_point<std::chrono::system_clock>;
 using Seconds = std::chrono::seconds;
 using MilliSeconds = std::chrono::milliseconds;
 
-class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage, WithContext
+class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage, WithMutableContext
 {
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
@@ -74,7 +74,8 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;

@@ -23,6 +23,7 @@ limitations under the License. */
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
+#include <Common/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewBlockInputStream.h>
@@ -366,20 +367,20 @@ bool StorageLiveView::getNewBlocks()
         new_blocks->push_back(block);
     }
 
-    hash.get128(key.low, key.high);
+    hash.get128(key);
 
     /// Update blocks only if hash keys do not match
     /// NOTE: hash could be different for the same result
     ///       if blocks are not in the same order
     bool updated = false;
     {
-        if (getBlocksHashKey() != key.toHexString())
+        if (getBlocksHashKey() != getHexUIntLowercase(key))
         {
             if (new_blocks->empty())
             {
                 new_blocks->push_back(getHeader());
             }
-            new_blocks_metadata->hash = key.toHexString();
+            new_blocks_metadata->hash = getHexUIntLowercase(key);
             new_blocks_metadata->version = getBlocksVersion() + 1;
             new_blocks_metadata->time = std::chrono::system_clock::now();
 

@@ -1,9 +1,13 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Common/Exception.h>
+#include <common/logger_useful.h>
 #include <algorithm>
+#include <cassert>
 
 
 namespace DB
 {
+
 
 ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names)
     : format_version(format_version_)
@@ -12,9 +16,10 @@ ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_,
         add(name);
 }
 
-
-bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
+/// FIXME replace warnings with logical errors
+bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts, Poco::Logger * log)
 {
+    /// TODO make it exception safe (out_replaced_parts->push_back(...) may throw)
     auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
 
     if (getContainingPartImpl(part_info) != part_info_to_name.end())
@@ -32,6 +37,12 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
         --it;
         if (!part_info.contains(it->first))
         {
+            if (!part_info.isDisjoint(it->first))
+            {
+                if (log)
+                    LOG_ERROR(log, "Part {} intersects previous part {}. It is a bug.", name, it->first.getPartName());
+                assert(false);
+            }
             ++it;
             break;
         }
@@ -47,9 +58,17 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
     /// Let's go to the right.
     while (it != part_info_to_name.end() && part_info.contains(it->first))
     {
+        assert(part_info != it->first);
         if (out_replaced_parts)
             out_replaced_parts->push_back(it->second);
         part_info_to_name.erase(it++);
+    }
+
+    if (it != part_info_to_name.end() && !part_info.isDisjoint(it->first))
+    {
+        if (log)
+            LOG_ERROR(log, "Part {} intersects next part {}. It is a bug.", name, it->first.getPartName());
+        assert(false);
     }
 
     part_info_to_name.emplace(part_info, name);

@@ -43,13 +43,13 @@ SELECT _shard_num, key FROM remote('127.0.0.1', currentDatabase(), dist_2) order
 -- JOIN system.clusters
 SELECT 'JOIN system.clusters';
 
-SELECT a._shard_num, a.key, b.host_name, b.host_address, b.port
+SELECT a._shard_num, a.key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
 FROM (SELECT *, _shard_num FROM dist_1) a
 JOIN system.clusters b
 ON a._shard_num = b.shard_num
 WHERE b.cluster = 'test_cluster_two_shards_localhost';
 
-SELECT _shard_num, key, b.host_name, b.host_address, b.port
+SELECT _shard_num, key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
 FROM dist_1 a
 JOIN system.clusters b
 ON _shard_num = b.shard_num
@@ -58,7 +58,7 @@ WHERE b.cluster = 'test_cluster_two_shards_localhost'; -- { serverError 403 }
 -- rewrite does not work with aliases, hence Missing columns (47)
 SELECT a._shard_num, key FROM dist_1 a; -- { serverError 47; }
 -- the same with JOIN, just in case
-SELECT a._shard_num, a.key, b.host_name, b.host_address, b.port
+SELECT a._shard_num, a.key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
 FROM dist_1 a
 JOIN system.clusters b
 ON a._shard_num = b.shard_num

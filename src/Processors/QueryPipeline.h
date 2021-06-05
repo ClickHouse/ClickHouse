@@ -119,7 +119,7 @@ public:
     const Block & getHeader() const { return pipe.getHeader(); }
 
     void addTableLock(TableLockHolder lock) { pipe.addTableLock(std::move(lock)); }
-    void addInterpreterContext(std::shared_ptr<Context> context) { pipe.addInterpreterContext(std::move(context)); }
+    void addInterpreterContext(std::shared_ptr<const Context> context) { pipe.addInterpreterContext(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
     void addQueryPlan(std::unique_ptr<QueryPlan> plan) { pipe.addQueryPlan(std::move(plan)); }
     void setLimits(const StreamLocalLimits & limits) { pipe.setLimits(limits); }
@@ -135,7 +135,7 @@ public:
     {
         auto num_threads = pipe.maxParallelStreams();
 
-        if (max_threads)
+        if (max_threads) //-V1051
             num_threads = std::min(num_threads, max_threads);
 
         return std::max<size_t>(1, num_threads);

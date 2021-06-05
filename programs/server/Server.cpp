@@ -13,6 +13,7 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Environment.h>
 #include <ext/scope_guard.h>
 #include <common/defines.h>
 #include <common/logger_useful.h>
@@ -73,6 +74,7 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
+#include <filesystem>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -115,6 +117,8 @@ namespace CurrentMetrics
     extern const Metric MemoryTracking;
     extern const Metric MaxDDLEntryID;
 }
+
+namespace fs = std::filesystem;
 
 #if USE_JEMALLOC
 static bool jemallocOptionEnabled(const char *name)
@@ -182,19 +186,19 @@ void setupTmpPath(Poco::Logger * log, const std::string & path)
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    Poco::File(path).createDirectories();
+    fs::create_directories(path);
 
     /// Clearing old temporary files.
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
-        if (it->isFile() && startsWith(it.name(), "tmp"))
+        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
         {
-            LOG_DEBUG(log, "Removing old temporary file {}", it->path());
-            it->remove();
+            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+            fs::remove(it->path());
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path());
+            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
     }
 }
 
@@ -385,6 +389,11 @@ void Server::initialize(Poco::Util::Application & self)
 {
     BaseDaemon::initialize(self);
     logger().information("starting up");
+
+    LOG_INFO(&logger(), "OS Name = {}, OS Version = {}, OS Architecture = {}",
+        Poco::Environment::osName(),
+        Poco::Environment::osVersion(),
+        Poco::Environment::osArchitecture());
 }
 
 std::string Server::getDefaultCorePath() const
@@ -672,37 +681,38 @@ int Server::main(const std::vector<std::string> & /*args*/)
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
     {
-        Poco::File(path + "flags/").createDirectories();
-        global_context->setFlagsPath(path + "flags/");
+        auto flags_path = fs::path(path) / "flags/";
+        fs::create_directories(flags_path);
+        global_context->setFlagsPath(flags_path);
     }
 
     /** Directory with user provided files that are usable by 'file' table function.
       */
     {
 
-        std::string user_files_path = config().getString("user_files_path", path + "user_files/");
+        std::string user_files_path = config().getString("user_files_path", fs::path(path) / "user_files/");
         global_context->setUserFilesPath(user_files_path);
-        Poco::File(user_files_path).createDirectories();
+        fs::create_directories(user_files_path);
     }
 
     {
-        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", fs::path(path) / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
-        Poco::File(dictionaries_lib_path).createDirectories();
+        fs::create_directories(dictionaries_lib_path);
     }
 
     /// top_level_domains_lists
     {
-        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/") + "/";
-        TLDListsHolder::getInstance().parseConfig(top_level_domains_path, config());
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
+        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
     {
-        Poco::File(path + "data/").createDirectories();
-        Poco::File(path + "metadata/").createDirectories();
+        fs::create_directories(fs::path(path) / "data/");
+        fs::create_directories(fs::path(path) / "metadata/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        Poco::File(path + "metadata_dropped/").createDirectories();
+        fs::create_directories(fs::path(path) / "metadata_dropped/");
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -879,14 +889,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
+    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 1024;
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
-    auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
-    global_context->setFormatSchemaPath(format_schema_path.path());
-    format_schema_path.createDirectories();
+    fs::path format_schema_path(config().getString("format_schema_path", fs::path(path) / "format_schemas/"));
+    global_context->setFormatSchemaPath(format_schema_path);
+    fs::create_directories(format_schema_path);
 
     /// Check sanity of MergeTreeSettings on server startup
     global_context->getMergeTreeSettings().sanityCheck(settings);
@@ -1026,6 +1037,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
+        /// We load temporary database first, because projections need it.
+        database_catalog.loadTemporaryDatabase();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         database_catalog.loadDatabases();
@@ -1376,16 +1389,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
         /// try to load dictionaries immediately, throw on error and die
-        ext::scope_guard dictionaries_xmls;
         try
         {
-            if (!config().getBool("dictionaries_lazy_load", true))
-            {
-                global_context->tryCreateEmbeddedDictionaries();
-                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
-            }
-            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
-                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
+            global_context->loadDictionaries(config());
         }
         catch (...)
         {

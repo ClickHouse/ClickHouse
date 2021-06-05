@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -30,7 +30,7 @@ private:
 
 public:
     static constexpr auto name = "getMacro";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionGetMacro>(context->getMacros());
     }

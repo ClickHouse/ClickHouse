@@ -113,12 +113,11 @@ using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
 
+class Throttler;
+using ThrottlerPtr = std::shared_ptr<Throttler>;
+
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
-
-#if USE_EMBEDDED_COMPILER
-class CompiledExpressionCache;
-#endif
 
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
@@ -206,6 +205,7 @@ private:
             databases = rhs.databases;
             tables = rhs.tables;
             columns = rhs.columns;
+            projections = rhs.projections;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -221,6 +221,7 @@ private:
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
+            std::swap(projections, rhs.projections);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -228,6 +229,7 @@ private:
         std::set<std::string> databases{};
         std::set<std::string> tables{};
         std::set<std::string> columns{};
+        std::set<std::string> projections;
     };
 
     QueryAccessInfo query_access_info;
@@ -253,12 +255,12 @@ private:
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
 
-    ContextWeakPtr query_context;
-    ContextWeakPtr session_context;  /// Session context or nullptr. Could be equal to this.
-    ContextWeakPtr global_context;   /// Global context. Could be equal to this.
+    ContextWeakMutablePtr query_context;
+    ContextWeakMutablePtr session_context;  /// Session context or nullptr. Could be equal to this.
+    ContextWeakMutablePtr global_context;   /// Global context. Could be equal to this.
 
     /// XXX: move this stuff to shared part instead.
-    ContextPtr buffer_context;  /// Buffer context. Could be equal to this.
+    ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
@@ -294,10 +296,10 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static ContextPtr createGlobal(ContextSharedPart * shared);
-    static ContextPtr createCopy(const ContextWeakConstPtr & other);
-    static ContextPtr createCopy(const ContextConstPtr & other);
-    static ContextPtr createCopy(const ContextPtr & other);
+    static ContextMutablePtr createGlobal(ContextSharedPart * shared);
+    static ContextMutablePtr createCopy(const ContextWeakConstPtr & other);
+    static ContextMutablePtr createCopy(const ContextMutablePtr & other);
+    static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
 
     void copyFrom(const ContextPtr & other);
@@ -434,7 +436,11 @@ public:
     bool hasScalar(const String & name) const;
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
-    void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
+    void addQueryAccessInfo(
+        const String & quoted_database_name,
+        const String & full_quoted_table_name,
+        const Names & column_names,
+        const String & projection_name = {});
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories
@@ -456,7 +462,7 @@ public:
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
     void addViewSource(const StoragePtr & storage);
-    StoragePtr getViewSource();
+    StoragePtr getViewSource() const;
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
@@ -507,6 +513,7 @@ public:
     ExternalModelsLoader & getExternalModelsLoader();
     ExternalModelsLoader & getExternalModelsLoaderUnlocked();
     void tryCreateEmbeddedDictionaries() const;
+    void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
 
     void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
@@ -551,14 +558,14 @@ public:
 
     /// For methods below you may need to acquire the context lock by yourself.
 
-    ContextPtr getQueryContext() const;
+    ContextMutablePtr getQueryContext() const;
     bool hasQueryContext() const { return !query_context.expired(); }
     bool isInternalSubquery() const;
 
-    ContextPtr getSessionContext() const;
+    ContextMutablePtr getSessionContext() const;
     bool hasSessionContext() const { return !session_context.expired(); }
 
-    ContextPtr getGlobalContext() const;
+    ContextMutablePtr getGlobalContext() const;
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
     {
@@ -566,10 +573,10 @@ public:
         return ptr && ptr.get() == this;
     }
 
-    ContextPtr getBufferContext() const;
+    ContextMutablePtr getBufferContext() const;
 
-    void setQueryContext(ContextPtr context_) { query_context = context_; }
-    void setSessionContext(ContextPtr context_) { session_context = context_; }
+    void setQueryContext(ContextMutablePtr context_) { query_context = context_; }
+    void setSessionContext(ContextMutablePtr context_) { session_context = context_; }
 
     void makeQueryContext() { query_context = shared_from_this(); }
     void makeSessionContext() { session_context = shared_from_this(); }
@@ -653,6 +660,9 @@ public:
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
 
+    ThrottlerPtr getReplicatedFetchesThrottler() const;
+    ThrottlerPtr getReplicatedSendsThrottler() const;
+
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
@@ -664,7 +674,7 @@ public:
     void setClustersConfig(const ConfigurationPtr & config, const String & config_name = "remote_servers");
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
-    void reloadClusterConfig();
+    void reloadClusterConfig() const;
 
     Compiler & getCompiler();
 
@@ -677,17 +687,17 @@ public:
     bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
-    std::shared_ptr<QueryLog> getQueryLog();
-    std::shared_ptr<QueryThreadLog> getQueryThreadLog();
-    std::shared_ptr<TraceLog> getTraceLog();
-    std::shared_ptr<TextLog> getTextLog();
-    std::shared_ptr<MetricLog> getMetricLog();
+    std::shared_ptr<QueryLog> getQueryLog() const;
+    std::shared_ptr<QueryThreadLog> getQueryThreadLog() const;
+    std::shared_ptr<TraceLog> getTraceLog() const;
+    std::shared_ptr<TextLog> getTextLog() const;
+    std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
-    std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog();
+    std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
-    std::shared_ptr<PartLog> getPartLog(const String & part_database);
+    std::shared_ptr<PartLog> getPartLog(const String & part_database) const;
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
@@ -730,7 +740,8 @@ public:
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
-        LOCAL           /// clickhouse-local
+        LOCAL,          /// clickhouse-local
+        KEEPER,         /// clickhouse-keeper (also daemon)
     };
 
     ApplicationType getApplicationType() const;
@@ -773,8 +784,8 @@ public:
 
     MySQLWireContext mysql;
 
-    PartUUIDsPtr getPartUUIDs();
-    PartUUIDsPtr getIgnoredPartUUIDs();
+    PartUUIDsPtr getPartUUIDs() const;
+    PartUUIDsPtr getIgnoredPartUUIDs() const;
 
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
@@ -815,7 +826,7 @@ struct NamedSession
 {
     NamedSessionKey key;
     UInt64 close_cycle = 0;
-    ContextPtr context;
+    ContextMutablePtr context;
     std::chrono::steady_clock::duration timeout;
     NamedSessions & parent;
 

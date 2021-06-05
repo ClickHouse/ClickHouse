@@ -5,7 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
@@ -47,7 +47,7 @@ class FunctionDateDiff : public IFunction
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
     static constexpr auto name = "dateDiff";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionDateDiff>(); }
 
     String getName() const override
     {

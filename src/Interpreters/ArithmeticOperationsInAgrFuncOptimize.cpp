@@ -64,6 +64,8 @@ Field zeroField(const Field & value)
         case Field::Types::Float64: return Float64(0);
         case Field::Types::UInt128: return UInt128(0);
         case Field::Types::Int128: return Int128(0);
+        case Field::Types::UInt256: return UInt256(0);
+        case Field::Types::Int256: return Int256(0);
         default:
             break;
     }
