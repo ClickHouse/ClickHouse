@@ -79,7 +79,7 @@ protected:
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
 
 private:
-    ContextPtr rabbitmq_context;
+    ContextMutablePtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
     const String exchange_name;
