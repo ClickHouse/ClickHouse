@@ -315,6 +315,83 @@ public:
         b.SetInsertPoint(join_block);
     }
 
+    static void compileChangeIfLess(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+
+        auto * value = getValueFromAggregateDataPtr(b, aggregate_data_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        auto is_signed = std::numeric_limits<T>::is_signed;
+
+        llvm::Value * is_current_value_less = nullptr;
+
+        if (value_to_check->getType()->isIntegerTy())
+            is_current_value_less = is_signed ? b.CreateICmpSLT(value_to_check, value) : b.CreateICmpULT(value_to_check, value);
+        else
+            is_current_value_less = b.CreateFCmpOLT(value_to_check, value);
+
+        b.CreateCondBr(b.CreateOr(b.CreateNot(has_value_value), is_current_value_less), if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChange(builder, aggregate_data_ptr, value_to_check);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    static void compileChangeIfLessMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
+
+        auto * value_dst = getValueFromAggregateDataPtr(b, aggregate_data_dst_ptr);
+
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
+
+        auto * value_src = getValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        auto is_signed = std::numeric_limits<T>::is_signed;
+
+        llvm::Value * is_current_value_less = nullptr;
+
+        if (value_src->getType()->isIntegerTy())
+            is_current_value_less = is_signed ? b.CreateICmpSLT(value_dst, value_src) : b.CreateICmpULT(value_dst, value_src);
+        else
+            is_current_value_less = b.CreateFCmpOLT(value_dst, value_src);
+
+        b.CreateCondBr(b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), is_current_value_less)), if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChangeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
     static llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
     {
         return getValueFromAggregateDataPtr(builder, aggregate_data_ptr);
@@ -755,7 +832,17 @@ struct AggregateFunctionMinData : Data
 
 #if USE_EMBEDDED_COMPILER
 
-    static constexpr bool is_compilable = false;
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeIfLess(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeIfLessMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
 
 #endif
 };
@@ -935,7 +1022,6 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        std::cerr << "AggregateFunctionSingleValue::add sizeof data " << this->sizeOfData() << " align of data " << this->alignOfData() << std::endl;
         this->data(place).changeIfBetter(*columns[0], row_num, arena);
     }
 
