@@ -275,10 +275,12 @@ void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr 
         executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, target_table_id, true);
 }
 
-void StorageMaterializedView::refresh(bool grab_lock) {
+void StorageMaterializedView::refresh(bool grab_lock)
+{
     LOG_DEBUG(log, "Refresh materialized view.");
     std::unique_lock lock(mutex, std::defer_lock);
-    if (grab_lock) {
+    if (grab_lock)
+    {
         lock.lock();
     }
 
@@ -288,7 +290,8 @@ void StorageMaterializedView::refresh(bool grab_lock) {
     bool created = false;
     bool replaced = false;
 
-    try {
+    try
+    {
         ASTPtr query = DatabaseCatalog::instance().getDatabase(target_table_id.database_name)->getCreateTableQuery(target_table_id.table_name, getContext());
         auto create_query = query->as<ASTCreateQuery &>();
         create_query.table = table_to_replace_name;
@@ -298,7 +301,7 @@ void StorageMaterializedView::refresh(bool grab_lock) {
         if (!create_context->hasQueryContext())
             create_context->makeQueryContext();
         executeQuery(create_query_str, create_context, true).onFinish();
-  
+
         ast_drop->table = table_to_replace_name;
         ast_drop->database = target_table_id.database_name;
         ast_drop->kind = ASTDropQuery::Drop;
@@ -321,8 +324,7 @@ void StorageMaterializedView::refresh(bool grab_lock) {
         insert_io.onFinish();
 
         auto ast_rename = std::make_shared<ASTRenameQuery>();
-        ASTRenameQuery::Element elem
-        {
+        ASTRenameQuery::Element elem{
             ASTRenameQuery::Table{target_table_id.database_name, table_to_replace_name},
             ASTRenameQuery::Table{target_table_id.database_name, target_table_id.table_name}
         };
@@ -337,10 +339,11 @@ void StorageMaterializedView::refresh(bool grab_lock) {
         replaced = true;
 
         InterpreterDropQuery(ast_drop, drop_context).execute();
-    } catch (...) {
-        if (created && !replaced) {
+    }
+    catch (...)
+    {
+        if (created && !replaced)
             InterpreterDropQuery(ast_drop, drop_context).execute();
-        }
         throw;
     }
     last_refresh_time = std::chrono::system_clock::now();
@@ -352,7 +355,8 @@ void StorageMaterializedView::scheduleNextPeriodicRefresh()
     Seconds current_time = std::chrono::duration_cast<Seconds>(std::chrono::system_clock::now().time_since_epoch());
     Seconds blocks_time = std::chrono::duration_cast<Seconds>(last_refresh_time.time_since_epoch());
 
-    if ((current_time - periodic_view_refresh) >= blocks_time) {
+    if ((current_time - periodic_view_refresh) >= blocks_time)
+    {
         refresh(false);
         blocks_time = std::chrono::duration_cast<Seconds>(last_refresh_time.time_since_epoch());
     }
@@ -519,7 +523,8 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 
 void StorageMaterializedView::startup()
 {
-    if (is_periodically_refreshed) {
+    if (is_periodically_refreshed)
+    {
         periodic_refresh_task->activate();
         periodic_refresh_task->scheduleAfter(0);
     }

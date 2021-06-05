@@ -385,7 +385,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (is_populate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
-    
+
     if (is_materialized_view && view_periodic_refresh)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
                       << *view_periodic_refresh;

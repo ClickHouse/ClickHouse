@@ -125,9 +125,10 @@ BlockIO InterpreterAlterQuery::execute()
     if (!view_commands.empty())
     {
         view_commands.validate(*table);
-        if (!dynamic_cast<const StorageLiveView *>(&*table)) {
+        if (!dynamic_cast<const StorageLiveView *>(&*table))
+        {
             auto mat_view = std::dynamic_pointer_cast<StorageMaterializedView>(table);
-            for (const ViewCommand & command : view_commands)
+            for (const ViewCommand &command : view_commands)
             {
                 switch (command.type)
                 {
@@ -136,9 +137,11 @@ BlockIO InterpreterAlterQuery::execute()
                         break;
                 }
             }
-        } else {
+        }
+        else
+        {
             auto live_view = std::dynamic_pointer_cast<StorageLiveView>(table);
-            for (const ViewCommand & command : view_commands)
+            for (const ViewCommand &command : view_commands)
             {
                 switch (command.type)
                 {
