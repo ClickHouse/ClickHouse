@@ -56,18 +56,18 @@ public:
             const auto & first_column = arguments[0];
             if (!isString(first_column.type))
             {
-                throw Exception{
+                throw Exception(
                     "JSONPath functions require 1 argument to be JSONPath of type string, illegal type: " + first_column.type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
             /// Check 2 argument: must be of type String (JSON)
             const auto & second_column = arguments[1];
             if (!isString(second_column.type))
             {
-                throw Exception{
+                throw Exception(
                     "JSONPath functions require 2 argument to be JSON of string, illegal type: " + second_column.type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
             /// If argument is successfully cast to (ColumnConst *) then it is quoted string

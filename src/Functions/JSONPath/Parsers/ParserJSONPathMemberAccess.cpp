@@ -17,8 +17,6 @@ namespace DB
  */
 bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto member_access = std::make_shared<ASTJSONPathMemberAccess>();
-    node = member_access;
     if (pos->type != TokenType::Dot) {
         return false;
     }
@@ -27,12 +25,15 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (pos->type != TokenType::BareWord) {
         return false;
     }
+
     ParserIdentifier name_p;
     ASTPtr member_name;
     if (!name_p.parse(pos, member_name, expected)) {
         return false;
     }
 
+    auto member_access = std::make_shared<ASTJSONPathMemberAccess>();
+    node = member_access;
     if (!tryGetIdentifierNameInto(member_name, member_access->member_name)) {
         return false;
     }
