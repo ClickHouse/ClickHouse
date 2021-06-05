@@ -125,3 +125,4 @@ set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-s
 
 target_link_libraries(clickhouse_functions PRIVATE stemmer)
 target_link_libraries(clickhouse_functions PRIVATE wnb)
+target_link_libraries(clickhouse_functions PRIVATE lemmagen)

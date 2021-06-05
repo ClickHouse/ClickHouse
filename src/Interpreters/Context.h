@@ -53,6 +53,7 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
 class SynonymsExtensions;
+class Lemmatizers;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -517,6 +518,7 @@ public:
     void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
 
     SynonymsExtensions & getSynonymsExtensions() const;
+    Lemmatizers & getLemmatizers() const;
 
     void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
