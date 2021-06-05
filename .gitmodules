@@ -228,15 +228,6 @@
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/ClickHouse-Extras/datasketches-cpp.git
-[submodule "contrib/lizard"]
-	path = contrib/lizard
-	url = https://github.com/inikep/lizard
-[submodule "contrib/density"]
-	path = contrib/density
-	url = https://github.com/centaurean/density.git
-[submodule "contrib/lzsse"]
-	path = contrib/lzsse
-	url = https://github.com/ConorStokes/LZSSE.git
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse-Extras/yaml-cpp.git
