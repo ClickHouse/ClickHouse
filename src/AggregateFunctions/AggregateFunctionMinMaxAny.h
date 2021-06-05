@@ -29,6 +29,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** Aggregate functions that store one of passed values.
