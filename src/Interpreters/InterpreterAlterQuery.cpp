@@ -13,12 +13,11 @@
 #include <Parsers/ASTAssignment.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/LiveView/LiveViewCommands.h>
 #include <Storages/LiveView/StorageLiveView.h>
-#include <Storages/MaterializedViewCommands.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/ViewCommands.h>
 #include <Common/typeid_cast.h>
 
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -76,8 +75,7 @@ BlockIO InterpreterAlterQuery::execute()
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
-    MaterializedViewCommands mat_view_commands;
-    LiveViewCommands live_view_commands;
+    ViewCommands view_commands;
     for (const auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
@@ -95,17 +93,15 @@ BlockIO InterpreterAlterQuery::execute()
 
             mutation_commands.emplace_back(std::move(*mut_command));
         }
-        else if (auto mat_view_command = MaterializedViewCommand::parse(command_ast))
-            mat_view_commands.emplace_back(std::move(*mat_view_command));
-        else if (auto live_view_command = LiveViewCommand::parse(command_ast))
-            live_view_commands.emplace_back(std::move(*live_view_command));
+        else if (auto view_command = ViewCommand::parse(command_ast))
+            view_commands.emplace_back(std::move(*view_command));
         else
             throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
     }
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))
     {
-        int command_types_count = !mutation_commands.empty() + !partition_commands.empty() + !live_view_commands.empty() + !alter_commands.empty();
+        int command_types_count = !mutation_commands.empty() + !partition_commands.empty() + !view_commands.empty() + !alter_commands.empty();
         if (1 < command_types_count)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
                                                          "to execute ALTERs of different types in single query");
@@ -126,32 +122,30 @@ BlockIO InterpreterAlterQuery::execute()
             res.pipeline.init(std::move(partition_commands_pipe));
     }
 
-    if (!mat_view_commands.empty())
+    if (!view_commands.empty())
     {
-        mat_view_commands.validate(*table);
-        for (const MaterializedViewCommand & command : mat_view_commands)
-        {
+        view_commands.validate(*table);
+        if (!dynamic_cast<const StorageLiveView *>(&*table)) {
             auto mat_view = std::dynamic_pointer_cast<StorageMaterializedView>(table);
-            switch (command.type)
+            for (const ViewCommand & command : view_commands)
             {
-                case MaterializedViewCommand::REFRESH:
-                    mat_view->refresh();
-                    break;
+                switch (command.type)
+                {
+                    case ViewCommand::REFRESH:
+                        mat_view->refresh();
+                        break;
+                }
             }
-        }
-    }
-
-    if (!live_view_commands.empty())
-    {
-        live_view_commands.validate(*table);
-        for (const LiveViewCommand & command : live_view_commands)
-        {
+        } else {
             auto live_view = std::dynamic_pointer_cast<StorageLiveView>(table);
-            switch (command.type)
+            for (const ViewCommand & command : view_commands)
             {
-                case LiveViewCommand::REFRESH:
-                    live_view->refresh();
-                    break;
+                switch (command.type)
+                {
+                    case ViewCommand::REFRESH:
+                        live_view->refresh();
+                        break;
+                }
             }
         }
     }

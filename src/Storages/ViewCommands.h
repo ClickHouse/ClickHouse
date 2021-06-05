@@ -14,6 +14,7 @@ limitations under the License. */
 #include <optional>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/LiveView/StorageLiveView.h>
+#include <Storages/StorageMaterializedView.h>
 
 
 namespace DB
@@ -24,7 +25,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
 }
 
-struct LiveViewCommand
+struct ViewCommand
 {
     enum Type
     {
@@ -35,15 +36,15 @@ struct LiveViewCommand
 
     ASTPtr values;
 
-    static LiveViewCommand refresh(const ASTPtr & values)
+    static ViewCommand refresh(const ASTPtr & values)
     {
-        LiveViewCommand res;
+        ViewCommand res;
         res.type = REFRESH;
         res.values = values;
         return res;
     }
 
-    static std::optional<LiveViewCommand> parse(ASTAlterCommand * command)
+    static std::optional<ViewCommand> parse(ASTAlterCommand * command)
     {
         if (command->type == ASTAlterCommand::VIEW_REFRESH)
             return refresh(command->values);
@@ -52,13 +53,17 @@ struct LiveViewCommand
 };
 
 
-class LiveViewCommands : public std::vector<LiveViewCommand>
+class ViewCommands : public std::vector<ViewCommand>
 {
 public:
     void validate(const IStorage & table)
     {
-        if (!empty() && !dynamic_cast<const StorageLiveView *>(&table))
-            throw Exception("Wrong storage type. Must be StorageLiveView", DB::ErrorCodes::UNKNOWN_STORAGE);
+        if (empty())
+            return;
+        bool is_materialized_view = !!dynamic_cast<const StorageMaterializedView *>(&table);
+        bool is_live_view = !!dynamic_cast<const StorageLiveView *>(&table);
+        if (!is_materialized_view && !is_live_view) throw Exception(
+            "Wrong storage type. Must be " + std::string(is_live_view ? "StorageLiveView" : "StorageMaterializedView"), DB::ErrorCodes::UNKNOWN_STORAGE);
     }
 };
 
