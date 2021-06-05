@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Functions/JSONPath/ASTs/ASTJSONPathRange.h>
 #include <Functions/JSONPath/Generators/IVisitor.h>
 #include <Functions/JSONPath/Generators/VisitorStatus.h>
@@ -112,4 +114,4 @@ private:
     UInt32 current_index;
 };
 
-} // namespace
+}

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Functions/JSONPath/Generators/IGenerator.h>
 #include <Functions/JSONPath/Generators/VisitorJSONPathMemberAccess.h>
 #include <Functions/JSONPath/Generators/VisitorJSONPathRange.h>

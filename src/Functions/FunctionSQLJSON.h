@@ -30,7 +30,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
 }
@@ -52,17 +51,24 @@ public:
                 throw Exception{"JSONPath functions require at least 2 arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
             }
 
-            /// Check 1 argument: must be of type String (JSONPath)
             const auto & first_column = arguments[0];
+
+            /// Check 1 argument: must be of type String (JSONPath)
             if (!isString(first_column.type))
             {
                 throw Exception(
                     "JSONPath functions require 1 argument to be JSONPath of type string, illegal type: " + first_column.type->getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
+            /// Check 1 argument: must be const (JSONPath)
+            if (!isColumnConst(*first_column.column))
+            {
+                throw Exception("1 argument (JSONPath) must be const", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
+
+            const auto & second_column = arguments[1];
 
             /// Check 2 argument: must be of type String (JSON)
-            const auto & second_column = arguments[1];
             if (!isString(second_column.type))
             {
                 throw Exception(
@@ -78,21 +84,15 @@ public:
             /// Example:
             ///     SomeFunction(database.table.column)
 
-            /// Check 1 argument: must be const String (JSONPath)
             const ColumnPtr & arg_jsonpath = first_column.column;
             const auto * arg_jsonpath_const = typeid_cast<const ColumnConst *>(arg_jsonpath.get());
-            if (!arg_jsonpath_const)
-            {
-                throw Exception{"JSONPath argument must be of type const String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-            }
-            /// Retrieve data from 1 argument
             const auto * arg_jsonpath_string = typeid_cast<const ColumnString *>(arg_jsonpath_const->getDataColumnPtr().get());
+
             if (!arg_jsonpath_string)
             {
                 throw Exception{"Illegal column " + arg_jsonpath->getName(), ErrorCodes::ILLEGAL_COLUMN};
             }
 
-            /// Check 2 argument: must be const or non-const String (JSON)
             const ColumnPtr & arg_json = second_column.column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
             const auto * col_json_string
@@ -166,6 +166,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -182,9 +183,8 @@ public:
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
             return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
-#else
-        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
+        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
     }
 };
 

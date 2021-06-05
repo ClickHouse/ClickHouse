@@ -10,10 +10,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
 }
 /**
@@ -45,7 +41,7 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         {
             if (range->is_star)
             {
-                throw Exception{"Multiple asterisks in square array range are not allowed", ErrorCodes::BAD_ARGUMENTS};
+                throw Exception("Multiple asterisks in square array range are not allowed", ErrorCodes::BAD_ARGUMENTS);
             }
             range->is_star = true;
             ++pos;
