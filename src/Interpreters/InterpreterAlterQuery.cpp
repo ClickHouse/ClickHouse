@@ -124,33 +124,24 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!view_commands.empty())
     {
-        view_commands.validate(*table);
-        if (!dynamic_cast<const StorageLiveView *>(&*table))
-        {
-            auto mat_view = std::dynamic_pointer_cast<StorageMaterializedView>(table);
+        auto refresh_if_needed = [&view_commands](auto &view) {
             for (const ViewCommand &command : view_commands)
             {
                 switch (command.type)
                 {
                     case ViewCommand::REFRESH:
-                        mat_view->refresh();
+                        view.refresh();
                         break;
                 }
             }
-        }
+        };
+
+        if (auto mat_view = std::dynamic_pointer_cast<StorageMaterializedView>(table))
+            refresh_if_needed(*mat_view);
+        else if (auto live_view = std::dynamic_pointer_cast<StorageLiveView>(table))
+            refresh_if_needed(*live_view);
         else
-        {
-            auto live_view = std::dynamic_pointer_cast<StorageLiveView>(table);
-            for (const ViewCommand &command : view_commands)
-            {
-                switch (command.type)
-                {
-                    case ViewCommand::REFRESH:
-                        live_view->refresh();
-                        break;
-                }
-            }
-        }
+            throw Exception("Wrong storage type. Must be StorageLiveView or StorageMaterializedView", DB::ErrorCodes::UNKNOWN_STORAGE);
     }
 
     if (!alter_commands.empty())

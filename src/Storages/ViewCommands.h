@@ -52,19 +52,6 @@ struct ViewCommand
     }
 };
 
-
-class ViewCommands : public std::vector<ViewCommand>
-{
-public:
-    void validate(const IStorage & table)
-    {
-        if (empty())
-            return;
-        bool is_materialized_view = !!dynamic_cast<const StorageMaterializedView *>(&table);
-        bool is_live_view = !!dynamic_cast<const StorageLiveView *>(&table);
-        if (!is_materialized_view && !is_live_view) throw Exception(
-            "Wrong storage type. Must be " + std::string(is_live_view ? "StorageLiveView" : "StorageMaterializedView"), DB::ErrorCodes::UNKNOWN_STORAGE);
-    }
-};
+typedef std::vector<ViewCommand> ViewCommands;
 
 }
