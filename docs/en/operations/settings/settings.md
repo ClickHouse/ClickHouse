@@ -3074,29 +3074,29 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 0.
+Default value: `0`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
-How long initial DDL query should wait for Replicated database to precess previous DDL queue entries.
+Sets how long initial DDL query should wait for Replicated database to precess previous DDL queue entries in seconds.
 
 Possible values:
 
 -   Positive integer.
--   0 — Disabled or unlimited or something else.
+-   0 — Unlimited.
 
 Default value: `300`.
 
 ## database_replicated_ddl_output {#database_replicated_ddl_output}
 
-Return table with query execution status as a result of DDL query.
+Returns table with query execution status as a result of DDL query.
 
 Possible values:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 1.
+Default value: `1`.
 
 ## background_replicated_schedule_pool_size {#background_replicated_schedule_pool_size}
 
@@ -3105,8 +3105,8 @@ Number of threads performing background tasks in replicated databases. One task 
 Possible values:
 
 -   Any positive integer.
--   0 — Disabled or unlimited or something else.
+-   0 — Unlimited.
 
-Default value: 4.
+Default value: `4`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
