@@ -7,11 +7,20 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <common/StringRef.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
 
 namespace DB
 {
@@ -177,6 +186,93 @@ public:
     {
         return false;
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = true;
+
+    static void compileChange(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        b.CreateStore(b.getInt1(true), has_value_ptr);
+
+        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
+
+        auto * type = toNativeType<T>(builder);
+        auto * value_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, value_offset_from_structure);
+        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
+        b.CreateStore(value_to_check, value_ptr);
+    }
+
+    static void compileChangeMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
+
+        auto * type = toNativeType<T>(b);
+        auto * value_src_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_src_ptr, value_offset_from_structure);
+        auto * value_src_ptr = b.CreatePointerCast(value_src_ptr_with_offset, type->getPointerTo());
+        auto * value_src = b.CreateLoad(type, value_src_ptr);
+
+        compileChange(builder, aggregate_data_dst_ptr, value_src);
+    }
+
+    static void compileChangeFirstTime(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_has = llvm::BasicBlock::Create(head->getContext(), "if_has", head->getParent());
+        auto * if_has_not = llvm::BasicBlock::Create(head->getContext(), "if_has_not", head->getParent());
+
+        b.CreateCondBr(has_value_value, if_has, if_has_not);
+
+        b.SetInsertPoint(if_has);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_has_not);
+        compileChange(builder, aggregate_data_ptr, value_to_check);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    static void compileChangeFirstTimeMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
+
+        auto * type = toNativeType<T>(b);
+        auto * value_src_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_src_ptr, value_offset_from_structure);
+        auto * value_src_ptr = b.CreatePointerCast(value_src_ptr_with_offset, type->getPointerTo());
+        auto * value_src = b.CreateLoad(type, value_src_ptr);
+
+        compileChangeFirstTime(builder, aggregate_data_dst_ptr, value_src);
+    }
+
+    static llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
+
+        auto * type = toNativeType<T>(builder);
+        auto * value_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, value_offset_from_structure);
+        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
+        return b.CreateLoad(type, value_ptr);
+    }
+
+#endif
+
 };
 
 
@@ -400,6 +496,13 @@ public:
     {
         return true;
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
+
 };
 
 static_assert(
@@ -576,6 +679,13 @@ public:
     {
         return false;
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
+
 };
 
 
@@ -593,6 +703,12 @@ struct AggregateFunctionMinData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfLess(to, arena); }
 
     static const char * name() { return "min"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
 };
 
 template <typename Data>
@@ -604,6 +720,12 @@ struct AggregateFunctionMaxData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfGreater(to, arena); }
 
     static const char * name() { return "max"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
 };
 
 template <typename Data>
@@ -615,6 +737,22 @@ struct AggregateFunctionAnyData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeFirstTime(to, arena); }
 
     static const char * name() { return "any"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeFirstTime(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeFirstTimeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+#endif
 };
 
 template <typename Data>
@@ -626,6 +764,12 @@ struct AggregateFunctionAnyLastData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeEveryTime(to, arena); }
 
     static const char * name() { return "anyLast"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
 };
 
 
@@ -693,6 +837,13 @@ struct AggregateFunctionAnyHeavyData : Data
     }
 
     static const char * name() { return "anyHeavy"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
+
 };
 
 
@@ -725,6 +876,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
+        std::cerr << "AggregateFunctionSingleValue::add sizeof data " << this->sizeOfData() << " align of data " << this->alignOfData() << std::endl;
         this->data(place).changeIfBetter(*columns[0], row_num, arena);
     }
 
@@ -752,6 +904,63 @@ public:
     {
         this->data(place).insertResultInto(to);
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        if constexpr (!Data::is_compilable)
+            return false;
+
+        return canBeNativeType(*type);
+    }
+
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto alignment = llvm::assumeAligned(this->alignOfData());
+        b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->sizeOfData(), alignment);
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> & argument_values) const override
+    {
+        if constexpr (Data::is_compilable)
+        {
+            Data::compileChangeIfBetter(builder, aggregate_data_ptr, argument_values[0]);
+        }
+        else
+        {
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+
+    void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+        {
+            Data::compileChangeIfBetterMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        }
+        else
+        {
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+        {
+            return Data::compileGetResult(builder, aggregate_data_ptr);
+        }
+        else
+        {
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+
+#endif
 };
 
 }

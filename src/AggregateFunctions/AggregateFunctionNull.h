@@ -250,8 +250,8 @@ public:
 
         if constexpr (result_is_nullable)
         {
-            auto alignemnt = llvm::assumeAligned(this->alignOfData());
-            b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->prefix_size, alignemnt);
+            auto alignment = llvm::assumeAligned(this->alignOfData());
+            b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->prefix_size, alignment);
         }
 
         auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, this->prefix_size);
