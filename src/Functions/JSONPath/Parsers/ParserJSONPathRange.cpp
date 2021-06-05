@@ -25,14 +25,15 @@ namespace ErrorCodes
  */
 bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto range = std::make_shared<ASTJSONPathRange>();
-    node = range;
 
     if (pos->type != TokenType::OpeningSquareBracket)
     {
         return false;
     }
     ++pos;
+
+    auto range = std::make_shared<ASTJSONPathRange>();
+    node = range;
 
     while (pos->type != TokenType::ClosingSquareBracket)
     {
@@ -107,8 +108,8 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     }
     ++pos;
 
-    /// We cant have both ranges and star present, so parse was successful <=> exactly 1 of these conditions is true
-    return !range->ranges.empty() != range->is_star;
+    /// We can't have both ranges and star present, so parse was successful <=> exactly 1 of these conditions is true
+    return !range->ranges.empty() ^ range->is_star;
 }
 
 }

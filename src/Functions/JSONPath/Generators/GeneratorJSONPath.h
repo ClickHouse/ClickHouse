@@ -21,28 +21,22 @@ public:
     {
         query_ptr = query_ptr_;
         const auto * path = query_ptr->as<ASTJSONPath>();
-        if (!path) {
+        if (!path)
+        {
             throw Exception("Invalid path", ErrorCodes::LOGICAL_ERROR);
         }
         const auto * query = path->jsonpath_query;
 
         for (auto child_ast : query->children)
         {
-            if (child_ast->getID() == "ASTJSONPathMemberAccess")
+            if (typeid_cast<ASTJSONPathMemberAccess *>(child_ast.get()))
             {
-                auto member_access_visitor = std::make_shared<VisitorJSONPathMemberAccess<JSONParser>>(child_ast);
-                if (member_access_visitor) {
-                    visitors.push_back(member_access_visitor);
-                } else {
-                    throw Exception("member_access_visitor could not be nullptr", ErrorCodes::LOGICAL_ERROR);
-                }
-            } else if (child_ast->getID() == "ASTJSONPathRange") {
-                auto range_visitor = std::make_shared<VisitorJSONPathRange<JSONParser>>(child_ast);
-                if (range_visitor) {
-                    visitors.push_back(range_visitor);
-                } else {
-                    throw Exception("range_visitor could not be nullptr", ErrorCodes::LOGICAL_ERROR);
-                }
+                visitors.push_back(std::make_shared<VisitorJSONPathMemberAccess<JSONParser>>(child_ast));
+            }
+            else if (child_ast->getID() == "ASTJSONPathRange")
+            {
+
+                visitors.push_back(std::make_shared<VisitorJSONPathRange<JSONParser>>(child_ast));
             }
         }
     }
@@ -56,27 +50,33 @@ public:
      */
     VisitorStatus getNextItem(typename JSONParser::Element & element) override
     {
-        while (true) {
+        while (true)
+        {
             auto root = element;
-            if (current_visitor < 0) {
+            if (current_visitor < 0)
+            {
                 return VisitorStatus::Exhausted;
             }
 
-            for (int i = 0; i < current_visitor; ++i) {
+            for (int i = 0; i < current_visitor; ++i)
+            {
                 visitors[i]->apply(root);
             }
 
             VisitorStatus status = VisitorStatus::Error;
-            for (size_t i = current_visitor; i < visitors.size(); ++i) {
+            for (size_t i = current_visitor; i < visitors.size(); ++i)
+            {
                 status = visitors[i]->visit(root);
                 current_visitor = i;
-                if (status == VisitorStatus::Error || status == VisitorStatus::Ignore) {
+                if (status == VisitorStatus::Error || status == VisitorStatus::Ignore)
+                {
                     break;
                 }
             }
             updateVisitorsForNextRun();
 
-            if (status != VisitorStatus::Ignore) {
+            if (status != VisitorStatus::Ignore)
+            {
                 element = root;
                 return status;
             }
@@ -84,12 +84,15 @@ public:
     }
 
 private:
-    bool updateVisitorsForNextRun() {
-        while (current_visitor >= 0 && visitors[current_visitor]->isExhausted()) {
+    bool updateVisitorsForNextRun()
+    {
+        while (current_visitor >= 0 && visitors[current_visitor]->isExhausted())
+        {
             visitors[current_visitor]->reinitialize();
             current_visitor--;
         }
-        if (current_visitor >= 0) {
+        if (current_visitor >= 0)
+        {
             visitors[current_visitor]->updateState();
         }
         return current_visitor >= 0;
