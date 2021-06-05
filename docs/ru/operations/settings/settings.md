@@ -2956,4 +2956,48 @@ SELECT
 FROM fuse_tbl
 ```
 
+## allow_experimental_database_replicated {#allow_experimental_database_replicated}
+
+Позволяет создавать базы данных с движком [Replicated](../../engines/database-engines/replicated.md).
+
+Возможные значения:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Значение по умолчанию: `0`.
+
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
+
+Устанавливает, как долго начальный запрос DDL должен ждать, пока реплицированная база данных прецессирует предыдущие записи очереди DDL в секундах.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — Не ограничено.
+
+Значение по умолчанию: `300`.
+
+## database_replicated_ddl_output {#database_replicated_ddl_output}
+
+Возвращает таблицу со статусом выполнения запроса в результате запроса DDL.
+
+Возможные значения:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Значение по умолчанию: `1`.
+
+## background_replicated_schedule_pool_size {#background_replicated_schedule_pool_size}
+
+Ограничивает количество потоков, выполняющих фоновые задачи в реплицированных базах данных. Одна задача соответствует одной реплицированной реплике базы данных. Имеет значение только при запуске сервера.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — Не ограничено.
+
+Значение по умолчанию: `4`.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
