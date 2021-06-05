@@ -102,13 +102,9 @@ public:
     }
 };
 
-void registerFunctionTokenize(FunctionFactory & factory)
+void registerFunctionsTokenize(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTokenize<StandartTokenizer>>(FunctionFactory::CaseInsensitive);
-}
-
-void registerFunctionTokenizeWhitespace(FunctionFactory & factory)
-{
     factory.registerFunction<FunctionTokenize<WhitespaceTokenizer>>(FunctionFactory::CaseInsensitive);
 }
 
