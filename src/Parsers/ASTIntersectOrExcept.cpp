@@ -20,7 +20,7 @@ void ASTIntersectOrExcept::formatQueryImpl(const FormatSettings & settings, Form
     children[0]->formatImpl(settings, state, frame);
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
     settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
-                  << (is_except ? "EXCEPT" : "INTERSECT ")
+                  << (is_except ? "EXCEPT" : "INTERSECT")
                   << (settings.hilite ? hilite_none : "") << settings.nl_or_ws;
     children[1]->formatImpl(settings, state, frame);
 }
