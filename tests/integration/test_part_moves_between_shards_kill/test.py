@@ -68,6 +68,13 @@ def test_part_move_kill_while_move(started_cluster):
     # TODO(nv): Write the test.
     #   ...
     #   But how?
+    #       Shutdown one of destination replica to make waiting for fetch fail.
+    #       Assert on last_exception
+    #
+    #           Start a mutation while fetch is blocked to make a later attach
+    #           fail.
+    #
+    #           Rollback.
 
     s0r0.query("""
         KILL PART_MOVE_TO_SHARD
