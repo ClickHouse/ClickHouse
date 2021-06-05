@@ -20,11 +20,6 @@ limitations under the License. */
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_STORAGE;
-}
-
 struct ViewCommand
 {
     enum Type

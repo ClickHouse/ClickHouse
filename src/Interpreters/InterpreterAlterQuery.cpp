@@ -30,9 +30,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_STORAGE;
 }
 
 
@@ -124,7 +125,8 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!view_commands.empty())
     {
-        auto refresh_if_needed = [&view_commands](auto &view) {
+        auto refresh_if_needed = [&view_commands](auto &view)
+        {
             for (const ViewCommand &command : view_commands)
             {
                 switch (command.type)
