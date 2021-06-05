@@ -18,7 +18,6 @@ then
     echo Some commits will be missed, review these manually.
 fi
 
-# NOTE keep in sync with ./backport.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
 # variant is squashed. Next are some backport message variants.
 find_prs=(sed -n "s/^.*merg[eding]*.*#\([[:digit:]]\+\).*$/\1/Ip;
@@ -39,6 +38,8 @@ function github_download()
     local file=${2}
     if ! [ -f "$file" ]
     then
+        echo "curl -u \"$GITHUB_USER:***\" -sSf \"$url\" > \"$file\""
+
         if ! curl -u "$GITHUB_USER:$GITHUB_TOKEN" \
                 -sSf "$url" \
                 > "$file"
