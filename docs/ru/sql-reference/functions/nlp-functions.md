@@ -3,31 +3,31 @@ toc_priority: 67
 toc_title: NLP
 ---
 
-# Natural Language Processing functions {#nlp-functions}
+# Функции для работы с ествественным языком {#nlp-functions}
 
 ## tokenize, tokenizeWhitespace {#tokenize}
 
-Performs tokenization on a given text.
+Данные функции проводят токенизацию - разделение заданного текста на слова.
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 tokenize(text)
 ```
 
-**Arguments**
+**Аргументы**
 
--   `text` — Text that needs to be tokenized. [String](../../sql-reference/data-types/string.md#string).
+-   `text` — Текст подлежащий токенизации. [String](../../sql-reference/data-types/string.md#string).
 
-**Examples**
+**Примеры**
 
-Query:
+Запрос:
 
 ``` sql
 SELECT tokenize('I think it is a blessing in disguise.') as res;
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─res────────────────────────────────────────────────────┐
@@ -37,18 +37,18 @@ Result:
 
 ## stem {#stem}
 
-Performs stemming on a previously tokenized text.
+Данная функция проводит стемминг заданного слова.
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 stem('language', word)
 ```
 
-**Arguments**
+**Аргументы**
 
--   `language` — Language which rules will be applied. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
--   `word` — word that needs to be stemmed. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
+-   `language` — Язык, правила которого будут применены для стемминга. Допускается только нижний регистр. [String](../../sql-reference/data-types/string.md#string).
+-   `word` — Слово подлежащее стеммингу. Допускается только нижний регистр. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
@@ -68,28 +68,28 @@ Result:
 
 ## lemmatize {#lemmatize}
 
-Performs lemmatization on a given word.
+Данная функция проводит лемматизацию для заданного слова.
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 lemmatize('language', word)
 ```
 
-**Arguments**
+**Аргументы**
 
--   `language` — Language which rules will be applied. [String](../../sql-reference/data-types/string.md#string).
--   `word` — Word that needs to be lemmatized. Must be lowercase. [String](../../sql-reference/data-types/string.md#string).
+-   `language` — Язык, правила которого будут применены для лемматизации. [String](../../sql-reference/data-types/string.md#string).
+-   `word` — Слово, подлежащее лемматизации. Допускается только нижний регистр. [String](../../sql-reference/data-types/string.md#string).
 
-**Examples**
+**Примеры**
 
-Query:
+Запрос:
 
 ``` sql
 SELECT lemmatize('en', 'wolves');
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─lemmatize("wolves")─┐
@@ -97,7 +97,7 @@ Result:
 └─────────────────────┘
 ```
 
-Configuration:
+Конфигурация:
 ``` xml
 <lemmatizers>
     <lemmatizer>
@@ -109,28 +109,28 @@ Configuration:
 
 ## synonyms {#synonyms}
 
-Finds synonyms to a given word. 
+Находит синонимы к заданному слову.
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 synonyms('extension_name', word)
 ```
 
-**Arguments**
+**Аргументы**
 
--   `extension_name` — Name of the extention in which search will be performed. [String](../../sql-reference/data-types/string.md#string).
--   `word` — Word that will be searched in extension. [String](../../sql-reference/data-types/string.md#string).
+-   `extension_name` — Название расширения, в котором будет проводиться поиск. [String](../../sql-reference/data-types/string.md#string).
+-   `word` — Слово, которое будет искаться в расширении. [String](../../sql-reference/data-types/string.md#string).
 
-**Examples**
+**Примеры**
 
-Query:
+Запрос:
 
 ``` sql
 SELECT synonyms('list', 'important');
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─synonyms('list', 'important')────────────┐
@@ -138,7 +138,7 @@ Result:
 └──────────────────────────────────────────┘
 ```
 
-Configuration:
+Конфигурация:
 ``` xml
 <synonyms_extensions>
     <extension>
