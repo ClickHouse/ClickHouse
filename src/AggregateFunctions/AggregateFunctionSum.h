@@ -409,17 +409,17 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, removeNullable(getReturnType()));
+        auto * return_type = toNativeType(b, getReturnType());
         auto * aggregate_sum_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
 
-        b.CreateStore(llvm::ConstantInt::get(return_type, 0), aggregate_sum_ptr);
+        b.CreateStore(llvm::Constant::getNullValue(return_type), aggregate_sum_ptr);
     }
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, removeNullable(getReturnType()));
+        auto * return_type = toNativeType(b, getReturnType());
 
         auto * sum_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
         auto * sum_value = b.CreateLoad(return_type, sum_value_ptr);
@@ -437,7 +437,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, removeNullable(getReturnType()));
+        auto * return_type = toNativeType(b, getReturnType());
 
         auto * sum_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
         auto * sum_value_dst = b.CreateLoad(return_type, sum_value_dst_ptr);
@@ -445,7 +445,7 @@ public:
         auto * sum_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
         auto * sum_value_src = b.CreateLoad(return_type, sum_value_src_ptr);
 
-        auto * sum_return_value = b.CreateAdd(sum_value_dst, sum_value_src);
+        auto * sum_return_value = sum_value_dst->getType()->isIntegerTy() ? b.CreateAdd(sum_value_dst, sum_value_src) : b.CreateFAdd(sum_value_dst, sum_value_src);
         b.CreateStore(sum_return_value, sum_value_dst_ptr);
     }
 
@@ -453,7 +453,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, removeNullable(getReturnType()));
+        auto * return_type = toNativeType(b, getReturnType());
         auto * sum_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
 
         return b.CreateLoad(return_type, sum_value_ptr);
