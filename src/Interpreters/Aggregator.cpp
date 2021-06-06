@@ -222,32 +222,6 @@ static CHJIT & getJITInstance()
     return jit;
 }
 
-static std::string dumpAggregateFunction(const IAggregateFunction * function)
-{
-    std::string function_dump;
-
-    auto return_type_name = function->getReturnType()->getName();
-
-    function_dump += return_type_name;
-    function_dump += ' ';
-    function_dump += function->getName();
-    function_dump += '(';
-
-    const auto & argument_types = function->getArgumentTypes();
-    for (const auto & argument_type : argument_types)
-    {
-        function_dump += argument_type->getName();
-        function_dump += ',';
-    }
-
-    if (!argument_types.empty())
-        function_dump.pop_back();
-
-    function_dump += ')';
-
-    return function_dump;
-}
-
 #endif
 
 Aggregator::Aggregator(const Params & params_)
@@ -317,7 +291,7 @@ void Aggregator::compileAggregateFunctions()
 
     std::vector<AggregateFunctionWithOffset> functions_to_compile;
     size_t aggregate_instructions_size = 0;
-    std::string functions_dump;
+    String functions_description;
 
     /// Add values to the aggregate functions.
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
@@ -333,11 +307,10 @@ void Aggregator::compileAggregateFunctions()
                 .aggregate_data_offset = offset_of_aggregate_function
             };
 
-            std::string function_dump = dumpAggregateFunction(function);
-            functions_dump += function_dump;
-            functions_dump += ' ';
-
             functions_to_compile.emplace_back(std::move(function_to_compile));
+
+            functions_description += function->getDescription();
+            functions_description += ' ';
         }
 
         ++aggregate_instructions_size;
@@ -354,20 +327,21 @@ void Aggregator::compileAggregateFunctions()
 
         std::lock_guard<std::mutex> lock(mtx);
 
-        auto it = aggregation_functions_dump_to_add_compiled.find(functions_dump);
+        auto it = aggregation_functions_dump_to_add_compiled.find(functions_description);
         if (it != aggregation_functions_dump_to_add_compiled.end())
         {
             compiled_aggregate_functions = it->second;
         }
         else
         {
-            LOG_TRACE(log, "Compile expression {}", functions_dump);
+            LOG_TRACE(log, "Compile expression {}", functions_description);
 
-            compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_dump);
-            aggregation_functions_dump_to_add_compiled[functions_dump] = compiled_aggregate_functions;
+            compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_description);
+            aggregation_functions_dump_to_add_compiled[functions_description] = compiled_aggregate_functions;
         }
     }
 
+    LOG_TRACE(log, "Use compiled expression {}", functions_description);
     compiled_functions.emplace(std::move(compiled_aggregate_functions));
 }
 

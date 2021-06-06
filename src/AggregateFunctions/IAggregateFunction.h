@@ -251,6 +251,30 @@ public:
     // of true window functions, so this hack-ish interface suffices.
     virtual bool isOnlyWindowFunction() const { return false; }
 
+    virtual String getDescription() const
+    {
+        String description;
+
+        description += getName();
+        description += '(';
+
+        for (const auto & argument_type : argument_types)
+        {
+            description += argument_type->getName();
+            description += ", ";
+        }
+
+        if (!argument_types.empty())
+        {
+            description.pop_back();
+            description.pop_back();
+        }
+
+        description += ')';
+
+        return description;
+    }
+
     #if USE_EMBEDDED_COMPILER
 
     virtual bool isCompilable() const { return false; }
