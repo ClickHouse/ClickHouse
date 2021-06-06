@@ -185,6 +185,9 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
+            contrib/lemmagen-c
+            contrib/libstemmer_c
+            contrib/wordnet-blast
         )
 
         git submodule sync
