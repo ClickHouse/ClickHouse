@@ -370,6 +370,8 @@ function run_tests
 
         # Depends on AWS
         01801_s3_cluster
+        # needs psql
+        01889_postgresql_protocol_null_fields
     )
 
     (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
