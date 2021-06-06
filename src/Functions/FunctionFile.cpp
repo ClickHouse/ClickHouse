@@ -3,10 +3,11 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Interpreters/Context.h>
 #include <unistd.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -68,21 +69,19 @@ public:
         {
             const char * filename = reinterpret_cast<const char *>(&chars[source_offset]);
 
-            const String user_files_path = getContext()->getUserFilesPath();
-            String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
-            Poco::Path poco_filepath = Poco::Path(filename);
-            if (poco_filepath.isRelative())
-                poco_filepath = Poco::Path(user_files_absolute_path, poco_filepath);
-            const String file_absolute_path = poco_filepath.absolute().toString();
-            checkReadIsAllowedOrThrow(user_files_absolute_path, file_absolute_path);
+            fs::path user_files_absolute_path = fs::canonical(fs::path(getContext()->getUserFilesPath()));
+            fs::path file_path(filename);
+            if (file_path.is_relative())
+                file_path = user_files_absolute_path / file_path;
+            fs::path file_absolute_path = fs::canonical(file_path);
+            checkReadIsAllowedOrThrow(user_files_absolute_path.string(), file_absolute_path);
 
-            checked_filenames[row] = file_absolute_path;
-            auto file = Poco::File(file_absolute_path);
+            checked_filenames[row] = file_absolute_path.string();
 
-            if (!file.exists())
-                throw Exception(fmt::format("File {} doesn't exist.", file_absolute_path), ErrorCodes::FILE_DOESNT_EXIST);
+            if (!fs::exists(file_absolute_path))
+                throw Exception(fmt::format("File {} doesn't exist.", file_absolute_path.string()), ErrorCodes::FILE_DOESNT_EXIST);
 
-            const auto current_file_size = Poco::File(file_absolute_path).getSize();
+            const auto current_file_size = fs::file_size(file_absolute_path);
 
             result_offset += current_file_size + 1;
             res_offsets[row] = result_offset;
@@ -117,8 +116,8 @@ private:
             if (file_absolute_path.find(user_files_absolute_path) != 0)
                 throw Exception("File is not inside " + user_files_absolute_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
-        Poco::File path_poco_file = Poco::File(file_absolute_path);
-        if (path_poco_file.exists() && path_poco_file.isDirectory())
+        fs::path fs_path(file_absolute_path);
+        if (fs::exists(fs_path) && fs::is_directory(fs_path))
             throw Exception("File can't be a directory", ErrorCodes::INCORRECT_FILE_NAME);
     }
 };
