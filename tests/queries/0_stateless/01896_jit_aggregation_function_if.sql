@@ -72,70 +72,126 @@ SELECT
 FROM test_table_float_values GROUP BY id ORDER BY id;
 DROP TABLE test_table_float_values;
 
--- SELECT 'Test nullable unsigned integer values';
+SELECT 'Test nullable unsigned integer values';
 
--- DROP TABLE IF EXISTS test_table_nullable_unsigned_values;
--- CREATE TABLE test_table_nullable_unsigned_values
--- (
---     id UInt64,
+DROP TABLE IF EXISTS test_table_nullable_unsigned_values;
+CREATE TABLE test_table_nullable_unsigned_values
+(
+    id UInt64,
 
---     value1 Nullable(UInt8),
---     value2 Nullable(UInt16),
---     value3 Nullable(UInt32),
---     value4 Nullable(UInt64)
--- ) ENGINE=TinyLog;
+    value1 Nullable(UInt8),
+    value2 Nullable(UInt16),
+    value3 Nullable(UInt32),
+    value4 Nullable(UInt64),
 
--- INSERT INTO test_table_nullable_unsigned_values SELECT number % 3, number, number, number, number FROM system.numbers LIMIT 120;
--- SELECT id, sum(value1), sum(value2), sum(value3), sum(value4) FROM test_table_nullable_unsigned_values GROUP BY id ORDER BY id;
--- DROP TABLE test_table_nullable_unsigned_values;
+    predicate_value UInt8
+) ENGINE=TinyLog;
 
--- SELECT 'Test nullable signed integer values';
+INSERT INTO test_table_nullable_unsigned_values SELECT number % 3, number, number, number, number, if(number % 2 == 0, 1, 0)  FROM system.numbers LIMIT 120;
+SELECT
+    id,
+    sumIf(value1, predicate_value),
+    sumIf(value2, predicate_value),
+    sumIf(value3, predicate_value),
+    sumIf(value4, predicate_value)
+FROM test_table_nullable_unsigned_values GROUP BY id ORDER BY id;
+DROP TABLE test_table_nullable_unsigned_values;
 
--- DROP TABLE IF EXISTS test_table_nullable_signed_values;
--- CREATE TABLE test_table_nullable_signed_values
--- (
---     id UInt64,
+SELECT 'Test nullable signed integer values';
 
---     value1 Nullable(Int8),
---     value2 Nullable(Int16),
---     value3 Nullable(Int32),
---     value4 Nullable(Int64)
--- ) ENGINE=TinyLog;
+DROP TABLE IF EXISTS test_table_nullable_signed_values;
+CREATE TABLE test_table_nullable_signed_values
+(
+    id UInt64,
 
--- INSERT INTO test_table_nullable_signed_values SELECT number % 3, number, number, number, number FROM system.numbers LIMIT 120;
--- SELECT id, sum(value1), sum(value2), sum(value3), sum(value4) FROM test_table_nullable_signed_values GROUP BY id ORDER BY id;
--- DROP TABLE test_table_nullable_signed_values;
+    value1 Nullable(Int8),
+    value2 Nullable(Int16),
+    value3 Nullable(Int32),
+    value4 Nullable(Int64),
 
--- SELECT 'Test nullable float values';
+    predicate_value UInt8
+) ENGINE=TinyLog;
 
--- DROP TABLE IF EXISTS test_table_nullable_float_values;
--- CREATE TABLE test_table_nullable_float_values
--- (
---     id UInt64,
+INSERT INTO test_table_nullable_signed_values SELECT number % 3, number, number, number, number, if(number % 2 == 0, 1, 0) FROM system.numbers LIMIT 120;
+SELECT
+    id,
+    sumIf(value1, predicate_value),
+    sumIf(value2, predicate_value),
+    sumIf(value3, predicate_value),
+    sumIf(value4, predicate_value)
+FROM test_table_nullable_signed_values GROUP BY id ORDER BY id;
+DROP TABLE test_table_nullable_signed_values;
 
---     value1 Nullable(Float32),
---     value2 Nullable(Float64)
--- ) ENGINE=TinyLog;
+SELECT 'Test nullable float values';
 
--- INSERT INTO test_table_nullable_float_values SELECT number % 3, number, number FROM system.numbers LIMIT 120;
--- SELECT id, sum(value1), sum(value2) FROM test_table_nullable_float_values GROUP BY id ORDER BY id;
--- DROP TABLE test_table_nullable_float_values;
+DROP TABLE IF EXISTS test_table_nullable_float_values;
+CREATE TABLE test_table_nullable_float_values
+(
+    id UInt64,
 
--- SELECT 'Test null specifics';
+    value1 Nullable(Float32),
+    value2 Nullable(Float64),
 
--- DROP TABLE IF EXISTS test_table_null_specifics;
--- CREATE TABLE test_table_null_specifics
--- (
---     id UInt64,
+    predicate_value UInt8
+) ENGINE=TinyLog;
 
---     value1 Nullable(UInt64),
---     value2 Nullable(UInt64),
---     value3 Nullable(UInt64)
--- ) ENGINE=TinyLog;
+INSERT INTO test_table_nullable_float_values SELECT number % 3, number, number, if(number % 2 == 0, 1, 0) FROM system.numbers LIMIT 120;
+SELECT
+    id,
+    sumIf(value1, predicate_value),
+    sumIf(value2, predicate_value)
+FROM test_table_nullable_float_values GROUP BY id ORDER BY id;
+DROP TABLE test_table_nullable_float_values;
 
--- INSERT INTO test_table_null_specifics VALUES (0, 1, 1, NULL);
--- INSERT INTO test_table_null_specifics VALUES (0, 2, NULL, NULL);
--- INSERT INTO test_table_null_specifics VALUES (0, 3, 3, NULL);
+SELECT 'Test null specifics';
 
--- SELECT id, sum(value1), sum(value2), sum(value3) FROM test_table_null_specifics GROUP BY id ORDER BY id;
--- DROP TABLE IF EXISTS test_table_null_specifics;
+DROP TABLE IF EXISTS test_table_null_specifics;
+CREATE TABLE test_table_null_specifics
+(
+    id UInt64,
+
+    value1 Nullable(UInt64),
+    value2 Nullable(UInt64),
+    value3 Nullable(UInt64),
+
+    predicate_value UInt8
+) ENGINE=TinyLog;
+
+INSERT INTO test_table_null_specifics VALUES (0, 1, 1, NULL, 1);
+INSERT INTO test_table_null_specifics VALUES (0, 2, NULL, NULL, 1);
+INSERT INTO test_table_null_specifics VALUES (0, 3, 3, NULL, 1);
+
+SELECT
+    id,
+    sumIf(value1, predicate_value),
+    sumIf(value2, predicate_value),
+    sumIf(value3, predicate_value)
+FROM test_table_null_specifics GROUP BY id ORDER BY id;
+DROP TABLE IF EXISTS test_table_null_specifics;
+
+SELECT 'Test null variadic';
+
+DROP TABLE IF EXISTS test_table_null_specifics;
+CREATE TABLE test_table_null_specifics
+(
+    id UInt64,
+
+    value1 Nullable(UInt64),
+    value2 Nullable(UInt64),
+    value3 Nullable(UInt64),
+
+    predicate_value UInt8,
+    weight UInt64
+) ENGINE=TinyLog;
+
+INSERT INTO test_table_null_specifics VALUES (0, 1, 1, NULL, 1, 1);
+INSERT INTO test_table_null_specifics VALUES (0, 2, NULL, NULL, 1, 2);
+INSERT INTO test_table_null_specifics VALUES (0, 3, 3, NULL, 1, 3);
+
+SELECT
+    id,
+    avgWeightedIf(value1, weight, predicate_value),
+    avgWeightedIf(value2, weight, predicate_value),
+    avgWeightedIf(value3, weight, predicate_value)
+FROM test_table_null_specifics GROUP BY id ORDER BY id;
+DROP TABLE IF EXISTS test_table_null_specifics;
