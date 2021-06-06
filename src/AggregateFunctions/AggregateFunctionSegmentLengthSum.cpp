@@ -38,7 +38,7 @@ namespace
 
         for (const auto & arg : args)
         {
-            if (!isNativeNumber(arg) && !isDateOrDateTime(arg))
+            if (!isNativeNumber(arg) && !isDate(arg) && !isDateTime(arg) && !isDateTime64(arg))
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument of aggregate function " + name
                         + ", must be Number, Date, DateTime or DateTime64",
