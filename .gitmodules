@@ -49,6 +49,7 @@
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse-Extras/boost.git
+	branch = master
 [submodule "contrib/base64"]
 	path = contrib/base64
 	url = https://github.com/ClickHouse-Extras/Turbo-Base64.git
