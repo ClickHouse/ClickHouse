@@ -106,6 +106,16 @@ public:
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
         }
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        return false;
+    }
+
+#endif
+
 };
 
 template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped>
@@ -167,6 +177,15 @@ public:
             this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
         }
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        return false;
+    }
+
+#endif
 
 private:
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
