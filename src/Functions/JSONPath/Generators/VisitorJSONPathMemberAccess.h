@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Functions/JSONPath/ASTs/ASTJSONPathMemberAccess.h>
 #include <Functions/JSONPath/Generators/IVisitor.h>
 #include <Functions/JSONPath/Generators/VisitorStatus.h>
