@@ -237,7 +237,7 @@
 	url = https://github.com/evillique/libstemmer_c.git
 [submodule "contrib/wordnet-blast"]
 	path = contrib/wordnet-blast
-	url = git@github.com:evillique/wordnet-blast.git
+	url = https://github.com/evillique/wordnet-blast.git
 [submodule "contrib/lemmagen-c"]
 	path = contrib/lemmagen-c
 	url = https://github.com/evillique/lemmagen-c.git
