@@ -4,7 +4,6 @@
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -37,7 +36,7 @@ TotalsHavingStep::TotalsHavingStep(
             input_stream_,
             TotalsHavingTransform::transformHeader(
                     input_stream_.header,
-                    actions_dag_.get(),
+                    (actions_dag_ ? std::make_shared<ExpressionActions>(actions_dag_) : nullptr),
                     final_),
             getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
@@ -49,18 +48,11 @@ TotalsHavingStep::TotalsHavingStep(
 {
 }
 
-void TotalsHavingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
+void TotalsHavingStep::transformPipeline(QueryPipeline & pipeline)
 {
-    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings()) : nullptr;
-
     auto totals_having = std::make_shared<TotalsHavingTransform>(
-        pipeline.getHeader(),
-        overflow_row,
-        expression_actions,
-        filter_column_name,
-        totals_mode,
-        auto_include_threshold,
-        final);
+            pipeline.getHeader(), overflow_row, (actions_dag ? std::make_shared<ExpressionActions>(actions_dag) : nullptr),
+            filter_column_name, totals_mode, auto_include_threshold, final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
 }
@@ -99,17 +91,6 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
             first = false;
             settings.out << action.toString() << '\n';
         }
-    }
-}
-
-void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    map.add("Mode", totalsModeToString(totals_mode, auto_include_threshold));
-    if (actions_dag)
-    {
-        map.add("Filter column", filter_column_name);
-        auto expression = std::make_shared<ExpressionActions>(actions_dag);
-        map.add("Expression", expression->toTree());
     }
 }
 

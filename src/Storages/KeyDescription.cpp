@@ -67,14 +67,14 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 void KeyDescription::recalculateWithNewAST(
     const ASTPtr & new_ast,
     const ColumnsDescription & columns,
-    ContextPtr context)
+    const Context & context)
 {
     *this = getSortingKeyFromAST(new_ast, columns, context, additional_column);
 }
 
 void KeyDescription::recalculateWithNewColumns(
     const ColumnsDescription & new_columns,
-    ContextPtr context)
+    const Context & context)
 {
     *this = getSortingKeyFromAST(definition_ast, new_columns, context, additional_column);
 }
@@ -82,7 +82,7 @@ void KeyDescription::recalculateWithNewColumns(
 KeyDescription KeyDescription::getKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    ContextPtr context)
+    const Context & context)
 {
     return getSortingKeyFromAST(definition_ast, columns, context, {});
 }
@@ -114,7 +114,7 @@ bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
 KeyDescription KeyDescription::getSortingKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    ContextPtr context,
+    const Context & context,
     const std::optional<String> & additional_column)
 {
     KeyDescription result;

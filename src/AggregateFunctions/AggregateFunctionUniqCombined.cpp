@@ -3,13 +3,11 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 
-#include <Common/FieldVisitors.h>
-
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <functional>
-
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {

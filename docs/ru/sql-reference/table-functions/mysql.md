@@ -5,15 +5,15 @@ toc_title: mysql
 
 # mysql {#mysql}
 
-Позволяет выполнять запросы `SELECT` и `INSERT` над данными, хранящимися на удалённом MySQL сервере.
+Позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом MySQL сервере.
 
 **Синтаксис**
 
 ``` sql
-mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
+mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `host:port` — адрес сервера MySQL.
 
@@ -29,10 +29,9 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
     - `0` - выполняется запрос `INSERT INTO`.
     - `1` - выполняется запрос `REPLACE INTO`.
 
--   `on_duplicate_clause` — выражение `ON DUPLICATE KEY on_duplicate_clause`, добавляемое в запрос `INSERT`. Может быть передано только с помощью  `replace_query = 0` (если вы одновременно передадите `replace_query = 1` и `on_duplicate_clause`, будет сгенерировано исключение). 
+-   `on_duplicate_clause` — выражение `ON DUPLICATE KEY on_duplicate_clause`, добавляемое в запрос `INSERT`. Может быть передано только с помощью  `replace_query = 0` (если вы одновременно передадите `replace_query = 1` и `on_duplicate_clause`, будет сгенерировано исключение).
 
-        Пример: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, где `on_duplicate_clause` это `UPDATE c2 = c2 + 1`. 
-        Выражения, которые могут использоваться в качестве `on_duplicate_clause` в секции `ON DUPLICATE KEY`, можно посмотреть в документации по [MySQL](http://www.mysql.ru/docs/).
+        Пример: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, где `on_duplicate_clause` это `UPDATE c2 = c2 + 1;`
 
 Простые условия `WHERE` такие как `=, !=, >, >=, <, =` выполняются на стороне сервера MySQL.
 
@@ -43,7 +42,7 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 Объект таблицы с теми же столбцами, что и в исходной таблице MySQL.
 
 !!! note "Примечание"
-    Чтобы отличить табличную функцию `mysql (...)` в запросе `INSERT` от имени таблицы со списком столбцов, используйте ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
+    Чтобы отличить табличную функцию `mysql (...)` в запросе `INSERT` от имени таблицы со списком имен столбцов, используйте ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
 
 **Примеры**
 
@@ -97,3 +96,4 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 -   [Движок таблиц ‘MySQL’](../../sql-reference/table-functions/mysql.md)
 -   [Использование MySQL как источника данных для внешнего словаря](../../sql-reference/table-functions/mysql.md#dicts-external_dicts_dict_sources-mysql)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table_functions/mysql/) <!--hide-->

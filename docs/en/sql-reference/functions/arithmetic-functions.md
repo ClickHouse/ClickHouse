@@ -82,3 +82,4 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 Returns the least common multiple of the numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

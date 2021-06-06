@@ -3,7 +3,6 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnArray.h>
 #include <Core/Field.h>
 
 

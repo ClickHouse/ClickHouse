@@ -1,21 +1,21 @@
 ---
 toc_priority: 61
-toc_title: "Инструкция для разработчиков"
+toc_title: "\u0418\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u044f\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
 ---
 
 # Инструкция для разработчиков
 
 Сборка ClickHouse поддерживается на Linux, FreeBSD, Mac OS X.
 
-## Если вы используете Windows {#esli-vy-ispolzuete-windows}
+# Если вы используете Windows {#esli-vy-ispolzuete-windows}
 
 Если вы используете Windows, вам потребуется создать виртуальную машину с Ubuntu. Для работы с виртуальной машиной, установите VirtualBox. Скачать Ubuntu можно на сайте: https://www.ubuntu.com/#download Создайте виртуальную машину из полученного образа. Выделите для неё не менее 4 GB оперативной памяти. Для запуска терминала в Ubuntu, найдите в меню программу со словом terminal (gnome-terminal, konsole или что-то в этом роде) или нажмите Ctrl+Alt+T.
 
-## Если вы используете 32-битную систему {#esli-vy-ispolzuete-32-bitnuiu-sistemu}
+# Если вы используете 32-битную систему {#esli-vy-ispolzuete-32-bitnuiu-sistemu}
 
 ClickHouse не работает и не собирается на 32-битных системах. Получите доступ к 64-битной системе и продолжайте.
 
-## Создание репозитория на GitHub {#sozdanie-repozitoriia-na-github}
+# Создание репозитория на GitHub {#sozdanie-repozitoriia-na-github}
 
 Для работы с репозиторием ClickHouse, вам потребуется аккаунт на GitHub. Наверное, он у вас уже есть.
 
@@ -34,7 +34,7 @@ ClickHouse не работает и не собирается на 32-битны
 
 Подробное руководство по использованию Git: https://git-scm.com/book/ru/v2
 
-## Клонирование репозитория на рабочую машину {#klonirovanie-repozitoriia-na-rabochuiu-mashinu}
+# Клонирование репозитория на рабочую машину {#klonirovanie-repozitoriia-na-rabochuiu-mashinu}
 
 Затем вам потребуется загрузить исходники для работы на свой компьютер. Это называется «клонирование репозитория», потому что создаёт на вашем компьютере локальную копию репозитория, с которой вы будете работать.
 
@@ -78,7 +78,7 @@ ClickHouse не работает и не собирается на 32-битны
 
 После этого, вы сможете добавлять в свой репозиторий обновления из репозитория Яндекса с помощью команды `git pull upstream master`.
 
-### Работа с сабмодулями Git {#rabota-s-sabmoduliami-git}
+## Работа с сабмодулями Git {#rabota-s-sabmoduliami-git}
 
 Работа с сабмодулями git может быть достаточно болезненной. Следующие команды позволят содержать их в порядке:
 
@@ -110,7 +110,7 @@ The next commands would help you to reset all submodules to the initial state (!
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
-## Система сборки {#sistema-sborki}
+# Система сборки {#sistema-sborki}
 
 ClickHouse использует систему сборки CMake и Ninja.
 
@@ -130,25 +130,25 @@ Ninja - система запуска сборочных задач.
 
 Проверьте версию CMake: `cmake --version`. Если версия меньше 3.3, то установите новую версию с сайта https://cmake.org/download/
 
-## Необязательные внешние библиотеки {#neobiazatelnye-vneshnie-biblioteki}
+# Необязательные внешние библиотеки {#neobiazatelnye-vneshnie-biblioteki}
 
 ClickHouse использует для сборки некоторое количество внешних библиотек. Но ни одну из них не требуется отдельно устанавливать, так как они собираются вместе с ClickHouse, из исходников, которые расположены в submodules. Посмотреть набор этих библиотек можно в директории contrib.
 
-## Компилятор C++ {#kompiliator-c}
+# Компилятор C++ {#kompiliator-c}
 
-В качестве компилятора C++ поддерживается Clang начиная с версии 11.
+В качестве компилятора C++ поддерживается GCC начиная с версии 9 или Clang начиная с версии 8.
 
-Впрочем, наша среда continuous integration проверяет около десятка вариантов сборки, включая gcc, но сборка с помощью gcc непригодна для использования в продакшене.
+Официальные сборки от Яндекса, на данный момент, используют GCC, так как он генерирует слегка более производительный машинный код (разница в среднем до нескольких процентов по нашим бенчмаркам). Clang обычно более удобен для разработки. Впрочем, наша среда continuous integration проверяет около десятка вариантов сборки.
 
-On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
+Для установки GCC под Ubuntu, выполните: `sudo apt install gcc g++`.
 
-```bash
-sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
-```
+Проверьте версию gcc: `gcc --version`. Если версия меньше 10, то следуйте инструкции: https://clickhouse.tech/docs/ru/development/build/#install-gcc-10.
 
 Сборка под Mac OS X поддерживается только для компилятора Clang. Чтобы установить его выполните `brew install llvm`
 
-## Процесс сборки {#protsess-sborki}
+Если вы решили использовать Clang, вы также можете установить `libc++` и `lld`, если вы знаете, что это такое. При желании, установите `ccache`.
+
+# Процесс сборки {#protsess-sborki}
 
 Теперь вы готовы к сборке ClickHouse. Для размещения собранных файлов, рекомендуется создать отдельную директорию build внутри директории ClickHouse:
 
@@ -158,7 +158,14 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 Вы можете иметь несколько разных директорий (build_release, build_debug) для разных вариантов сборки.
 
 Находясь в директории build, выполните конфигурацию сборки с помощью CMake.
-Перед первым запуском необходимо выставить переменные окружения, отвечающие за выбор компилятора.
+Перед первым запуском необходимо выставить переменные окружения, отвечающие за выбор компилятора (в данном примере это - gcc версии 9).
+
+Linux:
+
+    export CC=gcc-10 CXX=g++-10
+    cmake ..
+
+Mac OS X:
 
     export CC=clang CXX=clang++
     cmake ..
@@ -199,7 +206,7 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
     ls -l programs/clickhouse
 
-## Запуск собранной версии ClickHouse {#zapusk-sobrannoi-versii-clickhouse}
+# Запуск собранной версии ClickHouse {#zapusk-sobrannoi-versii-clickhouse}
 
 Для запуска сервера из под текущего пользователя, с выводом логов в терминал и с использованием примеров конфигурационных файлов, расположенных в исходниках, перейдите в директорию `ClickHouse/programs/server/` (эта директория находится не в директории build) и выполните:
 
@@ -226,7 +233,7 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
     sudo service clickhouse-server stop
     sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
-## Среда разработки {#sreda-razrabotki}
+# Среда разработки {#sreda-razrabotki}
 
 Если вы не знаете, какую среду разработки использовать, то рекомендуется использовать CLion. CLion является платным ПО, но его можно использовать бесплатно в течение пробного периода. Также он бесплатен для учащихся. CLion можно использовать как под Linux, так и под Mac OS X.
 
@@ -236,7 +243,7 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 На всякий случай заметим, что CLion самостоятельно создаёт свою build директорию, самостоятельно выбирает тип сборки debug по-умолчанию, для конфигурации использует встроенную в CLion версию CMake вместо установленного вами, а для запуска задач использует make вместо ninja. Это нормально, просто имейте это ввиду, чтобы не возникало путаницы.
 
-## Написание кода {#napisanie-koda}
+# Написание кода {#napisanie-koda}
 
 Описание архитектуры ClickHouse: https://clickhouse.tech/docs/ru/development/architecture/
 
@@ -246,7 +253,7 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 Список задач: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
-## Тестовые данные {#testovye-dannye}
+# Тестовые данные {#testovye-dannye}
 
 Разработка ClickHouse часто требует загрузки реалистичных наборов данных. Особенно это важно для тестирования производительности. Специально для вас мы подготовили набор данных, представляющий собой анонимизированные данные Яндекс.Метрики. Загрузка этих данных потребует ещё 3 GB места на диске. Для выполнения большинства задач разработки, загружать эти данные не обязательно.
 
@@ -267,7 +274,7 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
     clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
     clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
 
-## Создание Pull Request {#sozdanie-pull-request}
+# Создание Pull Request {#sozdanie-pull-request}
 
 Откройте свой форк репозитория в интерфейсе GitHub. Если вы вели разработку в бранче, выберите этот бранч. На странице будет доступна кнопка «Pull request». По сути, это означает «создать заявку на принятие моих изменений в основной репозиторий».
 

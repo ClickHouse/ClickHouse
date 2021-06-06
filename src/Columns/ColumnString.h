@@ -111,7 +111,7 @@ public:
     }
 
 /// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -128,7 +128,7 @@ public:
         offsets.push_back(new_size);
     }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
@@ -188,8 +188,6 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
-
-    const char * skipSerializedInArena(const char * pos) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
@@ -278,6 +276,7 @@ public:
     {
         return typeid(rhs) == typeid(ColumnString);
     }
+
 
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }

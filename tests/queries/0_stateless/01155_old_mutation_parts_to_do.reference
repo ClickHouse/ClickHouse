@@ -1,7 +1,0 @@
-waiting	default	rmt	0000000002	UPDATE m = m * toInt8(s) WHERE n = 3
-1	4	2
-2	15	5
-3	7	fail
-4	11	13
-0000000000	UPDATE m = m * toInt8(s) WHERE 1	[]	0	1
-0000000001	UPDATE m = m * toInt8(s) WHERE 1	[]	0	1

@@ -74,7 +74,6 @@ public:
     {
         const Base::NestedPoolPtr pool;
         size_t error_count;
-        size_t slowdown_count;
         std::chrono::seconds estimated_recovery_time;
     };
 

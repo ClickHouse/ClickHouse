@@ -9,8 +9,6 @@
 namespace DB
 {
 
-class MMappedFileCache;
-
 
 /// Unlike CompressedReadBuffer, it can do seek.
 class CompressedReadBufferFromFile : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
@@ -33,7 +31,7 @@ public:
     CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
 
     CompressedReadBufferFromFile(
-        const std::string & path, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache,
+        const std::string & path, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, bool allow_different_codecs_ = false);
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);

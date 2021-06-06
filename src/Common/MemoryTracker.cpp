@@ -6,13 +6,11 @@
 #include <Common/formatReadable.h>
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Common/thread_local_rng.h>
 
 #include <atomic>
 #include <cmath>
 #include <random>
 #include <cstdlib>
-
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 thread_local bool _memory_tracker_always_throw_logical_error_on_allocation = false;
@@ -26,8 +24,8 @@ namespace
 ///
 /// - when it is explicitly blocked with LockExceptionInThread
 ///
-/// - when there are uncaught exceptions objects in the current thread
-///   (to avoid std::terminate())
+/// - to avoid std::terminate(), when stack unwinding is currently in progress
+///   in this thread.
 ///
 ///   NOTE: that since C++11 destructor marked with noexcept by default, and
 ///   this means that any throw from destructor (that is not marked with
