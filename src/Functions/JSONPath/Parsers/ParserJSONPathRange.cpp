@@ -89,11 +89,11 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
         if (range_indices.first >= range_indices.second)
         {
-            throw Exception{
+            throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Start of range must be greater than end of range, however {} >= {}",
                 range_indices.first,
-                range_indices.second};
+                range_indices.second);
         }
 
         range->ranges.push_back(std::move(range_indices));
