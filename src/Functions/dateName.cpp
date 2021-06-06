@@ -209,7 +209,7 @@ private:
         static inline void writeMonth(char *& target, Time source, const DateLUTImpl & timezone)
         {
             const auto month = ToMonthImpl::execute(source, timezone);
-            const String monthnames[12]
+            static constexpr std::string_view monthnames[]
                 = {"January",
                    "February",
                    "March",
@@ -243,7 +243,7 @@ private:
         static inline void writeWeekday(char *& target, Time source, const DateLUTImpl & timezone)
         {
             const auto day = ToDayOfWeekImpl::execute(source, timezone);
-            const String daynames[12] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+            static constexpr std::string_view daynames[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
             writeString(target, daynames[day - 1]);
         }
 
@@ -262,7 +262,7 @@ private:
             writeNumber(target, ToSecondImpl::execute(source, timezone));
         }
 
-        static inline void writeString(char *& target, const String & value)
+        static inline void writeString(char *& target, const std::string_view & value)
         {
             size_t size = value.size() + 1; /// With zero terminator
             memcpy(target, value.data(), size);
