@@ -170,7 +170,7 @@ def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
     return testcase_args
 
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
-    client = args.client
+    client = args.testcase_client
     start_time = args.testcase_start_time
     database = args.testcase_database
 
