@@ -1390,7 +1390,8 @@ def test_librdkafka_compression(kafka_cluster):
         logging.debug(('Check compression {}'.format(compression_type)))
 
         topic_name = 'test_librdkafka_compression_{}'.format(compression_type)
-        admin_client = admin.AdminClient({'bootstrap.servers': 'localhost:9092'})
+        admin_client = admin.AdminClient({'bootstrap.servers': "localhost:{}".format(kafka_cluster.kafka_port)})
+
         topic = admin.NewTopic(topic=topic_name, num_partitions=1, replication_factor=1, config={
             'compression.type': compression_type,
         })
