@@ -1,17 +1,16 @@
 #pragma once
 
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/assert_cast.h>
 
-// TODO include this last because of a broken roaring header. See the comment inside.
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 namespace DB
 {
-struct Settings;
+
 /// Counts bitmap operation on numbers.
 template <typename T, typename Data>
 class AggregateFunctionBitmap final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>
