@@ -39,9 +39,6 @@ struct CompiledFunctionWeightFunction
     }
 };
 
-/** This child of LRUCache breaks one of it's invariants: total weight may be changed after insertion.
- * We have to do so, because we don't known real memory consumption of generated LLVM code for every function.
- */
 class CompiledExpressionCache : public LRUCache<UInt128, CompiledFunctionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>
 {
 public:

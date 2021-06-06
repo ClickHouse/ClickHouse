@@ -286,6 +286,10 @@ Aggregator::Aggregator(const Params & params_)
 
 void Aggregator::compileAggregateFunctions()
 {
+    static std::unordered_map<UInt128, UInt64, UInt128Hash> aggregate_functions_description_to_count;
+    static std::unordered_map<std::string, CompiledAggregateFunctions> aggregation_functions_dump_to_add_compiled;
+    static std::mutex mtx;
+
     if (!params.compile_aggregate_expressions || params.overflow_row)
         return;
 
@@ -321,11 +325,17 @@ void Aggregator::compileAggregateFunctions()
 
     CompiledAggregateFunctions compiled_aggregate_functions;
 
-    {
-        static std::unordered_map<std::string, CompiledAggregateFunctions> aggregation_functions_dump_to_add_compiled;
-        static std::mutex mtx;
+    SipHash aggregate_function_description_hash;
+    aggregate_function_description_hash.update(functions_description);
 
+    UInt128 aggregate_function_description_hash_result;
+    aggregate_function_description_hash.get128(aggregate_function_description_hash_result);
+
+    {
         std::lock_guard<std::mutex> lock(mtx);
+
+        if (aggregate_functions_description_to_count[aggregate_function_description_hash_result]++ < params.min_count_to_compile_aggregate_expression)
+            return;
 
         auto it = aggregation_functions_dump_to_add_compiled.find(functions_description);
         if (it != aggregation_functions_dump_to_add_compiled.end())
