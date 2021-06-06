@@ -1,5 +1,3 @@
-#pragma once
-
 #include <Functions/JSONPath/ASTs/ASTJSONPathMemberAccess.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPathMemberAccess.h>
 
