@@ -132,7 +132,7 @@ StoragePtr TemporaryTableHolder::getTable() const
 }
 
 
-void DatabaseCatalog::loadTemporaryDatabase()
+void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
 
