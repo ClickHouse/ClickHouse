@@ -779,6 +779,7 @@
         "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
         "01748_dictionary_table_dot", // creates database
         "00950_dict_get",
+        "01870_modulo_partition_key",
         "01850_dist_INSERT_preserve_error" // uses cluster with different static databases shard_0/shard_1
     ]
 }

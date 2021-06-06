@@ -2260,7 +2260,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
             part_desc->res_part = fetcher.fetchPart(
-                metadata_snapshot, part_desc->found_new_part_name, source_replica_path,
+                metadata_snapshot, global_context, part_desc->found_new_part_name, source_replica_path,
                 address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
@@ -3694,7 +3694,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                     ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
             return fetcher.fetchPart(
-                metadata_snapshot, part_name, source_replica_path,
+                metadata_snapshot, global_context, part_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, user_password.first, user_password.second, interserver_scheme, to_detached);
         };
