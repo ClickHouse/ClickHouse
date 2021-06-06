@@ -1,28 +1,25 @@
 #pragma once
 
-#include <algorithm>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <boost/noncopyable.hpp>
-#include <Common/HashTable/SmallTable.h>
-#include <Common/PODArray.h>
-
-// Include this header last, because it is an auto-generated dump of questionable
-// garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
-// TODO: find out what it is. On github, they have proper interface headers like
-// this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
 #include <roaring.hh>
 #include <roaring64map.hh>
 
+#include <algorithm>
+#include <boost/noncopyable.hpp>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/HashTable/SmallTable.h>
+#include <Common/PODArray.h>
+
+
 namespace DB
 {
-struct Settings;
 
 enum BitmapKind
 {
     Small = 0,
     Bitmap = 1
 };
+
 
 /**
   * For a small number of values - an array of fixed size "on the stack".
