@@ -485,7 +485,7 @@ Arena & ColumnAggregateFunction::createOrGetArena()
 }
 
 
-static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, IAggregateFunction * func)
+static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, const IAggregateFunction * func)
 {
     data.push_back(arena.alignedAlloc(func->sizeOfData(), func->alignOfData()));
     try
