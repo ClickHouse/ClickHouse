@@ -218,6 +218,7 @@ private:
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
+    void replacePartitionUpdate(const ASTPtr & partition, bool replace, const MutationCommands & commands, ContextPtr context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) override;
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
     /// Update mutation entries after part mutation execution. May reset old
@@ -260,6 +261,14 @@ protected:
         bool has_force_restore_data_flag);
 
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+
+private:
+    void replacePartitionFromOrUpdate(
+        const StoragePtr & source_table,
+        const ASTPtr & partition,
+        bool replace,
+        const MutationCommands & commands,
+        ContextPtr local_context);
 };
 
 }

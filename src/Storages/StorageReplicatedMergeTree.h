@@ -677,6 +677,7 @@ private:
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context) override;
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
+    void replacePartitionUpdate(const ASTPtr & partition, bool replace, const MutationCommands & commands, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
     void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;
     void fetchPartition(
@@ -720,6 +721,14 @@ protected:
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag,
         bool allow_renaming_);
+
+private:
+    void replacePartitionFromOrUpdate(
+        const StoragePtr & source_table, // not-null if replace from other tables
+        const ASTPtr & partition,
+        bool replace,
+        const MutationCommands & commands, // not empty if replace update from self
+        ContextPtr query_context);
 };
 
 

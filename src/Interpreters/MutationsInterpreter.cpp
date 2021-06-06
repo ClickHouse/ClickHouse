@@ -215,7 +215,8 @@ bool isStorageTouchedByMutations(
     /// Interpreter must be alive, when we use result of execute() method.
     /// For some reason it may copy context and and give it into ExpressionBlockInputStream
     /// after that we will use context from destroyed stack frame in our stream.
-    InterpreterSelectQuery interpreter(select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits());
+    InterpreterSelectQuery interpreter(
+        select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
     BlockInputStreamPtr in = interpreter.execute().getInputStream();
 
     Block block = in->read();
@@ -274,31 +275,41 @@ MutationsInterpreter::MutationsInterpreter(
     , commands(std::move(commands_))
     , context(Context::createCopy(context_))
     , can_execute(can_execute_)
-    , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits())
+    , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
 {
     mutation_ast = prepare(!can_execute);
 }
 
 static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
 {
+    // If it's a ALTER REPLACE PARTITION FROM PARTITION UPDATE command, the underlying storage will be StorageFromMergeTreeDataPart.
+    const StorageFromMergeTreeDataPart * merge_tree_parts = dynamic_cast<const StorageFromMergeTreeDataPart *>(storage.get());
     const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
-    if (!merge_tree_data)
+    if (!merge_tree_data && !merge_tree_parts)
         return {};
 
     NameSet key_columns;
 
-    for (const String & col : metadata_snapshot->getColumnsRequiredForPartitionKey())
-        key_columns.insert(col);
+    // We allow changing partition keys for ALTER REPLACE PARTITION FROM PARTITION UPDATE command.
+    if (merge_tree_data)
+    {
+        for (const String & col : metadata_snapshot->getColumnsRequiredForPartitionKey())
+            key_columns.insert(col);
+    }
 
     for (const String & col : metadata_snapshot->getColumnsRequiredForSortingKey())
         key_columns.insert(col);
+
     /// We don't process sample_by_ast separately because it must be among the primary key columns.
 
-    if (!merge_tree_data->merging_params.sign_column.empty())
-        key_columns.insert(merge_tree_data->merging_params.sign_column);
+    const MergeTreeData::MergingParams & merging_params
+        = merge_tree_parts ? merge_tree_parts->getMergingParams() : merge_tree_data->merging_params; //-V522
 
-    if (!merge_tree_data->merging_params.version_column.empty())
-        key_columns.insert(merge_tree_data->merging_params.version_column);
+    if (!merging_params.sign_column.empty())
+        key_columns.insert(merging_params.sign_column);
+
+    if (!merging_params.version_column.empty())
+        key_columns.insert(merging_params.version_column);
 
     return key_columns;
 }
@@ -394,12 +405,16 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
-    NameSet updated_columns;
+    updated_columns.clear();
     for (const MutationCommand & command : commands)
     {
         for (const auto & kv : command.column_to_update_expression)
         {
-            updated_columns.insert(kv.first);
+            // Skip if the update clause doesn't change anything, e.g. update a = a
+            if (auto * t = kv.second->as<ASTIdentifier>(); t && t->shortName() == kv.first)
+                continue;
+            else
+                updated_columns.insert(kv.first);
         }
     }
 
@@ -648,8 +663,11 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 stages.emplace_back(context);
 
             for (const auto & column : changed_columns)
-                stages.back().column_to_updated.emplace(
-                    column, std::make_shared<ASTIdentifier>(column));
+            {
+                stages.back().column_to_updated.emplace(column, std::make_shared<ASTIdentifier>(column));
+                /// Track the updated columns to make sure dependent indices and projections are recalculated
+                updated_columns.insert(column);
+            }
         }
 
         if (!unchanged_columns.empty())
@@ -669,7 +687,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
                 InterpreterSelectQuery interpreter{
                     select_query, context, storage, metadata_snapshot,
-                    SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+                    SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits().ignoreProjections()};
 
                 auto first_stage_header = interpreter.getSampleBlock();
                 QueryPlan plan;

@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/queryToString.h>
 #include <common/logger_useful.h>
+#include <Storages/PartitionCommands.h>
 
 
 namespace DB
@@ -163,6 +164,10 @@ void MutationCommands::readText(ReadBuffer & in)
 {
     String commands_str;
     readEscapedString(commands_str, in);
+
+    // empty query appears in REPLACE PARTITION query without UPDATE clause
+    if (commands_str.empty())
+        return;
 
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(

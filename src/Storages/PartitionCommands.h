@@ -4,6 +4,7 @@
 #include <common/types.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/MutationCommands.h>
 
 #include <optional>
 #include <vector>
@@ -48,6 +49,7 @@ struct PartitionCommand
     String from_database;
     String from_table;
     bool replace = true;
+    MutationCommand update;
 
     /// For MOVE PARTITION
     String to_database;
