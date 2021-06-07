@@ -19,9 +19,6 @@ alter table test_alter_attach_01901D replace partition '2020-01-01' from test_al
 select count() from test_alter_attach_01901D;
 select count() from test_alter_attach_01901S;
 
-
 DROP TABLE test_alter_attach_01901S;
 DROP TABLE test_alter_attach_01901D;
-
-
 
