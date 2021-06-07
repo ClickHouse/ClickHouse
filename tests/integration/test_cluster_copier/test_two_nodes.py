@@ -387,10 +387,10 @@ class TaskDropTargetPartition:
         assert a == b, "Data"
 
 
-def execute_task(task, cmd_options):
+def execute_task(started_cluster, task, cmd_options):
     task.start()
 
-    zk = cluster.get_kazoo_client('zoo1')
+    zk = started_cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
     # Run cluster-copier processes on each node
@@ -407,8 +407,8 @@ def execute_task(task, cmd_options):
 
     print(cmd)
 
-    for instance_name, instance in cluster.instances.items():
-        instance = cluster.instances[instance_name]
+    for instance_name, instance in started_cluster.instances.items():
+        instance = started_cluster.instances[instance_name]
         container = instance.get_docker_handle()
         instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs_two_nodes/config-copier.xml"), "/etc/clickhouse-server/config-copier.xml")
         logging.info("Copied copier config to {}".format(instance.name))
@@ -421,7 +421,7 @@ def execute_task(task, cmd_options):
     # time.sleep(1000)
 
     # Wait for copiers stopping and check their return codes
-    for exec_id, instance in zip(copiers_exec_ids, iter(cluster.instances.values())):
+    for exec_id, instance in zip(copiers_exec_ids, iter(started_cluster.instances.values())):
         while True:
             res = docker_api.exec_inspect(exec_id)
             if not res['Running']:
@@ -439,19 +439,19 @@ def execute_task(task, cmd_options):
 # Tests
 @pytest.mark.timeout(600)
 def test_different_schema(started_cluster):
-    execute_task(TaskWithDifferentSchema(started_cluster), [])
+    execute_task(started_cluster, TaskWithDifferentSchema(started_cluster), [])
 
 
 @pytest.mark.timeout(600)
 def test_ttl_columns(started_cluster):
-    execute_task(TaskTTL(started_cluster), [])
+    execute_task(started_cluster, TaskTTL(started_cluster), [])
 
 
 @pytest.mark.timeout(600)
 def test_skip_index(started_cluster):
-    execute_task(TaskSkipIndex(started_cluster), [])
+    execute_task(started_cluster, TaskSkipIndex(started_cluster), [])
 
 
 @pytest.mark.timeout(600)
 def test_ttl_move_to_volume(started_cluster):
-    execute_task(TaskTTLMoveToVolume(started_cluster), [])
+    execute_task(started_cluster, TaskTTLMoveToVolume(started_cluster), [])

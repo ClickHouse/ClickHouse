@@ -121,10 +121,10 @@ class TaskReplicatedWithoutArguments:
             node.query("DROP TABLE trivial_without_arguments")
 
 
-def execute_task(task, cmd_options):
+def execute_task(started_cluster, task, cmd_options):
     task.start()
 
-    zk = cluster.get_kazoo_client('zoo1')
+    zk = started_cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
     try:
@@ -137,7 +137,7 @@ def execute_task(task, cmd_options):
     zk.create(zk_task_path + "/description", task.copier_task_config.encode())
 
     # Run cluster-copier processes on each node
-    docker_api = cluster.docker_client.api
+    docker_api = started_cluster.docker_client.api
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
@@ -146,10 +146,10 @@ def execute_task(task, cmd_options):
            '--base-dir', '/var/log/clickhouse-server/copier']
     cmd += cmd_options
 
-    copiers = list(cluster.instances.keys())
+    copiers = list(started_cluster.instances.keys())
 
     for instance_name in copiers:
-        instance = cluster.instances[instance_name]
+        instance = started_cluster.instances[instance_name]
         container = instance.get_docker_handle()
         instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs/config-copier.xml"),
                                         "/etc/clickhouse-server/config-copier.xml")
@@ -162,7 +162,7 @@ def execute_task(task, cmd_options):
 
     # Wait for copiers stopping and check their return codes
     for exec_id, instance_name in zip(copiers_exec_ids, copiers):
-        instance = cluster.instances[instance_name]
+        instance = started_cluster.instances[instance_name]
         while True:
             res = docker_api.exec_inspect(exec_id)
             if not res['Running']:
@@ -183,10 +183,10 @@ def execute_task(task, cmd_options):
 @pytest.mark.parametrize(('use_sample_offset'),[False,True])
 def test_trivial_copy(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--experimental-use-sample-offset', '1'])
+        execute_task(started_cluster, TaskTrivial(started_cluster, use_sample_offset), ['--experimental-use-sample-offset', '1'])
     else:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), [])
+        execute_task(started_cluster, TaskTrivial(started_cluster, use_sample_offset), [])
 
 
 def test_trivial_without_arguments(started_cluster):
-    execute_task(TaskReplicatedWithoutArguments(started_cluster), [])
+    execute_task(started_cluster, TaskReplicatedWithoutArguments(started_cluster), [])
