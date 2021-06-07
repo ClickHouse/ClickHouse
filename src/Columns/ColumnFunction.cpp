@@ -33,7 +33,7 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
     for (auto & column : capture)
         column.column = column.column->cloneResized(size);
 
-    return ColumnFunction::create(size, function, capture, is_short_circuit_argument);
+    return ColumnFunction::create(size, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
 ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
@@ -47,7 +47,7 @@ ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
         column.column = column.column->replicate(offsets);
 
     size_t replicated_size = 0 == size_ ? 0 : offsets.back();
-    return ColumnFunction::create(replicated_size, function, capture, is_short_circuit_argument);
+    return ColumnFunction::create(replicated_size, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
 ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
@@ -56,7 +56,7 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     for (auto & column : capture)
         column.column = column.column->cut(start, length);
 
-    return ColumnFunction::create(length, function, capture, is_short_circuit_argument);
+    return ColumnFunction::create(length, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
 ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const
@@ -79,7 +79,7 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, 
     else
         filtered_size = capture.front().column->size();
 
-    return ColumnFunction::create(filtered_size, function, capture, is_short_circuit_argument);
+    return ColumnFunction::create(filtered_size, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
 void ColumnFunction::expand(const Filter & mask, bool inverted)
@@ -108,7 +108,7 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
     for (auto & column : capture)
         column.column = column.column->permute(perm, limit);
 
-    return ColumnFunction::create(limit, function, capture, is_short_circuit_argument);
+    return ColumnFunction::create(limit, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
 ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
@@ -117,7 +117,7 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
     for (auto & column : capture)
         column.column = column.column->index(indexes, limit);
 
-    return ColumnFunction::create(limit, function, capture, is_short_circuit_argument);
+    return ColumnFunction::create(limit, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
 std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_columns,
