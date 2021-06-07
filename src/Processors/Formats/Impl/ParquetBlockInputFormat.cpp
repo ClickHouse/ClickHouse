@@ -31,14 +31,13 @@ namespace ErrorCodes
     } while (false)
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_)
-    : IInputFormat(std::move(header_), in_), arrow_column_to_ch_column(std::make_unique<ArrowColumnToCHColumn>())
+    : IInputFormat(std::move(header_), in_)
 {
 }
 
 Chunk ParquetBlockInputFormat::generate()
 {
     Chunk res;
-    const Block & header = getPort().getHeader();
 
     if (!file_reader)
         prepareReader();
@@ -54,7 +53,7 @@ Chunk ParquetBlockInputFormat::generate()
 
     ++row_group_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, header, "Parquet");
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
     return res;
 }
 
@@ -98,6 +97,8 @@ void ParquetBlockInputFormat::prepareReader()
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
+
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), schema, "Parquet");
 
     int index = 0;
     for (int i = 0; i < schema->num_fields(); ++i)

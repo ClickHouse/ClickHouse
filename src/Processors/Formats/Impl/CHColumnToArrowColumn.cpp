@@ -60,7 +60,7 @@ namespace DB
     static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
     {
         if (!status.ok())
-            throw Exception{"Error with a " + format_name + " column \"" + column_name + "\": " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+            throw Exception{fmt::format("Error with a {} column \"{}\": {}.", format_name, column_name, status.ToString()), ErrorCodes::UNKNOWN_EXCEPTION};
     }
 
     template <typename NumericType, typename ArrowBuilderType>
@@ -191,7 +191,7 @@ namespace DB
             case TypeIndex::UInt64:
                 return extractIndexesImpl<UInt64>(column, start, end);
             default:
-                throw Exception("Indexes column must be ColumnUInt, got " + column->getName(),
+                throw Exception(fmt::format("Indexes column must be ColumnUInt, got {}.", column->getName()),
                                 ErrorCodes::LOGICAL_ERROR);
         }
     }
@@ -439,7 +439,7 @@ namespace DB
         {
             throw Exception
                 {
-                    "Internal type \"" + column_type_name + "\" of a column \"" + column_name + "\" is not supported for conversion into a " + format_name + " data format",
+                    fmt::format("Internal type \"{}\" of a column \"{}\" is not supported for conversion into a {} data format.", column_type_name, column_name, format_name),
                     ErrorCodes::UNKNOWN_TYPE
                 };
         }
@@ -486,7 +486,7 @@ namespace DB
             case TypeIndex::UInt64:
                 return arrow::int64();
             default:
-                throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got " + indexes_column->getName(),
+                throw Exception(fmt::format("Indexes column for getUniqueIndex must be ColumnUInt, got {}.", indexes_column->getName()),
                                       ErrorCodes::LOGICAL_ERROR);
         }
     }
@@ -580,51 +580,61 @@ namespace DB
             return arrow_type_it->second;
         }
 
-        throw Exception{"The type \"" + column_type->getName() + "\" of a column \"" + column_name + "\""
-                             " is not supported for conversion into a " + format_name + " data format",
+        throw Exception{fmt::format("The type \"{}\" of a column \"{}\" is not supported for conversion into a {} data format.", column_type->getName(), column_name, format_name),
                              ErrorCodes::UNKNOWN_TYPE};
+    }
+
+    CHColumnToArrowColumn::CHColumnToArrowColumn(const Block & header, const std::string & format_name_, bool low_cardinality_as_dictionary_)
+        : format_name(format_name_), low_cardinality_as_dictionary(low_cardinality_as_dictionary_)
+    {
+        arrow_fields.reserve(header.columns());
+        header_columns.reserve(header.columns());
+        for (auto column : header.getColumnsWithTypeAndName())
+        {
+            if (!low_cardinality_as_dictionary)
+            {
+                column.type = recursiveRemoveLowCardinality(column.type);
+                column.column = recursiveRemoveLowCardinality(column.column);
+            }
+            bool is_column_nullable = false;
+            auto arrow_type = getArrowType(column.type, column.column, column.name, format_name, &is_column_nullable);
+            arrow_fields.emplace_back(std::make_shared<arrow::Field>(column.name, arrow_type, is_column_nullable));
+            header_columns.emplace_back(std::move(column));
+        }
     }
 
     void CHColumnToArrowColumn::chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
-        const Block & header,
         const Chunk & chunk,
-        size_t columns_num,
-        String format_name,
-        bool low_cardinality_as_dictionary)
+        size_t columns_num)
     {
         /// For arrow::Schema and arrow::Table creation
-        std::vector<std::shared_ptr<arrow::Field>> arrow_fields;
         std::vector<std::shared_ptr<arrow::Array>> arrow_arrays;
         arrow_fields.reserve(columns_num);
         arrow_arrays.reserve(columns_num);
 
         for (size_t column_i = 0; column_i < columns_num; ++column_i)
         {
-            // TODO: constructed every iteration
-            ColumnWithTypeAndName column = header.safeGetByPosition(column_i);
-            column.column = chunk.getColumns()[column_i];
+            const ColumnWithTypeAndName & header_column = header_columns[column_i];
+            auto column = chunk.getColumns()[column_i];
 
             if (!low_cardinality_as_dictionary)
-            {
-                column.column = recursiveRemoveLowCardinality(column.column);
-                column.type = recursiveRemoveLowCardinality(column.type);
-            }
+                column = recursiveRemoveLowCardinality(column);
 
             bool is_column_nullable = false;
-            auto arrow_type = getArrowType(column.type, column.column, column.name, format_name, &is_column_nullable);
-            arrow_fields.emplace_back(std::make_shared<arrow::Field>(column.name, arrow_type, is_column_nullable));
+            auto arrow_type = getArrowType(header_column.type, column, header_column.name, format_name, &is_column_nullable);
+            arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
 
             arrow::MemoryPool* pool = arrow::default_memory_pool();
             std::unique_ptr<arrow::ArrayBuilder> array_builder;
             arrow::Status status = MakeBuilder(pool, arrow_fields[column_i]->type(), &array_builder);
-            checkStatus(status, column.column->getName(), format_name);
+            checkStatus(status, column->getName(), format_name);
 
-            fillArrowArray(column.name, column.column, column.type, nullptr, array_builder.get(), format_name, 0, column.column->size(), dictionary_values);
+            fillArrowArray(header_column.name, column, header_column.type, nullptr, array_builder.get(), format_name, 0, column->size(), dictionary_values);
 
             std::shared_ptr<arrow::Array> arrow_array;
             status = array_builder->Finish(&arrow_array);
-            checkStatus(status, column.column->getName(), format_name);
+            checkStatus(status, column->getName(), format_name);
             arrow_arrays.emplace_back(std::move(arrow_array));
         }
 

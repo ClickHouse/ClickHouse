@@ -22,7 +22,6 @@ ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block &
     , stream{stream_}
     , format_settings{format_settings_}
     , arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
-    , ch_column_to_arrow_column(std::make_unique<CHColumnToArrowColumn>())
 {
 }
 
@@ -32,10 +31,13 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
-    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Arrow", format_settings.arrow.low_cardinality_as_dictionary);
+    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
 
     if (!writer)
+    {
         prepareWriter(arrow_table->schema());
+        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", format_settings.arrow.low_cardinality_as_dictionary);
+    }
 
     // TODO: calculate row_group_size depending on a number of rows and table size
     auto status = writer->WriteTable(*arrow_table, format_settings.arrow.row_group_size);
