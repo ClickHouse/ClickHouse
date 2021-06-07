@@ -557,13 +557,13 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(ContextConstPtr context) { return std::make_shared<FunctionComparison>(context); }
 
-    explicit FunctionComparison(ContextPtr context_)
+    explicit FunctionComparison(ContextConstPtr context_)
         : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
 
 private:
-    ContextPtr context;
+    ContextConstPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -1086,7 +1086,7 @@ public:
         if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
-            || (left.isDateOrDateTime() && right.isDateOrDateTime() && left.idx == right.idx) /// only date vs date, or datetime vs datetime
+            || ((left.isDate() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
@@ -1105,8 +1105,7 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(
-                FunctionComparison<Op, Name>::create(context)));
+            auto func = FunctionToOverloadResolverAdaptor(FunctionComparison<Op, Name>::create(context));
 
             bool has_nullable = false;
             bool has_null = false;
@@ -1116,7 +1115,7 @@ public:
             {
                 ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                {nullptr, right_tuple->getElements()[i], ""}};
-                auto element_type = adaptor.build(args)->getResultType();
+                auto element_type = func.build(args)->getResultType();
                 has_nullable = has_nullable || element_type->isNullable();
                 has_null = has_null || element_type->onlyNull();
             }
@@ -1148,17 +1147,24 @@ public:
         /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
         if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
         {
+            ColumnPtr result_column;
+
             /// Always true: =, <=, >=
             if constexpr (IsOperation<Op>::equals
                 || IsOperation<Op>::less_or_equals
                 || IsOperation<Op>::greater_or_equals)
             {
-                return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
+                result_column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
             }
             else
             {
-                return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+                result_column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
             }
+
+            if (!isColumnConst(*col_left_untyped))
+                result_column = result_column->convertToFullColumnIfConst();
+
+            return result_column;
         }
 
         WhichDataType which_left{left_type};
@@ -1170,8 +1176,8 @@ public:
         const bool left_is_string = isStringOrFixedString(which_left);
         const bool right_is_string = isStringOrFixedString(which_right);
 
-        bool date_and_datetime = (which_left.idx != which_right.idx) &&
-            which_left.isDateOrDateTime() && which_right.isDateOrDateTime();
+        bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDateTime() || which_left.isDateTime64())
+            && (which_right.isDate() || which_right.isDateTime() || which_right.isDateTime64());
 
         ColumnPtr res;
         if (left_is_num && right_is_num && !date_and_datetime)

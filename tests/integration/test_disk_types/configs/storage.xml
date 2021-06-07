@@ -11,6 +11,10 @@
             <disk_memory>
                 <type>memory</type>
             </disk_memory>
+            <disk_hdfs>
+                <type>hdfs</type>
+                <endpoint>http://hdfs1:9000/data/</endpoint>
+            </disk_hdfs>
             <disk_encrypted>
                 <type>encrypted</type>
                 <disk>disk_s3</disk>

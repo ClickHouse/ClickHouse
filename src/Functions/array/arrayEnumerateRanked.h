@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
@@ -90,7 +90,7 @@ template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
 {
 public:
-    static FunctionPtr create(ContextPtr /* context */) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(ContextConstPtr /* context */) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 

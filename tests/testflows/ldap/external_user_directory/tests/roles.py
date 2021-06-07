@@ -7,7 +7,7 @@ from ldap.external_user_directory.requirements import *
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Role_New("1.0")
 )
-def new_role(self, server, timeout=20):
+def new_role(self, server):
     """Check that new roles can't be assigned to any LDAP user
     authenticated using external user directory.
     """
@@ -50,7 +50,7 @@ def new_role(self, server, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Role_NewPrivilege("1.0")
 )
-def add_privilege(self, server, timeout=20):
+def add_privilege(self, server):
     """Check that we can add privilege to a role used
     in the external user directory configuration.
     """
@@ -95,7 +95,7 @@ def add_privilege(self, server, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Role_RemovedPrivilege("1.0")
 )
-def remove_privilege(self, server, timeout=20):
+def remove_privilege(self, server):
     """Check that we can remove privilege from a role used
     in the external user directory configuration.
     """
@@ -141,7 +141,7 @@ def remove_privilege(self, server, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Role_Removed("2.0")
 )
-def remove_role(self, server, timeout=20):
+def remove_role(self, server):
     """Check that when a role used in the external user directory configuration
     is dynamically removed then any LDAP users should still be authenticated using
     LDAP external user directory.
@@ -178,7 +178,7 @@ def remove_role(self, server, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Role_Removed_Privileges("1.0")
 )
-def remove_privilege_by_removing_role(self, server, timeout=20):
+def remove_privilege_by_removing_role(self, server):
     """Check that when the role used in the external user directory configuration
     is dynamically removed then privileges are removed from all
     LDAP users that are authenticated using external user directory.
@@ -221,7 +221,7 @@ def remove_privilege_by_removing_role(self, server, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Role_Readded_Privileges("1.0")
 )
-def readd_privilege_by_readding_role(self, server, timeout=20):
+def readd_privilege_by_readding_role(self, server):
     """Check that when the role used in the external user directory configuration
     is dynamically removed then all the privileges are removed from any
     LDAP users authenticated using external user directory but when the role is re-added
@@ -286,7 +286,7 @@ def readd_privilege_by_readding_role(self, server, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Role_NotPresent_Added("1.0")
 )
-def not_present_role_added(self, server, timeout=20):
+def not_present_role_added(self, server):
     """Check that when the role used in the external user directory configuration
     which was not present during LDAP user authentication
     is dynamically added then all the privileges granted by the role

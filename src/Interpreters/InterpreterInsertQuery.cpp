@@ -209,8 +209,13 @@ BlockIO InterpreterInsertQuery::execute()
 
                 new_settings.max_threads = std::max<UInt64>(1, settings.max_insert_threads);
 
-                if (settings.min_insert_block_size_rows && table->prefersLargeBlocks())
-                    new_settings.max_block_size = settings.min_insert_block_size_rows;
+                if (table->prefersLargeBlocks())
+                {
+                    if (settings.min_insert_block_size_rows)
+                        new_settings.max_block_size = settings.min_insert_block_size_rows;
+                    if (settings.min_insert_block_size_bytes)
+                        new_settings.preferred_block_size_bytes = settings.min_insert_block_size_bytes;
+                }
 
                 auto new_context = Context::createCopy(context);
                 new_context->setSettings(new_settings);
@@ -304,8 +309,7 @@ BlockIO InterpreterInsertQuery::execute()
 
             auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
             out_wrapper->setProcessListElement(getContext()->getProcessListElement());
-            out = std::move(out_wrapper);
-            out_streams.emplace_back(std::move(out));
+            out_streams.emplace_back(std::move(out_wrapper));
         }
     }
 
@@ -321,7 +325,7 @@ BlockIO InterpreterInsertQuery::execute()
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
                 header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Position);
-        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext()));
+        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
 
         res.pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {

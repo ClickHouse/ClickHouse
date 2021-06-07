@@ -54,7 +54,7 @@ StorageMaterializedView::StorageMaterializedView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     bool attach_)
-    : IStorage(table_id_), WithContext(local_context->getGlobalContext())
+    : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -228,7 +228,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context,
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
-            drop_context->setQueryContext(current_context);
+            drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
             drop_context->initZooKeeperMetadataTransaction(txn, true);
         }
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
@@ -366,17 +366,18 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     auto metadata_snapshot = getInMemoryMetadataPtr();
     bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
 
-    if (has_inner_table && tryGetTargetTable() && !from_atomic_to_atomic_database)
+    if (!from_atomic_to_atomic_database && has_inner_table && tryGetTargetTable())
     {
         auto new_target_table_name = generateInnerTableName(new_table_id);
         auto rename = std::make_shared<ASTRenameQuery>();
 
         ASTRenameQuery::Table from;
+        assert(target_table_id.database_name == old_table_id.database_name);
         from.database = target_table_id.database_name;
         from.table = target_table_id.table_name;
 
         ASTRenameQuery::Table to;
-        to.database = target_table_id.database_name;
+        to.database = new_table_id.database_name;
         to.table = new_target_table_name;
 
         ASTRenameQuery::Element elem;
@@ -385,10 +386,16 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         rename->elements.emplace_back(elem);
 
         InterpreterRenameQuery(rename, getContext()).execute();
+        target_table_id.database_name = new_table_id.database_name;
         target_table_id.table_name = new_target_table_name;
     }
 
     IStorage::renameInMemory(new_table_id);
+    if (from_atomic_to_atomic_database && has_inner_table)
+    {
+        assert(target_table_id.database_name == old_table_id.database_name);
+        target_table_id.database_name = new_table_id.database_name;
+    }
     const auto & select_query = metadata_snapshot->getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
@@ -424,7 +431,12 @@ Strings StorageMaterializedView::getDataPaths() const
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
-    return has_inner_table ? getTargetTable()->getActionLock(type) : ActionLock{};
+    if (has_inner_table)
+    {
+        if (auto target_table = tryGetTargetTable())
+            return target_table->getActionLock(type);
+    }
+    return ActionLock{};
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

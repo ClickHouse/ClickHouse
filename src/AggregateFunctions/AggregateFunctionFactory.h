@@ -14,6 +14,7 @@
 
 namespace DB
 {
+struct Settings;
 
 class Context;
 class IDataType;
@@ -26,7 +27,7 @@ using DataTypes = std::vector<DataTypePtr>;
  * Parameters are for "parametric" aggregate functions.
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
  */
-using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &)>;
+using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
 
 struct AggregateFunctionWithProperties
 {

@@ -102,6 +102,7 @@ StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_,
     size_t num_shards_,
     const Thresholds & min_thresholds_,
@@ -111,7 +112,8 @@ StorageBuffer::StorageBuffer(
     bool allow_materialized_)
     : IStorage(table_id_)
     , WithContext(context_->getBufferContext())
-    , num_shards(num_shards_), buffers(num_shards_)
+    , num_shards(num_shards_)
+    , buffers(num_shards_)
     , min_thresholds(min_thresholds_)
     , max_thresholds(max_thresholds_)
     , flush_thresholds(flush_thresholds_)
@@ -123,6 +125,7 @@ StorageBuffer::StorageBuffer(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -543,8 +546,8 @@ public:
 
         size_t bytes = block.bytes();
 
-        storage.writes.rows += rows;
-        storage.writes.bytes += bytes;
+        storage.lifetime_writes.rows += rows;
+        storage.lifetime_writes.bytes += bytes;
 
         /// If the block already exceeds the maximum limit, then we skip the buffer.
         if (rows > storage.max_thresholds.rows || bytes > storage.max_thresholds.bytes)
@@ -610,6 +613,9 @@ private:
         if (!buffer.data)
         {
             buffer.data = sorted_block.cloneEmpty();
+
+            storage.total_writes.rows += buffer.data.rows();
+            storage.total_writes.bytes += buffer.data.allocatedBytes();
         }
         else if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()))
         {
@@ -624,7 +630,13 @@ private:
         if (!buffer.first_write_time)
             buffer.first_write_time = current_time;
 
+        size_t old_rows = buffer.data.rows();
+        size_t old_bytes = buffer.data.allocatedBytes();
+
         appendBlock(sorted_block, buffer.data);
+
+        storage.total_writes.rows += (buffer.data.rows() - old_rows);
+        storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
     }
 };
 
@@ -662,7 +674,7 @@ void StorageBuffer::startup()
 }
 
 
-void StorageBuffer::shutdown()
+void StorageBuffer::flush()
 {
     if (!flush_handle)
         return;
@@ -827,13 +839,20 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     buffer.data.swap(block_to_write);
     buffer.first_write_time = 0;
 
-    CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_to_write.rows());
-    CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
+    size_t block_rows = block_to_write.rows();
+    size_t block_bytes = block_to_write.bytes();
+    size_t block_allocated_bytes_delta = block_to_write.allocatedBytes() - buffer.data.allocatedBytes();
+
+    CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_rows);
+    CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_bytes);
 
     ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
     if (!destination_id)
     {
+        total_writes.rows -= block_rows;
+        total_writes.bytes -= block_allocated_bytes_delta;
+
         LOG_DEBUG(log, "Flushing buffer with {} rows (discarded), {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
         return;
     }
@@ -869,6 +888,9 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         /// After a while, the next write attempt will happen.
         throw;
     }
+
+    total_writes.rows -= block_rows;
+    total_writes.bytes -= block_allocated_bytes_delta;
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Flushing buffer with {} rows, {} bytes, age {} seconds, took {} ms {}.", rows, bytes, time_passed, milliseconds, (check_thresholds ? "(bg)" : "(direct)"));
@@ -1026,24 +1048,12 @@ std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
     if (!underlying_rows)
         return underlying_rows;
 
-    UInt64 rows = 0;
-    for (const auto & buffer : buffers)
-    {
-        const auto lock(buffer.lockForReading());
-        rows += buffer.data.rows();
-    }
-    return rows + *underlying_rows;
+    return total_writes.rows + *underlying_rows;
 }
 
 std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) const
 {
-    UInt64 bytes = 0;
-    for (const auto & buffer : buffers)
-    {
-        const auto lock(buffer.lockForReading());
-        bytes += buffer.data.allocatedBytes();
-    }
-    return bytes;
+    return total_writes.bytes;
 }
 
 void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, TableLockHolder &)
@@ -1135,9 +1145,12 @@ void registerStorageBuffer(StorageFactory & factory)
             args.table_id,
             args.columns,
             args.constraints,
+            args.comment,
             args.getContext(),
             num_buckets,
-            min, max, flush,
+            min,
+            max,
+            flush,
             destination_id,
             static_cast<bool>(args.getLocalContext()->getSettingsRef().insert_allow_materialized_columns));
     },
