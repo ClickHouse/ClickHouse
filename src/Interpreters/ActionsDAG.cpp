@@ -205,34 +205,31 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.function = node.function_base->prepare(arguments);
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-    if (all_const && node.function_base->isSuitableForConstantFolding())
+    if (node.function_base->isSuitableForConstantFolding())
     {
-        size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
-        auto col = node.function->execute(arguments, node.result_type, num_rows, true);
+        ColumnPtr column;
+
+        if (all_const)
+        {
+            size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
+            column = node.function->execute(arguments, node.result_type, num_rows, true);
+        }
+        else
+        {
+            column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
+        }
 
         /// If the result is not a constant, just in case, we will consider the result as unknown.
-        if (isColumnConst(*col))
+        if (column && isColumnConst(*column))
         {
             /// All constant (literal) columns in block are added with size 1.
             /// But if there was no columns in block before executing a function, the result has size 0.
             /// Change the size to 1.
 
-            if (col->empty())
-                col = col->cloneResized(1);
+            if (column->empty())
+                column = column->cloneResized(1);
 
-            node.column = std::move(col);
-        }
-    }
-
-    /// Some functions like ignore(), indexHint() or getTypeName() always return constant result even if arguments are not constant.
-    /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
-    /// unnecessary materialization.
-    if (!node.column && node.function_base->isSuitableForConstantFolding())
-    {
-        if (auto col = node.function_base->getResultIfAlwaysReturnsConstantAndHasArguments(arguments))
-        {
-            node.column = std::move(col);
-            node.allow_constant_folding = false;
+            node.column = std::move(column);
         }
     }
 
@@ -289,6 +286,17 @@ NamesAndTypesList ActionsDAG::getRequiredColumns() const
     NamesAndTypesList result;
     for (const auto & input : inputs)
         result.emplace_back(input->result_name, input->result_type);
+
+    return result;
+}
+
+Names ActionsDAG::getRequiredColumnsNames() const
+{
+    Names result;
+    result.reserve(inputs.size());
+
+    for (const auto & input : inputs)
+        result.emplace_back(input->result_name);
 
     return result;
 }
@@ -397,13 +405,10 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
 
     for (auto & node : nodes)
     {
-        /// We cannot remove function with side effects even if it returns constant (e.g. ignore(...)).
-        bool prevent_constant_folding = node.column && isColumnConst(*node.column) && !node.allow_constant_folding;
         /// We cannot remove arrayJoin because it changes the number of rows.
         bool is_array_join = node.type == ActionType::ARRAY_JOIN;
 
-        bool must_keep_node = is_array_join || prevent_constant_folding;
-        if (must_keep_node && visited_nodes.count(&node) == 0)
+        if (is_array_join && visited_nodes.count(&node) == 0)
         {
             visited_nodes.insert(&node);
             stack.push(&node);
@@ -418,7 +423,7 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
         auto * node = stack.top();
         stack.pop();
 
-        if (!node->children.empty() && node->column && isColumnConst(*node->column) && node->allow_constant_folding)
+        if (!node->children.empty() && node->column && isColumnConst(*node->column))
         {
             /// Constant folding.
             node->type = ActionsDAG::ActionType::COLUMN;
@@ -529,7 +534,7 @@ Block ActionsDAG::updateHeader(Block header) const
 
     struct Frame
     {
-        const Node * node;
+        const Node * node = nullptr;
         size_t next_child = 0;
     };
 
@@ -576,8 +581,7 @@ Block ActionsDAG::updateHeader(Block header) const
                 }
             }
 
-            auto & column = node_to_column[output];
-            if (column.column)
+            if (node_to_column[output].column)
                 result_columns.push_back(node_to_column[output]);
         }
     }
@@ -986,10 +990,8 @@ void ActionsDAG::addMaterializingOutputActions()
 
 const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node)
 {
-    FunctionOverloadResolverPtr func_builder_materialize =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionMaterialize>()));
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(
+                            std::make_shared<FunctionMaterialize>());
 
     const auto & name = node.result_name;
     const auto * func = &addFunction(func_builder_materialize, {&node}, {});
@@ -1016,10 +1018,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     auto actions_dag = std::make_shared<ActionsDAG>(source);
     NodeRawConstPtrs projection(num_result_columns);
 
-    FunctionOverloadResolverPtr func_builder_materialize =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionMaterialize>()));
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     std::map<std::string_view, std::list<size_t>> inputs;
     if (mode == MatchColumnsMode::Name)
@@ -1046,11 +1045,19 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             {
                 auto & input = inputs[res_elem.name];
                 if (input.empty())
-                    throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
-                                    ErrorCodes::THERE_IS_NO_COLUMN);
-
-                src_node = dst_node = actions_dag->inputs[input.front()];
-                input.pop_front();
+                {
+                    const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get());
+                    if (ignore_constant_values && res_const)
+                        src_node = dst_node = &actions_dag->addColumn(res_elem);
+                    else
+                        throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
+                                        ErrorCodes::THERE_IS_NO_COLUMN);
+                }
+                else
+                {
+                    src_node = dst_node = actions_dag->inputs[input.front()];
+                    input.pop_front();
+                }
                 break;
             }
         }
@@ -1085,9 +1092,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             const auto * left_arg = dst_node;
 
             FunctionCast::Diagnostic diagnostic = {dst_node->result_name, res_elem.name};
-            FunctionOverloadResolverPtr func_builder_cast =
-                    std::make_shared<FunctionOverloadResolverAdaptor>(
-                            CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic)));
+            FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic));
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {});
@@ -1137,10 +1142,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 {
     auto adding_column_action = std::make_shared<ActionsDAG>();
-    FunctionOverloadResolverPtr func_builder_materialize =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionMaterialize>()));
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     auto column_name = column.name;
     const auto * column_node = &adding_column_action->addColumn(std::move(column));
@@ -1512,7 +1514,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
 
     auto res = split(split_nodes);
     /// Do not remove array joined columns if they are not used.
-    res.first->project_input = false;
+    /// res.first->project_input = false;
     return res;
 }
 
@@ -1525,7 +1527,9 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
                         column_name, dumpDAG());
 
     std::unordered_set<const Node *> split_nodes = {node};
-    return split(split_nodes);
+    auto res = split(split_nodes);
+    res.second->project_input = project_input;
+    return res;
 }
 
 namespace
@@ -1655,10 +1659,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
 
     auto actions = std::make_shared<ActionsDAG>();
 
-    FunctionOverloadResolverPtr func_builder_and =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionAnd>()));
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> nodes_mapping;
     std::unordered_map<std::string, std::list<const Node *>> required_inputs;
@@ -1863,9 +1864,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                 predicate->children = {left_arg, right_arg};
                 auto arguments = prepareFunctionArguments(predicate->children);
 
-                FunctionOverloadResolverPtr func_builder_cast =
-                        std::make_shared<FunctionOverloadResolverAdaptor>(
-                                CastOverloadResolver<CastType::nonAccurate>::createImpl(false));
+                FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false);
 
                 predicate->function_builder = func_builder_cast;
                 predicate->function_base = predicate->function_builder->build(arguments);

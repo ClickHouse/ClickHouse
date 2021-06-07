@@ -188,9 +188,9 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & root_config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 ContextConstPtr context,
                                  const std::string & /* default_database */,
-                                 bool /* check_config */) -> DictionarySourcePtr
+                                 bool /* created_from_ddl */) -> DictionarySourcePtr
     {
 #if USE_LIBPQXX
         const auto config_prefix = root_config_prefix + ".postgresql";

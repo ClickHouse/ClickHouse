@@ -1,7 +1,7 @@
 #pragma once
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
@@ -24,7 +24,7 @@ class FunctionDateOrDateTimeToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
 
     String getName() const override
     {
@@ -38,7 +38,7 @@ public:
     {
         if (arguments.size() == 1)
         {
-            if (!isDateOrDateTime(arguments[0].type))
+            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -46,7 +46,7 @@ public:
         }
         else if (arguments.size() == 2)
         {
-            if (!isDateOrDateTime(arguments[0].type))
+            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",

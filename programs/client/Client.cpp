@@ -25,7 +25,6 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
-#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
@@ -89,6 +88,9 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/ProgressBar.h>
+#include <filesystem>
+#include <Common/filesystemHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -98,9 +100,7 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
-/// http://en.wikipedia.org/wiki/ANSI_escape_code
-#define CLEAR_TO_END_OF_LINE "\033[K"
-
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -194,7 +194,7 @@ private:
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
     SharedContextHolder shared_context = Context::createShared();
-    ContextPtr context = Context::createGlobal(shared_context.get());
+    ContextMutablePtr context = Context::createGlobal(shared_context.get());
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in {STDIN_FILENO};
@@ -290,7 +290,7 @@ private:
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
-            context->setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
+            context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
 
         /// Initialize query_id_formats if any
         if (config().has("query_id_formats"))
@@ -653,8 +653,8 @@ private:
                     history_file = home_path + "/.clickhouse-client-history";
             }
 
-            if (!history_file.empty() && !Poco::File(history_file).exists())
-                Poco::File(history_file).createFile();
+            if (!history_file.empty() && !fs::exists(history_file))
+                FS::createFile(history_file);
 
             LineReader::Patterns query_extenders = {"\\"};
             LineReader::Patterns query_delimiters = {";", "\\G"};
@@ -1426,11 +1426,29 @@ private:
 
             if (have_error)
             {
-                const auto * exception = server_exception
-                    ? server_exception.get() : client_exception.get();
-                fmt::print(stderr, "Error on processing query '{}': {}\n",
-                    ast_to_process->formatForErrorMessage(),
-                    exception->message());
+                const auto * exception = server_exception ? server_exception.get() : client_exception.get();
+                fmt::print(stderr, "Error on processing query '{}': {}\n", ast_to_process->formatForErrorMessage(), exception->message());
+
+                // Try to reconnect after errors, for two reasons:
+                // 1. We might not have realized that the server died, e.g. if
+                //    it sent us a <Fatal> trace and closed connection properly.
+                // 2. The connection might have gotten into a wrong state and
+                //    the next query will get false positive about
+                //    "Unknown packet from server".
+                try
+                {
+                    connection->forceConnected(connection_parameters.timeouts);
+                }
+                catch (...)
+                {
+                    // Just report it, we'll terminate below.
+                    fmt::print(stderr,
+                        "Error while reconnecting to the server: Code: {}: {}\n",
+                        getCurrentExceptionCode(),
+                        getCurrentExceptionMessage(true));
+
+                    assert(!connection->isConnected());
+                }
             }
 
             if (!connection->isConnected())

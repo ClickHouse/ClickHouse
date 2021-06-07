@@ -96,7 +96,7 @@ namespace ErrorCodes
 }
 
 
-std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextPtr context, const SelectQueryOptions & options)
+std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     OpenTelemetrySpanHolder span("InterpreterFactory::get()");
 
