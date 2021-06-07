@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <IO/createReadBufferFromFileBase.h>
@@ -85,6 +86,10 @@ struct ReplicatedFetchReadCallback
 };
 
 }
+
+
+Service::Service(StorageReplicatedMergeTree & data_) :
+    data(data_), log(&Poco::Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
 
 std::string Service::getId(const std::string & node_id) const
 {
@@ -243,6 +248,8 @@ void Service::sendPartFromMemory(
     NativeBlockOutputStream block_out(out, 0, metadata_snapshot->getSampleBlock());
     part->checksums.write(out);
     block_out.write(part_in_memory->block);
+
+    data.getSendsThrottler()->add(part_in_memory->block.bytes());
 }
 
 MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
@@ -298,7 +305,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         auto file_in = disk->readFile(path);
         HashingWriteBuffer hashing_out(out);
-        copyData(*file_in, hashing_out, blocker.getCounter());
+        copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
 
         if (blocker.isCancelled())
             throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
@@ -354,7 +361,7 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
 
         auto file_in = createReadBufferFromFileBase(metadata_file, 0, 0, 0, nullptr, DBMS_DEFAULT_BUFFER_SIZE);
         HashingWriteBuffer hashing_out(out);
-        copyData(*file_in, hashing_out, blocker.getCounter());
+        copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
         if (blocker.isCancelled())
             throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
@@ -388,6 +395,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & user,
     const String & password,
     const String & interserver_scheme,
+    ThrottlerPtr throttler,
     bool to_detached,
     const String & tmp_prefix_,
     std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
@@ -514,7 +522,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
         try
         {
-            return downloadPartToS3(part_name, replica_path, to_detached, tmp_prefix_, std::move(disks_s3), in);
+            return downloadPartToS3(part_name, replica_path, to_detached, tmp_prefix_, std::move(disks_s3), in, throttler);
         }
         catch (const Exception & e)
         {
@@ -522,7 +530,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
                 throw;
             /// Try again but without S3 copy
             return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
-                user, password, interserver_scheme, to_detached, tmp_prefix_, nullptr, false);
+                user, password, interserver_scheme, throttler, to_detached, tmp_prefix_, nullptr, false);
         }
     }
 
@@ -585,8 +593,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     MergeTreeData::DataPart::Checksums checksums;
     return part_type == "InMemory"
-        ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, context, std::move(reservation), in, projections)
-        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, reservation->getDisk(), in, projections, checksums);
+        ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, context, std::move(reservation), in, projections, throttler)
+        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, reservation->getDisk(), in, projections, checksums, throttler);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
@@ -596,7 +604,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     ContextPtr context,
     ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in,
-    size_t projections)
+    size_t projections,
+    ThrottlerPtr throttler)
 {
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, reservation->getDisk(), 0);
     MergeTreeData::MutableDataPartPtr new_data_part =
@@ -612,6 +621,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
         NativeBlockInputStream block_in(in, 0);
         auto block = block_in.read();
+        throttler->add(block.bytes());
 
         MergeTreePartInfo new_part_info("all", 0, 0, 0);
         MergeTreeData::MutableDataPartPtr new_projection_part =
@@ -645,6 +655,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
     NativeBlockInputStream block_in(in, 0);
     auto block = block_in.read();
+    throttler->add(block.bytes());
 
     new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
@@ -669,7 +680,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     bool sync,
     DiskPtr disk,
     PooledReadWriteBufferFromHTTP & in,
-    MergeTreeData::DataPart::Checksums & checksums) const
+    MergeTreeData::DataPart::Checksums & checksums,
+    ThrottlerPtr throttler) const
 {
     size_t files;
     readBinary(files, in);
@@ -692,7 +704,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         auto file_out = disk->writeFile(fs::path(part_download_path) / file_name);
         HashingWriteBuffer hashing_out(*file_out);
-        copyData(in, hashing_out, file_size, blocker.getCounter());
+        copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
 
         if (blocker.isCancelled())
         {
@@ -729,7 +741,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     DiskPtr disk,
     PooledReadWriteBufferFromHTTP & in,
     size_t projections,
-    MergeTreeData::DataPart::Checksums & checksums)
+    MergeTreeData::DataPart::Checksums & checksums,
+    ThrottlerPtr throttler)
 {
     static const String TMP_PREFIX = "tmp_fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
@@ -766,13 +779,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         MergeTreeData::DataPart::Checksums projection_checksum;
         disk->createDirectories(part_download_path + projection_name + ".proj/");
         downloadBaseOrProjectionPartToDisk(
-            replica_path, part_download_path + projection_name + ".proj/", sync, disk, in, projection_checksum);
+            replica_path, part_download_path + projection_name + ".proj/", sync, disk, in, projection_checksum, throttler);
         checksums.addFile(
             projection_name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
     }
 
     // Download the base part
-    downloadBaseOrProjectionPartToDisk(replica_path, part_download_path, sync, disk, in, checksums);
+    downloadBaseOrProjectionPartToDisk(replica_path, part_download_path, sync, disk, in, checksums, throttler);
 
     assertEOF(in);
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
@@ -790,8 +803,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
     bool to_detached,
     const String & tmp_prefix_,
     const Disks & disks_s3,
-    PooledReadWriteBufferFromHTTP & in
-    )
+    PooledReadWriteBufferFromHTTP & in,
+    ThrottlerPtr throttler)
 {
     if (disks_s3.empty())
         throw Exception("No S3 disks anymore", ErrorCodes::LOGICAL_ERROR);
@@ -844,7 +857,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
 
             HashingWriteBuffer hashing_out(*file_out);
 
-            copyData(in, hashing_out, file_size, blocker.getCounter());
+            copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
 
             if (blocker.isCancelled())
             {
