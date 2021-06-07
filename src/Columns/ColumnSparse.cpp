@@ -66,6 +66,11 @@ MutableColumnPtr ColumnSparse::cloneResized(size_t new_size) const
     return res;
 }
 
+bool ColumnSparse::isDefaultAt(size_t n) const
+{
+    return getValueIndex(n) == 0;
+}
+
 bool ColumnSparse::isNullAt(size_t n) const
 {
     return values->isNullAt(getValueIndex(n));
@@ -179,7 +184,7 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
             }
 
             /// 'end' <= 'src_offsets[offsets_end]', but end is excluded, so index is 'offsets_end' - 1.
-            /// Since 'end' is excluded need, to substract one more row from result.
+            /// Since 'end' is excluded need, to subtract one more row from result.
             insertManyDefaults(end - src_offsets[offset_end - 1] - 1);
             values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start);
         }
@@ -637,18 +642,18 @@ void ColumnSparse::getExtremes(Field & min, Field & max) const
     values->getExtremes(min, max);
 }
 
-void ColumnSparse::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const
+void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const
 {
     const auto & offsets_data = getOffsetsData();
     const auto * start = from ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from) : offsets_data.begin();
     const auto * end = limit ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from + limit) : offsets_data.end();
 
-    indices.assign(start, end);
+    indices.insert(start, end);
 }
 
-size_t ColumnSparse::getNumberOfDefaultRows(size_t step) const
+double ColumnSparse::getRatioOfDefaultRows(double) const
 {
-    return getNumberOfDefaults() / step;
+    return static_cast<double>(getNumberOfDefaults()) / _size;
 }
 
 MutableColumns ColumnSparse::scatter(ColumnIndex num_columns, const Selector & selector) const

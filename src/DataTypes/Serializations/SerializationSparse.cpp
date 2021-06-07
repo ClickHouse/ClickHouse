@@ -66,7 +66,7 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
     }
 
     /// Just try to guess number of offsets.
-    offsets.reserve(static_cast<size_t>(limit * IColumn::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION));
+    offsets.reserve(static_cast<size_t>(limit * ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION));
 
     bool first = true;
     size_t total_rows = state.num_trailing_defaults;
@@ -165,7 +165,7 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
 
     auto offsets_column = DataTypeNumber<IColumn::Offset>().createColumn();
     auto & offsets_data = assert_cast<ColumnVector<IColumn::Offset> &>(*offsets_column).getData();
-    column.getIndicesOfNonDefaultValues(offsets_data, offset, limit);
+    column.getIndicesOfNonDefaultRows(offsets_data, offset, limit);
 
     settings.path.push_back(Substream::SparseOffsets);
     if (auto * stream = settings.getter(settings.path))

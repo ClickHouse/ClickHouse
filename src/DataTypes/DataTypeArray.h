@@ -54,8 +54,6 @@ public:
         return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
     }
 
-    /// TODO: support arrays with sparse serialization.
-    bool supportsSparseSerialization() const override { return false; }
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
     SerializationPtr getSubcolumnSerialization(

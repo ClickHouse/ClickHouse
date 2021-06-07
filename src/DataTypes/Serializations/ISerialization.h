@@ -38,7 +38,7 @@ struct NameAndTypePair;
  *  Every data type has default serialization, but can be serialized in different representations.
  *  Default serialization can be wrapped to one of the special kind of serializations.
  *  Currently there is only one special serialization: Sparse.
- *  Each serialization has its own implemetation of IColumn as its in-memory representation.
+ *  Each serialization has its own implementation of IColumn as its in-memory representation.
  */
 class ISerialization
 {

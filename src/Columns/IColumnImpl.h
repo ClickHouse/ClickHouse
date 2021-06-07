@@ -139,4 +139,41 @@ bool IColumn::hasEqualValuesImpl() const
     return true;
 }
 
+
+template <typename Derived>
+double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
+{
+    assert(sample_ratio > 0 && sample_ratio <= 1.0);
+
+    size_t num_rows = size();
+    size_t num_sampled_rows = static_cast<size_t>(num_rows * sample_ratio);
+    if (num_sampled_rows == 0)
+        return 0.0;
+
+    size_t step = num_rows / num_sampled_rows;
+    std::uniform_int_distribution<size_t> dist(1, step);
+
+    size_t res = 0;
+    for (size_t i = 0; i < num_rows; i += step)
+    {
+        size_t idx = std::min(i + dist(thread_local_rng), num_rows - 1);
+        res += static_cast<const Derived &>(*this).isDefaultAt(idx);
+    }
+
+    return static_cast<double>(res) / num_sampled_rows;
+}
+
+template <typename Derived>
+void IColumn::getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const
+{
+    size_t to = limit && from + limit < size() ? from + limit : size();
+    indices.reserve(indices.size() + to - from);
+
+    for (size_t i = from; i < to; ++i)
+    {
+        if (!static_cast<const Derived &>(*this).isDefaultAt(i))
+            indices.push_back(i);
+    }
+}
+
 }

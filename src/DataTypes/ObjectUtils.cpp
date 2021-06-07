@@ -142,7 +142,7 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
 
         const auto & tuple_names = type_tuple->getElementNames();
         const auto & tuple_types = type_tuple->getElements();
-        assert(tuple_names.size() == tuple_type.size());
+        assert(tuple_names.size() == tuple_types.size());
 
         for (size_t i = 0; i < tuple_names.size(); ++i)
             subcolumns_types[tuple_names[i]].push_back(tuple_types[i]);

@@ -35,7 +35,6 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
 }
 
-
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 {
     const auto & arr = getNullMapData();
@@ -684,27 +683,6 @@ void ColumnNullable::checkConsistency() const
     if (null_map->size() != getNestedColumn().size())
         throw Exception("Logical error: Sizes of nested column and null map of Nullable column are not equal",
             ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
-}
-
-size_t ColumnNullable::getNumberOfDefaultRows(size_t step) const
-{
-    size_t res = 0;
-    const auto & null_map_data = getNullMapData();
-    for (size_t i = 0; i < null_map_data.size(); i += step)
-        res += (null_map_data != 0);
-
-    return res;
-}
-
-void ColumnNullable::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const
-{
-    size_t to = limit && from + limit < size() ? from + limit : size();
-    indices.reserve(indices.size() + to - from);
-
-    const auto & null_map_data = getNullMapData();
-    for (size_t i = from; i < to; ++i)
-        if (null_map_data[i] == 0)
-            indices.push_back(i);
 }
 
 ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const

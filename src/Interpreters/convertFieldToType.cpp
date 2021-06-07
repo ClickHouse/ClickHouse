@@ -190,7 +190,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
-        if (which_type.isDateOrDateTime() && !which_type.isDateTime64() && src.getType() == Field::Types::UInt64)
+        if ((which_type.isDate() || which_type.isDateTime()) && src.getType() == Field::Types::UInt64)
         {
             /// We don't need any conversion UInt64 is under type of Date and DateTime
             return src;
@@ -203,7 +203,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         if (which_type.isDateTime64()
-            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDateOrDateTime()))
+            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDate() || which_from_type.isDateTime() || which_from_type.isDateTime64()))
         {
             const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
             const auto decimal_value = DecimalUtils::decimalFromComponents<DateTime64>(src.reinterpret<Int64>(), 0, scale);

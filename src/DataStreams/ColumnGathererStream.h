@@ -67,6 +67,8 @@ public:
 
     void readSuffixImpl() override;
 
+    bool columnsCanDifferInRepresentationAmongBlocks() const override { return true; }
+
     Block getHeader() const override { return children.at(0)->getHeader(); }
 
     /// for use in implementations of IColumn::gather()

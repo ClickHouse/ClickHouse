@@ -68,6 +68,11 @@ public:
         throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    bool isDefaultAt(size_t) const override
+    {
+        throw Exception("isDefaultAt is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void insert(const Field &) override
     {
         throw Exception("Cannot insert into " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -151,6 +156,16 @@ public:
     void gather(ColumnGathererStream &) override
     {
         throw Exception("Method gather is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    double getRatioOfDefaultRows(double) const override
+    {
+        throw Exception("Method getRatioOfDefaultRows is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
+    {
+        throw Exception("Method getIndicesOfNonDefaultRows is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
 private:

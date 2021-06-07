@@ -5,11 +5,8 @@
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -19,6 +16,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -39,6 +37,12 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     bool use_exact_hash_function = !isAllArgumentsContiguousInMemory(argument_types);
+
+    const WhichDataType t(argument_types[0]);
+    if (t.isAggregateFunction())
+        throw Exception(
+            "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     if (argument_types.size() == 1)
     {
@@ -81,6 +85,12 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
     if (argument_types.empty())
         throw Exception("Incorrect number of arguments for aggregate function " + name,
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    const WhichDataType t(argument_types[0]);
+    if (t.isAggregateFunction())
+        throw Exception(
+            "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     /// We use exact hash function if the user wants it;
     /// or if the arguments are not contiguous in memory, because only exact hash function have support for this case.

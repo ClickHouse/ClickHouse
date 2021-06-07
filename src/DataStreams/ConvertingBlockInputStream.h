@@ -38,6 +38,7 @@ public:
 
     String getName() const override { return "Converting"; }
     Block getHeader() const override { return header; }
+    bool columnsCanDifferInRepresentationAmongBlocks() const override { return true; }
 
 private:
     Block readImpl() override;
