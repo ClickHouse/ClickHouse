@@ -447,6 +447,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
 
     bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
+    bool allow_experimental_codecs = attach || context_->getSettingsRef().allow_experimental_codecs;
+
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
     for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
@@ -481,7 +483,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
         }
 
         if (col_decl.ttl)
