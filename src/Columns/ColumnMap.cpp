@@ -278,6 +278,11 @@ double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
     return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
 }
 
+void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);
+}
+
 ColumnPtr ColumnMap::compress() const
 {
     auto compressed = nested->compress();

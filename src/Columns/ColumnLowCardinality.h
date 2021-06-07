@@ -181,6 +181,11 @@ public:
         return getRatioOfDefaultRowsImpl<ColumnLowCardinality>(sample_ratio);
     }
 
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    {
+        return getIndicesOfNonDefaultRowsImpl<ColumnLowCardinality>(indices, from, limit);
+    }
+
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
     bool isFixedAndContiguous() const override { return false; }
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }

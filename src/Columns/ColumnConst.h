@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/PODArray.h>
 
 
 namespace DB
@@ -245,6 +246,16 @@ public:
     double getRatioOfDefaultRows(double) const override
     {
         return data->isDefaultAt(0) ? 1.0 : 0.0;
+    }
+
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    {
+        if (!data->isDefaultAt(0))
+        {
+            indices.reserve(indices.size() + limit);
+            for (size_t i = from; i < from + limit; ++i)
+                indices.push_back(i);
+        }
     }
 
     bool isNullable() const override { return isColumnNullable(*data); }

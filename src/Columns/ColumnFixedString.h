@@ -186,6 +186,11 @@ public:
         return getRatioOfDefaultRowsImpl<ColumnFixedString>(sample_ratio);
     }
 
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    {
+        return getIndicesOfNonDefaultRowsImpl<ColumnFixedString>(indices, from, limit);
+    }
+
     bool canBeInsideNullable() const override { return true; }
 
     bool isFixedAndContiguous() const override { return true; }

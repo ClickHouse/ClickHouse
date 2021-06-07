@@ -376,13 +376,12 @@ public:
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /// Returns number of values in column, that equal to default value of column.
-    /// Checks every @step-th value. So, if step is not 1, returns number,
-    /// that lower than actual. 0 means, that such statistic is unknown for column.
+    /// Returns ration of values in column, that equal to default value of column.
+    /// Checks only @sample_ratio ratio of rows.
     virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0;
 
     /// Returns indices of values in column, that not equal to default value of column.
-    virtual void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const;
+    virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
 
     /// Returns column with @total_size elements.
     /// In result column values from current column are at positions from @offsets.
@@ -506,8 +505,12 @@ protected:
     template <typename Derived>
     bool hasEqualValuesImpl() const;
 
+    /// Template is to devirtualize calls to 'isDefaultAt' method.
     template <typename Derived>
     double getRatioOfDefaultRowsImpl(double sample_ratio) const;
+
+    template <typename Derived>
+    void getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const;
 };
 
 using ColumnPtr = IColumn::Ptr;

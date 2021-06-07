@@ -1223,13 +1223,4 @@ void ColumnArray::gather(ColumnGathererStream & gatherer)
     gatherer.gather(*this);
 }
 
-void ColumnArray::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const
-{
-    const auto & offsets_data = getOffsets();
-    size_t to = limit && from + limit < size() ? from + limit : size();
-    for (size_t i = from;  i < to; ++i)
-        if (offsets_data[i] != offsets_data[i - 1])
-            indices.push_back(i);
-}
-
 }

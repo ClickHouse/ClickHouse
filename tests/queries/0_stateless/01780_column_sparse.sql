@@ -37,8 +37,8 @@ INSERT INTO t_sparse_1 VALUES (1, 6), (2, 1), (3, 0), (4, -1), (5, 0), (6, 0), (
 
 SELECT * FROM t_sparse_1 ORDER BY v;
 SELECT * FROM t_sparse_1 ORDER BY v DESC;
-SELECT * FROM t_sparse_1 ORDER BY v LIMIT 5;
-SELECT * FROM t_sparse_1 ORDER BY v DESC LIMIT 5;
+SELECT * FROM t_sparse_1 ORDER BY v, id LIMIT 5;
+SELECT * FROM t_sparse_1 ORDER BY v DESC, id LIMIT 5;
 
 DROP TABLE t_sparse;
 DROP TABLE t_sparse_1;

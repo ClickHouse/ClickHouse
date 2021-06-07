@@ -36,14 +36,6 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
-void IColumn::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const
-{
-    size_t to = limit && from + limit < size() ? from + limit : size();
-    indices.reserve(indices.size() + to - from);
-    for (size_t i = from; i < to; ++i)
-        indices.push_back(i);
-}
-
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())

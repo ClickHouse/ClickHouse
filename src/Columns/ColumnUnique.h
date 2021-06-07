@@ -127,6 +127,11 @@ public:
         return getNestedColumn()->getRatioOfDefaultRows(sample_ratio);
     }
 
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
+    {
+        return getNestedColumn()->getIndicesOfNonDefaultRows(indices, from, limit);
+    }
+
     const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }

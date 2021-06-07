@@ -121,7 +121,7 @@ public:
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
 
-    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const override;
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
