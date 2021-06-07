@@ -44,6 +44,8 @@ env = None
 
 cached_source_files = {}
 
+functions_bounds = {}
+
 def percent(a, b):
   return 0 if b == 0 else int(a * 100 / b)
 
@@ -278,7 +280,7 @@ def get_functions_bounds(src, funcs):
 
     bounds = {}
 
-    for line in set([line for (_, line) in funcs.values()]):
+    for line in sorted(set([line for (_, line) in funcs.values()])):
         line -= 1
 
         if line > len(src):
@@ -346,17 +348,31 @@ def get_all_lines(sf_index, source_file_path, funcs):
         cached_source_files[sf_index] = src_file.read()
         file_contents = cached_source_files[sf_index].split("\n")
 
-    bounds = get_functions_bounds(file_contents, funcs)
+    global functions_bounds
+
+    functions_bounds[sf_index] = get_functions_bounds(file_contents, funcs)
 
     lines = []
 
-    for start, end in bounds.values():
+    for start, end in functions_bounds[sf_index].values():
         lines.extend(range(start + 1, end + 2))
     
     return lines
 
 def get_covered_lines(sf_index, covered_funcs, covered_edges):
-    return []
+    if sf_index not in functions_bounds or len(covered_funcs) == 0:
+        return []
+
+    sf_funcs_bounds = functions_bounds[sf_index]
+    sf_funcs= files[sf_index]
+
+    lines = []
+
+    # for edge_index in covered_funcs:
+    #     sf_funcs
+    #     func_lines = sf_functions[]
+
+    return lines
 
 def read_header(report_file):
     global files
