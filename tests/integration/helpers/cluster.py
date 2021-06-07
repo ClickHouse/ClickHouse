@@ -373,7 +373,7 @@ class ClickHouseCluster:
     def cleanup(self):
         # Just in case kill unstopped containers from previous launch
         try:
-            result = run_and_check(['docker', 'container', 'list', '-a', '-f name={self.project_name}'])
+            result = run_and_check(['docker', 'container', 'list', '-a', '-f name={self.project_name}', '|', 'wc', '-l'])
             if int(result) > 1:
                 logging.debug("Trying to kill unstopped containers...")
                 run_and_check(['docker', 'kill', f'`docker container list -a -f name={self.project_name}`'])
@@ -662,7 +662,6 @@ class ClickHouseCluster:
         self.base_cassandra_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                     '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
         return self.base_cassandra_cmd
-
 
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None, with_zookeeper=False, with_zookeeper_secure=False,
