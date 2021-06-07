@@ -1,61 +1,39 @@
 <td><a href="{{ entry.url }}">{{ entry.name }}</a></td>
-<td class="
-    {% if entry.lines[1] == 0 %}
-    {% elif entry.lines[2] >= bounds["lines"][0] %}
-            table-success
-    {% elif entry.lines[2] >= bounds["lines"][1] %}
-            table-warning
+
+{% for entry_list_type, entry_list in entry.types_and_lists() %}
+    <td class="
+        {% if entry_list[TOTAL] == 0 %}
+        {% elif entry_list[PERCENT] >= bounds[entry_list_type][0] %}
+                table-success
+        {% elif entry_list[PERCENT] >= bounds[entry_list_type][1] %}
+                table-warning
+        {% else %}
+                table-danger
+        {% endif %}">
+        {% if entry_list[TOTAL] > 0 %}
+            {{ entry_list[2] }}%
+        {% else %}
+            -
+        {% endif %}
+    </td>
+
+    {% if entry_list[TOTAL] > 0 %}
+        <td> {{ entry_list[HITS] }} </td>
+        <td> {{ entry_list[TOTAL] }} </td>
     {% else %}
-            table-danger
-    {% endif %}">
-    {% if entry.lines[1] > 0 %}
-        {{ entry.lines[2] }}%
-    {% else %}
-        -
+        <td>-</td>
+        <td>-</td>
     {% endif %}
-</td>
-
-{% if entry.lines[1] > 0 %}
-    <td> {{ entry.lines[0] }} </td>
-    <td> {{ entry.lines[1] }} </td>
-{% else %}
-    <td>-</td> <td>-</td>
-{% endif %}
+{% endfor %}
 
 <td class="
-    {% if entry.funcs[1] == 0 %}
-    {% elif entry.funcs[2] >= bounds["funcs"][0] %}
+    {% if entry.tests[PERCENT] >= bounds[TESTS][0] %}
             table-success
-    {% elif entry.funcs[2] >= bounds["funcs"][1] %}
+    {% elif entry.tests[1] >= bounds[TESTS][1] %}
             table-warning
     {% else %}
             table-danger
     {% endif %}">
-    {% if entry.funcs[1] > 0 %}
-        {{ entry.funcs[2] }}%
-    {% else %}
-        -
-    {% endif %}
+    {{ entry.tests[PERCENT] }}%
 </td>
-
-{% if entry.funcs[1] > 0 %}
-    <td> {{ entry.funcs[0] }} </td>
-    <td> {{ entry.funcs[1] }} </td>
-{% else %}
-    <td>-</td> <td>-</td>
-{% endif %}
-
-<td class="
-    {% if entry.tests[1] >= bounds["tests"][0] %}
-            table-success
-    {% elif entry.tests[1] >= bounds["tests"][1] %}
-            table-warning
-    {% else %}
-            table-danger
-    {% endif %}">
-    {{ entry.tests[1] }}%
-</td>
-<td>
-    {{ entry.tests[0] }}
-</td>
-</td>
+<td> {{ entry.tests[HITS] }} </td>

@@ -3,33 +3,36 @@
     <head>
         <meta charset="UTF-8">
         <title>{{ title }}</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet"
-                                                                                             integrity="sha384-+0n0xVW2eSR5OomGNYDnhzAbDsOXxcvSN1TPprVMTNDbiYZCxYbOOl7+AMvyTG2x" crossorigin="anonymous">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-+0n0xVW2eSR5OomGNYDnhzAbDsOXxcvSN1TPprVMTNDbiYZCxYbOOl7+AMvyTG2x" crossorigin="anonymous">
         <link href="https://rawgit.com/richleland/pygments-css/master/autumn.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/js/bootstrap.bundle.min.js"
-                integrity="sha384-gtEjrD/SeCtmISkJkNUaaKMoLD0//ElJ19smozuHV6z3Iehds+3Ulb9Bn9Plx0x4" crossorigin="anonymous"></script>
     </head>
     <body>
         <div class="container-lg">
-            <div class="row" style="margin-bottom: 20px;margin-top: 20px;">
+            <div class="row py-1">
                 <div class="col-4">
-                    Coverage report:<br>
+                    <h5>Coverage report</h5>
                     <a href="{{ root_url }}">Root directory</a>
                     <a href="{{ index_url }}">All files index</a>
+                    <br>
+                    Tests: {{ tests_total }}
+                    <br>
+                    Generated at {{ generated_at }}
                 </div>
                 <div class="col-4">
+                    <h6>Coverage bounds</h6>
                     {% for e in bounds %}
-                        {{ e }} coverage:
+                        {{ e }}:&emsp;
                         <span class="badge bg-success">> {{ bounds[e][0] }}%</span>
                         <span class="badge bg-warning text-dark">>= {{ bounds[e][1] }}%</span>
                         <span class="badge bg-danger">< {{ bounds[e][1] }}%</span> <br>
                     {% endfor %}
                 </div>
                 <div class="col-4">
+                    <h6>File view legend</h6>
                     {% for key in colors %}
-                        {{ key }}:
-                        <span class="badge text-dark" style="background-color:{{ colors[key][1] }}">Covered</span>
-                        <span class="badge text-dark" style="background-color:{{ colors[key][0] }}">Not covered</span>
+                        {{ key }}:&emsp;
+                        <span class="badge text-dark" style="background-color:{{ colors[key][0] }}">Covered</span>
+                        <span class="badge text-dark" style="background-color:{{ colors[key][1] }}">Not covered</span>
                         <br>
                     {% endfor %}
                 </div>

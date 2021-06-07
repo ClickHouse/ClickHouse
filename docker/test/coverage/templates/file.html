@@ -1,45 +1,41 @@
 {% extends "page.html" %}
-
 {% block content %}
 
     <div class="col-12">
-        <table class="table table-bordered table-sm">
-            <thead>
-                {% include "table_header.html" %}
-            </thead>
-            <tbody>
-                <tr> {% include "entry.html" %} </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">Not covered lines</h5>
-                <p class="card-text">
-                    {% for line in not_covered_lines %}
-                        <a href="#line-{{ line }}">{{ line }}</a>
-                    {% endfor %}
-                </p>
+        <div class="d-grid gap-3">
+            <div class="p-2">
+                <table class="table table-bordered table-sm">
+                    <thead>
+                        {% include "table_header.html" %}
+                    </thead>
+                    <tbody>
+                        <tr> {% include "entry.html" %} </tr>
+                    </tbody>
+                </table>
             </div>
+
+            {% for entity, lines in not_covered %}
+                {% if lines|length > 0 %}
+                    <div class="p-2 shadow-sm">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Not covered {{entity}}</h5>
+                                <p class="card-text">
+                                    {% for start, end in lines %}
+                                        {% if start == end %}
+                                            <a href="#line-{{ start }}">{{ start }}</a>
+                                        {% else %}
+                                            <a href="#line-{{ start }}">{{ start }}</a>-<a href="#line-{{ end }}">{{ end }}</a>
+                                        {% endif %}
+                                    {% endfor %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+            {% endfor %}
         </div>
     </div>
 
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">Not covered funcs</h5>
-                <p class="card-text">
-                    {% for line in not_covered_funcs %}
-                        <a href="#line-{{ line }}">{{ line }}</a>
-                    {% endfor %}
-                </p>
-            </div>
-        </div>
-    </div>
-
-
-    <div class="col-12"> {{ lines }} </div>
-
+    <div class="col-12"> {{ highlighted_sources }} </div>
 {% endblock %}
