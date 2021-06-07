@@ -136,7 +136,7 @@ MaskInfo getMaskFromColumn(
             bool use_value_from_expanding_mask = mask_used_in_expanding && (!(*mask_used_in_expanding)[i] ^ inverted_mask_used_in_expanding);
             if (use_value_from_expanding_mask)
                 value = inverted ? !default_value_in_expanding : default_value_in_expanding;
-            else if (only_null || (null_bytemap && (*null_bytemap)[i]))
+            else if (only_null || (null_bytemap && (*null_bytemap)[column_index]))
             {
                 value = inverted ? !null_value : null_value;
                 if (nulls)
