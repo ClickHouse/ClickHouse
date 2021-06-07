@@ -754,13 +754,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             {
                 /// Create and correctly initialize global WAL object
                 write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
-                for (auto && part : write_ahead_log->restore(metadata_snapshot))
+                for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext()))
                     parts_from_wal.push_back(std::move(part));
             }
             else if (settings->in_memory_parts_enable_wal)
             {
                 MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
-                for (auto && part : wal.restore(metadata_snapshot))
+                for (auto && part : wal.restore(metadata_snapshot, getContext()))
                     parts_from_wal.push_back(std::move(part));
             }
         }
@@ -4121,8 +4121,13 @@ void MergeTreeData::removeQueryId(const String & query_id) const
 {
     std::lock_guard lock(query_id_set_mutex);
     if (query_id_set.find(query_id) == query_id_set.end())
+    {
+        /// Do not throw exception, because this method is used in destructor.
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
+        assert(false);
+    }
     else
         query_id_set.erase(query_id);
 }
+
 }

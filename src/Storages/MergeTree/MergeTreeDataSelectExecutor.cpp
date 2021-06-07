@@ -250,7 +250,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
         minmax_idx_condition.emplace(query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key));
-        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context, false /* strict */);
+        partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {

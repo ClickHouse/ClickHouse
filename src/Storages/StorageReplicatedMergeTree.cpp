@@ -509,10 +509,11 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             if (wait_event->tryWait(1000))
                 continue;
 
-            /// Here we check mutation for errors or kill on local replica. If they happen on this replica
+            /// Here we check mutation for errors on local replica. If they happen on this replica
             /// they will happen on each replica, so we can check only in-memory info.
             auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id);
-            if (!mutation_status || !mutation_status->latest_fail_reason.empty())
+            /// If mutation status is empty, than local replica may just not loaded it into memory.
+            if (mutation_status && !mutation_status->latest_fail_reason.empty())
                 break;
         }
 
@@ -1863,7 +1864,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                         if (code == Coordination::Error::ZOK)
                         {
                             LOG_DEBUG(log, "Marked quorum for part {} as failed.", entry.new_part_name);
-                            queue.removeFromVirtualParts(part_info);
+                            queue.removeFailedQuorumPart(part_info);
                             return true;
                         }
                         else if (code == Coordination::Error::ZBADVERSION || code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
@@ -1875,7 +1876,10 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                     }
                     else
                     {
-                        LOG_WARNING(log, "No active replica has part {}, but that part needs quorum and /quorum/status contains entry about another part {}. It means that part was successfully written to {} replicas, but then all of them goes offline. Or it is a bug.", entry.new_part_name, quorum_entry.part_name, entry.quorum);
+                        LOG_WARNING(log, "No active replica has part {}, "
+                                         "but that part needs quorum and /quorum/status contains entry about another part {}. "
+                                         "It means that part was successfully written to {} replicas, but then all of them goes offline. "
+                                         "Or it is a bug.", entry.new_part_name, quorum_entry.part_name, entry.quorum);
                     }
                 }
             }
@@ -2260,7 +2264,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
             part_desc->res_part = fetcher.fetchPart(
-                metadata_snapshot, part_desc->found_new_part_name, source_replica_path,
+                metadata_snapshot, global_context, part_desc->found_new_part_name, source_replica_path,
                 address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
@@ -2450,7 +2454,6 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     {
         if (active_parts_set.getContainingPart(part).empty())
         {
-            queue.remove(zookeeper, part);
             parts_to_remove_from_zk.emplace_back(part);
             LOG_WARNING(log, "Source replica does not have part {}. Removing it from ZooKeeper.", part);
         }
@@ -2695,6 +2698,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
     /// Clear obsolete queue that we no longer need.
     zookeeper->removeChildren(replica_path + "/queue");
+    queue.clear();
 
     /// Will do repair from the selected replica.
     cloneReplica(source_replica, source_is_lost_stat, zookeeper);
@@ -3694,7 +3698,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                     ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
             return fetcher.fetchPart(
-                metadata_snapshot, part_name, source_replica_path,
+                metadata_snapshot, global_context, part_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, user_password.first, user_password.second, interserver_scheme, to_detached);
         };
@@ -4573,7 +4577,10 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
         auto zookeeper = getZooKeeper();
         delimiting_block_lock = allocateBlockNumber(partition_id, zookeeper);
         right = delimiting_block_lock->getNumber();
-        mutation_version = queue.getCurrentMutationVersion(partition_id, right);
+        /// Make sure we cover all parts in drop range.
+        /// There might be parts with mutation version greater than current block number
+        /// if some part mutation has been assigned after block number allocation, but before creation of DROP_RANGE entry.
+        mutation_version = MergeTreePartInfo::MAX_BLOCK_NUMBER;
     }
 
     if (for_replace_range)
