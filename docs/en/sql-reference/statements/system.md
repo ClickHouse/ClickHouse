@@ -79,7 +79,7 @@ Completely reloads a CatBoost model `model_name` if the configuration was update
 **Syntax**
 
 ```sql
-SYSTEM RELOAD MODEL [db.]<model_name>
+SYSTEM RELOAD MODEL <model_name>
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
