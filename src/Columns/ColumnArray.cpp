@@ -181,6 +181,13 @@ StringRef ColumnArray::getDataAt(size_t n) const
 }
 
 
+bool ColumnArray::isDefaultAt(size_t n) const
+{
+    const auto & offsets_data = getOffsets();
+    return offsets_data[n] == offsets_data[n - 1];
+}
+
+
 void ColumnArray::insertData(const char * pos, size_t length)
 {
     /** Similarly - only for arrays of fixed length values.
@@ -1222,25 +1229,6 @@ size_t ColumnArray::getNumberOfDimensions() const
     if (!nested_array)
         return 1;
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
-}
-
-size_t ColumnArray::getNumberOfDefaultRows(size_t step) const
-{
-    const auto & offsets_data = getOffsets();
-    size_t res = 0;
-    for (size_t i = 0; i < offsets_data.size(); i += step)
-        res += (offsets_data[i] != offsets_data[i - 1]);
-
-    return res;
-}
-
-void ColumnArray::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const
-{
-    const auto & offsets_data = getOffsets();
-    size_t to = limit && from + limit < size() ? from + limit : size();
-    for (size_t i = from;  i < to; ++i)
-        if (offsets_data[i] != offsets_data[i - 1])
-            indices.push_back(i);
 }
 
 }

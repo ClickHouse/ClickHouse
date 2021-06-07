@@ -1890,7 +1890,7 @@ struct ToDateMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
         auto which = WhichDataType(type);
-        if (which.isDateOrDateTime() || which.isInt8() || which.isInt16() || which.isUInt8() || which.isUInt16())
+        if (which.isDate() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8() || which.isUInt16())
             return {true, true, true};
         else if (
             (which.isUInt() && ((left.isNull() || left.get<UInt64>() < 0xFFFF) && (right.isNull() || right.get<UInt64>() >= 0xFFFF)))
@@ -2408,7 +2408,7 @@ private:
         UInt32 scale = to_type->getScale();
 
         WhichDataType which(type_index);
-        bool ok = which.isNativeInt() || which.isNativeUInt() || which.isDecimal() || which.isFloat() || which.isDateOrDateTime()
+        bool ok = which.isNativeInt() || which.isNativeUInt() || which.isDecimal() || which.isFloat() || which.isDate() || which.isDateTime() || which.isDateTime64()
             || which.isStringOrFixedString();
         if (!ok)
         {

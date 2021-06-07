@@ -80,6 +80,7 @@ public:
     Field operator[](size_t) const override { throwMustBeConcrete(); }
     void get(size_t, Field &) const override { throwMustBeConcrete(); }
     StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
+    bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
     void insert(const Field &) override { throwMustBeConcrete(); }
     void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeConcrete(); }
     void insertData(const char *, size_t) override { throwMustBeConcrete(); }
@@ -104,6 +105,8 @@ public:
     void gather(ColumnGathererStream &) override { throwMustBeConcrete(); }
     void getExtremes(Field &, Field &) const override { throwMustBeConcrete(); }
     size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }
+    double getRatioOfDefaultRows(double) const override { throwMustBeConcrete(); }
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeConcrete(); }
 
 private:
     [[noreturn]] void throwMustBeConcrete() const

@@ -7,9 +7,6 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
 
 # Runs custom python-based S3 endpoint.
 def run_endpoint(cluster):
@@ -20,11 +17,12 @@ def run_endpoint(cluster):
     cluster.exec_in_container(container_id, ["python", "endpoint.py"], detach=True)
 
     # Wait for S3 endpoint start
-    for attempt in range(10):
+    num_attempts = 100
+    for attempt in range(num_attempts):
         ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'),
                                   ["curl", "-s", "http://resolver:8080/"], nothrow=True)
         if ping_response != 'OK':
-            if attempt == 9:
+            if attempt == num_attempts - 1:
                 assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
             else:
                 time.sleep(1)
@@ -69,7 +67,7 @@ def drop_table(cluster):
 
 
 # S3 request will be failed for an appropriate part file write.
-FILES_PER_PART_BASE = 5  # partition.dat, default_compression_codec.txt, count.txt, columns.txt, checksums.txt
+FILES_PER_PART_BASE = 6  # partition.dat, default_compression_codec.txt, count.txt, columns.txt, checksums.txt, serialization.txt
 FILES_PER_PART_WIDE = FILES_PER_PART_BASE + 1 + 1 + 3 * 2  # Primary index, MinMax, Mark and data file for column(s)
 FILES_PER_PART_COMPACT = FILES_PER_PART_BASE + 1 + 1 + 2
 
@@ -159,13 +157,13 @@ def test_move_failover(cluster):
 
     # There should be 2 attempts to move part.
     assert node.query("""
-        SELECT count(*) FROM system.part_log 
+        SELECT count(*) FROM system.part_log
         WHERE event_type='MovePart' AND table='s3_failover_test'
         """) == '2\n'
 
     # First attempt should be failed with expected error.
     exception = node.query("""
-        SELECT exception FROM system.part_log 
+        SELECT exception FROM system.part_log
         WHERE event_type='MovePart' AND table='s3_failover_test' AND notEmpty(exception)
         ORDER BY event_time
         LIMIT 1

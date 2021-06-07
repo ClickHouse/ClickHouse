@@ -197,7 +197,7 @@ void ColumnObject::optimizeTypesOfSubcolumns()
         }
 
         size_t subcolumn_size = subcolumn.size();
-        if (subcolumn.data->getNumberOfDefaultRows(/*step=*/ 1) == 0)
+        if (subcolumn.data->getRatioOfDefaultRows() == 1.0)
         {
             subcolumn.data = castColumn({subcolumn.data, from_type, ""}, to_type);
         }
@@ -206,7 +206,7 @@ void ColumnObject::optimizeTypesOfSubcolumns()
             auto offsets = ColumnUInt64::create();
             auto & offsets_data = offsets->getData();
 
-            subcolumn.data->getIndicesOfNonDefaultValues(offsets_data, 0, subcolumn_size);
+            subcolumn.data->getIndicesOfNonDefaultRows(offsets_data, 0, subcolumn_size);
             auto values = subcolumn.data->index(*offsets, offsets->size());
 
             values = castColumn({values, from_type, ""}, to_type);

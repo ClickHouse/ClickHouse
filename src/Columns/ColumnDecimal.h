@@ -174,11 +174,17 @@ public:
         return false;
     }
 
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
+    }
+
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
+    {
+        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
+    }
+
     ColumnPtr compress() const override;
-
-    size_t getNumberOfDefaultRows(size_t step) const override;
-    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const override;
-
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }

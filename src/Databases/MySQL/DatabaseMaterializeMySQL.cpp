@@ -13,9 +13,11 @@
 #    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Storages/StorageMaterializeMySQL.h>
-#    include <Poco/File.h>
 #    include <Poco/Logger.h>
 #    include <Common/setThreadName.h>
+#    include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -158,10 +160,10 @@ template<typename Base>
 void DatabaseMaterializeMySQL<Base>::drop(ContextPtr context_)
 {
     /// Remove metadata info
-    Poco::File metadata(Base::getMetadataPath() + "/.metadata");
+    fs::path metadata(Base::getMetadataPath() + "/.metadata");
 
-    if (metadata.exists())
-        metadata.remove(false);
+    if (fs::exists(metadata))
+        fs::remove(metadata);
 
     Base::drop(context_);
 }

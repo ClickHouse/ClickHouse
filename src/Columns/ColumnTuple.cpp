@@ -113,6 +113,15 @@ void ColumnTuple::get(size_t n, Field & res) const
     res = tuple;
 }
 
+bool ColumnTuple::isDefaultAt(size_t n) const
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        if (!columns[i]->isDefaultAt(n))
+            return false;
+    return true;
+}
+
 StringRef ColumnTuple::getDataAt(size_t) const
 {
     throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -528,6 +537,16 @@ ColumnPtr ColumnTuple::compress() const
                 column = column->decompress();
             return ColumnTuple::create(compressed);
         });
+}
+
+double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
+{
+    return getRatioOfDefaultRowsImpl<ColumnTuple>(sample_ratio);
+}
+
+void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
 }
 
 }

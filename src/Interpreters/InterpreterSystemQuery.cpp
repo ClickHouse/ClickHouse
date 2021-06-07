@@ -542,7 +542,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (!query.replica_zk_path.empty())
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
-        auto remote_replica_path = query.replica_zk_path  + "/replicas/" + query.replica;
+        String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
 
         /// This check is actually redundant, but it may prevent from some user mistakes
         for (auto & elem : DatabaseCatalog::instance().getDatabases())

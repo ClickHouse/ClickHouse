@@ -36,6 +36,7 @@ public:
     const char * getFamilyName() const override { return "Tuple"; }
 
     bool canBeInsideNullable() const override { return false; }
+    bool supportsSparseSerialization() const override { return true; }
 
     MutableColumnPtr createColumn() const override;
     MutableColumnPtr createColumn(const ISerialization & serialization) const override;

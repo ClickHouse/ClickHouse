@@ -16,7 +16,7 @@ namespace DB
  *  It stores column with non-default values and column
  *  with their sorted positions in original column. Column with
  *  values contains also one default value at 0 position to make
- *  implementation of execution of functions and sorting more convinient.
+ *  implementation of execution of functions and sorting more convenient.
  */
 class ColumnSparse final : public COWHelper<IColumn, ColumnSparse>
 {
@@ -28,6 +28,10 @@ private:
     ColumnSparse(const ColumnSparse &) = default;
 
 public:
+    static constexpr auto DEFAULT_ROWS_SEARCH_SAMPLE_RATIO = 0.1;
+    static constexpr auto DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION = 0.95;
+    // static constexpr auto MIN_ROWS_TO_SEARCH_DEFAULTS = DEFAULT_ROWS_SEARCH_STEP * 16;
+
     using Base = COWHelper<IColumn, ColumnSparse>;
     static Ptr create(const ColumnPtr & values_, const ColumnPtr & offsets_, size_t size_)
     {
@@ -57,6 +61,7 @@ public:
     TypeIndex getDataType() const override { return values->getDataType(); }
     MutableColumnPtr cloneResized(size_t new_size) const override;
     size_t size() const override { return _size; }
+    bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -116,8 +121,8 @@ public:
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
 
-    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const override;
-    size_t getNumberOfDefaultRows(size_t step) const override;
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
+    double getRatioOfDefaultRows(double sample_ratio) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
