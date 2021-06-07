@@ -632,7 +632,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     if (compression_method == "ZSTD")
         compression_level = settings.network_zstd_compression_level;
 
-    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs);
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
