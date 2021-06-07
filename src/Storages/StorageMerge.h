@@ -53,8 +53,10 @@ private:
     std::optional<OptimizedRegularExpression> source_table_regexp;
     std::optional<std::unordered_map<String, std::unordered_set<String>>> source_databases_and_tables;
 
-    using StorageWithLockAndName = std::tuple<StoragePtr, TableLockHolder, String>;
+    /// (Database, Table, Lock, TableName)
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
+    using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
 
     StorageMerge::StorageListWithLocks getSelectedTables(
             ContextPtr query_context, const ASTPtr & query = nullptr, bool filter_by_virtual_column = false) const;
@@ -62,7 +64,7 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
-    DatabaseTablesIteratorPtr getDatabaseIterator(ContextPtr context) const;
+    DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
 
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
@@ -93,6 +95,7 @@ protected:
         Names & real_column_names,
         ContextMutablePtr modified_context,
         size_t streams_num,
+        bool has_database_virtual_column,
         bool has_table_virtual_column,
         bool concat_streams = false);
 
