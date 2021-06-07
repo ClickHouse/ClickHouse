@@ -27,7 +27,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/castColumn.h>
 
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <ext/range.h>
 
@@ -62,10 +62,10 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper : WithContext
+class FunctionDictHelper : WithConstContext
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionDictHelper(ContextConstPtr context_) : WithConstContext(context_) {}
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
@@ -132,12 +132,12 @@ class FunctionDictHas final : public IFunction
 public:
     static constexpr auto name = "dictHas";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionDictHas>(context);
     }
 
-    explicit FunctionDictHas(ContextPtr context_) : helper(context_) {}
+    explicit FunctionDictHas(ContextConstPtr context_) : helper(context_) {}
 
     String getName() const override { return name; }
 
@@ -270,12 +270,12 @@ class FunctionDictGetNoType final : public IFunction
 public:
     static constexpr auto name = dictionary_get_function_type == DictionaryGetFunctionType::get ? "dictGet" : "dictGetOrDefault";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionDictGetNoType>(context);
     }
 
-    explicit FunctionDictGetNoType(ContextPtr context_) : helper(context_) {}
+    explicit FunctionDictGetNoType(ContextConstPtr context_) : helper(context_) {}
 
     String getName() const override { return name; }
 
@@ -604,12 +604,12 @@ class FunctionDictGetImpl final : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionDictGetImpl>(context);
     }
 
-    explicit FunctionDictGetImpl(ContextPtr context_) : impl(context_) {}
+    explicit FunctionDictGetImpl(ContextConstPtr context_) : impl(context_) {}
 
     String getName() const override { return name; }
 
@@ -743,12 +743,12 @@ class FunctionDictGetOrNull final : public IFunction
 public:
     static constexpr auto name = "dictGetOrNull";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionDictGetOrNull>(context);
     }
 
-    explicit FunctionDictGetOrNull(ContextPtr context_)
+    explicit FunctionDictGetOrNull(ContextConstPtr context_)
         : dictionary_get_func_impl(context_)
         , dictionary_has_func_impl(context_)
     {}
@@ -906,12 +906,12 @@ class FunctionDictGetHierarchy final : public IFunction
 public:
     static constexpr auto name = "dictGetHierarchy";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionDictGetHierarchy>(context);
     }
 
-    explicit FunctionDictGetHierarchy(ContextPtr context_) : helper(context_) {}
+    explicit FunctionDictGetHierarchy(ContextConstPtr context_) : helper(context_) {}
 
     String getName() const override { return name; }
 
@@ -966,12 +966,12 @@ class FunctionDictIsIn final : public IFunction
 public:
     static constexpr auto name = "dictIsIn";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionDictIsIn>(context);
     }
 
-    explicit FunctionDictIsIn(ContextPtr context_)
+    explicit FunctionDictIsIn(ContextConstPtr context_)
         : helper(context_) {}
 
     String getName() const override { return name; }
@@ -1032,12 +1032,12 @@ class FunctionDictGetChildren final : public IFunction
 public:
     static constexpr auto name = "dictGetChildren";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionDictGetChildren>(context);
     }
 
-    explicit FunctionDictGetChildren(ContextPtr context_)
+    explicit FunctionDictGetChildren(ContextConstPtr context_)
         : helper(context_) {}
 
     String getName() const override { return name; }
@@ -1091,12 +1091,12 @@ class FunctionDictGetDescendants final : public IFunction
 public:
     static constexpr auto name = "dictGetDescendants";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionDictGetDescendants>(context);
     }
 
-    explicit FunctionDictGetDescendants(ContextPtr context_)
+    explicit FunctionDictGetDescendants(ContextConstPtr context_)
         : helper(context_) {}
 
     String getName() const override { return name; }

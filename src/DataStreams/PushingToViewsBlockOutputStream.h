@@ -54,8 +54,8 @@ private:
     };
 
     std::vector<ViewInfo> views;
-    ContextPtr select_context;
-    ContextPtr insert_context;
+    ContextMutablePtr select_context;
+    ContextMutablePtr insert_context;
 
     void process(const Block & block, ViewInfo & view);
 };

@@ -17,7 +17,7 @@ class LibraryBridgeHelper : public IBridgeHelper
 public:
     static constexpr inline size_t DEFAULT_PORT = 9012;
 
-    LibraryBridgeHelper(ContextPtr context_, const Block & sample_block, const Field & dictionary_id_);
+    LibraryBridgeHelper(ContextConstPtr context_, const Block & sample_block, const Field & dictionary_id_);
 
     bool initLibrary(const std::string & library_path, std::string library_settings, std::string attributes_names);
 

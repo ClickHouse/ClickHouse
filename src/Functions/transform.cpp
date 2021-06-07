@@ -11,7 +11,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -58,7 +58,7 @@ class FunctionTransform : public IFunction
 {
 public:
     static constexpr auto name = "transform";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTransform>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionTransform>(); }
 
     String getName() const override
     {

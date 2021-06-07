@@ -9,7 +9,7 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
@@ -483,7 +483,7 @@ struct NameRegionIn                    { static constexpr auto name = "regionIn"
 struct FunctionRegionToCity :
     public FunctionTransformWithDictionary<UInt32, RegionToCityImpl,    RegionsHierarchyGetter,    NameRegionToCity>
 {
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -492,7 +492,7 @@ struct FunctionRegionToCity :
 struct FunctionRegionToArea :
     public FunctionTransformWithDictionary<UInt32, RegionToAreaImpl,    RegionsHierarchyGetter,    NameRegionToArea>
 {
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -501,7 +501,7 @@ struct FunctionRegionToArea :
 struct FunctionRegionToDistrict :
     public FunctionTransformWithDictionary<UInt32, RegionToDistrictImpl, RegionsHierarchyGetter, NameRegionToDistrict>
 {
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -510,7 +510,7 @@ struct FunctionRegionToDistrict :
 struct FunctionRegionToCountry :
     public FunctionTransformWithDictionary<UInt32, RegionToCountryImpl, RegionsHierarchyGetter, NameRegionToCountry>
 {
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -519,7 +519,7 @@ struct FunctionRegionToCountry :
 struct FunctionRegionToContinent :
     public FunctionTransformWithDictionary<UInt32, RegionToContinentImpl, RegionsHierarchyGetter, NameRegionToContinent>
 {
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -528,7 +528,7 @@ struct FunctionRegionToContinent :
 struct FunctionRegionToTopContinent :
     public FunctionTransformWithDictionary<UInt32, RegionToTopContinentImpl, RegionsHierarchyGetter, NameRegionToTopContinent>
 {
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -537,7 +537,7 @@ struct FunctionRegionToTopContinent :
 struct FunctionRegionToPopulation :
     public FunctionTransformWithDictionary<UInt32, RegionToPopulationImpl, RegionsHierarchyGetter, NameRegionToPopulation>
 {
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -546,7 +546,7 @@ struct FunctionRegionToPopulation :
 struct FunctionRegionIn :
     public FunctionIsInWithDictionary<UInt32, RegionInImpl, RegionsHierarchyGetter,    NameRegionIn>
 {
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -555,7 +555,7 @@ struct FunctionRegionIn :
 struct FunctionRegionHierarchy :
     public FunctionHierarchyWithDictionary<UInt32, RegionHierarchyImpl, RegionsHierarchyGetter, NameRegionHierarchy>
 {
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -567,7 +567,7 @@ class FunctionRegionToName : public IFunction
 {
 public:
     static constexpr auto name = "regionToName";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionRegionToName>(context->getEmbeddedDictionaries().getRegionsNames());
     }

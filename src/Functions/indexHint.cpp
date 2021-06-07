@@ -1,4 +1,4 @@
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -23,7 +23,7 @@ class FunctionIndexHint : public IFunction
 {
 public:
     static constexpr auto name = "indexHint";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionIndexHint>();
     }
@@ -55,10 +55,6 @@ public:
         return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &) const override
-    {
-        return DataTypeUInt8().createColumnConst(1, 1u);
-    }
 };
 
 

@@ -265,7 +265,7 @@ Result:
 ```
 
 !!! attention "Attention"
-    The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of normal range (years 1970 - 2105) will give incorrect result.
+    The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1925 - 2283) will give an incorrect result.
 
 ## toStartOfYear {#tostartofyear}
 
@@ -460,7 +460,7 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 
 -   Otherwise, it is the last week of the previous year, and the next week is week 1.
 
-For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It doesn’t matter how many days in the new year the week contained, even if it contained only one day.
+For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It does not matter how many days in the new year the week contained, even if it contained only one day.
 
 ``` sql
 toWeek(date, [, mode][, Timezone])

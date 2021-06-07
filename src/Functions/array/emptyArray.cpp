@@ -1,4 +1,4 @@
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -22,7 +22,7 @@ class FunctionEmptyArray : public IFunction
 {
 public:
     static String getNameImpl() { return "emptyArray" + DataType().getName(); }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEmptyArray>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionEmptyArray>(); }
 
 private:
     String getName() const override

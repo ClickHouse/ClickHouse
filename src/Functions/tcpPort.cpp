@@ -14,7 +14,7 @@ class FunctionTcpPort : public IFunction
 public:
     static constexpr auto name = "tcpPort";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionTcpPort>(context->getTCPPort());
     }

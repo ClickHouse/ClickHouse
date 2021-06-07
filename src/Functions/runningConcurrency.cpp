@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <common/defines.h>
 #include <set>
@@ -154,7 +154,7 @@ namespace DB
     public:
         static constexpr auto name = Name::name;
 
-        static FunctionOverloadResolverPtr create(ContextPtr)
+        static FunctionOverloadResolverPtr create(ContextConstPtr)
         {
             return std::make_unique<RunningConcurrencyOverloadResolver<Name, ConcurrencyDataType>>();
         }
