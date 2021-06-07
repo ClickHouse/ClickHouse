@@ -4121,8 +4121,13 @@ void MergeTreeData::removeQueryId(const String & query_id) const
 {
     std::lock_guard lock(query_id_set_mutex);
     if (query_id_set.find(query_id) == query_id_set.end())
+    {
+        /// Do not throw exception, because this method is used in destructor.
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
+        assert(false);
+    }
     else
         query_id_set.erase(query_id);
 }
+
 }

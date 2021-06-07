@@ -445,8 +445,6 @@ void RemoteQueryExecutor::sendScalars()
 
 void RemoteQueryExecutor::sendExternalTables()
 {
-    SelectQueryInfo query_info;
-
     size_t count = connections->size();
 
     {
@@ -461,24 +459,29 @@ void RemoteQueryExecutor::sendExternalTables()
             for (const auto & table : external_tables)
             {
                 StoragePtr cur = table.second;
-                auto metadata_snapshot = cur->getInMemoryMetadataPtr();
-                QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
-                    context, QueryProcessingStage::Complete, query_info);
-
-                Pipe pipe = cur->read(
-                    metadata_snapshot->getColumns().getNamesOfPhysical(),
-                    metadata_snapshot, query_info, context,
-                    read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
+                data->creating_pipe_callback = [cur, context = this->context]()
+                {
+                    SelectQueryInfo query_info;
+                    auto metadata_snapshot = cur->getInMemoryMetadataPtr();
+                    QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
+                        context, QueryProcessingStage::Complete, query_info);
 
-                if (pipe.empty())
-                    data->pipe = std::make_unique<Pipe>(
+                    Pipe pipe = cur->read(
+                        metadata_snapshot->getColumns().getNamesOfPhysical(),
+                        metadata_snapshot, query_info, context,
+                        read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
+
+                    if (pipe.empty())
+                        return std::make_unique<Pipe>(
                             std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), Chunk()));
-                else
-                    data->pipe = std::make_unique<Pipe>(std::move(pipe));
 
+                    return std::make_unique<Pipe>(std::move(pipe));
+                };
+
+                data->pipe = data->creating_pipe_callback();
                 res.emplace_back(std::move(data));
             }
             external_tables_data.push_back(std::move(res));
