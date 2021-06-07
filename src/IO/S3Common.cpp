@@ -619,7 +619,7 @@ namespace S3
         storage_name = S3;
 
         if (uri.getHost().empty())
-            throw Exception("Host is empty in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI: {}", uri.toString());
 
         String name;
         String endpoint_authority_from_uri;
@@ -632,8 +632,8 @@ namespace S3
             /// S3 specification requires at least 3 and at most 63 characters in bucket name.
             /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
             if (bucket.length() < 3 || bucket.length() > 63)
-                throw Exception(
-                    "Bucket name length is out of bounds in virtual hosted style S3 URI: " + backQuote(bucket) + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Bucket name length is out of bounds in virtual hosted style S3 URI: {} ({})", quoteString(bucket), uri.toString());
 
             if (!uri.getPath().empty())
             {
@@ -642,11 +642,11 @@ namespace S3
             }
 
             if (key.empty() || key == "/")
-                throw Exception("Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name is empty in virtual hosted style S3 URI: {} ({})", quoteString(key), uri.toString());
             boost::to_upper(name);
             if (name != S3 && name != COS)
             {
-                throw Exception("Object storage system name is unrecognized in virtual hosted style S3 URI: " + backQuote(name) + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {} ({})", quoteString(name), uri.toString());
             }
             if (name == S3)
             {
@@ -665,14 +665,14 @@ namespace S3
             /// S3 specification requires at least 3 and at most 63 characters in bucket name.
             /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
             if (bucket.length() < 3 || bucket.length() > 63)
-                throw Exception(
-                    "Bucket name length is out of bounds in path style S3 URI: " + backQuote(bucket) + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Bucket name length is out of bounds in path style S3 URI: {} ({})", quoteString(bucket), uri.toString());
 
             if (key.empty() || key == "/")
-                throw Exception("Key name is empty in path style S3 URI: " + backQuote(key) + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name is empty in path style S3 URI: {} ({})", quoteString(key), uri.toString());
         }
         else
-            throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI: {}", uri.toString());
     }
 }
 
