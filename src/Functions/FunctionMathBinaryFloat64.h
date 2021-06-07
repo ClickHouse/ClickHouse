@@ -28,7 +28,7 @@ class FunctionMathBinaryFloat64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMathBinaryFloat64>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionMathBinaryFloat64>(); }
     static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
 
     bool useDefaultImplementationForConstants() const override { return true; }

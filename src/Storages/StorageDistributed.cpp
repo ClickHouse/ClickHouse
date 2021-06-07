@@ -76,6 +76,8 @@
 #include <cassert>
 
 
+namespace fs = std::filesystem;
+
 namespace
 {
 const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
@@ -607,7 +609,7 @@ void StorageDistributed::read(
     ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
         modified_query_ast, local_context, query_info,
         sharding_key_expr, sharding_key_column_name,
-        getCluster());
+        query_info.cluster);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -864,7 +866,7 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
 {
     const std::string path(disk->getPath() + relative_data_path);
-    Poco::File{path}.createDirectories();
+    fs::create_directories(path);
 
     std::filesystem::directory_iterator begin(path);
     std::filesystem::directory_iterator end;

@@ -24,9 +24,9 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
-                                   [[maybe_unused]] ContextPtr context,
+                                   [[maybe_unused]] ContextConstPtr context,
                                  const std::string & /* default_database */,
-                                 bool /* check_config */) -> DictionarySourcePtr {
+                                 bool /* created_from_ddl */) -> DictionarySourcePtr {
 #if USE_MYSQL
         StreamSettings mysql_input_stream_settings(context->getSettingsRef()
             , config.getBool(config_prefix + ".mysql.close_connection", false) || config.getBool(config_prefix + ".mysql.share_connection", false)

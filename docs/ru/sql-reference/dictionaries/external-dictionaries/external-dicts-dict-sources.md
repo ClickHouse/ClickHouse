@@ -53,7 +53,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 или
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
@@ -69,7 +69,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
-    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)      
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
 
 ## Локальный файл {#dicts-external_dicts_dict_sources-local_file}
 
@@ -87,7 +87,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 или
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 ```
 
 Поля настройки:
@@ -96,6 +96,10 @@ SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 -   `format` — формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
 
 Если словарь с источником `FILE` создается с помощью DDL-команды (`CREATE DICTIONARY ...`), источник словаря должен быть расположен в каталоге `user_files`. Иначе пользователи базы данных будут иметь доступ к произвольному файлу на узле ClickHouse.
+
+**Смотрите также**
+
+-   [Функция dictionary](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
 ## Исполняемый файл {#dicts-external_dicts_dict_sources-executable}
 
