@@ -26,7 +26,7 @@ class TensorFlowModel : public IModel
 {
 public:
     TensorFlowModel(std::string name, std::string model_path,
-                    std::string lib_path, const ExternalLoadableLifetime & lifetime, int32_t num_threads);
+                    std::string lib_path, const ExternalLoadableLifetime & lifetime);
 
     ColumnPtr evaluate(const ColumnRawPtrs & columns) const override;
     std::string getTypeName() const override { return "tensorflow"; }
@@ -49,7 +49,6 @@ private:
     std::string model_path;
     std::string lib_path;
     ExternalLoadableLifetime lifetime;
-    int32_t num_threads;
 
     std::unique_ptr<ITensorFlowModelImpl> model;
 };

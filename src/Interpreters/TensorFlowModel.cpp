@@ -151,7 +151,7 @@ std::shared_ptr<TensorFlowLibHolder> getTensorFlowWrapperHolder(const std::strin
 class TensorFlowModelImpl : public ITensorFlowModelImpl
 {
 public:
-    TensorFlowModelImpl(std::string lib_path, std::string model_path, int32_t num_threads)
+    TensorFlowModelImpl(std::string lib_path, std::string model_path)
     {
         api_provider = getTensorFlowWrapperHolder(lib_path);
         api = &api_provider->getAPI();
@@ -161,7 +161,6 @@ public:
             throw Exception("Model loading was failed", ErrorCodes::BAD_ARGUMENTS);
 
         interpreter_options = api->TfLiteInterpreterOptionsCreate();
-        api->TfLiteInterpreterOptionsSetNumThreads(interpreter_options, num_threads);
 
         interpreter = api->TfLiteInterpreterCreate(model, interpreter_options);
         if (interpreter == nullptr)
@@ -304,14 +303,13 @@ private:
 };
 
 TensorFlowModel::TensorFlowModel(std::string name_, std::string model_path_, std::string lib_path_,
-                                 const ExternalLoadableLifetime & lifetime_, int32_t num_threads_)
+                                 const ExternalLoadableLifetime & lifetime_)
     : name(std::move(name_))
     , model_path(std::move(model_path_))
     , lib_path(std::move(lib_path_))
     , lifetime(lifetime_)
-    , num_threads(num_threads_)
 {
-    model = std::make_unique<TensorFlowModelImpl>(lib_path, model_path, num_threads);
+    model = std::make_unique<TensorFlowModelImpl>(lib_path, model_path);
 }
 
 ColumnPtr TensorFlowModel::evaluate(const ColumnRawPtrs & columns) const
@@ -338,7 +336,7 @@ bool TensorFlowModel::isModified() const
 
 std::shared_ptr<const IExternalLoadable> TensorFlowModel::clone() const
 {
-    return std::make_shared<TensorFlowModel>(name, model_path, lib_path, lifetime, num_threads);
+    return std::make_shared<TensorFlowModel>(name, model_path, lib_path, lifetime);
 }
 
 }

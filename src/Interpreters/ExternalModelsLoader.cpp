@@ -37,14 +37,10 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
     }
     else if (type == "tensorflow")
     {
-        int32_t num_threads = 1;
-        if (config.has(config_prefix + ".num_threads")) 
-            num_threads = config.getInt(config_prefix + ".num_threads");
-
         return std::make_unique<TensorFlowModel>(
                 name, config.getString(config_prefix + ".path"),
                 context.getConfigRef().getString("tensorflow_lite_dynamic_library_path"),
-                lifetime, num_threads
+                lifetime
         );
     }
     else
