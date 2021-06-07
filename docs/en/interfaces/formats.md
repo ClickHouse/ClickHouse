@@ -547,7 +547,7 @@ Differs from JSON only in that data rows are output in arrays, not in objects.
 
 Example:
 
-``` json
+```
 // JSONCompact
 {
         "meta":
@@ -579,7 +579,7 @@ Example:
 }
 ```
 
-```json
+```
 // JSONCompactString
 {
         "meta":
@@ -662,7 +662,7 @@ ClickHouse allows:
 -   Any order of key-value pairs in the object.
 -   Omitting some values.
 
-ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects in one line. You don’t have to separate them with line breaks.
+ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects in one line. You do not have to separate them with line breaks.
 
 **Omitted values processing**
 
@@ -770,9 +770,9 @@ SELECT * FROM json_each_row_nested
 
 ## Native {#native}
 
-The most efficient format. Data is written and read by blocks in binary format. For each block, the number of rows, number of columns, column names and types, and parts of columns in this block are recorded one after another. In other words, this format is “columnar” – it doesn’t convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
+The most efficient format. Data is written and read by blocks in binary format. For each block, the number of rows, number of columns, column names and types, and parts of columns in this block are recorded one after another. In other words, this format is “columnar” – it does not convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
 
-You can use this format to quickly generate dumps that can only be read by the ClickHouse DBMS. It doesn’t make sense to work with this format yourself.
+You can use this format to quickly generate dumps that can only be read by the ClickHouse DBMS. It does not make sense to work with this format yourself.
 
 ## Null {#null}
 
@@ -1039,7 +1039,7 @@ struct Message {
 }
 ```
 
-Deserialization is effective and usually doesn’t increase the system load.
+Deserialization is effective and usually does not increase the system load.
 
 See also [Format Schema](#formatschema).
 
@@ -1312,7 +1312,7 @@ ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` q
 
 Unsupported ORC data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-The data types of ClickHouse table columns don’t have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
+The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
 ### Inserting Data {#inserting-data-2}
 

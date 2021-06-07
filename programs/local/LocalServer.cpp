@@ -43,9 +43,9 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/randomSeed.h>
-
 #include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -73,11 +73,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
     Poco::Util::Application::initialize(self);
 
     /// Load config files if exists
-    if (config().has("config-file") || Poco::File("config.xml").exists())
+    if (config().has("config-file") || fs::exists("config.xml"))
     {
         const auto config_path = config().getString("config-file", "config.xml");
         ConfigProcessor config_processor(config_path, false, true);
-        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+        config_processor.setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", "."));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
@@ -101,7 +101,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 }
 
-void LocalServer::applyCmdSettings(ContextPtr context)
+void LocalServer::applyCmdSettings(ContextMutablePtr context)
 {
     context->applySettingsChanges(cmd_settings.changes());
 }
@@ -293,8 +293,8 @@ try
         LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        Poco::File(path + "data/").createDirectories();
-        Poco::File(path + "metadata/").createDirectories();
+        fs::create_directories(fs::path(path) / "data/");
+        fs::create_directories(fs::path(path) / "metadata/");
         loadMetadataSystem(global_context);
         attachSystemTables(global_context);
         loadMetadata(global_context);
@@ -485,7 +485,7 @@ void LocalServer::setupUsers()
 {
     ConfigurationPtr users_config;
 
-    if (config().has("users_config") || config().has("config-file") || Poco::File("config.xml").exists())
+    if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
     {
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
         ConfigProcessor config_processor(users_config_path);
@@ -651,7 +651,7 @@ void LocalServer::init(int argc, char ** argv)
     argsToConfig(arguments, config(), 100);
 }
 
-void LocalServer::applyCmdOptions(ContextPtr context)
+void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
     context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
     applyCmdSettings(context);

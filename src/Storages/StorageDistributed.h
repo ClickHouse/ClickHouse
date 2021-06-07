@@ -51,6 +51,7 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool isRemote() const override { return true; }
@@ -124,6 +125,7 @@ private:
         const StorageID & id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         const String & remote_database_,
         const String & remote_table_,
         const String & cluster_name_,

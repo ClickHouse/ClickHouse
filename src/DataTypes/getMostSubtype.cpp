@@ -241,7 +241,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
         for (const auto & type : types)
         {
-            if (isDateOrDateTime(type))
+            if (isDate(type) || isDateTime(type) || isDateTime64(type))
                 have_date_or_datetime = true;
             else
                 all_date_or_datetime = false;

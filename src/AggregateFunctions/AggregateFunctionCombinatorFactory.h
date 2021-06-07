@@ -9,6 +9,7 @@
 
 namespace DB
 {
+struct Settings;
 
 /** Create aggregate function combinator by matching suffix in aggregate function name.
   */

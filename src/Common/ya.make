@@ -18,7 +18,6 @@ PEERDIR(
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
-    contrib/libs/cxxsupp/libcxxabi-parts
     contrib/restricted/dragonbox
 )
 
@@ -33,6 +32,7 @@ SRCS(
     Config/AbstractConfigurationComparison.cpp
     Config/ConfigProcessor.cpp
     Config/ConfigReloader.cpp
+    Config/YAMLParser.cpp
     Config/configReadClient.cpp
     CurrentMemoryTracker.cpp
     CurrentMetrics.cpp
@@ -80,6 +80,7 @@ SRCS(
     ThreadPool.cpp
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
+    Throttler.cpp
     TimerDescriptor.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
