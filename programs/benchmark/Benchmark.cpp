@@ -8,7 +8,6 @@
 #include <iomanip>
 #include <random>
 #include <pcg_random.hpp>
-#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -36,7 +35,9 @@
 #include <Common/Config/configReadClient.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
@@ -119,8 +120,8 @@ public:
 
     int main(const std::vector<std::string> &) override
     {
-        if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
-            Poco::File(json_path).remove();
+        if (!json_path.empty() && fs::exists(json_path)) /// Clear file with previous results
+            fs::remove(json_path);
 
         readQueries();
         runBenchmark();
@@ -159,7 +160,7 @@ private:
     bool print_stacktrace;
     const Settings & settings;
     SharedContextHolder shared_context;
-    ContextPtr global_context;
+    ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
     /// Don't execute new queries after timelimit or SIGINT or exception
