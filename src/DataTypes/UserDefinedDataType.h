@@ -1,6 +1,8 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Functions/IFunctionImpl.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -12,16 +14,18 @@ class UserDefinedDataType final : public IDataType
 {
 private:
     DataTypePtr nested;
+    ASTPtr nested_ast;
     String type_name;
 
 public:
-    UserDefinedDataType(const DataTypePtr & nested_, const String & type_name_);
     UserDefinedDataType();
 
     DataTypePtr getNested() const;
+    ASTPtr getNestedAST() const;
     String getTypeName() const;
 
     void setNested(const DataTypePtr & nested_);
+    void setNestedAST(const ASTPtr & nested_ast_);
     void setTypeName(const String & type_name_);
 
     TypeIndex getTypeId() const override { return nested->getTypeId(); }

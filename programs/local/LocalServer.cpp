@@ -12,6 +12,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/UserDefinedObjectsOnDisk.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -285,6 +286,11 @@ try
 
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
+
+        LOG_DEBUG(log, "Loading user defined objects from {}", path);
+        Poco::File(path + "user_defined/").createDirectories();
+        UserDefinedObjectsOnDisk::instance().loadUserDefinedObjects(global_context);
+        LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         Poco::File(path + "data/").createDirectories();

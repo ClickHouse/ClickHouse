@@ -297,8 +297,12 @@ ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
     ColumnsWithTypeAndName result;
     result.reserve(index.size());
     for (const auto & node : index)
-        result.emplace_back(node->column, node->result_type, node->result_name);
-
+    {
+        DataTypePtr data_type = node->result_type;
+        if (DataTypeFactory::instance().isUserDefinedDataType(data_type->getName()))
+            data_type = static_cast<const UserDefinedDataType *>(data_type.get())->getNested();
+        result.emplace_back(node->column, data_type, node->result_name);
+    }
     return result;
 }
 

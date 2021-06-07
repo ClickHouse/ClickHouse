@@ -2,9 +2,9 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/UserDefinedDataType.h>
+#include <Functions/FunctionFactory.h>
 #include <Parsers/ASTCreateDataTypeQuery.h>
 #include <Parsers/IAST.h>
-#include <Columns/ColumnMap.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -20,6 +20,11 @@ DataTypePtr UserDefinedDataType::getNested() const
     return nested;
 }
 
+ASTPtr UserDefinedDataType::getNestedAST() const
+{
+    return nested_ast;
+}
+
 String UserDefinedDataType::getTypeName() const
 {
     return type_name;
@@ -28,6 +33,11 @@ String UserDefinedDataType::getTypeName() const
 void UserDefinedDataType::setNested(const DataTypePtr & nested_)
 {
     nested = nested_;
+}
+
+void UserDefinedDataType::setNestedAST(const ASTPtr & nested_ast_)
+{
+    nested_ast = nested_ast_;
 }
 
 void UserDefinedDataType::setTypeName(const String & type_name_)
@@ -84,19 +94,15 @@ static UserDefinedDataTypePtr create()
 }
 
 
-void registerUserDefinedDataType(DataTypeFactory & factory, const ASTCreateDataTypeQuery & createDataTypeQuery)
+void registerUserDefinedDataType(
+    DataTypeFactory & factory,
+    const ASTCreateDataTypeQuery & createDataTypeQuery)
 {
     if (factory.hasNameOrAlias(createDataTypeQuery.type_name))
         throw Exception("The data type '" + createDataTypeQuery.type_name + "' already exists", ErrorCodes::TYPE_ALREADY_EXISTS);
 
     factory.get(createDataTypeQuery.nested); // will throw exception if nested type was not registered
     factory.registerUserDefinedDataType(createDataTypeQuery.type_name, create, createDataTypeQuery);
-}
-
-UserDefinedDataType::UserDefinedDataType(const DataTypePtr & nested_, const String & type_name_)
-    : nested{nested_}
-    , type_name{type_name_}
-{
 }
 
 UserDefinedDataType::UserDefinedDataType()

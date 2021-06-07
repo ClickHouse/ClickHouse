@@ -6,7 +6,7 @@
 #include <Common/IFactoryWithAliases.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/UserDefinedDataType.h>
-
+#include <Interpreters/Context.h>
 
 #include <functional>
 #include <memory>
@@ -52,9 +52,14 @@ public:
     void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     /// Register a user defined data type
-    void registerUserDefinedDataType(const String & name, UserDefinedTypeCreator creator, const ASTCreateDataTypeQuery & createDataTypeQuery);
+    void registerUserDefinedDataType(
+        const String & name,
+        UserDefinedTypeCreator creator,
+        const ASTCreateDataTypeQuery & createDataTypeQuery);
 
     void unregisterUserDefinedDataType(const String & name);
+
+    bool isUserDefinedDataType(const String & name) const;
 
 private:
     const Value & findCreatorByName(const String & family_name) const;

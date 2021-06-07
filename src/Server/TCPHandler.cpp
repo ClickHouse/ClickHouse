@@ -29,6 +29,7 @@
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Compression/CompressionFactory.h>
 #include <common/logger_useful.h>
 
@@ -1547,7 +1548,19 @@ void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
 
     /// Send external table name (empty name is the main table)
     writeStringBinary("", *out);
-    writeStringBinary(columns.toString(), *out);
+
+    ColumnsDescription patched_columns;
+    for (const auto & column : columns)
+    {
+        if (DataTypeFactory::instance().isUserDefinedDataType(column.type->getFamilyName()))
+        {
+            ColumnDescription patched_column(column.name, static_cast<const UserDefinedDataType *>(column.type.get())->getNested());
+            patched_columns.add(patched_column);
+        }
+        else
+            patched_columns.add(column);
+    }
+    writeStringBinary(patched_columns.toString(), *out);
 
     out->next();
 }

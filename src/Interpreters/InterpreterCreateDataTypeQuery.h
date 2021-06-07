@@ -14,8 +14,13 @@ public:
 
     BlockIO execute() override;
 
+    void setInternal(bool internal_);
+
 private:
     ASTPtr query_ptr;
+
+    /// Is this an internal query - not from the user.
+    bool internal = false;
 };
 
 }

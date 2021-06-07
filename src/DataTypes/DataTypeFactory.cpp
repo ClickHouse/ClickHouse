@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <Functions/FunctionFactory.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateDataTypeQuery.h>
@@ -156,14 +157,17 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerUserDefinedDataType(const String & name, UserDefinedTypeCreator creator, const ASTCreateDataTypeQuery & createDataTypeQuery)
+void DataTypeFactory::registerUserDefinedDataType(
+    const String & name,
+    UserDefinedTypeCreator creator,
+    const ASTCreateDataTypeQuery & createDataTypeQuery)
 {
     registerDataType(name, [this, creator, createDataTypeQuery](const ASTPtr &)
     {
         auto res = creator();
         res->setNested(get(createDataTypeQuery.nested));
+        res->setNestedAST(createDataTypeQuery.nested);
         res->setTypeName(createDataTypeQuery.type_name);
-
         return res;
     }, CaseSensitiveness::CaseSensitive);
     user_defined_data_types.insert(name);
@@ -187,6 +191,11 @@ void DataTypeFactory::unregisterUserDefinedDataType(const String & name)
         throw Exception("Unknown data type family: " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_TYPE);
     else
         throw Exception("Unknown data type family: " + name, ErrorCodes::UNKNOWN_TYPE);
+}
+
+bool DataTypeFactory::isUserDefinedDataType(const String & name) const
+{
+    return user_defined_data_types.contains(name);
 }
 
 const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const
