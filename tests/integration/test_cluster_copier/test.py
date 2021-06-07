@@ -320,8 +320,14 @@ class Task_self_copy:
 def execute_task(started_cluster, task, cmd_options):
     task.start()
 
-    zk = cluster.get_kazoo_client('zoo1')
+    zk = started_cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
+    
+    
+    try:
+        zk.delete("/clickhouse-copier", recursive=True)
+    except kazoo.exceptions.NoNodeError:
+        print("No node /clickhouse-copier. It is Ok in first test.")
 
     # Run cluster-copier processes on each node
     docker_api = started_cluster.docker_client.api
