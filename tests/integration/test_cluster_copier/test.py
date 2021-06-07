@@ -322,8 +322,8 @@ def execute_task(started_cluster, task, cmd_options):
 
     zk = started_cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
-    
-    
+
+
     try:
         zk.delete("/clickhouse-copier", recursive=True)
     except kazoo.exceptions.NoNodeError:
@@ -343,7 +343,7 @@ def execute_task(started_cluster, task, cmd_options):
 
     print(cmd)
 
-    copiers = random.sample(list(cluster.instances.keys()), 3)
+    copiers = random.sample(list(started_cluster.instances.keys()), 3)
 
     for instance_name in copiers:
         instance = started_cluster.instances[instance_name]
@@ -402,19 +402,16 @@ def test_copy_with_recovering_after_move_faults(started_cluster, use_sample_offs
         execute_task(started_cluster, Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 
-@pytest.mark.partition
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition(started_cluster):
     execute_task(started_cluster, Task2(started_cluster, "test1"), [])
 
 
-@pytest.mark.partition
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition_with_recovering(started_cluster):
     execute_task(started_cluster, Task2(started_cluster, "test2"), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 
-@pytest.mark.partition
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition_with_recovering_after_move_faults(started_cluster):
     execute_task(started_cluster, Task2(started_cluster, "test3"), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
