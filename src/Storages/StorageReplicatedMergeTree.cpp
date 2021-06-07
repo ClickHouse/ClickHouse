@@ -5357,56 +5357,6 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
             event->tryWait(event_wait_timeout_ms);
         }
     }
-    else if (startsWith(entry.znode_name, "queue-"))
-    {
-        /** In this case, the number of `log` node is unknown. You need look through everything from `log_pointer` to the end,
-          *  looking for a node with the same content. And if we do not find it - then the replica has already taken this entry in its queue.
-          */
-
-        String log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer");
-
-        Strings log_entries = getZooKeeper()->getChildren(fs::path(table_zookeeper_path) / "log");
-        UInt64 log_index = 0;
-        bool found = false;
-
-        for (const String & log_entry_name : log_entries)
-        {
-            log_index = parse<UInt64>(log_entry_name.substr(log_entry_name.size() - 10));
-
-            if (!log_pointer.empty() && log_index < parse<UInt64>(log_pointer))
-                continue;
-
-            String log_entry_str;
-            bool exists = getZooKeeper()->tryGet(fs::path(table_zookeeper_path) / "log" / log_entry_name, log_entry_str);
-            if (exists && entry_str == log_entry_str)
-            {
-                found = true;
-                log_node_name = log_entry_name;
-                break;
-            }
-        }
-
-        if (found)
-        {
-            LOG_DEBUG(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
-
-            /// Let's wait until the entry gets into the replica queue.
-            while (!stop_waiting())
-            {
-                zkutil::EventPtr event = std::make_shared<Poco::Event>();
-
-                String log_pointer_new = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, event);
-                if (!log_pointer_new.empty() && parse<UInt64>(log_pointer_new) > log_index)
-                    break;
-
-                /// Wait with timeout because we can be already shut down, but not dropped.
-                /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
-                /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
-                /// but the query will never finish because the drop already shut down the table.
-                event->tryWait(event_wait_timeout_ms);
-            }
-        }
-    }
     else
         throw Exception("Logical error: unexpected name of log node: " + entry.znode_name, ErrorCodes::LOGICAL_ERROR);
 
