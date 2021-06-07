@@ -125,8 +125,16 @@ public:
     {
         String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
         auto load_result = external_loader.getLoadResult(resolved_name);
+
+        if (load_result.object)
+        {
+            const auto dictionary = std::static_pointer_cast<const IDictionary>(load_result.object);
+            return dictionary->getStructure();
+        }
+
         if (!load_result.config)
             throw Exception("Dictionary " + backQuote(dictionary_name) + " not found", ErrorCodes::BAD_ARGUMENTS);
+
         return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
     }
 
