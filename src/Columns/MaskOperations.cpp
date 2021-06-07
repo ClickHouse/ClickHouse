@@ -3,18 +3,15 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnConst.h>
 #include <algorithm>
-
-#include <common/logger_useful.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <typename T>
@@ -234,8 +231,7 @@ int checkShirtCircuitArguments(const ColumnsWithTypeAndName & arguments)
     int last_short_circuit_argument_index = -1;
     for (size_t i = 0; i != arguments.size(); ++i)
     {
-        const auto * column_func = checkAndGetColumn<ColumnFunction>(*arguments[i].column);
-        if (column_func && column_func->isShortCircuitArgument())
+        if (const auto * column_function = checkAndGetShortCircuitArgument(arguments[i].column))
             last_short_circuit_argument_index = i;
     }
 
