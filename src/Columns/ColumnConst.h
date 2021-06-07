@@ -115,6 +115,11 @@ public:
         return data->getFloat32(0);
     }
 
+    bool isDefaultAt(size_t) const override
+    {
+        return data->isDefaultAt(0);
+    }
+
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);
@@ -235,6 +240,11 @@ public:
         if (auto rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
             return data->structureEquals(*rhs_concrete->data);
         return false;
+    }
+
+    double getRatioOfDefaultRows(double) const override
+    {
+        return data->isDefaultAt(0) ? 1.0 : 0.0;
     }
 
     bool isNullable() const override { return isColumnNullable(*data); }

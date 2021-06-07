@@ -142,7 +142,7 @@ public:
         throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual bool isDefaultAt(size_t n) const { return get64(n) == 0; }
+    virtual bool isDefaultAt(size_t n) const = 0;
     virtual bool isNullAt(size_t /*n*/) const { return false; }
 
     /** If column is numeric, return value of n-th element, casted to bool.
@@ -376,14 +376,10 @@ public:
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    static constexpr auto DEFAULT_ROWS_SEARCH_STEP = 8;
-    static constexpr auto MIN_ROWS_TO_SEARCH_DEFAULTS = DEFAULT_ROWS_SEARCH_STEP * 16;
-    static constexpr auto DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION = 0.95;
-
     /// Returns number of values in column, that equal to default value of column.
     /// Checks every @step-th value. So, if step is not 1, returns number,
     /// that lower than actual. 0 means, that such statistic is unknown for column.
-    virtual size_t getNumberOfDefaultRows(size_t /* step */) const { return 0; }
+    virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0;
 
     /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const;
@@ -490,7 +486,6 @@ public:
     String dumpStructure() const;
 
 protected:
-
     /// Template is to devirtualize calls to insertFrom method.
     /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
     template <typename Derived>
@@ -510,6 +505,9 @@ protected:
 
     template <typename Derived>
     bool hasEqualValuesImpl() const;
+
+    template <typename Derived>
+    double getRatioOfDefaultRowsImpl(double sample_ratio) const;
 };
 
 using ColumnPtr = IColumn::Ptr;

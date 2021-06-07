@@ -87,6 +87,8 @@ public:
         return StringRef(&chars[n * index], n);
     }
 
+    bool isDefaultAt(size_t index) const override;
+
     void insert(const Field & x) override;
 
     void insertFrom(const IColumn & src_, size_t index) override;
@@ -177,6 +179,11 @@ public:
         if (auto rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
             return n == rhs_concrete->n;
         return false;
+    }
+
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return getRatioOfDefaultRowsImpl<ColumnFixedString>(sample_ratio);
     }
 
     bool canBeInsideNullable() const override { return true; }

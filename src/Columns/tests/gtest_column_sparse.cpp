@@ -63,7 +63,6 @@ constexpr size_t sparse_ratios[] = {1, 2, 5, 10, 32, 50, 64, 100, 256, 500, 1000
 constexpr size_t K = sizeof(sparse_ratios) / sizeof(sparse_ratios[0]);
 
 #define DUMP_COLUMN(column) std::cerr << #column << ": " << (column)->dumpStructure() << "\n"
-#define DUMP_NON_DEFAULTS(column) std::cerr << "non-default values in " #column ": " << (column)->size() - (column)->getNumberOfDefaultRows(1) << "\n"
 
 TEST(ColumnSparse, InsertRangeFrom)
 {
@@ -81,7 +80,6 @@ TEST(ColumnSparse, InsertRangeFrom)
             DUMP_COLUMN(full_src);
             DUMP_COLUMN(sparse_dst);
             DUMP_COLUMN(full_dst);
-            DUMP_NON_DEFAULTS(full_dst);
             throw Exception(error_code, "Columns are unequal");
         }
     };
@@ -124,7 +122,6 @@ TEST(ColumnSparse, PopBack)
         {
             DUMP_COLUMN(sparse_dst);
             DUMP_COLUMN(full_dst);
-            DUMP_NON_DEFAULTS(full_dst);
             throw Exception(error_code, "Columns are unequal");
         }
     };
@@ -165,7 +162,6 @@ TEST(ColumnSparse, Filter)
             DUMP_COLUMN(full_src);
             DUMP_COLUMN(sparse_dst);
             DUMP_COLUMN(full_dst);
-            DUMP_NON_DEFAULTS(full_dst);
             throw Exception(error_code, "Columns are unequal");
         }
     };
@@ -212,7 +208,6 @@ TEST(ColumnSparse, Permute)
             DUMP_COLUMN(full_src);
             DUMP_COLUMN(sparse_dst);
             DUMP_COLUMN(full_dst);
-            DUMP_NON_DEFAULTS(full_dst);
             throw Exception(error_code, "Columns are unequal");
         }
     };
@@ -305,7 +300,6 @@ TEST(ColumnSparse, GetPermutation)
             DUMP_COLUMN(full_src);
             DUMP_COLUMN(sparse_sorted);
             DUMP_COLUMN(full_sorted);
-            DUMP_NON_DEFAULTS(full_sorted);
             throw Exception(error_code, "Sorted columns are unequal");
         }
     };

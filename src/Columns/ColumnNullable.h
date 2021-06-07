@@ -135,6 +135,14 @@ public:
         return false;
     }
 
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return null_map->getRatioOfDefaultRows(sample_ratio);
+    }
+
+    void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const override;
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows, size_t shift) const override;
+
     bool isNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return false; }
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
@@ -171,10 +179,6 @@ public:
 
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
-
-    size_t getNumberOfDefaultRows(size_t step) const override;
-    void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const override;
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows, size_t shift) const override;
 
 private:
     WrappedPtr nested_column;

@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
@@ -65,7 +66,7 @@ public:
     SerializationInfoBuilder();
     SerializationInfoBuilder(
         double ratio_for_sparse_serialization_,
-        size_t default_rows_search_step_ = IColumn::DEFAULT_ROWS_SEARCH_STEP);
+        double default_rows_search_sample_ratio_ = ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
 
     /// Add information about column from block.
     void add(const Block & block);
@@ -86,7 +87,7 @@ public:
 
 private:
     double ratio_for_sparse_serialization;
-    size_t default_rows_search_step;
+    double default_rows_search_sample_ratio;
 
     SerializationInfoPtr info;
 };

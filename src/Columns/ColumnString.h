@@ -113,7 +113,7 @@ public:
     bool isDefaultAt(size_t n) const override
     {
         assert(n < size());
-        return offsetAt(n) == 0;
+        return sizeAt(n) == 1;
     }
 
 /// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
@@ -285,8 +285,12 @@ public:
         return typeid(rhs) == typeid(ColumnString);
     }
 
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return getRatioOfDefaultRowsImpl<ColumnString>(sample_ratio);
+    }
+
     void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const override;
-    size_t getNumberOfDefaultRows(size_t step) const override;
 
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }

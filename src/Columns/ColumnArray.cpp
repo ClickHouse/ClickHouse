@@ -181,6 +181,13 @@ StringRef ColumnArray::getDataAt(size_t n) const
 }
 
 
+bool ColumnArray::isDefaultAt(size_t n) const
+{
+    const auto & offsets_data = getOffsets();
+    return offsets_data[n] == offsets_data[n - 1];
+}
+
+
 void ColumnArray::insertData(const char * pos, size_t length)
 {
     /** Similarly - only for arrays of fixed length values.
@@ -1214,16 +1221,6 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
 void ColumnArray::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
-}
-
-size_t ColumnArray::getNumberOfDefaultRows(size_t step) const
-{
-    const auto & offsets_data = getOffsets();
-    size_t res = 0;
-    for (size_t i = 0; i < offsets_data.size(); i += step)
-        res += (offsets_data[i] != offsets_data[i - 1]);
-
-    return res;
 }
 
 void ColumnArray::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const
