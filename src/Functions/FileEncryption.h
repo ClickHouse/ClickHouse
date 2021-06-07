@@ -108,7 +108,6 @@ String GetRandomString(size_t size)
 
     while (cur < size)
     {
-        /// may be it's better to use GRND_RANDOM
         ret = getrandom(iv.data() + cur, size - cur, 0);
         if (ret < 0)
         {
