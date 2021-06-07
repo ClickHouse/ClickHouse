@@ -68,14 +68,14 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (ParserKeyword("LIKE").ignore(pos, expected))
     {
-        if (!ParserCompoundIdentifier(false).parse(pos, like_table, expected))
+        if (!ParserCompoundIdentifier(true).parse(pos, like_table, expected))
             return false;
     }
     else if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
         if (ParserKeyword("LIKE").ignore(pos, expected))
         {
-            if (!ParserCompoundIdentifier(false).parse(pos, like_table, expected))
+            if (!ParserCompoundIdentifier(true).parse(pos, like_table, expected))
                 return false;
 
             if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))

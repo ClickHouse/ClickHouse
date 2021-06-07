@@ -36,7 +36,7 @@ bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & e
     if (!ParserKeyword("ALTER TABLE").ignore(pos, expected))
         return false;
 
-    if (!ParserCompoundIdentifier(false).parse(pos, table, expected))
+    if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
         return false;
 
     if (!ParserList(std::make_unique<ParserAlterCommand>(), std::make_unique<ParserToken>(TokenType::Comma)).parse(pos, command_list, expected))
