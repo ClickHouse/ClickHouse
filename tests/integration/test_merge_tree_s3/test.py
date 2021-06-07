@@ -8,9 +8,6 @@ import os
 import pytest
 from helpers.cluster import ClickHouseCluster
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
 
 # By default the exceptions that was throwed in threads will be ignored
 # (they will not mark the test as failed, only printed to stderr).

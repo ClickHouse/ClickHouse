@@ -331,7 +331,6 @@ struct WhichDataType
     constexpr bool isDate() const { return idx == TypeIndex::Date; }
     constexpr bool isDateTime() const { return idx == TypeIndex::DateTime; }
     constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
-    constexpr bool isDateOrDateTime() const { return isDate() || isDateTime() || isDateTime64(); }
 
     constexpr bool isString() const { return idx == TypeIndex::String; }
     constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
@@ -354,8 +353,6 @@ struct WhichDataType
 
 template <typename T>
 inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }
-template <typename T>
-inline bool isDateOrDateTime(const T & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
 template <typename T>
 inline bool isDateTime(const T & data_type) { return WhichDataType(data_type).isDateTime(); }
 template <typename T>
@@ -420,7 +417,7 @@ template <typename T>
 inline bool isColumnedAsNumber(const T & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDateTime() || which.isUUID();
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDate() || which.isDateTime() || which.isDateTime64() || which.isUUID();
 }
 
 template <typename T>

@@ -19,25 +19,25 @@ def get_skip_list_cmd(path):
 
 
 def get_options(i):
-    options = ""
+    options = []
     if 0 < i:
-        options += " --order=random"
+        options.append("--order=random")
 
     if i % 3 == 1:
-        options += " --db-engine=Ordinary"
+        options.append("--db-engine=Ordinary")
 
     if i % 3 == 2:
-        options += ''' --client-option='allow_experimental_database_replicated=1' --db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
+        options.append('''--client-option='allow_experimental_database_replicated=1' --db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i))
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
     if i % 2 == 1:
-        options += " --database=test_{}".format(i)
+        options.append(" --database=test_{}".format(i))
 
     if i == 13:
-        options += " --client-option='memory_tracker_fault_probability=0.00001'"
+        options.append(" --client-option='memory_tracker_fault_probability=0.00001'")
 
-    return options
+    return ' '.join(options)
 
 
 def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_time_limit):
@@ -62,7 +62,7 @@ def compress_stress_logs(output_path, files_prefix):
     cmd = f"cd {output_path} && tar -zcf stress_run_logs.tar.gz {files_prefix}* && rm {files_prefix}*"
     check_output(cmd, shell=True)
 
-def prepare_for_hung_check():
+def prepare_for_hung_check(drop_databases):
     # FIXME this function should not exist, but...
 
     # We attach gdb to clickhouse-server before running tests
@@ -95,6 +95,17 @@ def prepare_for_hung_check():
     # Long query from 00084_external_agregation
     call("""clickhouse client -q "KILL QUERY WHERE query LIKE 'SELECT URL, uniq(SearchPhrase) AS u FROM test.hits GROUP BY URL ORDER BY u %'" """, shell=True, stderr=STDOUT)
 
+    if drop_databases:
+        # Here we try to drop all databases in async mode. If some queries really hung, than drop will hung too.
+        # Otherwise we will get rid of queries which wait for background pool. It can take a long time on slow builds (more than 900 seconds).
+        databases = check_output('clickhouse client -q "SHOW DATABASES"', shell=True).decode('utf-8').strip().split()
+        for db in databases:
+            if db == "system":
+                continue
+            command = f'clickhouse client -q "DROP DATABASE {db}"'
+            # we don't wait for drop
+            Popen(command, shell=True)
+
     # Wait for last queries to finish if any, not longer than 300 seconds
     call("""clickhouse client -q "select sleepEachRow((
             select maxOrDefault(300 - elapsed) + 1 from system.processes where query not like '%from system.processes%' and elapsed < 300
@@ -122,8 +133,12 @@ if __name__ == "__main__":
     parser.add_argument("--global-time-limit", type=int, default=3600)
     parser.add_argument("--num-parallel", type=int, default=cpu_count())
     parser.add_argument('--hung-check', action='store_true', default=False)
+    # make sense only for hung check
+    parser.add_argument('--drop-databases', action='store_true', default=False)
 
     args = parser.parse_args()
+    if args.drop_databases and not args.hung_check:
+        raise Exception("--drop-databases only used in hung check (--hung-check)")
     func_pipes = []
     func_pipes = run_func_test(args.test_cmd, args.output_folder, args.num_parallel, args.skip_func_tests, args.global_time_limit)
 
@@ -145,7 +160,7 @@ if __name__ == "__main__":
     logging.info("Logs compressed")
 
     if args.hung_check:
-        have_long_running_queries = prepare_for_hung_check()
+        have_long_running_queries = prepare_for_hung_check(args.drop_databases)
         logging.info("Checking if some queries hung")
         cmd = "{} {} {}".format(args.test_cmd, "--hung-check", "00001_select_1")
         res = call(cmd, shell=True, stderr=STDOUT)
