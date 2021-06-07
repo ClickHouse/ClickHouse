@@ -728,6 +728,11 @@ inline void writeDateText(DayNum date, WriteBuffer & buf)
     writeDateText<delimiter>(LocalDate(date), buf);
 }
 
+template <char delimiter = '-'>
+inline void writeDateText(ExtendedDayNum date, WriteBuffer & buf)
+{
+    writeDateText<delimiter>(LocalDate(date), buf);
+}
 
 /// In the format YYYY-MM-DD HH:MM:SS
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>

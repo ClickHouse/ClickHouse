@@ -39,6 +39,7 @@ enum class TypeIndex
     Float32,
     Float64,
     Date,
+    Date32,
     DateTime,
     DateTime64,
     String,
