@@ -545,15 +545,6 @@ void ColumnString::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, 
             indices.push_back(i);
 }
 
-size_t ColumnString::getNumberOfDefaultRows(size_t step) const
-{
-    size_t res = 0;
-    for (size_t i = 0; i < offsets.size(); i += step)
-        res += (offsets[i] == offsets[i - 1] + 1);
-
-    return res;
-}
-
 ColumnPtr ColumnString::compress() const
 {
     size_t source_chars_size = chars.size();

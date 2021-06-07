@@ -78,6 +78,7 @@ public:
     Field operator[](size_t) const override { throwMustBeDecompressed(); }
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
     StringRef getDataAt(size_t) const override { throwMustBeDecompressed(); }
+    bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
     void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
@@ -108,6 +109,7 @@ public:
     void gather(ColumnGathererStream &) override { throwMustBeDecompressed(); }
     void getExtremes(Field &, Field &) const override { throwMustBeDecompressed(); }
     size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }
+    double getRatioOfDefaultRows(double) const override { throwMustBeDecompressed(); }
 
 protected:
     size_t rows;

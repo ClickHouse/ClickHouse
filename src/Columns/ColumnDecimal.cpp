@@ -384,16 +384,6 @@ ColumnPtr ColumnDecimal<T>::compress() const
 }
 
 template <typename T>
-size_t ColumnDecimal<T>::getNumberOfDefaultRows(size_t step) const
-{
-    size_t res = 0;
-    for (size_t i = 0; i < data.size(); i += step)
-        res += (data[i] == T{});
-
-    return res;
-}
-
-template <typename T>
 void ColumnDecimal<T>::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const
 {
     size_t to = limit && from + limit < size() ? from + limit : size();

@@ -21,16 +21,17 @@ namespace ErrorCodes
 
 SerializationInfoBuilder::SerializationInfoBuilder(
     double ratio_for_sparse_serialization_,
-    size_t default_rows_search_step_)
+    double default_rows_search_sample_ratio_)
     : ratio_for_sparse_serialization(ratio_for_sparse_serialization_)
-    , default_rows_search_step(default_rows_search_step_)
+    , default_rows_search_sample_ratio(default_rows_search_sample_ratio_)
     , info(std::make_shared<SerializationInfo>())
 {
 }
 
 void SerializationInfoBuilder::add(const Block & block)
 {
-    info->number_of_rows += block.rows();
+    size_t num_rows = block.rows();
+    info->number_of_rows += num_rows;
     for (const auto & elem : block)
     {
         /// Just skip column and always return default serialization.
@@ -38,7 +39,9 @@ void SerializationInfoBuilder::add(const Block & block)
             continue;
 
         /// Multiply by step to restore approximate number of default values.
-        info->columns[elem.name].num_defaults += elem.column->getNumberOfDefaultRows(default_rows_search_step) * default_rows_search_step;
+        info->columns[elem.name].num_defaults += static_cast<size_t>(
+            num_rows * elem.column->getRatioOfDefaultRows(default_rows_search_sample_ratio));
+
         for (const auto & subcolumn_name : elem.type->getSubcolumnNames())
         {
             auto subcolumn_type = elem.type->getSubcolumnType(subcolumn_name);
@@ -55,7 +58,9 @@ void SerializationInfoBuilder::add(const Block & block)
 
             auto subcolumn = elem.type->getSubcolumn(subcolumn_name, *elem.column);
             auto full_name = Nested::concatenateName(elem.name, subcolumn_name);
-            info->columns[full_name].num_defaults += subcolumn->getNumberOfDefaultRows(default_rows_search_step) * default_rows_search_step;
+
+            info->columns[full_name].num_defaults += static_cast<size_t>(
+                num_rows * subcolumn->getRatioOfDefaultRows(default_rows_search_sample_ratio));
         }
     }
 }

@@ -686,16 +686,6 @@ void ColumnNullable::checkConsistency() const
             ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
 }
 
-size_t ColumnNullable::getNumberOfDefaultRows(size_t step) const
-{
-    size_t res = 0;
-    const auto & null_map_data = getNullMapData();
-    for (size_t i = 0; i < null_map_data.size(); i += step)
-        res += (null_map_data != 0);
-
-    return res;
-}
-
 void ColumnNullable::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const
 {
     size_t to = limit && from + limit < size() ? from + limit : size();

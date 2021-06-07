@@ -66,6 +66,11 @@ MutableColumnPtr ColumnSparse::cloneResized(size_t new_size) const
     return res;
 }
 
+bool ColumnSparse::isDefaultAt(size_t n) const
+{
+    return getValueIndex(n) == 0;
+}
+
 bool ColumnSparse::isNullAt(size_t n) const
 {
     return values->isNullAt(getValueIndex(n));
@@ -646,9 +651,9 @@ void ColumnSparse::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size
     indices.assign(start, end);
 }
 
-size_t ColumnSparse::getNumberOfDefaultRows(size_t step) const
+double ColumnSparse::getRatioOfDefaultRows(double) const
 {
-    return getNumberOfDefaults() / step;
+    return static_cast<double>(getNumberOfDefaults()) / _size;
 }
 
 MutableColumns ColumnSparse::scatter(ColumnIndex num_columns, const Selector & selector) const
