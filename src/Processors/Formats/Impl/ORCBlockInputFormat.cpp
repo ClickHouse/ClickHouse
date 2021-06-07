@@ -26,14 +26,13 @@ namespace ErrorCodes
             throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
-ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_) : IInputFormat(std::move(header_), in_), arrow_column_to_ch_column(std::make_unique<ArrowColumnToCHColumn>())
+ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_) : IInputFormat(std::move(header_), in_)
 {
 }
 
 Chunk ORCBlockInputFormat::generate()
 {
     Chunk res;
-    const Block & header = getPort().getHeader();
 
     if (!file_reader)
         prepareReader();
@@ -54,7 +53,7 @@ Chunk ORCBlockInputFormat::generate()
 
     ++stripe_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result, header, "ORC");
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result);
     return res;
 }
 
@@ -98,6 +97,8 @@ void ORCBlockInputFormat::prepareReader()
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->ReadSchema(&schema));
+
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), schema, "ORC");
 
     /// In ReadStripe column indices should be started from 1,
     /// because 0 indicates to select all columns.
