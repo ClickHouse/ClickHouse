@@ -23,11 +23,11 @@ namespace ErrorCodes
 
 namespace
 {
-    [[noreturn]] void throwNoTablesMatchRegexp(const String & source_database, const String & source_table_regexp)
+    [[noreturn]] void throwNoTablesMatchRegexp(const String & source_database_regexp, const String & source_table_regexp)
     {
         throw Exception(
-            "Error while executing table function merge. In database " + source_database
-                + " no one matches regular expression: " + source_table_regexp,
+            "Error while executing table function merge. Neither no one database matches regular expression " + source_database_regexp
+                + " nor in database matches " + source_database_regexp + " no one table matches regular expression: " + source_table_regexp,
             ErrorCodes::UNKNOWN_TABLE);
     }
 }
@@ -62,47 +62,57 @@ const std::unordered_map<String, std::unordered_set<String>> & TableFunctionMerg
     if (source_databases_and_tables)
         return *source_databases_and_tables;
 
-    // auto database = DatabaseCatalog::instance().getDatabase(source_database);
 
     OptimizedRegularExpression database_re(source_database_regexp);
     OptimizedRegularExpression table_re(source_table_regexp);
-    auto database_name_match = [&](const String & database_name_) { return database_re.match(database_name_); };
+
     auto table_name_match = [&](const String & table_name_) { return table_re.match(table_name_); };
 
     auto access = context->getAccess();
-    bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, source_database);
-    bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, source_database);
 
-    source_tables.emplace();
-    for (auto it = database->getTablesIterator(context, table_name_match); it->isValid(); it->next())
+    auto databases = DatabaseCatalog::instance().getDatabases();
+
+    for (const auto & db : databases)
     {
-        if (!it->table())
-            continue;
-        bool granted_show = granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, source_database, it->name());
-        if (!granted_show)
-            continue;
-        if (!granted_select_on_all_tables)
-            access->checkAccess(AccessType::SELECT, source_database, it->name());
-        source_tables->emplace_back(it->name());
+        if (database_re.match(db.first))
+        {
+            bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, db.first);
+            bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, db.first);
+            std::unordered_set<String> source_tables;
+            for (auto it = db.second->getTablesIterator(context, table_name_match); it->isValid(); it->next())
+            {
+                if (!it->table())
+                    continue;
+                bool granted_show = granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, db.first, it->name());
+                if (!granted_show)
+                    continue;
+                if (!granted_select_on_all_tables)
+                    access->checkAccess(AccessType::SELECT, db.first, it->name());
+                source_tables.insert(it->name());
+            }
+
+            if (!source_tables.empty())
+              (*source_databases_and_tables)[db.first] = source_tables;
+        }
     }
 
-    if (source_tables->empty())
-        throwNoTablesMatchRegexp(source_database, source_table_regexp);
+    if ((*source_databases_and_tables).empty())
+        throwNoTablesMatchRegexp(source_database_regexp, source_table_regexp);
 
-    return *source_tables;
+    return *source_databases_and_tables;
 }
 
 
 ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context) const
 {
-    for (const auto & table_name : getSourceTables(context))
+    for (const auto & db_with_tables : getSourceDatabasesAndTables(context))
     {
-        auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{source_database, table_name}, context);
+        auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{db_with_tables.first, *db_with_tables.second.begin()}, context);
         if (storage)
             return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
     }
 
-    throwNoTablesMatchRegexp(source_database, source_table_regexp);
+    throwNoTablesMatchRegexp(source_database_regexp, source_table_regexp);
 }
 
 
