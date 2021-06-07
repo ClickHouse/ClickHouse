@@ -7,7 +7,7 @@ PEERDIR(
     clickhouse/src/Common
 )
 
-
+SRCS(
     DiskCacheWrapper.cpp
     DiskDecorator.cpp
     DiskFactory.cpp
