@@ -215,6 +215,11 @@ public:
         throw Exception("Method getRatioOfDefaultRows is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
+    {
+        throw Exception("Method getIndicesOfNonDefaultRows is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
 

@@ -11,7 +11,7 @@ namespace Nested
 {
     std::string concatenateName(const std::string & nested_table_name, const std::string & nested_field_name);
 
-    /// Splits name of compound indentifier by firts/last dot (depending on 'reverse' parameter).
+    /// Splits name of compound identifier by first/last dot (depending on 'reverse' parameter).
     std::pair<std::string, std::string> splitName(const std::string & name, bool reverse = false);
 
     /// Returns the prefix of the name to the first '.'. Or the name is unchanged if there is no dot.

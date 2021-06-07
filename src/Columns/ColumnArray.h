@@ -146,7 +146,10 @@ public:
         return getRatioOfDefaultRowsImpl<ColumnArray>(sample_ratio);
     }
 
-    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const override;
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    {
+        return getIndicesOfNonDefaultRowsImpl<ColumnArray>(indices, from, limit);
+    }
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 

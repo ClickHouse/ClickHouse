@@ -686,17 +686,6 @@ void ColumnNullable::checkConsistency() const
             ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
 }
 
-void ColumnNullable::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const
-{
-    size_t to = limit && from + limit < size() ? from + limit : size();
-    indices.reserve(indices.size() + to - from);
-
-    const auto & null_map_data = getNullMapData();
-    for (size_t i = from; i < to; ++i)
-        if (null_map_data[i] == 0)
-            indices.push_back(i);
-}
-
 ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows, size_t shift) const
 {
     auto new_values = nested_column->createWithOffsets(offsets, total_rows, shift);

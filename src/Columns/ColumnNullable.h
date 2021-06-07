@@ -140,7 +140,11 @@ public:
         return null_map->getRatioOfDefaultRows(sample_ratio);
     }
 
-    void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const override;
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    {
+        null_map->getIndicesOfNonDefaultRows(indices, from, limit);
+    }
+
     ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows, size_t shift) const override;
 
     bool isNullable() const override { return true; }

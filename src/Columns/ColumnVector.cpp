@@ -563,16 +563,6 @@ ColumnPtr ColumnVector<T>::compress() const
 }
 
 template <typename T>
-void ColumnVector<T>::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const
-{
-    size_t to = limit && from + limit < size() ? from + limit : size();
-    indices.reserve(indices.size() + to - from);
-    for (size_t i = from; i < to; ++i)
-        if (data[i] != T{})
-            indices.push_back(i);
-}
-
-template <typename T>
 ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())

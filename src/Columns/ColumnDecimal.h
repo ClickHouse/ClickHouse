@@ -179,7 +179,10 @@ public:
         return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
     }
 
-    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const override;
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
+    {
+        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
+    }
 
     ColumnPtr compress() const override;
 

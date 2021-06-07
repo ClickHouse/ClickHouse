@@ -165,7 +165,7 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
 
     auto offsets_column = DataTypeNumber<IColumn::Offset>().createColumn();
     auto & offsets_data = assert_cast<ColumnVector<IColumn::Offset> &>(*offsets_column).getData();
-    column.getIndicesOfNonDefaultValues(offsets_data, offset, limit);
+    column.getIndicesOfNonDefaultRows(offsets_data, offset, limit);
 
     settings.path.push_back(Substream::SparseOffsets);
     if (auto * stream = settings.getter(settings.path))

@@ -163,4 +163,17 @@ double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
     return static_cast<double>(res) / num_sampled_rows;
 }
 
+template <typename Derived>
+void IColumn::getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const
+{
+    size_t to = limit && from + limit < size() ? from + limit : size();
+    indices.reserve(indices.size() + to - from);
+
+    for (size_t i = from; i < to; ++i)
+    {
+        if (!static_cast<const Derived &>(*this).isDefaultAt(i))
+            indices.push_back(i);
+    }
+}
+
 }
