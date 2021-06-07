@@ -81,8 +81,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
-
     static FunctionOverloadResolverPtr create(ContextPtr)
     {
         return std::make_unique<RandomConstantOverloadResolver<ToType, Name>>();

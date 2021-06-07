@@ -219,11 +219,6 @@ namespace DB
         {
             return true;
         }
-
-        bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override
-        {
-            return false;
-        }
     };
 
     struct NameToModifiedJulianDay

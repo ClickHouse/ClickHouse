@@ -283,9 +283,9 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool inverse) const override;
+    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool inverted) const override;
 
-    void expand(const IColumn::Filter & mask, bool inverse) override;
+    void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 

@@ -221,21 +221,21 @@ void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t leng
             start, length);
 }
 
-ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint, bool inverse) const
+ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
-        new_columns[i] = columns[i]->filter(filt, result_size_hint, inverse);
+        new_columns[i] = columns[i]->filter(filt, result_size_hint, inverted);
 
     return ColumnTuple::create(new_columns);
 }
 
-void ColumnTuple::expand(const Filter & mask, bool inverse)
+void ColumnTuple::expand(const Filter & mask, bool inverted)
 {
     for (auto & column : columns)
-        column->expand(mask, inverse);
+        column->expand(mask, inverted);
 }
 
 ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const

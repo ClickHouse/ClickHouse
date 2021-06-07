@@ -48,6 +48,55 @@ using namespace GatherUtils;
   * then, else - numeric types for which there is a general type, or dates, datetimes, or strings, or arrays of these types.
   */
 
+template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
+static inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
+{
+    size_t size = cond.size();
+    bool a_is_short = a.size() < size;
+    bool b_is_short = b.size() < size;
+
+    size_t a_index = 0;
+    size_t b_index = 0;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (cond[i])
+            res[i] = a_is_short ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(a[i]);
+        else
+            res[i] = b_is_short ? static_cast<ResultType>(b[b_index++]) : static_cast<ResultType>(b[i]);
+    }
+}
+
+template <typename ArrayCond, typename ArrayA, typename B, typename ArrayResult, typename ResultType>
+static inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
+{
+    size_t size = cond.size();
+    bool a_is_short = a.size() < size;
+    size_t a_index = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (cond[i])
+            res[i] = a_is_short ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(a[i]);
+        else
+            res[i] = static_cast<ResultType>(b);
+    }
+}
+
+template <typename ArrayCond, typename A, typename ArrayB, typename ArrayResult, typename ResultType>
+static inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
+{
+    size_t size = cond.size();
+    bool b_is_short = b.size() < size;
+    size_t b_index = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (cond[i])
+            res[i] = static_cast<ResultType>(a);
+        else
+            res[i] = b_is_short ? static_cast<ResultType>(b[b_index++]) : static_cast<ResultType>(b[i]);
+    }
+}
+
 template <typename A, typename B, typename ResultType>
 struct NumIfImpl
 {
@@ -55,15 +104,14 @@ struct NumIfImpl
     using ArrayA = typename ColumnVector<A>::Container;
     using ArrayB = typename ColumnVector<B>::Container;
     using ColVecResult = ColumnVector<ResultType>;
+    using ArrayResult = typename ColVecResult::Container;
 
     static ColumnPtr vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, UInt32)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
-        typename ColVecResult::Container & res = col_res->getData();
-
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+        ArrayResult & res = col_res->getData();
+        fillVectorVector<ArrayCond, ArrayA, ArrayB, ArrayResult, ResultType>(cond, a, b, res);
         return col_res;
     }
 
@@ -71,10 +119,8 @@ struct NumIfImpl
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
-        typename ColVecResult::Container & res = col_res->getData();
-
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+        ArrayResult & res = col_res->getData();
+        fillVectorConstant<ArrayCond, ArrayA, B, ArrayResult, ResultType>(cond, a, b, res);
         return col_res;
     }
 
@@ -82,10 +128,8 @@ struct NumIfImpl
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
-        typename ColVecResult::Container & res = col_res->getData();
-
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+        ArrayResult & res = col_res->getData();
+        fillConstantVector<ArrayCond, A, ArrayB, ArrayResult, ResultType>(cond, a, b, res);
         return col_res;
     }
 
@@ -93,7 +137,7 @@ struct NumIfImpl
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
-        typename ColVecResult::Container & res = col_res->getData();
+        ArrayResult & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
@@ -110,15 +154,14 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     using ArrayB = typename ColumnDecimal<Decimal<B>>::Container;
     using ColVecResult = ColumnDecimal<ResultType>;
     using Block = ColumnsWithTypeAndName;
+    using ArrayResult = typename ColVecResult::Container;
 
     static ColumnPtr vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, UInt32 scale)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
-        typename ColVecResult::Container & res = col_res->getData();
-
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+        ArrayResult & res = col_res->getData();
+        fillVectorVector<ArrayCond, ArrayA, ArrayB, ArrayResult, ResultType>(cond, a, b, res);
         return col_res;
     }
 
@@ -126,10 +169,8 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
-        typename ColVecResult::Container & res = col_res->getData();
-
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+        ArrayResult & res = col_res->getData();
+        fillVectorConstant<ArrayCond, ArrayA, B, ArrayResult, ResultType>(cond, a, b, res);
         return col_res;
     }
 
@@ -137,10 +178,8 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
-        typename ColVecResult::Container & res = col_res->getData();
-
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+        ArrayResult & res = col_res->getData();
+        fillConstantVector<ArrayCond, A, ArrayB, ArrayResult, ResultType>(cond, a, b, res);
         return col_res;
     }
 
@@ -148,7 +187,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
-        typename ColVecResult::Container & res = col_res->getData();
+        ArrayResult & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
@@ -589,6 +628,9 @@ private:
         bool then_is_const = isColumnConst(*col_then);
         bool else_is_const = isColumnConst(*col_else);
 
+        bool then_is_short = col_then->size() < cond_col->size();
+        bool else_is_short = col_else->size() < cond_col->size();
+
         const auto & cond_array = cond_col->getData();
 
         if (then_is_const && else_is_const)
@@ -608,30 +650,38 @@ private:
         {
             const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
 
+            size_t else_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
                     result_column->insertFrom(then_nested_column, 0);
                 else
-                    result_column->insertFrom(*col_else, i);
+                    result_column->insertFrom(*col_else, else_is_short ? else_index++ : i);
             }
         }
         else if (else_is_const)
         {
             const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
 
+            size_t then_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
+                    result_column->insertFrom(*col_then, then_is_short ? then_index++ : i);
                 else
                     result_column->insertFrom(else_nested_column, 0);
             }
         }
         else
         {
+            size_t then_index = 0, else_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
-                result_column->insertFrom(cond_array[i] ? *col_then : *col_else, i);
+            {
+                if (cond_array[i])
+                    result_column->insertFrom(*col_then, then_is_short ? then_index++ : i);
+                else
+                    result_column->insertFrom(*col_else, else_is_short ? else_index++ : i);
+            }
         }
 
         return result_column;
@@ -705,7 +755,8 @@ private:
         return nullptr;
     }
 
-    static ColumnPtr materializeColumnIfConst(const ColumnPtr & column)
+    template <typename AnyColumnPtr>
+    static ColumnPtr materializeColumnIfConst(const AnyColumnPtr & column)
     {
         return column->convertToFullColumnIfConst();
     }
@@ -819,6 +870,9 @@ private:
         if (then_is_null && else_is_null)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
+        bool then_is_short = arg_then.column->size() < arg_cond.column->size();
+        bool else_is_short = arg_else.column->size() < arg_cond.column->size();
+
         const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
         const ColumnConst * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
 
@@ -827,15 +881,17 @@ private:
         {
             if (cond_col)
             {
+                auto arg_else_column = arg_else.column;
+                auto result_column = IColumn::mutate(std::move(arg_else_column));
+                if (else_is_short)
+                    result_column->expand(cond_col->getData(), true);
                 if (isColumnNullable(*arg_else.column))
                 {
-                    auto arg_else_column = arg_else.column;
-                    auto result_column = IColumn::mutate(std::move(arg_else_column));
                     assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     return result_column;
                 }
                 else
-                    return ColumnNullable::create(materializeColumnIfConst(arg_else.column), arg_cond.column);
+                    return ColumnNullable::create(materializeColumnIfConst(result_column), arg_cond.column);
             }
             else if (cond_const_col)
             {
@@ -865,15 +921,18 @@ private:
                 for (size_t i = 0; i < size; ++i)
                     negated_null_map_data[i] = !null_map_data[i];
 
+                auto arg_then_column = arg_then.column;
+                auto result_column = IColumn::mutate(std::move(arg_then_column));
+                if (then_is_short)
+                    result_column->expand(cond_col->getData(), false);
+
                 if (isColumnNullable(*arg_then.column))
                 {
-                    auto arg_then_column = arg_then.column;
-                    auto result_column = IColumn::mutate(std::move(arg_then_column));
                     assert_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     return result_column;
                 }
                 else
-                    return ColumnNullable::create(materializeColumnIfConst(arg_then.column), std::move(negated_null_map));
+                    return ColumnNullable::create(materializeColumnIfConst(result_column), std::move(negated_null_map));
             }
             else if (cond_const_col)
             {
@@ -900,7 +959,13 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isShortCircuit() const override { return true; }
+    bool isShortCircuit(ShortCircuitSettings * settings, size_t /*number_of_arguments*/) const override
+    {
+        settings->enable_lazy_execution_for_first_argument = false;
+        settings->enable_lazy_execution_for_common_descendants_of_arguments = false;
+        settings->force_enable_lazy_execution = false;
+        return true;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
@@ -921,25 +986,31 @@ public:
         return getLeastSupertype({arguments[1], arguments[2]});
     }
 
-    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override
+    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const
     {
         int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
-        if (last_short_circuit_argument_index < 0)
+        if (last_short_circuit_argument_index == -1)
             return;
 
-        executeColumnIfNeeded(arguments[0]);
-        /// Create mask only if it's needed.
-        if (last_short_circuit_argument_index > 0)
+        /// Check if condition is const or null to not create full mask from it.
+        if ((isColumnConst(*arguments[0].column) || arguments[0].column->onlyNull()) && !arguments[0].column->empty())
         {
-            IColumn::Filter mask;
-            getMaskFromColumn(arguments[0].column, mask);
-            maskedExecute(arguments[1], mask);
-            maskedExecute(arguments[2], mask, /*inverse=*/true);
+            bool value = arguments[0].column->getBool(0);
+            executeColumnIfNeeded(arguments[1], !value);
+            executeColumnIfNeeded(arguments[2], value);
+            return;
         }
+
+        IColumn::Filter mask;
+        auto mask_info = getMaskFromColumn(arguments[0].column, mask);
+        maskedExecute(arguments[1], mask, mask_info);
+        maskedExecute(arguments[2], mask, mask_info, /*inverted=*/true);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        ColumnsWithTypeAndName arguments = std::move(args);
+        executeShortCircuitArguments(arguments);
         ColumnPtr res;
         if (   (res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count))
             || (res = executeForNullThenElse(arguments, result_type, input_rows_count))

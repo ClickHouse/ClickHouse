@@ -98,18 +98,18 @@ public:
         s += length;
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/, bool inverse = false) const override
+    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/, bool inverted = false) const override
     {
         size_t bytes = countBytesInFilter(filt);
-        if (inverse)
+        if (inverted)
             bytes = filt.size() - bytes;
         return cloneDummy(bytes);
     }
 
-    void expand(const IColumn::Filter & mask, bool inverse) override
+    void expand(const IColumn::Filter & mask, bool inverted) override
     {
         size_t bytes = countBytesInFilter(mask);
-        if (inverse)
+        if (inverted)
             bytes = mask.size() - bytes;
         s = bytes;
     }

@@ -266,7 +266,7 @@ void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_
     memcpy(chars.data() + old_size, &src_concrete.chars[start * n], length * n);
 }
 
-ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool inverse) const
+ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool inverted) const
 {
     size_t col_size = size();
     if (col_size != filt.size())
@@ -296,7 +296,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     while (filt_pos < filt_end_sse)
     {
         UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-        mask = inverse ? mask : ~mask;
+        mask = inverted ? mask : ~mask;
 
         if (0 == mask)
         {
@@ -313,7 +313,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
             size_t res_chars_size = res->chars.size();
             for (size_t i = 0; i < SIMD_BYTES; ++i)
             {
-                if (inverse ^ filt_pos[i])
+                if (inverted ^ filt_pos[i])
                 {
                     res->chars.resize(res_chars_size + n);
                     memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos, n);
@@ -330,7 +330,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     size_t res_chars_size = res->chars.size();
     while (filt_pos < filt_end)
     {
-        if (inverse ^ *filt_pos)
+        if (inverted ^ *filt_pos)
         {
             res->chars.resize(res_chars_size + n);
             memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos, n);
@@ -344,7 +344,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     return res;
 }
 
-void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverse)
+void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
 {
     if (mask.size() < size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
@@ -354,7 +354,7 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverse)
     chars.resize_fill(mask.size() * n, 0);
     while (index >= 0)
     {
-        if (mask[index] ^ inverse)
+        if (mask[index] ^ inverted)
         {
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);

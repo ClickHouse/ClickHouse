@@ -499,7 +499,7 @@
 10
 10
 10
-10.00000000000002
+10
 505
 255
 170
@@ -515,3 +515,43 @@
 93
 55
 2
+10
+2
+12
+2
+14
+2
+16
+2
+18
+2
+String
+String
+String
+String
+String
+String
+String
+String
+String
+String
+Int64
+Int64
+Int64
+Int64
+Int64
+Int64
+Int64
+Int64
+Int64
+Int64
+Decimal(9, 5)
+Decimal(9, 5)
+Decimal(9, 5)
+Decimal(9, 5)
+Decimal(9, 5)
+Decimal32
+Decimal32
+Decimal32
+Decimal32
+Decimal32

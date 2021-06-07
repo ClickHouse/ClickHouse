@@ -154,8 +154,14 @@ public:
     }
 
     bool isVariadic() const override { return true; }
-    bool isShortCircuit() const override { return name == NameAnd::name || name == NameOr::name; }
-    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override;
+    bool isShortCircuit(ShortCircuitSettings * settings, size_t /*number_of_arguments*/) const override
+    {
+        settings->enable_lazy_execution_for_first_argument = false;
+        settings->enable_lazy_execution_for_common_descendants_of_arguments = true;
+        settings->force_enable_lazy_execution = false;
+        return name == NameAnd::name || name == NameOr::name;
+    }
+    ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const;
     bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 

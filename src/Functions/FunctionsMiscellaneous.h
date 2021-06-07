@@ -250,7 +250,6 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return return_type; }
     size_t getNumberOfArguments() const override { return capture->captured_types.size(); }
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {

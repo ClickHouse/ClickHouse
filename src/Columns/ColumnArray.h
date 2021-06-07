@@ -70,8 +70,8 @@ public:
     void insertFrom(const IColumn & src_, size_t n) override;
     void insertDefault() override;
     void popBack(size_t n) override;
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool inverse) const override;
-    void expand(const Filter & mask, bool inverse) override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const override;
+    void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
@@ -174,12 +174,12 @@ private:
 
     /// Specializations for the filter function.
     template <typename T>
-    ColumnPtr filterNumber(const Filter & filt, ssize_t result_size_hint, bool inverse) const;
+    ColumnPtr filterNumber(const Filter & filt, ssize_t result_size_hint, bool inverted) const;
 
-    ColumnPtr filterString(const Filter & filt, ssize_t result_size_hint, bool inverse) const;
-    ColumnPtr filterTuple(const Filter & filt, ssize_t result_size_hint, bool inverse) const;
-    ColumnPtr filterNullable(const Filter & filt, ssize_t result_size_hint, bool inverse) const;
-    ColumnPtr filterGeneric(const Filter & filt, ssize_t result_size_hint, bool inverse) const;
+    ColumnPtr filterString(const Filter & filt, ssize_t result_size_hint, bool inverted) const;
+    ColumnPtr filterTuple(const Filter & filt, ssize_t result_size_hint, bool inverted) const;
+    ColumnPtr filterNullable(const Filter & filt, ssize_t result_size_hint, bool inverted) const;
+    ColumnPtr filterGeneric(const Filter & filt, ssize_t result_size_hint, bool inverted) const;
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator=nullptr) const;
 

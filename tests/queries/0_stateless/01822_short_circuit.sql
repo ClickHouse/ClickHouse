@@ -40,8 +40,18 @@ select number > 0 and Null and intDiv(100, number) from numbers(5);
 select number == 0 or 5 or intDiv(100, number) from numbers(5);
 select multiIf(number % 2 != 0, intDiv(10, number % 2), 5, intDiv(10, 1 - number % 2), intDiv(10, number)) from numbers(5);
 
-select if(number != 0, 5 * (1 + intDiv(100, number)), exp(log(throwIf(number) + 10))) from numbers(5);
+select if(number != 0, 5 * (1 + intDiv(100, number)), toInt32(exp(log(throwIf(number) + 10)))) from numbers(5);
 select if(number % 2, 5 * (1 + intDiv(100, number + 1)), 3 + 10 * intDiv(100, intDiv(100, number + 1))) from numbers(10);
 
 select sum(number) FROM numbers(10) WHERE number != 0 and 3 % number and number != 1 and intDiv(1, number - 1) > 0;
+select multiIf(0, 1, intDiv(number % 2, 1), 2, 0, 3, 1, number + 10, 2) from numbers(10);
+
+select toTypeName(toString(number)) from numbers(5);
+select toColumnTypeName(toString(number)) from numbers(5);
+
+select toTypeName(toInt64OrZero(toString(number))) from numbers(5);
+select toColumnTypeName(toInt64OrZero(toString(number))) from numbers(5);
+
+select toTypeName(toDecimal32OrZero(toString(number), 5)) from numbers(5);
+select toColumnTypeName(toDecimal32OrZero(toString(number), 5)) from numbers(5);
 

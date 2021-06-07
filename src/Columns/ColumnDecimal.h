@@ -150,8 +150,8 @@ public:
     UInt64 get64(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool inverse) const override;
-    void expand(const IColumn::Filter & mask, bool inverse) override;
+    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool inverted) const override;
+    void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;

@@ -79,8 +79,6 @@ public:
         auto day_num = DateLUT::instance().toDayNum(time(nullptr)) - 1;
         return std::make_unique<FunctionBaseYesterday>(static_cast<DayNum>(day_num));
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
 };
 
 void registerFunctionYesterday(FunctionFactory & factory)

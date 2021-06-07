@@ -345,7 +345,7 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool inverse) const
+ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool inverted) const
 {
     size_t size = data.size();
     if (size != filt.size())
@@ -375,7 +375,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     while (filt_pos < filt_end_sse)
     {
         UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-        mask = inverse ? mask : ~mask;
+        mask = inverted ? mask : ~mask;
 
         if (0 == mask)
         {
@@ -388,7 +388,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         else
         {
             for (size_t i = 0; i < SIMD_BYTES; ++i)
-                if (inverse ^ filt_pos[i])
+                if (inverted ^ filt_pos[i])
                     res_data.push_back(data_pos[i]);
         }
 
@@ -399,7 +399,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 
     while (filt_pos < filt_end)
     {
-        if (inverse ^ *filt_pos)
+        if (inverted ^ *filt_pos)
             res_data.push_back(*data_pos);
 
         ++filt_pos;
@@ -410,9 +410,9 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 }
 
 template <typename T>
-void ColumnVector<T>::expand(const IColumn::Filter & mask, bool inverse)
+void ColumnVector<T>::expand(const IColumn::Filter & mask, bool inverted)
 {
-    expandDataByMask<T>(data, mask, inverse);
+    expandDataByMask<T>(data, mask, inverted);
 }
 
 template <typename T>

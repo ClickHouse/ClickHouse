@@ -192,7 +192,7 @@ namespace
     void filterArraysImplGeneric(
         const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
         PaddedPODArray<T> & res_elems, IColumn::Offsets * res_offsets,
-        const IColumn::Filter & filt, ssize_t result_size_hint, bool inverse)
+        const IColumn::Filter & filt, ssize_t result_size_hint, bool inverted)
     {
         const size_t size = src_offsets.size();
         if (size != filt.size())
@@ -239,7 +239,7 @@ namespace
             UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
                 _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
                 zero_vec));
-            mask = inverse ? mask : ~mask;
+            mask = inverted ? mask : ~mask;
 
             if (mask == 0)
             {
@@ -263,7 +263,7 @@ namespace
             else
             {
                 for (size_t i = 0; i < SIMD_BYTES; ++i)
-                    if (inverse ^ filt_pos[i])
+                    if (inverted ^ filt_pos[i])
                         copy_array(offsets_pos + i);
             }
 
@@ -274,7 +274,7 @@ namespace
 
         while (filt_pos < filt_end)
         {
-            if (inverse ^ *filt_pos)
+            if (inverted ^ *filt_pos)
                 copy_array(offsets_pos);
 
             ++filt_pos;
@@ -288,18 +288,18 @@ template <typename T>
 void filterArraysImpl(
     const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
     PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
-    const IColumn::Filter & filt, ssize_t result_size_hint, bool inverse)
+    const IColumn::Filter & filt, ssize_t result_size_hint, bool inverted)
 {
-    return filterArraysImplGeneric<T, ResultOffsetsBuilder>(src_elems, src_offsets, res_elems, &res_offsets, filt, result_size_hint, inverse);
+    return filterArraysImplGeneric<T, ResultOffsetsBuilder>(src_elems, src_offsets, res_elems, &res_offsets, filt, result_size_hint, inverted);
 }
 
 template <typename T>
 void filterArraysImplOnlyData(
     const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
     PaddedPODArray<T> & res_elems,
-    const IColumn::Filter & filt, ssize_t result_size_hint, bool inverse)
+    const IColumn::Filter & filt, ssize_t result_size_hint, bool inverted)
 {
-    return filterArraysImplGeneric<T, NoResultOffsetsBuilder>(src_elems, src_offsets, res_elems, nullptr, filt, result_size_hint, inverse);
+    return filterArraysImplGeneric<T, NoResultOffsetsBuilder>(src_elems, src_offsets, res_elems, nullptr, filt, result_size_hint, inverted);
 }
 
 

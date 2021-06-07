@@ -213,11 +213,6 @@ namespace DB
         {
             return false;
         }
-
-        bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override
-        {
-            return true;
-        }
     };
 
     struct NameRunningConcurrency
