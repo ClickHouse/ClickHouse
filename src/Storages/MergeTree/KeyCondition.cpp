@@ -602,7 +602,12 @@ bool KeyCondition::canConstantBeWrapped(const ASTPtr & node, const String & expr
 {
     NameSet names;
     for (const auto & action : key_expr->getActions())
+    {
         names.insert(action.node->result_name);
+        // std::cerr << "-- added " << action.node->result_name << std::endl;
+    }
+
+    // std::cerr << key_expr->getSampleBlock().dumpStructure() << std::endl;
 
     /// sample_block from key_expr cannot contain modulo and moduloLegacy at the same time.
     /// For partition key it is always moduloLegacy.
@@ -676,14 +681,20 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 
                 if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() == 1)
                 {
+                    const auto * next_node = cur_node->children.front();
 
                     if (!cur_node->function_base->hasInformationAboutMonotonicity())
-                    {
                         is_valid_chain = false;
-                        break;
+                    else
+                    {
+                        /// Range is irrelevant in this case.
+                        auto monotonicity = cur_node->function_base->getMonotonicityForRange(
+                            *next_node->result_type, Field(), Field());
+                        if (!monotonicity.is_always_monotonic)
+                            is_valid_chain = false;
                     }
 
-                    cur_node = cur_node->children.front();
+                    cur_node = next_node;
                 }
                 else if (cur_node->type == ActionsDAG::ActionType::ALIAS)
                     cur_node = cur_node->children.front();
@@ -691,7 +702,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
                     is_valid_chain = false;
             }
 
-            if (is_valid_chain)
+            if (is_valid_chain && !chain.empty())
             {
                 /// Here we cast constant to the input type.
                 /// It is not clear, why this works in general.
@@ -703,6 +714,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
                 /// However, looks like this case newer happenes (I could not find such).
                 /// Let's assume that any two comparable types are castable to each other.
                 auto const_type = cur_node->result_type;
+                // std::cerr << "==== Using type (mon) for expr " << expr_name << " " << const_type->getName() << std::endl;
                 auto const_column = out_type->createColumnConst(1, out_value);
                 auto const_value = (*castColumn({const_column, out_type, ""}, const_type))[0];
 
@@ -734,6 +746,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
+
+    // std::cerr << "=========== canConstantBeWrappedByMonotonicFunctions for " << ast->getColumnName() << std::endl;
     // Constant expr should use alias names if any
     String passed_expr_name = ast->getColumnName();
     String expr_name;
@@ -795,6 +809,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
             {
                 /// This CAST is the same as in canConstantBeWrappedByMonotonicFunctions (see comment).
                 auto const_type = cur_node->result_type;
+                // std::cerr << "==== Using type for expr " << expr_name << " " << const_type->getName() << std::endl;
                 auto const_column = out_type->createColumnConst(1, out_value);
                 auto const_value = (*castColumn({const_column, out_type, ""}, const_type))[0];
 
@@ -805,6 +820,8 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 
                     if (func->type != ActionsDAG::ActionType::FUNCTION)
                         continue;
+
+                    // std::cerr << ".. chain func " << func->function_base->getName() << ' ' << func->function_builder->getName() << std::endl;
 
                     if (func->children.size() == 1)
                     {
