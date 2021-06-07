@@ -543,6 +543,40 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     auto left_lower = std::lower_bound(indices.begin(), indices.end(), left_point, less);
     auto right_lower = std::lower_bound(indices.begin(), indices.end(), right_point, less);
 
+    /// A special case of 1-element KeyRange. It's useful for partition pruning
+    bool one_element_range = true;
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        auto & left = left_point[i];
+        auto & right = right_point[i];
+        if (left.getType() == right.getType())
+        {
+            if (left.getType() == ValueWithInfinity::NORMAL)
+            {
+                if (0 != left.getColumnIfFinite().compareAt(0, 0, right.getColumnIfFinite(), 1))
+                {
+                    one_element_range = false;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            one_element_range = false;
+            break;
+        }
+    }
+    if (one_element_range)
+    {
+        /// Here we know that there is one element in range.
+        /// The main difference with the normal case is that we can definitely say that
+        /// condition in this range always TRUE (can_be_false = 0) xor always FALSE (can_be_true = 0).
+        if (left_lower != indices.end() && equals(*left_lower, left_point))
+            return {true, false};
+        else
+            return {false, true};
+    }
+
     return
     {
         left_lower != right_lower
