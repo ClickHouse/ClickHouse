@@ -12,9 +12,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Columns/ColumnNothing.h>
-
-#include <common/logger_useful.h>
 
 #include <algorithm>
 

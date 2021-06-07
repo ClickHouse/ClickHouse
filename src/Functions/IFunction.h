@@ -284,6 +284,8 @@ public:
 
     void getLambdaArgumentTypes(DataTypes & arguments) const;
 
+    void checkNumberOfArguments(size_t number_of_arguments) const;
+
     /// Get the main function name.
     virtual String getName() const = 0;
 
@@ -358,8 +360,6 @@ protected:
 
 private:
 
-    void checkNumberOfArguments(size_t number_of_arguments) const;
-
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };
 
@@ -414,7 +414,7 @@ public:
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
-    /// Properties from IFunctionBase
+    /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
