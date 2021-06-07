@@ -41,4 +41,25 @@ SELECT x + y FROM t_null
 └────────────┘
 ```
 
+It is possible to use `null` subcolumns that can be read without reading the whole column:
+
+``` sql
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+SELECT n.null FROM nullable;
+```
+
+Result:
+
+``` text
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+```
+
 [Original article](https://clickhouse.tech/docs/en/data_types/nullable/) <!--hide-->

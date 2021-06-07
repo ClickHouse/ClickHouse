@@ -74,4 +74,25 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
+It is possible to use `size0` subcolumns that can be read without reading the whole column:
+
+```sql
+CREATE TABLE t_arr (a Array(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_arr VALUES ([1]) ([]) ([1, 2, 3]) ([1, 2]);
+
+SELECT a.size0 FROM t_arr;
+```
+
+Result:
+
+``` text
+┌─a.size0─┐
+│       1 │
+│       0 │
+│       3 │
+│       2 │
+└─────────┘
+```
+
 [Original article](https://clickhouse.tech/docs/en/data_types/array/) <!--hide-->
