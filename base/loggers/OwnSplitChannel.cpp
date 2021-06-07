@@ -61,15 +61,12 @@ void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
         const std::string & exception_message = getCurrentExceptionMessage(true);
         const std::string & message = msg.getText();
 
-        if (!writeRetry(STDERR_FILENO, "Cannot add message to the log: ") ||
-            !writeRetry(STDERR_FILENO, message.data(), message.size()) ||
-            !writeRetry(STDERR_FILENO, "\n") ||
-            !writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size()) ||
-            !writeRetry(STDERR_FILENO, "\n")
-        )
-        {
-            /// Nothing can be done. Ignore the error.
-        }
+        /// NOTE: errors are ignored, since nothing can be done.
+        writeRetry(STDERR_FILENO, "Cannot add message to the log: ");
+        writeRetry(STDERR_FILENO, message.data(), message.size());
+        writeRetry(STDERR_FILENO, "\n");
+        writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
+        writeRetry(STDERR_FILENO, "\n");
     }
 }
 
