@@ -21,10 +21,20 @@ using ConnectionPtr = std::unique_ptr<nanodbc::connection>;
 using Pool = BorrowedObjectPool<ConnectionPtr>;
 using PoolPtr = std::shared_ptr<Pool>;
 
+static constexpr inline auto ODBC_CONNECT_TIMEOUT = 100;
+
+
 class ConnectionHolder
 {
 public:
-    ConnectionHolder(PoolPtr pool_, ConnectionPtr connection_) : pool(pool_), connection(std::move(connection_)) {}
+    ConnectionHolder(PoolPtr pool_,
+                     ConnectionPtr connection_,
+                     const String & connection_string_)
+        : pool(pool_)
+        , connection(std::move(connection_))
+        , connection_string(connection_string_)
+    {
+    }
 
     ConnectionHolder(const ConnectionHolder & other) = delete;
 
@@ -39,12 +49,19 @@ public:
         return *connection;
     }
 
+    void updateConnection()
+    {
+        connection = std::make_unique<nanodbc::connection>(connection_string, ODBC_CONNECT_TIMEOUT);
+    }
+
 private:
     PoolPtr pool;
     ConnectionPtr connection;
+    const String & connection_string;
 };
 
-using ConnectionHolderPtr = std::unique_ptr<ConnectionHolder>;
+using ConnectionHolderPtr = std::shared_ptr<ConnectionHolder>;
+
 }
 
 
@@ -53,7 +70,26 @@ namespace DB
 
 static constexpr inline auto ODBC_CONNECT_TIMEOUT = 100;
 static constexpr inline auto ODBC_POOL_WAIT_TIMEOUT = 10000;
-static constexpr auto ODBC_CHECK_CONNECTION_QUERY = "SELECT 1";
+
+template <typename T>
+T execute(nanodbc::ConnectionHolderPtr connection_holder, std::function<T(nanodbc::connection &)> query_func)
+{
+    try
+    {
+        return query_func(connection_holder->get());
+    }
+    catch (const nanodbc::database_error & e)
+    {
+        /// SQLState, connection related errors start with 08S0.
+        if (e.state().starts_with("08S0"))
+        {
+            connection_holder->updateConnection();
+            return query_func(connection_holder->get());
+        }
+        throw;
+    }
+}
+
 
 class ODBCConnectionFactory final : private boost::noncopyable
 {
@@ -62,22 +98,6 @@ public:
     {
         static ODBCConnectionFactory ret;
         return ret;
-    }
-
-    /// this check is performed only on the connection which was already successfully open before.
-    static bool needReconnect(nanodbc::connection & connection)
-    {
-        try
-        {
-            /// just_execute - execution without preparing any result object.
-            just_execute(connection, ODBC_CHECK_CONNECTION_QUERY);
-        }
-        catch (const nanodbc::database_error &)
-        {
-            return true;
-        }
-
-        return false;
     }
 
     nanodbc::ConnectionHolderPtr get(const std::string & connection_string, size_t pool_size)
@@ -97,10 +117,8 @@ public:
 
         try
         {
-            if (!connection || needReconnect(*connection))
-            {
+            if (!connection)
                 connection = std::make_unique<nanodbc::connection>(connection_string, ODBC_CONNECT_TIMEOUT);
-            }
         }
         catch (...)
         {
@@ -108,7 +126,7 @@ public:
             throw;
         }
 
-        return std::make_unique<nanodbc::ConnectionHolder>(factory[connection_string], std::move(connection));
+        return std::make_unique<nanodbc::ConnectionHolder>(factory[connection_string], std::move(connection), connection_string);
     }
 
 private:
