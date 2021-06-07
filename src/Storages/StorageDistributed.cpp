@@ -609,7 +609,7 @@ void StorageDistributed::read(
     ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
         modified_query_ast, local_context, query_info,
         sharding_key_expr, sharding_key_column_name,
-        getCluster());
+        query_info.cluster);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())

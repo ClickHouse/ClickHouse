@@ -30,6 +30,7 @@ from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
 from minio.deleteobjects import DeleteObject
+from helpers.test_tools import assert_eq_with_retry
 
 import docker
 
@@ -51,7 +52,7 @@ def _create_env_file(path, variables):
             f.write("=".join([var, value]) + "\n")
     return path
 
-def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180, nothrow=False, detach=False):
+def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300, nothrow=False, detach=False):
     if detach:
         subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, shell=shell)
         return
@@ -104,12 +105,6 @@ def subprocess_check_call(args, detach=False, nothrow=False):
     # Uncomment for debugging
     #logging.info('run:' + ' '.join(args))
     return run_and_check(args, detach=detach, nothrow=nothrow)
-
-
-def subprocess_call(args):
-    # Uncomment for debugging..;
-    # logging.debug('run:', ' ' . join(args))
-    run_and_check(args)
 
 def get_odbc_bridge_path():
     path = os.environ.get('CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH')
@@ -378,13 +373,13 @@ class ClickHouseCluster:
     def cleanup(self):
         # Just in case kill unstopped containers from previous launch
         try:
-            result = subprocess_call(['docker', 'container', 'list', '-a', '-f name={self.project_name}'])
+            result = run_and_check(['docker', 'container', 'list', '-a', '-f name={self.project_name}'])
             if int(result) > 1:
                 logging.debug("Trying to kill unstopped containers...")
-                subprocess_call(['docker', 'kill', f'`docker container list -a -f name={self.project_name}`'])
-                subprocess_call(['docker', 'rm', f'`docker container list -a -f name={self.project_name}`'])
+                run_and_check(['docker', 'kill', f'`docker container list -a -f name={self.project_name}`'])
+                run_and_check(['docker', 'rm', f'`docker container list -a -f name={self.project_name}`'])
                 logging.debug("Unstopped containers killed")
-                subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+                run_and_check(['docker-compose', 'ps', '--services', '--all'])
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
         except:
@@ -394,7 +389,7 @@ class ClickHouseCluster:
         # try:
         #     logging.debug("Trying to prune unused networks...")
 
-        #     subprocess_call(['docker', 'network', 'prune', '-f'])
+        #     run_and_check(['docker', 'network', 'prune', '-f'])
         #     logging.debug("Networks pruned")
         # except:
         #     pass
@@ -403,7 +398,7 @@ class ClickHouseCluster:
         # try:
         #     logging.debug("Trying to prune unused images...")
 
-        #     subprocess_call(['docker', 'image', 'prune', '-f'])
+        #     run_and_check(['docker', 'image', 'prune', '-f'])
         #     logging.debug("Images pruned")
         # except:
         #     pass
@@ -412,7 +407,7 @@ class ClickHouseCluster:
         try:
             logging.debug("Trying to prune unused volumes...")
 
-            subprocess_call(['docker', 'volume', 'prune', '-f'])
+            run_and_check(['docker', 'volume', 'prune', '-f'])
             logging.debug("Volumes pruned")
         except:
             pass
@@ -949,7 +944,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(1)
 
-        subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker-compose', 'ps', '--services', '--all'])
         logging.error("Can't connect to MySQL Client:{}".format(errors))
         raise Exception("Cannot wait MySQL Client container")
 
@@ -967,7 +962,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(0.5)
 
-        subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker-compose', 'ps', '--services', '--all'])
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
@@ -984,7 +979,7 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to MySQL 8 " + str(ex))
                 time.sleep(0.5)
 
-        subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker-compose', 'ps', '--services', '--all'])
         raise Exception("Cannot wait MySQL 8 container")
 
     def wait_mysql_cluster_to_start(self, timeout=180):
@@ -1004,7 +999,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(0.5)
 
-        subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker-compose', 'ps', '--services', '--all'])
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
@@ -1425,7 +1420,7 @@ class ClickHouseCluster:
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
-            start_timeout = 180.0  # seconds
+            start_timeout = 300.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
@@ -1881,7 +1876,7 @@ class ClickHouseInstance:
                 return None
         return None
 
-    def restart_with_latest_version(self, stop_start_wait_sec=120, callback_onstop=None, signal=60):
+    def restart_with_latest_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=60):
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
@@ -1908,7 +1903,6 @@ class ClickHouseInstance:
                                 "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse"],
                                user='root')
         self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
-        from helpers.test_tools import assert_eq_with_retry
 
         # wait start
         assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
@@ -2048,7 +2042,6 @@ class ClickHouseInstance:
 
         instance_config_dir = p.abspath(p.join(self.path, 'configs'))
         os.makedirs(instance_config_dir)
-        os.chmod(instance_config_dir, stat.S_IRWXO)
 
         print(f"Copy common default production configuration from {self.base_config_dir}. Files: {self.main_config_name}, {self.users_config_name}")
 
