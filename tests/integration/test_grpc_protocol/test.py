@@ -133,7 +133,7 @@ def start_cluster():
 @pytest.fixture(autouse=True)
 def reset_after_test():
     yield
-    query("DROP TABLE IF EXISTS t")
+    node.query_with_retry("DROP TABLE IF EXISTS t")
 
 # Actual tests
 

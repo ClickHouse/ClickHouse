@@ -109,6 +109,7 @@
         "01153_attach_mv_uuid"
     ],
     "database-replicated": [
+        /// Unclassified
         "memory_tracking",
         "memory_usage",
         "live_view",
@@ -167,6 +168,8 @@
         /// Does not support renaming of multiple tables in single query
         "00634_rename_view",
         "00140_rename",
+        /// Requires investigation
+        "00953_zookeeper_suetin_deduplication_bug",
         "01783_http_chunk_size"
     ],
     "polymorphic-parts": [
@@ -271,6 +274,7 @@
         "01145_with_fill_const",
         "01149_zookeeper_mutation_stuck_after_replace_partition",
         "01150_ddl_guard_rwr",
+        "01155_old_mutation_parts_to_do",
         "01185_create_or_replace_table",
         "01187_set_profile_as_setting",
         "01188_attach_table_from_path",
@@ -393,15 +397,17 @@
         "01475_read_subcolumns_storages",
         "01674_clickhouse_client_query_param_cte",
         "01666_merge_tree_max_query_limit",
-        "01710_projections",
-        "01710_normal_projections",
-        "01710_aggregate_projections",
         "01786_explain_merge_tree",
         "01666_merge_tree_max_query_limit",
         "01802_test_postgresql_protocol_with_row_policy", /// It cannot parse DROP ROW POLICY
         "01823_explain_json",
         "01852_cast_operator",
-        "01852_cast_operator_bad_cases"
+        "01852_cast_operator_bad_cases",
+        "01053_ssd_dictionary",
+        "01280_ssd_complex_key_dictionary",
+        "01684_ssd_cache_dictionary_simple_key",
+        "01685_ssd_cache_dictionary_complex_key",
+        "01889_postgresql_protocol_null_fields"
     ],
     "parallel":
     [
@@ -570,6 +576,8 @@
         "01150_ddl_guard_rwr",
         "01153_attach_mv_uuid",
         "01152_cross_replication",
+        "01154_move_partition_long",
+        "01155_rename_move_materialized_view",
         "01185_create_or_replace_table",
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
@@ -718,6 +726,10 @@
         "01802_test_postgresql_protocol_with_row_policy", /// Creates database and users
         "01804_dictionary_decimal256_type",
         "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
-        "01710_projection_fetch"
+        "01821_table_comment",
+        "01710_projection_fetch",
+        "01870_modulo_partition_key",
+        "01870_buffer_flush", // creates database
+        "01889_postgresql_protocol_null_fields"
     ]
 }

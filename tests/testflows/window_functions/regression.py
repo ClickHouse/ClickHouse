@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 
 from testflows.core import *
@@ -79,16 +80,20 @@ xflags = {
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """Window functions regression.
     """
+    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
     }
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
-        self.context.cluster = cluster
-        self.context.stress = stress
 
-        if parallel is not None:
-            self.context.parallel = parallel
+    if stress is not None:
+        self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
+
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), "window_functions_env")) as cluster:
+        self.context.cluster = cluster
 
         Feature(run=load("window_functions.tests.feature", "feature"), flags=TE)
 

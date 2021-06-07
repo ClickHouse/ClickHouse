@@ -211,9 +211,12 @@ namespace
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
-        virtual void
-        insertPartitionValueColumn(size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String & name)
-            = 0;
+
+        virtual void insertPartitionValueColumn(
+            size_t rows,
+            const Row & partition_value,
+            const DataTypePtr & partition_value_type,
+            const String & name) = 0;
     };
 }
 
@@ -358,8 +361,8 @@ namespace
             columns.push_back(column);
         }
 
-        void
-        insertPartitionValueColumn(size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String &) final
+        void insertPartitionValueColumn(
+            size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String &) final
         {
             ColumnPtr column;
             if (rows)
