@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -8,13 +8,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
 
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
   * Takes state of aggregate function. Returns result of aggregation (finalized state).
@@ -23,7 +24,7 @@ class FunctionFinalizeAggregation : public IFunction
 {
 public:
     static constexpr auto name = "finalizeAggregation";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionFinalizeAggregation>();
     }
@@ -31,11 +32,6 @@ public:
     String getName() const override
     {
         return name;
-    }
-
-    bool isStateful() const override
-    {
-        return true;
     }
 
     size_t getNumberOfArguments() const override
@@ -49,27 +45,31 @@ public:
     {
         const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
-            throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument for function '{}' must have type AggregateFunction - state of aggregate function."
+                " Got '{}' instead", getName(), arguments[0]->getName());
+        }
 
         return type->getReturnType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        auto column = block.getByPosition(arguments.at(0)).column;
+        auto column = arguments.at(0).column;
         if (!typeid_cast<const ColumnAggregateFunction *>(column.get()))
-            throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
+            throw Exception("Illegal column " + arguments.at(0).column->getName()
                     + " of first argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         /// Column is copied here, because there is no guarantee that we own it.
         auto mut_column = IColumn::mutate(std::move(column));
-        block.getByPosition(result).column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
+        return ColumnAggregateFunction::convertToValues(std::move(mut_column));
     }
 };
 
+}
 
 void registerFunctionFinalizeAggregation(FunctionFactory & factory)
 {

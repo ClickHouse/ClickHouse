@@ -1,3 +1,8 @@
+---
+toc_priority: 31
+toc_title: "Синтаксис"
+---
+
 # Синтаксис {#sintaksis}
 
 В системе есть два вида парсеров: полноценный парсер SQL (recursive descent parser) и парсер форматов данных (быстрый потоковый парсер).
@@ -33,7 +38,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 -   Стандарту SQL. Например, применение любого из вариантов `SELECT`, `select` или `SeLeCt` не вызовет ошибки.
 -   Реализации в некоторых популярных DBMS (MySQL или Postgres). Например, `DateTime` и `datetime`.
 
-Зависимость от регистра для имён типов данных можно проверить в таблице [system.data_type_families](../operations/system-tables.md#system_tables-data_type_families).
+Зависимость от регистра для имён типов данных можно проверить в таблице [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families).
 
 В отличие от стандарта SQL, все остальные ключевые слова, включая названия функций зависят от регистра.
 
@@ -89,7 +94,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 Обозначает, что значение отсутствует.
 
-Чтобы в поле таблицы можно было хранить `NULL`, оно должно быть типа [Nullable](../sql-reference/syntax.md).
+Чтобы в поле таблицы можно было хранить `NULL`, оно должно быть типа [Nullable](../sql-reference/data-types/nullable.md).
 
 В зависимости от формата данных (входных или выходных) `NULL` может иметь различное представление. Подробнее смотрите в документации для [форматов данных](../interfaces/formats.md#formats).
 
@@ -123,7 +128,7 @@ expr AS alias
 
         Например, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-        В функции [CAST](sql_reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
+        В функции [CAST](../sql_reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
 
 -   `expr` — любое выражение, которое поддерживает ClickHouse.
 
@@ -133,7 +138,7 @@ expr AS alias
 
         Например, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
-### Примечания по использованию {#primechaniia-po-ispolzovaniiu}
+### Примечания по использованию {#notes-on-usage}
 
 Синонимы являются глобальными для запроса или подзапроса, и вы можете определить синоним в любой части запроса для любого выражения. Например, `SELECT (1 AS n) + 2, n`.
 
@@ -164,9 +169,9 @@ Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
-В этом примере мы объявили таблицу `t` со столбцом `b`. Затем, при выборе данных, мы определили синоним `sum(b) AS b`. Поскольку синонимы глобальные, то ClickHouse заменил литерал `b` в выражении `argMax(a, b)` выражением `sum(b)`. Эта замена вызвала исключение.
+В этом примере мы объявили таблицу `t` со столбцом `b`. Затем, при выборе данных, мы определили синоним `sum(b) AS b`. Поскольку синонимы глобальные, то ClickHouse заменил литерал `b` в выражении `argMax(a, b)` выражением `sum(b)`. Эта замена вызвала исключение. Можно изменить это поведение, включив настройку [prefer_column_name_to_alias](../operations/settings/settings.md#prefer_column_name_to_alias), для этого нужно установить ее в значение `1`.
 
-## Звёздочка {#zviozdochka}
+## Звёздочка {#asterisk}
 
 В запросе `SELECT`, вместо выражения может стоять звёздочка. Подробнее смотрите раздел «SELECT».
 
@@ -175,5 +180,3 @@ Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 Выражение представляет собой функцию, идентификатор, литерал, применение оператора, выражение в скобках, подзапрос, звёздочку. А также может содержать синоним.
 Список выражений - одно выражение или несколько выражений через запятую.
 Функции и операторы, в свою очередь, в качестве аргументов, могут иметь произвольные выражения.
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/syntax/) <!--hide-->

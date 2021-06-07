@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Access/AccessControlManager.h>
+#include <Access/AccessRightsElement.h>
 #include <Access/Role.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
@@ -17,7 +18,6 @@
 namespace DB
 {
 using EntityType = IAccessEntity::Type;
-
 
 NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
 {
@@ -35,10 +35,10 @@ NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
 }
 
 
-void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
-    const auto & access_control = context.getAccessControlManager();
+    context->checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
+    const auto & access_control = context->getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
 
@@ -124,9 +124,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
 
     auto add_rows = [&](const String & grantee_name,
                         IAccessEntity::Type grantee_type,
-                        const AccessRightsElements & elements,
-                        bool is_partial_revoke,
-                        bool grant_option)
+                        const AccessRightsElements & elements)
     {
         for (const auto & element : elements)
         {
@@ -140,13 +138,13 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
             if (element.any_column)
             {
                 for (const auto & access_type : access_types)
-                    add_row(grantee_name, grantee_type, access_type, database, table, nullptr, is_partial_revoke, grant_option);
+                    add_row(grantee_name, grantee_type, access_type, database, table, nullptr, element.is_partial_revoke, element.grant_option);
             }
             else
             {
                 for (const auto & access_type : access_types)
                     for (const auto & column : element.columns)
-                        add_row(grantee_name, grantee_type, access_type, database, table, &column, is_partial_revoke, grant_option);
+                        add_row(grantee_name, grantee_type, access_type, database, table, &column, element.is_partial_revoke, element.grant_option);
             }
         }
     };
@@ -157,7 +155,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
         if (!entity)
             continue;
 
-        const GrantedAccess * access = nullptr;
+        const AccessRights * access = nullptr;
         if (auto role = typeid_cast<RolePtr>(entity))
             access = &role->access;
         else if (auto user = typeid_cast<UserPtr>(entity))
@@ -167,13 +165,8 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
 
         const String & grantee_name = entity->getName();
         const auto grantee_type = entity->getType();
-        auto grants_and_revokes = access->access.getGrantsAndPartialRevokes();
-        auto grants_and_revokes_with_grant_option = access->access_with_grant_option.getGrantsAndPartialRevokes();
-
-        add_rows(grantee_name, grantee_type, grants_and_revokes.grants, /* is_partial_revoke = */ false, /* grant_option = */ false);
-        add_rows(grantee_name, grantee_type, grants_and_revokes.revokes, /* is_partial_revoke = */ true, /* grant_option = */ false);
-        add_rows(grantee_name, grantee_type, grants_and_revokes_with_grant_option.grants, /* is_partial_revoke = */ false, /* grant_option = */ true);
-        add_rows(grantee_name, grantee_type, grants_and_revokes_with_grant_option.revokes, /* is_partial_revoke = */ true, /* grant_option = */ true);
+        auto elements = access->getElements();
+        add_rows(grantee_name, grantee_type, elements);
     }
 }
 

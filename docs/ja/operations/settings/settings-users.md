@@ -43,7 +43,7 @@ toc_title: "\u30E6\u30FC\u30B6\u30FC\u8A2D\u5B9A"
 </users>
 ```
 
-### user\_name/パスワード {#user-namepassword}
+### user_name/パスワード {#user-namepassword}
 
 パスワードは、平文またはSHA256(hex形式)で指定できます。
 
@@ -75,7 +75,7 @@ toc_title: "\u30E6\u30FC\u30B6\u30FC\u8A2D\u5B9A"
 
     結果の最初の行はパスワードです。 第二の行は、対応する二重SHA1ハッシュです。
 
-### access\_management {#access_management-user-setting}
+### access_management {#access_management-user-setting}
 
 この設定では、SQLドリブンの使用を無効にできます [アクセス制御とアカウント管理](../access-rights.md#access-control) ユーザーのために。
 
@@ -86,7 +86,7 @@ toc_title: "\u30E6\u30FC\u30B6\u30FC\u8A2D\u5B9A"
 
 デフォルト値は0です。
 
-### user\_name/ネットワーク {#user-namenetworks}
+### user_name/ネットワーク {#user-namenetworks}
 
 ユーザーがClickHouseサーバーに接続できるネットワークのリスト。
 
@@ -128,18 +128,18 @@ toc_title: "\u30E6\u30FC\u30B6\u30FC\u8A2D\u5B9A"
 <ip>127.0.0.1</ip>
 ```
 
-### user\_name/プロファイル {#user-nameprofile}
+### user_name/プロファイル {#user-nameprofile}
 
 を割り当てることができる設定プロファイルをユーザーです。 設定プロファイルは、 `users.xml` ファイル 詳細については、 [設定のプロファイル](settings-profiles.md).
 
-### user\_name/クォータ {#user-namequota}
+### user_name/クォータ {#user-namequota}
 
 クォータを使用すると、一定期間のリソース使用量を追跡または制限できます。 クォータは `quotas`
 のセクション `users.xml` 設定ファイル。
 
 ユーザにクォータセットを割り当てることができます。 クォータ設定の詳細については、以下を参照してください [クォータ](../quotas.md#quotas).
 
-### user\_name/データベース {#user-namedatabases}
+### user_name/データベース {#user-namedatabases}
 
 このセクションでは、ClickHouseによって返される行を以下の目的で制限することができます `SELECT` クエリーによる、現在のユーザが実施基本列レベルです。
 

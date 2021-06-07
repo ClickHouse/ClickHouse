@@ -16,6 +16,8 @@ struct AccessRightsElement
     bool any_database = true;
     bool any_table = true;
     bool any_column = true;
+    bool grant_option = false;
+    bool is_partial_revoke = false;
 
     AccessRightsElement() = default;
     AccessRightsElement(const AccessRightsElement &) = default;
@@ -71,26 +73,48 @@ struct AccessRightsElement
     {
     }
 
-    auto toTuple() const { return std::tie(access_flags, database, any_database, table, any_table, columns, any_column); }
+    bool empty() const { return !access_flags || (!any_column && columns.empty()); }
+
+    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns, grant_option, is_partial_revoke); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
-    friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() != right.toTuple(); }
-    friend bool operator<(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() < right.toTuple(); }
-    friend bool operator>(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() > right.toTuple(); }
-    friend bool operator<=(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() <= right.toTuple(); }
-    friend bool operator>=(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() >= right.toTuple(); }
+    friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
 
-    /// Sets the database.
-    void setDatabase(const String & new_database);
+    bool sameDatabaseAndTable(const AccessRightsElement & other) const
+    {
+        return (database == other.database) && (any_database == other.any_database) && (table == other.table)
+            && (any_table == other.any_table);
+    }
 
-    /// If the database is empty, replaces it with `new_database`. Otherwise does nothing.
-    void replaceEmptyDatabase(const String & new_database);
+    bool sameOptions(const AccessRightsElement & other) const
+    {
+        return (grant_option == other.grant_option) && (is_partial_revoke == other.is_partial_revoke);
+    }
 
-    bool isEmptyDatabase() const;
+    /// Resets flags which cannot be granted.
+    void eraseNonGrantable()
+    {
+        if (!any_column)
+            access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
+        else if (!any_table)
+            access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
+        else if (!any_database)
+            access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
+        else
+            access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
+    }
 
-    /// Returns a human-readable representation like "SELECT, UPDATE(x, y) ON db.table".
-    /// The returned string isn't prefixed with the "GRANT" keyword.
+    bool isEmptyDatabase() const { return !any_database && database.empty(); }
+
+    /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
+    void replaceEmptyDatabase(const String & current_database)
+    {
+        if (isEmptyDatabase())
+            database = current_database;
+    }
+
+    /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
-    String toStringWithoutON() const;
+    String toStringWithoutOptions() const;
 };
 
 
@@ -98,16 +122,31 @@ struct AccessRightsElement
 class AccessRightsElements : public std::vector<AccessRightsElement>
 {
 public:
-    /// Replaces the empty database with `new_database`.
-    void replaceEmptyDatabase(const String & new_database);
+    bool empty() const { return std::all_of(begin(), end(), [](const AccessRightsElement & e) { return e.empty(); }); }
 
-    /// Returns a human-readable representation like "SELECT, UPDATE(x, y) ON db.table".
-    /// The returned string isn't prefixed with the "GRANT" keyword.
-    String toString() const { return AccessRightsElements(*this).toString(); }
-    String toString();
+    bool sameDatabaseAndTable() const
+    {
+        return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameDatabaseAndTable(front()); });
+    }
 
-    /// Reorder and group elements to show them in more readable form.
-    void normalize();
+    bool sameOptions() const
+    {
+        return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });
+    }
+
+    /// Resets flags which cannot be granted.
+    void eraseNonGrantable();
+
+    /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
+    void replaceEmptyDatabase(const String & current_database)
+    {
+        for (auto & element : *this)
+            element.replaceEmptyDatabase(current_database);
+    }
+
+    /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
+    String toString() const;
+    String toStringWithoutOptions() const;
 };
 
 }

@@ -55,7 +55,7 @@ If `clickhouse-server` start failed with a configuration error, you should see t
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
-If you don’t see an error at the end of the file, look through the entire file starting from the string:
+If you do not see an error at the end of the file, look through the entire file starting from the string:
 
 ``` text
 <Information> Application: starting up.
@@ -79,7 +79,7 @@ Revision: 54413
 
 **See system.d logs**
 
-If you don’t find any useful information in `clickhouse-server` logs or there aren’t any logs, you can view `system.d` logs using the command:
+If you do not find any useful information in `clickhouse-server` logs or there aren’t any logs, you can view `system.d` logs using the command:
 
 ``` bash
 $ sudo journalctl -u clickhouse-server
@@ -103,7 +103,7 @@ Check:
 
 -   Endpoint settings.
 
-    Check [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) and [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) settings.
+    Check [listen_host](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) and [tcp_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) settings.
 
     ClickHouse server accepts localhost connections only by default.
 
@@ -115,8 +115,8 @@ Check:
 
     Check:
 
-    -   The [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) setting.
-    -   Settings for [SSL certificates](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
+    -   The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) setting.
+    -   Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 

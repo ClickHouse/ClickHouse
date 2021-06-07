@@ -1,5 +1,5 @@
 #include <common/memory.h>
-#include <Common/MemoryTracker.h>
+#include <Common/CurrentMemoryTracker.h>
 
 #include <iostream>
 #include <new>
@@ -10,6 +10,30 @@
 #   include <malloc/malloc.h>
 #endif
 
+#if defined(OS_DARWIN) && defined(BUNDLED_STATIC_JEMALLOC)
+extern "C"
+{
+extern void zone_register();
+}
+
+struct InitializeJemallocZoneAllocatorForOSX
+{
+    InitializeJemallocZoneAllocatorForOSX()
+    {
+        /// In case of OSX jemalloc register itself as a default zone allocator.
+        ///
+        /// But when you link statically then zone_register() will not be called,
+        /// and even will be optimized out:
+        ///
+        /// It is ok to call it twice (i.e. in case of shared libraries)
+        /// Since zone_register() is a no-op if the default zone is already replaced with something.
+        ///
+        /// https://github.com/jemalloc/jemalloc/issues/708
+        zone_register();
+    }
+} initializeJemallocZoneAllocatorForOSX;
+#endif
+
 /// Replace default new/delete with memory tracking versions.
 /// @sa https://en.cppreference.com/w/cpp/memory/new/operator_new
 ///     https://en.cppreference.com/w/cpp/memory/new/operator_delete
@@ -17,9 +41,9 @@
 namespace Memory
 {
 
-inline ALWAYS_INLINE void trackMemory(std::size_t size)
+inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size)
 {
-    std::size_t actual_size = size;
+    size_t actual_size = size;
 
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 5
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
@@ -28,21 +52,13 @@ inline ALWAYS_INLINE void trackMemory(std::size_t size)
         actual_size = nallocx(size, 0);
 #endif
 
-    CurrentMemoryTracker::alloc(actual_size);
+    return actual_size;
 }
 
-inline ALWAYS_INLINE bool trackMemoryNoExcept(std::size_t size) noexcept
+inline ALWAYS_INLINE void trackMemory(std::size_t size)
 {
-    try
-    {
-        trackMemory(size);
-    }
-    catch (...)
-    {
-        return false;
-    }
-
-    return true;
+    std::size_t actual_size = getActualAllocationSize(size);
+    CurrentMemoryTracker::allocNoThrow(actual_size);
 }
 
 inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]] = 0) noexcept
@@ -74,27 +90,29 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
 void * operator new(std::size_t size)
 {
     Memory::trackMemory(size);
+
     return Memory::newImpl(size);
 }
 
 void * operator new[](std::size_t size)
 {
     Memory::trackMemory(size);
+
     return Memory::newImpl(size);
 }
 
 void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
-    if (likely(Memory::trackMemoryNoExcept(size)))
-        return Memory::newNoExept(size);
-    return nullptr;
+    Memory::trackMemory(size);
+
+    return Memory::newNoExept(size);
 }
 
 void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 {
-    if (likely(Memory::trackMemoryNoExcept(size)))
-        return Memory::newNoExept(size);
-    return nullptr;
+    Memory::trackMemory(size);
+
+    return Memory::newNoExept(size);
 }
 
 /// delete

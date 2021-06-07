@@ -3,7 +3,8 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS json_each_row_nested"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE json_each_row_nested (d1 UInt8, d2 String, n Nested (s String, i Int32) ) ENGINE = Memory"

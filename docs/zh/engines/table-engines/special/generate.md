@@ -1,35 +1,31 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
-toc_title: GenerateRandom
+toc_title: 随机数生成
 ---
 
-# Generaterandom {#table_engines-generate}
+# 随机数生成表引擎 {#table_engines-generate}
 
-GenerateRandom表引擎为给定的表架构生成随机数据。
+随机数生成表引擎为指定的表模式生成随机数 
 
 使用示例:
+- 测试时生成可复写的大表
+- 为复杂测试生成随机输入
 
--   在测试中使用填充可重复的大表。
--   为模糊测试生成随机输入。
-
-## 在ClickHouse服务器中的使用 {#usage-in-clickhouse-server}
+## CH服务端的用法 {#usage-in-clickhouse-server}
 
 ``` sql
 ENGINE = GenerateRandom(random_seed, max_string_length, max_array_length)
 ```
 
-该 `max_array_length` 和 `max_string_length` 参数指定所有的最大长度
-数组列和字符串相应地在生成的数据中。
+生成数据时，通过`max_array_length` 设置array列的最大长度， `max_string_length`设置string数据的最大长度
 
-生成表引擎仅支持 `SELECT` 查询。
+该引擎仅支持 `SELECT` 查询语句.
 
-它支持所有 [数据类型](../../../sql-reference/data-types/index.md) 可以存储在一个表中，除了 `LowCardinality` 和 `AggregateFunction`.
+该引擎支持能在表中存储的所有数据类型 [DataTypes](../../../sql-reference/data-types/index.md) ，除了 `LowCardinality` 和 `AggregateFunction`.
 
-**示例:**
+## 示例 {#example}
 
-**1.** 设置 `generate_engine_table` 表:
+**1.** 设置 `generate_engine_table` 引擎表:
 
 ``` sql
 CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
@@ -49,13 +45,13 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-## 实施细节 {#details-of-implementation}
+## 实现细节 {#details-of-implementation}
 
--   不支持:
+-   以下特性不支持:
     -   `ALTER`
     -   `SELECT ... SAMPLE`
     -   `INSERT`
-    -   指数
-    -   复制
+    -   Indices
+    -   Replication
 
-[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/generate/) <!--hide-->
+[原始文档](https://clickhouse.tech/docs/en/operations/table_engines/generate/) <!--hide-->

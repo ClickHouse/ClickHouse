@@ -83,7 +83,7 @@ public:
     {
         IBlockInputStream::cancel(kill);
 
-        /// Wait for some backgroud calculations to be sure,
+        /// Wait for some background calculations to be sure,
         ///  that after end of stream nothing is being executing.
         if (started)
             pool.wait();

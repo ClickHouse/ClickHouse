@@ -20,25 +20,25 @@ std::string readInvalidateQuery(IBlockInputStream & block_input_stream)
 
     Block block = block_input_stream.read();
     if (!block)
-        throw Exception("Empty response", ErrorCodes::RECEIVED_EMPTY_DATA);
+        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Empty response");
 
     auto columns = block.columns();
     if (columns > 1)
-        throw Exception("Expected single column in resultset, got " + std::to_string(columns), ErrorCodes::TOO_MANY_COLUMNS);
+        throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Expected single column in resultset, got {}", std::to_string(columns));
 
     auto rows = block.rows();
     if (rows == 0)
-        throw Exception("Expected single row in resultset, got 0", ErrorCodes::RECEIVED_EMPTY_DATA);
+        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Expected single row in resultset, got 0");
     if (rows > 1)
-        throw Exception("Expected single row in resultset, got at least " + std::to_string(rows), ErrorCodes::TOO_MANY_ROWS);
+        throw Exception(ErrorCodes::TOO_MANY_ROWS, "Expected single row in resultset, got at least {}", std::to_string(rows));
 
     WriteBufferFromOwnString out;
     auto & column_type = block.getByPosition(0);
-    column_type.type->serializeAsTextQuoted(*column_type.column->convertToFullColumnIfConst(), 0, out, FormatSettings());
+    column_type.type->getDefaultSerialization()->serializeTextQuoted(*column_type.column->convertToFullColumnIfConst(), 0, out, FormatSettings());
 
     while ((block = block_input_stream.read()))
         if (block.rows() > 0)
-            throw Exception("Expected single row in resultset, got at least " + std::to_string(rows + 1), ErrorCodes::TOO_MANY_ROWS);
+            throw Exception(ErrorCodes::TOO_MANY_ROWS, "Expected single row in resultset, got at least {}", std::to_string(rows + 1));
 
     block_input_stream.readSuffix();
     return out.str();

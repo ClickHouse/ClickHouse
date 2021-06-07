@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
@@ -7,12 +7,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
 
 /** tuple(x, y, ...) is a function that allows you to group several columns
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
@@ -23,7 +24,7 @@ class FunctionTuple : public IFunction
 public:
     static constexpr auto name = "tuple";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionTuple>();
     }
@@ -43,7 +44,7 @@ public:
         return 0;
     }
 
-    bool isInjective(const Block &) const override
+    bool isInjective(const ColumnsWithTypeAndName &) const override
     {
         return true;
     }
@@ -51,15 +52,32 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return std::make_shared<DataTypeTuple>(arguments);
+        DataTypes types;
+        Strings names;
+
+        for (const auto & argument : arguments)
+        {
+            types.emplace_back(argument.type);
+            names.emplace_back(argument.name);
+        }
+
+        /// Create named tuple if possible. We don't print tuple element names
+        /// because they are bad anyway -- aliases are not used, e.g. tuple(1 a)
+        /// will have element name '1' and not 'a'. If we ever change this, and
+        /// add the ability to access tuple elements by name, like tuple(1 a).a,
+        /// we should probably enable printing for better discoverability.
+        if (DataTypeTuple::canBeCreatedWithNames(names))
+            return std::make_shared<DataTypeTuple>(types, names, false /*print names*/);
+
+        return std::make_shared<DataTypeTuple>(types);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);
@@ -69,11 +87,13 @@ public:
               *  convert all to non-constant columns,
               *  because many places in code expect all non-constant columns in non-constant tuple.
               */
-            tuple_columns[i] = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
+            tuple_columns[i] = arguments[i].column->convertToFullColumnIfConst();
         }
-        block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
+        return ColumnTuple::create(tuple_columns);
     }
 };
+
+}
 
 void registerFunctionTuple(FunctionFactory & factory)
 {

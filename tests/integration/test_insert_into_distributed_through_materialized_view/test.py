@@ -1,10 +1,9 @@
-import pytest
 import time
 
+import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
-
 
 cluster = ClickHouseCluster(__file__)
 
@@ -12,7 +11,7 @@ instance_test_reconnect = cluster.add_instance('instance_test_reconnect', main_c
 instance_test_inserts_batching = cluster.add_instance(
     'instance_test_inserts_batching',
     main_configs=['configs/remote_servers.xml'], user_configs=['configs/enable_distributed_inserts_batching.xml'])
-remote = cluster.add_instance('remote', user_configs=['configs/forbid_background_merges.xml'])
+remote = cluster.add_instance('remote', main_configs=['configs/forbid_background_merges.xml'])
 
 instance_test_inserts_local_cluster = cluster.add_instance(
     'instance_test_inserts_local_cluster',
@@ -30,23 +29,25 @@ def started_cluster():
 CREATE TABLE distributed (x UInt32) ENGINE = Distributed('test_cluster', 'default', 'local1')
 ''')
         instance_test_reconnect.query("CREATE TABLE local1_source (x UInt32) ENGINE = Memory")
-        instance_test_reconnect.query("CREATE MATERIALIZED VIEW local1_view to distributed AS SELECT x FROM local1_source")
+        instance_test_reconnect.query(
+            "CREATE MATERIALIZED VIEW local1_view to distributed AS SELECT x FROM local1_source")
 
         remote.query("CREATE TABLE local2 (d Date, x UInt32, s String) ENGINE = MergeTree(d, x, 8192)")
         instance_test_inserts_batching.query('''
 CREATE TABLE distributed (d Date, x UInt32) ENGINE = Distributed('test_cluster', 'default', 'local2')
 ''')
         instance_test_inserts_batching.query("CREATE TABLE local2_source (d Date, x UInt32) ENGINE = Log")
-        instance_test_inserts_batching.query("CREATE MATERIALIZED VIEW local2_view to distributed AS SELECT d,x FROM local2_source")
-
+        instance_test_inserts_batching.query(
+            "CREATE MATERIALIZED VIEW local2_view to distributed AS SELECT d,x FROM local2_source")
 
         instance_test_inserts_local_cluster.query("CREATE TABLE local_source (d Date, x UInt32) ENGINE = Memory")
-        instance_test_inserts_local_cluster.query("CREATE MATERIALIZED VIEW local_view to distributed_on_local AS SELECT d,x FROM local_source")
-        instance_test_inserts_local_cluster.query("CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)")
+        instance_test_inserts_local_cluster.query(
+            "CREATE MATERIALIZED VIEW local_view to distributed_on_local AS SELECT d,x FROM local_source")
+        instance_test_inserts_local_cluster.query(
+            "CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)")
         instance_test_inserts_local_cluster.query('''
 CREATE TABLE distributed_on_local (d Date, x UInt32) ENGINE = Distributed('test_local_cluster', 'default', 'local')
 ''')
-
 
         yield cluster
 
@@ -77,6 +78,7 @@ def test_reconnect(started_cluster):
         time.sleep(1)
 
         assert remote.query("SELECT count(*) FROM local1").strip() == '3'
+
 
 @pytest.mark.skip(reason="Flapping test")
 def test_inserts_batching(started_cluster):

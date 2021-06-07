@@ -2,10 +2,12 @@
 
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -14,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
 }
 
 KeyDescription::KeyDescription(const KeyDescription & other)
@@ -25,7 +28,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , additional_column(other.additional_column)
 {
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
 }
 
 KeyDescription & KeyDescription::operator=(const KeyDescription & other)
@@ -45,7 +48,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
 
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
     else
         expression.reset();
 
@@ -55,7 +58,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
     /// additional_column is constant property It should never be lost.
     if (additional_column.has_value() && !other.additional_column.has_value())
-        throw Exception("Wrong key assignment, loosing additional_column", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Wrong key assignment, losing additional_column", ErrorCodes::LOGICAL_ERROR);
     additional_column = other.additional_column;
     return *this;
 }
@@ -64,14 +67,14 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 void KeyDescription::recalculateWithNewAST(
     const ASTPtr & new_ast,
     const ColumnsDescription & columns,
-    const Context & context)
+    ContextPtr context)
 {
     *this = getSortingKeyFromAST(new_ast, columns, context, additional_column);
 }
 
 void KeyDescription::recalculateWithNewColumns(
     const ColumnsDescription & new_columns,
-    const Context & context)
+    ContextPtr context)
 {
     *this = getSortingKeyFromAST(definition_ast, new_columns, context, additional_column);
 }
@@ -79,15 +82,39 @@ void KeyDescription::recalculateWithNewColumns(
 KeyDescription KeyDescription::getKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    const Context & context)
+    ContextPtr context)
 {
     return getSortingKeyFromAST(definition_ast, columns, context, {});
+}
+
+bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
+{
+    if (!node_expr)
+        return false;
+
+    auto * function_expr = node_expr->as<ASTFunction>();
+    bool modulo_in_ast = false;
+    if (function_expr)
+    {
+        if (function_expr->name == "modulo")
+        {
+            function_expr->name = "moduloLegacy";
+            modulo_in_ast = true;
+        }
+        if (function_expr->arguments)
+        {
+            auto children = function_expr->arguments->children;
+            for (const auto & child : children)
+                modulo_in_ast |= moduloToModuloLegacyRecursive(child);
+        }
+    }
+    return modulo_in_ast;
 }
 
 KeyDescription KeyDescription::getSortingKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    const Context & context,
+    ContextPtr context,
     const std::optional<String> & additional_column)
 {
     KeyDescription result;
@@ -107,7 +134,7 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
 
     {
         auto expr = result.expression_list_ast->clone();
-        auto syntax_result = SyntaxAnalyzer(context).analyze(expr, columns.getAllPhysical());
+        auto syntax_result = TreeRewriter(context).analyze(expr, columns.getAllPhysical());
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns
@@ -115,7 +142,13 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
+    {
         result.data_types.emplace_back(result.sample_block.getByPosition(i).type);
+        if (!result.data_types.back()->isComparable())
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
+                            "Column {} with type {} is not allowed in key expression, it's not comparable",
+                            backQuote(result.sample_block.getByPosition(i).name), result.data_types.back()->getName());
+    }
 
     return result;
 }

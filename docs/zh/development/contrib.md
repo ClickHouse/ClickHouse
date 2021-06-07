@@ -11,7 +11,6 @@
 | FastMemcpy         | [MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libmemcpy/impl/LICENSE)                                             |
 | googletest         | [BSD3-条款许可](https://github.com/google/googletest/blob/master/LICENSE)                                                           |
 | 超扫描             | [BSD3-条款许可](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                             |
-| libbtrie           | [BSD2-条款许可](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                      |
 | libcxxabi          | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                 |
 | libdivide          | [Zlib许可证](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                    |
 | libgsasl           | [LGPL v2.1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                    |
@@ -20,7 +19,7 @@
 | libpcg-随机        | [Apache许可证2.0](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libpcg-random/LICENSE-APACHE.txt)                    |
 | libressl           | [OpenSSL许可证](https://github.com/ClickHouse-Extras/ssl/blob/master/COPYING)                                                       |
 | librdkafka         | [BSD2-条款许可](https://github.com/edenhill/librdkafka/blob/363dcad5a23dc29381cc626620e68ae418b3af19/LICENSE)                       |
-| libwidechar\_width | [CC0 1.0通用](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                  |
+| libwidechar_width | [CC0 1.0通用](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                  |
 | llvm               | [BSD3-条款许可](https://github.com/ClickHouse-Extras/llvm/blob/163def217817c90fb982a6daf384744d8472b92b/llvm/LICENSE.TXT)           |
 | lz4                | [BSD2-条款许可](https://github.com/lz4/lz4/blob/c10863b98e1503af90616ae99725ecd120265dfb/LICENSE)                                   |
 | mariadb-连接器-c   | [LGPL v2.1](https://github.com/ClickHouse-Extras/mariadb-connector-c/blob/3.1/COPYING.LIB)                                          |

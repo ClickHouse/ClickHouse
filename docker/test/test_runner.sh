@@ -2,21 +2,23 @@
 
 set -e -x
 
+# Not sure why shellcheck complains that rc is not assigned before it is referenced.
+# shellcheck disable=SC2154
 trap 'rc=$?; echo EXITED WITH: $rc; exit $rc' EXIT
 
 # CLI option to prevent rebuilding images, just re-run tests with images leftover from previuos time
 readonly NO_REBUILD_FLAG="--no-rebuild"
 
-readonly CLICKHOUSE_DOCKER_DIR="$(realpath ${1})"
+readonly CLICKHOUSE_DOCKER_DIR="$(realpath "${1}")"
 readonly CLICKHOUSE_PACKAGES_ARG="${2}"
 CLICKHOUSE_SERVER_IMAGE="${3}"
 
-if [ ${CLICKHOUSE_PACKAGES_ARG} != ${NO_REBUILD_FLAG} ]; then
-    readonly CLICKHOUSE_PACKAGES_DIR="$(realpath ${2})" # or --no-rebuild
+if [ "${CLICKHOUSE_PACKAGES_ARG}" != "${NO_REBUILD_FLAG}" ]; then
+    readonly CLICKHOUSE_PACKAGES_DIR="$(realpath "${2}")" # or --no-rebuild
 fi
 
 
-# In order to allow packages directory to be anywhere, and to reduce amoun of context sent to the docker daemon,
+# In order to allow packages directory to be anywhere, and to reduce amount of context sent to the docker daemon,
 # all images are built in multiple stages:
 # 1. build base image, install dependencies
 # 2. run image with volume mounted, install what needed from those volumes
@@ -25,15 +27,15 @@ fi
 
 # TODO: optionally mount most recent clickhouse-test and queries directory from local machine
 
-if [ ${CLICKHOUSE_PACKAGES_ARG} != ${NO_REBUILD_FLAG} ]; then
-    docker build \
+if [ "${CLICKHOUSE_PACKAGES_ARG}" != "${NO_REBUILD_FLAG}" ]; then
+    docker build --network=host \
         -f "${CLICKHOUSE_DOCKER_DIR}/test/stateless/clickhouse-statelest-test-runner.Dockerfile" \
         --target clickhouse-test-runner-base \
         -t clickhouse-test-runner-base:preinstall \
         "${CLICKHOUSE_DOCKER_DIR}/test/stateless"
 
     docker rm -f clickhouse-test-runner-installing-packages || true
-    docker run \
+    docker run  --network=host \
         -v "${CLICKHOUSE_PACKAGES_DIR}:/packages" \
         --name clickhouse-test-runner-installing-packages \
         clickhouse-test-runner-base:preinstall
@@ -49,20 +51,20 @@ fi
 if [ -z "${CLICKHOUSE_SERVER_IMAGE}" ]; then
     CLICKHOUSE_SERVER_IMAGE="yandex/clickhouse-server:local"
 
-    if [ ${CLICKHOUSE_PACKAGES_ARG} != ${NO_REBUILD_FLAG} ]; then
-        docker build \
+    if [ "${CLICKHOUSE_PACKAGES_ARG}" != "${NO_REBUILD_FLAG}" ]; then
+        docker build --network=host \
             -f "${CLICKHOUSE_DOCKER_DIR}/server/local.Dockerfile" \
             --target clickhouse-server-base \
             -t clickhouse-server-base:preinstall \
             "${CLICKHOUSE_DOCKER_DIR}/server"
 
         docker rm -f clickhouse_server_base_installing_server || true
-        docker run -v "${CLICKHOUSE_PACKAGES_DIR}:/packages" \
+        docker run  --network=host -v "${CLICKHOUSE_PACKAGES_DIR}:/packages" \
             --name clickhouse_server_base_installing_server \
             clickhouse-server-base:preinstall
         docker commit clickhouse_server_base_installing_server clickhouse-server-base:postinstall
 
-        docker build \
+        docker build --network=host \
             -f "${CLICKHOUSE_DOCKER_DIR}/server/local.Dockerfile" \
             --target clickhouse-server \
             -t "${CLICKHOUSE_SERVER_IMAGE}" \

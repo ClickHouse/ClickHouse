@@ -1,11 +1,19 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Client/ConnectionPool.h>
-#include <Client/MultiplexedConnections.h>
+#include <Client/IConnections.h>
+#include <Client/ConnectionPoolWithFailover.h>
+#include <Storages/IStorage_fwd.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
+#include <Common/FiberStack.h>
+#include <Common/TimerDescriptor.h>
+#include <variant>
 
 namespace DB
 {
+
+class Context;
 
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
@@ -16,49 +24,60 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct BlockStreamProfileInfo;
 using ProfileInfoCallback = std::function<void(const BlockStreamProfileInfo & info)>;
 
+class RemoteQueryExecutorReadContext;
+
+/// This is the same type as StorageS3Source::IteratorWrapper
+using TaskIterator = std::function<String()>;
+
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
 {
 public:
+    using ReadContext = RemoteQueryExecutorReadContext;
+
     /// Takes already set connection.
-    /// If `settings` is nullptr, settings will be taken from context.
     RemoteQueryExecutor(
         Connection & connection,
-        const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
+        const String & query_, const Block & header_, ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
 
     /// Accepts several connections already taken from pool.
-    /// If `settings` is nullptr, settings will be taken from context.
     RemoteQueryExecutor(
-        std::vector<IConnectionPool::Entry> && connections,
-        const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
+        std::vector<IConnectionPool::Entry> && connections_,
+        const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
 
     /// Takes a pool and gets one or several connections from it.
-    /// If `settings` is nullptr, settings will be taken from context.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
+        const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
 
     ~RemoteQueryExecutor();
 
     /// Create connection and send query, external tables and scalars.
     void sendQuery();
 
+    /// Query is resent to a replica, the query itself can be modified.
+    std::atomic<bool> resent_query { false };
+
     /// Read next block of data. Returns empty block if query is finished.
     Block read();
 
+    /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
+    /// ReadContext is an internal read state. Pass empty ptr first time, reuse created one for every call.
+    std::variant<Block, int> read(std::unique_ptr<ReadContext> & read_context);
+
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
-    void finish();
+    void finish(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// Cancel query execution. Sends Cancel packet and ignore others.
     /// This method may be called from separate thread.
-    void cancel();
+    void cancel(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// Get totals and extremes if any.
     Block getTotals() { return std::move(totals); }
@@ -88,12 +107,12 @@ private:
     Block totals;
     Block extremes;
 
-    std::function<std::unique_ptr<MultiplexedConnections>()> create_multiplexed_connections;
-    std::unique_ptr<MultiplexedConnections> multiplexed_connections;
+    std::function<std::unique_ptr<IConnections>()> create_connections;
+    std::unique_ptr<IConnections> connections;
 
     const String query;
-    String query_id = "";
-    Context context;
+    String query_id;
+    ContextPtr context;
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
@@ -103,6 +122,8 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
+    /// Initiator identifier for distributed task processing
+    std::shared_ptr<TaskIterator> task_iterator;
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
@@ -140,6 +161,14 @@ private:
       */
     std::atomic<bool> got_unknown_packet_from_replica { false };
 
+    /** Got duplicated uuids from replica
+      */
+    std::atomic<bool> got_duplicated_part_uuids{ false };
+
+    /// Parts uuids, collected from remote replicas
+    std::mutex duplicated_part_uuids_mutex;
+    std::vector<UUID> duplicated_part_uuids;
+
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
@@ -151,14 +180,31 @@ private:
     /// Send all temporary tables to remote servers
     void sendExternalTables();
 
+    /// Set part uuids to a query context, collected from remote replicas.
+    /// Return true if duplicates found.
+    bool setPartUUIDs(const std::vector<UUID> & uuids);
+
+    void processReadTaskRequest();
+
+    /// Cancell query and restart it with info about duplicated UUIDs
+    /// only for `allow_experimental_query_deduplication`.
+    std::variant<Block, int> restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
+
     /// If wasn't sent yet, send request to cancel all connections to replicas
-    void tryCancel(const char * reason);
+    void tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context);
 
     /// Returns true if query was sent
     bool isQueryPending() const;
 
     /// Returns true if exception was thrown
     bool hasThrownException() const;
+
+    /// Process packet for read and return data block if possible.
+    std::optional<Block> processPacket(Packet packet);
+
+    /// Reads packet by packet
+    Block readPackets();
+
 };
 
 }

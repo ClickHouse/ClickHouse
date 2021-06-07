@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 # BOM can be parsed if TSV format has first column that cannot contain arbitrary binary data (such as integer)
 # In contrast, BOM cannot be parsed if the first column in String as it can contain arbitrary binary data.

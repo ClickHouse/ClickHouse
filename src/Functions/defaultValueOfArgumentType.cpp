@@ -1,9 +1,11 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 
 
 namespace DB
+{
+namespace
 {
 
 /// Returns global default value for type of passed argument (example: 0 for numeric types, '' for String).
@@ -11,7 +13,7 @@ class FunctionDefaultValueOfArgumentType : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfArgumentType";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionDefaultValueOfArgumentType>();
     }
@@ -22,6 +24,7 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
@@ -33,19 +36,20 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const IDataType & type = *block.getByPosition(arguments[0]).type;
-        block.getByPosition(result).column = type.createColumnConst(input_rows_count, type.getDefault());
+        const IDataType & type = *arguments[0].type;
+        return type.createColumnConst(input_rows_count, type.getDefault());
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const override
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
-        const IDataType & type = *block.getByPosition(arguments[0]).type;
+        const IDataType & type = *arguments[0].type;
         return type.createColumnConst(1, type.getDefault());
     }
 };
 
+}
 
 void registerFunctionDefaultValueOfArgumentType(FunctionFactory & factory)
 {

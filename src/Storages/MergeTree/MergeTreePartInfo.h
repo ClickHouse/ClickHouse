@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tuple>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <common/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
@@ -18,6 +18,8 @@ struct MergeTreePartInfo
     Int64 max_block = 0;
     UInt32 level = 0;
     Int64 mutation = 0;   /// If the part has been mutated or contains mutated parts, is equal to mutation version number.
+
+    bool use_leagcy_max_level = false;  /// For compatibility. TODO remove it
 
     MergeTreePartInfo() = default;
 
@@ -69,6 +71,13 @@ struct MergeTreePartInfo
             || max_block < rhs.min_block;
     }
 
+    bool isFakeDropRangePart() const
+    {
+        /// Another max level was previously used for REPLACE/MOVE PARTITION
+        auto another_max_level = std::numeric_limits<decltype(level)>::max();
+        return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
+    }
+
     String getPartName() const;
     String getPartNameV0(DayNum left_date, DayNum right_date) const;
     UInt64 getBlocksCount() const
@@ -86,6 +95,8 @@ struct MergeTreePartInfo
 
     static constexpr UInt32 MAX_LEVEL = 999999999;
     static constexpr UInt32 MAX_BLOCK_NUMBER = 999999999;
+
+    static constexpr UInt32 LEGACY_MAX_LEVEL = std::numeric_limits<decltype(level)>::max();
 };
 
 /// Information about detached part, which includes its prefix in

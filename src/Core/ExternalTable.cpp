@@ -1,18 +1,24 @@
 #include <boost/program_options.hpp>
+#include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Storages/IStorage.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Interpreters/Context.h>
-#include <IO/copyData.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
-#include <Storages/StorageMemory.h>
-#include <Processors/Sources/SourceFromInputStream.h>
+
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
+#include <Formats/FormatFactory.h>
 #include <common/find_symbols.h>
 
 
@@ -25,11 +31,11 @@ namespace ErrorCodes
 }
 
 
-ExternalTableDataPtr BaseExternalTable::getData(const Context & context)
+ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = context.getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
     auto stream = std::make_shared<AsynchronousBlockInputStream>(input);
 
     auto data = std::make_unique<ExternalTableData>();
@@ -39,7 +45,7 @@ ExternalTableDataPtr BaseExternalTable::getData(const Context & context)
     return data;
 }
 
-void BaseExternalTable::clean()
+void BaseExternalTable::clear()
 {
     name.clear();
     file.clear();
@@ -47,17 +53,6 @@ void BaseExternalTable::clean()
     structure.clear();
     sample_block.clear();
     read_buffer.reset();
-}
-
-/// Function for debugging information output
-void BaseExternalTable::write()
-{
-    std::cerr << "file " << file << std::endl;
-    std::cerr << "name " << name << std::endl;
-    std::cerr << "format " << format << std::endl;
-    std::cerr << "structure: \n";
-    for (const auto & elem : structure)
-        std::cerr << '\t' << elem.first << ' ' << elem.second << std::endl;
 }
 
 void BaseExternalTable::parseStructureFromStructureField(const std::string & argument)
@@ -130,19 +125,16 @@ ExternalTable::ExternalTable(const boost::program_options::variables_map & exter
 }
 
 
-void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, std::istream & stream)
+void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, ReadBuffer & stream)
 {
-    const Settings & settings = context.getSettingsRef();
-
-    /// The buffer is initialized here, not in the virtual function initReadBuffer
-    read_buffer_impl = std::make_unique<ReadBufferFromIStream>(stream);
+    const Settings & settings = getContext()->getSettingsRef();
 
     if (settings.http_max_multipart_form_data_size)
         read_buffer = std::make_unique<LimitReadBuffer>(
-            *read_buffer_impl, settings.http_max_multipart_form_data_size,
+            stream, settings.http_max_multipart_form_data_size,
             true, "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting");
     else
-        read_buffer = std::move(read_buffer_impl);
+        read_buffer = wrapReadBufferReference(stream);
 
     /// Retrieve a collection of parameters from MessageHeader
     Poco::Net::NameValueCollection content;
@@ -160,27 +152,29 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     else
         throw Exception("Neither structure nor types have not been provided for external table " + name + ". Use fields " + name + "_structure or " + name + "_types to do so.", ErrorCodes::BAD_ARGUMENTS);
 
-    ExternalTableDataPtr data = getData(context);
+    ExternalTableDataPtr data = getData(getContext());
 
     /// Create table
     NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    auto temporary_table = TemporaryTableHolder(context, ColumnsDescription{columns}, {});
+    auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
     auto storage = temporary_table.getTable();
-    context.addExternalTable(data->table_name, std::move(temporary_table));
-    BlockOutputStreamPtr output = storage->write(ASTPtr(), context);
+    getContext()->addExternalTable(data->table_name, std::move(temporary_table));
+    BlockOutputStreamPtr output = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
 
     /// Write data
-    auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
-    connect(data->pipe->getPort(), sink->getPort());
+    data->pipe->resize(1);
 
-    auto processors = std::move(*data->pipe).detachProcessors();
+    auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
+    connect(*data->pipe->getOutputPort(0), sink->getPort());
+
+    auto processors = Pipe::detachProcessors(std::move(*data->pipe));
     processors.push_back(std::move(sink));
 
     auto executor = std::make_shared<PipelineExecutor>(processors);
     executor->execute(/*num_threads = */ 1);
 
     /// We are ready to receive the next file, for this we clear all the information received
-    clean();
+    clear();
 }
 
 }

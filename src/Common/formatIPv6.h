@@ -25,14 +25,14 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
 
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv4 string.
  *
- * Parses the input string `src` and stores binary BE value into buffer pointed by `dst`,
+ * Parses the input string `src` and stores binary host-endian value into buffer pointed by `dst`,
  * which should be long enough.
  * That is "127.0.0.1" becomes 0x7f000001.
  *
  * In case of failure returns false and doesn't modify buffer pointed by `dst`.
  *
  * @param src - input string, expected to be non-null and null-terminated right after the IPv4 string value.
- * @param dst - where to put output bytes, expected to be non-null and atleast IPV4_BINARY_LENGTH-long.
+ * @param dst - where to put output bytes, expected to be non-null and at IPV4_BINARY_LENGTH-long.
  * @return false if parsing failed, true otherwise.
  */
 inline bool parseIPv4(const char * src, unsigned char * dst)
@@ -63,12 +63,12 @@ inline bool parseIPv4(const char * src, unsigned char * dst)
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
 *
 * Slightly altered implementation from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
-* Parses the input string `src` and stores binary LE value into buffer pointed by `dst`,
+* Parses the input string `src` and stores binary big-endian value into buffer pointed by `dst`,
 * which should be long enough. In case of failure zeroes
 * IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
 *
 * @param src - input string, expected to be non-null and null-terminated right after the IPv6 string value.
-* @param dst - where to put output bytes, expected to be non-null and atleast IPV6_BINARY_LENGTH-long.
+* @param dst - where to put output bytes, expected to be non-null and at IPV6_BINARY_LENGTH-long.
 * @return false if parsing failed, true otherwise.
 */
 inline bool parseIPv6(const char * src, unsigned char * dst)
@@ -85,26 +85,26 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
             return clear_dst();
 
     unsigned char tmp[IPV6_BINARY_LENGTH]{};
-    auto tp = tmp;
-    auto endp = tp + IPV6_BINARY_LENGTH;
-    auto curtok = src;
-    auto saw_xdigit = false;
+    unsigned char * tp = tmp;
+    unsigned char * endp = tp + IPV6_BINARY_LENGTH;
+    const char * curtok = src;
+    bool saw_xdigit = false;
     UInt32 val{};
     unsigned char * colonp = nullptr;
 
     /// Assuming zero-terminated string.
-    while (const auto ch = *src++)
+    while (char ch = *src++)
     {
-        const auto num = unhex(ch);
+        UInt8 num = unhex(ch);
 
-        if (num != '\xff')
+        if (num != 0xFF)
         {
             val <<= 4;
             val |= num;
             if (val > 0xffffu)
                 return clear_dst();
 
-            saw_xdigit = 1;
+            saw_xdigit = true;
             continue;
         }
 
@@ -177,7 +177,7 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
 }
 
 /** Format 4-byte binary sequesnce as IPv4 text: 'aaa.bbb.ccc.ddd',
-  * expects inout to be in BE-format, that is 0x7f000001 => "127.0.0.1".
+  * expects in out to be in BE-format, that is 0x7f000001 => "127.0.0.1".
   *
   * Any number of the tail bytes can be masked with given mask string.
   *
@@ -204,7 +204,7 @@ inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail
     for (size_t octet = 0; octet < limit; ++octet)
     {
         const uint8_t value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
-        auto rep = one_byte_to_string_lookup_table[value];
+        const auto * rep = one_byte_to_string_lookup_table[value];
         const uint8_t len = rep[0];
         const char* str = rep + 1;
 

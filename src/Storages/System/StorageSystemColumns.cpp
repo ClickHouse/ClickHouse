@@ -5,7 +5,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/NullBlockInputStream.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -23,10 +22,11 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-StorageSystemColumns::StorageSystemColumns(const std::string & name_)
-    : IStorage({"system", name_})
+StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
+    : IStorage(table_id_)
 {
-    setColumns(ColumnsDescription(
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(ColumnsDescription(
     {
         { "database",           std::make_shared<DataTypeString>() },
         { "table",              std::make_shared<DataTypeString>() },
@@ -45,6 +45,7 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>() },
         { "compression_codec",   std::make_shared<DataTypeString>() },
     }));
+    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -64,12 +65,12 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        const Context & context)
+        ContextPtr context)
         : SourceWithProgress(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
-        , total_tables(tables->size()), access(context.getAccess())
-        , query_id(context.getCurrentQueryId()), lock_acquire_timeout(context.getSettingsRef().lock_acquire_timeout)
+        , total_tables(tables->size()), access(context->getAccess())
+        , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
     }
 
@@ -101,11 +102,11 @@ protected:
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableStructureReadLockHolder table_lock;
+                TableLockHolder table_lock;
 
                 try
                 {
-                    table_lock = storage->lockStructureForShare(false, query_id, lock_acquire_timeout);
+                    table_lock = storage->lockForShare(query_id, lock_acquire_timeout);
                 }
                 catch (const Exception & e)
                 {
@@ -120,13 +121,13 @@ protected:
                         throw;
                 }
 
-                columns = storage->getColumns();
+                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+                columns = metadata_snapshot->getColumns();
 
-                cols_required_for_partition_key = storage->getColumnsRequiredForPartitionKey();
-                cols_required_for_sorting_key = storage->getColumnsRequiredForSortingKey();
-                cols_required_for_primary_key = storage->getColumnsRequiredForPrimaryKey();
-                cols_required_for_sampling = storage->getColumnsRequiredForSampling();
-
+                cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();
+                cols_required_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
+                cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
+                cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
                 column_sizes = storage->getColumnSizes();
             }
 
@@ -212,7 +213,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (column.codec)
-                        res_columns[res_index++]->insert("CODEC(" + column.codec->getCodecDesc() + ")");
+                        res_columns[res_index++]->insert(queryToString(column.codec));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -234,25 +235,26 @@ private:
     size_t total_tables;
     std::shared_ptr<const ContextAccess> access;
     String query_id;
-    SettingSeconds lock_acquire_timeout;
+    std::chrono::milliseconds lock_acquire_timeout;
 };
 
 
-Pipes StorageSystemColumns::read(
+Pipe StorageSystemColumns::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     /// Create a mask of what columns are needed in the result.
 
     NameSet names_set(column_names.begin(), column_names.end());
 
-    Block sample_block = getSampleBlock();
+    Block sample_block = metadata_snapshot->getSampleBlock();
     Block header;
 
     std::vector<UInt8> columns_mask(sample_block.columns());
@@ -270,17 +272,28 @@ Pipes StorageSystemColumns::read(
     Pipes pipes;
 
     {
-        Databases databases = DatabaseCatalog::instance().getDatabases();
-
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
-        for (const auto & database : databases)
+
+        const auto databases = DatabaseCatalog::instance().getDatabases();
+        for (const auto & [database_name, database] : databases)
         {
+            if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+                continue; /// We don't want to show the internal database for temporary tables in system.columns
+
             /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
             /// This should be documented.
 
-            if (database.second->getEngineName() != "Lazy")
-                database_column_mut->insert(database.first);
+            if (database->getEngineName() != "Lazy")
+                database_column_mut->insert(database_name);
+        }
+
+        Tables external_tables;
+        if (context->hasSessionContext())
+        {
+            external_tables = context->getSessionContext()->getExternalTables();
+            if (!external_tables.empty())
+                database_column_mut->insertDefault(); /// Empty database for external tables.
         }
 
         block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
@@ -291,33 +304,40 @@ Pipes StorageSystemColumns::read(
         if (!block_to_filter.rows())
         {
             pipes.emplace_back(std::make_shared<NullSource>(header));
-            return pipes;
+            return Pipe::unitePipes(std::move(pipes));
         }
 
         ColumnPtr & database_column = block_to_filter.getByName("database").column;
-        size_t rows = database_column->size();
 
         /// Add `table` column.
         MutableColumnPtr table_column_mut = ColumnString::create();
-        IColumn::Offsets offsets(rows);
-        for (size_t i = 0; i < rows; ++i)
+        IColumn::Offsets offsets(database_column->size());
+
+        for (size_t i = 0; i < database_column->size(); ++i)
         {
             const std::string database_name = (*database_column)[i].get<std::string>();
-            const DatabasePtr database = databases.at(database_name);
-            offsets[i] = i ? offsets[i - 1] : 0;
-
-            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+            if (database_name.empty())
             {
-                if (const auto & table = iterator->table())
+                for (auto & [table_name, table] : external_tables)
                 {
-                    const String & table_name = iterator->name();
-                    storages.emplace(std::piecewise_construct,
-                        std::forward_as_tuple(database_name, table_name),
-                        std::forward_as_tuple(table));
+                    storages[{"", table_name}] = table;
                     table_column_mut->insert(table_name);
-                    ++offsets[i];
                 }
             }
+            else
+            {
+                const DatabasePtr & database = databases.at(database_name);
+                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                {
+                    if (const auto & table = iterator->table())
+                    {
+                        const String & table_name = iterator->name();
+                        storages[{database_name, table_name}] = table;
+                        table_column_mut->insert(table_name);
+                    }
+                }
+            }
+            offsets[i] = table_column_mut->size();
         }
 
         database_column = database_column->replicate(offsets);
@@ -330,7 +350,7 @@ Pipes StorageSystemColumns::read(
     if (!block_to_filter.rows())
     {
         pipes.emplace_back(std::make_shared<NullSource>(header));
-        return pipes;
+        return Pipe::unitePipes(std::move(pipes));
     }
 
     ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
@@ -341,7 +361,7 @@ Pipes StorageSystemColumns::read(
             std::move(filtered_database_column), std::move(filtered_table_column),
             std::move(storages), context));
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 }

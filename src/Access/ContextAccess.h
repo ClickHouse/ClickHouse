@@ -6,7 +6,6 @@
 #include <Core/UUID.h>
 #include <ext/scope_guard.h>
 #include <ext/shared_ptr_helper.h>
-#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
 
@@ -30,40 +29,46 @@ class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
 
+struct ContextAccessParams
+{
+    std::optional<UUID> user_id;
+    boost::container::flat_set<UUID> current_roles;
+    bool use_default_roles = false;
+    UInt64 readonly = 0;
+    bool allow_ddl = false;
+    bool allow_introspection = false;
+    String current_database;
+    ClientInfo::Interface interface = ClientInfo::Interface::TCP;
+    ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
+    Poco::Net::IPAddress address;
+    String forwarded_address;
+    String quota_key;
+
+    auto toTuple() const
+    {
+        return std::tie(
+            user_id, current_roles, use_default_roles, readonly, allow_ddl, allow_introspection,
+            current_database, interface, http_method, address, forwarded_address, quota_key);
+    }
+
+    friend bool operator ==(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return lhs.toTuple() == rhs.toTuple(); }
+    friend bool operator !=(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return !(lhs == rhs); }
+    friend bool operator <(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return lhs.toTuple() < rhs.toTuple(); }
+    friend bool operator >(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return rhs < lhs; }
+    friend bool operator <=(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return !(rhs < lhs); }
+    friend bool operator >=(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return !(lhs < rhs); }
+};
+
+
 class ContextAccess
 {
 public:
-    struct Params
-    {
-        std::optional<UUID> user_id;
-        boost::container::flat_set<UUID> current_roles;
-        bool use_default_roles = false;
-        UInt64 readonly = 0;
-        bool allow_ddl = false;
-        bool allow_introspection = false;
-        String current_database;
-        ClientInfo::Interface interface = ClientInfo::Interface::TCP;
-        ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
-        Poco::Net::IPAddress address;
-        String quota_key;
-
-        auto toTuple() const { return std::tie(user_id, current_roles, use_default_roles, readonly, allow_ddl, allow_introspection, current_database, interface, http_method, address, quota_key); }
-        friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }
-        friend bool operator !=(const Params & lhs, const Params & rhs) { return !(lhs == rhs); }
-        friend bool operator <(const Params & lhs, const Params & rhs) { return lhs.toTuple() < rhs.toTuple(); }
-        friend bool operator >(const Params & lhs, const Params & rhs) { return rhs < lhs; }
-        friend bool operator <=(const Params & lhs, const Params & rhs) { return !(rhs < lhs); }
-        friend bool operator >=(const Params & lhs, const Params & rhs) { return !(lhs < rhs); }
-    };
-
+    using Params = ContextAccessParams;
     const Params & getParams() const { return params; }
 
     /// Returns the current user. The function can return nullptr.
     UserPtr getUser() const;
     String getUserName() const;
-
-    bool isCorrectPassword(const String & password) const;
-    bool isClientHostAllowed() const;
 
     /// Returns information about current and enabled roles.
     /// The function can return nullptr.
@@ -90,6 +95,10 @@ public:
     /// The function returns nullptr if there are no constraints.
     std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
 
+    /// Returns the current access rights.
+    std::shared_ptr<const AccessRights> getAccessRights() const;
+    std::shared_ptr<const AccessRights> getAccessRightsWithImplicit() const;
+
     /// Checks if a specified access is granted, and throws an exception if not.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & flags) const;
@@ -101,27 +110,6 @@ public:
     void checkAccess(const AccessRightsElement & element) const;
     void checkAccess(const AccessRightsElements & elements) const;
 
-    /// Checks if a specified access is granted.
-    bool isGranted(const AccessFlags & flags) const;
-    bool isGranted(const AccessFlags & flags, const std::string_view & database) const;
-    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
-    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
-    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
-    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
-    bool isGranted(const AccessRightsElement & element) const;
-    bool isGranted(const AccessRightsElements & elements) const;
-
-    /// Checks if a specified access is granted, and logs a warning if not.
-    bool isGranted(Poco::Logger * log_, const AccessFlags & flags) const;
-    bool isGranted(Poco::Logger * log_, const AccessFlags & flags, const std::string_view & database) const;
-    bool isGranted(Poco::Logger * log_, const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
-    bool isGranted(Poco::Logger * log_, const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
-    bool isGranted(Poco::Logger * log_, const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
-    bool isGranted(Poco::Logger * log_, const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
-    bool isGranted(Poco::Logger * log_, const AccessRightsElement & element) const;
-    bool isGranted(Poco::Logger * log_, const AccessRightsElements & elements) const;
-
-    /// Checks if a specified access is granted with grant option, and throws an exception if not.
     void checkGrantOption(const AccessFlags & flags) const;
     void checkGrantOption(const AccessFlags & flags, const std::string_view & database) const;
     void checkGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
@@ -131,8 +119,41 @@ public:
     void checkGrantOption(const AccessRightsElement & element) const;
     void checkGrantOption(const AccessRightsElements & elements) const;
 
+    /// Checks if a specified access is granted, and returns false if not.
+    /// Empty database means the current database.
+    bool isGranted(const AccessFlags & flags) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    bool isGranted(const AccessRightsElement & element) const;
+    bool isGranted(const AccessRightsElements & elements) const;
+
+    bool hasGrantOption(const AccessFlags & flags) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    bool hasGrantOption(const AccessRightsElement & element) const;
+    bool hasGrantOption(const AccessRightsElements & elements) const;
+
     /// Checks if a specified role is granted with admin option, and throws an exception if not.
     void checkAdminOption(const UUID & role_id) const;
+    void checkAdminOption(const UUID & role_id, const String & role_name) const;
+    void checkAdminOption(const UUID & role_id, const std::unordered_map<UUID, String> & names_of_roles) const;
+    void checkAdminOption(const std::vector<UUID> & role_ids) const;
+    void checkAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const;
+    void checkAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
+
+    /// Checks if a specified role is granted with admin option, and returns false if not.
+    bool hasAdminOption(const UUID & role_id) const;
+    bool hasAdminOption(const UUID & role_id, const String & role_name) const;
+    bool hasAdminOption(const UUID & role_id, const std::unordered_map<UUID, String> & names_of_roles) const;
+    bool hasAdminOption(const std::vector<UUID> & role_ids) const;
+    bool hasAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const;
+    bool hasAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
 
     /// Makes an instance of ContextAccess which provides full access to everything
     /// without any limitations. This is used for the global context.
@@ -146,27 +167,50 @@ private:
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
     void setSettingsAndConstraints() const;
+    void calculateAccessRights() const;
 
-    template <int mode, bool grant_option>
-    bool checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags) const;
+    template <bool throw_if_denied, bool grant_option>
+    bool checkAccessImpl(const AccessFlags & flags) const;
 
-    template <int mode, bool grant_option, typename... Args>
-    bool checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags, const std::string_view & database, const Args &... args) const;
+    template <bool throw_if_denied, bool grant_option, typename... Args>
+    bool checkAccessImpl(const AccessFlags & flags, const std::string_view & database, const Args &... args) const;
 
-    template <int mode, bool grant_option>
-    bool checkAccessImpl(Poco::Logger * log_, const AccessRightsElement & element) const;
+    template <bool throw_if_denied, bool grant_option>
+    bool checkAccessImpl(const AccessRightsElement & element) const;
 
-    template <int mode, bool grant_option>
-    bool checkAccessImpl(Poco::Logger * log_, const AccessRightsElements & elements) const;
+    template <bool throw_if_denied, bool grant_option>
+    bool checkAccessImpl(const AccessRightsElements & elements) const;
 
-    template <int mode, bool grant_option, typename... Args>
-    bool calculateResultAccessAndCheck(Poco::Logger * log_, const AccessFlags & flags, const Args &... args) const;
+    template <bool throw_if_denied, bool grant_option, typename... Args>
+    bool checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const;
 
-    boost::shared_ptr<const AccessRights> calculateResultAccess(bool grant_option) const;
-    boost::shared_ptr<const AccessRights> calculateResultAccess(bool grant_option, UInt64 readonly_, bool allow_ddl_, bool allow_introspection_) const;
+    template <bool throw_if_denied, bool grant_option>
+    bool checkAccessImplHelper(const AccessRightsElement & element) const;
+
+    template <bool throw_if_denied>
+    bool checkAdminOptionImpl(const UUID & role_id) const;
+
+    template <bool throw_if_denied>
+    bool checkAdminOptionImpl(const UUID & role_id, const String & role_name) const;
+
+    template <bool throw_if_denied>
+    bool checkAdminOptionImpl(const UUID & role_id, const std::unordered_map<UUID, String> & names_of_roles) const;
+
+    template <bool throw_if_denied>
+    bool checkAdminOptionImpl(const std::vector<UUID> & role_ids) const;
+
+    template <bool throw_if_denied>
+    bool checkAdminOptionImpl(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const;
+
+    template <bool throw_if_denied>
+    bool checkAdminOptionImpl(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
+
+    template <bool throw_if_denied, typename Container, typename GetNameFunction>
+    bool checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const;
 
     const AccessControlManager * manager = nullptr;
     const Params params;
+    bool is_full_access = false;
     mutable Poco::Logger * trace_log = nullptr;
     mutable UserPtr user;
     mutable String user_name;
@@ -174,7 +218,8 @@ private:
     mutable std::shared_ptr<const EnabledRoles> enabled_roles;
     mutable ext::scope_guard subscription_for_roles_changes;
     mutable std::shared_ptr<const EnabledRolesInfo> roles_info;
-    mutable boost::atomic_shared_ptr<const AccessRights> result_access[7];
+    mutable std::shared_ptr<const AccessRights> access;
+    mutable std::shared_ptr<const AccessRights> access_with_implicit;
     mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies;
     mutable std::shared_ptr<const EnabledQuota> enabled_quota;
     mutable std::shared_ptr<const EnabledSettings> enabled_settings;

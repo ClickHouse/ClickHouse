@@ -5,7 +5,7 @@ toc_title: CollapsingMergeTree
 
 # CollapsingMergeTree {#table_engine-collapsingmergetree}
 
-The engine inherits from [MergeTree](mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
+The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 
 `CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a sorting key (`ORDER BY`) are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#table_engine-collapsingmergetree-collapsing) section of the document.
 
@@ -26,7 +26,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of query parameters, see [query description](../../../sql-reference/statements/create.md).
+For a description of query parameters, see [query description](../../../sql-reference/statements/create/table.md).
 
 **CollapsingMergeTree Parameters**
 
@@ -36,7 +36,7 @@ For a description of query parameters, see [query description](../../../sql-refe
 
 **Query clauses**
 
-When creating a `CollapsingMergeTree` table, the same [query clauses](mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
+When creating a `CollapsingMergeTree` table, the same [query clauses](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 
@@ -126,7 +126,7 @@ Also when there are at least 2 more “state” rows than “cancel” rows, or 
 Thus, collapsing should not change the results of calculating statistics.
 Changes gradually collapsed so that in the end only the last state of almost every object left.
 
-The `Sign` is required because the merging algorithm doesn’t guarantee that all of the rows with the same sorting key will be in the same resulting data part and even on the same physical server. ClickHouse process `SELECT` queries with multiple threads, and it can not predict the order of rows in the result. The aggregation is required if there is a need to get completely “collapsed” data from `CollapsingMergeTree` table.
+The `Sign` is required because the merging algorithm does not guarantee that all of the rows with the same sorting key will be in the same resulting data part and even on the same physical server. ClickHouse process `SELECT` queries with multiple threads, and it can not predict the order of rows in the result. The aggregation is required if there is a need to get completely “collapsed” data from `CollapsingMergeTree` table.
 
 To finalize collapsing, write a query with `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and so on, and also add `HAVING sum(Sign) > 0`.
 
@@ -273,13 +273,15 @@ SELECT
     sum(Duration) AS Duration
 FROM UAct
 GROUP BY UserID
-```text
+```
+
+``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┐
 │ 4324182021466249494 │         6 │      185 │
 └─────────────────────┴───────────┴──────────┘
 ```
 
-``` sqk
+``` sql
 select count() FROM UAct
 ```
 

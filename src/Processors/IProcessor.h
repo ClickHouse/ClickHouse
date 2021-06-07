@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+class IQueryPlanStep;
+
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
@@ -68,11 +70,11 @@ using Processors = std::vector<ProcessorPtr>;
   * Limiting transformation. Pulls data from input and passes to output.
   * When there was enough data, says that it doesn't need data on its input and that data on its output port is finished.
   *
-  * Resize. Has arbitary number of inputs and arbitary number of outputs.
-  * Pulls data from whatever ready input and pushes it to randomly choosed free output.
+  * Resize. Has arbitrary number of inputs and arbitrary number of outputs.
+  * Pulls data from whatever ready input and pushes it to randomly chosen free output.
   * Examples:
-  * Union - merge data from number of inputs to one output in arbitary order.
-  * Split - read data from one input and pass it to arbitary output.
+  * Union - merge data from number of inputs to one output in arbitrary order.
+  * Split - read data from one input and pass it to arbitrary output.
   *
   * Concat. Has many inputs and only one output. Pulls all data from first input until it is exhausted,
   *  then all data from second input, etc. and pushes all data to output.
@@ -102,7 +104,7 @@ using Processors = std::vector<ProcessorPtr>;
   * TODO Processor with all its parameters should represent "pure" function on streams of data from its input ports.
   * It's in question, what kind of "pure" function do we mean.
   * For example, data streams are considered equal up to order unless ordering properties are stated explicitly.
-  * Another example: we should support the notion of "arbitary N-th of M substream" of full stream of data.
+  * Another example: we should support the notion of "arbitrary N-th of M substream" of full stream of data.
   */
 
 class IProcessor
@@ -144,12 +146,9 @@ public:
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
-        /// You may call 'schedule' method and processor will initiate some background work.
+        /// You may call 'schedule' method and processor will return descriptor.
+        /// You need to poll this descriptor and call work() afterwards.
         Async,
-
-        /// Processor is doing some work in background.
-        /// You may wait for next event or do something else and then you should call 'prepare' again.
-        Wait,
 
         /// Processor wants to add other processors to pipeline.
         /// New processors must be obtained by expandPipeline() call.
@@ -196,16 +195,21 @@ public:
         throw Exception("Method 'work' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** You may call this method if 'prepare' returned Async.
+    /** Executor must call this method when 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
       *
-      * This method should return instantly and fire an event (or many events) when asynchronous job will be done.
-      * When the job is not done, method 'prepare' will return Wait and the user may block and wait for next event before checking again.
+      * This method should instantly return epollable file descriptor which will be readable when asynchronous job is done.
+      * When descriptor is readable, method `work` is called to continue data processing.
       *
-      * Note that it can fire many events in EventCounter while doing its job,
-      *  and you have to wait for next event (or do something else) every time when 'prepare' returned Wait.
+      * NOTE: it would be more logical to let `work()` return ASYNC status instead of prepare. This will get
+      * prepare() -> work() -> schedule() -> work() -> schedule() -> .. -> work() -> prepare()
+      * chain instead of
+      * prepare() -> work() -> prepare() -> schedule() -> work() -> prepare() -> schedule() -> .. -> work() -> prepare()
+      *
+      * It is expected that executor epoll using level-triggered notifications.
+      * Read all available data from descriptor before returning ASYNC.
       */
-    virtual void schedule(EventCounter & /*watch*/)
+    virtual int schedule()
     {
         throw Exception("Method 'schedule' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -245,7 +249,7 @@ public:
     UInt64 getInputPortNumber(const InputPort * input_port) const
     {
         UInt64 number = 0;
-        for (auto & port : inputs)
+        for (const auto & port : inputs)
         {
             if (&port == input_port)
                 return number;
@@ -259,7 +263,7 @@ public:
     UInt64 getOutputPortNumber(const OutputPort * output_port) const
     {
         UInt64 number = 0;
-        for (auto & port : outputs)
+        for (const auto & port : outputs)
         {
             if (&port == output_port)
                 return number;
@@ -285,8 +289,15 @@ public:
     size_t getStream() const { return stream_number; }
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
-    void enableQuota() { has_quota = true; }
-    bool hasQuota() const { return has_quota; }
+    /// Step of QueryPlan from which processor was created.
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
+    {
+        query_plan_step = step;
+        query_plan_step_group = group;
+    }
+
+    IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
+    size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
 
 protected:
     virtual void onCancel() {}
@@ -298,7 +309,8 @@ private:
 
     size_t stream_number = NO_STREAM;
 
-    bool has_quota = false;
+    IQueryPlanStep * query_plan_step = nullptr;
+    size_t query_plan_step_group = 0;
 };
 
 

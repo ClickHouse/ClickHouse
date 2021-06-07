@@ -11,6 +11,9 @@
 #define DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_SECURE_MS 100
 #define DBMS_DEFAULT_SEND_TIMEOUT_SEC 300
 #define DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC 300
+/// Timeouts for hedged requests.
+#define DBMS_DEFAULT_HEDGED_CONNECTION_TIMEOUT_MS 100
+#define DBMS_DEFAULT_RECEIVE_DATA_TIMEOUT_MS 2000
 /// Timeout for synchronous request-result protocol call (like Ping or TablesStatus).
 #define DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC 5
 #define DBMS_DEFAULT_POLL_INTERVAL 10
@@ -21,14 +24,14 @@
 /** Which blocks by default read the data (by number of rows).
   * Smaller values give better cache locality, less consumption of RAM, but more overhead to process the query.
   */
-#define DEFAULT_BLOCK_SIZE 65536
+#define DEFAULT_BLOCK_SIZE 65505    /// 65536 minus 16 + 15 bytes padding that we usually have in arrays
 
 /** Which blocks should be formed for insertion into the table, if we control the formation of blocks.
   * (Sometimes the blocks are inserted exactly such blocks that have been read / transmitted from the outside, and this parameter does not affect their size.)
   * More than DEFAULT_BLOCK_SIZE, because in some tables a block of data on the disk is created for each block (quite a big thing),
   *  and if the parts were small, then it would be costly then to combine them.
   */
-#define DEFAULT_INSERT_BLOCK_SIZE 1048576
+#define DEFAULT_INSERT_BLOCK_SIZE 1048545   /// 1048576 minus 16 + 15 bytes padding that we usually have in arrays
 
 /** The same, but for merge operations. Less DEFAULT_BLOCK_SIZE for saving RAM (since all the columns are read).
   * Significantly less, since there are 10-way mergers.
@@ -36,6 +39,7 @@
 #define DEFAULT_MERGE_BLOCK_SIZE 8192
 
 #define DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC 5
+#define DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC 60
 #define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
 #define DEFAULT_LIVE_VIEW_HEARTBEAT_INTERVAL_SEC 15
 #define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 1024
@@ -64,12 +68,25 @@
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
 #define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54420
 
-/// Mininum revision supporting SettingsBinaryFormat::STRINGS.
+/// Minimum revision supporting SettingsBinaryFormat::STRINGS.
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
 
-/// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
-#define DBMS_TCP_PROTOCOL_VERSION 54226
+/// Minimum revision supporting OpenTelemetry
+#define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442
 
+
+#define DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION 1
+
+/// Minimum revision supporting interserver secret.
+#define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
+
+#define DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO 54443
+#define DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO 54447
+
+/// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
+#define DBMS_TCP_PROTOCOL_VERSION 54448
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH 54448
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
 
@@ -80,6 +97,8 @@
 #define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
 
 #define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
+
+#define KEEPER_DEFAULT_PATH "/var/lib/clickhouse-keeper/"
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 

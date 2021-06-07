@@ -1,17 +1,15 @@
 #pragma once
 
-#include "IServer.h"
-#include "PrometheusMetricsWriter.h"
+#include <Server/HTTP/HTTPRequestHandler.h>
 
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTTPRequestHandler.h>
-#include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include "PrometheusMetricsWriter.h"
 
 namespace DB
 {
 
-class PrometheusRequestHandler : public Poco::Net::HTTPRequestHandler
+class IServer;
+
+class PrometheusRequestHandler : public HTTPRequestHandler
 {
 private:
     IServer & server;
@@ -24,9 +22,7 @@ public:
     {
     }
 
-    void handleRequest(
-        Poco::Net::HTTPServerRequest & request,
-        Poco::Net::HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 };
 
 }

@@ -1,6 +1,6 @@
 ---
 toc_priority: 31
-toc_title: "\u61D2\u60F0"
+toc_title: "延时引擎"
 ---
 
 # 延时引擎Lazy {#lazy}

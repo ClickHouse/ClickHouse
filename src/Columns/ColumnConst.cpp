@@ -2,10 +2,10 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+
 #include <common/defines.h>
 
 #if defined(MEMORY_SANITIZER)
@@ -120,7 +120,9 @@ void ColumnConst::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_d
         res[i] = i;
 }
 
-void ColumnConst::updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const {}
+void ColumnConst::updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const
+{
+}
 
 void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
 {
@@ -134,6 +136,14 @@ void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
 
     for (auto & value : hash.getData())
         value = intHashCRC32(data_hash, value);
+}
+
+void ColumnConst::compareColumn(
+    const IColumn & rhs, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> & compare_results, int, int nan_direction_hint)
+    const
+{
+    Int8 res = compareAt(1, 1, rhs, nan_direction_hint);
+    std::fill(compare_results.begin(), compare_results.end(), res);
 }
 
 }

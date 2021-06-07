@@ -308,7 +308,7 @@ inline void splitInto(To & to, const std::string & what, bool token_compress = f
         const char * delimiter_or_end = find_first_symbols<symbols...>(pos, end);
 
         if (!token_compress || pos < delimiter_or_end)
-            to.emplace_back(pos, delimiter_or_end);
+            to.emplace_back(pos, delimiter_or_end - pos);
 
         if (delimiter_or_end < end)
             pos = delimiter_or_end + 1;

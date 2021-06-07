@@ -117,7 +117,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
     if (curr_position < prev_position)
         throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
 
-    if (isNativeNumber(type) || isDateOrDateTime(type))
+    if (isNativeNumber(type) || isDate(type) || isDateTime(type) || isDateTime64(type))
     {
         /// An empty string instead of a value.
         if (curr_position == prev_position)
@@ -140,6 +140,8 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
             out << "ERROR: Date must be in YYYY-MM-DD format.\n";
         else
             out << "ERROR\n";
+        // Print exception message
+        out << getExceptionMessage(exception, false) << '\n';
         return false;
     }
 

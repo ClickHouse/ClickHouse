@@ -16,6 +16,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -29,7 +31,7 @@ namespace
     using FuncLogisticRegression = AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression>;
     template <class Method>
     AggregateFunctionPtr
-    createAggregateFunctionMLMethod(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+    createAggregateFunctionMLMethod(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         if (parameters.size() > 4)
             throw Exception(
@@ -143,13 +145,12 @@ void LinearModelData::updateState()
 
 void LinearModelData::predict(
     ColumnVector<Float64>::Container & container,
-    Block & block,
+    const ColumnsWithTypeAndName & arguments,
     size_t offset,
     size_t limit,
-    const ColumnNumbers & arguments,
-    const Context & context) const
+    ContextConstPtr context) const
 {
-    gradient_computer->predict(container, block, offset, limit, arguments, weights, bias, context);
+    gradient_computer->predict(container, arguments, offset, limit, weights, bias, context);
 }
 
 void LinearModelData::returnWeights(IColumn & to) const
@@ -200,7 +201,7 @@ void LinearModelData::merge(const DB::LinearModelData & rhs)
     updateState();
     /// can't update rhs state because it's constant
 
-    /// squared mean is more stable (in sence of quality of prediction) when two states with quietly different number of learning steps are merged
+    /// squared mean is more stable (in sense of quality of prediction) when two states with quietly different number of learning steps are merged
     Float64 frac = (static_cast<Float64>(iter_num) * iter_num) / (iter_num * iter_num + rhs.iter_num * rhs.iter_num);
 
     for (size_t i = 0; i < weights.size(); ++i)
@@ -265,8 +266,8 @@ void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
         average_gradient[i] = average_gradient[i] * frac + adam_rhs.average_gradient[i] * rhs_frac;
         average_squared_gradient[i] = average_squared_gradient[i] * frac + adam_rhs.average_squared_gradient[i] * rhs_frac;
     }
-    beta1_powered_ *= adam_rhs.beta1_powered_;
-    beta2_powered_ *= adam_rhs.beta2_powered_;
+    beta1_powered *= adam_rhs.beta1_powered;
+    beta2_powered *= adam_rhs.beta2_powered;
 }
 
 void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
@@ -283,21 +284,21 @@ void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & b
     for (size_t i = 0; i != average_gradient.size(); ++i)
     {
         Float64 normed_gradient = batch_gradient[i] / batch_size;
-        average_gradient[i] = beta1_ * average_gradient[i] + (1 - beta1_) * normed_gradient;
-        average_squared_gradient[i] = beta2_ * average_squared_gradient[i] +
-                (1 - beta2_) * normed_gradient * normed_gradient;
+        average_gradient[i] = beta1 * average_gradient[i] + (1 - beta1) * normed_gradient;
+        average_squared_gradient[i] = beta2 * average_squared_gradient[i] +
+                (1 - beta2) * normed_gradient * normed_gradient;
     }
 
     for (size_t i = 0; i < weights.size(); ++i)
     {
         weights[i] += (learning_rate * average_gradient[i]) /
-                ((1 - beta1_powered_) * (sqrt(average_squared_gradient[i] / (1 - beta2_powered_)) + eps_));
+                ((1 - beta1_powered) * (sqrt(average_squared_gradient[i] / (1 - beta2_powered)) + eps));
     }
     bias += (learning_rate * average_gradient[weights.size()]) /
-            ((1 - beta1_powered_) * (sqrt(average_squared_gradient[weights.size()] / (1 - beta2_powered_)) + eps_));
+            ((1 - beta1_powered) * (sqrt(average_squared_gradient[weights.size()] / (1 - beta2_powered)) + eps));
 
-    beta1_powered_ *= beta1_;
-    beta2_powered_ *= beta2_;
+    beta1_powered *= beta1;
+    beta2_powered *= beta2;
 }
 
 void Adam::addToBatch(
@@ -349,7 +350,7 @@ void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
-        accumulated_gradient[i] = accumulated_gradient[i] * alpha_ + (learning_rate * batch_gradient[i]) / batch_size;
+        accumulated_gradient[i] = accumulated_gradient[i] * alpha + (learning_rate * batch_gradient[i]) / batch_size;
     }
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -376,9 +377,9 @@ void Nesterov::addToBatch(
     std::vector<Float64> shifted_weights(weights.size());
     for (size_t i = 0; i != shifted_weights.size(); ++i)
     {
-        shifted_weights[i] = weights[i] + accumulated_gradient[i] * alpha_;
+        shifted_weights[i] = weights[i] + accumulated_gradient[i] * alpha;
     }
-    auto shifted_bias = bias + accumulated_gradient[weights.size()] * alpha_;
+    auto shifted_bias = bias + accumulated_gradient[weights.size()] * alpha;
 
     gradient_computer.compute(batch_gradient, shifted_weights, shifted_bias, l2_reg_coef, target, columns, row_num);
 }
@@ -412,7 +413,7 @@ void Momentum::update(UInt64 batch_size, std::vector<Float64> & weights, Float64
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
-        accumulated_gradient[i] = accumulated_gradient[i] * alpha_ + (learning_rate * batch_gradient[i]) / batch_size;
+        accumulated_gradient[i] = accumulated_gradient[i] * alpha + (learning_rate * batch_gradient[i]) / batch_size;
     }
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -449,15 +450,14 @@ void IWeightsUpdater::addToBatch(
 
 void LogisticRegression::predict(
     ColumnVector<Float64>::Container & container,
-    Block & block,
+    const ColumnsWithTypeAndName & arguments,
     size_t offset,
     size_t limit,
-    const ColumnNumbers & arguments,
     const std::vector<Float64> & weights,
     Float64 bias,
-    const Context & /*context*/) const
+    ContextConstPtr /*context*/) const
 {
-    size_t rows_num = block.rows();
+    size_t rows_num = arguments.front().column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
         throw Exception("Invalid offset and limit for LogisticRegression::predict. "
@@ -468,7 +468,7 @@ void LogisticRegression::predict(
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
-        const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
+        const ColumnWithTypeAndName & cur_col = arguments[i];
 
         if (!isNativeNumber(cur_col.type))
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
@@ -518,20 +518,19 @@ void LogisticRegression::compute(
 
 void LinearRegression::predict(
     ColumnVector<Float64>::Container & container,
-    Block & block,
+    const ColumnsWithTypeAndName & arguments,
     size_t offset,
     size_t limit,
-    const ColumnNumbers & arguments,
     const std::vector<Float64> & weights,
     Float64 bias,
-    const Context & /*context*/) const
+    ContextConstPtr /*context*/) const
 {
     if (weights.size() + 1 != arguments.size())
     {
         throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
     }
 
-    size_t rows_num = block.rows();
+    size_t rows_num = arguments.front().column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
         throw Exception("Invalid offset and limit for LogisticRegression::predict. "
@@ -542,7 +541,7 @@ void LinearRegression::predict(
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
-        const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
+        const ColumnWithTypeAndName & cur_col = arguments[i];
 
         if (!isNativeNumber(cur_col.type))
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);

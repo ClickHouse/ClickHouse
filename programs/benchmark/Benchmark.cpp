@@ -8,7 +8,6 @@
 #include <iomanip>
 #include <random>
 #include <pcg_random.hpp>
-#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -27,6 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Context.h>
@@ -35,7 +35,9 @@
 #include <Common/Config/configReadClient.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
@@ -49,7 +51,6 @@ using Ports = std::vector<UInt16>;
 namespace ErrorCodes
 {
     extern const int CANNOT_BLOCK_SIGNAL;
-    extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
 }
 
@@ -60,11 +61,15 @@ public:
             bool cumulative_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
-            const String & json_path_, size_t confidence_, const String & query_id_, const Settings & settings_)
+            const String & json_path_, size_t confidence_,
+            const String & query_id_, const String & query_to_execute_, bool continue_on_errors_,
+            bool reconnect_, bool print_stacktrace_, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
-        json_path(json_path_), confidence(confidence_), query_id(query_id_), settings(settings_),
+        json_path(json_path_), confidence(confidence_), query_id(query_id_),
+        query_to_execute(query_to_execute_), continue_on_errors(continue_on_errors_), reconnect(reconnect_),
+        print_stacktrace(print_stacktrace_), settings(settings_),
         shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
         pool(concurrency)
     {
@@ -80,12 +85,19 @@ public:
             UInt16 cur_port = i >= ports_.size() ? 9000 : ports_[i];
             std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
 
-            connections.emplace_back(std::make_unique<ConnectionPool>(concurrency, cur_host, cur_port, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure));
+            connections.emplace_back(std::make_unique<ConnectionPool>(
+                concurrency,
+                cur_host, cur_port,
+                default_database_, user_, password_,
+                "", /* cluster */
+                "", /* cluster_secret */
+                "benchmark", Protocol::Compression::Enable, secure));
             comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
 
-        global_context.makeGlobalContext();
+        global_context->makeGlobalContext();
+        global_context->setSettings(settings);
 
         std::cerr << std::fixed << std::setprecision(3);
 
@@ -93,15 +105,7 @@ public:
         /// (example: when using stage = 'with_mergeable_state')
         registerAggregateFunctions();
 
-        if (stage == "complete")
-            query_processing_stage = QueryProcessingStage::Complete;
-        else if (stage == "fetch_columns")
-            query_processing_stage = QueryProcessingStage::FetchColumns;
-        else if (stage == "with_mergeable_state")
-            query_processing_stage = QueryProcessingStage::WithMergeableState;
-        else
-            throw Exception("Unknown query processing stage: " + stage, ErrorCodes::BAD_ARGUMENTS);
-
+        query_processing_stage = QueryProcessingStage::fromString(stage);
     }
 
     void initialize(Poco::Util::Application & self [[maybe_unused]]) override
@@ -116,8 +120,8 @@ public:
 
     int main(const std::vector<std::string> &) override
     {
-        if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
-            Poco::File(json_path).remove();
+        if (!json_path.empty() && fs::exists(json_path)) /// Clear file with previous results
+            fs::remove(json_path);
 
         readQueries();
         runBenchmark();
@@ -149,10 +153,14 @@ private:
     double max_time;
     String json_path;
     size_t confidence;
-    std::string query_id;
-    Settings settings;
+    String query_id;
+    String query_to_execute;
+    bool continue_on_errors;
+    bool reconnect;
+    bool print_stacktrace;
+    const Settings & settings;
     SharedContextHolder shared_context;
-    Context global_context;
+    ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
     /// Don't execute new queries after timelimit or SIGINT or exception
@@ -163,6 +171,7 @@ private:
     struct Stats
     {
         std::atomic<size_t> queries{0};
+        size_t errors = 0;
         size_t read_rows = 0;
         size_t read_bytes = 0;
         size_t result_rows = 0;
@@ -209,20 +218,28 @@ private:
 
     void readQueries()
     {
-        ReadBufferFromFileDescriptor in(STDIN_FILENO);
-
-        while (!in.eof())
+        if (query_to_execute.empty())
         {
-            std::string query;
-            readText(query, in);
-            assertChar('\n', in);
+            ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
-            if (!query.empty())
-                queries.emplace_back(query);
+            while (!in.eof())
+            {
+                String query;
+                readText(query, in);
+                assertChar('\n', in);
+
+                if (!query.empty())
+                    queries.emplace_back(std::move(query));
+            }
+
+            if (queries.empty())
+                throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
+        }
+        else
+        {
+            queries.emplace_back(query_to_execute);
         }
 
-        if (queries.empty())
-            throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
 
         std::cerr << "Loaded " << queries.size() << " queries.\n";
     }
@@ -259,7 +276,7 @@ private:
 
             if (interrupt_listener.check())
             {
-                std::cout << "Stopping launch of queries. SIGINT received.\n";
+                std::cout << "Stopping launch of queries. SIGINT received." << std::endl;
                 return false;
             }
 
@@ -333,44 +350,70 @@ private:
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, connection_entries.size() - 1);
 
-        try
+        /// In these threads we do not accept INT signal.
+        sigset_t sig_set;
+        if (sigemptyset(&sig_set)
+            || sigaddset(&sig_set, SIGINT)
+            || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         {
-            /// In these threads we do not accept INT signal.
-            sigset_t sig_set;
-            if (sigemptyset(&sig_set)
-                || sigaddset(&sig_set, SIGINT)
-                || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-                throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
-
-            while (true)
-            {
-                bool extracted = false;
-
-                while (!extracted)
-                {
-                    extracted = queue.tryPop(query, 100);
-
-                    if (shutdown || (max_iterations && queries_executed == max_iterations))
-                        return;
-                }
-                execute(connection_entries, query, distribution(generator));
-                ++queries_executed;
-            }
+            throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
         }
-        catch (...)
+
+        while (true)
         {
-            shutdown = true;
-            std::cerr << "An error occurred while processing query:\n" << query << "\n";
-            throw;
+            bool extracted = false;
+
+            while (!extracted)
+            {
+                extracted = queue.tryPop(query, 100);
+
+                if (shutdown
+                    || (max_iterations && queries_executed == max_iterations))
+                {
+                    return;
+                }
+            }
+
+            const auto connection_index = distribution(generator);
+            try
+            {
+                execute(connection_entries, query, connection_index);
+            }
+            catch (...)
+            {
+                std::cerr << "An error occurred while processing the query '"
+                          << query << "'.\n";
+                if (!continue_on_errors)
+                {
+                    shutdown = true;
+                    throw;
+                }
+                else
+                {
+                    std::cerr << getCurrentExceptionMessage(print_stacktrace,
+                        true /*check embedded stack trace*/) << std::endl;
+
+                    comparison_info_per_interval[connection_index]->errors++;
+                    comparison_info_total[connection_index]->errors++;
+                }
+            }
+            // Count failed queries toward executed, so that we'd reach
+            // max_iterations even if every run fails.
+            ++queries_executed;
         }
     }
 
     void execute(EntryPtrs & connection_entries, Query & query, size_t connection_index)
     {
         Stopwatch watch;
+
+        Connection & connection = **connection_entries[connection_index];
+
+        if (reconnect)
+            connection.disconnect();
+
         RemoteBlockInputStream stream(
-            *(*connection_entries[connection_index]),
-            query, {}, global_context, &settings, nullptr, Scalars(), Tables(), query_processing_stage);
+            connection, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
         if (!query_id.empty())
             stream.setQueryId(query_id);
 
@@ -410,7 +453,12 @@ private:
 
             std::cerr
                     << connections[i]->getDescription() << ", "
-                    << "queries " << info->queries << ", "
+                    << "queries " << info->queries << ", ";
+            if (info->errors)
+            {
+                std::cerr << "errors " << info->errors << ", ";
+            }
+            std::cerr
                     << "QPS: " << (info->queries / seconds) << ", "
                     << "RPS: " << (info->read_rows / seconds) << ", "
                     << "MiB/s: " << (info->read_bytes / seconds / 1048576) << ", "
@@ -477,18 +525,22 @@ private:
             print_key_value("MiBPS", info->read_bytes / info->work_time);
             print_key_value("RPS_result", info->result_rows / info->work_time);
             print_key_value("MiBPS_result", info->result_bytes / info->work_time);
-            print_key_value("num_queries", info->queries.load(), false);
+            print_key_value("num_queries", info->queries.load());
+            print_key_value("num_errors", info->errors, false);
 
             json_out << "},\n";
             json_out << double_quote << "query_time_percentiles" << ": {\n";
 
-            for (int percent = 0; percent <= 90; percent += 10)
-                print_percentile(*info, percent);
+            if (info->queries != 0)
+            {
+                for (int percent = 0; percent <= 90; percent += 10)
+                    print_percentile(*info, percent);
 
-            print_percentile(*info, 95);
-            print_percentile(*info, 99);
-            print_percentile(*info, 99.9);
-            print_percentile(*info, 99.99, false);
+                print_percentile(*info, 95);
+                print_percentile(*info, 99);
+                print_percentile(*info, 99.9);
+                print_percentile(*info, 99.99, false);
+            }
 
             json_out << "}\n";
             json_out << (i == infos.size() - 1 ? "}\n" : "},\n");
@@ -525,9 +577,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                            "produce help message")
+            ("query",      value<std::string>()->default_value(""),             "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
-            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state")
+            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
@@ -542,6 +595,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("stacktrace",                                                      "print stack traces of exceptions")
             ("confidence",    value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id",      value<std::string>()->default_value(""),         "")
+            ("continue_on_errors", "continue testing even if a query fails")
+            ("reconnect", "establish new connection for every query")
         ;
 
         Settings settings;
@@ -562,8 +617,15 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         print_stacktrace = options.count("stacktrace");
 
+        /// NOTE Maybe clickhouse-benchmark should also respect .xml configuration of clickhouse-client.
+
+        UInt16 default_port = options.count("secure") ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT;
+
         UseSSL use_ssl;
-        Ports ports = options.count("port") ? options["port"].as<Ports>() : Ports({9000});
+        Ports ports = options.count("port")
+            ? options["port"].as<Ports>()
+            : Ports({default_port});
+
         Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
 
         Benchmark benchmark(
@@ -583,6 +645,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["json"].as<std::string>(),
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
+            options["query"].as<std::string>(),
+            options.count("continue_on_errors"),
+            options.count("reconnect"),
+            print_stacktrace,
             settings);
         return benchmark.run();
     }

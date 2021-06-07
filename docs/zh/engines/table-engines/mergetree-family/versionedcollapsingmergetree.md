@@ -1,9 +1,9 @@
 ---
 toc_priority: 37
-toc_title: "\u7248\u672C\u96C6\u5408\u5728\u65B0\u6811"
+toc_title: "版本折叠MergeTree"
 ---
 
-# 版本折叠合并树 {#versionedcollapsingmergetree}
+# 版本折叠MergeTree {#versionedcollapsingmergetree}
 
 这个引擎:
 
@@ -37,7 +37,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 VersionedCollapsingMergeTree(sign, version)
 ```
 
--   `sign` — 指定行类型的列名: `1` 是一个 “state” 行, `-1` 是一个 “cancel” 划
+-   `sign` — 指定行类型的列名: `1` 是一个 “state” 行, `-1` 是一个 “cancel” 行
 
     列数据类型应为 `Int8`.
 

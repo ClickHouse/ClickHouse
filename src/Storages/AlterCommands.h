@@ -23,22 +23,42 @@ struct AlterCommand
 
     enum Type
     {
+        UNKNOWN,
         ADD_COLUMN,
         DROP_COLUMN,
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
+        MODIFY_SAMPLE_BY,
         ADD_INDEX,
         DROP_INDEX,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
+        ADD_PROJECTION,
+        DROP_PROJECTION,
         MODIFY_TTL,
         MODIFY_SETTING,
         MODIFY_QUERY,
         RENAME_COLUMN,
+        REMOVE_TTL,
     };
 
-    Type type;
+    /// Which property user wants to remove from column
+    enum class RemoveProperty
+    {
+        NO_PROPERTY,
+        /// Default specifiers
+        DEFAULT,
+        MATERIALIZED,
+        ALIAS,
+
+        /// Other properties
+        COMMENT,
+        CODEC,
+        TTL
+    };
+
+    Type type = UNKNOWN;
 
     String column_name;
 
@@ -54,8 +74,11 @@ struct AlterCommand
     /// For COMMENT column
     std::optional<String> comment;
 
-    /// For ADD - after which column to add a new one. If an empty string, add to the end. To add to the beginning now it is impossible.
+    /// For ADD or MODIFY - after which column to add a new one. If an empty string, add to the end.
     String after_column;
+
+    /// For ADD_COLUMN, MODIFY_COLUMN - Add to the begin if it is true.
+    bool first = false;
 
     /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
     bool if_exists = false;
@@ -65,6 +88,9 @@ struct AlterCommand
 
     /// For MODIFY_ORDER_BY
     ASTPtr order_by = nullptr;
+
+    /// For MODIFY_SAMPLE_BY
+    ASTPtr sample_by = nullptr;
 
     /// For ADD INDEX
     ASTPtr index_decl = nullptr;
@@ -79,6 +105,13 @@ struct AlterCommand
     // For ADD/DROP CONSTRAINT
     String constraint_name;
 
+    /// For ADD PROJECTION
+    ASTPtr projection_decl = nullptr;
+    String after_projection_name;
+
+    /// For ADD/DROP PROJECTION
+    String projection_name;
+
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;
 
@@ -89,7 +122,7 @@ struct AlterCommand
     bool clear = false;
 
     /// For ADD and MODIFY
-    CompressionCodecPtr codec = nullptr;
+    ASTPtr codec = nullptr;
 
     /// For MODIFY SETTING
     SettingsChanges settings_changes;
@@ -100,16 +133,17 @@ struct AlterCommand
     /// Target column name
     String rename_to;
 
-    static std::optional<AlterCommand> parse(const ASTAlterCommand * command, bool sanity_check_compression_codecs);
+    /// What to remove from column (or TTL)
+    RemoveProperty to_remove = RemoveProperty::NO_PROPERTY;
 
-    void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
+    static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    /// Checks that alter query changes data. For MergeTree:
-    ///    * column files (data and marks)
-    ///    * each part meta (columns.txt)
-    /// in each part on disk (it's not lightweight alter).
-    bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
+    void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
+    /// Check that alter command require data modification (mutation) to be
+    /// executed. For example, cast from Date to UInt16 type can be executed
+    /// without any data modifications. But column drop or modify from UInt16 to
+    /// UInt32 require data modification.
     bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
 
     /// Checks that only settings changed by alter
@@ -121,10 +155,13 @@ struct AlterCommand
     /// Checks that any TTL changed by alter
     bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
 
+    /// Command removing some property from column or table
+    bool isRemovingProperty() const;
+
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const;
+    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 };
 
 /// Return string representation of AlterCommand::Type
@@ -140,10 +177,10 @@ private:
 
 public:
     /// Validate that commands can be applied to metadata.
-    /// Checks that all columns exist and dependecies between them.
+    /// Checks that all columns exist and dependencies between them.
     /// This check is lightweight and base only on metadata.
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
-    void validate(const StorageInMemoryMetadata & metadata, const Context & context) const;
+    void validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)
@@ -151,10 +188,7 @@ public:
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
-    void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
-
-    /// At least one command modify data on disk.
-    bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
+    void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// At least one command modify settings.
     bool isSettingsAlter() const;
@@ -166,7 +200,7 @@ public:
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, const Context & context) const;
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const;
 };
 
 }

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
 
@@ -24,7 +25,7 @@ namespace DB
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema);
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
 private:
@@ -105,13 +106,16 @@ private:
 class AvroRowInputFormat : public IRowInputFormat
 {
 public:
-    AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
-    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
+
     String getName() const override { return "AvroRowInputFormat"; }
 
 private:
-    avro::DataFileReaderBase file_reader;
-    AvroDeserializer deserializer;
+    std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
+    std::unique_ptr<AvroDeserializer> deserializer_ptr;
+    bool allow_missing_fields;
 };
 
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.
@@ -128,6 +132,9 @@ public:
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
     class SchemaRegistry;
+protected:
+    bool allowSyncAfterError() const override { return true; }
+    void syncAfterError() override;
 private:
     std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
@@ -136,6 +143,7 @@ private:
 
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
+    FormatSettings format_settings;
 };
 
 }

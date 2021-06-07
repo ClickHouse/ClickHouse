@@ -1,62 +1,46 @@
 #pragma once
 
-#include <algorithm>
 #include <cstdint>
-#include <cstdlib>
 #include <string>
-#include <type_traits>
 
 using Int8 = int8_t;
 using Int16 = int16_t;
 using Int32 = int32_t;
 using Int64 = int64_t;
 
-#if __cplusplus <= 201703L
+#ifndef __cpp_char8_t
 using char8_t = unsigned char;
 #endif
 
+/// This is needed for more strict aliasing. https://godbolt.org/z/xpJBSb https://stackoverflow.com/a/57453713
+#if !defined(PVS_STUDIO) /// But PVS-Studio does not treat it correctly.
 using UInt8 = char8_t;
+#else
+using UInt8 = uint8_t;
+#endif
+
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
 
 using String = std::string;
 
-/// The standard library type traits, such as std::is_arithmetic, with one exception
-/// (std::common_type), are "set in stone". Attempting to specialize them causes undefined behavior.
-/// So instead of using the std type_traits, we use our own version which allows extension.
-template <typename T>
-struct is_signed
+namespace DB
 {
-    static constexpr bool value = std::is_signed_v<T>;
-};
 
-template <typename T>
-inline constexpr bool is_signed_v = is_signed<T>::value;
+using UInt8 = ::UInt8;
+using UInt16 = ::UInt16;
+using UInt32 = ::UInt32;
+using UInt64 = ::UInt64;
 
-template <typename T>
-struct is_unsigned
-{
-    static constexpr bool value = std::is_unsigned_v<T>;
-};
+using Int8 = ::Int8;
+using Int16 = ::Int16;
+using Int32 = ::Int32;
+using Int64 = ::Int64;
 
-template <typename T>
-inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
+using Float32 = float;
+using Float64 = double;
 
-template <typename T>
-struct is_integral
-{
-    static constexpr bool value = std::is_integral_v<T>;
-};
+using String = std::string;
 
-template <typename T>
-inline constexpr bool is_integral_v = is_integral<T>::value;
-
-template <typename T>
-struct is_arithmetic
-{
-    static constexpr bool value = std::is_arithmetic_v<T>;
-};
-
-template <typename T>
-inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
+}

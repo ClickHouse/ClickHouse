@@ -1,4 +1,3 @@
-#include <sstream>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -8,7 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -64,19 +63,44 @@ public:
                 const IColumn & inner_column = assert_cast<const ColumnConst &>(*result.column).getDataColumn();
 
                 WriteBufferFromOwnString out;
-                result.type->serializeAsText(inner_column, 0, out, FormatSettings());
+                result.type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
                 node = std::make_shared<ASTLiteral>(out.str());
             }
         }
     }
 };
 
-void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & all_columns)
+class DropAliasesMatcher
 {
-    auto syntax_result = SyntaxAnalyzer(context).analyze(node, all_columns);
+public:
+    struct Data {};
+    Data data;
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &)
+    {
+        return true;
+    }
+
+    static void visit(ASTPtr & node, Data)
+    {
+        if (!node->tryGetAlias().empty())
+            node->setAlias({});
+    }
+};
+
+void replaceConstantExpressions(ASTPtr & node, ContextPtr context, const NamesAndTypesList & all_columns)
+{
+    auto syntax_result = TreeRewriter(context).analyze(node, all_columns);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
     InDepthNodeVisitor<ReplacingConstantExpressionsMatcherNumOrStr, true> visitor(block_with_constants);
+    visitor.visit(node);
+}
+
+void dropAliases(ASTPtr & node)
+{
+    DropAliasesMatcher::Data data;
+    InDepthNodeVisitor<DropAliasesMatcher, true> visitor(data);
     visitor.visit(node);
 }
 
@@ -114,6 +138,12 @@ bool isCompatible(const IAST & node)
         if (name == "tuple" && function->arguments->children.size() <= 1)
             return false;
 
+        /// If the right hand side of IN is an identifier (example: x IN table), then it's not compatible.
+        if ((name == "in" || name == "notIn")
+            && (function->arguments->children.size() != 2
+                || function->arguments->children[1]->as<ASTIdentifier>()))
+            return false;
+
         for (const auto & expr : function->arguments->children)
             if (!isCompatible(*expr))
                 return false;
@@ -130,8 +160,78 @@ bool isCompatible(const IAST & node)
     return node.as<ASTIdentifier>();
 }
 
+bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names);
+
+void removeUnknownChildren(ASTs & children, const NameSet & known_names)
+{
+
+    ASTs new_children;
+    for (auto & child : children)
+    {
+        bool leave_child = removeUnknownSubexpressions(child, known_names);
+        if (leave_child)
+            new_children.push_back(child);
+    }
+    children = std::move(new_children);
 }
 
+/// return `true` if we should leave node in tree
+bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
+{
+    if (const auto * ident = node->as<ASTIdentifier>())
+        return known_names.contains(ident->name());
+
+    if (node->as<ASTLiteral>() != nullptr)
+        return true;
+
+    auto * func = node->as<ASTFunction>();
+    if (func && (func->name == "and" || func->name == "or"))
+    {
+        removeUnknownChildren(func->arguments->children, known_names);
+        /// all children removed, current node can be removed too
+        if (func->arguments->children.size() == 1)
+        {
+            /// if only one child left, pull it on top level
+            node = func->arguments->children[0];
+            return true;
+        }
+        return !func->arguments->children.empty();
+    }
+
+    bool leave_child = true;
+    for (auto & child : node->children)
+    {
+        leave_child = leave_child && removeUnknownSubexpressions(child, known_names);
+        if (!leave_child)
+            break;
+    }
+    return leave_child;
+}
+
+// When a query references an external table such as table from MySQL database,
+// the corresponding table storage has to execute the relevant part of the query. We
+// send the query to the storage as AST. Before that, we have to remove the conditions
+// that reference other tables from `WHERE`, so that the external engine is not confused
+// by the unknown columns.
+bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns)
+{
+    if (!node)
+        return false;
+
+    NameSet known_names;
+    for (const auto & col : available_columns)
+        known_names.insert(col.name);
+
+    if (auto * expr_list = node->as<ASTExpressionList>(); expr_list && !expr_list->children.empty())
+    {
+        /// traverse expression list on top level
+        removeUnknownChildren(expr_list->children, known_names);
+        return !expr_list->children.empty();
+    }
+    return removeUnknownSubexpressions(node, known_names);
+}
+
+}
 
 String transformQueryForExternalDatabase(
     const SelectQueryInfo & query_info,
@@ -139,7 +239,7 @@ String transformQueryForExternalDatabase(
     IdentifierQuotingStyle identifier_quoting_style,
     const String & database,
     const String & table,
-    const Context & context)
+    ContextPtr context)
 {
     auto clone_query = query_info.query->clone();
     const Names used_columns = query_info.syntax_analyzer_result->requiredSourceColumns();
@@ -161,7 +261,8 @@ String transformQueryForExternalDatabase(
       */
 
     ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
-    if (original_where)
+    bool where_has_known_columns = removeUnknownSubexpressionsFromWhere(original_where, available_columns);
+    if (original_where && where_has_known_columns)
     {
         replaceConstantExpressions(original_where, context, available_columns);
 
@@ -192,7 +293,10 @@ String transformQueryForExternalDatabase(
         }
     }
 
-    std::stringstream out;
+    ASTPtr select_ptr = select;
+    dropAliases(select_ptr);
+
+    WriteBufferFromOwnString out;
     IAST::FormatSettings settings(out, true);
     settings.identifier_quoting_style = identifier_quoting_style;
     settings.always_quote_identifiers = identifier_quoting_style != IdentifierQuotingStyle::None;

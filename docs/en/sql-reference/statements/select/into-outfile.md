@@ -6,7 +6,7 @@ toc_title: INTO OUTFILE
 
 Add the `INTO OUTFILE filename` clause (where filename is a string literal) to `SELECT query` to redirect its output to the specified file on the client-side.
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
 -   This functionality is available in the [command-line client](../../../interfaces/cli.md) and [clickhouse-local](../../../operations/utilities/clickhouse-local.md). Thus a query sent via [HTTP interface](../../../interfaces/http.md) will fail.
 -   The query will fail if a file with the same filename already exists.

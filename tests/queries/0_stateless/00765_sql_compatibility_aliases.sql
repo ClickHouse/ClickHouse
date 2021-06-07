@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 select lcase('FOO');
 select ucase('foo');

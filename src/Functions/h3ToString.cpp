@@ -1,14 +1,18 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
 #if USE_H3
-#    include <Columns/ColumnString.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/IFunction.h>
-#    include <Common/typeid_cast.h>
 
-#    include <h3api.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
 
-#    define H3_INDEX_STRING_LENGTH 17 // includes \0 terminator
+#include <h3api.h>
+
+#define H3_INDEX_STRING_LENGTH 17 // includes \0 terminator
 
 namespace DB
 {
@@ -16,12 +20,16 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
+
 class FunctionH3ToString : public IFunction
 {
 public:
     static constexpr auto name = "h3ToString";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3ToString>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionH3ToString>(); }
 
     std::string getName() const override { return name; }
 
@@ -40,9 +48,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
+        const auto * col_hindex = arguments[0].column.get();
 
         auto col_res = ColumnString::create();
         auto & vec_res = col_res->getChars();
@@ -72,10 +80,11 @@ public:
             vec_offsets[i] = ++pos - begin;
         }
         vec_res.resize(pos - begin);
-        block.getByPosition(result).column = std::move(col_res);
+        return col_res;
     }
 };
 
+}
 
 void registerFunctionH3ToString(FunctionFactory & factory)
 {
@@ -83,4 +92,5 @@ void registerFunctionH3ToString(FunctionFactory & factory)
 }
 
 }
+
 #endif

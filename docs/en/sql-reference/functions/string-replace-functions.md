@@ -5,6 +5,9 @@ toc_title: For Replacing in Strings
 
 # Functions for Searching and Replacing in Strings {#functions-for-searching-and-replacing-in-strings}
 
+!!! note "Note"
+    Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
+
 ## replaceOne(haystack, pattern, replacement) {#replaceonehaystack-pattern-replacement}
 
 Replaces the first occurrence, if it exists, of the ‘pattern’ substring in ‘haystack’ with the ‘replacement’ substring.
@@ -85,8 +88,7 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ## regexpQuoteMeta(s) {#regexpquotemetas}
 
 The function adds a backslash before some predefined characters in the string.
-Predefined characters: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’, ’\]’, ‘?’, ’\*‘,’+‘,’{‘,’:‘,’-’.
-This implementation slightly differs from re2::RE2::QuoteMeta. It escapes zero byte as \\0 instead of 00 and it escapes only required characters.
+Predefined characters: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, `*`, `+`, `{`, `:`, `-`.
+This implementation slightly differs from re2::RE2::QuoteMeta. It escapes zero byte as `\0` instead of `\x00` and it escapes only required characters.
 For more information, see the link: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_replace_functions/) <!--hide-->

@@ -1,6 +1,6 @@
 ---
 toc_priority: 59
-toc_title: Working with Yandex.Metrica Dictionaries
+toc_title: Yandex.Metrica Dictionaries
 ---
 
 # Functions for Working with Yandex.Metrica Dictionaries {#functions-for-working-with-yandex-metrica-dictionaries}
@@ -15,12 +15,12 @@ ClickHouse supports working with multiple alternative geobases (regional hierarc
 
 The ‘clickhouse-server’ config specifies the file with the regional hierarchy::`<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>`
 
-Besides this file, it also searches for files nearby that have the \_ symbol and any suffix appended to the name (before the file extension).
+Besides this file, it also searches for files nearby that have the _ symbol and any suffix appended to the name (before the file extension).
 For example, it will also find the file `/opt/geo/regions_hierarchy_ua.txt`, if present.
 
 `ua` is called the dictionary key. For a dictionary without a suffix, the key is an empty string.
 
-All the dictionaries are re-loaded in runtime (once every certain number of seconds, as defined in the builtin\_dictionaries\_reload\_interval config parameter, or once an hour by default). However, the list of available dictionaries is defined one time, when the server starts.
+All the dictionaries are re-loaded in runtime (once every certain number of seconds, as defined in the builtin_dictionaries_reload_interval config parameter, or once an hour by default). However, the list of available dictionaries is defined one time, when the server starts.
 
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 Example:
@@ -105,17 +105,17 @@ Example: `regionToCountry(toUInt32(213)) = 225` converts Moscow (213) to Russia 
 Converts a region to a continent. In every other way, this function is the same as ‘regionToCity’.
 Example: `regionToContinent(toUInt32(213)) = 10001` converts Moscow (213) to Eurasia (10001).
 
-### regionToTopContinent (\#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
+### regionToTopContinent (#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
 
 Finds the highest continent in the hierarchy for the region.
 
 **Syntax**
 
 ``` sql
-regionToTopContinent(id[, geobase]);
+regionToTopContinent(id[, geobase])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `id` — Region ID from the Yandex geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
 -   `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). Optional.
@@ -136,7 +136,7 @@ In the Yandex geobase, the population might be recorded for child regions, but n
 
 ### regionIn(lhs, rhs\[, geobase\]) {#regioninlhs-rhs-geobase}
 
-Checks whether a ‘lhs’ region belongs to a ‘rhs’ region. Returns a UInt8 number equal to 1 if it belongs, or 0 if it doesn’t belong.
+Checks whether a ‘lhs’ region belongs to a ‘rhs’ region. Returns a UInt8 number equal to 1 if it belongs, or 0 if it does not belong.
 The relationship is reflexive – any region also belongs to itself.
 
 ### regionHierarchy(id\[, geobase\]) {#regionhierarchyid-geobase}
@@ -146,8 +146,7 @@ Example: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 
 ### regionToName(id\[, lang\]) {#regiontonameid-lang}
 
-Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn’t exist, an empty string is returned.
+Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID does not exist, an empty string is returned.
 
 `ua` and `uk` both mean Ukrainian.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/ym_dict_functions/) <!--hide-->

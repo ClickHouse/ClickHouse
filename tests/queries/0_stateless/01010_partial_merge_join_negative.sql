@@ -8,15 +8,15 @@ SET join_algorithm = 'partial_merge';
 
 SELECT 'all';
 
-SELECT * FROM t0 ANY LEFT JOIN t1 ON t1.x = t0.x;
-SELECT * FROM t0 ANY INNER JOIN t1 ON t1.x = t0.x;
-SELECT * FROM t0 ANY RIGHT JOIN t1 ON t1.x = t0.x; -- { serverError 48 }
-SELECT * FROM t0 ANY FULL JOIN t1 ON t1.x = t0.x; -- { serverError 48 }
-
 SELECT * FROM t0 LEFT JOIN t1 ON t1.x = t0.x;
 SELECT * FROM t0 INNER JOIN t1 ON t1.x = t0.x;
-SELECT * FROM t0 RIGHT JOIN t1 ON t1.x = t0.x; -- { serverError 48 }
-SELECT * FROM t0 FULL JOIN t1 ON t1.x = t0.x; -- { serverError 48 }
+SELECT * FROM t0 RIGHT JOIN t1 ON t1.x = t0.x;
+SELECT * FROM t0 FULL JOIN t1 ON t1.x = t0.x;
+
+SELECT * FROM t0 LEFT JOIN t1 USING x;
+SELECT * FROM t0 INNER JOIN t1 USING x;
+SELECT * FROM t0 RIGHT JOIN t1 USING x;
+SELECT * FROM t0 FULL JOIN t1 USING x;
 
 SELECT 'cross';
 
@@ -24,15 +24,15 @@ SELECT * FROM t0 CROSS JOIN t1; -- { serverError 48 }
 
 SELECT 'any';
 
+SELECT * FROM t0 ANY LEFT JOIN t1 ON t1.x = t0.x;
+SELECT * FROM t0 ANY INNER JOIN t1 ON t1.x = t0.x;
+SELECT * FROM t0 ANY RIGHT JOIN t1 ON t1.x = t0.x; -- { serverError 48 }
+SELECT * FROM t0 ANY FULL JOIN t1 ON t1.x = t0.x; -- { serverError 48 }
+
 SELECT * FROM t0 ANY LEFT JOIN t1 USING (x);
 SELECT * FROM t0 ANY INNER JOIN t1 USING (x);
 SELECT * FROM t0 ANY RIGHT JOIN t1 USING (x); -- { serverError 48 }
 SELECT * FROM t0 ANY FULL JOIN t1 USING (x); -- { serverError 48 }
-
-SELECT * FROM t0 LEFT JOIN t1 USING (x);
-SELECT * FROM t0 INNER JOIN t1 USING (x);
-SELECT * FROM t0 RIGHT JOIN t1 USING (x); -- { serverError 48 }
-SELECT * FROM t0 FULL JOIN t1 USING (x); -- { serverError 48 }
 
 SELECT 'semi';
 

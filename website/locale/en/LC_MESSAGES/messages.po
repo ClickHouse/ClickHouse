@@ -3,7 +3,6 @@
 # This file is distributed under the same license as the PROJECT project.
 # FIRST AUTHOR <EMAIL@ADDRESS>, 2020.
 #
-#, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
@@ -280,12 +279,12 @@ msgstr "Hosting ClickHouse Meetups"
 msgid ""
 "ClickHouse meetups are essential for strengthening community worldwide, "
 "but they couldn't be possible without the help of local organizers. "
-"Please, feel this form if you want to become one or want to meet "
+"Please, fill this form if you want to become one or want to meet "
 "ClickHouse core team for any other reason."
 msgstr ""
 "ClickHouse meetups are essential for strengthening community worldwide, "
 "but they couldn't be possible without the help of local organizers. "
-"Please, feel this form if you want to become one or want to meet "
+"Please, fill this form if you want to become one or want to meet "
 "ClickHouse core team for any other reason."
 
 #: templates/index/community.html:159

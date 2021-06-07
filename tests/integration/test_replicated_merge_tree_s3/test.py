@@ -1,13 +1,9 @@
 import logging
 import random
 import string
-import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
 
 
 @pytest.fixture(scope="module")
@@ -15,9 +11,12 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
 
-        cluster.add_instance("node1", config_dir="configs", macros={'cluster': 'test1'}, with_minio=True, with_zookeeper=True)
-        cluster.add_instance("node2", config_dir="configs", macros={'cluster': 'test1'}, with_zookeeper=True)
-        cluster.add_instance("node3", config_dir="configs", macros={'cluster': 'test1'}, with_zookeeper=True)
+        cluster.add_instance("node1", main_configs=["configs/config.d/storage_conf.xml"], macros={'replica': '1'},
+                             with_minio=True, with_zookeeper=True)
+        cluster.add_instance("node2", main_configs=["configs/config.d/storage_conf.xml"], macros={'replica': '2'},
+                             with_zookeeper=True)
+        cluster.add_instance("node3", main_configs=["configs/config.d/storage_conf.xml"], macros={'replica': '3'},
+                             with_zookeeper=True)
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -30,7 +29,8 @@ def cluster():
 
 FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
-FILES_OVERHEAD_PER_PART = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6
+FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
+FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
 
 
 def random_string(length):
@@ -39,32 +39,34 @@ def random_string(length):
 
 
 def generate_values(date_str, count, sign=1):
-    data = [[date_str, sign*(i + 1), random_string(10)] for i in range(count)]
+    data = [[date_str, sign * (i + 1), random_string(10)] for i in range(count)]
     data.sort(key=lambda tup: tup[1])
     return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
 
 
-def create_table(cluster):
+def create_table(cluster, additional_settings=None):
     create_table_statement = """
-        CREATE TABLE s3_test (
+        CREATE TABLE s3_test ON CLUSTER cluster(
             dt Date,
             id Int64,
             data String,
             INDEX min_max (id) TYPE minmax GRANULARITY 3
-        ) ENGINE=ReplicatedMergeTree('/clickhouse/{cluster}/tables/test/s3', '{instance}')
+        ) ENGINE=ReplicatedMergeTree()
         PARTITION BY dt
         ORDER BY (dt, id)
         SETTINGS storage_policy='s3'
         """
+    if additional_settings:
+        create_table_statement += ","
+        create_table_statement += additional_settings
 
-    for node in cluster.instances.values():
-        node.query(create_table_statement)
+    list(cluster.instances.values())[0].query(create_table_statement)
 
 
 @pytest.fixture(autouse=True)
 def drop_table(cluster):
     yield
-    for node in cluster.instances.values():
+    for node in list(cluster.instances.values()):
         node.query("DROP TABLE IF EXISTS s3_test")
 
     minio = cluster.minio_client
@@ -72,9 +74,15 @@ def drop_table(cluster):
     for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
 
-
-def test_insert_select_replicated(cluster):
-    create_table(cluster)
+@pytest.mark.parametrize(
+    "min_rows_for_wide_part,files_per_part",
+    [
+        (0, FILES_OVERHEAD_PER_PART_WIDE),
+        (8192, FILES_OVERHEAD_PER_PART_COMPACT)
+    ]
+)
+def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_part):
+    create_table(cluster, additional_settings="min_rows_for_wide_part={}".format(min_rows_for_wide_part))
 
     all_values = ""
     for node_idx in range(1, 4):
@@ -87,7 +95,8 @@ def test_insert_select_replicated(cluster):
 
     for node_idx in range(1, 4):
         node = cluster.instances["node" + str(node_idx)]
-        assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values", settings={"select_sequential_consistency": 1}) == all_values
+        assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values",
+                          settings={"select_sequential_consistency": 1}) == all_values
 
     minio = cluster.minio_client
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 3 * (FILES_OVERHEAD + FILES_OVERHEAD_PER_PART * 3)
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 3 * (FILES_OVERHEAD + files_per_part * 3)

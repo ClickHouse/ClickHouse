@@ -1,11 +1,11 @@
 ---
 toc_priority: 54
-toc_title: Working with URLs
+toc_title: URLs
 ---
 
 # Functions for Working with URLs {#functions-for-working-with-urls}
 
-All these functions don’t follow the RFC. They are maximally simplified for improved performance.
+All these functions do not follow the RFC. They are maximally simplified for improved performance.
 
 ## Functions that Extract Parts of a URL {#functions-that-extract-parts-of-a-url}
 
@@ -25,7 +25,7 @@ Extracts the hostname from a URL.
 domain(url)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
@@ -55,7 +55,7 @@ Type: `String`.
 **Example**
 
 ``` sql
-SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
+SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 ```
 
 ``` text
@@ -76,7 +76,7 @@ Extracts the the top-level domain from a URL.
 topLevelDomain(url)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
@@ -98,7 +98,7 @@ Type: `String`.
 **Example**
 
 ``` sql
-SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
+SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 ```
 
 ``` text
@@ -115,9 +115,185 @@ Returns the “first significant subdomain”. This is a non-standard concept sp
 
 Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain” (see the explanation above).
 
-For example, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+For example:
 
-### port(URL[, default_port = 0]) {#port}
+-   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+-   `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
+-   `cutToFirstSignificantSubdomain('tr') = ''`.
+
+### cutToFirstSignificantSubdomainWithWWW {#cuttofirstsignificantsubdomainwithwww}
+
+Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain”, without stripping "www".
+
+For example:
+
+-   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+-   `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
+-   `cutToFirstSignificantSubdomain('tr') = ''`.
+
+### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
+
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
+
+Can be useful if you need fresh TLD list or you have custom.
+
+Configuration example:
+
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
+```
+
+**Syntax**
+
+``` sql
+cutToFirstSignificantSubdomain(URL, TLD)
+```
+
+**Parameters**
+
+-   `URL` — URL. [String](../../sql-reference/data-types/string.md).
+-   `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Part of the domain that includes top-level subdomains up to the first significant subdomain.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');
+```
+
+Result:
+
+```text
+┌─cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
+│ foo.there-is-no-such-domain                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
+
+### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
+
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. Accepts custom TLD list name.
+
+Can be useful if you need fresh TLD list or you have custom.
+
+Configuration example:
+
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
+```
+
+**Syntax**
+
+```sql
+cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
+```
+
+**Parameters**
+
+-   `URL` — URL. [String](../../sql-reference/data-types/string.md).
+-   `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list');
+```
+
+Result:
+
+```text
+┌─cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list')─┐
+│ www.foo                                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
+
+### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
+
+Returns the first significant subdomain. Accepts customs TLD list name.
+
+Can be useful if you need fresh TLD list or you have custom.
+
+Configuration example:
+
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
+```
+
+**Syntax**
+
+```sql
+firstSignificantSubdomainCustom(URL, TLD)
+```
+
+**Parameters**
+
+-   `URL` — URL. [String](../../sql-reference/data-types/string.md).
+-   `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   First significant subdomain.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');
+```
+
+Result:
+
+```text 
+┌─firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
+│ foo                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+-   [firstSignificantSubdomain](#firstsignificantsubdomain).
+
+### port(URL\[, default_port = 0\]) {#port}
 
 Returns the port or `default_port` if there is no port in the URL (or in case of validation error).
 
@@ -127,11 +303,11 @@ Returns the path. Example: `/top/news.html` The path does not include the query 
 
 ### pathFull {#pathfull}
 
-The same as above, but including query string and fragment. Example: /top/news.html?page=2\#comments
+The same as above, but including query string and fragment. Example: /top/news.html?page=2#comments
 
 ### queryString {#querystring}
 
-Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as \# and everything after \#.
+Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as # and everything after #.
 
 ### fragment {#fragment}
 
@@ -139,7 +315,7 @@ Returns the fragment identifier. fragment does not include the initial hash symb
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Returns the query string and fragment identifier. Example: page=1\#29390.
+Returns the query string and fragment identifier. Example: page=1#29390.
 
 ### extractURLParameter(URL, name) {#extracturlparameterurl-name}
 
@@ -184,9 +360,45 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
+### netloc {#netloc}
+
+Extracts network locality (`username:password@host:port`) from a URL.
+
+**Syntax**
+
+``` sql
+netloc(URL)
+```
+
+**Arguments**
+
+-   `url` — URL. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   `username:password@host:port`.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT netloc('http://paul@www.example.com:80/');
+```
+
+Result:
+
+``` text
+┌─netloc('http://paul@www.example.com:80/')─┐
+│ paul@www.example.com:80                   │
+└───────────────────────────────────────────┘
+```
+
 ## Functions that Remove Part of a URL {#functions-that-remove-part-of-a-url}
 
-If the URL doesn’t have anything similar, the URL remains unchanged.
+If the URL does not have anything similar, the URL remains unchanged.
 
 ### cutWWW {#cutwww}
 
@@ -208,4 +420,3 @@ Removes the query string and fragment identifier. The question mark and number s
 
 Removes the ‘name’ URL parameter, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/url_functions/) <!--hide-->

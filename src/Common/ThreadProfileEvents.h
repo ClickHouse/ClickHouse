@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/ProfileEvents.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -53,6 +53,14 @@ namespace ProfileEvents
     extern const Event PerfCpuMigrations;
     extern const Event PerfAlignmentFaults;
     extern const Event PerfEmulationFaults;
+    extern const Event PerfMinEnabledTime;
+    extern const Event PerfMinEnabledRunningTime;
+    extern const Event PerfDataTLBReferences;
+    extern const Event PerfDataTLBMisses;
+    extern const Event PerfInstructionTLBReferences;
+    extern const Event PerfInstructionTLBMisses;
+    extern const Event PerfLocalMemoryReferences;
+    extern const Event PerfLocalMemoryMisses;
 #endif
 }
 
@@ -64,14 +72,6 @@ template <typename TUInt>
 inline TUInt safeDiff(TUInt prev, TUInt curr)
 {
     return curr >= prev ? curr - prev : 0;
-}
-
-
-inline UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
-{
-    struct timespec ts;
-    clock_gettime(clock_type, &ts);
-    return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
 
@@ -101,20 +101,17 @@ struct RUsageCounters
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
     }
 
-    static RUsageCounters zeros(UInt64 real_time_ = getCurrentTimeNanoseconds())
-    {
-        RUsageCounters res;
-        res.real_time = real_time_;
-        return res;
-    }
-
-    static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
+    static RUsageCounters current()
     {
         ::rusage rusage {};
 #if !defined(__APPLE__)
+#if defined(OS_SUNOS)
+        ::getrusage(RUSAGE_LWP, &rusage);
+#else
         ::getrusage(RUSAGE_THREAD, &rusage);
-#endif
-        return RUsageCounters(rusage, real_time_);
+#endif // OS_SUNOS
+#endif // __APPLE
+        return RUsageCounters(rusage, getClockMonotonic());
     }
 
     static void incrementProfileEvents(const RUsageCounters & prev, const RUsageCounters & curr, ProfileEvents::Counters & profile_events)
@@ -133,11 +130,17 @@ struct RUsageCounters
         incrementProfileEvents(last_counters, current_counters, profile_events);
         last_counters = current_counters;
     }
+
+private:
+    static inline UInt64 getClockMonotonic()
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+    }
 };
 
-// thread_local is disabled in Arcadia, so we have to use a dummy implementation
-// there.
-#if defined(__linux__) && !defined(ARCADIA_BUILD)
+#if defined(__linux__)
 
 struct PerfEventInfo
 {
@@ -156,7 +159,7 @@ struct PerfEventValue
     UInt64 time_running = 0;
 };
 
-static constexpr size_t NUMBER_OF_RAW_EVENTS = 16;
+static constexpr size_t NUMBER_OF_RAW_EVENTS = 22;
 
 struct PerfDescriptorsHolder : boost::noncopyable
 {
@@ -194,7 +197,7 @@ extern thread_local PerfEventsCounters current_thread_counters;
 
 #else
 
-// Not on Linux, or in Arcadia: the functionality is disabled.
+// the functionality is disabled when we are not running on Linux.
 struct PerfEventsCounters
 {
     void initializeProfileEvents(const std::string & /* events_list */) {}
@@ -202,7 +205,6 @@ struct PerfEventsCounters
     void closeEventDescriptors() {}
 };
 
-// thread_local is disabled in Arcadia, so we are going to use a static dummy.
 extern PerfEventsCounters current_thread_counters;
 
 #endif

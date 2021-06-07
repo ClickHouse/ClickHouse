@@ -28,7 +28,7 @@ CREATE ROLE r2_01293
 CREATE ROLE r1_01293 SETTINGS readonly = 1
 CREATE ROLE r2_01293 SETTINGS readonly = 1
 -- system.roles
-r1_01293	disk
+r1_01293	local directory
 -- system.settings_profile_elements
 \N	\N	r1_01293	0	readonly	1	\N	\N	\N	\N
 \N	\N	r2_01293	0	\N	\N	\N	\N	\N	default

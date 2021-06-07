@@ -1,23 +1,41 @@
 #include <Processors/Sources/DelayedSource.h>
-#include "NullSource.h"
+#include <Processors/Sources/NullSource.h>
+#include <Processors/NullSink.h>
+#include <Processors/ResizeProcessor.h>
 
 namespace DB
 {
 
-DelayedSource::DelayedSource(const Block & header, Creator processors_creator)
-    : IProcessor({}, OutputPorts(3, header))
+DelayedSource::DelayedSource(const Block & header, Creator processors_creator, bool add_totals_port, bool add_extremes_port)
+    : IProcessor({}, OutputPorts(1 + (add_totals_port ? 1 : 0) + (add_extremes_port ? 1 : 0), header))
     , creator(std::move(processors_creator))
 {
+    auto output = outputs.begin();
+
+    main = &*output;
+    ++output;
+
+    if (add_totals_port)
+    {
+        totals = &*output;
+        ++output;
+    }
+
+    if (add_extremes_port)
+    {
+        extremes = &*output;
+        ++output;
+    }
 }
 
 IProcessor::Status DelayedSource::prepare()
 {
-    /// At first, wait for main input is needed and expand pipeline.
+    /// At first, wait for main output is needed and expand pipeline.
     if (inputs.empty())
     {
         auto & first_output = outputs.front();
 
-        /// If main port was finished before callback was called, stop execution.
+        /// If main output port was finished before callback was called, stop execution.
         if (first_output.isFinished())
         {
             for (auto & output : outputs)
@@ -57,7 +75,7 @@ IProcessor::Status DelayedSource::prepare()
 
         input->setNeeded();
         if (!input->hasData())
-            return Status::PortFull;
+            return Status::NeedData;
 
         output->pushData(input->pullData(true));
         return Status::PortFull;
@@ -66,27 +84,54 @@ IProcessor::Status DelayedSource::prepare()
     return Status::Finished;
 }
 
+/// Fix port from returned pipe. Create source_port if created or drop if source_port is null.
+void synchronizePorts(OutputPort *& pipe_port, OutputPort * source_port, const Block & header, Processors & processors)
+{
+    if (source_port)
+    {
+        /// Need port in DelayedSource. Create NullSource.
+        if (!pipe_port)
+        {
+            processors.emplace_back(std::make_shared<NullSource>(header));
+            pipe_port = &processors.back()->getOutputs().back();
+        }
+    }
+    else
+    {
+        /// Has port in pipe, but don't need it. Create NullSink.
+        if (pipe_port)
+        {
+            auto sink = std::make_shared<NullSink>(header);
+            connect(*pipe_port, sink->getPort());
+            processors.emplace_back(std::move(sink));
+            pipe_port = nullptr;
+        }
+    }
+}
+
 void DelayedSource::work()
 {
     auto pipe = creator();
+    const auto & header = main->getHeader();
 
-    main_output = &pipe.getPort();
+    if (pipe.empty())
+    {
+        auto source = std::make_shared<NullSource>(header);
+        main_output = &source->getPort();
+        processors.emplace_back(std::move(source));
+        return;
+    }
+
+    pipe.resize(1);
+
+    main_output = pipe.getOutputPort(0);
     totals_output = pipe.getTotalsPort();
     extremes_output = pipe.getExtremesPort();
 
-    processors = std::move(pipe).detachProcessors();
+    processors = Pipe::detachProcessors(std::move(pipe));
 
-    if (!totals_output)
-    {
-        processors.emplace_back(std::make_shared<NullSource>(main_output->getHeader()));
-        totals_output = &processors.back()->getOutputs().back();
-    }
-
-    if (!extremes_output)
-    {
-        processors.emplace_back(std::make_shared<NullSource>(main_output->getHeader()));
-        extremes_output = &processors.back()->getOutputs().back();
-    }
+    synchronizePorts(totals_output, totals, header, processors);
+    synchronizePorts(extremes_output, extremes, header, processors);
 }
 
 Processors DelayedSource::expandPipeline()
@@ -94,6 +139,9 @@ Processors DelayedSource::expandPipeline()
     /// Add new inputs. They must have the same header as output.
     for (const auto & output : {main_output, totals_output, extremes_output})
     {
+        if (!output)
+            continue;
+
         inputs.emplace_back(outputs.front().getHeader(), this);
         /// Connect checks that header is same for ports.
         connect(*output, inputs.back());
@@ -104,16 +152,15 @@ Processors DelayedSource::expandPipeline()
     return std::move(processors);
 }
 
-Pipe createDelayedPipe(const Block & header, DelayedSource::Creator processors_creator)
+Pipe createDelayedPipe(const Block & header, DelayedSource::Creator processors_creator, bool add_totals_port, bool add_extremes_port)
 {
-    auto source = std::make_shared<DelayedSource>(header, std::move(processors_creator));
+    auto source = std::make_shared<DelayedSource>(header, std::move(processors_creator), add_totals_port, add_extremes_port);
 
-    Pipe pipe(&source->getPort(DelayedSource::Main));
-    pipe.setTotalsPort(&source->getPort(DelayedSource::Totals));
-    pipe.setExtremesPort(&source->getPort(DelayedSource::Extremes));
+    auto * main = &source->getPort();
+    auto * totals = source->getTotalsPort();
+    auto * extremes = source->getExtremesPort();
 
-    pipe.addProcessors({std::move(source)});
-    return pipe;
+    return Pipe(std::move(source), main, totals, extremes);
 }
 
 }

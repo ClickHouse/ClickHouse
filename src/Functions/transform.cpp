@@ -1,7 +1,7 @@
 #include <mutex>
+#include <ext/bit_cast.h>
+
 #include <Common/FieldVisitors.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -11,15 +11,15 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Interpreters/convertFieldToType.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -28,6 +28,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
 
 /** transform(x, from_array, to_array[, default]) - convert x according to an explicitly passed match.
   */
@@ -56,7 +58,7 @@ class FunctionTransform : public IFunction
 {
 public:
     static constexpr auto name = "transform";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTransform>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionTransform>(); }
 
     String getName() const override
     {
@@ -144,29 +146,26 @@ public:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
-        const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[2]).column.get());
+        const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(arguments[1].column.get());
+        const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get());
 
         if (!array_from || !array_to)
             throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
 
-        initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), block, arguments);
+        initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), arguments);
 
-        const auto * in = block.getByPosition(arguments.front()).column.get();
+        const auto * in = arguments.front().column.get();
 
         if (isColumnConst(*in))
-        {
-            executeConst(block, arguments, result, input_rows_count);
-            return;
-        }
+            return executeConst(arguments, result_type, input_rows_count);
 
         const IColumn * default_column = nullptr;
         if (arguments.size() == 4)
-            default_column = block.getByPosition(arguments[3]).column.get();
+            default_column = arguments[3].column.get();
 
-        auto column_result = block.getByPosition(result).type->createColumn();
+        auto column_result = result_type->createColumn();
         auto * out = column_result.get();
 
         if (!executeNum<UInt8>(in, out, default_column)
@@ -184,40 +183,24 @@ public:
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        block.getByPosition(result).column = std::move(column_result);
+        return column_result;
     }
 
 private:
-    static void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+    static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
     {
         /// Materialize the input column and compute the function as usual.
 
-        Block tmp_block;
-        ColumnNumbers tmp_arguments;
+        ColumnsWithTypeAndName args = arguments;
+        args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
-        tmp_block.insert(block.getByPosition(arguments[0]));
-        tmp_block.getByPosition(0).column = tmp_block.getByPosition(0).column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
-        tmp_arguments.push_back(0);
+        auto impl = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionTransform>()).build(args);
 
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            tmp_block.insert(block.getByPosition(arguments[i]));
-            tmp_arguments.push_back(i);
-        }
-
-        auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
-                    .build(tmp_block.getColumnsWithTypeAndName());
-
-        tmp_block.insert(block.getByPosition(result));
-        size_t tmp_result = arguments.size();
-
-        impl->execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
-
-        block.getByPosition(result).column = tmp_block.getByPosition(tmp_result).column;
+        return impl->execute(args, result_type, input_rows_count);
     }
 
     template <typename T>
-    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped)
+    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {
@@ -275,7 +258,7 @@ private:
         return false;
     }
 
-    bool executeString(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped)
+    bool executeString(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped) const
     {
         if (const auto * in = checkAndGetColumn<ColumnString>(in_untyped))
         {
@@ -329,18 +312,18 @@ private:
     }
 
     template <typename T, typename U>
-    bool executeNumToNumWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped)
+    bool executeNumToNumWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped) const
     {
         auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
         if (!out)
             return false;
 
-        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), const_default_value.get<U>());
+        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
         return true;
     }
 
     template <typename T, typename U>
-    bool executeNumToNumWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped)
+    bool executeNumToNumWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
     {
         auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
         if (!out)
@@ -366,7 +349,7 @@ private:
     }
 
     template <typename T, typename U, typename V>
-    bool executeNumToNumWithNonConstDefault2(const ColumnVector<T> * in, ColumnVector<U> * out, const IColumn * default_untyped)
+    bool executeNumToNumWithNonConstDefault2(const ColumnVector<T> * in, ColumnVector<U> * out, const IColumn * default_untyped) const
     {
         auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
         if (!col_default)
@@ -377,20 +360,20 @@ private:
     }
 
     template <typename T>
-    bool executeNumToStringWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped)
+    bool executeNumToStringWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped) const
     {
         auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
             return false;
 
-        const String & default_str = const_default_value.get<const String &>();
+        const String & default_str = cache.const_default_value.get<const String &>();
         StringRef default_string_ref{default_str.data(), default_str.size() + 1};
         executeImplNumToStringWithConstDefault<T>(in->getData(), out->getChars(), out->getOffsets(), default_string_ref);
         return true;
     }
 
     template <typename T>
-    bool executeNumToStringWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped)
+    bool executeNumToStringWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
     {
         auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
@@ -412,18 +395,18 @@ private:
     }
 
     template <typename U>
-    bool executeStringToNumWithConstDefault(const ColumnString * in, IColumn * out_untyped)
+    bool executeStringToNumWithConstDefault(const ColumnString * in, IColumn * out_untyped) const
     {
         auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
         if (!out)
             return false;
 
-        executeImplStringToNumWithConstDefault<U>(in->getChars(), in->getOffsets(), out->getData(), const_default_value.get<U>());
+        executeImplStringToNumWithConstDefault<U>(in->getChars(), in->getOffsets(), out->getData(), cache.const_default_value.get<U>());
         return true;
     }
 
     template <typename U>
-    bool executeStringToNumWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped)
+    bool executeStringToNumWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped) const
     {
         auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
         if (!out)
@@ -448,7 +431,7 @@ private:
     }
 
     template <typename U, typename V>
-    bool executeStringToNumWithNonConstDefault2(const ColumnString * in, ColumnVector<U> * out, const IColumn * default_untyped)
+    bool executeStringToNumWithNonConstDefault2(const ColumnString * in, ColumnVector<U> * out, const IColumn * default_untyped) const
     {
         auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
         if (!col_default)
@@ -458,7 +441,7 @@ private:
         return true;
     }
 
-    bool executeStringToString(const ColumnString * in, IColumn * out_untyped)
+    bool executeStringToString(const ColumnString * in, IColumn * out_untyped) const
     {
         auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
@@ -468,19 +451,19 @@ private:
         return true;
     }
 
-    bool executeStringToStringWithConstDefault(const ColumnString * in, IColumn * out_untyped)
+    bool executeStringToStringWithConstDefault(const ColumnString * in, IColumn * out_untyped) const
     {
         auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
             return false;
 
-        const String & default_str = const_default_value.get<const String &>();
+        const String & default_str = cache.const_default_value.get<const String &>();
         StringRef default_string_ref{default_str.data(), default_str.size() + 1};
         executeImplStringToStringWithConstDefault(in->getChars(), in->getOffsets(), out->getChars(), out->getOffsets(), default_string_ref);
         return true;
     }
 
-    bool executeStringToStringWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped)
+    bool executeStringToStringWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped) const
     {
         auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
@@ -503,14 +486,14 @@ private:
 
 
     template <typename T, typename U>
-    void executeImplNumToNumWithConstDefault(const PaddedPODArray<T> & src, PaddedPODArray<U> & dst, U dst_default)
+    void executeImplNumToNumWithConstDefault(const PaddedPODArray<T> & src, PaddedPODArray<U> & dst, U dst_default) const
     {
-        const auto & table = *table_num_to_num;
+        const auto & table = *cache.table_num_to_num;
         size_t size = src.size();
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = table.find(src[i]);
+            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
@@ -519,14 +502,14 @@ private:
     }
 
     template <typename T, typename U, typename V>
-    void executeImplNumToNumWithNonConstDefault(const PaddedPODArray<T> & src, PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default)
+    void executeImplNumToNumWithNonConstDefault(const PaddedPODArray<T> & src, PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default) const
     {
-        const auto & table = *table_num_to_num;
+        const auto & table = *cache.table_num_to_num;
         size_t size = src.size();
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = table.find(src[i]);
+            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
@@ -535,14 +518,14 @@ private:
     }
 
     template <typename T>
-    void executeImplNumToNum(const PaddedPODArray<T> & src, PaddedPODArray<T> & dst)
+    void executeImplNumToNum(const PaddedPODArray<T> & src, PaddedPODArray<T> & dst) const
     {
-        const auto & table = *table_num_to_num;
+        const auto & table = *cache.table_num_to_num;
         size_t size = src.size();
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = table.find(src[i]);
+            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
             else
@@ -552,15 +535,15 @@ private:
 
     template <typename T>
     void executeImplNumToStringWithConstDefault(const PaddedPODArray<T> & src,
-        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
+        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default) const
     {
-        const auto & table = *table_num_to_string;
+        const auto & table = *cache.table_num_to_string;
         size_t size = src.size();
         dst_offsets.resize(size);
         ColumnString::Offset current_dst_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = table.find(src[i]);
+            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
             StringRef ref = it ? it->getMapped() : dst_default;
             dst_data.resize(current_dst_offset + ref.size);
             memcpy(&dst_data[current_dst_offset], ref.data, ref.size);
@@ -572,16 +555,17 @@ private:
     template <typename T>
     void executeImplNumToStringWithNonConstDefault(const PaddedPODArray<T> & src,
         ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets,
-        const ColumnString::Chars & dst_default_data, const ColumnString::Offsets & dst_default_offsets)
+        const ColumnString::Chars & dst_default_data, const ColumnString::Offsets & dst_default_offsets) const
     {
-        const auto & table = *table_num_to_string;
+        const auto & table = *cache.table_num_to_string;
         size_t size = src.size();
         dst_offsets.resize(size);
         ColumnString::Offset current_dst_offset = 0;
         ColumnString::Offset current_dst_default_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = table.find(src[i]);
+            Field key = src[i];
+            const auto * it = table.find(key.reinterpret<UInt64>());
             StringRef ref;
 
             if (it)
@@ -603,9 +587,9 @@ private:
     template <typename U>
     void executeImplStringToNumWithConstDefault(
         const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        PaddedPODArray<U> & dst, U dst_default)
+        PaddedPODArray<U> & dst, U dst_default) const
     {
-        const auto & table = *table_string_to_num;
+        const auto & table = *cache.table_string_to_num;
         size_t size = src_offsets.size();
         dst.resize(size);
         ColumnString::Offset current_src_offset = 0;
@@ -624,9 +608,9 @@ private:
     template <typename U, typename V>
     void executeImplStringToNumWithNonConstDefault(
         const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default)
+        PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default) const
     {
-        const auto & table = *table_string_to_num;
+        const auto & table = *cache.table_string_to_num;
         size_t size = src_offsets.size();
         dst.resize(size);
         ColumnString::Offset current_src_offset = 0;
@@ -645,9 +629,9 @@ private:
     template <bool with_default>
     void executeImplStringToStringWithOrWithoutConstDefault(
         const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
+        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default) const
     {
-        const auto & table = *table_string_to_string;
+        const auto & table = *cache.table_string_to_string;
         size_t size = src_offsets.size();
         dst_offsets.resize(size);
         ColumnString::Offset current_src_offset = 0;
@@ -669,14 +653,14 @@ private:
 
     void executeImplStringToString(
         const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets)
+        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets) const
     {
         executeImplStringToStringWithOrWithoutConstDefault<false>(src_data, src_offsets, dst_data, dst_offsets, {});
     }
 
     void executeImplStringToStringWithConstDefault(
         const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
+        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default) const
     {
         executeImplStringToStringWithOrWithoutConstDefault<true>(src_data, src_offsets, dst_data, dst_offsets, dst_default);
     }
@@ -684,9 +668,9 @@ private:
     void executeImplStringToStringWithNonConstDefault(
         const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
         ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets,
-        const ColumnString::Chars & dst_default_data, const ColumnString::Offsets & dst_default_offsets)
+        const ColumnString::Chars & dst_default_data, const ColumnString::Offsets & dst_default_offsets) const
     {
-        const auto & table = *table_string_to_string;
+        const auto & table = *cache.table_string_to_string;
         size_t size = src_offsets.size();
         dst_offsets.resize(size);
         ColumnString::Offset current_src_offset = 0;
@@ -719,36 +703,41 @@ private:
 
     /// Different versions of the hash tables to implement the mapping.
 
-    using NumToNum = HashMap<UInt64, UInt64, HashCRC32<UInt64>>;
-    using NumToString = HashMap <UInt64, StringRef, HashCRC32<UInt64>>;     /// Everywhere StringRef's with trailing zero.
-    using StringToNum = HashMap<StringRef, UInt64, StringRefHash>;
-    using StringToString = HashMap<StringRef, StringRef, StringRefHash>;
+    struct Cache
+    {
+        using NumToNum = HashMap<UInt64, UInt64, HashCRC32<UInt64>>;
+        using NumToString = HashMap<UInt64, StringRef, HashCRC32<UInt64>>;     /// Everywhere StringRef's with trailing zero.
+        using StringToNum = HashMap<StringRef, UInt64, StringRefHash>;
+        using StringToString = HashMap<StringRef, StringRef, StringRefHash>;
 
-    std::unique_ptr<NumToNum> table_num_to_num;
-    std::unique_ptr<NumToString> table_num_to_string;
-    std::unique_ptr<StringToNum> table_string_to_num;
-    std::unique_ptr<StringToString> table_string_to_string;
+        std::unique_ptr<NumToNum> table_num_to_num;
+        std::unique_ptr<NumToString> table_num_to_string;
+        std::unique_ptr<StringToNum> table_string_to_num;
+        std::unique_ptr<StringToString> table_string_to_string;
 
-    Arena string_pool;
+        Arena string_pool;
 
-    Field const_default_value;    /// Null, if not specified.
+        Field const_default_value;    /// Null, if not specified.
 
-    std::atomic<bool> initialized {false};
-    std::mutex mutex;
+        std::atomic<bool> initialized{false};
+        std::mutex mutex;
+    };
+
+    mutable Cache cache;
 
     /// Can be called from different threads. It works only on the first call.
-    void initialize(const Array & from, const Array & to, Block & block, const ColumnNumbers & arguments)
+    void initialize(const Array & from, const Array & to, const ColumnsWithTypeAndName & arguments) const
     {
-        if (initialized)
+        if (cache.initialized)
             return;
 
         const size_t size = from.size();
         if (0 == size)
             throw Exception{"Empty arrays are illegal in function " + getName(), ErrorCodes::BAD_ARGUMENTS};
 
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(cache.mutex);
 
-        if (initialized)
+        if (cache.initialized)
             return;
 
         if (size != to.size())
@@ -761,11 +750,11 @@ private:
 
         if (arguments.size() == 4)
         {
-            const IColumn * default_col = block.getByPosition(arguments[3]).column.get();
+            const IColumn * default_col = arguments[3].column.get();
             const ColumnConst * const_default_col = typeid_cast<const ColumnConst *>(default_col);
 
             if (const_default_col)
-                const_default_value = (*const_default_col)[0];
+                cache.const_default_value = (*const_default_col)[0];
 
             /// Do we need to convert the elements `to` and `default_value` to the smallest common type that is Float64?
             bool default_col_is_float =
@@ -786,62 +775,80 @@ private:
             else if (!default_col_is_float && to_is_float)
             {
                 if (const_default_col)
-                    const_default_value = applyVisitor(FieldVisitorConvertToNumber<Float64>(), const_default_value);
+                    cache.const_default_value = applyVisitor(FieldVisitorConvertToNumber<Float64>(), cache.const_default_value);
             }
         }
 
         /// Note: Doesn't check the duplicates in the `from` array.
 
-        if (from[0].getType() != Field::Types::String && to[0].getType() != Field::Types::String)
+        const IDataType & from_type = *arguments[0].type;
+
+        if (from[0].getType() != Field::Types::String)
         {
-            table_num_to_num = std::make_unique<NumToNum>();
-            auto & table = *table_num_to_num;
-            for (size_t i = 0; i < size; ++i)
+            if (to[0].getType() != Field::Types::String)
             {
-                // Field may be of Float type, but for the purpose of bitwise
-                // equality we can treat them as UInt64, hence the reinterpret().
-                table[from[i].reinterpret<UInt64>()] = (*used_to)[i].reinterpret<UInt64>();
+                cache.table_num_to_num = std::make_unique<Cache::NumToNum>();
+                auto & table = *cache.table_num_to_num;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    Field key = convertFieldToType(from[i], from_type);
+                    if (key.isNull())
+                        continue;
+
+                    // Field may be of Float type, but for the purpose of bitwise
+                    // equality we can treat them as UInt64, hence the reinterpret().
+                    table[key.reinterpret<UInt64>()] = (*used_to)[i].reinterpret<UInt64>();
+                }
+            }
+            else
+            {
+                cache.table_num_to_string = std::make_unique<Cache::NumToString>();
+                auto & table = *cache.table_num_to_string;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    Field key = convertFieldToType(from[i], from_type);
+                    if (key.isNull())
+                        continue;
+
+                    const String & str_to = to[i].get<const String &>();
+                    StringRef ref{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
+                    table[key.reinterpret<UInt64>()] = ref;
+                }
             }
         }
-        else if (from[0].getType() != Field::Types::String && to[0].getType() == Field::Types::String)
+        else
         {
-            table_num_to_string = std::make_unique<NumToString>();
-            auto & table = *table_num_to_string;
-            for (size_t i = 0; i < size; ++i)
+            if (to[0].getType() != Field::Types::String)
             {
-                const String & str_to = to[i].get<const String &>();
-                StringRef ref{string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
-                table[from[i].reinterpret<UInt64>()] = ref;
+                cache.table_string_to_num = std::make_unique<Cache::StringToNum>();
+                auto & table = *cache.table_string_to_num;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    const String & str_from = from[i].get<const String &>();
+                    StringRef ref{cache.string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
+                    table[ref] = (*used_to)[i].reinterpret<UInt64>();
+                }
             }
-        }
-        else if (from[0].getType() == Field::Types::String && to[0].getType() != Field::Types::String)
-        {
-            table_string_to_num = std::make_unique<StringToNum>();
-            auto & table = *table_string_to_num;
-            for (size_t i = 0; i < size; ++i)
+            else
             {
-                const String & str_from = from[i].get<const String &>();
-                StringRef ref{string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
-                table[ref] = (*used_to)[i].reinterpret<UInt64>();
-            }
-        }
-        else if (from[0].getType() == Field::Types::String && to[0].getType() == Field::Types::String)
-        {
-            table_string_to_string = std::make_unique<StringToString>();
-            auto & table = *table_string_to_string;
-            for (size_t i = 0; i < size; ++i)
-            {
-                const String & str_from = from[i].get<const String &>();
-                const String & str_to = to[i].get<const String &>();
-                StringRef ref_from{string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
-                StringRef ref_to{string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
-                table[ref_from] = ref_to;
+                cache.table_string_to_string = std::make_unique<Cache::StringToString>();
+                auto & table = *cache.table_string_to_string;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    const String & str_from = from[i].get<const String &>();
+                    const String & str_to = to[i].get<const String &>();
+                    StringRef ref_from{cache.string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
+                    StringRef ref_to{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
+                    table[ref_from] = ref_to;
+                }
             }
         }
 
-        initialized = true;
+        cache.initialized = true;
     }
 };
+
+}
 
 void registerFunctionTransform(FunctionFactory & factory)
 {

@@ -2,11 +2,11 @@
 
 #include <Core/Block.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/SizeLimits.h>
 #include <DataStreams/ExecutionSpeedLimits.h>
+#include <DataStreams/SizeLimits.h>
+#include <DataStreams/StreamLocalLimits.h>
 #include <IO/Progress.h>
-#include <Storages/TableStructureLockHolder.h>
+#include <Storages/TableLockHolder.h>
 #include <Common/TypePromotion.h>
 
 #include <atomic>
@@ -66,12 +66,6 @@ public:
         return none;
     }
 
-    /// If this stream generates data in order by some keys, return true.
-    virtual bool isSortedOutput() const { return false; }
-
-    /// In case of isSortedOutput, return corresponding SortDescription
-    virtual const SortDescription & getSortDescription() const;
-
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).
       * NOTE: Only one thread can read from one instance of IBlockInputStream simultaneously.
@@ -100,7 +94,7 @@ public:
     virtual void readSuffix();
 
     /// Must be called before `read()` and `readPrefix()`.
-    void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1) const;
+    void dumpTree(WriteBuffer & ostr, size_t indent = 0, size_t multiplier = 1) const;
 
     /** Check the depth of the pipeline.
       * If max_depth is specified and the `depth` is greater - throw an exception.
@@ -109,7 +103,7 @@ public:
     size_t checkDepth(size_t max_depth) const { return checkDepthImpl(max_depth, max_depth); }
 
     /// Do not allow to change the table while the blocks stream and its children are alive.
-    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
 
     /// Get information about execution speed.
     const BlockStreamProfileInfo & getProfileInfo() const { return info; }
@@ -164,7 +158,7 @@ public:
 
     /** Set the approximate total number of rows to read.
       */
-    virtual void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
+    void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
 
 
     /** Ask to abort the receipt of data as soon as possible.
@@ -179,38 +173,13 @@ public:
     bool isCancelled() const;
     bool isCancelledOrThrowIfKilled() const;
 
-    /** What limitations and quotas should be checked.
-      * LIMITS_CURRENT - checks amount of data returned by current stream only (BlockStreamProfileInfo is used for check).
-      *  Currently it is used in root streams to check max_result_{rows,bytes} limits.
-      * LIMITS_TOTAL - checks total amount of read data from leaf streams (i.e. data read from disk and remote servers).
-      *  It is checks max_{rows,bytes}_to_read in progress handler and use info from ProcessListElement::progress_in for this.
-      *  Currently this check is performed only in leaf streams.
-      */
-    enum LimitsMode
-    {
-        LIMITS_CURRENT,
-        LIMITS_TOTAL,
-    };
-
-    /// It is a subset of limitations from Limits.
-    struct LocalLimits
-    {
-        LimitsMode mode = LIMITS_CURRENT;
-
-        SizeLimits size_limits;
-
-        ExecutionSpeedLimits speed_limits;
-
-        OverflowMode timeout_overflow_mode = OverflowMode::THROW;
-    };
-
     /** Set limitations that checked on each block. */
-    virtual void setLimits(const LocalLimits & limits_)
+    virtual void setLimits(const StreamLocalLimits & limits_)
     {
         limits = limits_;
     }
 
-    const LocalLimits & getLimits() const
+    const StreamLocalLimits & getLimits() const
     {
         return limits;
     }
@@ -229,7 +198,7 @@ public:
 protected:
     /// Order is important: `table_locks` must be destroyed after `children` so that tables from
     /// which child streams read are protected by the locks during the lifetime of the child streams.
-    std::vector<TableStructureReadLockHolder> table_locks;
+    std::vector<TableLockHolder> table_locks;
 
     BlockInputStreams children;
     std::shared_mutex children_mutex;
@@ -274,7 +243,7 @@ private:
 
     /// Limitations and quotas.
 
-    LocalLimits limits;
+    StreamLocalLimits limits;
 
     std::shared_ptr<const EnabledQuota> quota;    /// If nullptr - the quota is not used.
     UInt64 prev_elapsed = 0;

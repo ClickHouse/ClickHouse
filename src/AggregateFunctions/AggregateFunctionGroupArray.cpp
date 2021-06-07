@@ -9,6 +9,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -49,7 +50,7 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
 }
 
 
-AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
 
@@ -83,7 +84,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name,
         return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::NONE>>(argument_types[0], max_elems);
 }
 
-AggregateFunctionPtr createAggregateFunctionGroupArraySample(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionGroupArraySample(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
 
@@ -120,8 +121,10 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(const std::string &
 
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("groupArray", createAggregateFunctionGroupArray);
-    factory.registerFunction("groupArraySample", createAggregateFunctionGroupArraySample);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+
+    factory.registerFunction("groupArray", { createAggregateFunctionGroupArray, properties });
+    factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
 }
 
 }

@@ -7,6 +7,7 @@
 
 namespace DB
 {
+struct Settings;
 
 /** Aggregate function combinator allows to take one aggregate function
   *  and transform it to another aggregate function.
@@ -54,7 +55,7 @@ public:
 
     /** Create combined aggregate function (ex: sumIf)
       *  from nested function (ex: sum)
-      *  and arguments for combined agggregate function (ex: UInt64, UInt8 for sumIf).
+      *  and arguments for combined aggregate function (ex: UInt64, UInt8 for sumIf).
       * It's assumed that function transformArguments was called before this function and 'arguments' are validated.
       */
     virtual AggregateFunctionPtr transformAggregateFunction(

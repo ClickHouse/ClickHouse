@@ -9,7 +9,7 @@ ClickHouseのビルドはLinux、FreeBSD、Mac OS Xでサポートされてい�
 
 # Windowsを使用する場合 {#if-you-use-windows}
 
-Windowsを使用する場合は、Ubuntuで仮想マシンを作成する必要があります。 するのは、仮想マシンをインストールしてくださいVirtualBox. ダウンロードできますUbuntuのウェブサイト：https://www.ubuntu.com/\#download. を作成してください仮想マシンからダウンロードした画像を保少なくとも4GB RAMめます。 Ubuntuでコマンドライン端末を実行するには、その単語を含むプログラムを見つけてください “terminal” その名前で（gnome-terminal、konsoleなど。）または単にCtrl+Alt+Tを押します。
+Windowsを使用する場合は、Ubuntuで仮想マシンを作成する必要があります。 するのは、仮想マシンをインストールしてくださいVirtualBox. ダウンロードできますUbuntuのウェブサイト：https://www.ubuntu.com/#download. を作成してください仮想マシンからダウンロードした画像を保少なくとも4GB RAMめます。 Ubuntuでコマンドライン端末を実行するには、その単語を含むプログラムを見つけてください “terminal” その名前で（gnome-terminal、konsoleなど。）または単にCtrl+Alt+Tを押します。
 
 # 32ビットシステムを使用する場合 {#if-you-use-a-32-bit-system}
 
@@ -32,7 +32,7 @@ Ubuntuでこれを行うには、コマンドラインターミナルで実行�
     sudo apt update
     sudo apt install git
 
-簡単なマニュアルを使用Gitで、できるだけ早く送ってくださhttps://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+簡単なマニュアルを使用Gitで、できるだけ早く送ってくださhttps://education.github.com/git-cheat-sheet-education.pdf.
 詳細なマニュアルGit見https://git-scm.com/book/en/v2.
 
 # 開発マシンへのリポジトリの複製 {#cloning-a-repository-to-your-development-machine}
@@ -44,7 +44,7 @@ Ubuntuでこれを行うには、コマンドラインターミナルで実行�
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-注:、代理して下さい *your\_github\_username* 適切なもので！
+注:、代理して下さい *your_github_username* 適切なもので！
 
 このコマンドディレクトリの作成 `ClickHouse` プロジェクトの作業コピーを含む。
 
@@ -133,19 +133,19 @@ ArchまたはGentooを使用する場合は、おそらくCMakeのインスト�
 
 ClickHouseはビルドに複数の外部ライブラリを使用します。 それらのすべては、サブモジュールにあるソースからClickHouseと一緒に構築されているので、別々にインストールする必要はありません。 リストは次の場所で確認できます `contrib`.
 
-# C++コンパイラ {#c-compiler}
+## C++ Compiler {#c-compiler}
 
-ClickHouseのビルドには、バージョン9以降のGCCとClangバージョン8以降のコンパイラがサポートされます。
+Compilers Clang starting from version 11 is supported for building ClickHouse.
 
-公式のYandexビルドは、わずかに優れたパフォーマンスのマシンコードを生成するため、GCCを使用しています（私たちのベンチマークに応じて最大数パーセントの そしてClangは開発のために通常より便利です。 が、当社の継続的インテグレーション（CI)プラットフォームを運チェックのための十数の組み合わせとなります。
+Clang should be used instead of gcc. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
-UBUNTUにGCCをインストールするには: `sudo apt install gcc g++`
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
-Gccのバージョンを確認する: `gcc --version`. の場合は下記9その指示に従う。https://clickhouse.tech/docs/ja/development/build/#install-gcc-9.
+```bash
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+```
 
-Mac OS XのビルドはClangでのみサポートされています。 ちょうど実行 `brew install llvm`
-
-Clangを使用する場合は、次のものもインストールできます `libc++` と `lld` あなたがそれが何であるか知っていれば。 を使用して `ccache` また、推奨されます。
+Mac OS X build is also supported. Just run `brew install llvm`
 
 # 建築プロセス {#the-building-process}
 
@@ -154,16 +154,9 @@ ClickHouseを構築する準備ができたので、別のディレクトリを�
     mkdir build
     cd build
 
-いくつかの異なるディレクトリ（build\_release、build\_debugなど）を持つことができます。）ビルドの異なるタイプのために。
+いくつかの異なるディレクトリ（build_release、build_debugなど）を持つことができます。）ビルドの異なるタイプのために。
 
 中の間 `build` cmakeを実行してビルドを構成します。 最初の実行の前に、コンパイラ（この例ではバージョン9gccコンパイラ）を指定する環境変数を定義する必要があります。
-
-Linux:
-
-    export CC=gcc-9 CXX=g++-9
-    cmake ..
-
-Mac OS X:
 
     export CC=clang CXX=clang++
     cmake ..
@@ -212,7 +205,7 @@ Mac OS X:
 
 この場合、ClickHouseは現在のディレクトリにある設定ファイルを使用します。 実行できます `clickhouse server` からのディレクトリのパスを指定し、設定ファイルとしてコマンドラインパラメータ `--config-file`.
 
-別のターミナルでclickhouse-clientを使用してClickHouseに接続するには、次の場所に移動します `ClickHouse/build/programs/` と実行 `clickhouse client`.
+別のターミナルでclickhouse-clientを使用してClickHouseに接続するには、次の場所に移動します `ClickHouse/build/programs/` と実行 `./clickhouse client`.
 
 あなたが得る場合 `Connection refused` メッセージMac OS XまたはFreeBSDでは、ホストアドレス127.0.0.1を指定してみます:
 
@@ -249,7 +242,7 @@ KDevelopとQTCreatorは、ClickHouseを開発するためのIDEの他の優れ�
 
 筆記試験：https://clickhouse.tech/docs/en/development/tests/
 
-タスクのリスト：https://github.com/ClickHouse/ClickHouse/contribute
+タスクのリスト：https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # テストデータ {#test-data}
 
@@ -257,8 +250,8 @@ KDevelopとQTCreatorは、ClickHouseを開発するためのIDEの他の優れ�
 
     sudo apt install wget xz-utils
 
-    wget https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz
-    wget https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

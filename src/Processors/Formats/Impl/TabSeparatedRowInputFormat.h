@@ -28,22 +28,21 @@ public:
 
     void resetParser() override;
 
-private:
+protected:
     bool with_names;
     bool with_types;
     const FormatSettings format_settings;
+
+    virtual bool readField(IColumn & column, const DataTypePtr & type,
+        const SerializationPtr & serialization, bool is_last_file_column);
+
+private:
     DataTypes data_types;
 
     using IndexesMap = std::unordered_map<String, size_t>;
     IndexesMap column_indexes_by_names;
 
-    using OptionalIndexes = std::vector<std::optional<size_t>>;
-    OptionalIndexes column_indexes_for_input_fields;
-
-    std::vector<UInt8> read_columns;
     std::vector<size_t> columns_to_fill_with_default_values;
-
-    bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column);
 
     void addInputColumn(const String & column_name);
     void setupAllColumnsByTableSchema();

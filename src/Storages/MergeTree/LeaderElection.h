@@ -9,17 +9,6 @@
 #include <Core/BackgroundSchedulePool.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event LeaderElectionAcquiredLeadership;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric LeaderElection;
-}
-
-
 namespace zkutil
 {
 
@@ -91,12 +80,10 @@ private:
 
     std::atomic<bool> shutdown_called {false};
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::LeaderElection};
-
     void createNode()
     {
         shutdown_called = false;
-        node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
+        node = EphemeralNodeHolder::createSequential(fs::path(path) / "leader_election-", zookeeper, identifier);
 
         std::string node_path = node->getPath();
         node_name = node_path.substr(node_path.find_last_of('/') + 1);
@@ -125,20 +112,19 @@ private:
 
             String value = zookeeper.get(path + "/" + children.front());
 
-#if !defined(ARCADIA_BUILD) /// C++20; Replicated tables are unused in Arcadia.
             if (value.ends_with(suffix))
             {
-                ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
                 handler();
                 return;
             }
-#endif
+
             if (my_node_it == children.begin())
                 throw Poco::Exception("Assertion failed in LeaderElection");
 
             /// Watch for the node in front of us.
             --my_node_it;
-            if (!zookeeper.existsWatch(path + "/" + *my_node_it, nullptr, task->getWatchCallback()))
+            std::string get_path_value;
+            if (!zookeeper.tryGetWatch(path + "/" + *my_node_it, get_path_value, nullptr, task->getWatchCallback()))
                 task->schedule();
 
             success = true;

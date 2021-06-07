@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os
 import sys
 import signal
@@ -30,6 +30,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.send('CREATE LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt')
     client1.expect(prompt)
     client1.send('WATCH test.lv EVENTS')
+    client1.expect('version')
     client1.expect('1.*' + end_of_block)
     client2.send('INSERT INTO test.mt VALUES (1),(2),(3)')
     client1.expect('2.*' + end_of_block)

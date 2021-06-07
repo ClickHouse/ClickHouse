@@ -17,7 +17,7 @@
         <table_exists>file('test_some_expr_matches.values', Values, 'i Int64, ari Array(Int64), ars Array(String)')</table_exists>
     </preconditions>
 
-    <query>select * from file('test_all_expr_matches.values', Values, 'd DateTime, i UInt32, s String, ni Nullable(UInt64), ns Nullable(String), ars Array(String)')</query>
-    <query>select * from file('test_some_expr_matches.values', Values, 'i Int64, ari Array(Int64), ars Array(String)')</query>
+    <query>select * from file('test_all_expr_matches.values', Values, 'd DateTime, i UInt32, s String, ni Nullable(UInt64), ns Nullable(String), ars Array(String)') format Null</query>
+    <query>select * from file('test_some_expr_matches.values', Values, 'i Int64, ari Array(Int64), ars Array(String)') format Null</query>
 
 </test>

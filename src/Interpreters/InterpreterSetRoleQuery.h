@@ -7,16 +7,14 @@
 namespace DB
 {
 
-class Context;
 class ASTSetRoleQuery;
 struct RolesOrUsersSet;
 struct User;
 
-
-class InterpreterSetRoleQuery : public IInterpreter
+class InterpreterSetRoleQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterSetRoleQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
+    InterpreterSetRoleQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 
@@ -27,6 +25,6 @@ private:
     void setDefaultRole(const ASTSetRoleQuery & query);
 
     ASTPtr query_ptr;
-    Context & context;
 };
+
 }

@@ -1,8 +1,7 @@
 #include "MergeTreeDataPartCompact.h"
+#include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Poco/File.h>
 
 
 namespace DB
@@ -21,8 +20,9 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
        MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT)
+        const std::optional<String> & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT, parent_part_)
 {
 }
 
@@ -31,13 +31,15 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT)
+        const std::optional<String> & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT, parent_part_)
 {
 }
 
 IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const NamesAndTypesList & columns_to_read,
+    const StorageMetadataPtr & metadata_snapshot,
     const MarkRanges & mark_ranges,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
@@ -47,15 +49,16 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
 {
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartCompact>(shared_from_this());
     return std::make_unique<MergeTreeReaderCompact>(
-        ptr, columns_to_read, uncompressed_cache,
+        ptr, columns_to_read, metadata_snapshot, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     const NamesAndTypesList & columns_list,
+    const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const CompressionCodecPtr & default_codec,
+    const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
@@ -68,13 +71,13 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
-        shared_from_this(), ordered_columns_list, indices_to_recalc,
-        index_granularity_info.marks_file_extension,
-        default_codec, writer_settings, computed_index_granularity);
+        shared_from_this(), ordered_columns_list, metadata_snapshot,
+        indices_to_recalc, index_granularity_info.marks_file_extension,
+        default_codec_, writer_settings, computed_index_granularity);
 }
 
 
-void MergeTreeDataPartCompact::calculateEachColumnSizesOnDisk(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
+void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
 {
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
     if (bin_checksum != checksums.files.end())
@@ -120,9 +123,9 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     index_granularity.setInitialized();
 }
 
-bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const IDataType &) const
+bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
 {
-    if (!getColumnPosition(column_name))
+    if (!getColumnPosition(column.name))
         return false;
 
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);

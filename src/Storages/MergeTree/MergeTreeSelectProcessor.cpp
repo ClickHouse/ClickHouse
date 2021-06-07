@@ -14,6 +14,7 @@ namespace ErrorCodes
 
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const MergeTreeData & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
     UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
@@ -29,16 +30,15 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool quiet)
     :
     MergeTreeBaseSelectProcessor{
-        storage_.getSampleBlockForColumns(required_columns_),
-        storage_, prewhere_info_, max_block_size_rows_,
+        metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
+        storage_, metadata_snapshot_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
-    check_columns(check_columns_),
-    path(data_part->getFullRelativePath())
+    check_columns(check_columns_)
 {
     /// Let's estimate total number of rows for progress bar.
     for (const auto & range : all_mark_ranges)
@@ -47,7 +47,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     size_t total_rows = data_part->index_granularity.getRowsCountInRanges(all_mark_ranges);
 
     if (!quiet)
-        LOG_TRACE(log, "Reading {} ranges from part {}, approx. {} rows starting from {}",
+        LOG_DEBUG(log, "Reading {} ranges from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
@@ -67,11 +67,13 @@ try
     }
     is_first_task = false;
 
-    task_columns = getReadTaskColumns(storage, data_part, required_columns, prewhere_info, check_columns);
+    task_columns = getReadTaskColumns(
+        storage, metadata_snapshot, data_part,
+        required_columns, prewhere_info, check_columns);
 
     auto size_predictor = (preferred_block_size_bytes == 0)
         ? nullptr
-        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, data_part->storage.getSampleBlock());
+        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, metadata_snapshot->getSampleBlock());
 
     /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
@@ -85,15 +87,15 @@ try
     if (!reader)
     {
         if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.global_context.getUncompressedCache();
+            owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
 
-        owned_mark_cache = storage.global_context.getMarkCache();
+        owned_mark_cache = storage.getContext()->getMarkCache();
 
-        reader = data_part->getReader(task_columns.columns, all_mark_ranges,
+        reader = data_part->getReader(task_columns.columns, metadata_snapshot, all_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 
         if (prewhere_info)
-            pre_reader = data_part->getReader(task_columns.pre_columns, all_mark_ranges,
+            pre_reader = data_part->getReader(task_columns.pre_columns, metadata_snapshot, all_mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
     }
 

@@ -3,6 +3,7 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -33,27 +34,46 @@ namespace
         }
 
         String authentication_type_name = Authentication::TypeInfo::get(authentication_type).name;
-        std::optional<String> password;
+        String by_keyword = "BY";
+        std::optional<String> by_value;
 
-        if (show_password)
+        if (
+            show_password ||
+            authentication_type == Authentication::LDAP ||
+            authentication_type == Authentication::KERBEROS
+        )
         {
             switch (authentication_type)
             {
                 case Authentication::PLAINTEXT_PASSWORD:
                 {
-                    password = authentication.getPassword();
+                    by_value = authentication.getPassword();
                     break;
                 }
                 case Authentication::SHA256_PASSWORD:
                 {
                     authentication_type_name = "sha256_hash";
-                    password = authentication.getPasswordHashHex();
+                    by_value = authentication.getPasswordHashHex();
                     break;
                 }
                 case Authentication::DOUBLE_SHA1_PASSWORD:
                 {
                     authentication_type_name = "double_sha1_hash";
-                    password = authentication.getPasswordHashHex();
+                    by_value = authentication.getPasswordHashHex();
+                    break;
+                }
+                case Authentication::LDAP:
+                {
+                    by_keyword = "SERVER";
+                    by_value = authentication.getLDAPServerName();
+                    break;
+                }
+                case Authentication::KERBEROS:
+                {
+                    by_keyword = "REALM";
+                    const auto & realm = authentication.getKerberosRealm();
+                    if (!realm.empty())
+                        by_value = realm;
                     break;
                 }
 
@@ -65,9 +85,12 @@ namespace
 
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << authentication_type_name
                       << (settings.hilite ? IAST::hilite_none : "");
-        if (password)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " BY " << (settings.hilite ? IAST::hilite_none : "")
-                << quoteString(*password);
+
+        if (by_value)
+        {
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << by_keyword << " "
+                          << (settings.hilite ? IAST::hilite_none : "") << quoteString(*by_value);
+        }
     }
 
 
@@ -180,6 +203,13 @@ namespace
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
         settings.format(format);
     }
+
+
+    void formatGrantees(const ASTRolesOrUsersSet & grantees, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " GRANTEES " << (settings.hilite ? IAST::hilite_none : "");
+        grantees.format(settings);
+    }
 }
 
 
@@ -237,5 +267,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (settings && (!settings->empty() || alter))
         formatSettings(*settings, format);
+
+    if (grantees)
+        formatGrantees(*grantees, format);
 }
 }

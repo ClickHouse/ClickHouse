@@ -15,6 +15,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -149,7 +150,7 @@ public:
         parsePattern();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
 
@@ -163,17 +164,17 @@ public:
         this->data(place).add(timestamp, events);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }
@@ -261,7 +262,7 @@ private:
                     if (actions.back().type != PatternActionType::SpecificEvent &&
                         actions.back().type != PatternActionType::AnyEvent &&
                         actions.back().type != PatternActionType::KleeneStar)
-                        throw Exception{"Temporal condition should be preceeded by an event condition", ErrorCodes::BAD_ARGUMENTS};
+                        throw Exception{"Temporal condition should be preceded by an event condition", ErrorCodes::BAD_ARGUMENTS};
 
                     pattern_has_time = true;
                     actions.emplace_back(type, duration);
@@ -560,7 +561,9 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt8>(); }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         this->data(place).sort();
 
@@ -588,14 +591,16 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        const_cast<Data &>(this->data(place)).sort();
+        this->data(place).sort();
         assert_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
     }
 
 private:
-    UInt64 count(const ConstAggregateDataPtr & place) const
+    UInt64 count(ConstAggregateDataPtr __restrict place) const
     {
         const auto & data_ref = this->data(place);
 

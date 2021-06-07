@@ -24,25 +24,26 @@ class StorageTinyLog final : public ext::shared_ptr_helper<StorageTinyLog>, publ
 public:
     String getName() const override { return "TinyLog"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
+    CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) override;
 
+    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
+    bool supportsSubcolumns() const override { return true; }
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
-
-    void drop() override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
 protected:
     StorageTinyLog(
@@ -51,6 +52,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         bool attach,
         size_t max_compress_block_size_);
 
@@ -69,11 +71,11 @@ private:
     Files files;
 
     FileChecker file_checker;
-    mutable std::shared_mutex rwlock;
+    std::shared_timed_mutex rwlock;
 
     Poco::Logger * log;
 
-    void addFiles(const String & column_name, const IDataType & type);
+    void addFiles(const NameAndTypePair & column);
 };
 
 }

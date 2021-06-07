@@ -1,5 +1,6 @@
 #pragma once
 
+#include <type_traits>
 #include <common/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
@@ -24,10 +25,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
-/// Is the LIKE expression reduced to finding a substring in a string?
+/// Is the [I]LIKE expression reduced to finding a substring in a string?
 static inline bool likePatternIsStrstr(const String & pattern, String & res)
 {
     res = "";
@@ -67,25 +69,38 @@ static inline bool likePatternIsStrstr(const String & pattern, String & res)
     return true;
 }
 
-/** 'like' - if true, treat pattern as SQL LIKE; if false - treat pattern as re2 regexp.
-  * NOTE: We want to run regexp search for whole block by one call (as implemented in function 'position')
+/** 'like' - if true, treat pattern as SQL LIKE or ILIKE; if false - treat pattern as re2 regexp.
+  * NOTE: We want to run regexp search for whole columns by one call (as implemented in function 'position')
   *  but for that, regexp engine must support \0 bytes and their interpretation as string boundaries.
   */
-template <bool like, bool revert = false>
+template <bool like, bool revert = false, bool case_insensitive = false>
 struct MatchImpl
 {
     static constexpr bool use_default_implementation_for_constants = true;
+    static constexpr bool supports_start_pos = false;
 
     using ResultType = UInt8;
 
+    using Searcher = std::conditional_t<case_insensitive,
+          VolnitskyCaseInsensitiveUTF8,
+          VolnitskyUTF8>;
+
     static void vectorConstant(
-        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
+        const std::string & pattern,
+        const ColumnPtr & start_pos,
+        PaddedPODArray<UInt8> & res)
     {
+        if (start_pos != nullptr)
+            throw Exception("Functions 'like' and 'match' don't support start_pos argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         if (offsets.empty())
             return;
 
         String strstr_pattern;
-        /// A simple case where the LIKE expression reduces to finding a substring in a string
+
+        /// A simple case where the [I]LIKE expression reduces to finding a substring in a string
         if (like && likePatternIsStrstr(pattern, strstr_pattern))
         {
             const UInt8 * begin = data.data();
@@ -96,7 +111,7 @@ struct MatchImpl
             size_t i = 0;
 
             /// TODO You need to make that `searcher` is common to all the calls of the function.
-            Volnitsky searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
+            Searcher searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
 
             /// We will search for the next occurrence in all rows at once.
             while (pos < end && end != (pos = searcher.search(pos, end - pos)))
@@ -126,7 +141,7 @@ struct MatchImpl
         {
             size_t size = offsets.size();
 
-            const auto & regexp = Regexps::get<like, true>(pattern);
+            auto regexp = Regexps::get<like, true, case_insensitive>(pattern);
 
             std::string required_substring;
             bool is_trivial;
@@ -170,7 +185,7 @@ struct MatchImpl
                 /// The current index in the array of strings.
                 size_t i = 0;
 
-                Volnitsky searcher(required_substring.data(), required_substring.size(), end - pos);
+                Searcher searcher(required_substring.data(), required_substring.size(), end - pos);
 
                 /// We will search for the next occurrence in all rows at once.
                 while (pos < end && end != (pos = searcher.search(pos, end - pos)))
@@ -229,7 +244,8 @@ struct MatchImpl
 
     /// Very carefully crafted copy-paste.
     static void vectorFixedConstant(
-        const ColumnString::Chars & data, size_t n, const std::string & pattern, PaddedPODArray<UInt8> & res)
+        const ColumnString::Chars & data, size_t n, const std::string & pattern,
+        PaddedPODArray<UInt8> & res)
     {
         if (data.empty())
             return;
@@ -248,7 +264,7 @@ struct MatchImpl
             /// If pattern is larger than string size - it cannot be found.
             if (strstr_pattern.size() <= n)
             {
-                Volnitsky searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
+                Searcher searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
 
                 /// We will search for the next occurrence in all rows at once.
                 while (pos < end && end != (pos = searcher.search(pos, end - pos)))
@@ -281,7 +297,7 @@ struct MatchImpl
         {
             size_t size = data.size() / n;
 
-            const auto & regexp = Regexps::get<like, true>(pattern);
+            auto regexp = Regexps::get<like, true>(pattern);
 
             std::string required_substring;
             bool is_trivial;
@@ -328,7 +344,7 @@ struct MatchImpl
                 /// If required substring is larger than string size - it cannot be found.
                 if (strstr_pattern.size() <= n)
                 {
-                    Volnitsky searcher(required_substring.data(), required_substring.size(), end - pos);
+                    Searcher searcher(required_substring.data(), required_substring.size(), end - pos);
 
                     /// We will search for the next occurrence in all rows at once.
                     while (pos < end && end != (pos = searcher.search(pos, end - pos)))

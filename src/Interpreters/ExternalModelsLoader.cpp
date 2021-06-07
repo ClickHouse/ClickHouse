@@ -11,11 +11,10 @@ namespace ErrorCodes
 }
 
 
-ExternalModelsLoader::ExternalModelsLoader(Context & context_)
-    : ExternalLoader("external model", &Poco::Logger::get("ExternalModelsLoader"))
-    , context(context_)
+ExternalModelsLoader::ExternalModelsLoader(ContextPtr context_)
+    : ExternalLoader("external model", &Poco::Logger::get("ExternalModelsLoader")), WithContext(context_)
 {
-    setConfigSettings({"model", "name", {}});
+    setConfigSettings({"model", "name", {}, {}});
     enablePeriodicUpdates(true);
 }
 
@@ -31,7 +30,7 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
     {
         return std::make_unique<CatBoostModel>(
                 name, config.getString(config_prefix + ".path"),
-                context.getConfigRef().getString("catboost_dynamic_library_path"),
+                getContext()->getConfigRef().getString("catboost_dynamic_library_path"),
                 lifetime
         );
     }

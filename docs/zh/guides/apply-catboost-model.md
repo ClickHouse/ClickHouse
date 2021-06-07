@@ -7,35 +7,37 @@ toc_title: "\u5E94\u7528CatBoost\u6A21\u578B"
 
 # 在ClickHouse中应用Catboost模型 {#applying-catboost-model-in-clickhouse}
 
-[CatBoost](https://catboost.ai) 是一个自由和开源的梯度提升库开发 [Yandex](https://yandex.com/company/) 用于机器学习。
+[CatBoost](https://catboost.ai) 是一个由[Yandex](https://yandex.com/company/)开发的开源免费机器学习库。
 
-通过此指令，您将学习如何通过从SQL运行模型推理在ClickHouse中应用预先训练好的模型。
 
-在ClickHouse中应用CatBoost模型:
+通过这篇指导，您将学会如何用SQL建模，使用ClickHouse预先训练好的模型来推断数据。
 
-1.  [创建表](#create-table).
+
+在ClickHouse中应用CatBoost模型的一般过程:
+
+1.  [创建数据表](#create-table).
 2.  [将数据插入到表中](#insert-data-to-table).
-3.  [碌莽禄into拢Integrate010-68520682\<url\>](#integrate-catboost-into-clickhouse) （可选步骤）。
-4.  [从SQL运行模型推理](#run-model-inference).
+3.  [将CatBoost集成到ClickHouse中](#integrate-catboost-into-clickhouse) （可跳过）。
+4.  [从SQL运行模型推断](#run-model-inference).
 
-有关训练CatBoost模型的详细信息，请参阅 [培训和应用模型](https://catboost.ai/docs/features/training.html#training).
+有关训练CatBoost模型的详细信息，请参阅 [训练和模型应用](https://catboost.ai/docs/features/training.html#training).
 
 ## 先决条件 {#prerequisites}
 
-如果你没有 [Docker](https://docs.docker.com/install/) 然而，安装它。
+请先安装 [Docker](https://docs.docker.com/install/)。
 
 !!! note "注"
-    [Docker](https://www.docker.com) 是一个软件平台，允许您创建容器，将CatBoost和ClickHouse安装与系统的其余部分隔离。
+    [Docker](https://www.docker.com) 是一个软件平台，用户可以用来创建独立于其余系统、集成CatBoost和ClickHouse的容器。
 
 在应用CatBoost模型之前:
 
-**1.** 拉 [码头窗口映像](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) 从注册表:
+**1.** 从容器仓库拉取docker映像 (https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) :
 
 ``` bash
 $ docker pull yandex/tutorial-catboost-clickhouse
 ```
 
-此Docker映像包含运行CatBoost和ClickHouse所需的所有内容：代码、运行时、库、环境变量和配置文件。
+此Docker映像包含运行CatBoost和ClickHouse所需的所有内容：代码、运行环境、库、环境变量和配置文件。
 
 **2.** 确保已成功拉取Docker映像:
 
@@ -51,7 +53,7 @@ yandex/tutorial-catboost-clickhouse   latest              622e4d17945b        22
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
 
-## 1. 创建表 {#create-table}
+## 1. 创建数据表 {#create-table}
 
 为训练样本创建ClickHouse表:
 
@@ -119,22 +121,24 @@ FROM amazon_train
 +-------+
 ```
 
-## 3. 碌莽禄into拢Integrate010-68520682\<url\> {#integrate-catboost-into-clickhouse}
+## 3. 将CatBoost集成到ClickHouse中 {#integrate-catboost-into-clickhouse}
 
 !!! note "注"
-    **可选步骤。** Docker映像包含运行CatBoost和ClickHouse所需的所有内容。
+    **可跳过。** Docker映像包含运行CatBoost和ClickHouse所需的所有内容。
 
-碌莽禄to拢integrate010-68520682\<url\>:
+CatBoost集成到ClickHouse步骤:
 
 **1.** 构建评估库。
 
-评估CatBoost模型的最快方法是编译 `libcatboostmodel.<so|dll|dylib>` 图书馆. 有关如何构建库的详细信息，请参阅 [CatBoost文件](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+评估CatBoost模型的最快方法是编译 `libcatboostmodel.<so|dll|dylib>` 库文件. 
 
-**2.** 例如，在任何地方和任何名称创建一个新目录, `data` 并将创建的库放入其中。 Docker映像已经包含了库 `data/libcatboostmodel.so`.
+有关如何构建库文件的详细信息，请参阅 [CatBoost文件](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
 
-**3.** 例如，在任何地方和任何名称为config model创建一个新目录, `models`.
+**2.** 创建一个新目录（位置与名称可随意指定）, 如 `data` 并将创建的库文件放入其中。 Docker映像已经包含了库 `data/libcatboostmodel.so`.
 
-**4.** 创建具有任意名称的模型配置文件，例如, `models/amazon_model.xml`.
+**3.** 创建一个新目录来放配置模型, 如 `models`.
+
+**4.** 创建一个模型配置文件，如 `models/amazon_model.xml`.
 
 **5.** 描述模型配置:
 
@@ -153,7 +157,7 @@ FROM amazon_train
 </models>
 ```
 
-**6.** 将CatBoost的路径和模型配置添加到ClickHouse配置:
+**6.** 将CatBoost库文件的路径和模型配置添加到ClickHouse配置:
 
 ``` xml
 <!-- File etc/clickhouse-server/config.d/models_config.xml. -->
@@ -161,11 +165,11 @@ FROM amazon_train
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
-## 4. 从SQL运行模型推理 {#run-model-inference}
+## 4. 运行从SQL推断的模型 {#run-model-inference}
 
-对于测试模型，运行ClickHouse客户端 `$ clickhouse client`.
+测试模型是否正常，运行ClickHouse客户端 `$ clickhouse client`.
 
-让我们确保模型正常工作:
+让我们确保模型能正常工作:
 
 ``` sql
 :) SELECT
@@ -182,12 +186,12 @@ FROM amazon_train
     ACTION AS target
 FROM amazon_train
 LIMIT 10
-```
+``` 
 
 !!! note "注"
-    功能 [模型值](../sql-reference/functions/other-functions.md#function-modelevaluate) 返回带有多类模型的每类原始预测的元组。
+    函数 [modelEvaluate](../sql-reference/functions/other-functions.md#function-modelevaluate) 返回带有多类模型的每类原始预测的元组。
 
-让我们预测一下:
+执行预测:
 
 ``` sql
 :) SELECT
@@ -208,7 +212,7 @@ LIMIT 10
 ```
 
 !!! note "注"
-    更多信息 [exp()](../sql-reference/functions/math-functions.md) 功能。
+    查看函数说明 [exp()](../sql-reference/functions/math-functions.md) 。
 
 让我们计算样本的LogLoss:
 
@@ -234,6 +238,6 @@ FROM
 ```
 
 !!! note "注"
-    更多信息 [avg()](../sql-reference/aggregate-functions/reference.md#agg_function-avg) 和 [日志()](../sql-reference/functions/math-functions.md) 功能。
+    查看函数说明 [avg()](../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) 和 [log()](../sql-reference/functions/math-functions.md) 。
 
 [原始文章](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->

@@ -1,0 +1,12 @@
+0,"good"\n
+1,"good"\n
+2,"good"\n
+0\t2001-12-12\t1.4
+1\t2001-12-12\t1.4
+2\t2001-12-12\t1.4
+{"number":"0","toNullable(3)":3,"NULL":null}\n
+{"number":"1","toNullable(3)":3,"NULL":null}\n
+{"number":"2","toNullable(3)":3,"NULL":null}\n
+{"number":"0"}
+{"number":"1"}
+{"number":"2"}

@@ -1,3 +1,9 @@
+---
+toc_priority: 39
+toc_title: "Внешние словари"
+---
+
+
 # Внешние словари {#dicts-external-dicts}
 
 Существует возможность подключать собственные словари из различных источников данных. Источником данных для словаря может быть локальный текстовый/исполняемый файл, HTTP(s) ресурс или другая СУБД. Подробнее смотрите в разделе «[Источники внешних словарей](external-dicts-dict-sources.md)».
@@ -5,13 +11,13 @@
 ClickHouse:
 - Полностью или частично хранит словари в оперативной памяти.
 - Периодически обновляет их и динамически подгружает отсутствующие значения.
-- Позволяет создавать внешние словари с помощью xml-файлов или [DDL-запросов](../../statements/create.md#create-dictionary-query).
+- Позволяет создавать внешние словари с помощью xml-файлов или [DDL-запросов](../../statements/create/dictionary.md#create-dictionary-query).
 
-Конфигурация внешних словарей может находится в одном или нескольких xml-файлах. Путь к конфигурации указывается в параметре [dictionaries\_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config).
+Конфигурация внешних словарей может находится в одном или нескольких xml-файлах. Путь к конфигурации указывается в параметре [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config).
 
-Словари могут загружаться при старте сервера или при первом использовании, в зависимости от настройки [dictionaries\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load).
+Словари могут загружаться при старте сервера или при первом использовании, в зависимости от настройки [dictionaries_lazy_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load).
 
-Системная таблица [system.dictionaries](../../../operations/system-tables.md#system_tables-dictionaries) содержит информацию о словарях, сконфигурированных на сервере. Для каждого словаря там можно найти:
+Системная таблица [system.dictionaries](../../../operations/system-tables/dictionaries.md#system_tables-dictionaries) содержит информацию о словарях, сконфигурированных на сервере. Для каждого словаря там можно найти:
 
 - Статус словаря.
 - Конфигурационные параметры.
@@ -41,7 +47,7 @@ ClickHouse:
 
 В одном файле можно [сконфигурировать](external-dicts-dict.md) произвольное количество словарей.
 
-Если вы создаёте внешние словари [DDL-запросами](../../statements/create.md#create-dictionary-query), то не задавайте конфигурацию словаря в конфигурации сервера.
+Если вы создаёте внешние словари [DDL-запросами](../../statements/create/index.md#create-dictionary-query), то не задавайте конфигурацию словаря в конфигурации сервера.
 
 !!! attention "Внимание"
     Можно преобразовывать значения по небольшому словарю, описав его в запросе `SELECT` (см. функцию [transform](../../../sql-reference/functions/other-functions.md)). Эта функциональность не связана с внешними словарями.
@@ -55,4 +61,3 @@ ClickHouse:
 -   [Ключ и поля словаря](external-dicts-dict-structure.md)
 -   [Функции для работы с внешними словарями](../../../sql-reference/functions/ext-dict-functions.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts/) <!--hide-->

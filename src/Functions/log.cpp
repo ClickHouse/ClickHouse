@@ -4,12 +4,13 @@
 namespace DB
 {
 
+namespace
+{
+
 struct LogName { static constexpr auto name = "log"; };
 
 #if USE_FASTOPS
 
-namespace
-{
     struct Impl
     {
         static constexpr auto name = LogName::name;
@@ -22,13 +23,14 @@ namespace
             NFastOps::Log<true>(src, size, dst);
         }
     };
-}
 
 using FunctionLog = FunctionMathUnary<Impl>;
 
 #else
 using FunctionLog = FunctionMathUnary<UnaryFunctionVectorized<LogName, log>>;
 #endif
+
+}
 
 void registerFunctionLog(FunctionFactory & factory)
 {

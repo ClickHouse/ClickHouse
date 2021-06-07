@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/PODArray.h>
 
 #include <algorithm>
@@ -77,30 +77,29 @@ private:
 
     static std::vector<String> release(DistanceIndexQueue & queue, const std::vector<String> & prompting_strings)
     {
-        std::vector<String> ans;
-        ans.reserve(queue.size());
+        std::vector<String> answer;
+        answer.reserve(queue.size());
         while (!queue.empty())
         {
             auto top = queue.top();
             queue.pop();
-            ans.push_back(prompting_strings[top.second]);
+            answer.push_back(prompting_strings[top.second]);
         }
-        std::reverse(ans.begin(), ans.end());
-        return ans;
+        std::reverse(answer.begin(), answer.end());
+        return answer;
     }
 };
 
-template <size_t MaxNumHints, class Self>
+
+template <size_t MaxNumHints, typename Self>
 class IHints
 {
 public:
-
     virtual std::vector<String> getAllRegisteredNames() const = 0;
 
     std::vector<String> getHints(const String & name) const
     {
-        static const auto registered_names = getAllRegisteredNames();
-        return prompter.getHints(name, registered_names);
+        return prompter.getHints(name, getAllRegisteredNames());
     }
 
     virtual ~IHints() = default;

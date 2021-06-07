@@ -15,10 +15,12 @@ struct AbsImpl
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         if constexpr (IsDecimalNumber<A>)
-            return a < 0 ? A(-a) : a;
-        else if constexpr (is_integral_v<A> && is_signed_v<A>)
-            return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
-        else if constexpr (is_integral_v<A> && is_unsigned_v<A>)
+            return a < A(0) ? A(-a) : a;
+        else if constexpr (is_big_int_v<A> && is_signed_v<A>)
+            return (a < 0) ? -a : a;
+        else if constexpr (is_integer_v<A> && is_signed_v<A>)
+            return a < 0 ? static_cast<ResultType>(~a) + 1 : static_cast<ResultType>(a);
+        else if constexpr (is_integer_v<A> && is_unsigned_v<A>)
             return static_cast<ResultType>(a);
         else if constexpr (std::is_floating_point_v<A>)
             return static_cast<ResultType>(std::abs(a));

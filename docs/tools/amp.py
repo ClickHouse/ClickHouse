@@ -62,7 +62,6 @@ def build_amp(lang, args, cfg):
         for root, _, filenames in os.walk(site_temp):
             if 'index.html' in filenames:
                 paths.append(prepare_amp_html(lang, args, root, site_temp, main_site_dir))
-        test.test_amp(paths, lang)
     logging.info(f'Finished building AMP version for {lang}')
 
 
@@ -81,6 +80,15 @@ def html_to_amp(content):
             src = tag.attrs['src']
             if not (src.startswith('/') or src.startswith('http')):
                 tag.attrs['src'] = f'../{src}'
+            if not tag.attrs.get('width'):
+                tag.attrs['width'] = '640'
+            if not tag.attrs.get('height'):
+                tag.attrs['height'] = '320'
+        if tag.name == 'iframe':
+            tag.name = 'amp-iframe'
+            tag.attrs['layout'] = 'responsive'
+            del tag.attrs['alt']
+            del tag.attrs['allowfullscreen']
             if not tag.attrs.get('width'):
                 tag.attrs['width'] = '640'
             if not tag.attrs.get('height'):

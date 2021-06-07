@@ -22,9 +22,9 @@ DROP TABLE installation_stats;
 CREATE TEMPORARY TABLE Accounts (AccountID UInt64, Currency String);
 
 SELECT AccountID
-FROM 
+FROM
 (
-    SELECT 
+    SELECT
         AccountID, 
         Currency
     FROM Accounts 

@@ -42,6 +42,8 @@ WriteBufferToKafkaProducer::WriteBufferToKafkaProducer(
             timestamp_column_index = column_index;
         }
     }
+
+    reinitializeChunks();
 }
 
 WriteBufferToKafkaProducer::~WriteBufferToKafkaProducer()
@@ -57,7 +59,7 @@ void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t curren
         const std::string & last_chunk = chunks.back();
         size_t last_chunk_size = offset();
 
-        // if last character of last chunk is delimeter - we don't need it
+        // if last character of last chunk is delimiter - we don't need it
         if (delim && last_chunk[last_chunk_size - 1] == delim)
             --last_chunk_size;
 
@@ -108,9 +110,7 @@ void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t curren
             break;
         }
 
-        rows = 0;
-        chunks.clear();
-        set(nullptr, 0);
+        reinitializeChunks();
     }
 }
 
@@ -136,9 +136,24 @@ void WriteBufferToKafkaProducer::flush()
 
 void WriteBufferToKafkaProducer::nextImpl()
 {
+    addChunk();
+}
+
+void WriteBufferToKafkaProducer::addChunk()
+{
     chunks.push_back(std::string());
     chunks.back().resize(chunk_size);
     set(chunks.back().data(), chunk_size);
+}
+
+void WriteBufferToKafkaProducer::reinitializeChunks()
+{
+    rows = 0;
+    chunks.clear();
+    /// We cannot leave the buffer in the undefined state (i.e. without any
+    /// underlying buffer), since in this case the WriteBuffeR::next() will
+    /// not call our nextImpl() (due to available() == 0)
+    addChunk();
 }
 
 }

@@ -5,12 +5,6 @@ toc_title: Roadmap
 
 # Roadmap {#roadmap}
 
-## Q2 2020 {#q2-2020}
-
--   Integration with external authentication services
-
-## Q3 2020 {#q3-2020}
-
--   Resource pools for more precise distribution of cluster capacity between users
+The roadmap for the year 2021 is published for open discussion [here](https://github.com/ClickHouse/ClickHouse/issues/17623).
 
 {## [Original article](https://clickhouse.tech/docs/en/roadmap/) ##}

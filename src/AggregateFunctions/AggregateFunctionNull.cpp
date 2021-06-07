@@ -2,17 +2,22 @@
 #include <AggregateFunctions/AggregateFunctionNull.h>
 #include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinator
 {
@@ -68,8 +73,21 @@ public:
 
         assert(nested_function);
 
-        if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params))
+        if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params, properties))
             return adapter;
+
+        /// If applied to aggregate function with -State combinator, we apply -Null combinator to it's nested_function instead of itself.
+        /// Because Nullable AggregateFunctionState does not make sense and ruins the logic of managing aggregate function states.
+
+        if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(nested_function.get()))
+        {
+            auto transformed_nested_function = transformAggregateFunction(function_state->getNestedFunction(), properties, arguments, params);
+
+            return std::make_shared<AggregateFunctionState>(
+                transformed_nested_function,
+                transformed_nested_function->getArgumentTypes(),
+                transformed_nested_function->getParameters());
+        }
 
         bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getReturnType()->canBeInsideNullable();
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
@@ -104,6 +122,8 @@ public:
         }
     }
 };
+
+}
 
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory)
 {

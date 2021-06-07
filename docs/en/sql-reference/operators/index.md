@@ -1,5 +1,5 @@
 ---
-toc_priority: 37
+toc_priority: 38
 toc_title: Operators
 ---
 
@@ -53,13 +53,15 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `a NOT LIKE s` – The `notLike(a, b)` function.
 
+`a ILIKE s` – The `ilike(a, b)` function.
+
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 
 `a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
-*See [IN operators](in.md).*
+*See [IN operators](../../sql-reference/operators/in.md).*
 
 `a IN ...` – The `in(a, b)` function.
 
@@ -149,25 +151,47 @@ Types of intervals:
 - `QUARTER`
 - `YEAR`
 
+You can also use a string literal when setting the `INTERVAL` value. For example, `INTERVAL 1 HOUR` is identical to the `INTERVAL '1 hour'` or `INTERVAL '1' hour`.
+
 !!! warning "Warning"
     Intervals with different types can’t be combined. You can’t use expressions like `INTERVAL 4 DAY 1 HOUR`. Specify intervals in units that are smaller or equal to the smallest unit of the interval, for example, `INTERVAL 25 HOUR`. You can use consecutive operations, like in the example below.
 
-Example:
+Examples:
 
 ``` sql
-SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR;
 ```
 
 ``` text
 ┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
-│ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
+│ 2020-11-03 22:09:50 │                                    2020-11-08 01:09:50 │
 └─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+``` sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4 day' + INTERVAL '3 hour';
+```
+
+``` text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:12:10 │                                    2020-11-08 01:12:10 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+``` sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERVAL '3' hour;
+```
+
+``` text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay('4')), toIntervalHour('3'))─┐
+│ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
+└─────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
 **See Also**
 
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
--   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type convertion functions
+-   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
 
 ## Logical Negation Operator {#logical-negation-operator}
 
@@ -226,7 +250,7 @@ The following operators do not have a priority since they are brackets:
 ## Associativity {#associativity}
 
 All binary operators have left associativity. For example, `1 + 2 + 3` is transformed to `plus(plus(1, 2), 3)`.
-Sometimes this doesn’t work the way you expect. For example, `SELECT 4 > 2 > 3` will result in 0.
+Sometimes this does not work the way you expect. For example, `SELECT 4 > 2 > 3` will result in 0.
 
 For efficiency, the `and` and `or` functions accept any number of arguments. The corresponding chains of `AND` and `OR` operators are transformed into a single call of these functions.
 
@@ -272,4 +296,3 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/operators/) <!--hide-->

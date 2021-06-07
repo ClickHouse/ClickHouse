@@ -75,7 +75,7 @@ std::string determineDefaultTimeZone()
 
     try
     {
-        tz_database_path = fs::canonical(tz_database_path);
+        tz_database_path = fs::weakly_canonical(tz_database_path);
 
         /// The tzdata file exists. If it is inside the tz_database_dir,
         /// then the relative path is the time zone id.
@@ -91,7 +91,7 @@ std::string determineDefaultTimeZone()
             if (!tz_file_path.is_absolute())
                 tz_file_path = tz_database_path / tz_file_path;
 
-            tz_file_path = fs::canonical(tz_file_path);
+            tz_file_path = fs::weakly_canonical(tz_file_path);
 
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
@@ -152,7 +152,7 @@ const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) co
 
     auto it = impls.emplace(time_zone, nullptr).first;
     if (!it->second)
-        it->second = std::make_unique<DateLUTImpl>(time_zone);
+        it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
 
     return *it->second;
 }

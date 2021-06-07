@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/RowPolicy.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <unordered_map>

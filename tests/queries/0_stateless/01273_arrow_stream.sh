@@ -3,7 +3,8 @@
 set -e
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CUR_DIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
 
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS contributors"
@@ -56,13 +57,13 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types1 values (      127,       
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 FORMAT ArrowStream" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types2 FORMAT ArrowStream"
 
 echo original:
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 ORDER BY int8" | tee ${CLICKHOUSE_TMP}/arrow_all_types_1.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 ORDER BY int8" | tee "${CLICKHOUSE_TMP}"/arrow_all_types_1.dump
 echo converted:
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types2 ORDER BY int8" | tee ${CLICKHOUSE_TMP}/arrow_all_types_2.dump
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 ORDER BY int8 FORMAT ArrowStream" > ${CLICKHOUSE_TMP}/arrow_all_types_1.arrow
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types2 ORDER BY int8 FORMAT ArrowStream" > ${CLICKHOUSE_TMP}/arrow_all_types_2.arrow
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types2 ORDER BY int8" | tee "${CLICKHOUSE_TMP}"/arrow_all_types_2.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 ORDER BY int8 FORMAT ArrowStream" > "${CLICKHOUSE_TMP}"/arrow_all_types_1.arrow
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types2 ORDER BY int8 FORMAT ArrowStream" > "${CLICKHOUSE_TMP}"/arrow_all_types_2.arrow
 echo diff:
-diff ${CLICKHOUSE_TMP}/arrow_all_types_1.dump ${CLICKHOUSE_TMP}/arrow_all_types_2.dump
+diff "${CLICKHOUSE_TMP}"/arrow_all_types_1.dump "${CLICKHOUSE_TMP}"/arrow_all_types_2.dump
 
 ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE arrow_types2"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types3 values (       79,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str01',                  'fstr1', '2003-03-04', '2004-05-06')"
@@ -87,7 +88,7 @@ ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE arrow_types2"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE arrow_types5       (int8 Nullable(Int8), uint8 Nullable(UInt8), int16 Nullable(Int16), uint16 Nullable(UInt16), int32 Nullable(Int32), uint32 Nullable(UInt32), int64 Nullable(Int64), uint64 Nullable(UInt64), float32 Nullable(Float32), float64 Nullable(Float64), string Nullable(String), fixedstring Nullable(FixedString(15)), date Nullable(Date), datetime Nullable(DateTime)) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE arrow_types6       (int8 Nullable(Int8), uint8 Nullable(UInt8), int16 Nullable(Int16), uint16 Nullable(UInt16), int32 Nullable(Int32), uint32 Nullable(UInt32), int64 Nullable(Int64), uint64 Nullable(UInt64), float32 Nullable(Float32), float64 Nullable(Float64), string Nullable(String), fixedstring Nullable(FixedString(15)), date Nullable(Date), datetime Nullable(DateTime)) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types5 values (               NULL,                  NULL,                  NULL,                    NULL,                  NULL,                    NULL,                  NULL,                    NULL,                      NULL,                      NULL,                    NULL,                                  NULL,                NULL,                        NULL)"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types5 ORDER BY int8 FORMAT ArrowStream" > ${CLICKHOUSE_TMP}/arrow_all_types_5.arrow
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types5 ORDER BY int8 FORMAT ArrowStream" > "${CLICKHOUSE_TMP}"/arrow_all_types_5.arrow
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types5 ORDER BY int8 FORMAT ArrowStream" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types6 FORMAT ArrowStream"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 ORDER BY int8 FORMAT ArrowStream" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types6 FORMAT ArrowStream"
 echo dest from null:

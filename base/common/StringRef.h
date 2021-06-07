@@ -1,9 +1,11 @@
 #pragma once
 
+#include <cassert>
+#include <stdexcept> // for std::logic_error
 #include <string>
 #include <vector>
 #include <functional>
-#include <ostream>
+#include <iosfwd>
 
 #include <common/types.h>
 #include <common/unaligned.h>
@@ -20,17 +22,26 @@
 #endif
 
 
-/// The thing to avoid creating strings to find substrings in the hash table.
+/**
+ * The std::string_view-like container to avoid creating strings to find substrings in the hash table.
+ */
 struct StringRef
 {
     const char * data = nullptr;
     size_t size = 0;
 
+    /// Non-constexpr due to reinterpret_cast.
     template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    constexpr StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_) {}
+    StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_)
+    {
+        /// Sanity check for overflowed values.
+        assert(size < 0x8000000000000000ULL);
+    }
+
+    constexpr StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
 
     StringRef(const std::string & s) : data(s.data()), size(s.size()) {}
-    constexpr StringRef(const std::string_view & s) : data(s.data()), size(s.size()) {}
+    constexpr explicit StringRef(std::string_view s) : data(s.data()), size(s.size()) {}
     constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {}
     constexpr StringRef() = default;
 
@@ -39,6 +50,12 @@ struct StringRef
     explicit operator std::string() const { return toString(); }
     constexpr explicit operator std::string_view() const { return {data, size}; }
 };
+
+/// Here constexpr doesn't implicate inline, see https://www.viva64.com/en/w/v1043/
+/// nullptr can't be used because the StringRef values are used in SipHash's pointer arithmetic
+/// and the UBSan thinks that something like nullptr + 8 is UB.
+constexpr const inline char empty_string_ref_addr{};
+constexpr const inline StringRef EMPTY_STRING_REF{&empty_string_ref_addr, 0};
 
 using StringRefs = std::vector<StringRef>;
 
@@ -297,19 +314,4 @@ namespace ZeroTraits
 }
 
 
-inline bool operator==(StringRef lhs, const char * rhs)
-{
-    for (size_t pos = 0; pos < lhs.size; ++pos)
-        if (!rhs[pos] || lhs.data[pos] != rhs[pos])
-            return false;
-
-    return true;
-}
-
-inline std::ostream & operator<<(std::ostream & os, const StringRef & str)
-{
-    if (str.data)
-        os.write(str.data, str.size);
-
-    return os;
-}
+std::ostream & operator<<(std::ostream & os, const StringRef & str);

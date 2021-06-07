@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct IsInfiniteImpl
 {
@@ -31,6 +33,7 @@ struct IsInfiniteImpl
 
 using FunctionIsInfinite = FunctionNumericPredicate<IsInfiniteImpl>;
 
+}
 
 void registerFunctionIsInfinite(FunctionFactory & factory)
 {

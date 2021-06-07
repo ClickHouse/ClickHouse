@@ -1,21 +1,24 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Columns/IColumn.h>
 #include <DataStreams/IBlockStream_fwd.h>
+#include <Formats/FormatSettings.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <common/types.h>
+
+#include <boost/noncopyable.hpp>
 
 #include <functional>
 #include <memory>
 #include <unordered_map>
-#include <boost/noncopyable.hpp>
 
 namespace DB
 {
 
 class Block;
-class Context;
-struct FormatSettings;
+struct Settings;
+struct FormatFactorySettings;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -27,10 +30,15 @@ class IInputFormat;
 class IOutputFormat;
 
 struct RowInputFormatParams;
+struct RowOutputFormatParams;
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+FormatSettings getFormatSettings(ContextConstPtr context);
+
+template <typename T>
+FormatSettings getFormatSettings(ContextConstPtr context, const T & settings);
 
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
@@ -46,7 +54,7 @@ public:
       * Reads at least min_chunk_bytes and some more until the end of the chunk, depends on the format.
       * Used in ParallelParsingBlockInputStream.
       */
-    using FileSegmentationEngine = std::function<bool(
+    using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
         ReadBuffer & buf,
         DB::Memory<> & memory,
         size_t min_chunk_bytes)>;
@@ -71,16 +79,18 @@ private:
         WriteCallback callback,
         const FormatSettings & settings)>;
 
-    using InputProcessorCreator = std::function<InputFormatPtr(
-            ReadBuffer & buf,
-            const Block & header,
-            const RowInputFormatParams & params,
-            const FormatSettings & settings)>;
+    using InputProcessorCreatorFunc = InputFormatPtr(
+        ReadBuffer & buf,
+        const Block & header,
+        const RowInputFormatParams & params,
+        const FormatSettings & settings);
+
+    using InputProcessorCreator = std::function<InputProcessorCreatorFunc>;
 
     using OutputProcessorCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
-            WriteCallback callback,
+            const RowOutputFormatParams & params,
             const FormatSettings & settings)>;
 
     struct Creators
@@ -90,35 +100,66 @@ private:
         InputProcessorCreator input_processor_creator;
         OutputProcessorCreator output_processor_creator;
         FileSegmentationEngine file_segmentation_engine;
+        bool supports_parallel_formatting{false};
+        bool is_column_oriented{false};
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
-
     static FormatFactory & instance();
 
-    BlockInputStreamPtr getInput(
+    InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        const Context & context,
+        ContextConstPtr context,
         UInt64 max_block_size,
-        ReadCallback callback = {}) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context, WriteCallback callback = {}) const;
+    /// Checks all preconditions. Returns ordinary stream if parallel formatting cannot be done.
+    /// Currently used only in Client. Don't use it something else! Better look at getOutputFormatParallelIfPossible.
+    BlockOutputStreamPtr getOutputStreamParallelIfPossible(
+        const String & name,
+        WriteBuffer & buf,
+        const Block & sample,
+        ContextConstPtr context,
+        WriteCallback callback = {},
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+
+    /// Currently used only in Client. Don't use it something else! Better look at getOutputFormat.
+    BlockOutputStreamPtr getOutputStream(
+        const String & name,
+        WriteBuffer & buf,
+        const Block & sample,
+        ContextConstPtr context,
+        WriteCallback callback = {},
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        const Context & context,
+        ContextConstPtr context,
         UInt64 max_block_size,
-        ReadCallback callback = {}) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+
+    /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
+    OutputFormatPtr getOutputFormatParallelIfPossible(
+        const String & name,
+        WriteBuffer & buf,
+        const Block & sample,
+        ContextConstPtr context,
+        WriteCallback callback = {},
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(
-        const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}) const;
+        const String & name,
+        WriteBuffer & buf,
+        const Block & sample,
+        ContextConstPtr context,
+        WriteCallback callback = {},
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
@@ -128,84 +169,20 @@ public:
     void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
 
+    void markOutputFormatSupportsParallelFormatting(const String & name);
+    void markFormatAsColumnOriented(const String & name);
+
+    bool checkIfFormatIsColumnOriented(const String & name);
+
     const FormatsDictionary & getAllFormats() const
     {
         return dict;
     }
 
 private:
-    /// FormatsDictionary dict;
     FormatsDictionary dict;
-
-    FormatFactory();
 
     const Creators & getCreators(const String & name) const;
 };
-
-/// Formats for both input/output.
-
-void registerInputFormatNative(FormatFactory & factory);
-void registerOutputFormatNative(FormatFactory & factory);
-
-void registerInputFormatProcessorNative(FormatFactory & factory);
-void registerOutputFormatProcessorNative(FormatFactory & factory);
-void registerInputFormatProcessorRowBinary(FormatFactory & factory);
-void registerOutputFormatProcessorRowBinary(FormatFactory & factory);
-void registerInputFormatProcessorTabSeparated(FormatFactory & factory);
-void registerOutputFormatProcessorTabSeparated(FormatFactory & factory);
-void registerInputFormatProcessorValues(FormatFactory & factory);
-void registerOutputFormatProcessorValues(FormatFactory & factory);
-void registerInputFormatProcessorCSV(FormatFactory & factory);
-void registerOutputFormatProcessorCSV(FormatFactory & factory);
-void registerInputFormatProcessorTSKV(FormatFactory & factory);
-void registerOutputFormatProcessorTSKV(FormatFactory & factory);
-void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
-void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
-void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
-void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
-void registerInputFormatProcessorParquet(FormatFactory & factory);
-void registerOutputFormatProcessorParquet(FormatFactory & factory);
-void registerInputFormatProcessorArrow(FormatFactory & factory);
-void registerOutputFormatProcessorArrow(FormatFactory & factory);
-void registerInputFormatProcessorProtobuf(FormatFactory & factory);
-void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
-void registerInputFormatProcessorAvro(FormatFactory & factory);
-void registerOutputFormatProcessorAvro(FormatFactory & factory);
-void registerInputFormatProcessorTemplate(FormatFactory & factory);
-void registerOutputFormatProcessorTemplate(FormatFactory & factory);
-void registerInputFormatProcessorMsgPack(FormatFactory & factory);
-void registerOutputFormatProcessorMsgPack(FormatFactory & factory);
-
-/// File Segmentation Engines for parallel reading
-
-void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
-void registerFileSegmentationEngineCSV(FormatFactory & factory);
-void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
-void registerFileSegmentationEngineRegexp(FormatFactory & factory);
-void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
-
-/// Output only (presentational) formats.
-
-void registerOutputFormatNull(FormatFactory & factory);
-
-void registerOutputFormatProcessorPretty(FormatFactory & factory);
-void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
-void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
-void registerOutputFormatProcessorVertical(FormatFactory & factory);
-void registerOutputFormatProcessorJSON(FormatFactory & factory);
-void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
-void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
-void registerOutputFormatProcessorXML(FormatFactory & factory);
-void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
-void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
-void registerOutputFormatProcessorNull(FormatFactory & factory);
-void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
-void registerOutputFormatProcessorMarkdown(FormatFactory & factory);
-
-/// Input only formats.
-void registerInputFormatProcessorCapnProto(FormatFactory & factory);
-void registerInputFormatProcessorRegexp(FormatFactory & factory);
-void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
-void registerInputFormatProcessorORC(FormatFactory & factory);
 
 }

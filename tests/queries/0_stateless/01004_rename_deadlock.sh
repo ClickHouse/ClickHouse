@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 set -e
 
@@ -27,6 +28,7 @@ function thread2()
 function thread3()
 {
     while true; do
+        # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
         $CLICKHOUSE_CLIENT --query "SELECT * FROM system.tables" --format Null
     done
 }

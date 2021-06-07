@@ -1,4 +1,3 @@
-#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionDateOrDateTimeToSomething.h>
@@ -13,6 +12,9 @@ using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToD
 void registerFunctionToDayOfWeek(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToDayOfWeek>();
+
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToDayOfWeek>("DAYOFWEEK", FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -1,3 +1,8 @@
+---
+toc_priority: 35
+toc_title: AggregatingMergeTree
+---
+
 # AggregatingMergeTree {#aggregatingmergetree}
 
 Движок наследует функциональность [MergeTree](mergetree.md#table_engines-mergetree), изменяя логику слияния кусков данных. Все строки с одинаковым первичным ключом (точнее, с одинаковым [ключом сортировки](mergetree.md)) ClickHouse заменяет на одну (в пределах одного куска данных), которая хранит объединение состояний агрегатных функций.
@@ -92,4 +97,3 @@ GROUP BY StartDate
 ORDER BY StartDate;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/aggregatingmergetree/) <!--hide-->

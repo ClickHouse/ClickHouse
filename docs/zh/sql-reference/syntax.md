@@ -12,9 +12,9 @@ CH有2类解析器：完整SQL解析器（递归式解析器），以及数据�
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-含`INSERT INTO t VALUES` 的部分由完整SQL解析器处理，包含数据的部分 `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` 交给快速流式解析器解析。通过设置参数 [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions)，你也可以对数据部分开启完整SQL解析器。当 `input_format_values_interpret_expressions = 1` 时，CH优先采用快速流式解析器来解析数据。如果失败，CH再尝试用完整SQL解析器来处理，就像处理SQL [expression](#syntax-expressions) 一样。
+含`INSERT INTO t VALUES` 的部分由完整SQL解析器处理，包含数据的部分 `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` 交给快速流式解析器解析。通过设置参数 [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions)，你也可以对数据部分开启完整SQL解析器。当 `input_format_values_interpret_expressions = 1` 时，CH优先采用快速流式解析器来解析数据。如果失败，CH再尝试用完整SQL解析器来处理，就像处理SQL [expression](#syntax-expressions) 一样。
 
-数据可以采用任何格式。当CH接受到请求时，服务端先在内存中计算不超过 [max\_query\_size](../operations/settings/settings.md#settings-max_query_size) 字节的请求数据（默认1 mb），然后剩下部分交给快速流式解析器。
+数据可以采用任何格式。当CH接收到请求时，服务端先在内存中计算不超过 [max_query_size](../operations/settings/settings.md#settings-max_query_size) 字节的请求数据（默认1 mb），然后剩下部分交给快速流式解析器。
 
 这将避免在处理大型的 `INSERT`语句时出现问题。
 
@@ -38,7 +38,7 @@ CH支持SQL风格或C语言风格的注释：
 - 在某些流行的RDBMS中被实现的关键字，例如，`DateTime` 和 `datetime`是一样的
 
 
-你可以在系统表 [system.data_type_families](../operations/system-tables.md#system_tables-data_type_families) 中检查某个数据类型的名称是否是大小写敏感型。
+你可以在系统表 [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families) 中检查某个数据类型的名称是否是大小写敏感型。
 
 和标准SQL相反，所有其它的关键字都是 **大小写敏感的**，包括函数名称。
 In contrast to standard SQL, all other keywords (including functions names) are **case-sensitive**.
@@ -89,14 +89,11 @@ CH只支持用单引号包含的字母。特殊字符可通过反斜杠进行转
 在字符串中，你至少需要对 `'` 和 `\` 进行转义。单引号可以使用单引号转义，例如 `'It\'s'` 和 `'It''s'` 是相同的。
 
 ### 括号 {#compound}
+
 数组都是使用方括号进行构造 `[1, 2, 3]`，元组则使用圆括号 `(1, 'Hello, world!', 2)`
-
 从技术上来讲，这些都不是字符串，而是包含创建数组和元组运算符的表达式。
-
 创建一个数组必须至少包含一个元素，创建一个元组至少包含2个元素
-
 当元组出现在 `SELECT` 查询的 `IN` 部分时，是一种例外情形。查询结果可以包含元组，但是元组类型不能保存到数据库中（除非表采用 [内存表](../engines/table-engines/special/memory.md)引擎）
-
 
 ### NULL值 {#null-literal}
 
@@ -187,9 +184,8 @@ select查询中，星号可以代替表达式使用。详情请参见“select�
 
 ## 表达式 {#syntax-expressions}
 
-
-An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain an alias.
-A list of expressions is one or more expressions separated by commas.
-Functions and operators, in turn, can have expressions as arguments.
+表达式是函数、标识符、字符、运算符的应用程序、括号中的表达式、子查询或星号。它也可以包含别名。
+表达式列表是用逗号分隔的一个或多个表达式。
+反过来，函数和运算符可以将表达式作为参数。
 
 [原始文档](https://clickhouse.tech/docs/en/sql_reference/syntax/) <!--hide-->

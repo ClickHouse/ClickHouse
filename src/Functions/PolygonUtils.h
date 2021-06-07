@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <Core/TypeListNumber.h>
 #include <Columns/IColumn.h>
@@ -12,7 +12,7 @@
 /// Warning in boost::geometry during template strategy substitution.
 #pragma GCC diagnostic push
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
@@ -179,9 +179,9 @@ private:
     {
         inner,                                  /// The cell is completely inside polygon.
         outer,                                  /// The cell is completely outside of polygon.
-        singleLine,                             /// The cell is splitted to inner/outer part by a single line.
-        pairOfLinesSingleConvexPolygon,         /// The cell is splitted to inner/outer part by a polyline of two sections and inner part is convex.
-        pairOfLinesSingleNonConvexPolygons,     /// The cell is splitted to inner/outer part by a polyline of two sections and inner part is non convex.
+        singleLine,                             /// The cell is split to inner/outer part by a single line.
+        pairOfLinesSingleConvexPolygon,         /// The cell is split to inner/outer part by a polyline of two sections and inner part is convex.
+        pairOfLinesSingleNonConvexPolygons,     /// The cell is split to inner/outer part by a polyline of two sections and inner part is non convex.
         pairOfLinesDifferentPolygons,           /// The cell is spliited by two lines to three different parts.
         complexPolygon                          /// Generic case.
     };
@@ -285,7 +285,7 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     const Point & max_corner = box.max_corner();
 
 #pragma GCC diagnostic push
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
@@ -315,14 +315,14 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
     if (has_empty_bound)
         return;
 
-    cells.assign(grid_size * grid_size, {});
+    cells.assign(size_t(grid_size) * grid_size, {});
 
     const Point & min_corner = box.min_corner();
 
     for (size_t row = 0; row < grid_size; ++row)
     {
 #pragma GCC diagnostic push
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
         CoordinateType y_min = min_corner.y() + row * cell_height;
@@ -646,7 +646,7 @@ UInt128 sipHash128(Polygon && polygon)
         hash_ring(inner);
 
     UInt128 res;
-    hash.get128(res.low, res.high);
+    hash.get128(res);
     return res;
 }
 

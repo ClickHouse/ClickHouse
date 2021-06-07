@@ -24,16 +24,16 @@ The `Format` parameter specifies one of the available file formats. To perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](../../../interfaces/formats.md#formats) section.
 
-ClickHouse does not allow to specify filesystem path for`File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
+ClickHouse does not allow specifying filesystem path for`File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
 
 When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it’s put into `data.Format` file in that subdirectory.
 
-You may manually create this subfolder and file in server filesystem and then [ATTACH](../../../sql-reference/statements/misc.md) it to table information with matching name, so you can query data from that file.
+You may manually create this subfolder and file in server filesystem and then [ATTACH](../../../sql-reference/statements/attach.md) it to table information with matching name, so you can query data from that file.
 
 !!! warning "Warning"
     Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 
-## Example
+## Example {#example}
 
 **1.** Set up the `file_engine_table` table:
 
@@ -66,7 +66,8 @@ SELECT * FROM file_engine_table
 
 ## Usage in ClickHouse-local {#usage-in-clickhouse-local}
 
-In [clickhouse-local](../../../operations/utilities/clickhouse-local.md) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`.
+In [clickhouse-local](../../../operations/utilities/clickhouse-local.md) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`. It is possible to read and write compressed files based on an additional engine parameter or file extension (`gz`, `br` or `xz`).
+
 **Example:**
 
 ``` bash

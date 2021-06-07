@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Row.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 
@@ -21,7 +20,7 @@ class MergingSortedBlockInputStream : public IBlockInputStream
 {
 public:
     /** limit - if isn't 0, then we can produce only first limit rows in sorted order.
-      * out_row_sources - if isn't nullptr, then at the end of execution it should contain part numbers of each readed row (and needed flag)
+      * out_row_sources - if isn't nullptr, then at the end of execution it should contain part numbers of each read row (and needed flag)
       * quiet - don't log profiling info
       */
     MergingSortedBlockInputStream(
@@ -29,9 +28,6 @@ public:
         UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
 
     String getName() const override { return "MergingSorted"; }
-
-    bool isSortedOutput() const override { return true; }
-    const SortDescription & getSortDescription() const override { return description; }
 
     Block getHeader() const override { return header; }
 

@@ -1,10 +1,11 @@
+#pragma once
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 
 #include <memory>
@@ -13,12 +14,14 @@
 
 #include <Core/iostream_debug_helpers.h>
 
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -31,7 +34,7 @@ enum class ExtractAllGroupsResultKind
 
 /** Match all groups of given input string with given re, return array of arrays of matches.
  *
- * Depending on `Impl::Kind`, result is either grouped by grop id (Horizontal) or in order of appearance (Vertical):
+ * Depending on `Impl::Kind`, result is either grouped by group id (Horizontal) or in order of appearance (Vertical):
  *
  *  SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
  * =>
@@ -48,7 +51,7 @@ public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionExtractAllGroups>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionExtractAllGroups>(); }
 
     String getName() const override { return name; }
 
@@ -69,12 +72,12 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         static const auto MAX_GROUPS_COUNT = 128;
 
-        const ColumnPtr column_haystack = block.getByPosition(arguments[0]).column;
-        const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
+        const ColumnPtr column_haystack = arguments[0].column;
+        const ColumnPtr column_needle = arguments[1].column;
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
@@ -82,7 +85,8 @@ public:
             throw Exception("Length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
 
         using StringPiece = typename Regexps::Regexp::StringPieceType;
-        const auto & regexp = Regexps::get<false, false>(needle)->getRE2();
+        auto holder = Regexps::get<false, false>(needle);
+        const auto & regexp = holder->getRE2();
 
         if (!regexp)
             throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
@@ -128,7 +132,9 @@ public:
                     for (size_t group = 1; group <= groups_count; ++group)
                         data_col->insertData(matched_groups[group].data(), matched_groups[group].size());
 
-                    pos = matched_groups[0].data() + matched_groups[0].size();
+                    /// If match is empty - it's technically Ok but we have to shift one character nevertheless
+                    /// to avoid infinite loop.
+                    pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
 
                     current_nested_offset += groups_count;
                     nested_offsets_data.push_back(current_nested_offset);
@@ -141,11 +147,11 @@ public:
         }
         else
         {
-            std::vector<StringPiece> all_matches;
-            // number of times RE matched on each row of haystack column.
-            std::vector<size_t> number_of_matches_per_row;
+            PODArray<StringPiece, 0> all_matches;
+            /// Number of times RE matched on each row of haystack column.
+            PODArray<size_t, 0> number_of_matches_per_row;
 
-            // we expect RE to match multiple times on each row, `* 8` is arbitrary to reduce number of re-allocations.
+            /// We expect RE to match multiple times on each row, `* 8` is arbitrary to reduce number of re-allocations.
             all_matches.reserve(input_rows_count * groups_count * 8);
             number_of_matches_per_row.reserve(input_rows_count);
 
@@ -166,7 +172,14 @@ public:
                     for (size_t group = 1; group <= groups_count; ++group)
                         all_matches.push_back(matched_groups[group]);
 
-                    pos = matched_groups[0].data() + matched_groups[0].size();
+                    /// Additional limit to fail fast on supposedly incorrect usage, arbitrary value.
+                    static constexpr size_t MAX_MATCHES_PER_ROW = 1000;
+                    if (matches_per_row > MAX_MATCHES_PER_ROW)
+                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                                "Too many matches per row (> {}) in the result of function {}",
+                                MAX_MATCHES_PER_ROW, getName());
+
+                    pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
 
                     ++matches_per_row;
                 }
@@ -230,7 +243,7 @@ public:
 
         ColumnArray::MutablePtr nested_array_col = ColumnArray::create(std::move(data_col), std::move(nested_offsets_col));
         ColumnArray::MutablePtr root_array_col = ColumnArray::create(std::move(nested_array_col), std::move(root_offsets_col));
-        block.getByPosition(result).column = std::move(root_array_col);
+        return root_array_col;
     }
 };
 

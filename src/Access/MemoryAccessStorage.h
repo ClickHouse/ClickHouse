@@ -13,7 +13,11 @@ namespace DB
 class MemoryAccessStorage : public IAccessStorage
 {
 public:
-    MemoryAccessStorage(const String & storage_name_ = "memory");
+    static constexpr char STORAGE_TYPE[] = "memory";
+
+    MemoryAccessStorage(const String & storage_name_ = STORAGE_TYPE);
+
+    const char * getStorageType() const override { return STORAGE_TYPE; }
 
     /// Sets all entities at once.
     void setAll(const std::vector<AccessEntityPtr> & all_entities);
@@ -47,7 +51,7 @@ private:
     void setAllNoLock(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, Notifications & notifications);
     void prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const;
 
-    mutable std::mutex mutex;
+    mutable std::recursive_mutex mutex;
     std::unordered_map<UUID, Entry> entries_by_id; /// We want to search entries both by ID and by the pair of name and type.
     std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
     mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];

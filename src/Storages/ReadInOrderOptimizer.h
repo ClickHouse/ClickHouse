@@ -12,15 +12,17 @@ namespace DB
  *   common prefix, which is needed for
  *   performing reading in order of PK.
  */
+class Context;
+
 class ReadInOrderOptimizer
 {
 public:
     ReadInOrderOptimizer(
         const ManyExpressionActions & elements_actions,
         const SortDescription & required_sort_description,
-        const SyntaxAnalyzerResultPtr & syntax_result);
+        const TreeRewriterResultPtr & syntax_result);
 
-    InputOrderInfoPtr getInputOrder(const StoragePtr & storage) const;
+    InputOrderInfoPtr getInputOrder(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
 
 private:
     /// Actions for every element of order expression to analyze functions for monotonicity
@@ -28,5 +30,4 @@ private:
     NameSet forbidden_columns;
     SortDescription required_sort_description;
 };
-
 }

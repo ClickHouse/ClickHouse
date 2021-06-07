@@ -9,6 +9,7 @@ namespace DB
 class ASTQueryParameter;
 
 /// Visit substitutions in a query, replace ASTQueryParameter with ASTLiteral.
+/// Rebuild ASTIdentifiers if some parts are ASTQueryParameter.
 class ReplaceQueryParameterVisitor
 {
 public:
@@ -21,7 +22,9 @@ public:
 private:
     const NameToNameMap & query_parameters;
     const String & getParamValue(const String & name);
+    void visitIdentifier(ASTPtr & ast);
     void visitQueryParameter(ASTPtr & ast);
+    void visitChildren(ASTPtr & ast);
 };
 
 }

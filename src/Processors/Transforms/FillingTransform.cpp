@@ -1,6 +1,11 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/IDataType.h>
+#include <Core/Types.h>
+#include <DataTypes/DataTypesDecimal.h>
+
 
 namespace DB
 {
@@ -10,35 +15,57 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
+Block FillingTransform::transformHeader(Block header, const SortDescription & sort_description)
+{
+    NameSet sort_keys;
+    for (const auto & key : sort_description)
+        sort_keys.insert(key.column_name);
+
+    /// Columns which are not from sorting key may not be constant anymore.
+    for (auto & column : header)
+        if (column.column && isColumnConst(*column.column) && !sort_keys.count(column.name))
+            column.column = column.type->createColumn();
+
+    return header;
+}
 
 FillingTransform::FillingTransform(
         const Block & header_, const SortDescription & sort_description_)
-        : ISimpleTransform(header_, header_, true)
+        : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
         , sort_description(sort_description_)
         , filling_row(sort_description_)
         , next_row(sort_description_)
 {
-    std::vector<bool> is_fill_column(header_.columns());
-    for (const auto & elem : sort_description)
-        is_fill_column[header_.getPositionByName(elem.column_name)] = true;
-
-    auto try_convert_fields = [](FillColumnDescription & descr, const DataTypePtr & type)
+    auto try_convert_fields = [](auto & descr, const auto & type)
     {
         auto max_type = Field::Types::Null;
         WhichDataType which(type);
         DataTypePtr to_type;
-        if (isInteger(type) || which.isDateOrDateTime())
+
+        /// TODO Wrong results for big integers.
+        if (isInteger(type) || which.isDate() || which.isDateTime())
         {
             max_type = Field::Types::Int64;
             to_type = std::make_shared<DataTypeInt64>();
+        }
+        else if (which.isDateTime64())
+        {
+            max_type = Field::Types::Decimal64;
+            const auto & date_type = static_cast<const DataTypeDateTime64 &>(*type);
+            size_t precision = date_type.getPrecision();
+            size_t scale = date_type.getScale();
+            to_type = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
         }
         else if (which.isFloat())
         {
             max_type = Field::Types::Float64;
             to_type = std::make_shared<DataTypeFloat64>();
         }
+        else
+            return false;
 
-        if (descr.fill_from.getType() > max_type || descr.fill_to.getType() > max_type
+        if (descr.fill_from.getType() > max_type
+            || descr.fill_to.getType() > max_type
             || descr.fill_step.getType() > max_type)
             return false;
 
@@ -49,30 +76,32 @@ FillingTransform::FillingTransform(
         return true;
     };
 
-    for (size_t i = 0; i < header_.columns(); ++i)
+    std::vector<bool> is_fill_column(header_.columns());
+    for (size_t i = 0; i < sort_description.size(); ++i)
     {
-        if (is_fill_column[i])
+        size_t block_position = header_.getPositionByName(sort_description[i].column_name);
+        is_fill_column[block_position] = true;
+        fill_column_positions.push_back(block_position);
+
+        auto & descr = filling_row.getFillDescription(i);
+        const auto & type = header_.getByPosition(block_position).type;
+
+        if (!try_convert_fields(descr, type))
+            throw Exception("Incompatible types of WITH FILL expression values with column type "
+                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (type->isValueRepresentedByUnsignedInteger() &&
+            ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
+                (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
         {
-            size_t pos = fill_column_positions.size();
-            auto & descr = filling_row.getFillDescription(pos);
-            auto type = header_.getByPosition(i).type;
-            if (!try_convert_fields(descr, type))
-                throw Exception("Incompatible types of WITH FILL expression values with column type "
-                    + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-
-            if (type->isValueRepresentedByUnsignedInteger() &&
-                ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
-                    (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
-            {
-                throw Exception("WITH FILL bound values cannot be negative for unsigned type "
-                    + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-            }
-
-            fill_column_positions.push_back(i);
+            throw Exception("WITH FILL bound values cannot be negative for unsigned type "
+                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
         }
-        else
-            other_column_positions.push_back(i);
     }
+
+    for (size_t i = 0; i < header_.columns(); ++i)
+        if (!is_fill_column[i])
+            other_column_positions.push_back(i);
 }
 
 IProcessor::Status FillingTransform::prepare()
@@ -107,14 +136,15 @@ void FillingTransform::transform(Chunk & chunk)
     {
         for (size_t pos : positions)
         {
-            new_columns.push_back(old_columns[pos]);
-            new_mutable_columns.push_back(old_columns[pos]->cloneEmpty()->assumeMutable());
+            auto old_column = old_columns[pos]->convertToFullColumnIfConst();
+            new_columns.push_back(old_column);
+            new_mutable_columns.push_back(old_column->cloneEmpty()->assumeMutable());
         }
     };
 
     if (generate_suffix)
     {
-        const auto & empty_columns = inputs.front().getHeader().getColumns();
+        const auto & empty_columns = input.getHeader().getColumns();
         init_columns_by_positions(empty_columns, old_fill_columns, res_fill_columns, fill_column_positions);
         init_columns_by_positions(empty_columns, old_other_columns, res_other_columns, other_column_positions);
 

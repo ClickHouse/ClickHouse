@@ -42,20 +42,21 @@ NamesAndTypesList StorageSystemReplicationQueue::getNamesAndTypes()
         { "num_postponed",           std::make_shared<DataTypeUInt32>() },
         { "postpone_reason",         std::make_shared<DataTypeString>() },
         { "last_postpone_time",      std::make_shared<DataTypeDateTime>() },
+        { "merge_type",              std::make_shared<DataTypeString>() },
     };
 }
 
 
-void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
+void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
-    const auto access = context.getAccess();
+    const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
-        /// Lazy database can not contain replicated tables
-        if (db.second->getEngineName() == "Lazy")
+        /// Check if database can contain replicated tables
+        if (!db.second->canContainMergeTreeTables())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
@@ -145,6 +146,11 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const
             res_columns[col_num++]->insert(entry.num_postponed);
             res_columns[col_num++]->insert(entry.postpone_reason);
             res_columns[col_num++]->insert(UInt64(entry.last_postpone_time));
+
+            if (entry.type == ReplicatedMergeTreeLogEntryData::Type::MERGE_PARTS)
+                res_columns[col_num++]->insert(toString(entry.merge_type));
+            else
+                res_columns[col_num++]->insertDefault();
         }
     }
 }

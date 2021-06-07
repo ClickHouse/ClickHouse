@@ -1,34 +1,33 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <numeric>
+#include <Functions/GCDLCMImpl.h>
+
+#include <boost/integer/common_factor.hpp>
 
 
 namespace DB
 {
 
-template <typename A, typename B>
-struct GCDImpl
+namespace
 {
-    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
-    static const constexpr bool allow_fixed_string = false;
-
-    template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
-    {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
-        return std::gcd(
-            typename NumberTraits::ToInteger<Result>::Type(a),
-            typename NumberTraits::ToInteger<Result>::Type(b));
-    }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// exceptions (and a non-trivial algorithm)
-#endif
-};
 
 struct NameGCD { static constexpr auto name = "gcd"; };
-using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD, false>;
+
+template <typename A, typename B>
+struct GCDImpl : public GCDLCMImpl<A, B, GCDImpl<A, B>, NameGCD>
+{
+    using ResultType = typename GCDLCMImpl<A, B, GCDImpl, NameGCD>::ResultType;
+
+    static ResultType applyImpl(A a, B b)
+    {
+        using Int = typename NumberTraits::ToInteger<ResultType>::Type;
+        return boost::integer::gcd(Int(a), Int(b));
+    }
+};
+
+using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false, false>;
+
+}
 
 void registerFunctionGCD(FunctionFactory & factory)
 {

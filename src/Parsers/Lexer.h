@@ -40,6 +40,7 @@ namespace DB
     M(Arrow)                  /** ->. Should be distinguished from minus operator. */ \
     M(QuestionMark) \
     M(Colon) \
+    M(DoubleColon) \
     M(Equals) \
     M(NotEquals) \
     M(Less) \
@@ -48,7 +49,8 @@ namespace DB
     M(GreaterOrEquals) \
     M(Concatenation)          /** String concatenation operator: || */ \
     \
-    M(At)                     /** @. Used only for specifying user names. */ \
+    M(At)                     /** @. Used for specifying user names and also for MySQL-style variables. */ \
+    M(DoubleAt)               /** @@. Used for MySQL-style global variables. */ \
     \
     /** Order is important. EndOfStream goes after all usual tokens, and special error tokens goes after EndOfStream. */ \
     \

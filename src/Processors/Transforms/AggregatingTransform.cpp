@@ -1,10 +1,10 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <Common/ClickHouseRevision.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/ISource.h>
+#include <Processors/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-
+#include <DataStreams/materializeBlock.h>
 
 namespace ProfileEvents
 {
@@ -55,7 +55,7 @@ namespace
     public:
         SourceFromNativeStream(const Block & header, const std::string & path)
                 : ISource(header), file_in(path), compressed_in(file_in),
-                  block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get()))
+                  block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
         {
             block_in->readPrefix();
         }
@@ -95,7 +95,7 @@ public:
     struct SharedData
     {
         std::atomic<UInt32> next_bucket_to_merge = 0;
-        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed;
+        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed{};
         std::atomic<bool> is_cancelled = false;
 
         SharedData()
@@ -339,7 +339,7 @@ private:
         {
             params->aggregator.mergeWithoutKeyDataImpl(*data);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
-                    *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
+                *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
 
             setCurrentChunk(convertToChunk(block));
         }
@@ -379,9 +379,9 @@ private:
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
+            /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksSource>(
-                    params, data, shared_data, arena);
+            auto source = std::make_shared<ConvertingAggregatedToChunksSource>(params, data, shared_data, arena);
 
             processors.emplace_back(std::move(source));
         }
@@ -507,7 +507,7 @@ Processors AggregatingTransform::expandPipeline()
 
 void AggregatingTransform::consume(Chunk chunk)
 {
-    UInt64 num_rows = chunk.getNumRows();
+    const UInt64 num_rows = chunk.getNumRows();
 
     if (num_rows == 0 && params->params.empty_result_for_aggregation_by_empty_set)
         return;
@@ -518,11 +518,21 @@ void AggregatingTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
-    src_rows += chunk.getNumRows();
+    src_rows += num_rows;
     src_bytes += chunk.bytes();
 
-    if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
-        is_consume_finished = true;
+    if (params->only_merge)
+    {
+        auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
+        block = materializeBlock(block);
+        if (!params->aggregator.mergeBlock(block, variants, no_more_keys))
+            is_consume_finished = true;
+    }
+    else
+    {
+        if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
+            is_consume_finished = true;
+    }
 }
 
 void AggregatingTransform::initGenerate()
@@ -535,12 +545,17 @@ void AggregatingTransform::initGenerate()
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
-        params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
+    {
+        if (params->only_merge)
+            params->aggregator.mergeBlock(getInputs().front().getHeader(), variants, no_more_keys);
+        else
+            params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
+    }
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
 
-    LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+    LOG_DEBUG(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({:.3f} rows/sec., {}/sec.)",
         src_rows, rows, ReadableSize(src_bytes),
         elapsed_seconds, src_rows / elapsed_seconds,
         ReadableSize(src_bytes / elapsed_seconds));
@@ -585,23 +600,29 @@ void AggregatingTransform::initGenerate()
             }
         }
 
-        auto header = params->aggregator.getHeader(false);
-
         const auto & files = params->aggregator.getTemporaryFiles();
-        BlockInputStreams input_streams;
-        for (const auto & file : files.files)
-            processors.emplace_back(std::make_unique<SourceFromNativeStream>(header, file->path()));
+        Pipe pipe;
 
-        LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), ReadableSize(files.sum_size_compressed), ReadableSize(files.sum_size_uncompressed));
+        {
+            auto header = params->aggregator.getHeader(false);
+            Pipes pipes;
 
-        auto pipe = createMergingAggregatedMemoryEfficientPipe(
-                header, params, files.files.size(), temporary_data_merge_threads);
+            for (const auto & file : files.files)
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(header, file->path())));
 
-        auto input = pipe.front()->getInputs().begin();
-        for (auto & processor : processors)
-            connect(processor->getOutputs().front(), *(input++));
+            pipe = Pipe::unitePipes(std::move(pipes));
+        }
 
-        processors.insert(processors.end(), pipe.begin(), pipe.end());
+        LOG_DEBUG(
+            log,
+            "Will merge {} temporary files of size {} compressed, {} uncompressed.",
+            files.files.size(),
+            ReadableSize(files.sum_size_compressed),
+            ReadableSize(files.sum_size_uncompressed));
+
+        addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
+
+        processors = Pipe::detachProcessors(std::move(pipe));
     }
 }
 
