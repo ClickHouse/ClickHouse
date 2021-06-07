@@ -87,10 +87,7 @@ bool ReadIndirectBufferFromRemoteFS<T>::nextImpl()
 {
     /// Find first available buffer that fits to given offset.
     if (!current_buf)
-    {
         current_buf = initialize();
-        pos = working_buffer.begin();
-    }
 
     /// If current buffer has remaining data - use it.
     if (current_buf)
@@ -115,10 +112,14 @@ bool ReadIndirectBufferFromRemoteFS<T>::nextImpl()
 template <typename T>
 bool ReadIndirectBufferFromRemoteFS<T>::nextAndShiftPosition()
 {
+    /// Transfer current position and working_buffer to actual ReadBuffer
     swap(*current_buf);
+    /// Position and working_buffer will be updated in next() call
     auto result = current_buf->next();
+    /// and assigned to current buffer.
     swap(*current_buf);
 
+    /// absolute position is shifted by a data size that was read in next() call above.
     if (result)
         absolute_position += working_buffer.size();
 
