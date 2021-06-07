@@ -176,7 +176,7 @@ TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
           R"(SELECT "column" FROM "test"."table" WHERE 1 AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))");
     check(state, 1,
           "SELECT column FROM test.table WHERE toString(column) = '42' AND left(column, 10) = RIGHT(column, 10) AND column = 42",
-          R"(SELECT "column" FROM "test"."table" WHERE ("column" = 42))");
+          R"(SELECT "column" FROM "test"."table" WHERE "column" = 42)");
 }
 
 TEST(TransformQueryForExternalDatabase, Issue7245)

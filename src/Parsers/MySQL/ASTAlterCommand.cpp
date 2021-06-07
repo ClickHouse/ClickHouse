@@ -242,7 +242,7 @@ static inline bool parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expecte
     }
     else if (ParserKeyword("TO").ignore(pos, expected) || ParserKeyword("AS").ignore(pos, expected))
     {
-        if (!ParserCompoundIdentifier(false).parse(pos, new_name, expected))
+        if (!ParserCompoundIdentifier(true).parse(pos, new_name, expected))
             return false;
 
         auto new_table_id = new_name->as<ASTTableIdentifier>()->getTableId();

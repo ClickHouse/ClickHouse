@@ -273,20 +273,15 @@ String transformQueryForExternalDatabase(
         {
             if (function->name == "and")
             {
-                bool compatible_found = false;
                 auto new_function_and = makeASTFunction("and");
                 for (const auto & elem : function->arguments->children)
                 {
                     if (isCompatible(*elem))
-                    {
                         new_function_and->arguments->children.push_back(elem);
-                        compatible_found = true;
-                    }
                 }
                 if (new_function_and->arguments->children.size() == 1)
-                    new_function_and->name = "";
-
-                if (compatible_found)
+                    select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and->arguments->children[0]));
+                else if (new_function_and->arguments->children.size() > 1)
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));
             }
         }
