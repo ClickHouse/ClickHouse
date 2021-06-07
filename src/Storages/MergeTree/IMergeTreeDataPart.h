@@ -41,6 +41,8 @@ class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
 
+using ColumnToSize = std::map<std::string, UInt64>;
+
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
@@ -110,7 +112,7 @@ public:
 
     virtual ~IMergeTreeDataPart();
 
-    using ColumnToSize = std::map<std::string, UInt64>;
+
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const;
 

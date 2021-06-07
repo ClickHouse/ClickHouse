@@ -840,6 +840,7 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
     friend class MergeTreeDataWriter;
+    friend class MergeTask;
 
     bool require_part_metadata;
 
