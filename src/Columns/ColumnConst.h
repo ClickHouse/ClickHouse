@@ -252,8 +252,9 @@ public:
     {
         if (!data->isDefaultAt(0))
         {
-            indices.reserve(indices.size() + limit);
-            for (size_t i = from; i < from + limit; ++i)
+            size_t to = limit && from + limit < size() ? from + limit : size();
+            indices.reserve(indices.size() + to - from);
+            for (size_t i = from; i < to; ++i)
                 indices.push_back(i);
         }
     }
