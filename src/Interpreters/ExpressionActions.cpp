@@ -129,12 +129,8 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
             size_t i = short_circuit_settings.enable_lazy_execution_for_first_argument ? 0 : 1;
             for (; i < node.children.size(); ++i)
             {
-                /// Prevent multiple execution in cases like (expr AND expr AND expr)
-                if (short_circuit_settings.enable_lazy_execution_for_first_argument || node.children[i] != node.children[0])
-                {
-                    queue.push_back(node.children[i]);
-                    argument_ancestor[node.children[i]] = i;
-                }
+                queue.push_back(node.children[i]);
+                argument_ancestor[node.children[i]] = i;
             }
 
             need_outside[&node] = false;
@@ -142,6 +138,12 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
             {
                 const ActionsDAG::Node * cur = queue.front();
                 queue.pop_front();
+
+                /// If lazy execution is disabled for the first argument, we should check case
+                /// when the other arguments use it.
+                /// Examples: and(expr, expr), and(expr, expr1(..., expr, ...))
+                if (!short_circuit_settings.enable_lazy_execution_for_first_argument && cur == node.children[0])
+                    continue;
 
                 bool is_need_outside = false;
                 /// If action is used in result, we can't enable lazy execution.
