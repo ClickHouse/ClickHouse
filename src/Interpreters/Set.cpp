@@ -568,6 +568,9 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     }
     if (one_element_range)
     {
+        /// Here we know that there is one element in range.
+        /// The main difference with the normal case is that we can definitely say that
+        /// condition in this range always TRUE (can_be_false = 0) xor always FALSE (can_be_true = 0).
         if (left_lower != indices.end() && equals(*left_lower, left_point))
             return {true, false};
         else
