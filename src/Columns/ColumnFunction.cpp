@@ -226,10 +226,9 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     if (is_short_circuit_argument)
     {
         /// Arguments of lazy executed function can also be lazy executed.
-        const ColumnFunction * arg;
         for (auto & col : columns)
         {
-            if ((arg = typeid_cast<const ColumnFunction *>(col.column.get())) && arg->isShortCircuitArgument())
+            if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
                 col = arg->reduce();
         }
     }
@@ -242,6 +241,14 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
 
     res.column = function->execute(columns, res.type, size_);
     return res;
+}
+
+const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column)
+{
+    const ColumnFunction * column_function;
+    if ((column_function = typeid_cast<const ColumnFunction *>(column.get())) && column_function->isShortCircuitArgument())
+        return column_function;
+    return nullptr;
 }
 
 }

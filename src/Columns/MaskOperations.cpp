@@ -101,11 +101,6 @@ void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<
         throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
 }
 
-void expandColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& mask, bool inverted)
-{
-    column->assumeMutable()->expand(mask, inverted);
-}
-
 MaskInfo getMaskFromColumn(
     const ColumnPtr & column,
     PaddedPODArray<UInt8> & res,
@@ -197,8 +192,8 @@ void inverseMask(PaddedPODArray<UInt8> & mask)
 
 void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info, bool inverted)
 {
-    const auto * column_function = checkAndGetColumn<ColumnFunction>(*column.column);
-    if (!column_function || !column_function->isShortCircuitArgument())
+    const auto * column_function = checkAndGetShortCircuitArgument(column.column);
+    if (!column_function)
         return;
 
     ColumnWithTypeAndName result;
@@ -224,8 +219,8 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
 
 void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
 {
-    const auto * column_function = checkAndGetColumn<ColumnFunction>(*column.column);
-    if (!column_function || !column_function->isShortCircuitArgument())
+    const auto * column_function = checkAndGetShortCircuitArgument(column.column);
+    if (!column_function)
         return;
 
     if (!empty)

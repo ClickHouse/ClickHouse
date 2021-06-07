@@ -173,6 +173,10 @@ private:
     bool is_function_compiled;
 
     void appendArgument(const ColumnWithTypeAndName & column);
+
+    void addOffsetsForReplication(const IColumn::Offsets & offsets);
 };
+
+const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column);
 
 }
