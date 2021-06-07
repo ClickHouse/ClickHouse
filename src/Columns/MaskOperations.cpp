@@ -3,18 +3,22 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnConst.h>
+#include <algorithm>
+
+#include <common/logger_useful.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int LOGICAL_ERROR;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <typename T>
-void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverse)
+void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted)
 {
     if (mask.size() < data.size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
@@ -24,7 +28,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
     data.resize(mask.size());
     while (index >= 0)
     {
-        if (mask[index] ^ inverse)
+        if (mask[index] ^ inverted)
         {
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
@@ -68,7 +72,7 @@ INSTANTIATE(UUID)
 
 #undef INSTANTIATE
 
-void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<UInt8> & mask, bool inverse)
+void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<UInt8> & mask, bool inverted)
 {
     if (mask.size() < offsets.size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
@@ -79,7 +83,7 @@ void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<
     UInt64 prev_offset = offsets[from];
     while (index >= 0)
     {
-        if (mask[index] ^ inverse)
+        if (mask[index] ^ inverted)
         {
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
@@ -97,49 +101,70 @@ void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<
         throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
 }
 
-void expandColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& mask, bool inverse)
+void expandColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& mask, bool inverted)
 {
-    column->assumeMutable()->expand(mask, inverse);
+    column->assumeMutable()->expand(mask, inverted);
 }
 
-void getMaskFromColumn(
+MaskInfo getMaskFromColumn(
     const ColumnPtr & column,
     PaddedPODArray<UInt8> & res,
-    bool inverse,
+    bool inverted,
     const PaddedPODArray<UInt8> * mask_used_in_expanding,
     UInt8 default_value_in_expanding,
-    bool inverse_mask_used_in_expanding,
+    bool inverted_mask_used_in_expanding,
     UInt8 null_value,
-    const PaddedPODArray<UInt8> * null_bytemap)
+    const PaddedPODArray<UInt8> * null_bytemap,
+    PaddedPODArray<UInt8> * nulls)
 {
-    if (const auto * col = checkAndGetColumn<ColumnNothing>(*column))
-    {
-        res.resize_fill(col->size(), inverse ? !null_value : null_value);
-        return;
-    }
-
     if (const auto * col = checkAndGetColumn<ColumnNullable>(*column))
     {
         const PaddedPODArray<UInt8> & null_map = checkAndGetColumn<ColumnUInt8>(*col->getNullMapColumnPtr())->getData();
-        return getMaskFromColumn(col->getNestedColumnPtr(), res, inverse, mask_used_in_expanding, default_value_in_expanding, inverse_mask_used_in_expanding, null_value, &null_map);
+        return getMaskFromColumn(col->getNestedColumnPtr(), res, inverted, mask_used_in_expanding, default_value_in_expanding, inverted_mask_used_in_expanding, null_value, &null_map, nulls);
     }
+
+    bool is_full_column = true;
+    if (mask_used_in_expanding && mask_used_in_expanding->size() != column->size())
+        is_full_column = false;
+
+    size_t size = is_full_column ? column->size() : mask_used_in_expanding->size();
+    res.resize(size);
+
+    bool only_null = column->onlyNull();
 
     /// Some columns doesn't implement getBool() method and we cannot
     /// convert them to mask, throw an exception in this case.
     try
     {
-        if (res.size() != column->size())
-            res.resize(column->size());
-
-        for (size_t i = 0; i != column->size(); ++i)
+        MaskInfo info;
+        bool value;
+        size_t column_index = 0;
+        for (size_t i = 0; i != size; ++i)
         {
-            if (mask_used_in_expanding && (!(*mask_used_in_expanding)[i] ^ inverse_mask_used_in_expanding))
-                res[i] = inverse ? !default_value_in_expanding : default_value_in_expanding;
-            else if (null_bytemap && (*null_bytemap)[i])
-                res[i] = inverse ? !null_value : null_value;
+            bool use_value_from_expanding_mask = mask_used_in_expanding && (!(*mask_used_in_expanding)[i] ^ inverted_mask_used_in_expanding);
+            if (use_value_from_expanding_mask)
+                value = inverted ? !default_value_in_expanding : default_value_in_expanding;
+            else if (only_null || (null_bytemap && (*null_bytemap)[i]))
+            {
+                value = inverted ? !null_value : null_value;
+                if (nulls)
+                    (*nulls)[i] = 1;
+            }
             else
-                res[i] = inverse ? !column->getBool(i): column->getBool(i);
+                value = inverted ? !column->getBool(column_index) : column->getBool(column_index);
+
+            if (value)
+                info.has_once = true;
+            else
+                info.has_zeros = true;
+
+            if (is_full_column || !use_value_from_expanding_mask)
+                ++column_index;
+
+            res[i] = value;
         }
+
+        return info;
     }
     catch (...)
     {
@@ -147,36 +172,67 @@ void getMaskFromColumn(
     }
 }
 
-void disjunctionMasks(PaddedPODArray<UInt8> & mask1, const PaddedPODArray<UInt8> & mask2)
+MaskInfo disjunctionMasks(PaddedPODArray<UInt8> & mask1, const PaddedPODArray<UInt8> & mask2)
 {
     if (mask1.size() != mask2.size())
         throw Exception("Cannot make a disjunction of masks, they have different sizes", ErrorCodes::LOGICAL_ERROR);
 
+    MaskInfo info;
     for (size_t i = 0; i != mask1.size(); ++i)
-        mask1[i] = mask1[i] | mask2[i];
+    {
+        mask1[i] |= mask2[i];
+        if (mask1[i])
+            info.has_once = true;
+        else
+            info.has_zeros = true;
+    }
+
+    return info;
 }
 
-void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, bool inverse)
+void inverseMask(PaddedPODArray<UInt8> & mask)
+{
+    std::transform(mask.begin(), mask.end(), mask.begin(), [](UInt8 val){ return !val; });
+}
+
+void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info, bool inverted)
 {
     const auto * column_function = checkAndGetColumn<ColumnFunction>(*column.column);
     if (!column_function || !column_function->isShortCircuitArgument())
         return;
 
-    auto filtered = column_function->filter(mask, -1, inverse);
-    auto result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
-    expandColumnByMask(result.column, mask, inverse);
+    ColumnWithTypeAndName result;
+    /// If mask contains only zeros, we can just create
+    /// an empty column with the execution result type.
+    if ((!inverted && !mask_info.has_once) || (inverted && !mask_info.has_zeros))
+    {
+        auto result_type = column_function->getResultType();
+        auto empty_column = result_type->createColumn();
+        result = {std::move(empty_column), result_type, ""};
+    }
+    /// Filter column only if mask contains zeros.
+    else if ((!inverted && mask_info.has_zeros) || (inverted && mask_info.has_once))
+    {
+        auto filtered = column_function->filter(mask, -1, inverted);
+        result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
+    }
+    else
+        result = column_function->reduce();
+
     column = std::move(result);
 }
 
-void executeColumnIfNeeded(ColumnWithTypeAndName & column)
+void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
 {
     const auto * column_function = checkAndGetColumn<ColumnFunction>(*column.column);
     if (!column_function || !column_function->isShortCircuitArgument())
         return;
 
-    column = typeid_cast<const ColumnFunction *>(column_function)->reduce();
+    if (!empty)
+        column = column_function->reduce();
+    else
+        column.column = column_function->getResultType()->createColumn();
 }
-
 
 int checkShirtCircuitArguments(const ColumnsWithTypeAndName & arguments)
 {

@@ -80,14 +80,9 @@ public:
 
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
 
-    bool isShortCircuit() const override { return function->isShortCircuit(); }
+    bool isShortCircuit(ShortCircuitSettings * settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
 
     bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
-
-    void executeShortCircuitArguments(ColumnsWithTypeAndName & args) const override
-    {
-        function->executeShortCircuitArguments(args);
-    }
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
@@ -116,8 +111,6 @@ public:
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
-    bool isShortCircuit() const override { return function->isShortCircuit(); }
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName &  arguments) const override { return function->isSuitableForShortCircuitArgumentsExecution(arguments); }
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return function->getArgumentsThatAreAlwaysConstant(); }

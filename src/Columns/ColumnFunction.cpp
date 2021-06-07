@@ -59,7 +59,7 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture, is_short_circuit_argument);
 }
 
-ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, bool inverse) const
+ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const
 {
     if (size_ != filt.size())
         throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column ("
@@ -67,13 +67,13 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, 
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
-        column.column = column.column->filter(filt, result_size_hint, inverse);
+        column.column = column.column->filter(filt, result_size_hint, inverted);
 
     size_t filtered_size = 0;
     if (capture.empty())
     {
         filtered_size = countBytesInFilter(filt);
-        if (inverse)
+        if (inverted)
             filtered_size = filt.size() - filtered_size;
     }
     else
@@ -82,12 +82,12 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, 
     return ColumnFunction::create(filtered_size, function, capture, is_short_circuit_argument);
 }
 
-void ColumnFunction::expand(const Filter & mask, bool inverse)
+void ColumnFunction::expand(const Filter & mask, bool inverted)
 {
     for (auto & column : captured_columns)
     {
         column.column = column.column->cloneResized(column.column->size());
-        column.column->assumeMutable()->expand(mask, inverse);
+        column.column->assumeMutable()->expand(mask, inverted);
     }
 
     size_ = mask.size();
@@ -208,6 +208,11 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
     captured_columns.push_back(column);
 }
 
+DataTypePtr ColumnFunction::getResultType() const
+{
+    return function->getResultType();
+}
+
 ColumnWithTypeAndName ColumnFunction::reduce() const
 {
     auto args = function->getArgumentTypes().size();
@@ -220,9 +225,6 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     ColumnsWithTypeAndName columns = captured_columns;
     if (is_short_circuit_argument)
     {
-        if (function->isShortCircuit())
-            function->executeShortCircuitArguments(columns);
-
         /// Arguments of lazy executed function can also be lazy executed.
         const ColumnFunction * arg;
         for (auto & col : columns)

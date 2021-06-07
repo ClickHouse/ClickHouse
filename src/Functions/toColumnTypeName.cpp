@@ -26,9 +26,13 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool isShortCircuit() const override { return true; }
-
-    void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const override {}
+    bool isShortCircuit(ShortCircuitSettings * settings, size_t /*number_of_arguments*/) const override
+    {
+        settings->enable_lazy_execution_for_first_argument = true;
+        settings->enable_lazy_execution_for_common_descendants_of_arguments = true;
+        settings->force_enable_lazy_execution = true;
+        return true;
+    }
 
     bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
 

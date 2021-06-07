@@ -37,8 +37,8 @@ public:
 
     ColumnPtr cut(size_t start, size_t length) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool inverse) const override;
-    void expand(const Filter & mask, bool inverse) override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const override;
+    void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
@@ -155,6 +155,8 @@ public:
     }
 
     bool isShortCircuitArgument() const { return is_short_circuit_argument; }
+
+    DataTypePtr getResultType() const;
 
 private:
     size_t size_;

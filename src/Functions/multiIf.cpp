@@ -10,6 +10,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/MaskOperations.h>
 
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -40,7 +41,13 @@ public:
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
-    bool isShortCircuit() const override { return true; }
+    bool isShortCircuit(ShortCircuitSettings * settings, size_t number_of_arguments) const override
+    {
+        settings->enable_lazy_execution_for_first_argument = false;
+        settings->enable_lazy_execution_for_common_descendants_of_arguments = (number_of_arguments != 3);
+        settings->force_enable_lazy_execution = false;
+        return true;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -109,7 +116,7 @@ public:
         return getLeastSupertype(types_of_branches);
     }
 
-    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override
+    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const
     {
         int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
         if (last_short_circuit_argument_index < 0)
@@ -123,28 +130,57 @@ public:
         /// use default_value_in_expanding = 0 while extracting mask from
         /// executed condition and filter expression by this mask.
 
-        executeColumnIfNeeded(arguments[0]);
         IColumn::Filter current_mask;
+        MaskInfo current_mask_info = {.has_once = true, .has_zeros = false};
         IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);
+        MaskInfo disjunctions_mask_info = {.has_once = false, .has_zeros = true};
 
         int i = 1;
         while (i <= last_short_circuit_argument_index)
         {
-            getMaskFromColumn(arguments[i - 1].column, current_mask, false, &mask_disjunctions, 0, true);
-            maskedExecute(arguments[i], current_mask);
+            auto & cond_column = arguments[i - 1].column;
+            /// If condition is const or null and value is false, we can skip execution of expression after this condition.
+            if ((isColumnConst(*cond_column) || cond_column->onlyNull()) && !cond_column->empty() && !cond_column->getBool(0))
+            {
+                current_mask_info.has_once = false;
+                current_mask_info.has_zeros = true;
+            }
+            else
+            {
+                current_mask_info = getMaskFromColumn(arguments[i - 1].column, current_mask, false, &mask_disjunctions, 0, true);
+                maskedExecute(arguments[i], current_mask, current_mask_info, false);
+            }
+
+            /// Check if the condition is always true and we don't need to execute the rest arguments.
+            if (!current_mask_info.has_zeros)
+                break;
 
             ++i;
             if (i > last_short_circuit_argument_index)
                 break;
 
-            disjunctionMasks(mask_disjunctions, current_mask);
-            maskedExecute(arguments[i], mask_disjunctions, true);
+            /// Make a disjunction only if it make sense.
+            if (current_mask_info.has_once)
+                disjunctions_mask_info = disjunctionMasks(mask_disjunctions, current_mask);
+
+            /// If current disjunction of previous conditions doesn't have zeros, we don't need to execute the rest arguments.
+            if (!disjunctions_mask_info.has_zeros)
+                break;
+
+            maskedExecute(arguments[i], mask_disjunctions, disjunctions_mask_info, true);
             ++i;
         }
+
+        /// We could skip some arguments execution, but we cannot leave them as ColumnFunction.
+        /// So, create an empty column with the execution result type.
+        for (; i <= last_short_circuit_argument_index; ++i)
+            executeColumnIfNeeded(arguments[i], true);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        ColumnsWithTypeAndName arguments = std::move(args);
+        executeShortCircuitArguments(arguments);
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
         */
@@ -156,22 +192,27 @@ public:
             bool condition_always_true = false;
             bool condition_is_nullable = false;
             bool source_is_constant = false;
+
+            bool condition_is_short = false;
+            bool source_is_short = false;
+            size_t condition_index = 0;
+            size_t source_index = 0;
         };
 
         std::vector<Instruction> instructions;
-        instructions.reserve(args.size() / 2 + 1);
+        instructions.reserve(arguments.size() / 2 + 1);
 
         Columns converted_columns_holder;
         converted_columns_holder.reserve(instructions.size());
 
         const DataTypePtr & return_type = result_type;
 
-        for (size_t i = 0; i < args.size(); i += 2)
+        for (size_t i = 0; i < arguments.size(); i += 2)
         {
             Instruction instruction;
             size_t source_idx = i + 1;
 
-            bool last_else_branch = source_idx == args.size();
+            bool last_else_branch = source_idx == arguments.size();
 
             if (last_else_branch)
             {
@@ -181,7 +222,7 @@ public:
             }
             else
             {
-                const ColumnWithTypeAndName & cond_col = args[i];
+                const ColumnWithTypeAndName & cond_col = arguments[i];
 
                 /// We skip branches that are always false.
                 /// If we encounter a branch that is always true, we can finish.
@@ -207,9 +248,12 @@ public:
 
                     instruction.condition = cond_col.column.get();
                 }
+
+                instruction.condition_is_short = cond_col.column->size() < arguments[0].column->size();
             }
 
-            const ColumnWithTypeAndName & source_col = args[source_idx];
+            const ColumnWithTypeAndName & source_col = arguments[source_idx];
+            instruction.source_is_short = source_col.column->size() < arguments[0].column->size();
             if (source_col.type->equals(*return_type))
             {
                 instruction.source = source_col.column.get();
@@ -245,27 +289,29 @@ public:
 
         for (size_t i = 0; i < rows; ++i)
         {
-            for (const auto & instruction : instructions)
+            for (auto & instruction : instructions)
             {
                 bool insert = false;
 
+                size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : i;
                 if (instruction.condition_always_true)
                     insert = true;
                 else if (!instruction.condition_is_nullable)
-                    insert = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData()[i];
+                    insert = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData()[condition_index];
                 else
                 {
                     const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
                     const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
                     const NullMap & condition_null_map = condition_nullable.getNullMapData();
 
-                    insert = !condition_null_map[i] && condition_nested.getData()[i];
+                    insert = !condition_null_map[condition_index] && condition_nested.getData()[condition_index];
                 }
 
                 if (insert)
                 {
+                    size_t source_index = instruction.source_is_short ? instruction.source_index++ : i;
                     if (!instruction.source_is_constant)
-                        res->insertFrom(*instruction.source, i);
+                        res->insertFrom(*instruction.source, source_index);
                     else
                         res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
 

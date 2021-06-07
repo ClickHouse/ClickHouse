@@ -70,8 +70,6 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
-
     size_t getNumberOfArguments() const override { return 0; }
 
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<TodayOverloadResolver>(); }

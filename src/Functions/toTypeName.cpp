@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeString.h>
+#include <Columns/MaskOperations.h>
 
 
 namespace DB
@@ -29,7 +30,15 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isShortCircuit() const override { return true; }
+
+    bool isShortCircuit(ShortCircuitSettings * settings, size_t /*number_of_arguments*/) const override
+    {
+        settings->enable_lazy_execution_for_first_argument = false;
+        settings->enable_lazy_execution_for_common_descendants_of_arguments = true;
+        settings->force_enable_lazy_execution = true;
+        return true;
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }

@@ -211,12 +211,34 @@ public:
       */
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
+    struct ShortCircuitSettings
+    {
+        /// Should we enable lazy execution for the first argument of short-circuit function?
+        /// Example: if(cond, then, else), we don't need to execute cond lazily.
+        bool enable_lazy_execution_for_first_argument;
+        /// Should we enable lazy execution for functions, that are common descendants of
+        /// different short-circuit function arguments?
+        /// Example 1: if (cond, expr1(..., expr, ...), expr2(..., expr, ...)), we don't need
+        /// to execute expr lazily, because it's used in both branches.
+        /// Example 2: and(expr1, expr2(..., expr, ...), expr3(..., expr, ...)), here we
+        /// should enable lazy execution for expr, because it must be filtered by expr1.
+        bool enable_lazy_execution_for_common_descendants_of_arguments;
+        /// Should we enable lazy execution without checking isSuitableForShortCircuitArgumentsExecution?
+        /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
+        /// lazy execution (because of their simplicity), we shouldn't execute them at all.
+        bool force_enable_lazy_execution;
+    };
+
     /** Function is called "short-circuit" if it's arguments can be evaluated lazily
-      * (examples: and, or, if, multiIf). If function is short circuit, it must
-      *  implement method executeShortCircuitArguments for lazy arguments execution,
+      * (examples: and, or, if, multiIf). If function is short circuit, it should be
+      *  able to work with lazy executed arguments,
       *  this method will be called before function execution.
+      *  If function is short circuit, it must define all fields in settings for
+      *  appropriate preparations. Number of arguments is provided because some settings might depend on it.
+      *  Example: multiIf(cond, else, then) and multiIf(cond1, else1, cond2, else2, ...), the first
+      *  version can enable enable_lazy_execution_for_common_descendants_of_arguments setting, the second - not.
       */
-    virtual bool isShortCircuit() const { return false; }
+    virtual bool isShortCircuit(ShortCircuitSettings * /*settings*/, size_t /*number_of_arguments*/) const { return false; }
 
     /** Should we evaluate this function lazily in short-circuit function arguments?
       * If function can throw an exception or it's computationally heavy, then
@@ -224,15 +246,6 @@ public:
       * Suitability may depend on function arguments.
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
-
-    /** Method for lazy arguments execution in short-circuit functions.
-      * Lazy argument is presented as ColumnFunction with isShortCircuitArgument() = true.
-      * This method is called before function execution.
-      */
-    virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
-    {
-        throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     /// The property of monotonicity for a certain range.
     struct Monotonicity
@@ -271,8 +284,6 @@ public:
 
     void getLambdaArgumentTypes(DataTypes & arguments) const;
 
-    void checkNumberOfArguments(size_t number_of_arguments) const;
-
     /// Get the main function name.
     virtual String getName() const = 0;
 
@@ -290,12 +301,6 @@ public:
 
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
-
-    /// Override and return true if function is short-circuit.
-    virtual bool isShortCircuit() const { return false; }
-
-    /// Override and return true if function is suitable for lazy execution in short-circuit function arguments.
-    virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -352,6 +357,8 @@ protected:
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
 private:
+
+    void checkNumberOfArguments(size_t number_of_arguments) const;
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };
@@ -414,12 +421,10 @@ public:
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }
-    virtual bool isShortCircuit() const { return false; }
+
+    using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
+    virtual bool isShortCircuit(ShortCircuitSettings * /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
-    virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
-    {
-        throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 

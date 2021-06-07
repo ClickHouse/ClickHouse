@@ -214,17 +214,17 @@ void ColumnNullable::popBack(size_t n)
     getNullMapColumn().popBack(n);
 }
 
-ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint, bool inverse) const
+ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const
 {
-    ColumnPtr filtered_data = getNestedColumn().filter(filt, result_size_hint, inverse);
-    ColumnPtr filtered_null_map = getNullMapColumn().filter(filt, result_size_hint, inverse);
+    ColumnPtr filtered_data = getNestedColumn().filter(filt, result_size_hint, inverted);
+    ColumnPtr filtered_null_map = getNullMapColumn().filter(filt, result_size_hint, inverted);
     return ColumnNullable::create(filtered_data, filtered_null_map);
 }
 
-void ColumnNullable::expand(const IColumn::Filter & mask, bool inverse)
+void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
 {
-    nested_column->expand(mask, inverse);
-    null_map->expand(mask, inverse);
+    nested_column->expand(mask, inverted);
+    null_map->expand(mask, inverted);
 }
 
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const

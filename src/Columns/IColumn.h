@@ -232,18 +232,18 @@ public:
       * If result_size_hint > 0, then makes advance reserve(result_size_hint) for the result column;
       * if 0, then don't makes reserve(),
       * otherwise (i.e. < 0), makes reserve() using size of source column.
-      * If inverse is true, inverted filter will be used.
+      * If inverted is true, inverted filter will be used.
       */
     using Filter = PaddedPODArray<UInt8>;
-    virtual Ptr filter(const Filter & filt, ssize_t result_size_hint, bool inverse = false) const = 0;
+    virtual Ptr filter(const Filter & filt, ssize_t result_size_hint, bool inverted = false) const = 0;
 
     /** Expand column by mask inplace. After expanding column will
       * satisfy the following: if we filter it by given mask, we will
       * get initial column. Values with indexes i: mask[i] = 0
       * shouldn't be used after expanding.
-      * If inverse is true, inverted mask will be used.
+      * If inverted is true, inverted mask will be used.
       */
-    virtual void expand(const Filter & /*mask*/, bool /*inverse*/) = 0;
+    virtual void expand(const Filter & /*mask*/, bool /*inverted*/) = 0;
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
