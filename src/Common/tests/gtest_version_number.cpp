@@ -20,7 +20,11 @@ TEST(VersionNumber, fromString)
     EXPECT_EQ(VersionNumber::fromString("1.1.1", true), VersionNumber(1, 1, 1));
     EXPECT_EQ(VersionNumber::fromString("5.5.13prefix", true), VersionNumber(5, 5, 13));
 
+#ifdef ABORT_ON_LOGICAL_ERROR
+    EXPECT_EXIT(VersionNumber::fromString("1.1.1.1", true), testing::KilledBySignal(SIGABRT), "");
+#else
     EXPECT_THROW(VersionNumber::fromString("1.1.1.1", true), Exception);
+#endif
     EXPECT_NO_THROW(VersionNumber::fromString("1.1.1.1", false));
 
     EXPECT_EQ(VersionNumber::fromString("1.1.1.1", false), VersionNumber(1, 1, 1));

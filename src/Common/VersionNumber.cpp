@@ -8,13 +8,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_VERSION;
+    extern const int LOGICAL_ERROR;
 }
 
 VersionNumber::VersionNumber(const std::vector<long> & vec)
 {
     if (vec.size() > SIZE)
-        throw Exception(ErrorCodes::BAD_VERSION, "Too much components ({})", vec.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too much components ({})", vec.size());
 
     if (vec.size() > 0)
         std::get<0>(version) = vec[0];
