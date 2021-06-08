@@ -69,6 +69,8 @@ namespace
                 "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+        /// groupBitmap needs to know about the data type that was used to create bitmaps.
+        /// We need to look inside the type of its argument to obtain it.
         const DataTypeAggregateFunction & datatype_aggfunc = dynamic_cast<const DataTypeAggregateFunction &>(*argument_type_ptr);
         AggregateFunctionPtr aggfunc = datatype_aggfunc.getFunction();
         DataTypePtr nested_argument_type_ptr = aggfunc->getArgumentTypes()[0];
