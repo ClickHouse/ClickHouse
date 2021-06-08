@@ -127,6 +127,7 @@ public:
     void assertOnDisk() const;
 
     void remove(bool keep_s3 = false) const;
+    void removeIfNotLockedInS3() const;
 
     void projectionRemove(const String & parent_to, bool keep_s3 = false) const;
 
