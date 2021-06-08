@@ -106,6 +106,12 @@ public:
         return DayNum(lut.makeDayNum(m_year, m_month, m_day).toUnderType());
     }
 
+    ExtendedDayNum  getExtenedDayNum() const
+    {
+        const auto & lut = DateLUT::instance();
+        return ExtendedDayNum (lut.makeDayNum(m_year, m_month, m_day).toUnderType());
+    }
+
     operator DayNum() const
     {
         return getDayNum();

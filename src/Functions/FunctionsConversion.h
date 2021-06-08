@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -788,6 +789,16 @@ template <>
 inline bool tryParseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     DayNum tmp(0);
+    if (!tryReadDateText(tmp, rb))
+        return false;
+    x = tmp;
+    return true;
+}
+
+template <>
+inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    ExtendedDayNum tmp(0);
     if (!tryReadDateText(tmp, rb))
         return false;
     x = tmp;
