@@ -31,9 +31,14 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
 
 void ParquetBlockOutputFormat::consume(Chunk chunk)
 {
-    const Block & header = getPort(PortKind::Main).getHeader();
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
+
+    if (!ch_column_to_arrow_column)
+    {
+        const Block & header = getPort(PortKind::Main).getHeader();
+        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Parquet");
+    }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
 
@@ -54,8 +59,6 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
             &file_writer);
         if (!status.ok())
             throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
-
-        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Parquet");
     }
 
     // TODO: calculate row_group_size depending on a number of rows and table size
