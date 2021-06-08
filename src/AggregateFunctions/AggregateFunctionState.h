@@ -8,6 +8,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 /** Not an aggregate function, but an adapter of aggregate functions,

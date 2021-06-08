@@ -23,66 +23,12 @@ namespace
 /** timezoneOf(x) - get the name of the timezone of DateTime data type.
   * Example: Europe/Moscow.
   */
-class ExecutableFunctionTimezoneOf : public IExecutableFunction
+class FunctionTimezoneOf : public IFunction
 {
 public:
     static constexpr auto name = "timezoneOf";
     String getName() const override { return name; }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
-    /// Execute the function on the columns.
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
-
-        return DataTypeString().createColumnConst(input_rows_count,
-            dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
-    }
-};
-
-
-class BaseFunctionTimezoneOf : public IFunctionBase
-{
-public:
-    BaseFunctionTimezoneOf(DataTypes argument_types_, DataTypePtr return_type_)
-        : argument_types(std::move(argument_types_)), return_type(std::move(return_type_)) {}
-
-    static constexpr auto name = "timezoneOf";
-    String getName() const override { return name; }
-
-    bool isDeterministic() const override { return true; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
-
-    const DataTypes & getArgumentTypes() const override { return argument_types; }
-    const DataTypePtr & getResultType() const override { return return_type; }
-
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
-    {
-        return std::make_unique<ExecutableFunctionTimezoneOf>();
-    }
-
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
-
-        return DataTypeString().createColumnConst(1,
-            dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
-    }
-
-private:
-    DataTypes argument_types;
-    DataTypePtr return_type;
-};
-
-
-class FunctionTimezoneOfBuilder : public IFunctionOverloadResolver
-{
-public:
-    static constexpr auto name = "timezoneOf";
-    String getName() const override { return name; }
-    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<FunctionTimezoneOfBuilder>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_unique<FunctionTimezoneOf>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -96,21 +42,32 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad argument for function {}, should be DateTime or DateTime64", name);
     }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
-    {
-        return std::make_unique<BaseFunctionTimezoneOf>(DataTypes{arguments[0].type}, return_type);
-    }
-
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
+
+        return DataTypeString().createColumnConst(input_rows_count,
+            dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
+    }
+
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    {
+        DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
+
+        return DataTypeString().createColumnConst(1,
+            dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
+    }
 };
 
 }
 
 void registerFunctionTimezoneOf(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionTimezoneOfBuilder>();
+    factory.registerFunction<FunctionTimezoneOf>();
     factory.registerAlias("timeZoneOf", "timezoneOf");
 }
 
