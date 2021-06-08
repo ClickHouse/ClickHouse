@@ -1,5 +1,3 @@
-#include <Server/HTTPStreamHandler.h>
-
 #include <Access/Authentication.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
@@ -50,6 +48,9 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+
+#include "Server/HTTPStreamHandler.h"
+#include "Core/Protocol.h"
 
 namespace DB
 {
@@ -781,6 +782,7 @@ void HTTPStreamHandler::processQuery(
 
     sendSummary(*used_output.out_maybe_delayed_and_compressed, false);
 
+    sendEndOfStream(*used_output.out_maybe_delayed_and_compressed);
     /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to
     /// the client.
     used_output.out->finalize();
@@ -981,11 +983,19 @@ void HTTPStreamHandler::sendSummary(WriteBuffer & ostr, bool is_starting)
     if (is_starting)
         writeString("data: I plan to send", ostr);
     else
-    {
-        writeString("data: not yet", ostr);
-    }
+        writeString("data: I sent all data", ostr);
     writeChar('\n', ostr);
     writeChar('\n', ostr);
+    ostr.next();
+}
+
+void HTTPStreamHandler::sendEndOfStream(WriteBuffer & ostr)
+{
+    ostr.next();
+}
+
+void HTTPStreamHandler::sendReadTaskRequestAssumeLocked(WriteBuffer & ostr)
+{
     ostr.next();
 }
 
@@ -1003,63 +1013,6 @@ void HTTPStreamHandler::sendSummary(WriteBuffer & ostr, bool is_starting)
 //     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
 //         writeVarUInt(DBMS_VERSION_PATCH, *out);
 //     out->next();
-// }
-
-// void HTTPStreamHandler::sendData(const Block & block)
-// {
-//     initBlockOutput(block);
-
-//     auto prev_bytes_written_out = out->count();
-//     auto prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
-
-//     try
-//     {
-//         /// For testing hedged requests
-//         if (unknown_packet_in_send_data)
-//         {
-//             --unknown_packet_in_send_data;
-//             if (unknown_packet_in_send_data == 0)
-//                 writeVarUInt(UInt64(-1), *out);
-//         }
-
-//         writeVarUInt(Protocol::Server::Data, *out);
-//         /// Send external table name (empty name is the main table)
-//         writeStringBinary("", *out);
-
-//         /// For testing hedged requests
-//         const Settings & settings = query_context->getSettingsRef();
-//         if (block.rows() > 0 && settings.sleep_in_send_data_ms.totalMilliseconds())
-//         {
-//             out->next();
-//             std::chrono::milliseconds ms(settings.sleep_in_send_data_ms.totalMilliseconds());
-//             std::this_thread::sleep_for(ms);
-//         }
-
-//         state.block_out->write(block);
-//         state.maybe_compressed_out->next();
-//         out->next();
-//     }
-//     catch (...)
-//     {
-//         /// In case of unsuccessful write, if the buffer with written data was not flushed,
-//         ///  we will rollback write to avoid breaking the protocol.
-//         /// (otherwise the client will not be able to receive exception after unfinished data
-//         ///  as it will expect the continuation of the data).
-//         /// It looks like hangs on client side or a message like "Data compressed with different methods".
-
-//         if (state.compression == Protocol::Compression::Enable)
-//         {
-//             auto extra_bytes_written_compressed = state.maybe_compressed_out->count() - prev_bytes_written_compressed_out;
-//             if (state.maybe_compressed_out->offset() >= extra_bytes_written_compressed)
-//                 state.maybe_compressed_out->position() -= extra_bytes_written_compressed;
-//         }
-
-//         auto extra_bytes_written_out = out->count() - prev_bytes_written_out;
-//         if (out->offset() >= extra_bytes_written_out)
-//             out->position() -= extra_bytes_written_out;
-
-//         throw;
-//     }
 // }
 
 // void HTTPStreamHandler::sendLogData(const Block & block)
@@ -1082,13 +1035,6 @@ void HTTPStreamHandler::sendSummary(WriteBuffer & ostr, bool is_starting)
 //     writeStringBinary("", *out);
 //     writeStringBinary(columns.toString(), *out);
 
-//     out->next();
-// }
-
-// void HTTPStreamHandler::sendException(const Exception & e, bool with_stack_trace)
-// {
-//     writeVarUInt(Protocol::Server::Exception, *out);
-//     writeException(e, *out, with_stack_trace);
 //     out->next();
 // }
 
@@ -1130,13 +1076,6 @@ void HTTPStreamHandler::sendSummary(WriteBuffer & ostr, bool is_starting)
 //     }
 // }
 
-// void HTTPStreamHandler::sendEndOfStream()
-// {
-//     state.sent_all_data = true;
-//     writeVarUInt(Protocol::Server::EndOfStream, *out);
-//     out->next();
-// }
-
 // void HTTPStreamHandler::sendPartUUIDs()
 // {
 //     auto uuids = query_context->getPartUUIDs()->get();
@@ -1151,49 +1090,11 @@ void HTTPStreamHandler::sendSummary(WriteBuffer & ostr, bool is_starting)
 //     }
 // }
 
-// void HTTPStreamHandler::sendReadTaskRequestAssumeLocked()
-// {
-//     writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
-//     out->next();
-// }
-
 // void HTTPStreamHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 // {
 //     writeVarUInt(Protocol::Server::ProfileInfo, *out);
 //     info.write(*out);
 //     out->next();
-// }
-
-
-// void HTTPStreamHandler::sendTotals(const Block & totals)
-// {
-//     if (totals)
-//     {
-//         initBlockOutput(totals);
-
-//         writeVarUInt(Protocol::Server::Totals, *out);
-//         writeStringBinary("", *out);
-
-//         state.block_out->write(totals);
-//         state.maybe_compressed_out->next();
-//         out->next();
-//     }
-// }
-
-
-// void HTTPStreamHandler::sendExtremes(const Block & extremes)
-// {
-//     if (extremes)
-//     {
-//         initBlockOutput(extremes);
-
-//         writeVarUInt(Protocol::Server::Extremes, *out);
-//         writeStringBinary("", *out);
-
-//         state.block_out->write(extremes);
-//         state.maybe_compressed_out->next();
-//         out->next();
-//     }
 // }
 
 }

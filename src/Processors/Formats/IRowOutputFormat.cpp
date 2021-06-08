@@ -2,12 +2,34 @@
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <IO/WriteHelpers.h>
 
+#include <Poco/Base64Decoder.h>
+#include <Poco/Base64Encoder.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+static String base64Decode(const String & encoded)
+{
+    String decoded;
+    Poco::MemoryInputStream istr(encoded.data(), encoded.size());
+    Poco::Base64Decoder decoder(istr);
+    Poco::StreamCopier::copyToString(decoder, decoded);
+    return decoded;
+}
+
+static String base64Encode(const String & decoded)
+{
+    std::ostringstream ostr;
+    ostr.exceptions(std::ios::failbit);
+    Poco::Base64Encoder encoder(ostr);
+    encoder.rdbuf()->setLineLength(0);
+    encoder << decoded;
+    encoder.close();
+    return ostr.str();
 }
 
 IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
@@ -52,9 +74,11 @@ void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 
     const auto & columns = chunk.getColumns();
 
+    writeBeforeTotalsProtocol();
     writeBeforeTotals();
     writeTotals(columns, 0);
     writeAfterTotals();
+    writeAfterTotalsProtocol();
 }
 
 void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
@@ -67,11 +91,13 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
     if (num_rows != 2)
         throw Exception("Got " + toString(num_rows) + " in extremes chunk, expected 2", ErrorCodes::LOGICAL_ERROR);
 
+    writeBeforeExtremesProtocol();
     writeBeforeExtremes();
     writeMinExtreme(columns, 0);
     writeRowBetweenDelimiter();
     writeMaxExtreme(columns, 1);
     writeAfterExtremes();
+    writeAfterExtremesProtocol();
 }
 
 void IRowOutputFormat::finalize()
@@ -85,6 +111,8 @@ void IRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
     size_t num_columns = columns.size();
 
+    writeRowStartDelimiterProtocol();
+
     writeRowStartDelimiter();
 
     for (size_t i = 0; i < num_columns; ++i)
@@ -96,6 +124,8 @@ void IRowOutputFormat::write(const Columns & columns, size_t row_num)
     }
 
     writeRowEndDelimiter();
+
+    writeRowEndDelimiterProtocol();
 }
 
 void IRowOutputFormat::writeMinExtreme(const DB::Columns & columns, size_t row_num)

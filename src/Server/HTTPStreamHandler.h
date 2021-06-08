@@ -106,6 +106,8 @@ private:
     static void pushDelayedResults(Output & used_output);
 
     void sendSummary(WriteBuffer & ostr, bool is_starting);
+    void sendEndOfStream(WriteBuffer & ostr);
+    void sendReadTaskRequestAssumeLocked(WriteBuffer & ostr);
     // void sendHello();
     // void sendData(const Block & block);    /// Write a block to the network.
     // void sendLogData(const Block & block);
@@ -113,9 +115,7 @@ private:
     // void sendException(const Exception & e, bool with_stack_trace); //done
     // void sendProgress();
     // void sendLogs();
-    // void sendEndOfStream();
     // void sendPartUUIDs();
-    // void sendReadTaskRequestAssumeLocked();
     // void sendProfileInfo(const BlockStreamProfileInfo & info);
     // void sendTotals(const Block & totals);
     // void sendExtremes(const Block & extremes);

@@ -1188,7 +1188,7 @@ void executeStreamQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context->getDefaultFormat();
 
-            auto out = context->getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader());
+            auto out = context->getOutputStream(format_name, *out_buf, streams.in->getHeader());
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context->getProgressCallback();
@@ -1237,7 +1237,7 @@ void executeStreamQuery(
                     return std::make_shared<MaterializingTransform>(header);
                 });
 
-                auto out = context->getOutputFormatParallelIfPossible(format_name, *out_buf, pipeline.getHeader());
+                auto out = context->getOutputFormat(format_name, *out_buf, pipeline.getHeader());
                 out->setAutoFlush();
 
                 /// Save previous progress callback if any. TODO Do it more conveniently.

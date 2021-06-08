@@ -8,6 +8,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include "HTTPHandler.h"
+#include "HTTPStreamHandler.h"
 #include "NotFoundHandler.h"
 #include "StaticRequestHandler.h"
 #include "ReplicasStatusHandler.h"

@@ -2,6 +2,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <IO/WriteHelpers.h>
 
 #include <string>
 
@@ -68,6 +69,28 @@ private:
     bool suffix_written = false;
 
     Params params;
+
+    void writeRowStartDelimiterProtocol() { writeString("data: ", out); }
+
+    void writeRowEndDelimiterProtocol() { writeChar('\n', out); }
+
+    void writeBeforeTotalsProtocol()
+    {
+        writeString("event: totals", out);
+        writeChar('\n', out);
+        writeString("data: ", out);
+    }
+
+    void writeAfterTotalsProtocol() { writeChar('\n', out); }
+
+    void writeBeforeExtremesProtocol()
+    {
+        writeString("event: extremes", out);
+        writeChar('\n', out);
+        writeString("data: ", out);
+    }
+
+    void writeAfterExtremesProtocol() { writeChar('\n', out); }
 
     void writePrefixIfNot()
     {
