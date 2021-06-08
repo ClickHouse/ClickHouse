@@ -1,0 +1,2 @@
+step 1
+Code: 252. DB::Exception: Too many parts. Merges are processing significantly slower than inserts.
