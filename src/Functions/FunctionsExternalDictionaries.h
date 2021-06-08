@@ -128,7 +128,7 @@ public:
 
         if (load_result.object)
         {
-            const auto dictionary = std::static_pointer_cast<const IDictionary>(load_result.object);
+            const auto dictionary = std::static_pointer_cast<const IDictionaryBase>(load_result.object);
             return dictionary->getStructure();
         }
 
