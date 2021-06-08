@@ -103,9 +103,13 @@ StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & comment,
+    const String & source_database_regexp_,
     const std::unordered_map<String, std::unordered_set<String>> & source_databases_and_tables_,
     ContextPtr context_)
-    : IStorage(table_id_), WithContext(context_->getGlobalContext()), source_databases_and_tables(source_databases_and_tables_)
+    : IStorage(table_id_)
+    , WithContext(context_->getGlobalContext())
+    , source_database_regexp(source_database_regexp_)
+    , source_databases_and_tables(source_databases_and_tables_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -683,6 +687,10 @@ void registerStorageMerge(StorageFactory & factory)
 
         String source_database_regexp = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+
+        /// If database argument is not String literal, we should not treat it as regexp
+        if (!engine_args[0]->as<ASTLiteral>())
+            source_database_regexp = "^" + source_database_regexp + "$";
 
         return StorageMerge::create(
             args.table_id, args.columns, args.comment, source_database_regexp, table_name_regexp, args.getContext());

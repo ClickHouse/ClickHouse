@@ -74,6 +74,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & comment,
+        const String & source_database_regexp_,
         const std::unordered_map<String, std::unordered_set<String>> & source_databases_and_tables_,
         ContextPtr context_);
 
