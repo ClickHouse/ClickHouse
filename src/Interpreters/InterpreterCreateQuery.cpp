@@ -962,12 +962,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         StoragePtr table = DatabaseCatalog::instance().getTable({create.database, create.table, create.uuid}, getContext());
         const auto & output_columns = table->getInMemoryMetadataPtr()->getSampleBlock();
-        Block input_columns=InterpreterSelectWithUnionQuery(
-            create.select->clone(), getContext(),SelectQueryOptions().analyze()).getSampleBlock();
+        Block input_columns = InterpreterSelectWithUnionQuery(
+            create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
         auto actions_dag = ActionsDAG::makeConvertingActions(
             input_columns.getColumnsWithTypeAndName(),
             output_columns.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Name);
     }
 
     return fillTableIfNeeded(create);
