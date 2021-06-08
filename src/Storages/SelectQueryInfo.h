@@ -122,7 +122,7 @@ struct MergeTreeDataSelectCache;
 // The projection selected to execute current query
 struct ProjectionCandidate
 {
-    const ProjectionDescription * desc;
+    const ProjectionDescription * desc{};
     PrewhereInfoPtr prewhere_info;
     ActionsDAGPtr before_where;
     String where_column_name;
@@ -137,8 +137,8 @@ struct ProjectionCandidate
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
-    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_base_cache;
-    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_projection_cache;
+    // std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_base_cache;
+    // std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_projection_cache;
 };
 
 /** Query along with some additional data,
