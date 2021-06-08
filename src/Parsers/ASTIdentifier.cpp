@@ -80,7 +80,7 @@ void ASTIdentifier::setShortName(const String & new_name)
     name_parts = {new_name};
 
     bool special = semantic->special;
-    //how about keep the semantic info here, such as table
+    /// How about keep the semantic info here, such as table
     auto table = semantic->table;
 
     *semantic = IdentifierSemanticImpl();
@@ -120,7 +120,10 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
             /// does not respect children of identifier.
             /// Here we also ignore children if they are empty.
             if (name_parts[i].empty() && j < children.size())
-                children[j++]->formatImpl(settings, state, frame);
+            {
+                children[j]->formatImpl(settings, state, frame);
+                ++j;
+            }
             else
                 format_element(name_parts[i]);
         }
