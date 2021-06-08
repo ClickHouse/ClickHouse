@@ -161,8 +161,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
 
-        if (!create.attach && fs::exists(metadata_path))
-            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path.string());
+        if (!create.attach && fs::exists(metadata_file_path))
+            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata file {} already exists", metadata_file_path.string());
     }
     else if (create.storage->engine->name == "MaterializeMySQL")
     {
