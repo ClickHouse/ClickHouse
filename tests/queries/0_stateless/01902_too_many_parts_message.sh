@@ -13,7 +13,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE test_too_many_parts_01902 (A Int64, D date) 
 $CLICKHOUSE_CLIENT -q "system stop merges test_too_many_parts_01902"
 
 $CLICKHOUSE_CLIENT -q "insert into test_too_many_parts_01902 \
-                       select *, today() from numbers(10) \
+                       select *, today() from numbers(13) \
                        settings max_block_size=1, min_insert_block_size_rows=1, \
                        min_insert_block_size_bytes=1"
 
