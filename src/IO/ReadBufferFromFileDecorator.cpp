@@ -13,7 +13,7 @@ ReadBufferFromFileDecorator::ReadBufferFromFileDecorator(std::unique_ptr<Seekabl
 
 std::string ReadBufferFromFileDecorator::getFileName() const
 {
-    if (ReadBufferFromFileBase * buffer = dynamic_cast<ReadBufferFromFileBase*>(impl.get()))
+    if (ReadBufferFromFileBase * buffer = dynamic_cast<ReadBufferFromFileBase *>(impl.get()))
         return buffer->getFileName();
     return std::string();
 }
