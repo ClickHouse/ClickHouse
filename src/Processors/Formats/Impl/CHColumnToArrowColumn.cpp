@@ -610,9 +610,7 @@ namespace DB
     {
         /// For arrow::Schema and arrow::Table creation
         std::vector<std::shared_ptr<arrow::Array>> arrow_arrays;
-        arrow_fields.reserve(columns_num);
         arrow_arrays.reserve(columns_num);
-
         for (size_t column_i = 0; column_i < columns_num; ++column_i)
         {
             const ColumnWithTypeAndName & header_column = header_columns[column_i];
@@ -620,10 +618,6 @@ namespace DB
 
             if (!low_cardinality_as_dictionary)
                 column = recursiveRemoveLowCardinality(column);
-
-            bool is_column_nullable = false;
-            auto arrow_type = getArrowType(header_column.type, column, header_column.name, format_name, &is_column_nullable);
-            arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
 
             arrow::MemoryPool* pool = arrow::default_memory_pool();
             std::unique_ptr<arrow::ArrayBuilder> array_builder;
@@ -638,7 +632,7 @@ namespace DB
             arrow_arrays.emplace_back(std::move(arrow_array));
         }
 
-        std::shared_ptr<arrow::Schema> arrow_schema = std::make_shared<arrow::Schema>(std::move(arrow_fields));
+        std::shared_ptr<arrow::Schema> arrow_schema = std::make_shared<arrow::Schema>(arrow_fields);
 
         res = arrow::Table::Make(arrow_schema, arrow_arrays);
     }
