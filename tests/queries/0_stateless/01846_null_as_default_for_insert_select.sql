@@ -28,3 +28,5 @@ CREATE TABLE test_null_as_default (a Int8, b Int64 DEFAULT c - 500, c Int32 DEFA
 
 INSERT INTO test_null_as_default(a, c) SELECT 1, NULL UNION ALL SELECT 2, NULL;
 SELECT * FROM test_null_as_default ORDER BY a;
+
+DROP TABLE test_null_as_default;
