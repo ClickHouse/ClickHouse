@@ -248,6 +248,7 @@ class NetThroughput(object):
             if not check:
                 raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
         except:
+            logging.error("All available interfaces %s", subprocess.check_output("cat /proc/net/dev", shell=True))
             raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
 
         self.current_in = self._get_in_bytes()
