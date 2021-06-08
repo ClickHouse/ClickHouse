@@ -18,8 +18,7 @@ bool nestedEpollWorks(Poco::Logger * log)
     if (Poco::Environment::os() != POCO_OS_LINUX)
         return true;
 
-    DB::VersionNumber linux_version = DB::VersionNumber::fromString(
-        Poco::Environment::osVersion(), /* strict= */ false);
+    DB::VersionNumber linux_version(Poco::Environment::osVersion(), /* strict= */ false);
 
     /// the check is correct since there will be no more 5.5.x releases.
     if (linux_version >= DB::VersionNumber{5, 5, 0} && linux_version < DB::VersionNumber{5, 6, 13})

@@ -24,6 +24,10 @@ struct VersionNumber
     VersionNumber(long major, long minor, long patch)
         : version(major, minor, patch)
     {}
+    /// Parse version number from string.
+    ///
+    /// @param strict - throws if number of components > 3
+    VersionNumber(std::string version, bool strict);
 
     VersionNumber(const std::vector<long> & vec);
 
@@ -40,9 +44,6 @@ struct VersionNumber
     {
         return os << v.toString();
     }
-
-    /// @param strict - throws if number of components > 3
-    static VersionNumber fromString(std::string version, bool strict);
 
 private:
     using VersionTuple = std::tuple<long, long, long>;
