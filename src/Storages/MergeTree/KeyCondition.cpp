@@ -451,8 +451,6 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
     // Constant expr should use alias names if any
     String column_name = expr->getColumnName();
 
-    // std::cerr << "========= get const for : " << column_name << "\n" << block_with_constants.dumpStructure() << std::endl;
-
     if (const auto * lit = expr->as<ASTLiteral>())
     {
         /// By default block_with_constants has only one column named "_dummy".
