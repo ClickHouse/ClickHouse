@@ -22,8 +22,7 @@ $CLICKHOUSE_CLIENT -q "select 'step 1'"
 $CLICKHOUSE_CLIENT -q "insert into test_too_many_parts_01902 \
                        select *, today() from numbers(10) \
                        settings max_block_size=1, min_insert_block_size_rows=1, \
-                       min_insert_block_size_bytes=1"
-
-$CLICKHOUSE_CLIENT -q "DROP TABLE test_too_many_parts_01902" 2>&1 | \
+                       min_insert_block_size_bytes=1" 2>&1 | \
     sed 's/DB::Exception: Received from .*\. DB::Exception: Too many parts (.*)\./DB::Exception: Too many parts./g'
 
+$CLICKHOUSE_CLIENT -q "DROP TABLE test_too_many_parts_01902" 
