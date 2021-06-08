@@ -233,7 +233,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
         if (given_select.prewhere())
             select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.prewhere()->clone());
-        // TODO will row policy filter work?
 
         // After overriding the group by clause, we finish the possible aggregations directly
         if (processed_stage >= QueryProcessingStage::Enum::WithMergeableState && given_select.groupBy())
