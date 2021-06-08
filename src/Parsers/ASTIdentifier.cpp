@@ -118,7 +118,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
 
             /// Some AST revriting code, like IdentifierSemantic::setColumnLongName,
             /// does not respect children of identifier.
-            /// Here we also ingore children if they are empty.
+            /// Here we also ignore children if they are empty.
             if (name_parts[i].empty() && j < children.size())
                 children[j++]->formatImpl(settings, state, frame);
             else
