@@ -17,7 +17,8 @@ node4 = cluster.add_instance('node4', user_configs=['configs/enable_uncompressed
 node5 = cluster.add_instance('node5', main_configs=['configs/zstd_compression_by_default.xml'],
                              user_configs=['configs/enable_uncompressed_cache.xml',
                                            'configs/allow_suspicious_codecs.xml'])
-
+node6 = cluster.add_instance('node6', main_configs=['configs/allow_experimental_codecs.xml'],
+                             user_configs=['configs/allow_suspicious_codecs.xml'])
 
 @pytest.fixture(scope="module")
 def start_cluster():

@@ -136,13 +136,16 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     ContextPtr context_,
     size_t subquery_depth_,
     bool do_global,
-    SubqueriesForSets subqueries_for_sets_)
+    SubqueriesForSets subqueries_for_sets_,
+    PreparedSets prepared_sets_)
     : WithContext(context_)
     , query(query_), settings(getContext()->getSettings())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
 {
+    /// Cache prepared sets because we might run analysis multiple times
     subqueries_for_sets = std::move(subqueries_for_sets_);
+    prepared_sets = std::move(prepared_sets_);
 
     /// external_tables, subqueries_for_sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
@@ -399,8 +402,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
                 getRootActions(left_in_operand, true, temp_actions);
 
                 if (temp_actions->tryFindInIndex(left_in_operand->getColumnName()))
-                    makeExplicitSet(func, *temp_actions, true, getContext(),
-                        settings.size_limits_for_set, prepared_sets);
+                    makeExplicitSet(func, *temp_actions, true, getContext(), settings.size_limits_for_set, prepared_sets);
             }
         }
     }

@@ -99,12 +99,10 @@ private:
 public:
     /// Ctor for non-select queries. Generally its usage is:
     /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
-    ExpressionAnalyzer(
-        const ASTPtr & query_,
-        const TreeRewriterResultPtr & syntax_analyzer_result_,
-        ContextPtr context_)
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
-    {}
+    ExpressionAnalyzer(const ASTPtr & query_, const TreeRewriterResultPtr & syntax_analyzer_result_, ContextPtr context_)
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {}, {})
+    {
+    }
 
     ~ExpressionAnalyzer();
 
@@ -127,6 +125,8 @@ public:
       *  and create all the returned sets before performing the actions.
       */
     SubqueriesForSets & getSubqueriesForSets() { return subqueries_for_sets; }
+
+    PreparedSets & getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
@@ -156,7 +156,8 @@ protected:
         ContextPtr context_,
         size_t subquery_depth_,
         bool do_global_,
-        SubqueriesForSets subqueries_for_sets_);
+        SubqueriesForSets subqueries_for_sets_,
+        PreparedSets prepared_sets_);
 
     ASTPtr query;
     const ExtractedSettings settings;
@@ -288,8 +289,16 @@ public:
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {},
-        SubqueriesForSets subqueries_for_sets_ = {})
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_, std::move(subqueries_for_sets_))
+        SubqueriesForSets subqueries_for_sets_ = {},
+        PreparedSets prepared_sets_ = {})
+        : ExpressionAnalyzer(
+            query_,
+            syntax_analyzer_result_,
+            context_,
+            options_.subquery_depth,
+            do_global_,
+            std::move(subqueries_for_sets_),
+            std::move(prepared_sets_))
         , metadata_snapshot(metadata_snapshot_)
         , required_result_columns(required_result_columns_)
         , query_options(options_)
