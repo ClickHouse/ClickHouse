@@ -488,6 +488,6 @@ def test_skip_index(started_cluster):
     execute_task(started_cluster, TaskSkipIndex(started_cluster), [])
 
 
-@pytest.mark.timeout(600)
+@pytest.mark.skip(reason="Too flaky :(")
 def test_ttl_move_to_volume(started_cluster):
     execute_task(started_cluster, TaskTTLMoveToVolume(started_cluster), [])
