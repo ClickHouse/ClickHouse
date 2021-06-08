@@ -224,24 +224,28 @@ namespace
                     }
                 }
             }
-            else if (const auto * tuple_literal = right->as<ASTLiteral>();
-                tuple_literal && tuple_literal->value.getType() == Field::Types::Tuple)
+            else if (const auto * tuple_literal = right->as<ASTLiteral>(); tuple_literal)
             {
-                const auto & tuple = tuple_literal->value.get<const Tuple &>();
-                for (const auto & child : tuple)
+                if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto dnf = analyzeEquals(identifier, child, expr);
-
-                    if (dnf.empty())
+                    const auto & tuple = tuple_literal->value.get<const Tuple &>();
+                    for (const auto & child : tuple)
                     {
-                        return {};
-                    }
+                        const auto dnf = analyzeEquals(identifier, child, expr);
 
-                    if (!add_dnf(dnf))
-                    {
-                        return {};
+                        if (dnf.empty())
+                        {
+                            return {};
+                        }
+
+                        if (!add_dnf(dnf))
+                        {
+                            return {};
+                        }
                     }
                 }
+                else
+                    return analyzeEquals(identifier, tuple_literal, expr);
             }
             else
             {
