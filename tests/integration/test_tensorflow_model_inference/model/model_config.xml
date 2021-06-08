@@ -1,0 +1,8 @@
+<models>
+    <model>
+        <type>tensorflow</type>
+        <name>test</name>
+	<path>/etc/clickhouse-server/model/model.tflite</path>
+	<lifetime>0</lifetime>
+    </model>
+</models>
