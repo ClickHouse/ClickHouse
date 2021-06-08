@@ -5,6 +5,7 @@ namespace DB
 {
 
 class MergeTreeTransaction;
+/// TODO maybe replace with raw pointer? It should not be shared, only MergeTreeTransactionHolder can own a transaction object
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
 class MergeTreeTransactionHolder

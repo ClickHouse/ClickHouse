@@ -2657,6 +2657,8 @@ void Context::setCurrentTransaction(MergeTreeTransactionPtr txn)
     if (enable_mvcc_test_helper != 42)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported");
     merge_tree_transaction = std::move(txn);
+    if (!merge_tree_transaction)
+        merge_tree_transaction_holder = {};
 }
 
 MergeTreeTransactionPtr Context::getCurrentTransaction() const
