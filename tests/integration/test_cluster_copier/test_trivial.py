@@ -1,6 +1,8 @@
 import os
 import sys
 import time
+import random
+import string
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -16,28 +18,24 @@ sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 
 COPYING_FAIL_PROBABILITY = 0.1
 MOVING_FAIL_PROBABILITY = 0.1
-cluster = None
+
+cluster = ClickHouseCluster(__file__, name='copier_test_trivial')
 
 
-@pytest.fixture(scope="function")
+def generateRandomString(count):
+    return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(count))
+
+
+@pytest.fixture(scope="module")
 def started_cluster():
     global cluster
     try:
-        clusters_schema = {
-            "0": {"0": ["0"]},
-            "1": {"0": ["0"]}
-        }
-
-        cluster = ClickHouseCluster(__file__)
-
-        for cluster_name, shards in clusters_schema.items():
-            for shard_name, replicas in shards.items():
-                for replica_name in replicas:
-                    name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
-                    cluster.add_instance(name,
-                                         main_configs=["configs/conf.d/clusters_trivial.xml"], user_configs=[],
-                                         macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
-                                         with_zookeeper=True)
+        for name in ["first_trivial", "second_trivial"]:
+            instance = cluster.add_instance(name,
+                main_configs=["configs/conf.d/clusters_trivial.xml"],
+                user_configs=["configs_two_nodes/users.xml"],
+                macros={"cluster" : name, "shard" : "the_only_shard", "replica" : "the_only_replica"},
+                with_zookeeper=True)
 
         cluster.start()
         yield cluster
@@ -47,25 +45,22 @@ def started_cluster():
 
 
 class TaskTrivial:
-    def __init__(self, cluster, use_sample_offset):
+    def __init__(self, cluster):
         self.cluster = cluster
-        if use_sample_offset:
-            self.zk_task_path = "/clickhouse-copier/task_trivial_use_sample_offset"
-        else:
-            self.zk_task_path = "/clickhouse-copier/task_trivial"
+        self.zk_task_path = "/clickhouse-copier/task_trivial"
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_trivial.xml'), 'r').read()
 
     def start(self):
-        source = cluster.instances['s0_0_0']
-        destination = cluster.instances['s1_0_0']
+        source = cluster.instances['first_trivial']
+        destination = cluster.instances['second_trivial']
 
         for node in [source, destination]:
             node.query("DROP DATABASE IF EXISTS default")
             node.query("CREATE DATABASE IF NOT EXISTS default")
 
         source.query("CREATE TABLE trivial (d UInt64, d1 UInt64 MATERIALIZED d+1)"
-                     "ENGINE=ReplicatedMergeTree('/clickhouse/tables/source_trivial_cluster/1/trivial', '1') "
-                     "PARTITION BY d % 5 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16")
+                     "ENGINE=ReplicatedMergeTree('/clickhouse/tables/source_trivial_cluster/1/trivial/{}', '1') "
+                     "PARTITION BY d % 5 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16".format(generateRandomString(10)))
 
         source.query("INSERT INTO trivial SELECT * FROM system.numbers LIMIT 1002",
                      settings={"insert_distributed_sync": 1})
@@ -75,8 +70,8 @@ class TaskTrivial:
         status_data, _ = zk.get(self.zk_task_path + "/status")
         assert status_data == b'{"hits":{"all_partitions_count":5,"processed_partitions_count":5}}'
 
-        source = cluster.instances['s0_0_0']
-        destination = cluster.instances['s1_0_0']
+        source = cluster.instances['first_trivial']
+        destination = cluster.instances['second_trivial']
 
         assert TSV(source.query("SELECT count() FROM trivial")) == TSV("1002\n")
         assert TSV(destination.query("SELECT count() FROM trivial")) == TSV("1002\n")
@@ -92,8 +87,8 @@ class TaskReplicatedWithoutArguments:
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_trivial_without_arguments.xml'), 'r').read()
 
     def start(self):
-        source = cluster.instances['s0_0_0']
-        destination = cluster.instances['s1_0_0']
+        source = cluster.instances['first_trivial']
+        destination = cluster.instances['second_trivial']
 
         for node in [source, destination]:
             node.query("DROP DATABASE IF EXISTS default")
@@ -111,8 +106,8 @@ class TaskReplicatedWithoutArguments:
         status_data, _ = zk.get(self.zk_task_path + "/status")
         assert status_data == b'{"hits":{"all_partitions_count":5,"processed_partitions_count":5}}'
 
-        source = cluster.instances['s0_0_0']
-        destination = cluster.instances['s1_0_0']
+        source = cluster.instances['first_trivial']
+        destination = cluster.instances['second_trivial']
 
         assert TSV(source.query("SELECT count() FROM trivial_without_arguments")) == TSV("1002\n")
         assert TSV(destination.query("SELECT count() FROM trivial_without_arguments")) == TSV("1002\n")

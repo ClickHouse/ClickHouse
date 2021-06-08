@@ -5,7 +5,7 @@
              <shard>
                  <internal_replication>false</internal_replication>
                  <replica>
-                     <host>first</host>
+                     <host>first_of_two</host>
                      <port>9000</port>
                  </replica>
              </shard>
@@ -14,7 +14,7 @@
              <shard>
                  <internal_replication>false</internal_replication>
                  <replica>
-                     <host>second</host>
+                     <host>second_of_two</host>
                      <port>9000</port>
                  </replica>
              </shard>

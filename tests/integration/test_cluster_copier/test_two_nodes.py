@@ -12,16 +12,15 @@ import docker
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 
-cluster = None
+cluster = ClickHouseCluster(__file__, name='copier_test_two_nodes')
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     global cluster
     try:
-        cluster = ClickHouseCluster(__file__)
 
-        for name in ["first", "second"]:
+        for name in ["first_of_two", "second_of_two"]:
             instance = cluster.add_instance(name,
                 main_configs=[
                     "configs_two_nodes/conf.d/clusters.xml",
@@ -32,7 +31,7 @@ def started_cluster():
 
         cluster.start()
 
-        for name in ["first", "second"]:
+        for name in ["first_of_two", "second_of_two"]:
             instance = cluster.instances[name]
             instance.exec_in_container(['bash', '-c', 'mkdir /jbod1'])
             instance.exec_in_container(['bash', '-c', 'mkdir /jbod2'])
@@ -56,8 +55,13 @@ class TaskWithDifferentSchema:
             print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
-        first = cluster.instances["first"]
-        first.query("CREATE DATABASE db_different_schema;")
+        first = cluster.instances["first_of_two"]
+        second = cluster.instances["second_of_two"]
+
+        first.query("DROP DATABASE IF EXISTS db_different_schema SYNC")
+        second.query("DROP DATABASE IF EXISTS db_different_schema SYNC")
+
+        first.query("CREATE DATABASE IF NOT EXISTS db_different_schema;")
         first.query("""CREATE TABLE db_different_schema.source
         (
             Column1 String,
@@ -86,8 +90,8 @@ class TaskWithDifferentSchema:
             Column6 String, Column7 String, Column8 String, Column9 String, Column10 String,
             Column11 String, Column12 Decimal(3, 1), Column13 DateTime, Column14 UInt16', 1, 10, 2) LIMIT 50;""")
 
-        second = cluster.instances["second"]
-        second.query("CREATE DATABASE db_different_schema;")
+
+        second.query("CREATE DATABASE IF NOT EXISTS db_different_schema;")
         second.query("""CREATE TABLE db_different_schema.destination
         (
             Column1 LowCardinality(String) CODEC(LZ4),
@@ -111,8 +115,8 @@ class TaskWithDifferentSchema:
         print("Preparation completed")
 
     def check(self):
-        first = cluster.instances["first"]
-        second = cluster.instances["second"]
+        first = cluster.instances["first_of_two"]
+        second = cluster.instances["second_of_two"]
 
         a = first.query("SELECT count() from db_different_schema.source")
         b = second.query("SELECT count() from db_different_schema.destination")
@@ -123,6 +127,9 @@ class TaskWithDifferentSchema:
         b = TSV(second.query("""SELECT sipHash64(*) from db_different_schema.destination
             ORDER BY (Column1, Column2, Column3, Column4, Column5, Column6, Column7, Column8, Column9, Column10, Column11, Column12, Column13, Column14)"""))
         assert a == b, "Data"
+
+        first.query("DROP DATABASE IF EXISTS db_different_schema SYNC")
+        second.query("DROP DATABASE IF EXISTS db_different_schema SYNC")
 
 
 # Just simple copying, but table schema has TTL on columns
@@ -139,8 +146,13 @@ class TaskTTL:
             print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
-        first = cluster.instances["first"]
-        first.query("CREATE DATABASE db_ttl_columns;")
+        first = cluster.instances["first_of_two"]
+        second = cluster.instances["second_of_two"]
+
+        first.query("DROP DATABASE IF EXISTS db_ttl_columns SYNC")
+        second.query("DROP DATABASE IF EXISTS db_ttl_columns SYNC")
+
+        first.query("CREATE DATABASE IF NOT EXISTS db_ttl_columns;")
         first.query("""CREATE TABLE db_ttl_columns.source
         (
             Column1 String,
@@ -162,8 +174,7 @@ class TaskTTL:
             'Column1 String, Column2 UInt32, Column3 Date, Column4 DateTime, Column5 UInt16,
             Column6 String, Column7 Decimal(3, 1), Column8 Tuple(Float64, Float64)', 1, 10, 2) LIMIT 50;""")
 
-        second = cluster.instances["second"]
-        second.query("CREATE DATABASE db_ttl_columns;")
+        second.query("CREATE DATABASE IF NOT EXISTS db_ttl_columns;")
         second.query("""CREATE TABLE db_ttl_columns.destination
         (
             Column1 String,
@@ -181,8 +192,8 @@ class TaskTTL:
         print("Preparation completed")
 
     def check(self):
-        first = cluster.instances["first"]
-        second = cluster.instances["second"]
+        first = cluster.instances["first_of_two"]
+        second = cluster.instances["second_of_two"]
 
         a = first.query("SELECT count() from db_ttl_columns.source")
         b = second.query("SELECT count() from db_ttl_columns.destination")
@@ -193,6 +204,9 @@ class TaskTTL:
         b = TSV(second.query("""SELECT sipHash64(*) from db_ttl_columns.destination
             ORDER BY (Column1, Column2, Column3, Column4, Column5, Column6, Column7, Column8)"""))
         assert a == b, "Data"
+
+        first.query("DROP DATABASE IF EXISTS db_ttl_columns SYNC")
+        second.query("DROP DATABASE IF EXISTS db_ttl_columns SYNC")
 
 
 class TaskSkipIndex:
@@ -207,8 +221,13 @@ class TaskSkipIndex:
             print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
-        first = cluster.instances["first"]
-        first.query("CREATE DATABASE db_skip_index;")
+        first = cluster.instances["first_of_two"]
+        second = cluster.instances["second_of_two"]
+
+        first.query("DROP DATABASE IF EXISTS db_skip_index SYNC")
+        second.query("DROP DATABASE IF EXISTS db_skip_index SYNC")
+
+        first.query("CREATE DATABASE IF NOT EXISTS db_skip_index;")
         first.query("""CREATE TABLE db_skip_index.source
         (
             Column1 UInt64,
@@ -228,8 +247,7 @@ class TaskSkipIndex:
         first.query("""INSERT INTO db_skip_index.source SELECT * FROM generateRandom(
             'Column1 UInt64, Column2 Int32, Column3 Date, Column4 DateTime, Column5 String', 1, 10, 2) LIMIT 100;""")
 
-        second = cluster.instances["second"]
-        second.query("CREATE DATABASE db_skip_index;")
+        second.query("CREATE DATABASE IF NOT EXISTS db_skip_index;")
         second.query("""CREATE TABLE db_skip_index.destination
         (
             Column1 UInt64,
@@ -246,8 +264,8 @@ class TaskSkipIndex:
         print("Preparation completed")
 
     def check(self):
-        first = cluster.instances["first"]
-        second = cluster.instances["second"]
+        first = cluster.instances["first_of_two"]
+        second = cluster.instances["second_of_two"]
 
         a = first.query("SELECT count() from db_skip_index.source")
         b = second.query("SELECT count() from db_skip_index.destination")
@@ -258,6 +276,9 @@ class TaskSkipIndex:
         b = TSV(second.query("""SELECT sipHash64(*) from db_skip_index.destination
             ORDER BY (Column1, Column2, Column3, Column4, Column5)"""))
         assert a == b, "Data"
+
+        first.query("DROP DATABASE IF EXISTS db_skip_index SYNC")
+        second.query("DROP DATABASE IF EXISTS db_skip_index SYNC")
 
 
 class TaskTTLMoveToVolume:
@@ -272,8 +293,13 @@ class TaskTTLMoveToVolume:
             print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
-        first = cluster.instances["first"]
-        first.query("CREATE DATABASE db_move_to_volume;")
+        first = cluster.instances["first_of_two"]
+        second = cluster.instances["first_of_two"]
+
+        first.query("DROP DATABASE IF EXISTS db_move_to_volume SYNC")
+        second.query("DROP DATABASE IF EXISTS db_move_to_volume SYNC")
+
+        first.query("CREATE DATABASE IF NOT EXISTS db_move_to_volume;")
         first.query("""CREATE TABLE db_move_to_volume.source
         (
             Column1 UInt64,
@@ -292,8 +318,7 @@ class TaskTTLMoveToVolume:
         first.query("""INSERT INTO db_move_to_volume.source SELECT * FROM generateRandom(
             'Column1 UInt64, Column2 Int32, Column3 Date, Column4 DateTime, Column5 String', 1, 10, 2) LIMIT 100;""")
 
-        second = cluster.instances["second"]
-        second.query("CREATE DATABASE db_move_to_volume;")
+        second.query("CREATE DATABASE IF NOT EXISTS db_move_to_volume;")
         second.query("""CREATE TABLE db_move_to_volume.destination
         (
             Column1 UInt64,
@@ -310,8 +335,8 @@ class TaskTTLMoveToVolume:
         print("Preparation completed")
 
     def check(self):
-        first = cluster.instances["first"]
-        second = cluster.instances["second"]
+        first = cluster.instances["first_of_two"]
+        second = cluster.instances["second_of_two"]
 
         a = first.query("SELECT count() from db_move_to_volume.source")
         b = second.query("SELECT count() from db_move_to_volume.destination")
@@ -322,6 +347,9 @@ class TaskTTLMoveToVolume:
         b = TSV(second.query("""SELECT sipHash64(*) from db_move_to_volume.destination
             ORDER BY (Column1, Column2, Column3, Column4, Column5)"""))
         assert a == b, "Data"
+
+        first.query("DROP DATABASE IF EXISTS db_move_to_volume SYNC")
+        second.query("DROP DATABASE IF EXISTS db_move_to_volume SYNC")
 
 
 class TaskDropTargetPartition:
@@ -336,8 +364,13 @@ class TaskDropTargetPartition:
             print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
 
     def start(self):
-        first = cluster.instances["first"]
-        first.query("CREATE DATABASE db_drop_target_partition;")
+        first = cluster.instances["first_of_two"]
+        second = cluster.instances["second_of_two"]
+
+        first.query("DROP DATABASE IF EXISTS db_drop_target_partition SYNC")
+        second.query("DROP DATABASE IF EXISTS db_drop_target_partition SYNC")
+
+        first.query("CREATE DATABASE IF NOT EXISTS db_drop_target_partition;")
         first.query("""CREATE TABLE db_drop_target_partition.source
         (
             Column1 UInt64,
@@ -354,8 +387,8 @@ class TaskDropTargetPartition:
         first.query("""INSERT INTO db_drop_target_partition.source SELECT * FROM generateRandom(
             'Column1 UInt64, Column2 Int32, Column3 Date, Column4 DateTime, Column5 String', 1, 10, 2) LIMIT 100;""")
 
-        second = cluster.instances["second"]
-        second.query("CREATE DATABASE db_drop_target_partition;")
+
+        second.query("CREATE DATABASE IF NOT EXISTS db_drop_target_partition;")
         second.query("""CREATE TABLE db_drop_target_partition.destination
         (
             Column1 UInt64,
@@ -373,8 +406,8 @@ class TaskDropTargetPartition:
         print("Preparation completed")
 
     def check(self):
-        first = cluster.instances["first"]
-        second = cluster.instances["second"]
+        first = cluster.instances["first_of_two"]
+        second = cluster.instances["second_of_two"]
 
         a = first.query("SELECT count() from db_drop_target_partition.source")
         b = second.query("SELECT count() from db_drop_target_partition.destination")
@@ -385,6 +418,9 @@ class TaskDropTargetPartition:
         b = TSV(second.query("""SELECT sipHash64(*) from db_drop_target_partition.destination
             ORDER BY (Column1, Column2, Column3, Column4, Column5)"""))
         assert a == b, "Data"
+
+        first.query("DROP DATABASE IF EXISTS db_drop_target_partition SYNC")
+        second.query("DROP DATABASE IF EXISTS db_drop_target_partition SYNC")
 
 
 def execute_task(task, cmd_options):
