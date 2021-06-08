@@ -5939,57 +5939,6 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
     return CancellationCode::CancelSent;
 }
 
-void StorageReplicatedMergeTree::removePartsFromFilesystem(const DataPartsVector & parts)
-{
-    auto remove_part = [&](const auto & part)
-    {
-        LOG_DEBUG(log, "Removing part from filesystem {}", part.name);
-        try
-        {
-            bool keep_s3 = !this->unlockSharedData(part);
-            part.remove(keep_s3);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "There is a problem with deleting part " + part.name + " from filesystem");
-        }
-    };
-
-    const auto settings = getSettings();
-    if (settings->max_part_removal_threads > 1 && parts.size() > settings->concurrent_part_removal_threshold)
-    {
-        /// Parallel parts removal.
-
-        size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts.size());
-        ThreadPool pool(num_threads);
-
-        /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
-        for (const DataPartPtr & part : parts)
-        {
-            pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
-            {
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
-                );
-                if (thread_group)
-                    CurrentThread::attachTo(thread_group);
-
-                remove_part(*part);
-            });
-        }
-
-        pool.wait();
-    }
-    else
-    {
-        for (const DataPartPtr & part : parts)
-        {
-            remove_part(*part);
-        }
-    }
-}
-
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
     auto table_lock = lockForShare(
@@ -6017,7 +5966,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     /// Delete duplicate parts from filesystem
     if (!parts_to_delete_only_from_filesystem.empty())
     {
-        removePartsFromFilesystem(parts_to_delete_only_from_filesystem);
+        clearPartsFromFilesystem(parts_to_delete_only_from_filesystem);
         removePartsFinally(parts_to_delete_only_from_filesystem);
 
         LOG_DEBUG(log, "Removed {} old duplicate parts", parts_to_delete_only_from_filesystem.size());
@@ -6062,7 +6011,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     /// Remove parts from filesystem and finally from data_parts
     if (!parts_to_remove_from_filesystem.empty())
     {
-        removePartsFromFilesystem(parts_to_remove_from_filesystem);
+        clearPartsFromFilesystem(parts_to_remove_from_filesystem);
         removePartsFinally(parts_to_remove_from_filesystem);
 
         LOG_DEBUG(log, "Removed {} old parts", parts_to_remove_from_filesystem.size());

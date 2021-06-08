@@ -1097,6 +1097,21 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
 }
 
 
+void IMergeTreeDataPart::removeIfNotLockedInS3() const
+{
+    try
+    {
+        /// TODO Unlocking in try-catch looks ugly. Special "keep_s3" flag
+        /// which is a bit different from "keep_s3_on_delete" flag looks ugly too.
+        bool keep_s3 = !storage.unlockSharedData(*this);
+        remove(keep_s3);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "There is a problem with deleting part " + name + " from filesystem");
+    }
+}
+
 void IMergeTreeDataPart::remove(bool keep_s3) const
 {
     if (!isStoredOnDisk())

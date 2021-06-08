@@ -1313,7 +1313,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
                     CurrentThread::attachTo(thread_group);
 
                 LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
-                part->remove();
+                part->removeIfNotLockedInS3();
             });
         }
 
@@ -1324,7 +1324,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         for (const DataPartPtr & part : parts_to_remove)
         {
             LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
-            part->remove();
+            part->removeIfNotLockedInS3();
         }
     }
 }
