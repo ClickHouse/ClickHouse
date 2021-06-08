@@ -49,11 +49,15 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
-    args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
+    auto db_arg = evaluateConstantExpressionForDatabaseName(args[0], context);
+    auto table_arg = evaluateConstantExpressionAsLiteral(args[1], context);
 
-    source_database_regexp = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    source_table_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    source_database_regexp = db_arg->as<ASTLiteral &>().value.safeGet<String>();
+    source_table_regexp = table_arg->as<ASTLiteral &>().value.safeGet<String>();
+
+    /// If database argument is not String literal, we should not treat it as regexp
+    if (!args[0]->as<ASTLiteral>())
+        source_database_regexp = "^" + source_database_regexp + "$";
 }
 
 
@@ -122,6 +126,7 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
         StorageID(getDatabaseName(), table_name),
         getActualTableStructure(context),
         String{},
+        source_database_regexp,
         getSourceDatabasesAndTables(context),
         context);
 
