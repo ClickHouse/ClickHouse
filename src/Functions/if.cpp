@@ -909,16 +909,6 @@ private:
         {
             if (cond_col)
             {
-                size_t size = input_rows_count;
-                const auto & null_map_data = cond_col->getData();
-
-                auto negated_null_map = ColumnUInt8::create();
-                auto & negated_null_map_data = negated_null_map->getData();
-                negated_null_map_data.resize(size);
-
-                for (size_t i = 0; i < size; ++i)
-                    negated_null_map_data[i] = !null_map_data[i];
-
                 auto arg_then_column = arg_then.column;
                 auto result_column = IColumn::mutate(std::move(arg_then_column));
                 if (then_is_short)
@@ -930,7 +920,19 @@ private:
                     return result_column;
                 }
                 else
+                {
+                    size_t size = input_rows_count;
+                    const auto & null_map_data = cond_col->getData();
+
+                    auto negated_null_map = ColumnUInt8::create();
+                    auto & negated_null_map_data = negated_null_map->getData();
+                    negated_null_map_data.resize(size);
+
+                    for (size_t i = 0; i < size; ++i)
+                        negated_null_map_data[i] = !null_map_data[i];
+
                     return ColumnNullable::create(materializeColumnIfConst(result_column), std::move(negated_null_map));
+                }
             }
             else if (cond_const_col)
             {
