@@ -108,7 +108,7 @@ void MergeTreeTransaction::rollback() noexcept
 
     /// FIXME const_cast
     for (const auto & part : creating_parts)
-        const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet({part}, true);
+        const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet(nullptr, {part}, true);
 
     for (const auto & part : removing_parts)
         if (part->versions.getMinTID() != tid)

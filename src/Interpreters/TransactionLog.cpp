@@ -43,7 +43,7 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} exists", txn->tid.getHash(), txn->tid);
         txn->snapshot_in_use_it = snapshots_in_use.insert(snapshots_in_use.end(), snapshot);
     }
-    LOG_TRACE(log, "Beginning transaction {}", txn->tid);
+    LOG_TRACE(log, "Beginning transaction {} ({})", txn->tid, txn->tid.getHash());
     return txn;
 }
 

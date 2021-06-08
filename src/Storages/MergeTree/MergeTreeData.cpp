@@ -2255,10 +2255,10 @@ bool MergeTreeData::renameTempPartAndReplace(
     part->setState(DataPartState::PreCommitted);
     part->renameTo(part_name, true);
 
+    auto part_it = data_parts_indexes.insert(part).first;
     /// FIXME Transactions: it's not the best place for checking and setting maxtid,
     /// because it's too optimistic. We should lock maxtid of covered parts at the beginning of operation.
     MergeTreeTransaction::addNewPartAndRemoveCovered(shared_from_this(), part, covered_parts, txn);
-    auto part_it = data_parts_indexes.insert(part).first;
 
     if (out_transaction)
     {
@@ -2319,12 +2319,15 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     return covered_parts;
 }
 
-void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & /*acquired_lock*/)
+void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & /*acquired_lock*/)
 {
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
 
     for (const DataPartPtr & part : remove)
     {
+        if (part->versions.mincsn != Tx::RolledBackCSN)
+            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn);
+
         if (part->getState() == IMergeTreeDataPart::State::Committed)
         {
             removePartContributionToColumnSizes(part);
@@ -2359,7 +2362,8 @@ void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(con
     }
 }
 
-void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock)
+void MergeTreeData::removePartsFromWorkingSet(
+        MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock)
 {
     auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
 
@@ -2371,11 +2375,12 @@ void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bo
         part->assertState({DataPartState::PreCommitted, DataPartState::Committed, DataPartState::Outdated});
     }
 
-    removePartsFromWorkingSet(remove, clear_without_timeout, lock);
+    removePartsFromWorkingSet(txn, remove, clear_without_timeout, lock);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
-                                                                               DataPartsLock & lock)
+MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(
+        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range,
+        bool clear_without_timeout, DataPartsLock & lock)
 {
     DataPartsVector parts_to_remove;
 
@@ -2416,7 +2421,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             parts_to_remove.emplace_back(part);
     }
 
-    removePartsFromWorkingSet(parts_to_remove, clear_without_timeout, lock);
+    removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
 
     return parts_to_remove;
 }
@@ -3787,7 +3792,7 @@ void MergeTreeData::Transaction::rollback()
             }
         }
 
-        data.removePartsFromWorkingSet(
+        data.removePartsFromWorkingSet(txn,
             DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
             /* clear_without_timeout = */ true);
     }

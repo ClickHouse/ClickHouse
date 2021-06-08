@@ -243,7 +243,7 @@ void StorageMergeTree::drop()
     dropAllData();
 }
 
-void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
     {
         /// Asks to complete merges and does not allow them to start.
@@ -251,7 +251,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         auto merge_blocker = stopMergesAndWait();
 
         auto parts_to_remove = getDataPartsVector();
-        removePartsFromWorkingSet(parts_to_remove, true);
+        removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true);
 
         LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
     }
@@ -1058,7 +1058,6 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
                 return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock, txn);
             else if (mutate_entry)
                 return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-
             return true;
             //__builtin_unreachable();
         }, PoolType::MERGE_MUTATE};
@@ -1242,7 +1241,7 @@ ActionLock StorageMergeTree::stopMergesAndWait()
 }
 
 
-MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, bool force)
+MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force)
 {
 
     if (force)
@@ -1252,7 +1251,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, boo
         auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
         if (!part)
             throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
-        removePartsFromWorkingSet({part}, true);
+        removePartsFromWorkingSet(txn, {part}, true);
         return part;
     }
     else
@@ -1271,22 +1270,22 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, boo
         if (currently_merging_mutating_parts.count(part))
             return nullptr;
 
-        removePartsFromWorkingSet({part}, true);
+        removePartsFromWorkingSet(txn, {part}, true);
         return part;
     }
 }
 
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
-    if (auto part = outdatePart(part_name, /*force=*/ false))
+    if (auto part = outdatePart(nullptr, part_name, /*force=*/ false))
         dropPartsImpl({part}, /*detach=*/ false);
 
     /// Else nothing to do, part was removed in some different way
 }
 
-void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr /*query_context*/)
+void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
 {
-    if (auto part = outdatePart(part_name, /*force=*/ true))
+    if (auto part = outdatePart(query_context->getCurrentTransaction().get(), part_name, /*force=*/ true))
         dropPartsImpl({part}, detach);
 }
 
@@ -1302,7 +1301,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
         /// TODO should we throw an exception if parts_to_remove is empty?
-        removePartsFromWorkingSet(parts_to_remove, true);
+        removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true);
     }
 
     dropPartsImpl(std::move(parts_to_remove), detach);
@@ -1430,7 +1429,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
             if (replace)
-                removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
+                removePartsInRangeFromWorkingSet(local_context->getCurrentTransaction().get(), drop_range, true, data_parts_lock);
         }
 
         PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
@@ -1502,7 +1501,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             for (MutableDataPartPtr & part : dst_parts)
                 dest_table_storage->renameTempPartAndReplace(part, local_context->getCurrentTransaction().get(), &dest_table_storage->increment, &transaction, lock);
 
-            removePartsFromWorkingSet(src_parts, true, lock);
+            removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), src_parts, true, lock);
             transaction.commit(&lock);
         }
 

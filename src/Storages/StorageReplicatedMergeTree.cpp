@@ -2195,7 +2195,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     DataPartsVector parts_to_remove;
     {
         auto data_parts_lock = lockParts();
-        parts_to_remove = removePartsInRangeFromWorkingSet(drop_range_info, true, data_parts_lock);
+        parts_to_remove = removePartsInRangeFromWorkingSet(nullptr, drop_range_info, true, data_parts_lock);
     }
 
     if (entry.detach)
@@ -2311,7 +2311,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
         if (parts_to_add.empty() && replace)
         {
-            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
+            parts_to_remove = removePartsInRangeFromWorkingSet(nullptr, drop_range, true, data_parts_lock);
             String parts_to_remove_str;
             for (const auto & part : parts_to_remove)
             {
@@ -2554,7 +2554,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             transaction.commit(&data_parts_lock);
             if (replace)
             {
-                parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
+                parts_to_remove = removePartsInRangeFromWorkingSet(nullptr, drop_range, true, data_parts_lock);
                 String parts_to_remove_str;
                 for (const auto & part : parts_to_remove)
                 {
@@ -2777,7 +2777,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         }
     }
 
-    removePartsFromWorkingSet(parts_to_remove_from_working_set, true);
+    removePartsFromWorkingSet(nullptr, parts_to_remove_from_working_set, true);
 
     for (const String & name : active_parts)
     {
@@ -6486,7 +6486,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
             transaction.commit(&data_parts_lock);
             if (replace)
-                parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
+                parts_to_remove = removePartsInRangeFromWorkingSet(nullptr, drop_range, true, data_parts_lock);
         }
 
         PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
@@ -6672,7 +6672,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             else
                 zkutil::KeeperMultiException::check(code, ops, op_results);
 
-            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, lock);
+            parts_to_remove = removePartsInRangeFromWorkingSet(nullptr, drop_range, true, lock);
             transaction.commit(&lock);
         }
 
