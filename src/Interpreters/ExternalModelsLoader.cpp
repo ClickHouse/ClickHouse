@@ -38,7 +38,7 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
     {
         return std::make_unique<TensorFlowModel>(
                 name, config.getString(config_prefix + ".path"),
-                context.getConfigRef().getString("tensorflow_lite_dynamic_library_path"),
+                getContext()->getConfigRef().getString("tensorflow_lite_dynamic_library_path"),
                 lifetime
         );
     }
