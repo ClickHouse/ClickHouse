@@ -56,13 +56,13 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 - `port` — LDAP server port, default is `636` if `enable_tls` is set to `true`, `389` otherwise.
 - `bind_dn` — Template used to construct the DN to bind to.
     - The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt.
-- `user_dn_detection` - Section with LDAP search parameters for detecting the actual user DN of the bound user.
+- `user_dn_detection` — Section with LDAP search parameters for detecting the actual user DN of the bound user.
     - This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value.
-        - `base_dn` - Template used to construct the base DN for the LDAP search.
+        - `base_dn` — Template used to construct the base DN for the LDAP search.
             - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during the LDAP search.
-        - `scope` - Scope of the LDAP search.
+        - `scope` — Scope of the LDAP search.
             - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
-        - `search_filter` - Template used to construct the search filter for the LDAP search.
+        - `search_filter` — Template used to construct the search filter for the LDAP search.
             - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search.
             - Note, that the special characters must be escaped properly in XML.
 - `verification_cooldown` — A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server.
