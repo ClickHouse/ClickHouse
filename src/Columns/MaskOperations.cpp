@@ -33,6 +33,8 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
             data[index] = data[from];
             --from;
         }
+        else
+            data[index] = T();
 
         --index;
     }

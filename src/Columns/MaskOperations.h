@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// Expand data by mask. After expanding data will satisfy the following: if we filter data
-/// by given mask, we get initial data. In places where mask[i] = 0 we insert given default_value.
+/// by given mask, we get initial data. In places where mask[i] = 0 we insert default value.
 /// If inverted is true, we will work with inverted mask. This function is used in implementations of
 /// expand() method in IColumn interface.
 template <typename T>
