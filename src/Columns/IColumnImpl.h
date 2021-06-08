@@ -151,7 +151,7 @@ double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
         return 0.0;
 
     size_t step = num_rows / num_sampled_rows;
-    std::uniform_int_distribution<size_t> dist(1, step);
+    std::uniform_int_distribution<size_t> dist(0, step - 1);
 
     size_t res = 0;
     for (size_t i = 0; i < num_rows; i += step)

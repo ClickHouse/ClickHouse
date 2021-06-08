@@ -7,7 +7,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
 
-#include <Common/FieldVisitors.h>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {
@@ -169,6 +171,17 @@ Names ColumnObject::getKeys() const
     return keys;
 }
 
+static bool isPrefix(const Strings & prefix, const Strings & strings)
+{
+    if (prefix.size() > strings.size())
+        return false;
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+        if (prefix[i] != strings[i])
+            return false;
+    return true;
+}
+
 void ColumnObject::optimizeTypesOfSubcolumns()
 {
     if (optimized_types_of_subcolumns)
@@ -184,11 +197,20 @@ void ColumnObject::optimizeTypesOfSubcolumns()
         if (isNothing(getBaseTypeOfArray(to_type)))
             continue;
 
-        auto it = std::find_if(subcolumns.begin(), subcolumns.end(),
-            [&name = name](const auto & elem) { return elem.first.size() > name.size() && startsWith(elem.first, name); });
+        Strings name_parts;
+        boost::split(name_parts, name, boost::is_any_of("."));
 
-        if (it != subcolumns.end())
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Data in Object has ambiguous paths: '{}' and '{}", name, it->first);
+        for (const auto & [other_name, _] : subcolumns)
+        {
+            if (other_name.size() > name.size())
+            {
+                Strings other_name_parts;
+                boost::split(other_name_parts, other_name, boost::is_any_of("."));
+
+                if (isPrefix(name_parts, other_name_parts))
+                    throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Data in Object has ambiguous paths: '{}' and '{}", name, other_name);
+            }
+        }
 
         if (to_type->equals(*from_type))
         {

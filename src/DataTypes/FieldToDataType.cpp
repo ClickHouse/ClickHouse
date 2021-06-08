@@ -109,7 +109,7 @@ DataTypePtr FieldToDataType::operator() (const Array & x) const
     element_types.reserve(x.size());
 
     for (const Field & elem : x)
-        element_types.emplace_back(applyVisitor(FieldToDataType(), elem));
+        element_types.emplace_back(applyVisitor(FieldToDataType(allow_convertion_to_string), elem));
 
     return std::make_shared<DataTypeArray>(getLeastSupertype(element_types, allow_convertion_to_string));
 }
@@ -124,7 +124,7 @@ DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
     element_types.reserve(ext::size(tuple));
 
     for (const auto & element : tuple)
-        element_types.push_back(applyVisitor(FieldToDataType(), element));
+        element_types.push_back(applyVisitor(FieldToDataType(allow_convertion_to_string), element));
 
     return std::make_shared<DataTypeTuple>(element_types);
 }
@@ -140,8 +140,8 @@ DataTypePtr FieldToDataType::operator() (const Map & map) const
     {
         const auto & tuple = elem.safeGet<const Tuple &>();
         assert(tuple.size() == 2);
-        key_types.push_back(applyVisitor(FieldToDataType(), tuple[0]));
-        value_types.push_back(applyVisitor(FieldToDataType(), tuple[1]));
+        key_types.push_back(applyVisitor(FieldToDataType(allow_convertion_to_string), tuple[0]));
+        value_types.push_back(applyVisitor(FieldToDataType(allow_convertion_to_string), tuple[1]));
     }
 
     return std::make_shared<DataTypeMap>(

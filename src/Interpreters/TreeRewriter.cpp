@@ -452,7 +452,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
                 bool found = false;
                 for (const auto & column : source_columns)
                 {
-                    auto split = Nested::splitName(column.name);
+                    auto split = Nested::splitName(column.name, /*reverse=*/ true);
                     if (split.first == source_name && !split.second.empty())
                     {
                         result.array_join_result_to_source[Nested::concatenateName(result_name, split.second)] = column.name;

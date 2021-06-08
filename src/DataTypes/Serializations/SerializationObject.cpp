@@ -28,6 +28,7 @@ namespace ErrorCodes
 
 namespace
 {
+
 class FieldVisitorReplaceNull : public StaticVisitor<Field>
 {
 public:
