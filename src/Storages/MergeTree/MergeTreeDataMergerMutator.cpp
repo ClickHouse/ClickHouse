@@ -1477,13 +1477,6 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
 {
     /// Rename new part, add to the set and remove original parts.
     auto replaced_parts = data.renameTempPartAndReplace(new_data_part, txn.get(), nullptr, out_transaction);
-    //String parts_str;
-    //for (const auto & p : parts)
-    //    parts_str += "\t" + p->name;
-    //String parts_str2;
-    //for (const auto & p : replaced_parts)
-    //    parts_str2 += "\t" + p->name;
-    //LOG_ERROR(log, "WTF {}: source {}, replaced {}", new_data_part->name, parts_str, parts_str2);
 
     /// Let's check that all original parts have been deleted and only them.
     if (replaced_parts.size() != parts.size())
