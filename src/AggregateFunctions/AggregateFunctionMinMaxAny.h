@@ -706,7 +706,7 @@ private:
 public:
     AggregateFunctionsSingleValue(const DataTypePtr & type_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type_}, {})
-        , type(this->argument_types[0])
+        , type(type_)
         , serialization(type->getDefaultSerialization())
     {
         if (StringRef(Data::name()) == StringRef("min")
