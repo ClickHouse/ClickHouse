@@ -83,6 +83,17 @@ ContextPtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context,
         }
     }
 
+    if (settings.offset)
+    {
+        new_settings.offset = 0;
+        new_settings.offset.changed = false;
+    }
+    if (settings.limit)
+    {
+        new_settings.limit = 0;
+        new_settings.limit.changed = false;
+    }
+
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     return new_context;
