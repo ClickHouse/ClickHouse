@@ -724,8 +724,9 @@ public:
     Int32 size() const override
     {
         Int32 sz = 4 + 2; // size of message + number of fields
+        /// If values is NULL, field size is -1 and data not added.
         for (const std::shared_ptr<ISerializable> & field : row)
-            sz += 4 + field->size();
+            sz += 4 + (field->size() > 0 ? field->size() : 0);
         return sz;
     }
 
@@ -802,7 +803,7 @@ protected:
     static void setPassword(
         const String & user_name,
         const String & password,
-        ContextPtr context,
+        ContextMutablePtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
@@ -821,7 +822,7 @@ protected:
 public:
     virtual void authenticate(
         const String & user_name,
-        ContextPtr context,
+        ContextMutablePtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) = 0;
 
@@ -835,7 +836,7 @@ class NoPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        ContextPtr context,
+        ContextMutablePtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
@@ -853,7 +854,7 @@ class CleartextPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        ContextPtr context,
+        ContextMutablePtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
@@ -896,7 +897,7 @@ public:
 
     void authenticate(
         const String & user_name,
-        ContextPtr context,
+        ContextMutablePtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
