@@ -593,8 +593,8 @@ then
 #
     "${client[@]}" --query "
             select test, query_index,
-                quantileExact(0.99)(abs(diff)) * 1.5 max_diff,
-                quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 max_stat_threshold,
+                quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
+                quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
                 query_display_name
             from query_metrics_v2
             -- We use results at least one week in the past, so that the current
