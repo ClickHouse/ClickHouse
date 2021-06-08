@@ -308,18 +308,16 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
     llvm::IRBuilder<> b(context);
 
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
-
+    auto * places_type = b.getInt8Ty()->getPointerTo()->getPointerTo();
     auto * column_data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
-    auto * get_place_func_declaration = llvm::FunctionType::get(b.getInt8Ty()->getPointerTo(), { b.getInt8Ty()->getPointerTo(), size_type }, /*isVarArg=*/false);
-    auto * aggregate_loop_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, column_data_type->getPointerTo(), get_place_func_declaration->getPointerTo(), b.getInt8Ty()->getPointerTo() }, false);
 
+    auto * aggregate_loop_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, column_data_type->getPointerTo(), places_type }, false);
     auto * aggregate_loop_func_definition = llvm::Function::Create(aggregate_loop_func_declaration, llvm::Function::ExternalLinkage, name, module);
 
     auto * arguments = aggregate_loop_func_definition->args().begin();
     llvm::Value * rows_count_arg = arguments++;
     llvm::Value * columns_arg = arguments++;
-    llvm::Value * get_place_function_arg = arguments++;
-    llvm::Value * get_place_function_context_arg = arguments++;
+    llvm::Value * places_arg = arguments++;
 
     /// Initialize ColumnDataPlaceholder llvm representation of ColumnData
 
@@ -361,6 +359,9 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
     auto * counter_phi = b.CreatePHI(rows_count_arg->getType(), 2);
     counter_phi->addIncoming(llvm::ConstantInt::get(size_type, 0), entry);
 
+    auto * places_phi = b.CreatePHI(places_arg->getType(), 2);
+    places_phi->addIncoming(places_arg, entry);
+
     for (auto & col : columns)
     {
         col.data = b.CreatePHI(col.data_init->getType(), 2);
@@ -373,7 +374,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
         }
     }
 
-    auto * aggregation_place = b.CreateCall(get_place_func_declaration, get_place_function_arg, { get_place_function_context_arg, counter_phi });
+    auto * aggregation_place = b.CreateLoad(b.getInt8Ty()->getPointerTo(), places_phi);
 
     previous_columns_size = 0;
     for (const auto & function : functions)
@@ -423,6 +424,8 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
         if (col.null)
             col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
     }
+
+    places_phi->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, places_phi, 1), cur_block);
 
     auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1));
     counter_phi->addIncoming(value, cur_block);
@@ -591,7 +594,10 @@ CompiledAggregateFunctions compileAggregateFunctons(CHJIT & jit, const std::vect
         .create_aggregate_states_function = create_aggregate_states_function,
         .add_into_aggregate_states_function = add_into_aggregate_states_function,
         .merge_aggregate_states_function = merge_aggregate_states_function,
-        .insert_aggregates_into_columns_function = insert_aggregate_states_function
+        .insert_aggregates_into_columns_function = insert_aggregate_states_function,
+
+        .functions_count = functions.size(),
+        .compiled_module = std::move(compiled_module)
     };
 
     return compiled_aggregate_functions;

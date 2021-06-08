@@ -320,7 +320,8 @@ void Aggregator::compileAggregateFunctions()
         ++aggregate_instructions_size;
     }
 
-    if (functions_to_compile.empty() || functions_to_compile.size() != aggregate_instructions_size)
+    /// TODO: Probably better to compile more than 2 functions
+    if (functions_to_compile.empty())
         return;
 
     CompiledAggregateFunctions compiled_aggregate_functions;
@@ -523,10 +524,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     return AggregatedDataVariants::Type::serialized;
 }
 
-
-void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
+void Aggregator::createAggregateStates(size_t aggregate_function_start_index, AggregateDataPtr & aggregate_data) const
 {
-    for (size_t j = 0; j < params.aggregates_size; ++j)
+    for (size_t j = aggregate_function_start_index; j < params.aggregates_size; ++j)
     {
         try
         {
@@ -546,6 +546,10 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
     }
 }
 
+void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
+{
+    createAggregateStates(0, aggregate_data);
+}
 
 /** It's interesting - if you remove `noinline`, then gcc for some reason will inline this function, and the performance decreases (~ 10%).
   * (Probably because after the inline of this function, more internal functions no longer be inlined.)
@@ -593,13 +597,16 @@ void NO_INLINE Aggregator::handleAggregationJIT(
     auto add_into_aggregate_states_function = compiled_functions->add_into_aggregate_states_function;
     auto create_aggregate_states_function = compiled_functions->create_aggregate_states_function;
 
-    auto get_aggregate_data = [&](size_t row) -> AggregateDataPtr
+    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
+
+    /// For all rows.
+    for (size_t i = 0; i < rows; ++i)
     {
-        AggregateDataPtr aggregate_data;
+        AggregateDataPtr aggregate_data = nullptr;
 
         if constexpr (!no_more_keys)
         {
-            auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
+            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
             if (emplace_result.isInserted())
@@ -608,7 +615,10 @@ void NO_INLINE Aggregator::handleAggregationJIT(
                 emplace_result.setMapped(nullptr);
 
                 aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+
                 create_aggregate_states_function(aggregate_data);
+
+                createAggregateStates(compiled_functions->functions_count, aggregate_data);
 
                 emplace_result.setMapped(aggregate_data);
             }
@@ -620,20 +630,25 @@ void NO_INLINE Aggregator::handleAggregationJIT(
         else
         {
             /// Add only if the key already exists.
-            /// Overflow row is disabled for JIT.
-            auto find_result = state.findKey(method.data, row, *aggregates_pool);
-            assert(find_result.getMapped() != nullptr);
-
-            aggregate_data = find_result.getMapped();
+            auto find_result = state.findKey(method.data, i, *aggregates_pool);
+            if (find_result.isFound())
+                aggregate_data = find_result.getMapped();
         }
 
-        return aggregate_data;
-    };
+        places[i] = aggregate_data;
+    }
 
-    GetAggregateDataFunction get_aggregate_data_function = FunctorToStaticMethodAdaptor<decltype(get_aggregate_data)>::unsafeCall;
-    GetAggregateDataContext get_aggregate_data_context = reinterpret_cast<char *>(&get_aggregate_data);
+    add_into_aggregate_states_function(rows, columns_data.data(), places.get());
 
-    add_into_aggregate_states_function(rows, columns_data.data(), get_aggregate_data_function, get_aggregate_data_context);
+    /// Add values to the aggregate functions.
+    AggregateFunctionInstruction * inst = aggregate_instructions + compiled_functions->functions_count;
+    for (; inst->that; ++inst)
+    {
+        if (inst->offsets)
+            inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+        else
+            inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+    }
 }
 
 #endif
@@ -1367,19 +1382,65 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
             places[place_index] = mapped;
             ++place_index;
+
+            /// Mark the cell as destroyed so it will not be destroyed in destructor.
+            mapped = nullptr;
         });
 
-        std::vector<ColumnData> columns_data;
-        columns_data.reserve(final_aggregate_columns.size());
+        std::exception_ptr exception;
+        size_t aggregate_functions_destroy_index = 0;
 
-        for (auto & final_aggregate_column : final_aggregate_columns)
+        try
         {
-            final_aggregate_column = final_aggregate_column->cloneResized(data.size());
-            columns_data.emplace_back(getColumnData(final_aggregate_column.get()));
+            /** For JIT compiled functions we need to resize columns before pass them into compiled code.
+              * insert_aggregates_into_columns_function function does not throw exception.
+              */
+            std::vector<ColumnData> columns_data;
+            columns_data.reserve(final_aggregate_columns.size());
+
+            for (size_t i = 0; i < compiled_functions->functions_count; ++i)
+            {
+                auto & final_aggregate_column = final_aggregate_columns[i];
+                final_aggregate_column = final_aggregate_column->cloneResized(data.size());
+                columns_data.emplace_back(getColumnData(final_aggregate_column.get()));
+            }
+
+            auto insert_aggregate_states_function = compiled_functions->insert_aggregates_into_columns_function;
+            insert_aggregate_states_function(data.size(), columns_data.data(), places.get());
+
+            aggregate_functions_destroy_index = compiled_functions->functions_count;
+
+            for (; aggregate_functions_destroy_index < params.aggregates_size;)
+            {
+                auto & final_aggregate_column = final_aggregate_columns[aggregate_functions_destroy_index];
+                size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
+
+                /** We increase aggregate_functions_destroy_index because by function contract if insertResultIntoAndDestroyBatch
+                  * throws exception, it also must destroy all necessary states.
+                  * Then code need to continue to destroy other aggregate function states with next function index.
+                  */
+                size_t destroy_index = aggregate_functions_destroy_index;
+                ++aggregate_functions_destroy_index;
+
+                bool is_state = aggregate_functions[destroy_index]->isState();
+                bool destroy_place_after_insert = !is_state;
+
+                aggregate_functions[destroy_index]->insertResultIntoAndDestroyBatch(data.size(), places.get(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            }
+        }
+        catch (...)
+        {
+            exception = std::current_exception();
         }
 
-        auto insert_aggregate_states_function = compiled_functions->insert_aggregates_into_columns_function;
-        insert_aggregate_states_function(data.size(), columns_data.data(), places.get());
+        for (; aggregate_functions_destroy_index < params.aggregates_size; ++aggregate_functions_destroy_index)
+        {
+            size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
+            aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(data.size(), places.get(), offset);
+        }
+
+        if (exception)
+            std::rethrow_exception(exception);
     }
     else
 #endif
@@ -1828,6 +1889,12 @@ void NO_INLINE Aggregator::mergeDataImpl(
             if (!inserted)
             {
                 merge_aggregate_states_function_typed(dst, src);
+
+                for (size_t i = compiled_functions->functions_count; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+
+                for (size_t i = compiled_functions->functions_count; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
             }
             else
             {

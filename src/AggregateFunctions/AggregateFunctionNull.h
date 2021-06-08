@@ -205,10 +205,7 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         if constexpr (result_is_nullable)
-        {
-            auto alignment = llvm::assumeAligned(this->alignOfData());
-            b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->prefix_size, alignment);
-        }
+            b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->prefix_size, llvm::assumeAligned(this->alignOfData()));
 
         auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, this->prefix_size);
         this->nested_function->compileCreate(b, aggregate_data_ptr_with_prefix_size_offset);
@@ -220,8 +217,8 @@ public:
 
         if constexpr (result_is_nullable)
         {
-            auto alignment = llvm::assumeAligned(this->alignOfData());
-            b.CreateMemCpy(aggregate_data_dst_ptr, alignment, aggregate_data_src_ptr, alignment, this->prefix_size);
+            auto align_of_data = llvm::assumeAligned(this->alignOfData());
+            b.CreateMemCpy(aggregate_data_dst_ptr, align_of_data, aggregate_data_src_ptr, align_of_data, this->prefix_size);
         }
 
         auto * aggregate_data_dst_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_dst_ptr, this->prefix_size);

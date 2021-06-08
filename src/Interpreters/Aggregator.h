@@ -1096,6 +1096,8 @@ private:
 
     /** Create states of aggregate functions for one key.
       */
+    void createAggregateStates(size_t aggregate_function_start_index, AggregateDataPtr & aggregate_data) const;
+
     void createAggregateStates(AggregateDataPtr & aggregate_data) const;
 
     /** Call `destroy` methods for states of aggregate functions.
@@ -1132,24 +1134,6 @@ private:
         Arena * aggregates_pool,
         size_t rows,
         AggregateFunctionInstruction * aggregate_instructions) const;
-
-    // template <bool no_more_keys, typename Method>
-    // void handleAggregationJITV2(
-    //     Method & method,
-    //     typename Method::State & state,
-    //     Arena * aggregates_pool,
-    //     size_t rows,
-    //     AggregateFunctionInstruction * aggregate_instructions,
-    //     AggregateDataPtr overflow_row) const;
-
-    // template <bool no_more_keys, typename Method>
-    // void handleAggregationJITV3(
-    //     Method & method,
-    //     typename Method::State & state,
-    //     Arena * aggregates_pool,
-    //     size_t rows,
-    //     AggregateFunctionInstruction * aggregate_instructions,
-    //     AggregateDataPtr overflow_row) const;
 
     template <bool no_more_keys, typename Method>
     void handleAggregationDefault(
