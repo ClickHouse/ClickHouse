@@ -46,6 +46,7 @@ SRCS(
     ExternalLoaderStatus.cpp
     FieldVisitors.cpp
     FileChecker.cpp
+    IO.cpp
     IPv6ToBinary.cpp
     IntervalKind.cpp
     JSONBuilder.cpp
