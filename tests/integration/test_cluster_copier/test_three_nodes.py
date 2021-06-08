@@ -12,13 +12,12 @@ import docker
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 
-cluster = None
+cluster = ClickHouseCluster(__file__, name='copier_test_three_nodes')
 
 @pytest.fixture(scope="module")
 def started_cluster():
     global cluster
     try:
-        cluster = ClickHouseCluster(__file__)
 
         for name in ["first", "second", "third"]:
             cluster.add_instance(name,
@@ -44,10 +43,15 @@ class Task:
 
 
     def start(self):
+        for name in ["first", "second", "third"]:
+            node = cluster.instances[name]
+            node.query("DROP DATABASE IF EXISTS dailyhistory SYNC;")
+            node.query("DROP DATABASE IF EXISTS monthlyhistory SYNC;")
+
         instance = cluster.instances['first']
 
         # daily partition database
-        instance.query("CREATE DATABASE dailyhistory on cluster events;")
+        instance.query("CREATE DATABASE IF NOT EXISTS dailyhistory on cluster events;")
         instance.query("""CREATE TABLE dailyhistory.yellow_tripdata_staging ON CLUSTER events
         (
             id UUID DEFAULT generateUUIDv4(),
@@ -115,7 +119,7 @@ class Task:
             1, 10, 2) LIMIT 50;""")
 
         # monthly partition database
-        instance.query("create database monthlyhistory on cluster events;")
+        instance.query("create database IF NOT EXISTS monthlyhistory on cluster events;")
         instance.query("""CREATE TABLE monthlyhistory.yellow_tripdata_staging ON CLUSTER events
         (
             id UUID DEFAULT generateUUIDv4(),
@@ -171,6 +175,12 @@ class Task:
             b = TSV(instance.query("SELECT sipHash64(*) from monthlyhistory.yellow_tripdata_staging ORDER BY id"))
 
             assert a == b, "Data on each shard"
+
+        for name in ["first", "second", "third"]:
+            node = cluster.instances[name]
+            node.query("DROP DATABASE IF EXISTS dailyhistory SYNC;")
+            node.query("DROP DATABASE IF EXISTS monthlyhistory SYNC;")
+
 
 
 def execute_task(started_cluster, task, cmd_options):

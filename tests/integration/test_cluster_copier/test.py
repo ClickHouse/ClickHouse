@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 COPYING_FAIL_PROBABILITY = 0.2
 MOVING_FAIL_PROBABILITY = 0.2
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name='copier_test')
 
 def generateRandomString(count):
     return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(count))
@@ -77,7 +77,7 @@ class Task1:
 
     def __init__(self, cluster):
         self.cluster = cluster
-        self.zk_task_path = "/clickhouse-copier/task_simple_" + generateRandomString(5)
+        self.zk_task_path = "/clickhouse-copier/task_simple_" + generateRandomString(10)
         self.container_task_file = "/task0_description.xml"
 
         for instance_name, _ in cluster.instances.items():
@@ -223,7 +223,8 @@ class Task_no_index:
 
     def start(self):
         instance = cluster.instances['s0_0_0']
-        instance.query("create table ontime (Year UInt16, FlightDate String) ENGINE = Memory")
+        instance.query("DROP TABLE IF EXISTS ontime SYNC")
+        instance.query("create table IF NOT EXISTS ontime (Year UInt16, FlightDate String) ENGINE = Memory")
         instance.query("insert into ontime values (2016, 'test6'), (2017, 'test7'), (2018, 'test8')")
 
     def check(self):
@@ -249,16 +250,17 @@ class Task_no_arg:
 
     def start(self):
         instance = cluster.instances['s0_0_0']
+        instance.query("DROP TABLE IF EXISTS copier_test1 SYNC")
         instance.query(
-            "create table copier_test1 (date Date, id UInt32) engine = MergeTree PARTITION BY date ORDER BY date SETTINGS index_granularity = 8192")
+            "create table if not exists copier_test1 (date Date, id UInt32) engine = MergeTree PARTITION BY date ORDER BY date SETTINGS index_granularity = 8192")
         instance.query("insert into copier_test1 values ('2016-01-01', 10);")
 
     def check(self):
         assert TSV(self.cluster.instances['s1_1_0'].query("SELECT date FROM copier_test1_1")) == TSV("2016-01-01\n")
         instance = cluster.instances['s0_0_0']
-        instance.query("DROP TABLE copier_test1")
+        instance.query("DROP TABLE copier_test1 SYNC")
         instance = cluster.instances['s1_1_0']
-        instance.query("DROP TABLE copier_test1_1")
+        instance.query("DROP TABLE copier_test1_1 SYNC")
 
 class Task_non_partitioned_table:
 
@@ -275,6 +277,7 @@ class Task_non_partitioned_table:
 
     def start(self):
         instance = cluster.instances['s0_0_0']
+        instance.query("DROP TABLE IF EXISTS copier_test1 SYNC")
         instance.query(
             "create table copier_test1 (date Date, id UInt32) engine = MergeTree ORDER BY date SETTINGS index_granularity = 8192")
         instance.query("insert into copier_test1 values ('2016-01-01', 10);")
@@ -300,12 +303,14 @@ class Task_self_copy:
 
     def start(self):
         instance = cluster.instances['s0_0_0']
-        instance.query("CREATE DATABASE db1;")
+        instance.query("DROP DATABASE IF EXISTS db1 SYNC")
+        instance.query("DROP DATABASE IF EXISTS db2 SYNC")
+        instance.query("CREATE DATABASE IF NOT EXISTS db1;")
         instance.query(
-            "CREATE TABLE db1.source_table (`a` Int8, `b` String, `c` Int8) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity = 8192")
-        instance.query("CREATE DATABASE db2;")
+            "CREATE TABLE IF NOT EXISTS db1.source_table (`a` Int8, `b` String, `c` Int8) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity = 8192")
+        instance.query("CREATE DATABASE IF NOT EXISTS db2;")
         instance.query(
-            "CREATE TABLE db2.destination_table (`a` Int8, `b` String, `c` Int8) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity = 8192")
+            "CREATE TABLE IF NOT EXISTS db2.destination_table (`a` Int8, `b` String, `c` Int8) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity = 8192")
         instance.query("INSERT INTO db1.source_table VALUES (1, 'ClickHouse', 1);")
         instance.query("INSERT INTO db1.source_table VALUES (2, 'Copier', 2);")
 
@@ -313,8 +318,8 @@ class Task_self_copy:
         instance = cluster.instances['s0_0_0']
         assert TSV(instance.query("SELECT * FROM db2.destination_table ORDER BY a")) == TSV(instance.query("SELECT * FROM db1.source_table ORDER BY a"))
         instance = cluster.instances['s0_0_0']
-        instance.query("DROP DATABASE db1 SYNC")
-        instance.query("DROP DATABASE db2 SYNC")
+        instance.query("DROP DATABASE IF EXISTS db1 SYNC")
+        instance.query("DROP DATABASE IF EXISTS db2 SYNC")
 
 
 def execute_task(started_cluster, task, cmd_options):
@@ -435,9 +440,3 @@ def test_non_partitioned_table(started_cluster):
 
 def test_self_copy(started_cluster):
     execute_task(started_cluster, Task_self_copy(started_cluster), [])
-
-if __name__ == '__main__':
-    with contextmanager(started_cluster)() as cluster:
-        for name, instance in list(cluster.instances.items()):
-            print(name, instance.ip_address)
-        input("Cluster created, press any key to destroy...")
