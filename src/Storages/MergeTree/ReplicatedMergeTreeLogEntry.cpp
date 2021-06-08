@@ -441,10 +441,6 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
     if (type == DROP_RANGE)
         return {new_part_name};
 
-    /// CLEAR_COLUMN and CLEAR_INDEX are deprecated since 20.3
-    if (type == CLEAR_COLUMN || type == CLEAR_INDEX)
-        return {};
-
     if (type == REPLACE_RANGE)
     {
         Strings res = replace_range_entry->new_part_names;

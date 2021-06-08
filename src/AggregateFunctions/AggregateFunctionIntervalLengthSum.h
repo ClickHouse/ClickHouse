@@ -1,22 +1,39 @@
 #pragma once
 
-#include <unordered_set>
+#include <AggregateFunctions/AggregateFunctionNull.h>
+
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 
-#include <AggregateFunctions/AggregateFunctionNull.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypesNumber.h>
+
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+#include <unordered_set>
 
 namespace DB
 {
 
-template <typename T>
-struct AggregateFunctionSegmentLengthSumData
+namespace ErrorCodes
 {
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+/**
+ * Calculate total length of intervals without intersections. Each interval is the pair of numbers [begin, end];
+ * Return UInt64 for integral types (UInt/Int*, Date/DateTime) and return Float64 for Float*.
+ *
+ * Implementation simply stores intervals sorted by beginning and sums lengths at final.
+ */
+template <typename T>
+struct AggregateFunctionIntervalLengthSumData
+{
+    constexpr static size_t MAX_ARRAY_SIZE = 0xFFFFFF;
+
     using Segment = std::pair<T, T>;
     using Segments = PODArrayWithStackMemory<Segment, 64>;
 
@@ -24,18 +41,16 @@ struct AggregateFunctionSegmentLengthSumData
 
     Segments segments;
 
-    size_t size() const { return segments.size(); }
-
-    void add(T start, T end)
+    void add(T begin, T end)
     {
-        if (sorted && segments.size() > 0)
+        if (sorted && !segments.empty())
         {
-            sorted = segments.back().first <= start;
+            sorted = segments.back().first <= begin;
         }
-        segments.emplace_back(start, end);
+        segments.emplace_back(begin, end);
     }
 
-    void merge(const AggregateFunctionSegmentLengthSumData & other)
+    void merge(const AggregateFunctionIntervalLengthSumData & other)
     {
         if (other.segments.empty())
             return;
@@ -46,7 +61,9 @@ struct AggregateFunctionSegmentLengthSumData
 
         /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
-            std::stable_sort(std::begin(segments), std::end(segments));
+        {
+            std::sort(std::begin(segments), std::end(segments));
+        }
         else
         {
             const auto begin = std::begin(segments);
@@ -54,10 +71,10 @@ struct AggregateFunctionSegmentLengthSumData
             const auto end = std::end(segments);
 
             if (!sorted)
-                std::stable_sort(begin, middle);
+                std::sort(begin, middle);
 
             if (!other.sorted)
-                std::stable_sort(middle, end);
+                std::sort(middle, end);
 
             std::inplace_merge(begin, middle, end);
         }
@@ -69,7 +86,7 @@ struct AggregateFunctionSegmentLengthSumData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(segments), std::end(segments));
+            std::sort(std::begin(segments), std::end(segments));
             sorted = true;
         }
     }
@@ -93,28 +110,30 @@ struct AggregateFunctionSegmentLengthSumData
         size_t size;
         readBinary(size, buf);
 
+        if (unlikely(size > MAX_ARRAY_SIZE))
+            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+
         segments.clear();
         segments.reserve(size);
 
-        T start, end;
-
+        Segment segment;
         for (size_t i = 0; i < size; ++i)
         {
-            readBinary(start, buf);
-            readBinary(end, buf);
-            segments.emplace_back(start, end);
+            readBinary(segment.first, buf);
+            readBinary(segment.second, buf);
+            segments.emplace_back(segment);
         }
     }
 };
 
 template <typename T, typename Data>
-class AggregateFunctionSegmentLengthSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionSegmentLengthSum<T, Data>>
+class AggregateFunctionIntervalLengthSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>
 {
 private:
     template <typename TResult>
-    TResult getSegmentLengthSum(Data & data) const
+    TResult getIntervalLengthSum(Data & data) const
     {
-        if (data.size() == 0)
+        if (data.segments.empty())
             return 0;
 
         data.sort();
@@ -123,8 +142,9 @@ private:
 
         typename Data::Segment cur_segment = data.segments[0];
 
-        for (size_t i = 1; i < data.segments.size(); ++i)
+        for (size_t i = 1, sz = data.segments.size(); i < sz; ++i)
         {
+            /// Check if current interval intersect with next one then add length, otherwise advance interval end
             if (cur_segment.second < data.segments[i].first)
             {
                 res += cur_segment.second - cur_segment.first;
@@ -140,10 +160,10 @@ private:
     }
 
 public:
-    String getName() const override { return "segmentLengthSum"; }
+    String getName() const override { return "intervalLengthSum"; }
 
-    explicit AggregateFunctionSegmentLengthSum(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSegmentLengthSum<T, Data>>(arguments, {})
+    explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {})
     {
     }
 
@@ -167,9 +187,9 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        auto start = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
+        auto begin = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
         auto end = assert_cast<const ColumnVector<T> *>(columns[1])->getData()[row_num];
-        this->data(place).add(start, end);
+        this->data(place).add(begin, end);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -190,9 +210,9 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         if constexpr (std::is_floating_point_v<T>)
-            assert_cast<ColumnFloat64 &>(to).getData().push_back(getSegmentLengthSum<Float64>(this->data(place)));
+            assert_cast<ColumnFloat64 &>(to).getData().push_back(getIntervalLengthSum<Float64>(this->data(place)));
         else
-            assert_cast<ColumnUInt64 &>(to).getData().push_back(getSegmentLengthSum<UInt64>(this->data(place)));
+            assert_cast<ColumnUInt64 &>(to).getData().push_back(getIntervalLengthSum<UInt64>(this->data(place)));
     }
 };
 
