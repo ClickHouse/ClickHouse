@@ -1,9 +1,10 @@
 #include <Core/SettingsQuirks.h>
 #include <Core/Settings.h>
+#include <Poco/Environment.h>
+#include <Poco/Platform.h>
+#include <Common/VersionNumber.h>
 #include <common/logger_useful.h>
-
-#ifdef __linux__
-#include <linux/version.h>
+#include <cstdlib>
 
 /// Detect does epoll_wait with nested epoll fds works correctly.
 /// Polling nested epoll fds from epoll_wait is required for async_socket_for_remote and use_hedged_requests.
@@ -14,19 +15,22 @@
 ///   [2]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=0c54a6a44bf3
 bool nestedEpollWorks(Poco::Logger * log)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 5, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(5, 6, 13))
-        /// the check is correct since there will be no more 5.5.x releases.
+    if (Poco::Environment::os() != POCO_OS_LINUX)
+        return true;
+
+    DB::VersionNumber linux_version = DB::VersionNumber::fromString(
+        Poco::Environment::osVersion(), /* strict= */ false);
+
+    /// the check is correct since there will be no more 5.5.x releases.
+    if (linux_version >= DB::VersionNumber{5, 5, 0} && linux_version < DB::VersionNumber{5, 6, 13})
+    {
         if (log)
             LOG_WARNING(log, "Nested epoll_wait has some issues on kernels [5.5.0, 5.6.13). You should upgrade it to avoid possible issues.");
         return false;
-#else
-        (void)log;
-        return true;
-#endif
+    }
+
+    return true;
 }
-#else
-bool nestedEpollWorks(Poco::Logger *) { return true; }
-#endif
 
 namespace DB
 {
