@@ -1242,8 +1242,8 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         'Performance' check_name,
         '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' check_status,
         -- TODO toDateTime() can't parse output of 'date', so no time for now.
-        3600 * 1000 check_duration_ms,
-        now() - check_duration_ms / 1000 check_start_time,
+        ($(date +%s) - $CHPC_CHECK_START_TIMESTAMP) * 1000 check_duration_ms,
+        fromUnixTimestamp($CHPC_CHECK_START_TIMESTAMP) check_start_time,
         test_name,
         test_status,
         test_duration_ms,
