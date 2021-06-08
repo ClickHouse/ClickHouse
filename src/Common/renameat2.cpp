@@ -1,5 +1,7 @@
 #include <Common/renameat2.h>
 #include <Common/Exception.h>
+#include <Common/VersionNumber.h>
+#include <Poco/Environment.h>
 #include <filesystem>
 
 #if defined(linux) || defined(__linux) || defined(__linux__)
@@ -7,7 +9,6 @@
 #include <fcntl.h>
 #include <sys/syscall.h>
 #include <linux/fs.h>
-#include <sys/utsname.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -27,22 +28,9 @@ namespace ErrorCodes
 static bool supportsRenameat2Impl()
 {
 #if defined(__NR_renameat2)
-    /// renameat2 is available in linux since 3.15
-    struct utsname sysinfo;
-    if (uname(&sysinfo))
-        return false;
-    char * point = nullptr;
-    auto v_major = strtol(sysinfo.release, &point, 10);
-
-    errno = 0;
-    if (errno || *point != '.' || v_major < 3)
-        return false;
-    if (3 < v_major)
-        return true;
-
-    errno = 0;
-    auto v_minor = strtol(point + 1, nullptr, 10);
-    return !errno && 15 <= v_minor;
+    DB::VersionNumber renameat2_minimal_version(3, 15, 0);
+    DB::VersionNumber linux_version(Poco::Environment::osVersion(), /* strict= */ false);
+    return linux_version >= renameat2_minimal_version;
 #else
     return false;
 #endif
