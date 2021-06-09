@@ -1249,6 +1249,9 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `STRING`, `BINARY`           | [String](../sql-reference/data-types/string.md)           | `STRING`                     |
 | —                            | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                     |
 | `DECIMAL`                    | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                    |
+| `LIST`                       | [Array](../sql-reference/data-types/array.md)             | `LIST`                       |
+
+Elements of value `Array` type can be array or `Nullable` value.
 
 ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query treats the Parquet `DECIMAL` type as the ClickHouse `Decimal128` type.
 
@@ -1276,7 +1279,54 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 [Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
 
-`Arrow` is Apache Arrow’s “file mode” format. It is designed for in-memory random access.
+`Arrow` is Apache Arrow’s "file mode" format. It is designed for in-memory random access.
+
+### Data Types Matching {#data_types-matching-4}
+
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+
+| Arrow data type (`INSERT`) | ClickHouse data type                                | Arrow data type (`SELECT`) |
+|----------------------------|-----------------------------------------------------|----------------------------|
+| `UINT8`, `BOOL`            | [UInt8](../sql-reference/data-types/int-uint.md)    | `UINT8`                    |
+| `INT8`                     | [Int8](../sql-reference/data-types/int-uint.md)     | `INT8`                     |
+| `UINT16`                   | [UInt16](../sql-reference/data-types/int-uint.md)   | `UINT16`                   |
+| `INT16`                    | [Int16](../sql-reference/data-types/int-uint.md)    | `INT16`                    |
+| `UINT32`                   | [UInt32](../sql-reference/data-types/int-uint.md)   | `UINT32`                   |
+| `INT32`                    | [Int32](../sql-reference/data-types/int-uint.md)    | `INT32`                    |
+| `UINT64`                   | [UInt64](../sql-reference/data-types/int-uint.md)   | `UINT64`                   |
+| `INT64`                    | [Int64](../sql-reference/data-types/int-uint.md)    | `INT64`                    |
+| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)     | `FLOAT32`                  |
+| `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)     | `FLOAT64`                  |
+| `DATE32`                   | [Date](../sql-reference/data-types/date.md)         | `UINT16`                   |
+| `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                   |
+| `STRING`, `BINARY`         | [String](../sql-reference/data-types/string.md)     | `UTF8`                     |
+| `STRING`                   | [FixedString](../sql-reference/data-types/fixedstring.md)   | `UTF8`                        |
+| `DECIMAL`                  | [Decimal](../sql-reference/data-types/decimal.md)   | `-`                        |
+| `LIST`                     | [Array](../sql-reference/data-types/array.md)       | `LIST`                     |
+
+Elements of value `Array` type can be array or value of the `Nullable` type.
+
+ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the Arrow `DECIMAL` type as the ClickHouse `Decimal128` type.
+
+Unsupported Arrow data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
+
+### Inserting Data {#inserting-data-3}
+
+You can insert Arrow data from a file into ClickHouse table by the following command:
+
+``` bash
+$ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
+```
+
+### Selecting Data {#selecting-data-3}
+
+You can select data from a ClickHouse table and save them into some file in the Arrow format by the following command:
+
+``` bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
+```
 
 ## ArrowStream {#data-format-arrow-stream}
 
@@ -1306,7 +1356,9 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`              |
 | `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     | `BINARY`                 |
 | `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
-| `-`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
+| `LIST`                   | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
+
+Elements of value `Array` type can be array or value of the `Nullable` type.
 
 ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
 
