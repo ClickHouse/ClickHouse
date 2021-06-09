@@ -1,7 +1,8 @@
 #!/bin/bash
 set -ex
 
-export CHPC_CHECK_START_TIMESTAMP="$(date +%s)"
+CHPC_CHECK_START_TIMESTAMP="$(date +%s)"
+export CHPC_CHECK_START_TIMESTAMP
 
 # Use the packaged repository to find the revision we will compare to.
 function find_reference_sha
