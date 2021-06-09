@@ -278,6 +278,7 @@ class LegacyFieldVisitorHash : public FieldVisitorHash
 {
 public:
     using FieldVisitorHash::FieldVisitorHash;
+    using FieldVisitorHash::operator();
     void operator() (const UUID & x) const { FieldVisitorHash::operator()(x.toUnderType()); }
 };
 
