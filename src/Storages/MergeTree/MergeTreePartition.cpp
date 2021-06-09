@@ -74,7 +74,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     }
 
     SipHash hash;
-    FieldVisitorHash hashing_visitor(hash);
+    LegacyFieldVisitorHash hashing_visitor(hash);
     for (const Field & field : value)
         applyVisitor(hashing_visitor, field);
 
