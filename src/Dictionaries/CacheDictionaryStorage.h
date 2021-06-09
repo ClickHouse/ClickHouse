@@ -55,7 +55,7 @@ public:
         cells.resize_fill(cells_size);
         size_overlap_mask = cells_size - 1;
 
-        setup(dictionary_structure);
+        createAttributes(dictionary_structure);
     }
 
     bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
@@ -229,7 +229,7 @@ private:
             auto & fetched_column = *result.fetched_columns[attribute_index];
             fetched_column.reserve(fetched_columns_index);
 
-            if (unlikely(attribute.is_complex_type))
+            if (unlikely(attribute.is_nullable))
             {
                 getItemsForFetchedKeys<Field>(
                     attribute,
@@ -327,7 +327,9 @@ private:
                         column->get(key_index, column_value);
 
                         if constexpr (std::is_same_v<ElementType, Field>)
+                        {
                             container.back() = column_value;
+                        }
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
                             const String & string_value = column_value.get<String>();
@@ -336,7 +338,9 @@ private:
                             container.back() = inserted_value;
                         }
                         else
+                        {
                             container.back() = column_value.get<NearestFieldType<ElementType>>();
+                        }
                     });
                 }
 
@@ -370,7 +374,9 @@ private:
                         column->get(key_index, column_value);
 
                         if constexpr (std::is_same_v<ElementType, Field>)
+                        {
                             container[index_to_use] = column_value;
+                        }
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
                             const String & string_value = column_value.get<String>();
@@ -386,7 +392,9 @@ private:
                             container[index_to_use] = inserted_value;
                         }
                         else
+                        {
                             container[index_to_use] = column_value.get<NearestFieldType<ElementType>>();
+                        }
                     });
                 }
             }
@@ -492,7 +500,7 @@ private:
         auto & attribute = attributes[attribute_index];
         auto & attribute_type = attribute.type;
 
-        if (unlikely(attribute.is_complex_type))
+        if (unlikely(attribute.is_nullable))
         {
             auto & container = std::get<ContainerType<Field>>(attribute.attribute_container);
             std::forward<GetContainerFunc>(func)(container);
@@ -538,7 +546,7 @@ private:
     struct Attribute
     {
         AttributeUnderlyingType type;
-        bool is_complex_type;
+        bool is_nullable;
 
         std::variant<
             ContainerType<UInt8>,
@@ -604,7 +612,7 @@ private:
         }
     }
 
-    void setup(const DictionaryStructure & dictionary_structure)
+    void createAttributes(const DictionaryStructure & dictionary_structure)
     {
         /// For each dictionary attribute create storage attribute
         /// For simple attributes create PODArray, for complex vector of Fields
@@ -624,6 +632,7 @@ private:
                 attributes.emplace_back();
                 auto & last_attribute = attributes.back();
                 last_attribute.type = attribute_type;
+                last_attribute.is_nullable = dictionary_attribute.is_nullable;
 
                 if (dictionary_attribute.is_nullable)
                     last_attribute.attribute_container = ContainerType<Field>();
