@@ -311,7 +311,7 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
     skip_test_msan(node1)
 
     sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
-    node1.exec_in_container(["]sqlite3", sqlite_db, "INSERT INTO t3 values(1, 2, 3);"],
+    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t3 values(1, 2, 3);"],
                             privileged=True, user='root')
 
     assert node1.query("select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(1))") == "3\n"
