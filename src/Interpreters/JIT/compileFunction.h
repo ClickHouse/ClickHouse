@@ -61,7 +61,8 @@ using GetAggregateDataContext = char *;
 using GetAggregateDataFunction = AggregateDataPtr (*)(GetAggregateDataContext, size_t);
 
 using JITCreateAggregateStatesFunction = void (*)(AggregateDataPtr);
-using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
+using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsSize, ColumnData *, GetAggregateDataFunction, GetAggregateDataContext);
+using JITAddIntoAggregateStatesFunctionV2 = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
 using JITMergeAggregateStatesFunction = void (*)(AggregateDataPtr, AggregateDataPtr);
 using JITInsertAggregatesIntoColumnsFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
 
@@ -69,6 +70,7 @@ struct CompiledAggregateFunctions
 {
     JITCreateAggregateStatesFunction create_aggregate_states_function;
     JITAddIntoAggregateStatesFunction add_into_aggregate_states_function;
+    JITAddIntoAggregateStatesFunctionV2 add_into_aggregate_states_function_v2;
     JITMergeAggregateStatesFunction merge_aggregate_states_function;
     JITInsertAggregatesIntoColumnsFunction insert_aggregates_into_columns_function;
 
