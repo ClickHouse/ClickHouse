@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 
