@@ -373,21 +373,9 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);
-        auto nested_type = initial_type;
-        bool is_nullable = false;
+        bool is_nullable = initial_type->isNullable();
 
-        // while (const auto * array_type = typeid_cast<const DataTypeArray *>(nested_type.get()))
-        // {
-        //     is_array = true;
-        //     nested_type = array_type->getNestedType();
-        // }
-
-        if (nested_type->isNullable())
-        {
-            is_nullable = true;
-            nested_type = removeNullable(nested_type);
-        }
-
+        auto nested_type = removeNullable(initial_type);
         const auto underlying_type = getAttributeUnderlyingType(nested_type);
 
         const auto expression = config.getString(prefix + "expression", "");
@@ -407,7 +395,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
                 else
                 {
                     ReadBufferFromString null_value_buffer{null_value_string};
-                    auto column_with_null_value = nested_type->createColumn();
+                    auto column_with_null_value = initial_type->createColumn();
                     initial_type->getDefaultSerialization()->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
                     null_value = (*column_with_null_value)[0];
                 }
@@ -415,13 +403,10 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             catch (Exception & e)
             {
                 String dictionary_name = config.getString(".dictionary.name", "");
-                e.addMessage("While parsing null_value for attribute with name " + name
-                    + " in dictionary " + dictionary_name);
+                e.addMessage(fmt::format("While parsing null_value for attribute with name {} in dictionary {}", name, dictionary_name));
                 throw;
             }
         }
-
-        std::cerr << "DictionaryStructure::getAttributes null value " << null_value.dump() << std::endl;
 
         const auto hierarchical = config.getBool(prefix + "hierarchical", false);
         const auto injective = config.getBool(prefix + "injective", false);
@@ -441,8 +426,6 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             name,
             underlying_type,
             initial_type,
-            initial_type->getDefaultSerialization(),
-            nested_type,
             expression,
             null_value,
             hierarchical,

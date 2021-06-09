@@ -75,8 +75,6 @@ struct DictionaryAttribute final
     const std::string name;
     const AttributeUnderlyingType underlying_type;
     const DataTypePtr type;
-    const SerializationPtr serialization;
-    const DataTypePtr nested_type;
     const std::string expression;
     const Field null_value;
     const bool hierarchical;
