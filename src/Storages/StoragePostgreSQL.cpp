@@ -267,11 +267,15 @@ private:
     struct StreamTo
     {
         pqxx::work tx;
+        Names columns;
         pqxx::stream_to stream;
 
-        StreamTo(pqxx::connection & connection, pqxx::table_path table_path, Names columns)
+        StreamTo(pqxx::connection & connection, pqxx::table_path table_, Names columns_)
             : tx(connection)
-            , stream(pqxx::stream_to::raw_table(tx, connection.quote_table(table_path), connection.quote_columns(columns))) {}
+            , columns(std::move(columns_))
+            , stream(pqxx::stream_to::raw_table(tx, connection.quote_table(table_), connection.quote_columns(columns)))
+        {
+        }
 
         void complete()
         {
