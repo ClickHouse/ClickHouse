@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, subprocess_check_call
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -41,18 +41,13 @@ def test_partition_simple(partition_table_simple):
     q("OPTIMIZE TABLE test.partition")
 
 
-def exec_bash(cmd):
-    cmd = ["/bin/bash", "-c", cmd.replace('"', '\\"')]
-    return instance.exec_in_container(cmd)
-
-
 def partition_complex_assert_columns_txt():
     path_to_parts = path_to_data + 'data/test/partition/'
     parts = TSV(q("SELECT name FROM system.parts WHERE database='test' AND table='partition'"))
     for part_name in parts.lines:
         path_to_columns = path_to_parts + part_name + '/columns.txt'
         # 2 header lines + 3 columns
-        assert exec_bash('cat {} | wc -l'.format(path_to_columns)) == '5\n'
+        assert subprocess_check_call('cat {} | wc -l'.format(path_to_columns)) == '5\n'
 
 
 def partition_complex_assert_checksums():
@@ -91,7 +86,7 @@ def partition_complex_assert_checksums():
                 "e2af3bef1fd129aea73a890ede1e7a30\tshadow/1/data/test/partition/19700201_1_1_0/k.bin\n" \
                 "f2312862cc01adf34a93151377be2ddf\tshadow/1/data/test/partition/19700201_1_1_0/minmax_p.idx\n"
 
-    assert TSV(exec_bash(cmd).replace('  ', '\t')) == TSV(checksums)
+    assert TSV(subprocess_check_call(cmd).replace('  ', '\t')) == TSV(checksums)
 
 
 @pytest.fixture
@@ -171,9 +166,9 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     q("ALTER TABLE test.attach_partition DETACH PARTITION 0")
 
     path_to_detached = path_to_data + 'data/test/attach_partition/detached/'
-    exec_bash('mkdir {}'.format(path_to_detached + '0_5_5_0'))
-    exec_bash('cp -pr {} {}'.format(path_to_detached + '0_1_1_0', path_to_detached + 'attaching_0_6_6_0'))
-    exec_bash('cp -pr {} {}'.format(path_to_detached + '0_3_3_0', path_to_detached + 'deleting_0_7_7_0'))
+    subprocess_check_call('mkdir {}'.format(path_to_detached + '0_5_5_0'))
+    subprocess_check_call('cp -pr {} {}'.format(path_to_detached + '0_1_1_0', path_to_detached + 'attaching_0_6_6_0'))
+    subprocess_check_call('cp -pr {} {}'.format(path_to_detached + '0_3_3_0', path_to_detached + 'deleting_0_7_7_0'))
 
     error = instance.client.query_and_get_error("ALTER TABLE test.attach_partition ATTACH PARTITION 0")
     assert 0 <= error.find('No columns in part 0_5_5_0') or 0 <= error.find('No columns.txt in part 0_5_5_0')
@@ -184,7 +179,7 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
                  "WHERE table='attach_partition' AND database='test' ORDER BY name")
     assert TSV(detached) == TSV('0_1_1_0\n0_3_3_0\n0_5_5_0\nattaching_0_6_6_0\ndeleting_0_7_7_0')
 
-    exec_bash('rm -r {}'.format(path_to_detached + '0_5_5_0'))
+    subprocess_check_call('rm -r {}'.format(path_to_detached + '0_5_5_0'))
 
     q("ALTER TABLE test.attach_partition ATTACH PARTITION 0")
     parts = q("SElECT name FROM system.parts WHERE table='attach_partition' AND database='test' ORDER BY name")
@@ -217,10 +212,10 @@ def test_drop_detached_parts(drop_detached_parts_table):
     q("ALTER TABLE test.drop_detached DETACH PARTITION 1")
 
     path_to_detached = path_to_data + 'data/test/drop_detached/detached/'
-    exec_bash('mkdir {}'.format(path_to_detached + 'attaching_0_6_6_0'))
-    exec_bash('mkdir {}'.format(path_to_detached + 'deleting_0_7_7_0'))
-    exec_bash('mkdir {}'.format(path_to_detached + 'any_other_name'))
-    exec_bash('mkdir {}'.format(path_to_detached + 'prefix_1_2_2_0_0'))
+    subprocess_check_call('mkdir {}'.format(path_to_detached + 'attaching_0_6_6_0'))
+    subprocess_check_call('mkdir {}'.format(path_to_detached + 'deleting_0_7_7_0'))
+    subprocess_check_call('mkdir {}'.format(path_to_detached + 'any_other_name'))
+    subprocess_check_call('mkdir {}'.format(path_to_detached + 'prefix_1_2_2_0_0'))
 
     error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART '../1_2_2_0'",
                                                 settings=s)
