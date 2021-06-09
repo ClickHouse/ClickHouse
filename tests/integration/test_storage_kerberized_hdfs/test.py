@@ -22,8 +22,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-# TODO Remove it and enable test
-@pytest.mark.skip(reason="Don't work in parallel mode for some reason")
+
 def test_read_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -36,8 +35,6 @@ def test_read_table(started_cluster):
     select_read = node1.query("select * from hdfs('hdfs://kerberizedhdfs1:9010/simple_table_function', 'TSV', 'id UInt64, text String, number Float64')")
     assert select_read == data
 
-# TODO Remove it and enable test
-@pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_read_write_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -50,8 +47,6 @@ def test_read_write_storage(started_cluster):
     select_read = node1.query("select * from SimpleHDFSStorage2")
     assert select_read == "1\tMark\t72.53\n"
 
-# TODO Remove it and enable test
-@pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_write_storage_not_expired(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -66,8 +61,6 @@ def test_write_storage_not_expired(started_cluster):
     select_read = node1.query("select * from SimpleHDFSStorageNotExpired")
     assert select_read == "1\tMark\t72.53\n"
 
-# TODO Remove it and enable test
-@pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_two_users(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -81,8 +74,6 @@ def test_two_users(started_cluster):
 
     select_read_2 = node1.query("select * from hdfs('hdfs://suser@kerberizedhdfs1:9010/storage_user_one', 'TSV', 'id UInt64, text String, number Float64')")
 
-# TODO Remove it and enable test
-@pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_read_table_expired(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -100,8 +91,6 @@ def test_read_table_expired(started_cluster):
 
     started_cluster.unpause_container('hdfskerberos')
 
-# TODO Remove it and enable test
-@pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_prohibited(started_cluster):
     node1.query("create table HDFSStorTwoProhibited (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://suser@kerberizedhdfs1:9010/storage_user_two_prohibited', 'TSV')")
     try:
@@ -110,8 +99,6 @@ def test_prohibited(started_cluster):
     except Exception as ex:
         assert "Unable to open HDFS file: /storage_user_two_prohibited error: Permission denied: user=specuser, access=WRITE" in str(ex)
 
-# TODO Remove it and enable test
-@pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_cache_path(started_cluster):
     node1.query("create table HDFSStorCachePath (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://dedicatedcachepath@kerberizedhdfs1:9010/storage_dedicated_cache_path', 'TSV')")
     try:
