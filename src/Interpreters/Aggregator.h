@@ -911,6 +911,7 @@ public:
 
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
+        size_t aggregation_method;
 
         Params(
             const Block & src_header_,
@@ -923,6 +924,7 @@ public:
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
+            size_t aggregation_method_,
             const Block & intermediate_header_ = {})
             : src_header(src_header_),
             intermediate_header(intermediate_header_),
@@ -934,14 +936,15 @@ public:
             tmp_volume(tmp_volume_), max_threads(max_threads_),
             min_free_disk_space(min_free_disk_space_),
             compile_aggregate_expressions(compile_aggregate_expressions_),
-            min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
+            min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_),
+            aggregation_method(aggregation_method_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, 0)
         {
             intermediate_header = intermediate_header_;
         }
@@ -1129,6 +1132,14 @@ private:
 
     template <bool no_more_keys, typename Method>
     void handleAggregationJIT(
+        Method & method,
+        typename Method::State & state,
+        Arena * aggregates_pool,
+        size_t rows,
+        AggregateFunctionInstruction * aggregate_instructions) const;
+
+    template <bool no_more_keys, typename Method>
+    void handleAggregationJITV2(
         Method & method,
         typename Method::State & state,
         Arena * aggregates_pool,

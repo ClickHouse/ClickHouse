@@ -321,7 +321,7 @@ void Aggregator::compileAggregateFunctions()
     }
 
     /// TODO: Probably better to compile more than 2 functions
-    if (functions_to_compile.empty())
+    if (functions_to_compile.empty() || functions_to_compile.size() != aggregate_functions.size())
         return;
 
     CompiledAggregateFunctions compiled_aggregate_functions;
@@ -597,6 +597,90 @@ void NO_INLINE Aggregator::handleAggregationJIT(
     auto add_into_aggregate_states_function = compiled_functions->add_into_aggregate_states_function;
     auto create_aggregate_states_function = compiled_functions->create_aggregate_states_function;
 
+    std::unique_ptr<AggregateDataPtr[]> places;
+
+    bool not_all_functions_compiled = compiled_functions->functions_count != offsets_of_aggregate_states.size();
+    if (not_all_functions_compiled)
+        places.reset(new AggregateDataPtr[rows]);
+
+    auto get_aggregate_data = [&](size_t row) -> AggregateDataPtr
+    {
+        AggregateDataPtr aggregate_data;
+
+        if constexpr (!no_more_keys)
+        {
+            auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
+
+            /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+            if (emplace_result.isInserted())
+            {
+                /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+                emplace_result.setMapped(nullptr);
+
+                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                create_aggregate_states_function(aggregate_data);
+
+                emplace_result.setMapped(aggregate_data);
+            }
+            else
+                aggregate_data = emplace_result.getMapped();
+
+            assert(aggregate_data != nullptr);
+        }
+        else
+        {
+            /// Add only if the key already exists.
+            /// Overflow row is disabled for JIT.
+            auto find_result = state.findKey(method.data, row, *aggregates_pool);
+            assert(find_result.getMapped() != nullptr);
+
+            aggregate_data = find_result.getMapped();
+        }
+
+        if (not_all_functions_compiled)
+            places[row] = aggregate_data;
+
+        return aggregate_data;
+    };
+
+    GetAggregateDataFunction get_aggregate_data_function = FunctorToStaticMethodAdaptor<decltype(get_aggregate_data)>::unsafeCall;
+    GetAggregateDataContext get_aggregate_data_context = reinterpret_cast<char *>(&get_aggregate_data);
+
+    add_into_aggregate_states_function(rows, columns_data.data(), get_aggregate_data_function, get_aggregate_data_context);
+
+    /// Add values to the aggregate functions.
+    AggregateFunctionInstruction * inst = aggregate_instructions + compiled_functions->functions_count;
+    for (; inst->that; ++inst)
+    {
+        if (inst->offsets)
+            inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+        else
+            inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+    }
+}
+
+template <bool no_more_keys, typename Method>
+void NO_INLINE Aggregator::handleAggregationJITV2(
+    Method & method,
+    typename Method::State & state,
+    Arena * aggregates_pool,
+    size_t rows,
+    AggregateFunctionInstruction * aggregate_instructions) const
+{
+    std::vector<ColumnData> columns_data;
+    columns_data.reserve(aggregate_functions.size());
+
+    /// Add values to the aggregate functions.
+    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+    {
+        size_t arguments_size = inst->that->getArgumentTypes().size();
+        for (size_t i = 0; i < arguments_size; ++i)
+            columns_data.emplace_back(getColumnData(inst->batch_arguments[i]));
+    }
+
+    auto add_into_aggregate_states_function = compiled_functions->add_into_aggregate_states_function_v2;
+    auto create_aggregate_states_function = compiled_functions->create_aggregate_states_function;
+
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
 
     /// For all rows.
@@ -772,7 +856,10 @@ void NO_INLINE Aggregator::executeImplBatch(
 #if USE_EMBEDDED_COMPILER
     if (compiled_functions)
     {
-        handleAggregationJIT<no_more_keys>(method, state, aggregates_pool, rows, aggregate_instructions);
+        if (params.aggregation_method == 0)
+            handleAggregationJIT<no_more_keys>(method, state, aggregates_pool, rows, aggregate_instructions);
+        else
+            handleAggregationJITV2<no_more_keys>(method, state, aggregates_pool, rows, aggregate_instructions);
     }
     else
 #endif
