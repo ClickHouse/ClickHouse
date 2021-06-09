@@ -1,11 +1,13 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/assert_cast.h>
+
+// TODO include this last because of a broken roaring header. See the comment inside.
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 
 namespace DB

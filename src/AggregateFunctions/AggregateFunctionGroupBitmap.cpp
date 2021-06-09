@@ -1,8 +1,10 @@
-#include <AggregateFunctions/AggregateFunctionGroupBitmap.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+
+// TODO include this last because of a broken roaring header. See the comment inside.
+#include <AggregateFunctions/AggregateFunctionGroupBitmap.h>
 
 
 namespace DB
