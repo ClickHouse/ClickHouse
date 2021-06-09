@@ -554,6 +554,113 @@ def leadInFrame(self):
             expected=expected
         )
 
+@TestScenario
+@Requirements(
+    RQ_SRS_019_ClickHouse_WindowFunctions_LagInFrame("1.0")
+)
+def lagInFrame(self):
+    """Check `lagInFrame` function.
+    """
+    with Example("non default offset"):
+        expected = convert_output("""
+          empno | salary | lag
+        --------+--------+-------
+              1 |   5000 | 5000
+              2 |   3900 | 3900
+              3 |   4800 | 4800
+              4 |   4800 | 4800
+              5 |   3500 | 3500
+              7 |   4200 | 4200
+              8 |   6000 | 6000
+              9 |   4500 | 4500
+             10 |   5200 | 5200
+             11 |   5200 | 5200
+        """)
+
+        execute_query(
+            "select empno, salary, lagInFrame(salary,0) OVER (ORDER BY salary) AS lag FROM empsalary ORDER BY empno",
+            expected=expected
+        )
+
+    with Example("default offset"):
+        expected = convert_output("""
+          empno | salary | lag
+        --------+--------+-------
+             5  |   3500 |    0
+             2  |   3900 | 3500
+             7  |   4200 | 3900
+             9  |   4500 | 4200
+             3  |   4800 | 4500
+             4  |   4800 | 4800
+             1  |   5000 | 4800
+            10  |   5200 | 5000
+            11  |   5200 | 5200
+             8  |   6000 | 5200
+        """)
+
+        execute_query(
+            "select empno, salary, lagInFrame(salary) OVER (ORDER BY salary) AS lag FROM (SELECT * FROM empsalary ORDER BY empno)",
+            expected=expected
+        )
+
+    with Example("explicit default value"):
+        expected = convert_output("""
+          empno | salary | lag
+        --------+--------+-------
+             1  |   5000 | 4800
+             2  |   3900 | 3500
+             3  |   4800 | 4500
+             4  |   4800 | 4800
+             5  |   3500 |    8
+             7  |   4200 | 3900
+             8  |   6000 | 5200
+             9  |   4500 | 4200
+            10  |   5200 | 5000
+            11  |   5200 | 5200
+        """)
+
+        execute_query(
+            "select empno, salary, lagInFrame(salary,1,8) OVER (ORDER BY salary) AS lag FROM empsalary ORDER BY empno",
+            expected=expected
+        )
+
+    with Example("without order by"):
+        expected = convert_output("""
+          empno | salary | lag
+        --------+--------+-------
+             1  |   5000 |    0
+             2  |   3900 | 5000
+             3  |   4800 | 3900
+             4  |   4800 | 4800
+             5  |   3500 | 4800
+             7  |   4200 | 3500
+             8  |   6000 | 4200
+             9  |   4500 | 6000
+            10  |   5200 | 4500
+            11  |   5200 | 5200
+        """)
+
+        execute_query(
+            "select empno, salary, lagInFrame(salary) OVER () AS lag FROM (SELECT * FROM empsalary ORDER BY empno)",
+            expected=expected
+        )
+
+    with Example("with nulls"):
+        expected = convert_output("""
+          number | lag
+         --------+-----
+               1 |  0
+               1 |  1
+               2 |  1
+               3 |  2
+             \\N |  3
+        """)
+
+        execute_query(
+            "select number, lagInFrame(number,1,0) OVER () AS lag FROM values('number Nullable(Int8)', (1),(1),(2),(3),(NULL))",
+            expected=expected
+        )
+
 @TestFeature
 @Name("funcs")
 def feature(self):
