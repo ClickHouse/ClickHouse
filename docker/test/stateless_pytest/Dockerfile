@@ -8,6 +8,7 @@ RUN apt-get update -y && \
         python3-wheel \
         brotli \
         netcat-openbsd \
+        postgresql-client \
         zstd
 
 RUN python3 -m pip install \
