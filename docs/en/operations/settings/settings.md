@@ -988,7 +988,7 @@ Default value: 1024.
 
 ## max_distributed_depth {#max-distributed-depth}
 
-Maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
+Limits the maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
 
 If the value is exceeded, the server throws an exeption.
 
