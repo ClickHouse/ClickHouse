@@ -637,7 +637,7 @@ struct AggregateFunctionAnyLastData : Data
 template <typename Data>
 struct AggregateFunctionAnyHeavyData : Data
 {
-    size_t counter = 0;
+    UInt64 counter = 0;
 
     using Self = AggregateFunctionAnyHeavyData;
 
