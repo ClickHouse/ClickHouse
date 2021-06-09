@@ -4,7 +4,7 @@ toc_priority: 109
 
 # topKWeighted {#topkweighted}
 
-Similar to [topK](topk.md) but takes one additional argument of integer type - `weight`. Every value is accounted `weight` times for frequency calculation.
+Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves). Additionally, every value is accounted `weight` times for frequency calculation.
 
 **Syntax**
 
@@ -37,3 +37,7 @@ Result:
 │ [999,998,997,996,995,994,993,992,991,990] │
 └───────────────────────────────────────────┘
 ```
+
+**See Also**
+
+-   [topK](topk.md#topk)
