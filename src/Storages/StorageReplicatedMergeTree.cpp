@@ -71,7 +71,6 @@
 #include <numeric>
 #include <thread>
 #include <future>
-#include <filesystem>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -7116,7 +7115,7 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
 
     Coordination::Requests ops;
 
-    ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(), 
+    ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(),
         zkutil::CreateMode::PersistentSequential));
 
     /// Check and update version to avoid race with REPLACE_RANGE.

@@ -4,15 +4,15 @@
             <shard>
                 <internal_replication>true</internal_replication>
                 <replica>
-                    <host>node_1_1</host>
+                    <host>replica1</host>
                     <port>9000</port>
                 </replica>
                 <replica>
-                    <host>node_1_2</host>
+                    <host>replica2</host>
                     <port>9000</port>
                 </replica>
                  <replica>
-                    <host>node_1_3</host>
+                    <host>replica3</host>
                     <port>9000</port>
                 </replica>
             </shard>

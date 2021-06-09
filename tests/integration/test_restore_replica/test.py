@@ -96,6 +96,10 @@ def test_restore_replica_sequential(start_cluster):
 def test_restore_replica_parallel(start_cluster):
     zk = cluster.get_kazoo_client('zoo1')
 
+    node_1.query("TRUNCATE TABLE test")
+    node_2.query("TRUNCATE TABLE test")
+    node_3.query("TRUNCATE TABLE test")
+
     check_data(0, 0)
     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
     check_data(499500, 1000)
