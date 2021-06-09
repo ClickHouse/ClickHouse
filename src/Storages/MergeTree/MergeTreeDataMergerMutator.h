@@ -57,7 +57,7 @@ public:
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
     SelectPartsDecision selectPartsToMerge(
-        FutureMergedMutatedPart & future_part,
+        FutureMergedMutatedPartPtr future_part,
         bool aggressive,
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
@@ -70,7 +70,7 @@ public:
       * and without expired TTL won't be merged with itself.
       */
     SelectPartsDecision selectAllPartsToMergeWithinPartition(
-        FutureMergedMutatedPart & future_part,
+        FutureMergedMutatedPartPtr future_part,
         UInt64 & available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
@@ -90,7 +90,7 @@ public:
       * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
-        const FutureMergedMutatedPart & future_part,
+        FutureMergedMutatedPartPtr future_part,
         const StorageMetadataPtr & metadata_snapshot,
         MergeListEntry & merge_entry,
         TableLockHolder & table_lock_holder,
@@ -105,7 +105,7 @@ public:
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
-        const FutureMergedMutatedPart & future_part,
+        FutureMergedMutatedPartPtr future_part,
         const StorageMetadataPtr & metadata_snapshot,
         const MutationCommands & commands,
         MergeListEntry & merge_entry,

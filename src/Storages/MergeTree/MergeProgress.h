@@ -3,8 +3,17 @@
 
 #include "common/types.h"
 #include "Common/ProfileEvents.h"
+#include "IO/Progress.h"
 #include "Storages/MergeTree/MergeList.h"
 
+
+namespace ProfileEvents
+{
+    extern const Event MergesTimeMilliseconds;
+    extern const Event MergedUncompressedBytes;
+    extern const Event MergedRows;
+    extern const Event Merge;
+}
 
 namespace DB
 {

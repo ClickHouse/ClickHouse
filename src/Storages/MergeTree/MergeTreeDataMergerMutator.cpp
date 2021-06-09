@@ -9,6 +9,11 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeProgress.h>
+
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -73,86 +78,6 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 ///  because between selecting parts to merge and doing merge, amount of free space could have decreased.
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
-void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
-{
-    if (parts_.empty())
-        return;
-
-    size_t sum_rows = 0;
-    size_t sum_bytes_uncompressed = 0;
-    MergeTreeDataPartType future_part_type = MergeTreeDataPartType::UNKNOWN;
-    for (const auto & part : parts_)
-    {
-        sum_rows += part->rows_count;
-        sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
-        future_part_type = std::min(future_part_type, part->getType());
-    }
-
-    auto chosen_type = parts_.front()->storage.choosePartTypeOnDisk(sum_bytes_uncompressed, sum_rows);
-    future_part_type = std::min(future_part_type, chosen_type);
-    assign(std::move(parts_), future_part_type);
-}
-
-void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type)
-{
-    if (parts_.empty())
-        return;
-
-    for (const MergeTreeData::DataPartPtr & part : parts_)
-    {
-        const MergeTreeData::DataPartPtr & first_part = parts_.front();
-
-        if (part->partition.value != first_part->partition.value)
-            throw Exception(
-                "Attempting to merge parts " + first_part->name + " and " + part->name + " that are in different partitions",
-                ErrorCodes::LOGICAL_ERROR);
-    }
-
-    parts = std::move(parts_);
-
-    UInt32 max_level = 0;
-    Int64 max_mutation = 0;
-    for (const auto & part : parts)
-    {
-        max_level = std::max(max_level, part->info.level);
-        max_mutation = std::max(max_mutation, part->info.mutation);
-    }
-
-    type = future_part_type;
-    part_info.partition_id = parts.front()->info.partition_id;
-    part_info.min_block = parts.front()->info.min_block;
-    part_info.max_block = parts.back()->info.max_block;
-    part_info.level = max_level + 1;
-    part_info.mutation = max_mutation;
-
-    if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        DayNum min_date = DayNum(std::numeric_limits<UInt16>::max());
-        DayNum max_date = DayNum(std::numeric_limits<UInt16>::min());
-        for (const auto & part : parts)
-        {
-            /// NOTE: getting min and max dates from part names (instead of part data) because we want
-            /// the merged part name be determined only by source part names.
-            /// It is simpler this way when the real min and max dates for the block range can change
-            /// (e.g. after an ALTER DELETE command).
-            DayNum part_min_date;
-            DayNum part_max_date;
-            MergeTreePartInfo::parseMinMaxDatesFromPartName(part->name, part_min_date, part_max_date);
-            min_date = std::min(min_date, part_min_date);
-            max_date = std::max(max_date, part_max_date);
-        }
-
-        name = part_info.getPartNameV0(min_date, max_date);
-    }
-    else
-        name = part_info.getPartName();
-}
-
-void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const ReservationPtr & reservation)
-{
-    path = storage.getFullPathOnDisk(reservation->getDisk()) + name + "/";
-}
-
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size_)
     : data(data_), background_pool_size(background_pool_size_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
 {
@@ -208,7 +133,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
 }
 
 SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
-    FutureMergedMutatedPart & future_part,
+    FutureMergedMutatedPartPtr future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
@@ -337,7 +262,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
         if (!parts_to_merge.empty())
         {
-            future_part.merge_type = MergeType::TTL_DELETE;
+            future_part->merge_type = MergeType::TTL_DELETE;
         }
         else if (metadata_snapshot->hasAnyRecompressionTTL())
         {
@@ -349,7 +274,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
             parts_to_merge = recompress_ttl_selector.select(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
-                future_part.merge_type = MergeType::TTL_RECOMPRESS;
+                future_part->merge_type = MergeType::TTL_RECOMPRESS;
         }
     }
 
@@ -386,12 +311,12 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     }
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
-    future_part.assign(std::move(parts));
+    future_part->assign(std::move(parts));
     return SelectPartsDecision::SELECTED;
 }
 
 SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
-    FutureMergedMutatedPart & future_part,
+    FutureMergedMutatedPartPtr future_part,
     UInt64 & available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
@@ -463,7 +388,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     }
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
-    future_part.assign(std::move(parts));
+    future_part->assign(std::move(parts));
 
     available_disk_space -= required_disk_space;
     return SelectPartsDecision::SELECTED;
@@ -550,7 +475,7 @@ static void extractMergingAndGatheringColumns(
 /* Allow to compute more accurate progress statistics */
 class ColumnSizeEstimator
 {
-    MergeTreeData::DataPart::ColumnToSize map;
+    ColumnToSize map;
 public:
 
     /// Stores approximate size of columns in bytes
@@ -559,7 +484,7 @@ public:
     size_t sum_index_columns = 0;
     size_t sum_ordinary_columns = 0;
 
-    ColumnSizeEstimator(const MergeTreeData::DataPart::ColumnToSize & map_, const Names & key_columns, const Names & ordinary_columns)
+    ColumnSizeEstimator(const ColumnToSize & map_, const Names & key_columns, const Names & ordinary_columns)
         : map(map_)
     {
         for (const auto & name : key_columns)
@@ -598,7 +523,7 @@ static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeS
 
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
-    const FutureMergedMutatedPart & future_part,
+    FutureMergedMutatedPartPtr future_part,
     const StorageMetadataPtr & metadata_snapshot,
     MergeList::Entry & merge_entry,
     TableLockHolder & holder,
@@ -611,507 +536,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const IMergeTreeDataPart * parent_part,
     const String & prefix)
 {
-    const String tmp_prefix = parent_part ? prefix : "tmp_merge_";
-
-    if (merges_blocker.isCancelled())
-        throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
-
-    /// We don't want to perform merge assigned with TTL as normal merge, so
-    /// throw exception
-    if (isTTLMergeType(future_part.merge_type) && ttl_merges_blocker.isCancelled())
-        throw Exception("Cancelled merging parts with TTL", ErrorCodes::ABORTED);
-
-    const MergeTreeData::DataPartsVector & parts = future_part.parts;
-
-    LOG_DEBUG(log, "Merging {} parts: from {} to {} into {}", parts.size(), parts.front()->name, parts.back()->name, future_part.type.toString());
-    if (deduplicate)
-    {
-        if (deduplicate_by_columns.empty())
-            LOG_DEBUG(log, "DEDUPLICATE BY all columns");
-        else
-            LOG_DEBUG(log, "DEDUPLICATE BY ('{}')", fmt::join(deduplicate_by_columns, "', '"));
-    }
-
-    auto disk = space_reservation->getDisk();
-    String part_path = data.relative_data_path;
-    String new_part_tmp_path = part_path + tmp_prefix + future_part.name + (parent_part ? ".proj" : "") + "/";
-    if (disk->exists(new_part_tmp_path))
-        throw Exception("Directory " + fullPath(disk, new_part_tmp_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-
-
-    Names all_column_names = metadata_snapshot->getColumns().getNamesOfPhysical();
-    NamesAndTypesList storage_columns = metadata_snapshot->getColumns().getAllPhysical();
-    const auto data_settings = data.getSettings();
-
-    NamesAndTypesList gathering_columns;
-    NamesAndTypesList merging_columns;
-    Names gathering_column_names, merging_column_names;
-    extractMergingAndGatheringColumns(
-        storage_columns,
-        metadata_snapshot->getSortingKey().expression,
-        metadata_snapshot->getSecondaryIndices(),
-        metadata_snapshot->getProjections(),
-        merging_params,
-        gathering_columns,
-        gathering_column_names,
-        merging_columns,
-        merging_column_names);
-
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk, 0);
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
-        future_part.name,
-        future_part.type,
-        future_part.part_info,
-        single_disk_volume,
-        tmp_prefix + future_part.name + (parent_part ? ".proj" : ""),
-        parent_part);
-
-    new_data_part->uuid = future_part.uuid;
-    new_data_part->setColumns(storage_columns);
-    new_data_part->partition.assign(future_part.getPartition());
-    new_data_part->is_temp = parent_part == nullptr;
-
-    bool need_remove_expired_values = false;
-    bool force_ttl = false;
-    for (const auto & part : parts)
-    {
-        if (metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(metadata_snapshot))
-        {
-            LOG_INFO(log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
-            need_remove_expired_values = true;
-            force_ttl = true;
-        }
-        else
-        {
-            new_data_part->ttl_infos.update(part->ttl_infos);
-        }
-    }
-
-    const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
-    if (part_min_ttl && part_min_ttl <= time_of_merge)
-        need_remove_expired_values = true;
-
-    if (need_remove_expired_values && ttl_merges_blocker.isCancelled())
-    {
-        LOG_INFO(log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", new_data_part->name);
-        need_remove_expired_values = false;
-    }
-
-    size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
-    size_t sum_compressed_bytes_upper_bound = merge_entry->total_size_bytes_compressed;
-    MergeAlgorithm chosen_merge_algorithm = chooseMergeAlgorithm(
-        parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values, merging_params);
-    merge_entry->merge_algorithm.store(chosen_merge_algorithm, std::memory_order_relaxed);
-
-    LOG_DEBUG(log, "Selected MergeAlgorithm: {}", toString(chosen_merge_algorithm));
-
-    /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
-    /// (which is locked in data.getTotalActiveSizeInBytes())
-    /// (which is locked in shared mode when input streams are created) and when inserting new data
-    /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
-    /// deadlock is impossible.
-    auto compression_codec = data.getCompressionCodecForPart(merge_entry->total_size_bytes_compressed, new_data_part->ttl_infos, time_of_merge);
-
-    auto tmp_disk = context->getTemporaryVolume()->getDisk();
-    String rows_sources_file_path;
-    std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf;
-    std::unique_ptr<WriteBuffer> rows_sources_write_buf;
-    std::optional<ColumnSizeEstimator> column_sizes;
-
-    SyncGuardPtr sync_guard;
-
-    if (chosen_merge_algorithm == MergeAlgorithm::Vertical)
-    {
-        tmp_disk->createDirectories(new_part_tmp_path);
-        rows_sources_file_path = new_part_tmp_path + "rows_sources";
-        rows_sources_uncompressed_write_buf = tmp_disk->writeFile(rows_sources_file_path);
-        rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*rows_sources_uncompressed_write_buf);
-
-        MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
-        for (const MergeTreeData::DataPartPtr & part : parts)
-            part->accumulateColumnSizes(merged_column_to_size);
-
-        column_sizes = ColumnSizeEstimator(merged_column_to_size, merging_column_names, gathering_column_names);
-
-        if (data.getSettings()->fsync_part_directory)
-            sync_guard = disk->getDirectorySyncGuard(new_part_tmp_path);
-    }
-    else
-    {
-        merging_columns = storage_columns;
-        merging_column_names = all_column_names;
-        gathering_columns.clear();
-        gathering_column_names.clear();
-    }
-
-    /** Read from all parts, merge and write into a new one.
-      * In passing, we calculate expression for sorting.
-      */
-    Pipes pipes;
-    UInt64 watch_prev_elapsed = 0;
-
-    /// We count total amount of bytes in parts
-    /// and use direct_io if there is more than min_merge_bytes_to_use_direct_io
-    bool read_with_direct_io = false;
-    if (data_settings->min_merge_bytes_to_use_direct_io != 0)
-    {
-        size_t total_size = 0;
-        for (const auto & part : parts)
-        {
-            total_size += part->getBytesOnDisk();
-            if (total_size >= data_settings->min_merge_bytes_to_use_direct_io)
-            {
-                LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
-                read_with_direct_io = true;
-
-                break;
-            }
-        }
-    }
-
-    MergeStageProgress horizontal_stage_progress(
-        column_sizes ? column_sizes->keyColumnsWeight() : 1.0);
-
-    for (const auto & part : parts)
-    {
-        auto input = std::make_unique<MergeTreeSequentialSource>(
-            data, metadata_snapshot, part, merging_column_names, read_with_direct_io, true);
-
-        input->setProgressCallback(
-            MergeProgressCallback(merge_entry, watch_prev_elapsed, horizontal_stage_progress));
-
-        Pipe pipe(std::move(input));
-
-        if (metadata_snapshot->hasSortingKey())
-        {
-            pipe.addSimpleTransform([&metadata_snapshot](const Block & header)
-            {
-                return std::make_shared<ExpressionTransform>(header, metadata_snapshot->getSortingKey().expression);
-            });
-        }
-
-        pipes.emplace_back(std::move(pipe));
-    }
-
-    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    SortDescription sort_description;
-    size_t sort_columns_size = sort_columns.size();
-    sort_description.reserve(sort_columns_size);
-
-    Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
-
-    Block header = pipes.at(0).getHeader();
-    for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
-
-    /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
-    /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
-    ///  that is going in insertion order.
-    ProcessorPtr merged_transform;
-
-    /// If merge is vertical we cannot calculate it
-    bool blocks_are_granules_size = (chosen_merge_algorithm == MergeAlgorithm::Vertical);
-
-    UInt64 merge_block_size = data_settings->merge_max_block_size;
-    switch (merging_params.mode)
-    {
-        case MergeTreeData::MergingParams::Ordinary:
-            merged_transform = std::make_unique<MergingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size, 0, rows_sources_write_buf.get(), true, blocks_are_granules_size);
-            break;
-
-        case MergeTreeData::MergingParams::Collapsing:
-            merged_transform = std::make_unique<CollapsingSortedTransform>(
-                header, pipes.size(), sort_description, merging_params.sign_column, false,
-                merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
-            break;
-
-        case MergeTreeData::MergingParams::Summing:
-            merged_transform = std::make_unique<SummingSortedTransform>(
-                header, pipes.size(), sort_description, merging_params.columns_to_sum, partition_key_columns, merge_block_size);
-            break;
-
-        case MergeTreeData::MergingParams::Aggregating:
-            merged_transform = std::make_unique<AggregatingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size);
-            break;
-
-        case MergeTreeData::MergingParams::Replacing:
-            merged_transform = std::make_unique<ReplacingSortedTransform>(
-                header, pipes.size(), sort_description, merging_params.version_column,
-                merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
-            break;
-
-        case MergeTreeData::MergingParams::Graphite:
-            merged_transform = std::make_unique<GraphiteRollupSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size,
-                merging_params.graphite_params, time_of_merge);
-            break;
-
-        case MergeTreeData::MergingParams::VersionedCollapsing:
-            merged_transform = std::make_unique<VersionedCollapsingTransform>(
-                header, pipes.size(), sort_description, merging_params.sign_column,
-                merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
-            break;
-    }
-
-    QueryPipeline pipeline;
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
-    pipeline.addTransform(std::move(merged_transform));
-    pipeline.setMaxThreads(1);
-    BlockInputStreamPtr merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
-
-    if (deduplicate)
-        merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, deduplicate_by_columns);
-
-    if (need_remove_expired_values)
-    {
-        LOG_DEBUG(log, "Outdated rows found in source parts, TTLs processing enabled for merge");
-        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, force_ttl);
-    }
-
-    if (metadata_snapshot->hasSecondaryIndices())
-    {
-        const auto & indices = metadata_snapshot->getSecondaryIndices();
-        merged_stream = std::make_shared<ExpressionBlockInputStream>(
-            merged_stream, indices.getSingleExpressionForIndices(metadata_snapshot->getColumns(), data.getContext()));
-        merged_stream = std::make_shared<MaterializingBlockInputStream>(merged_stream);
-    }
-
-    const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream to{
-        new_data_part,
-        metadata_snapshot,
-        merging_columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        compression_codec,
-        blocks_are_granules_size};
-
-    merged_stream->readPrefix();
-    to.writePrefix();
-
-    size_t rows_written = 0;
-    const size_t initial_reservation = space_reservation ? space_reservation->getSize() : 0;
-
-    auto is_cancelled = [&]()
-    {
-        return merges_blocker.isCancelled()
-            || (need_remove_expired_values && ttl_merges_blocker.isCancelled())
-            || merge_entry->is_cancelled.load(std::memory_order_relaxed);
-    };
-
-    Block block;
-    while (!is_cancelled() && (block = merged_stream->read()))
-    {
-        rows_written += block.rows();
-
-        to.write(block);
-
-        merge_entry->rows_written = merged_stream->getProfileInfo().rows;
-        merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
-
-        /// Reservation updates is not performed yet, during the merge it may lead to higher free space requirements
-        if (space_reservation && sum_input_rows_upper_bound)
-        {
-            /// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
-            /// But now we are using inaccurate row-based estimation in Horizontal case for backward compatibility
-            Float64 progress = (chosen_merge_algorithm == MergeAlgorithm::Horizontal)
-                ? std::min(1., 1. * rows_written / sum_input_rows_upper_bound)
-                : std::min(1., merge_entry->progress.load(std::memory_order_relaxed));
-
-            space_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
-        }
-    }
-
-    merged_stream->readSuffix();
-    merged_stream.reset();
-
-    if (merges_blocker.isCancelled())
-        throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
-
-    if (need_remove_expired_values && ttl_merges_blocker.isCancelled())
-        throw Exception("Cancelled merging parts with expired TTL", ErrorCodes::ABORTED);
-
-    bool need_sync = needSyncPart(sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
-    MergeTreeData::DataPart::Checksums checksums_gathered_columns;
-
-    /// Gather ordinary columns
-    if (chosen_merge_algorithm == MergeAlgorithm::Vertical)
-    {
-        size_t sum_input_rows_exact = merge_entry->rows_read;
-        merge_entry->columns_written = merging_column_names.size();
-        merge_entry->progress.store(column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
-
-        BlockInputStreams column_part_streams(parts.size());
-
-        auto it_name_and_type = gathering_columns.cbegin();
-
-        rows_sources_write_buf->next();
-        rows_sources_uncompressed_write_buf->next();
-        /// Ensure data has written to disk.
-        rows_sources_uncompressed_write_buf->finalize();
-
-        size_t rows_sources_count = rows_sources_write_buf->count();
-        /// In special case, when there is only one source part, and no rows were skipped, we may have
-        /// skipped writing rows_sources file. Otherwise rows_sources_count must be equal to the total
-        /// number of input rows.
-        if ((rows_sources_count > 0 || parts.size() > 1) && sum_input_rows_exact != rows_sources_count)
-            throw Exception("Number of rows in source parts (" + toString(sum_input_rows_exact)
-                + ") differs from number of bytes written to rows_sources file (" + toString(rows_sources_count)
-                + "). It is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-        CompressedReadBufferFromFile rows_sources_read_buf(tmp_disk->readFile(rows_sources_file_path));
-        IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns;
-
-        for (size_t column_num = 0, gathering_column_names_size = gathering_column_names.size();
-            column_num < gathering_column_names_size;
-            ++column_num, ++it_name_and_type)
-        {
-            const String & column_name = it_name_and_type->name;
-            Names column_names{column_name};
-            Float64 progress_before = merge_entry->progress.load(std::memory_order_relaxed);
-
-            MergeStageProgress column_progress(progress_before, column_sizes->columnWeight(column_name));
-            for (size_t part_num = 0; part_num < parts.size(); ++part_num)
-            {
-                auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
-                    data, metadata_snapshot, parts[part_num], column_names, read_with_direct_io, true);
-
-                column_part_source->setProgressCallback(
-                    MergeProgressCallback(merge_entry, watch_prev_elapsed, column_progress));
-
-                QueryPipeline column_part_pipeline;
-                column_part_pipeline.init(Pipe(std::move(column_part_source)));
-                column_part_pipeline.setMaxThreads(1);
-
-                column_part_streams[part_num] =
-                        std::make_shared<PipelineExecutingBlockInputStream>(std::move(column_part_pipeline));
-            }
-
-            rows_sources_read_buf.seek(0, 0);
-            ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
-
-            MergedColumnOnlyOutputStream column_to(
-                new_data_part,
-                metadata_snapshot,
-                column_gathered_stream.getHeader(),
-                compression_codec,
-                /// we don't need to recalc indices here
-                /// because all of them were already recalculated and written
-                /// as key part of vertical merge
-                std::vector<MergeTreeIndexPtr>{},
-                &written_offset_columns,
-                to.getIndexGranularity());
-
-            size_t column_elems_written = 0;
-
-            column_to.writePrefix();
-            while (!merges_blocker.isCancelled() && (block = column_gathered_stream.read()))
-            {
-                column_elems_written += block.rows();
-                column_to.write(block);
-            }
-
-            if (merges_blocker.isCancelled())
-                throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
-
-            column_gathered_stream.readSuffix();
-            auto changed_checksums = column_to.writeSuffixAndGetChecksums(new_data_part, checksums_gathered_columns, need_sync);
-            checksums_gathered_columns.add(std::move(changed_checksums));
-
-            if (rows_written != column_elems_written)
-            {
-                throw Exception("Written " + toString(column_elems_written) + " elements of column " + column_name +
-                                ", but " + toString(rows_written) + " rows of PK columns", ErrorCodes::LOGICAL_ERROR);
-            }
-
-            /// NOTE: 'progress' is modified by single thread, but it may be concurrently read from MergeListElement::getInfo() (StorageSystemMerges).
-
-            merge_entry->columns_written += 1;
-            merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
-            merge_entry->progress.store(progress_before + column_sizes->columnWeight(column_name), std::memory_order_relaxed);
-        }
-
-        tmp_disk->removeFile(rows_sources_file_path);
-    }
-
-    for (const auto & part : parts)
-        new_data_part->minmax_idx.merge(part->minmax_idx);
-
-    /// Print overall profiling info. NOTE: it may duplicates previous messages
-    {
-        double elapsed_seconds = merge_entry->watch.elapsedSeconds();
-        LOG_DEBUG(log,
-            "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
-            merge_entry->rows_read,
-            all_column_names.size(),
-            merging_column_names.size(),
-            gathering_column_names.size(),
-            elapsed_seconds,
-            merge_entry->rows_read / elapsed_seconds,
-            ReadableSize(merge_entry->bytes_read_uncompressed / elapsed_seconds));
-    }
-
-    for (const auto & projection : metadata_snapshot->getProjections())
-    {
-        MergeTreeData::DataPartsVector projection_parts;
-        for (const auto & part : parts)
-        {
-            auto it = part->getProjectionParts().find(projection.name);
-            if (it != part->getProjectionParts().end())
-                projection_parts.push_back(it->second);
-        }
-        if (projection_parts.size() < parts.size())
-        {
-            LOG_DEBUG(log, "Projection {} is not merged because some parts don't have it", projection.name);
-            continue;
-        }
-
-        LOG_DEBUG(
-            log,
-            "Selected {} projection_parts from {} to {}",
-            projection_parts.size(),
-            projection_parts.front()->name,
-            projection_parts.back()->name);
-
-        FutureMergedMutatedPart projection_future_part;
-        projection_future_part.assign(std::move(projection_parts));
-        projection_future_part.name = projection.name;
-        projection_future_part.path = future_part.path + "/" + projection.name + ".proj/";
-        projection_future_part.part_info = {"all", 0, 0, 0};
-
-        MergeTreeData::MergingParams projection_merging_params;
-        projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
-        if (projection.type == ProjectionDescription::Type::Aggregate)
-            projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
-
-        // TODO Should we use a new merge_entry for projection?
-        auto merged_projection_part = mergePartsToTemporaryPart(
-            projection_future_part,
-            projection.metadata,
-            merge_entry,
-            holder,
-            time_of_merge,
-            context,
-            space_reservation,
-            deduplicate,
-            deduplicate_by_columns,
-            projection_merging_params,
-            new_data_part.get());
-        new_data_part->addProjectionPart(projection.name, std::move(merged_projection_part));
-    }
-
-    if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        to.writeSuffixAndFinalizePart(new_data_part, need_sync);
-    else
-        to.writeSuffixAndFinalizePart(new_data_part, need_sync, &storage_columns, &checksums_gathered_columns);
-
-    return new_data_part;
+    auto merge_entry_ptr = std::make_shared<MergeEntry>(merge_entry);
+    auto task = std::make_shared<MergeTask>(
+        future_part,
+        const_cast<StorageMetadataPtr &>(metadata_snapshot),
+        merge_entry_ptr,
+
+        );
 }
 
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
-    const FutureMergedMutatedPart & future_part,
+    FutureMergedMutatedPartPtr future_part,
     const StorageMetadataPtr & metadata_snapshot,
     const MutationCommands & commands,
     MergeListEntry & merge_entry,
@@ -1122,12 +558,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 {
     checkOperationIsNotCanceled(merge_entry);
 
-    if (future_part.parts.size() != 1)
-        throw Exception("Trying to mutate " + toString(future_part.parts.size()) + " parts, not one. "
+    if (future_part->parts.size() != 1)
+        throw Exception("Trying to mutate " + toString(future_part->parts.size()) + " parts, not one. "
             "This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
-    const auto & source_part = future_part.parts[0];
+    const auto & source_part = future_part->parts[0];
     auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
 
     auto context_for_reading = Context::createCopy(context);
@@ -1140,7 +576,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     MutationCommands commands_for_part;
     for (const auto & command : commands)
     {
-        if (command.partition == nullptr || future_part.parts[0]->info.partition_id == data.getPartitionIDFromQuery(
+        if (command.partition == nullptr || future_part->parts[0]->info.partition_id == data.getPartitionIDFromQuery(
                 command.partition, context_for_reading))
             commands_for_part.emplace_back(command);
     }
@@ -1148,12 +584,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     if (source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
         storage_from_source_part, metadata_snapshot, commands_for_part, Context::createCopy(context_for_reading)))
     {
-        LOG_TRACE(log, "Part {} doesn't change up to mutation version {}", source_part->name, future_part.part_info.mutation);
-        return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info, metadata_snapshot);
+        LOG_TRACE(log, "Part {} doesn't change up to mutation version {}", source_part->name, future_part->part_info.mutation);
+        return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part->part_info, metadata_snapshot);
     }
     else
     {
-        LOG_TRACE(log, "Mutating part {} to mutation version {}", source_part->name, future_part.part_info.mutation);
+        LOG_TRACE(log, "Mutating part {} to mutation version {}", source_part->name, future_part->part_info.mutation);
     }
 
     BlockInputStreamPtr in = nullptr;
@@ -1187,11 +623,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
     }
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, space_reservation->getDisk(), 0);
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part->name, space_reservation->getDisk(), 0);
     auto new_data_part = data.createPart(
-        future_part.name, future_part.type, future_part.part_info, single_disk_volume, "tmp_mut_" + future_part.name);
+        future_part->name, future_part->type, future_part->part_info, single_disk_volume, "tmp_mut_" + future_part->name);
 
-    new_data_part->uuid = future_part.uuid;
+    new_data_part->uuid = future_part->uuid;
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
 
@@ -1278,8 +714,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             && files_to_rename.empty())
         {
             LOG_TRACE(
-                log, "Part {} doesn't change up to mutation version {} (optimized)", source_part->name, future_part.part_info.mutation);
-            return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info, metadata_snapshot);
+                log, "Part {} doesn't change up to mutation version {} (optimized)", source_part->name, future_part->part_info.mutation);
+            return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part->part_info, metadata_snapshot);
         }
 
         if (need_remove_expired_values)
@@ -2048,19 +1484,19 @@ void MergeTreeDataMergerMutator::writeWithProjections(
             {
                 // Generate a unique part name
                 ++block_num;
-                FutureMergedMutatedPart projection_future_part;
+                auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
                 MergeTreeData::DataPartsVector const_selected_parts(
                     std::make_move_iterator(selected_parts.begin()), std::make_move_iterator(selected_parts.end()));
-                projection_future_part.assign(std::move(const_selected_parts));
-                projection_future_part.name = fmt::format("{}_{}", projection.name, ++block_num);
-                projection_future_part.part_info = {"all", 0, 0, 0};
+                projection_future_part->assign(std::move(const_selected_parts));
+                projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
+                projection_future_part->part_info = {"all", 0, 0, 0};
 
                 MergeTreeData::MergingParams projection_merging_params;
                 projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
                 if (projection.type == ProjectionDescription::Type::Aggregate)
                     projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
-                LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part.name);
+                LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
                 next_level_parts.push_back(mergePartsToTemporaryPart(
                     projection_future_part,
                     projection.metadata,
@@ -2106,7 +1542,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     if (need_remove_expired_values)
         mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, metadata_snapshot, new_data_part, time_of_mutation, true);
 
-    IMergeTreeDataPart::MinMaxIndex minmax_idx;
+    auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
     MergedBlockOutputStream out{
         new_data_part,
@@ -2129,7 +1565,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
         space_reservation,
         holder,
         context,
-        &minmax_idx);
+        minmax_idx.get());
 
     new_data_part->minmax_idx = std::move(minmax_idx);
     mutating_stream->readSuffix();

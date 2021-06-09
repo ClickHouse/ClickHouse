@@ -322,7 +322,7 @@ void StorageMergeTree::alter(
 
 /// While exists, marks parts as 'currently_merging_mutating_parts' and reserves free space on filesystem.
 StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
-    FutureMergedMutatedPart & future_part_,
+    FutureMergedMutatedPartPtr future_part_,
     size_t total_size,
     StorageMergeTree & storage_,
     const StorageMetadataPtr & metadata_snapshot,
@@ -333,12 +333,12 @@ StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
     if (is_mutation)
-        reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->volume);
+        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->volume);
     else
     {
         IMergeTreeDataPart::TTLInfos ttl_infos;
         size_t max_volume_index = 0;
-        for (auto & part_ptr : future_part_.parts)
+        for (auto & part_ptr : future_part->parts)
         {
             ttl_infos.update(part_ptr->ttl_infos);
             max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
@@ -348,9 +348,9 @@ StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             metadata_snapshot,
             total_size,
             max_volume_index,
-            future_part.name,
-            future_part.part_info,
-            future_part.parts,
+            future_part->name,
+            future_part->part_info,
+            future_part->parts,
             &tagger,
             &ttl_infos);
 
@@ -362,26 +362,26 @@ StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     if (!reserved_space)
     {
         if (is_mutation)
-            throw Exception("Not enough space for mutating part '" + future_part.parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
+            throw Exception("Not enough space for mutating part '" + future_part->parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
         else
             throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
     }
 
-    future_part_.updatePath(storage, reserved_space);
+    future_part->updatePath(storage, reserved_space);
 
-    for (const auto & part : future_part.parts)
+    for (const auto & part : future_part->parts)
     {
         if (storage.currently_merging_mutating_parts.count(part))
             throw Exception("Tagging already tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
     }
-    storage.currently_merging_mutating_parts.insert(future_part.parts.begin(), future_part.parts.end());
+    storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
 }
 
 StorageMergeTree::CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
 {
     std::lock_guard lock(storage.currently_processing_in_background_mutex);
 
-    for (const auto & part : future_part.parts)
+    for (const auto & part : future_part->parts)
     {
         if (!storage.currently_merging_mutating_parts.count(part))
             std::terminate();
@@ -414,12 +414,12 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
 }
 
 
-void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPart result_part, bool is_successful, const String & exception_message)
+void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message)
 {
     /// Update the information about failed parts in the system.mutations table.
 
-    Int64 sources_data_version = result_part.parts.at(0)->info.getDataVersion();
-    Int64 result_data_version = result_part.part_info.getDataVersion();
+    Int64 sources_data_version = result_part->parts.at(0)->info.getDataVersion();
+    Int64 result_data_version = result_part->part_info.getDataVersion();
     if (sources_data_version != result_data_version)
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
@@ -431,7 +431,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPart resul
             MergeTreeMutationEntry & entry = it->second;
             if (is_successful)
             {
-                if (!entry.latest_failed_part.empty() && result_part.part_info.contains(entry.latest_failed_part_info))
+                if (!entry.latest_failed_part.empty() && result_part->part_info.contains(entry.latest_failed_part_info))
                 {
                     entry.latest_failed_part.clear();
                     entry.latest_failed_part_info = MergeTreePartInfo();
@@ -441,8 +441,8 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPart resul
             }
             else
             {
-                entry.latest_failed_part = result_part.parts.at(0)->name;
-                entry.latest_failed_part_info = result_part.parts.at(0)->info;
+                entry.latest_failed_part = result_part->parts.at(0)->name;
+                entry.latest_failed_part_info = result_part->parts.at(0)->info;
                 entry.latest_fail_time = time(nullptr);
                 entry.latest_fail_reason = exception_message;
             }
@@ -689,10 +689,10 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 {
     auto data_settings = getSettings();
 
-    FutureMergedMutatedPart future_part;
+    auto future_part = std::make_shared<FutureMergedMutatedPart>();
 
     if (storage_settings.get()->assign_part_uuids)
-        future_part.uuid = UUIDHelpers::generateV4();
+        future_part->uuid = UUIDHelpers::generateV4();
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     CurrentlyMergingPartsTaggerPtr merging_tagger;
@@ -782,10 +782,10 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
     }
 
     /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
-    if (isTTLMergeType(future_part.merge_type))
+    if (isTTLMergeType(future_part->merge_type))
         getContext()->getMergeList().bookMergeWithTTL();
 
-    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, metadata_snapshot, false);
+    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part->parts), *this, metadata_snapshot, false);
     return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), MutationCommands{});
 }
 
@@ -851,9 +851,9 @@ bool StorageMergeTree::mergeSelectedParts(
             PartLogElement::MERGE_PARTS,
             execution_status,
             stopwatch.elapsed(),
-            future_part.name,
+            future_part->name,
             new_part,
-            future_part.parts,
+            future_part->parts,
             merge_list_entry.get());
     };
 
@@ -871,7 +871,7 @@ bool StorageMergeTree::mergeSelectedParts(
             deduplicate_by_columns,
             merging_params);
 
-        merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
+        merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, nullptr);
         write_part_log({});
     }
     catch (...)
@@ -894,9 +894,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 {
     size_t max_ast_elements = getContext()->getSettingsRef().max_expanded_ast_elements;
 
-    FutureMergedMutatedPart future_part;
+    auto future_part = std::make_shared<FutureMergedMutatedPart>();
     if (storage_settings.get()->assign_part_uuids)
-        future_part.uuid = UUIDHelpers::generateV4();
+        future_part->uuid = UUIDHelpers::generateV4();
 
     MutationCommands commands;
 
@@ -973,10 +973,10 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
         auto new_part_info = part->info;
         new_part_info.mutation = current_mutations_by_version.rbegin()->first;
 
-        future_part.parts.push_back(part);
-        future_part.part_info = new_part_info;
-        future_part.name = part->getNewName(new_part_info);
-        future_part.type = part->getType();
+        future_part->parts.push_back(part);
+        future_part->part_info = new_part_info;
+        future_part->name = part->getNewName(new_part_info);
+        future_part->type = part->getType();
 
         tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
         return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);
@@ -998,9 +998,9 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
             PartLogElement::MUTATE_PART,
             execution_status,
             stopwatch.elapsed(),
-            future_part.name,
+            future_part->name,
             new_part,
-            future_part.parts,
+            future_part->parts,
             merge_list_entry.get());
     };
 

@@ -1,14 +1,15 @@
 #pragma once
 
-#include "Storages/MergeTree/MergeTreeData.h"
+#include "Storages/MergeTree/IMergeTreeDataPart.h"
 
 
 namespace DB
 {
-    /* Allow to compute more accurate progress statistics */
+
+/* Allow to compute more accurate progress statistics */
 class ColumnSizeEstimator
 {
-MergeTreeData::DataPart::ColumnToSize map;
+ColumnToSize map;
 public:
 
 /// Stores approximate size of columns in bytes
@@ -17,7 +18,7 @@ size_t sum_total = 0;
 size_t sum_index_columns = 0;
 size_t sum_ordinary_columns = 0;
 
-ColumnSizeEstimator(const MergeTreeData::DataPart::ColumnToSize & map_, const Names & key_columns, const Names & ordinary_columns)
+ColumnSizeEstimator(const ColumnToSize & map_, const Names & key_columns, const Names & ordinary_columns)
     : map(map_)
 {
     for (const auto & name : key_columns)

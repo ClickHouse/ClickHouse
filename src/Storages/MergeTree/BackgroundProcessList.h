@@ -58,13 +58,14 @@ protected:
 
     CurrentMetrics::Metric metric;
 
-    BackgroundProcessList(const CurrentMetrics::Metric & metric_)
+    explicit BackgroundProcessList(const CurrentMetrics::Metric & metric_)
         : metric(metric_)
     {}
 public:
 
     using Entry = BackgroundProcessListEntry<ListElement, Info>;
-    using EntryPtr = std::unique_ptr<Entry>;
+    /// TODO: return to unique_ptr
+    using EntryPtr = std::shared_ptr<Entry>;
 
     template <typename... Args>
     EntryPtr insert(Args &&... args)
@@ -85,7 +86,7 @@ public:
 
     virtual void onEntryCreate(const Entry & /* entry */) {}
     virtual void onEntryDestroy(const Entry & /* entry */) {}
-    virtual inline ~BackgroundProcessList() {}
+    virtual inline ~BackgroundProcessList() = default;
 };
 
 }

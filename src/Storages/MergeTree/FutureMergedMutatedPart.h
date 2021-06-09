@@ -1,8 +1,17 @@
 #pragma once
 
+#include "common/types.h"
+#include "Storages/MergeTree/MergeTreeData.h"
+#include "Storages/MergeTree/MergeTreeDataPartType.h"
+#include "Storages/MergeTree/MergeTreePartInfo.h"
+#include "Storages/MergeTree/MergeType.h"
+#include "Storages/MergeTree/IMergeTreeDataPart.h"
 
-#include <Storages/MergeTree/MergeTreeData.h>
 
+namespace DB
+{
+
+class MergeTreeData;
 
 /// Auxiliary struct holding metainformation for the future merged or mutated part.
 struct FutureMergedMutatedPart
@@ -36,3 +45,5 @@ struct FutureMergedMutatedPart
 };
 
 using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
+
+}

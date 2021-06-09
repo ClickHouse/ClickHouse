@@ -1704,10 +1704,11 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     auto table_lock = lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
 
     StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
-    FutureMergedMutatedPart future_merged_part(parts, entry.new_part_type);
-    if (future_merged_part.name != entry.new_part_name)
+
+    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_type);
+    if (future_merged_part->name != entry.new_part_name)
     {
-        throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
+        throw Exception("Future merged part name " + backQuote(future_merged_part->name) + " differs from part name in log entry: "
             + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
 
@@ -1716,9 +1717,9 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         metadata_snapshot,
         estimated_space_for_merge,
         max_volume_index,
-        future_merged_part.name,
-        future_merged_part.part_info,
-        future_merged_part.parts,
+        future_merged_part->name,
+        future_merged_part->part_info,
+        future_merged_part->parts,
         &tagger,
         &ttl_infos);
 
@@ -1726,9 +1727,9 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         reserved_space
             = reserveSpacePreferringTTLRules(metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
 
-    future_merged_part.uuid = entry.new_part_uuid;
-    future_merged_part.updatePath(*this, reserved_space);
-    future_merged_part.merge_type = entry.merge_type;
+    future_merged_part->uuid = entry.new_part_uuid;
+    future_merged_part->updatePath(*this, reserved_space);
+    future_merged_part->merge_type = entry.merge_type;
 
     if (reserved_space->getDisk()->supportZeroCopyReplication()
         && storage_settings_ptr->allow_remote_fs_zero_copy_replication
@@ -1747,7 +1748,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     }
 
     /// Account TTL merge
-    if (isTTLMergeType(future_merged_part.merge_type))
+    if (isTTLMergeType(future_merged_part->merge_type))
         getContext()->getMergeList().bookMergeWithTTL();
 
     auto table_id = getStorageID();
@@ -1890,13 +1891,13 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MutableDataPartPtr new_part;
     Transaction transaction(*this);
 
-    FutureMergedMutatedPart future_mutated_part;
-    future_mutated_part.name = entry.new_part_name;
-    future_mutated_part.uuid = entry.new_part_uuid;
-    future_mutated_part.parts.push_back(source_part);
-    future_mutated_part.part_info = new_part_info;
-    future_mutated_part.updatePath(*this, reserved_space);
-    future_mutated_part.type = source_part->getType();
+    auto future_mutated_part = std::make_shared<FutureMergedMutatedPart>();
+    future_mutated_part->name = entry.new_part_name;
+    future_mutated_part->uuid = entry.new_part_uuid;
+    future_mutated_part->parts.push_back(source_part);
+    future_mutated_part->part_info = new_part_info;
+    future_mutated_part->updatePath(*this, reserved_space);
+    future_mutated_part->type = source_part->getType();
 
     MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(getStorageID(), future_mutated_part);
 
@@ -1906,7 +1907,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     {
         writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, new_part, future_mutated_part.parts, merge_entry.get());
+            entry.new_part_name, new_part, future_mutated_part->parts, merge_entry.get());
     };
 
     try
@@ -3297,24 +3298,24 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < storage_settings_ptr->max_replicated_merges_with_ttl_in_queue &&
                 getTotalMergesWithTTLInMergeList() < storage_settings_ptr->max_number_of_merges_with_ttl_in_pool;
 
-            FutureMergedMutatedPart future_merged_part;
+            auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
             if (storage_settings.get()->assign_part_uuids)
-                future_merged_part.uuid = UUIDHelpers::generateV4();
+                future_merged_part->uuid = UUIDHelpers::generateV4();
 
             if (max_source_parts_size_for_merge > 0 &&
                 merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, merge_with_ttl_allowed, nullptr) == SelectPartsDecision::SELECTED)
             {
                 create_result = createLogEntryToMergeParts(
                     zookeeper,
-                    future_merged_part.parts,
-                    future_merged_part.name,
-                    future_merged_part.uuid,
-                    future_merged_part.type,
+                    future_merged_part->parts,
+                    future_merged_part->name,
+                    future_merged_part->uuid,
+                    future_merged_part->type,
                     deduplicate,
                     deduplicate_by_columns,
                     nullptr,
                     merge_pred.getVersion(),
-                    future_merged_part.merge_type);
+                    future_merged_part->merge_type);
             }
             /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
             else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0
@@ -3333,7 +3334,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
                     create_result = createLogEntryToMutatePart(
                         *part,
-                        future_merged_part.uuid,
+                        future_merged_part->uuid,
                         desired_mutation_version->first,
                         desired_mutation_version->second,
                         merge_pred.getVersion());
@@ -4627,10 +4628,10 @@ bool StorageReplicatedMergeTree::optimize(
                     std::lock_guard merge_selecting_lock(merge_selecting_mutex);
                     ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
-                    FutureMergedMutatedPart future_merged_part;
+                    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
 
                     if (storage_settings.get()->assign_part_uuids)
-                        future_merged_part.uuid = UUIDHelpers::generateV4();
+                        future_merged_part->uuid = UUIDHelpers::generateV4();
 
                     SelectPartsDecision select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
                         future_merged_part, disk_space, can_merge, partition_id, true, metadata_snapshot, nullptr, query_context->getSettingsRef().optimize_skip_merged_partitions);
@@ -4640,10 +4641,10 @@ bool StorageReplicatedMergeTree::optimize(
 
                     ReplicatedMergeTreeLogEntryData merge_entry;
                     CreateMergeEntryResult create_result = createLogEntryToMergeParts(
-                        zookeeper, future_merged_part.parts,
-                        future_merged_part.name, future_merged_part.uuid, future_merged_part.type,
+                        zookeeper, future_merged_part->parts,
+                        future_merged_part->name, future_merged_part->uuid, future_merged_part->type,
                         deduplicate, deduplicate_by_columns,
-                        &merge_entry, can_merge.getVersion(), future_merged_part.merge_type);
+                        &merge_entry, can_merge.getVersion(), future_merged_part->merge_type);
 
                     if (create_result == CreateMergeEntryResult::MissingPart)
                         return handle_noop("Can't create merge queue node in ZooKeeper, because some parts are missing");
@@ -4667,9 +4668,9 @@ bool StorageReplicatedMergeTree::optimize(
                 std::lock_guard merge_selecting_lock(merge_selecting_mutex);
                 ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
-                FutureMergedMutatedPart future_merged_part;
+                auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
                 if (storage_settings.get()->assign_part_uuids)
-                    future_merged_part.uuid = UUIDHelpers::generateV4();
+                    future_merged_part->uuid = UUIDHelpers::generateV4();
 
                 String disable_reason;
                 SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
@@ -4702,10 +4703,10 @@ bool StorageReplicatedMergeTree::optimize(
 
                 ReplicatedMergeTreeLogEntryData merge_entry;
                 CreateMergeEntryResult create_result = createLogEntryToMergeParts(
-                    zookeeper, future_merged_part.parts,
-                    future_merged_part.name, future_merged_part.uuid, future_merged_part.type,
+                    zookeeper, future_merged_part->parts,
+                    future_merged_part->name, future_merged_part->uuid, future_merged_part->type,
                     deduplicate, deduplicate_by_columns,
-                    &merge_entry, can_merge.getVersion(), future_merged_part.merge_type);
+                    &merge_entry, can_merge.getVersion(), future_merged_part->merge_type);
 
                 if (create_result == CreateMergeEntryResult::MissingPart)
                     return handle_noop("Can't create merge queue node in ZooKeeper, because some parts are missing");

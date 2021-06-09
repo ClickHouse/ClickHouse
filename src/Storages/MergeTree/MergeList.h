@@ -53,6 +53,8 @@ struct MergeInfo
 };
 
 struct FutureMergedMutatedPart;
+using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
+using FutureMergedMutatedPartConstPtr = std::shared_ptr<const FutureMergedMutatedPart>;
 
 struct MergeListElement : boost::noncopyable
 {
@@ -95,7 +97,7 @@ struct MergeListElement : boost::noncopyable
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    MergeListElement(const StorageID & table_id_, const FutureMergedMutatedPart & future_part);
+    MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part);
 
     MergeInfo getInfo() const;
 
