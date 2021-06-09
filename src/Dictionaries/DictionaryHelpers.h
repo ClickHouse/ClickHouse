@@ -10,6 +10,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -244,7 +245,7 @@ public:
     {
         if constexpr (std::is_same_v<DictionaryAttributeType, Array>)
         {
-            if (const auto * array_type = typeid_cast<const DataTypeArray *>(dictionary_attribute.nested_type.get()))
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(dictionary_attribute.type.get()))
             {
                 auto nested_column = array_type->getNestedType()->createColumn();
                 return ColumnArray::create(std::move(nested_column));
@@ -264,7 +265,8 @@ public:
         }
         else if constexpr (IsDecimalNumber<DictionaryAttributeType>)
         {
-            auto scale = getDecimalScale(*dictionary_attribute.nested_type);
+            auto nested_type = removeNullable(dictionary_attribute.type);
+            auto scale = getDecimalScale(*nested_type);
             return ColumnType::create(size, scale);
         }
         else if constexpr (is_arithmetic_v<DictionaryAttributeType>)
