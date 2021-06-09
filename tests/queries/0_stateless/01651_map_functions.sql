@@ -24,4 +24,6 @@ drop table if exists table_map;
 
 -- Const column
 select map( 'aa', 4, 'bb' , 5) as m, mapKeys(m), mapValues(m);
-select map( 'aa', 4, 'bb' , 5) as m, mapContains(m, 'aa'), mapContains(m, 'k'); 
+select map( 'aa', 4, 'bb' , 5) as m, mapContains(m, 'aa'), mapContains(m, 'k');
+
+select map(0, 0) as m, mapContains(m, number % 2) from numbers(2);
