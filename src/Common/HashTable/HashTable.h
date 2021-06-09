@@ -341,21 +341,8 @@ struct ZeroValueStorage<false, Cell>
     const Cell * zeroValue() const { return nullptr; }
 };
 
-
-template <bool enable, typename Allocator, typename Cell>
-struct AllocatorBufferDeleter;
-
 template <typename Allocator, typename Cell>
-struct AllocatorBufferDeleter<false, Allocator, Cell>
-{
-    AllocatorBufferDeleter(Allocator &, size_t) {}
-
-    void operator()(Cell *) const {}
-
-};
-
-template <typename Allocator, typename Cell>
-struct AllocatorBufferDeleter<true, Allocator, Cell>
+struct AllocatorBufferDeleter
 {
     AllocatorBufferDeleter(Allocator & allocator_, size_t size_)
         : allocator(allocator_)
@@ -497,19 +484,29 @@ protected:
         size_t old_buffer_size = getBufferSizeInBytes();
 
         /** If cell required to be notified during move we need to temporary keep old buffer
-         * because realloc does not quarantee for reallocated buffer to have same base address
-         */
-        using Deleter = AllocatorBufferDeleter<Cell::need_to_notify_cell_during_move, Allocator, Cell>;
+            * because realloc does not quarantee for reallocated buffer to have same base address
+            */
+        using Deleter = AllocatorBufferDeleter<Allocator, Cell>;
         Deleter buffer_deleter(*this, old_buffer_size);
-        std::unique_ptr<Cell, Deleter> old_buffer(buf, buffer_deleter);
+        std::unique_ptr<Cell, Deleter> old_buffer_holder(buf, buffer_deleter);
 
-        if constexpr (Cell::need_to_notify_cell_during_move)
+        Cell * old_buffer = nullptr;
+
+        size_t new_buffer_size = new_grower.bufSize() * sizeof(Cell);
+        bool should_use_realloc = (old_buffer_size >= MMAP_THRESHOLD && new_buffer_size >= MMAP_THRESHOLD) && !Cell::need_to_notify_cell_during_move;
+
+        if (should_use_realloc)
         {
-            buf = reinterpret_cast<Cell *>(Allocator::alloc(new_grower.bufSize() * sizeof(Cell)));
-            memcpy(reinterpret_cast<void *>(buf), reinterpret_cast<const void *>(old_buffer.get()), old_buffer_size);
+            /// Realloc will free old buffer
+            old_buffer_holder.release();
+            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, new_grower.bufSize() * sizeof(Cell)));
+            old_buffer = buf;
         }
         else
-            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, new_grower.bufSize() * sizeof(Cell)));
+        {
+            old_buffer = old_buffer_holder.get();
+            buf = reinterpret_cast<Cell *>(Allocator::alloc(new_buffer_size));
+        }
 
         grower = new_grower;
 
@@ -519,12 +516,12 @@ protected:
           */
         size_t i = 0;
         for (; i < old_size; ++i)
-            if (!buf[i].isZero(*this))
+            if (!old_buffer[i].isZero(*this))
             {
-                size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
+                size_t updated_place_value = reinsert(old_buffer[i], old_buffer[i].getHash(*this));
 
                 if constexpr (Cell::need_to_notify_cell_during_move)
-                    Cell::move(&(old_buffer.get())[i], &buf[updated_place_value]);
+                    Cell::move(&old_buffer[i], &buf[updated_place_value]);
             }
 
         /** There is also a special case:
