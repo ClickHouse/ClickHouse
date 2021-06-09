@@ -2989,8 +2989,6 @@ def wait_for_new_data(table_name, prev_count = 0, max_retries = 120):
             if retries > max_retries:
                 raise Exception("No new data :(")
 
-
-@pytest.mark.timeout(120)
 def test_kafka_consumer_failover(kafka_cluster):
 
     # for backporting:
