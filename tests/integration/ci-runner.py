@@ -411,8 +411,8 @@ class ClickhouseIntegrationTestsRunner:
             for test in tests_in_group:
                 if (test not in counters["PASSED"] and
                     test not in counters["ERROR"] and
-                    test not in counters["FAILED"]
-                    and '::' in test):
+                    test not in counters["FAILED"] and
+                    '::' in test):
                     counters["ERROR"].append(test)
 
         return counters, tests_times, log_paths
