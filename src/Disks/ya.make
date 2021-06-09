@@ -7,7 +7,6 @@ PEERDIR(
     clickhouse/src/Common
 )
 
-
 SRCS(
     DiskCacheWrapper.cpp
     DiskDecorator.cpp
@@ -16,13 +15,21 @@ SRCS(
     DiskMemory.cpp
     DiskRestartProxy.cpp
     DiskSelector.cpp
+    HDFS/DiskHDFS.cpp
     IDisk.cpp
+    IDiskRemote.cpp
     IVolume.cpp
     LocalDirectorySyncGuard.cpp
+    ReadIndirectBufferFromRemoteFS.cpp
+    S3/DiskS3.cpp
+    S3/ProxyListConfiguration.cpp
+    S3/ProxyResolverConfiguration.cpp
+    S3/registerDiskS3.cpp
     SingleDiskVolume.cpp
     StoragePolicy.cpp
     VolumeJBOD.cpp
     VolumeRAID1.cpp
+    WriteIndirectBufferFromRemoteFS.cpp
     createVolume.cpp
     registerDisks.cpp
 

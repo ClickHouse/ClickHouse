@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionSegmentLengthSum.h>
+#include <AggregateFunctions/AggregateFunctionIntervalLengthSum.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -22,7 +22,7 @@ namespace
 {
     template <template <typename> class Data>
     AggregateFunctionPtr
-    createAggregateFunctionSegmentLengthSum(const std::string & name, const DataTypes & arguments, const Array &, const Settings *)
+    createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTypes & arguments, const Array &, const Settings *)
     {
         if (arguments.size() != 2)
             throw Exception(
@@ -32,35 +32,35 @@ namespace
 
         if (WhichDataType{args.begin()[0]}.idx != WhichDataType{args.begin()[1]}.idx)
             throw Exception(
-                "Illegal type " + args.begin()[0]->getName() + " and " + args.begin()[1]->getName() + " of arguments of aggregate function "
-                    + name + ", there two arguments should have same DataType",
+                "Illegal types " + args.begin()[0]->getName() + " and " + args.begin()[1]->getName() + " of arguments of aggregate function "
+                    + name + ", both arguments should have same data type",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         for (const auto & arg : args)
         {
-            if (!isNativeNumber(arg) && !isDate(arg) && !isDateTime(arg) && !isDateTime64(arg))
+            if (!isNativeNumber(arg) && !isDate(arg) && !isDateTime(arg))
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument of aggregate function " + name
-                        + ", must be Number, Date, DateTime or DateTime64",
+                        + ", must be native integral type, Date/DateTime or Float",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        AggregateFunctionPtr res(createWithBasicNumberOrDateOrDateTime<AggregateFunctionSegmentLengthSum, Data>(*arguments[0], arguments));
+        AggregateFunctionPtr res(createWithBasicNumberOrDateOrDateTime<AggregateFunctionIntervalLengthSum, Data>(*arguments[0], arguments));
 
         if (res)
             return res;
 
         throw Exception(
-            "Illegal type " + arguments.front().get()->getName() + " of first argument of aggregate function " + name
-                + ", must be Native Unsigned Number",
+            "Illegal type " + arguments.front().get()->getName() + " of argument of aggregate function " + name
+            + ", must be native integral type, Date/DateTime or Float",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 }
 
-void registerAggregateFunctionSegmentLengthSum(AggregateFunctionFactory & factory)
+void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("segmentLengthSum", createAggregateFunctionSegmentLengthSum<AggregateFunctionSegmentLengthSumData>);
+    factory.registerFunction("intervalLengthSum", createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>);
 }
 
 }
