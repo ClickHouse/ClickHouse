@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
 namespace DB
