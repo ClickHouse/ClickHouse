@@ -272,7 +272,7 @@ public:
 /// This is a special visitor which is used to get partition ID.
 /// Calculate hash for UUID the same way as for UInt128.
 /// It worked this way until 21.5, and we cannot change it,
-/// or partition ID will be different in case UUID is used in partiton key.
+/// or partition ID will be different in case UUID is used in partition key.
 /// (It is not recommended to use UUID as partition key).
 class LegacyFieldVisitorHash : public FieldVisitorHash
 {
