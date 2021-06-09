@@ -417,7 +417,11 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         /// Deferred initialization. Only for sync insertion.
         initWritingJobs(block, start, end);
 
-        pool.emplace(remote_jobs_count + local_jobs_count);
+        size_t jobs_count = remote_jobs_count + local_jobs_count;
+        size_t max_threads = std::min<size_t>(settings.max_distributed_connections, jobs_count);
+        pool.emplace(/* max_threads_= */ max_threads,
+                     /* max_free_threads_= */ max_threads,
+                     /* queue_size_= */ jobs_count);
 
         if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))
         {
