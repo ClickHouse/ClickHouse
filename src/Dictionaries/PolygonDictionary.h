@@ -49,6 +49,7 @@ public:
         Array,
         Tuple,
     };
+
     IPolygonDictionary(
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,

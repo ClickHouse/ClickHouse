@@ -52,7 +52,6 @@ ColumnPtr IPolygonDictionary::getColumn(
     const auto requested_key_points = extractPoints(key_columns);
 
     const auto & attribute = dict_struct.getAttribute(attribute_name, result_type);
-    bool complex_attribute = attribute.is_nullable || attribute.is_array;
     DefaultValueProvider default_value_provider(attribute.null_value, default_values_column);
 
     size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
@@ -66,7 +65,7 @@ ColumnPtr IPolygonDictionary::getColumn(
 
     size_t keys_found = 0;
 
-    if (unlikely(complex_attribute))
+    if (unlikely(attribute.is_nullable))
     {
         for (size_t requested_key_index = 0; requested_key_index < requested_key_points.size(); ++requested_key_index)
         {
