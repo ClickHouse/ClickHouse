@@ -4994,7 +4994,11 @@ void MergeTreeData::removeQueryId(const String & query_id) const
 {
     std::lock_guard lock(query_id_set_mutex);
     if (query_id_set.find(query_id) == query_id_set.end())
+    {
+        /// Do not throw exception, because this method is used in destructor.
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
+        assert(false);
+    }
     else
         query_id_set.erase(query_id);
 }
@@ -5174,7 +5178,10 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
     for (const auto & part : submerging_parts)
     {
         if (!storage.currently_submerging_big_parts.count(part))
-            LOG_WARNING(log, "currently_submerging_big_parts doesn't contain part {} to erase. This is a bug", part->name);
+        {
+            LOG_ERROR(log, "currently_submerging_big_parts doesn't contain part {} to erase. This is a bug", part->name);
+            assert(false);
+        }
         else
             storage.currently_submerging_big_parts.erase(part);
     }
