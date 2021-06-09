@@ -19,4 +19,4 @@ SELECT hex(toString(initializeAggregation('uniqExactState', initializeAggregatio
 SELECT finalizeAggregation(initializeAggregation('uniqExactState', initializeAggregation('uniqState', 0)));
 SELECT toTypeName(quantileState(x)) FROM (SELECT uniqState(number) AS x FROM numbers(1000)); -- { serverError 43 }
 SELECT hex(toString(quantileState(x))) FROM (SELECT uniqState(number) AS x FROM numbers(1000)); -- { serverError 43 }
-SELECT hex(toString(anyState(x))) FROM (SELECT uniqState(number) AS x FROM numbers(1000));
+SELECT hex(toString(anyState(x))), hex(toString(any(x))) FROM (SELECT uniqState(number) AS x FROM numbers(1000)) FORMAT Vertical;
