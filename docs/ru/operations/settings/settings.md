@@ -978,7 +978,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 ## max_distributed_depth {#max-distributed-depth}
 
-Максимальная грубина рекурсивных запросов для [Distributed](../../engines/table-engines/special/distributed.md) таблиц.
+Ограничивает максимальную глубину рекурсивных запросов для [Distributed](../../engines/table-engines/special/distributed.md) таблиц.
 
 Если значение превышено, сервер генерирует исключение.
 
