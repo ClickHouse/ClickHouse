@@ -26,6 +26,7 @@
 #include <Interpreters/PartLog.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/Throttler.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Processors/Pipe.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
@@ -243,6 +244,18 @@ public:
     /// Restores table metadata if ZK lost it.
     void restoreMetadataOnReadonlyTable();
 
+    /// Get throttler for replicated fetches
+    ThrottlerPtr getFetchesThrottler() const
+    {
+        return replicated_fetches_throttler;
+    }
+
+    /// Get throttler for replicated sends
+    ThrottlerPtr getSendsThrottler() const
+    {
+        return replicated_sends_throttler;
+    }
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -368,6 +381,11 @@ private:
     const bool allow_renaming;
 
     const size_t replicated_fetches_pool_size;
+
+    /// Throttlers used in DataPartsExchange to lower maximum fetch/sends
+    /// speed.
+    ThrottlerPtr replicated_fetches_throttler;
+    ThrottlerPtr replicated_sends_throttler;
 
     template <class Func>
     void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
@@ -649,12 +667,14 @@ private:
     /// Info about how other replicas can access this one.
     ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
 
-    bool dropPart(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
     bool dropAllPartsInPartition(
         zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, ContextPtr query_context, bool detach);
 
+    void dropPartNoWaitNoThrow(const String & part_name) override;
+    void dropPart(const String & part_name, bool detach, ContextPtr query_context) override;
+
     // Partition helpers
-    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr query_context, bool throw_if_noop) override;
+    void dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context) override;
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
@@ -665,6 +685,8 @@ private:
         const String & from,
         bool fetch_part,
         ContextPtr query_context) override;
+
+    bool dropPartImpl(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
@@ -692,7 +714,7 @@ protected:
         const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata_,
-        ContextPtr context_,
+        ContextMutablePtr context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,

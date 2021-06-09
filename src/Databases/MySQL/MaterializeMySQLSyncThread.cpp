@@ -41,7 +41,7 @@ namespace ErrorCodes
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
-static ContextPtr createQueryContext(ContextPtr context)
+static ContextMutablePtr createQueryContext(ContextPtr context)
 {
     Settings new_query_settings = context->getSettings();
     new_query_settings.insert_allow_materialized_columns = true;
@@ -59,7 +59,7 @@ static ContextPtr createQueryContext(ContextPtr context)
     return query_context;
 }
 
-static BlockIO tryToExecuteQuery(const String & query_to_execute, ContextPtr query_context, const String & database, const String & comment)
+static BlockIO tryToExecuteQuery(const String & query_to_execute, ContextMutablePtr query_context, const String & database, const String & comment)
 {
     try
     {
@@ -281,7 +281,7 @@ static inline void cleanOutdatedTables(const String & database_name, ContextPtr 
 }
 
 static inline BlockOutputStreamPtr
-getTableOutput(const String & database_name, const String & table_name, ContextPtr query_context, bool insert_materialized = false)
+getTableOutput(const String & database_name, const String & table_name, ContextMutablePtr query_context, bool insert_materialized = false)
 {
     const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
 

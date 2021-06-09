@@ -65,8 +65,6 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-# since it includes started_cluster fixture at first start
-@pytest.mark.timeout(60)
 @pytest.mark.parametrize('table,settings', itertools.product(
     [ # tables
         'dist_one',

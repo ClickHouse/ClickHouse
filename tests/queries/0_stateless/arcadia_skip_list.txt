@@ -238,3 +238,6 @@
 01850_dist_INSERT_preserve_error
 01870_modulo_partition_key
 01880_remote_ipv6
+01882_scalar_subquery_exception
+01882_check_max_parts_to_merge_at_once
+01892_setting_limit_offset_distributed
