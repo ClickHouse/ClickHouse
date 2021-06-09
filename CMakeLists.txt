@@ -315,7 +315,7 @@ if (WITH_COVERAGE)
         # Provide blocklist to all files (so compiler driver could exclude unneeded)
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -fsanitize-coverage-blocklist=${CMAKE_CURRENT_SOURCE_DIR}/blocklist.txt")
 
-        set(WITH_COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table")
+        set(WITH_COVERAGE_FLAGS "-ftest-coverage -fsanitize-coverage=trace-pc-guard,pc-table")
 
         # Coverage build runs in CI only, so we do not need compatibility
         set(GLIBC_COMPATIBILITY OFF)
@@ -400,7 +400,8 @@ endif ()
 
 if (WITH_COVERAGE)
     # Release flags, applied to contribs.
-    set(WITHOUT_COVERAGE "${CMAKE_CXX_FLAGS} -O3 -finline-functions -fno-sanitize-coverage=trace-pc-guard,pc-table")
+    set(WITHOUT_COVERAGE "${CMAKE_CXX_FLAGS} \
+        -fno-test-coverage -O3 -finline-functions -fno-sanitize-coverage=trace-pc-guard,pc-table")
 endif()
 
 function(build_target_without_coverage target)

@@ -4,6 +4,7 @@ from copy import deepcopy
 from collections import defaultdict
 from enum import IntEnum
 from itertools import groupby
+from fnmatch import fnmatch
   
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
@@ -14,8 +15,6 @@ from tqdm import tqdm
 import sys
 import argparse
 import os.path
-
-# N.B. All generated links should be made relative as args.our_dir != resulting S3 dir root
 
 LINES = "Lines"
 EDGES = "Edges"
@@ -42,10 +41,6 @@ tests_names = []
 args = None
 env = None
 
-cached_source_files = {}
-
-functions_bounds = {}
-
 def percent(a, b):
   return 0 if b == 0 else int(a * 100 / b)
 
@@ -70,7 +65,7 @@ class EntryBase:
         return [(FUNCS, self.funcs), (EDGES, self.edges), (LINES, self.lines)]
 
 class FileEntry(EntryBase):
-    def __init__(self, index, path, data, tests_with_hits):
+    def __init__(self, path, data, tests_with_hits):
         funcs, edges, lines = data
 
         super().__init__(
@@ -82,7 +77,6 @@ class FileEntry(EntryBase):
             self._helper(tests_with_hits))
 
         self.full_path = path
-        self.index = index
 
     def _helper(self, lst):
         total = len(lst)
@@ -168,8 +162,7 @@ def get_entries():
         edges_with_hits = [(edge_line, edge_line in edges_hit) for edge_line in edges_instrumented]
         lines_with_hits = [(line, line in lines_hit) for line in lines_instrumented]
 
-        test_file = FileEntry(sf_index, path, 
-            (funcs_with_hits, edges_with_hits, lines_with_hits), 
+        test_file = FileEntry(path, (funcs_with_hits, edges_with_hits, lines_with_hits), 
             [(i, sf_index in test.keys()) for i, test in enumerate(tests)])
 
         found = False
@@ -209,6 +202,7 @@ def generate_html():
     generate_dir_page(files_entry, page_name="files.html", is_root=True)
 
 def render(tpl, depth, **kwargs):
+    # All generated links must be made relative as args.out_dir != resulting S3 dir root
     root_url = "../" * depth
 
     kwargs.update({
@@ -242,7 +236,10 @@ def generate_dir_page(entry: DirEntry, page_name="index.html", is_root=False):
         f.write(render("directory.html", depth, entries=entries, entry=entry, special_entry=special_entry))
 
 def generate_file_page(entry: FileEntry):
-    if entry.index not in cached_source_files: # missing file
+    src_file_path = os.path.join(args.sources_dir, entry.full_path)
+
+    if not os.path.exists(src_file_path):
+        print("No file", src_file_path)
         return
 
     data = {}
@@ -257,122 +254,17 @@ def generate_file_page(entry: FileEntry):
 
         data[entity_type] = sorted(set(covered)), sorted(set(not_covered))
 
-    lines = highlight(cached_source_files[entry.index], CppLexer(), CodeFormatter(data))
+    with open(src_file_path, "r") as sf:
+        lines = highlight(sf.read(), CppLexer(), CodeFormatter(data))
 
-    depth = entry.full_path.count('/')
+        depth = entry.full_path.count('/')
 
-    not_covered = [(entity, list(intervals_extract(not_covered))) for (entity, (covered, not_covered)) in data.items()]
+        not_covered = [(entity, list(intervals_extract(not_covered))) for (entity, (covered, not_covered)) in data.items()]
 
-    output = render("file.html", depth, highlighted_sources=lines, entry=entry, not_covered=not_covered)
+        output = render("file.html", depth, highlighted_sources=lines, entry=entry, not_covered=not_covered)
 
-    with open(os.path.join(args.out_dir, entry.full_path) + ".html", "w") as f:
-        f.write(output)
-
-def get_functions_bounds(src, funcs):
-    # We don't have information about covered lines from the compiler, so we need to parse it ourselves.
-    # Lexical analysis sucks so there may be some corner cases
-
-    def trim_spaces(l):
-        return l.replace(" ", "")
-
-    def count_spaces(l):
-        return len(l) - len(l.lstrip(' '))
-
-    bounds = {}
-
-    for line in sorted(set([line for (_, line) in funcs.values()])):
-        line -= 1
-
-        if line > len(src):
-            break
-
-        src_line = src[line]
-
-        if len(trim_spaces(src_line)) == 0:
-            continue
-        elif src_line.find("= default") != -1: # single-line default constructor
-            bounds[line] = line, line
-        elif trim_spaces(src_line) == "{" and trim_spaces(src[line + 1]) == "}": # empty function body
-            bounds[line] = line, line + 1 
-        elif src_line.find('{') != -1 and src_line.find('}') != -1 and trim_spaces(src_line) != "{":
-            # inline function/functor (due to formatting rules)
-            bounds[line] = line, line
-        elif any(src_line.find(t) != -1 for t in ["SCOPE", "TRAITS", "SETTINGS"]): # inline funcs in macro
-            bounds[line] = line, line
-        elif any(src_line.find(t) != -1 or src[line - 1].find(t) != -1 for t in ["class", "struct"]): # definition start
-            continue
-        elif trim_spaces(src_line) == "};": # definition end
-            continue
-        elif trim_spaces(src_line).startswith("}"): # function empty body, line pointing at function end
-            bounds[line] = line - 1, line
-        else:
-            if src_line.strip() == "{":
-                start_line = line
-            elif src[line - 1].strip() == "{":
-                start_line = line - 1
-            elif src[line + 1].strip() == "{":
-                start_line = line + 1
-            else: # corner cases
-                continue
-
-            spaces = count_spaces(src[start_line])
-
-            end_line = start_line
-            t_line = src[end_line]
-
-            while not (count_spaces(t_line) == spaces and trim_spaces(t_line).startswith("}")):
-                end_line += 1
-                t_line = src[end_line]
-
-            bounds[line] = start_line, end_line
-
-    return bounds
-
-def intervals_extract(it):
-    for key, group in groupby(enumerate(sorted(set(it))), lambda t: t[1] - t[0]):
-        group = list(group)
-        yield [group[0][1], group[-1][1]]
-
-def get_all_lines(sf_index, source_file_path, funcs):
-    global cached_source_files
-
-    src_file_path = os.path.join(args.sources_dir, source_file_path)
-
-    if not os.path.exists(src_file_path):
-        print("No file", src_file_path)
-        return []
-
-    file_contents = ""
-
-    with open(src_file_path, "r") as src_file:
-        cached_source_files[sf_index] = src_file.read()
-        file_contents = cached_source_files[sf_index].split("\n")
-
-    global functions_bounds
-
-    functions_bounds[sf_index] = get_functions_bounds(file_contents, funcs)
-
-    lines = []
-
-    for start, end in functions_bounds[sf_index].values():
-        lines.extend(range(start + 1, end + 2))
-    
-    return lines
-
-def get_covered_lines(sf_index, covered_funcs, covered_edges):
-    if sf_index not in functions_bounds or len(covered_funcs) == 0:
-        return []
-
-    sf_funcs_bounds = functions_bounds[sf_index]
-    sf_funcs= files[sf_index]
-
-    lines = []
-
-    # for edge_index in covered_funcs:
-    #     sf_funcs
-    #     func_lines = sf_functions[]
-
-    return lines
+        with open(os.path.join(args.out_dir, entry.full_path) + ".html", "w") as f:
+            f.write(output)
 
 def read_header(report_file):
     global files
@@ -400,8 +292,7 @@ def read_header(report_file):
         if "contrib/" in file_path:
             source_files_map.append(-1)
         else:
-            lines = get_all_lines(sf_index, file_path, funcs)
-            files.append((file_path, funcs, edges, lines))
+            files.append((file_path, funcs, edges, [])) # lines will be parsed from llvm-cov intermediate format
 
             source_files_map.append(sf_index)
             sf_index += 1
@@ -452,6 +343,29 @@ def read_report(report_file):
 
     print(f"Read the report, {len(tests)} tests, {len(files)} source files")
 
+def find_gcno_files():
+    # Rationale: clang produces gcno files which contain needed information: bb graph + arcs + lines for file
+    # We can't get covered lines without getting arcs information
+    # gcov can't parse gcno files produced by clang
+    # llvm-cov gcov can't output json with parsed information
+
+    files = []
+
+    for root, dirs, files in os.walk(".", topdown=False):
+       for name in files:
+           if fnmatch.fnmatch(name, '*.gcno'):
+               files.append(os.path.join(root, name))
+
+    return files
+
+def read_gcno_files(files):
+    for file_path in files:
+        with open(file_path, "rb") as gcno:
+            read_gcno_file(gcno)
+
+def read_gcno_file(handle):
+    pass
+
 def main():
     file_loader = FileSystemLoader(os.path.abspath(os.path.dirname(__file__)) + '/templates', encoding='utf8')
 
@@ -477,6 +391,7 @@ def main():
 
     with open(args.report_file, "r") as f:
         read_report(f)
+        read_gcno_files(find_gcno_files())
 
         generate_html()
 
