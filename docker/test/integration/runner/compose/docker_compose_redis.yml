@@ -4,5 +4,5 @@ services:
         image: redis
         restart: always
         ports:
-            - 6380:6379
+            - ${REDIS_EXTERNAL_PORT}:${REDIS_INTERNAL_PORT}
         command: redis-server --requirepass "clickhouse" --databases 32

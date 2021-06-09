@@ -13,7 +13,7 @@ WITH 1 AS x
 SELECT x
 WITH 1 AS x
 SELECT x
-FROM 
+FROM
 (
     WITH 1 AS x
     SELECT x
@@ -22,7 +22,7 @@ WITH 1 AS x
 SELECT
     y,
     x
-FROM 
+FROM
 (
     WITH 2 AS x
     SELECT 2 AS y
@@ -39,7 +39,7 @@ WITH 2 AS x
 SELECT x
 WITH
     5 AS q1,
-    x AS 
+    x AS
     (
         WITH 5 AS q1
         SELECT
@@ -51,4 +51,5 @@ WITH
 SELECT
     b,
     a
-FROM x
+FROM
+x

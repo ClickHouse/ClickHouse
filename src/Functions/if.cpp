@@ -17,7 +17,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Algorithms.h>
@@ -173,7 +173,7 @@ class FunctionIf : public FunctionIfBase
 {
 public:
     static constexpr auto name = "if";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIf>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIf>(); }
 
 private:
     template <typename T0, typename T1>

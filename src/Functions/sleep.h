@@ -1,6 +1,6 @@
 #pragma once
 #include <unistd.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -36,7 +36,7 @@ class FunctionSleep : public IFunction
 {
 public:
     static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionSleep<variant>>();
     }

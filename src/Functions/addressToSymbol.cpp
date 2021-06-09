@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -28,7 +28,7 @@ class FunctionAddressToSymbol : public IFunction
 {
 public:
     static constexpr auto name = "addressToSymbol";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         context->checkAccess(AccessType::addressToSymbol);
         return std::make_shared<FunctionAddressToSymbol>();

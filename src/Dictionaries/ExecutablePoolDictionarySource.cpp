@@ -32,7 +32,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     Block & sample_block_,
-    ContextPtr context_)
+    ContextConstPtr context_)
     : log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
     , dict_struct{dict_struct_}
     , configuration{configuration_}
@@ -273,9 +273,9 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 ContextConstPtr context,
                                  const std::string & /* default_database */,
-                                 bool check_config) -> DictionarySourcePtr
+                                 bool created_from_ddl) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable_pool` does not support attribute expressions");
@@ -283,7 +283,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
-        if (check_config)
+        if (created_from_ddl)
             throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
 
         auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);

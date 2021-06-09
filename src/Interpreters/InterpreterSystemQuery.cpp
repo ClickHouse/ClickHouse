@@ -192,8 +192,8 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
 }
 
 
-InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextPtr context_)
-        : WithContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
+InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
+        : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
 {
 }
 
@@ -424,7 +424,7 @@ BlockIO InterpreterSystemQuery::execute()
 }
 
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextPtr system_context, bool need_ddl_guard)
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
 
@@ -436,7 +436,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
         return nullptr;
 
-    table->shutdown();
+    table->flushAndShutdown();
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
@@ -469,7 +469,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     return table;
 }
 
-void InterpreterSystemQuery::restartReplicas(ContextPtr system_context)
+void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 {
     std::vector<StorageID> replica_names;
     auto & catalog = DatabaseCatalog::instance();
@@ -542,7 +542,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (!query.replica_zk_path.empty())
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
-        auto remote_replica_path = query.replica_zk_path  + "/replicas/" + query.replica;
+        String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
 
         /// This check is actually redundant, but it may prevent from some user mistakes
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
