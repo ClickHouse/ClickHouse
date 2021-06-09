@@ -96,7 +96,20 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
-        if constexpr (std::is_same_v<ValueType, StringRef>)
+        if constexpr (std::is_same_v<ValueType, Array>)
+        {
+            auto * out = column.get();
+
+            getItemsImpl<ValueType>(
+                attribute,
+                extractor,
+                [&](const size_t, const Array & value) { out->insert(value); },
+                [&](const size_t)
+                {
+                },
+                default_value_extractor);
+        }
+        else if constexpr (std::is_same_v<ValueType, StringRef>)
         {
             auto * out = column.get();
 

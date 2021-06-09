@@ -131,11 +131,24 @@ ColumnPtr RangeHashedDictionary::getColumn(
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
-        if constexpr (std::is_same_v<AttributeType, String>)
+        if constexpr (std::is_same_v<ValueType, Array>)
         {
             auto * out = column.get();
 
-            getItemsImpl<ValueType, ValueType>(
+            getItemsImpl<ValueType>(
+                attribute,
+                modified_key_columns,
+                [&](const size_t, const Array & value, bool)
+                {
+                    out->insert(value);
+                },
+                default_value_extractor);
+        }
+        else if constexpr (std::is_same_v<ValueType, StringRef>)
+        {
+            auto * out = column.get();
+
+            getItemsImpl<ValueType>(
                 attribute,
                 modified_key_columns,
                 [&](const size_t row, const StringRef value, bool is_null)
@@ -151,7 +164,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
         {
             auto & out = column->getData();
 
-            getItemsImpl<ValueType, ValueType>(
+            getItemsImpl<ValueType>(
                 attribute,
                 modified_key_columns,
                 [&](const size_t row, const auto value, bool is_null)
@@ -385,7 +398,7 @@ RangeHashedDictionary::createAttribute(const DictionaryAttribute& attribute, con
     return attr;
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
 void RangeHashedDictionary::getItemsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
@@ -423,7 +436,7 @@ void RangeHashedDictionary::getItemsImpl(
                 auto & value = val_it->value;
 
                 if (value)
-                    set_value(row, static_cast<OutputType>(*value), false); // NOLINT
+                    set_value(row, *value, false);
                 else
                     set_value(row, default_value_extractor[row], true);
             }

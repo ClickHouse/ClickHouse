@@ -170,7 +170,7 @@ private:
 
     static Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,

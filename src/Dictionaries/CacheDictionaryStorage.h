@@ -226,23 +226,17 @@ private:
             auto & attribute = attributes[attribute_index];
             const auto & default_value_provider = fetch_request.defaultValueProviderAtIndex(attribute_index);
 
-            size_t fetched_keys_size = fetched_keys.size();
             auto & fetched_column = *result.fetched_columns[attribute_index];
-            fetched_column.reserve(fetched_keys_size);
+            fetched_column.reserve(fetched_columns_index);
 
             if (unlikely(attribute.is_complex_type))
             {
-                auto & container = std::get<std::vector<Field>>(attribute.attribute_container);
-
-                for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
-                {
-                    auto fetched_key = fetched_keys[fetched_key_index];
-
-                    if (unlikely(fetched_key.is_default))
-                        fetched_column.insert(default_value_provider.getDefaultValue(fetched_key_index));
-                    else
-                        fetched_column.insert(container[fetched_key.element_index]);
-                }
+                getItemsForFetchedKeys<Field>(
+                    attribute,
+                    fetched_columns_index,
+                    fetched_keys,
+                    [&](Field & value) { fetched_column.insert(value); },
+                    default_value_provider);
             }
             else
             {
@@ -250,46 +244,40 @@ private:
                 {
                     using Type = std::decay_t<decltype(dictionary_attribute_type)>;
                     using AttributeType = typename Type::AttributeType;
+                    using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+                    using ColumnType = typename ColumnProvider::ColumnType;
                     using ValueType = DictionaryValueType<AttributeType>;
-                    using ColumnType =
-                        std::conditional_t<std::is_same_v<AttributeType, String>, ColumnString,
-                            std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<ValueType>,
-                                ColumnVector<AttributeType>>>;
 
-                    auto & container = std::get<PaddedPODArray<ValueType>>(attribute.attribute_container);
                     ColumnType & column_typed = static_cast<ColumnType &>(fetched_column);
 
-                    if constexpr (std::is_same_v<ColumnType, ColumnString>)
+                    if constexpr (std::is_same_v<ValueType, Array>)
                     {
-                        for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
-                        {
-                            auto fetched_key = fetched_keys[fetched_key_index];
-
-                            if (unlikely(fetched_key.is_default))
-                                column_typed.insert(default_value_provider.getDefaultValue(fetched_key_index));
-                            else
-                            {
-                                auto item = container[fetched_key.element_index];
-                                column_typed.insertData(item.data, item.size);
-                            }
-                        }
+                        getItemsForFetchedKeys<ValueType>(
+                            attribute,
+                            fetched_columns_index,
+                            fetched_keys,
+                            [&](Array & value) { fetched_column.insert(value); },
+                            default_value_provider);
+                    }
+                    else if constexpr (std::is_same_v<ValueType, StringRef>)
+                    {
+                        getItemsForFetchedKeys<ValueType>(
+                            attribute,
+                            fetched_columns_index,
+                            fetched_keys,
+                            [&](StringRef value) { fetched_column.insertData(value.data, value.size); },
+                            default_value_provider);
                     }
                     else
                     {
                         auto & data = column_typed.getData();
 
-                        for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
-                        {
-                            auto fetched_key = fetched_keys[fetched_key_index];
-
-                            if (unlikely(fetched_key.is_default))
-                                column_typed.insert(default_value_provider.getDefaultValue(fetched_key_index));
-                            else
-                            {
-                                auto item = container[fetched_key.element_index];
-                                data.push_back(item);
-                            }
-                        }
+                        getItemsForFetchedKeys<ValueType>(
+                            attribute,
+                            fetched_columns_index,
+                            fetched_keys,
+                            [&](auto value) { data.push_back(value); },
+                            default_value_provider);
                     }
                 };
 
@@ -506,7 +494,7 @@ private:
 
         if (unlikely(attribute.is_complex_type))
         {
-            auto & container = std::get<std::vector<Field>>(attribute.attribute_container);
+            auto & container = std::get<ContainerType<Field>>(attribute.attribute_container);
             std::forward<GetContainerFunc>(func)(container);
         }
         else
@@ -517,7 +505,7 @@ private:
                 using AttributeType = typename Type::AttributeType;
                 using ValueType = DictionaryValueType<AttributeType>;
 
-                auto & container = std::get<PaddedPODArray<ValueType>>(attribute.attribute_container);
+                auto & container = std::get<ContainerType<ValueType>>(attribute.attribute_container);
                 std::forward<GetContainerFunc>(func)(container);
             };
 
@@ -539,6 +527,81 @@ private:
         StringRef updated_value{place_for_key, value_to_copy_size};
 
         return updated_value;
+    }
+
+    template <typename ValueType>
+    static constexpr bool is_nullable_or_array_type = std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array>;
+
+    template<typename ValueType>
+    using ContainerType = std::conditional_t<is_nullable_or_array_type<ValueType>, std::vector<ValueType>, PaddedPODArray<ValueType>>;
+
+    struct Attribute
+    {
+        AttributeUnderlyingType type;
+        bool is_complex_type;
+
+        std::variant<
+            ContainerType<UInt8>,
+            ContainerType<UInt16>,
+            ContainerType<UInt32>,
+            ContainerType<UInt64>,
+            ContainerType<UInt128>,
+            ContainerType<UInt256>,
+            ContainerType<Int8>,
+            ContainerType<Int16>,
+            ContainerType<Int32>,
+            ContainerType<Int64>,
+            ContainerType<Int128>,
+            ContainerType<Int256>,
+            ContainerType<Decimal32>,
+            ContainerType<Decimal64>,
+            ContainerType<Decimal128>,
+            ContainerType<Decimal256>,
+            ContainerType<Float32>,
+            ContainerType<Float64>,
+            ContainerType<UUID>,
+            ContainerType<StringRef>,
+            ContainerType<Array>,
+            ContainerType<Field>> attribute_container;
+    };
+
+    template <typename ValueType, typename ValueSetter>
+    void getItemsForFetchedKeys(
+        Attribute & attribute,
+        size_t fetched_keys_size,
+        PaddedPODArray<FetchedKey> & fetched_keys,
+        ValueSetter && value_setter,
+        const DefaultValueProvider & default_value_provider)
+    {
+        auto & container = std::get<ContainerType<ValueType>>(attribute.attribute_container);
+
+        for (size_t fetched_key_index = 0; fetched_key_index < fetched_keys_size; ++fetched_key_index)
+        {
+            auto fetched_key = fetched_keys[fetched_key_index];
+
+            if (unlikely(fetched_key.is_default))
+            {
+                auto default_value = default_value_provider.getDefaultValue(fetched_key_index);
+
+                if constexpr (std::is_same_v<ValueType, Field>)
+                {
+                    value_setter(default_value);
+                }
+                else if constexpr (std::is_same_v<ValueType, StringRef>)
+                {
+                    auto & value = default_value.get<String>();
+                    value_setter(value);
+                }
+                else
+                {
+                    value_setter(default_value.get<ValueType>());
+                }
+            }
+            else
+            {
+                value_setter(container[fetched_key.element_index]);
+            }
+        }
     }
 
     void setup(const DictionaryStructure & dictionary_structure)
@@ -563,9 +626,9 @@ private:
                 last_attribute.type = attribute_type;
 
                 if (dictionary_attribute.is_nullable)
-                    last_attribute.attribute_container = std::vector<Field>();
+                    last_attribute.attribute_container = ContainerType<Field>();
                 else
-                    last_attribute.attribute_container = PaddedPODArray<ValueType>();
+                    last_attribute.attribute_container = ContainerType<ValueType>();
             };
 
             callOnDictionaryAttributeType(attribute_type, type_call);
@@ -580,37 +643,6 @@ private:
         size_t element_index;
         bool is_default;
         time_t deadline;
-    };
-
-    struct Attribute
-    {
-        AttributeUnderlyingType type;
-        bool is_complex_type;
-
-        std::variant<
-            PaddedPODArray<UInt8>,
-            PaddedPODArray<UInt16>,
-            PaddedPODArray<UInt32>,
-            PaddedPODArray<UInt64>,
-            PaddedPODArray<UInt128>,
-            PaddedPODArray<UInt256>,
-            PaddedPODArray<Int8>,
-            PaddedPODArray<Int16>,
-            PaddedPODArray<Int32>,
-            PaddedPODArray<Int64>,
-            PaddedPODArray<Int128>,
-            PaddedPODArray<Int256>,
-            PaddedPODArray<Decimal32>,
-            PaddedPODArray<Decimal64>,
-            PaddedPODArray<Decimal128>,
-            PaddedPODArray<Decimal256>,
-            PaddedPODArray<Float32>,
-            PaddedPODArray<Float64>,
-            PaddedPODArray<UUID>,
-            PaddedPODArray<StringRef>,
-            /// TODO: FIX
-            PaddedPODArray<Array>,
-            std::vector<Field>> attribute_container;
     };
 
     CacheDictionaryStorageConfiguration configuration;
