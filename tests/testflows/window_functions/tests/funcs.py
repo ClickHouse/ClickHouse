@@ -447,6 +447,113 @@ def first_value_with_lead_workaround(self):
         expected=expected
     )
 
+@TestScenario
+@Requirements(
+    RQ_SRS_019_ClickHouse_WindowFunctions_LeadInFrame("1.0")
+)
+def leadInFrame(self):
+    """Check `leadInFrame` function.
+    """
+    with Example("non default offset"):
+        expected = convert_output("""
+          empno | salary | lead
+        --------+--------+-------
+            1   |  5000  | 5000
+            2   |  3900  | 3900
+            3   |  4800  | 4800
+            4   |  4800  | 4800
+            5   |  3500  | 3500
+            7   |  4200  | 4200
+            8   |  6000  | 6000
+            9   |  4500  | 4500
+           10   |  5200  | 5200
+           11   |  5200  | 5200
+        """)
+
+        execute_query(
+            "select empno, salary, leadInFrame(salary,0) OVER (ORDER BY salary) AS lead FROM empsalary ORDER BY empno",
+            expected=expected
+        )
+
+    with Example("default offset"):
+        expected = convert_output("""
+          empno | salary | lead
+        --------+--------+-------
+             1  |   5000 |    0
+             2  |   3900 |    0
+             3  |   4800 | 4800
+             4  |   4800 |    0
+             5  |   3500 |    0
+             7  |   4200 |    0
+             8  |   6000 |    0
+             9  |   4500 |    0
+            10  |   5200 | 5200
+            11  |   5200 |    0
+        """)
+
+        execute_query(
+            "select empno, salary, leadInFrame(salary) OVER (ORDER BY salary) AS lead FROM (SELECT * FROM empsalary ORDER BY empno)",
+            expected=expected
+        )
+
+    with Example("explicit default value"):
+        expected = convert_output("""
+          empno | salary | lead
+        --------+--------+-------
+             1  |   5000 |    8
+             2  |   3900 |    8
+             3  |   4800 | 4800
+             4  |   4800 |    8
+             5  |   3500 |    8
+             7  |   4200 |    8
+             8  |   6000 |    8
+             9  |   4500 |    8
+            10  |   5200 | 5200
+            11  |   5200 |    8
+        """)
+
+        execute_query(
+            "select empno, salary, leadInFrame(salary,1,8) OVER (ORDER BY salary) AS lead FROM empsalary ORDER BY empno",
+            expected=expected
+        )
+
+    with Example("without order by"):
+        expected = convert_output("""
+          empno | salary | lead
+        --------+--------+-------
+              1 |   5000 | 3900
+              2 |   3900 | 4800
+              3 |   4800 | 4800
+              4 |   4800 | 3500
+              5 |   3500 | 4200
+              7 |   4200 | 6000
+              8 |   6000 | 4500
+              9 |   4500 | 5200
+             10 |   5200 | 5200
+             11 |   5200 |    0
+        """)
+
+        execute_query(
+            "select empno, salary, leadInFrame(salary) OVER () AS lead FROM (SELECT * FROM empsalary ORDER BY empno)",
+            expected=expected
+        )
+
+    with Example("with nulls"):
+        expected = convert_output("""
+          number | lead
+         --------+-----
+               1 |  1
+               1 |  2
+               2 |  3
+               3 |  0
+             \\N |  0
+        """)
+
+        execute_query(
+            "select number, leadInFrame(number,1,0) OVER () AS lead FROM values('number Nullable(Int8)', (1),(1),(2),(3),(NULL))",
+            expected=expected
+        )
+
 @TestFeature
 @Name("funcs")
 def feature(self):
