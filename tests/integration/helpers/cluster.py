@@ -261,15 +261,17 @@ class ClickHouseCluster:
         # available when with_hdfs == True
         self.hdfs_host = "hdfs1"
         self.hdfs_ip = None
-        self.hdfs_name_port = get_free_port()
-        self.hdfs_data_port = get_free_port()
+        self.hdfs_name_port = 50070
+        self.hdfs_data_port = 50075
         self.hdfs_dir = p.abspath(p.join(self.instances_dir, "hdfs"))
         self.hdfs_logs_dir = os.path.join(self.hdfs_dir, "logs")
+        self.hdfs_api = None # also for kerberized hdfs
 
         # available when with_kerberized_hdfs == True
         self.hdfs_kerberized_host = "kerberizedhdfs1"
-        self.hdfs_kerberized_name_port = get_free_port()
-        self.hdfs_kerberized_data_port = get_free_port()
+        self.hdfs_kerberized_ip = None
+        self.hdfs_kerberized_name_port = 50070
+        self.hdfs_kerberized_data_port = 1006
         self.hdfs_kerberized_dir = p.abspath(p.join(self.instances_dir, "kerberized_hdfs"))
         self.hdfs_kerberized_logs_dir = os.path.join(self.hdfs_kerberized_dir, "logs")
 
@@ -562,10 +564,8 @@ class ClickHouseCluster:
     def setup_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hdfs = True
         env_variables['HDFS_HOST'] = self.hdfs_host
-        env_variables['HDFS_NAME_EXTERNAL_PORT'] = str(self.hdfs_name_port)
-        env_variables['HDFS_NAME_INTERNAL_PORT'] = "50070"
-        env_variables['HDFS_DATA_EXTERNAL_PORT'] = str(self.hdfs_data_port)
-        env_variables['HDFS_DATA_INTERNAL_PORT'] = "50075"
+        env_variables['HDFS_NAME_PORT'] = str(self.hdfs_name_port)
+        env_variables['HDFS_DATA_PORT'] = str(self.hdfs_data_port)
         env_variables['HDFS_LOGS'] = self.hdfs_logs_dir
         env_variables['HDFS_FS'] = "bind"
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')])
@@ -577,10 +577,8 @@ class ClickHouseCluster:
     def setup_kerberized_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_kerberized_hdfs = True
         env_variables['KERBERIZED_HDFS_HOST'] = self.hdfs_kerberized_host
-        env_variables['KERBERIZED_HDFS_NAME_EXTERNAL_PORT'] = str(self.hdfs_kerberized_name_port)
-        env_variables['KERBERIZED_HDFS_NAME_INTERNAL_PORT'] = "50070"
-        env_variables['KERBERIZED_HDFS_DATA_EXTERNAL_PORT'] = str(self.hdfs_kerberized_data_port)
-        env_variables['KERBERIZED_HDFS_DATA_INTERNAL_PORT'] = "1006"
+        env_variables['KERBERIZED_HDFS_NAME_PORT'] = str(self.hdfs_kerberized_name_port)
+        env_variables['KERBERIZED_HDFS_DATA_PORT'] = str(self.hdfs_kerberized_data_port)
         env_variables['KERBERIZED_HDFS_LOGS'] = self.hdfs_kerberized_logs_dir
         env_variables['KERBERIZED_HDFS_FS'] = "bind"
         env_variables['KERBERIZED_HDFS_DIR'] = instance.path + '/'
@@ -1088,30 +1086,26 @@ class ClickHouseCluster:
         raise Exception("Cannot wait ZooKeeper container")
 
     def make_hdfs_api(self, timeout=180, kerberized=False):
-        hdfs_api = None
         if kerberized:
             keytab = p.abspath(p.join(self.instances['node1'].path, "secrets/clickhouse.keytab"))
             krb_conf = p.abspath(p.join(self.instances['node1'].path, "secrets/krb_long.conf"))
-            hdfs_ip = self.get_instance_ip('kerberizedhdfs1')
-            # logging.debug("kerberizedhdfs1 ip ", hdfs_ip)
+            self.hdfs_kerberized_ip = self.get_instance_ip(self.hdfs_kerberized_host)
             kdc_ip = self.get_instance_ip('hdfskerberos')
-            # logging.debug("kdc_ip ", kdc_ip)
-            hdfs_api = HDFSApi(user="root",
-                              timeout=timeout,
-                              kerberized=True,
-                              principal="root@TEST.CLICKHOUSE.TECH",
-                              keytab=keytab,
-                              krb_conf=krb_conf,
-                              host="localhost",
-                              protocol="http",
-                              proxy_port=self.hdfs_kerberized_name_port,
-                              data_port=self.hdfs_kerberized_data_port,
-                              hdfs_ip=hdfs_ip,
-                              kdc_ip=kdc_ip)                         
+            self.hdfs_api = HDFSApi(user="root",
+                                    timeout=timeout,
+                                    kerberized=True,
+                                    principal="root@TEST.CLICKHOUSE.TECH",
+                                    keytab=keytab,
+                                    krb_conf=krb_conf,
+                                    host=self.hdfs_kerberized_host,
+                                    protocol="http",
+                                    proxy_port=self.hdfs_kerberized_name_port,
+                                    data_port=self.hdfs_kerberized_data_port,
+                                    hdfs_ip=self.hdfs_kerberized_ip,
+                                    kdc_ip=kdc_ip)                         
         else:
-            logging.debug("Create HDFSApi host={}".format("localhost"))
-            hdfs_api = HDFSApi(user="root", host="localhost", data_port=self.hdfs_data_port, proxy_port=self.hdfs_name_port)
-        return hdfs_api
+            self.hdfs_ip = self.get_instance_ip(self.hdfs_host)
+            self.hdfs_api = HDFSApi(user="root", host=self.hdfs_host, data_port=self.hdfs_data_port, proxy_port=self.hdfs_name_port, hdfs_ip=self.hdfs_ip)
 
     def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=50):
         retries = 0
@@ -1126,16 +1120,15 @@ class ClickHouseCluster:
                 time.sleep(1)
 
 
-    def wait_hdfs_to_start(self, hdfs_api, timeout=300):
-        self.hdfs_ip = self.get_instance_ip(self.hdfs_host)
+    def wait_hdfs_to_start(self, timeout=120):
         start = time.time()
         while time.time() - start < timeout:
             try:
-                hdfs_api.write_data("/somefilewithrandomname222", "1")
+                self.hdfs_api.write_data("/somefilewithrandomname222", "1")
                 logging.debug("Connected to HDFS and SafeMode disabled! ")
                 return
             except Exception as ex:
-                logging.debug("Can't connect to HDFS " + str(ex))
+                logging.exception("Can't connect to HDFS " + str(ex))
                 time.sleep(1)
 
         raise Exception("Can't wait HDFS to start")
@@ -1373,16 +1366,16 @@ class ClickHouseCluster:
                 os.makedirs(self.hdfs_logs_dir)
                 os.chmod(self.hdfs_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
-                hdfs_api = self.make_hdfs_api()
-                self.wait_hdfs_to_start(hdfs_api)
+                self.make_hdfs_api()
+                self.wait_hdfs_to_start()
 
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 logging.debug('Setup kerberized HDFS')
                 os.makedirs(self.hdfs_kerberized_logs_dir)
                 os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
-                hdfs_api = self.make_hdfs_api(kerberized=True)
-                self.wait_hdfs_to_start(hdfs_api)
+                self.make_hdfs_api(kerberized=True)
+                self.wait_hdfs_to_start()
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')

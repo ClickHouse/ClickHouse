@@ -25,7 +25,7 @@ def started_cluster():
 # TODO Remove it and enable test
 @pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_read_table(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api(kerberized=True)
+    hdfs_api = started_cluster.hdfs_api
 
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/simple_table_function", data)
@@ -39,7 +39,7 @@ def test_read_table(started_cluster):
 # TODO Remove it and enable test
 @pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_read_write_storage(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api(kerberized=True)
+    hdfs_api = started_cluster.hdfs_api
 
     node1.query("create table SimpleHDFSStorage2 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://kerberizedhdfs1:9010/simple_storage1', 'TSV')")
     node1.query("insert into SimpleHDFSStorage2 values (1, 'Mark', 72.53)")
@@ -53,7 +53,7 @@ def test_read_write_storage(started_cluster):
 # TODO Remove it and enable test
 @pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_write_storage_not_expired(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api(kerberized=True)
+    hdfs_api = started_cluster.hdfs_api
 
     node1.query("create table SimpleHDFSStorageNotExpired (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://kerberizedhdfs1:9010/simple_storage_not_expired', 'TSV')")
 
@@ -69,7 +69,7 @@ def test_write_storage_not_expired(started_cluster):
 # TODO Remove it and enable test
 @pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_two_users(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api(kerberized=True)
+    hdfs_api = started_cluster.hdfs_api
 
     node1.query("create table HDFSStorOne (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://kerberizedhdfs1:9010/storage_user_one', 'TSV')")
     node1.query("insert into HDFSStorOne values (1, 'Real', 86.00)")
@@ -84,7 +84,7 @@ def test_two_users(started_cluster):
 # TODO Remove it and enable test
 @pytest.mark.skip(reason="Don't work in parallel mode for some reason")
 def test_read_table_expired(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api(kerberized=True)
+    hdfs_api = started_cluster.hdfs_api
 
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/simple_table_function_relogin", data)
