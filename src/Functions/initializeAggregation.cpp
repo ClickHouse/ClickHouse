@@ -139,9 +139,9 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
     });
 
     {
-        auto * that = &agg_func;
+        const auto * that = &agg_func;
         /// Unnest consecutive trailing -State combinators
-        while (auto * func = typeid_cast<const AggregateFunctionState *>(that))
+        while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
         that->addBatch(input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
     }
