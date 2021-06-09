@@ -106,12 +106,12 @@ class HDFSApi(object):
 
 
     def read_data(self, path, universal_newlines=True):
-        logging.debug("read_data protocol:{} host:{} proxy port:{} data port:{} path: {}".format(self.protocol, self.host, self.proxy_port, self.data_port, path))
-        response = self.req_wrapper(requests.get, 307, url="{protocol}://{host}:{port}/webhdfs/v1{path}?op=OPEN".format(protocol=self.protocol, host=self.host, port=self.proxy_port, path=path), headers={'host': str(self.hdfs_ip)}, allow_redirects=False, verify=False, auth=self.kerberos_auth)
+        logging.debug("read_data protocol:{} host:{} ip:{} proxy port:{} data port:{} path: {}".format(self.protocol, self.host, self.hdfs_ip, self.proxy_port, self.data_port, path))
+        response = self.req_wrapper(requests.get, 307, url="{protocol}://{ip}:{port}/webhdfs/v1{path}?op=OPEN".format(protocol=self.protocol, ip=self.hdfs_ip, port=self.proxy_port, path=path), headers={'host': str(self.hdfs_ip)}, allow_redirects=False, verify=False, auth=self.kerberos_auth)
         # additional_params = '&'.join(response.headers['Location'].split('&')[1:2])
         location = None
         if self.kerberized:
-            location = response.headers['Location'].replace("kerberizedhdfs1:9010", "{}:{}".format(self.hdfs_ip, self.proxy_port))
+            location = response.headers['Location'].replace("kerberizedhdfs1:1006", "{}:{}".format(self.hdfs_ip, self.data_port))
         else:
             location = response.headers['Location'].replace("hdfs1:50075", "{}:{}".format(self.hdfs_ip, self.data_port))
         logging.debug("redirected to {}".format(location))

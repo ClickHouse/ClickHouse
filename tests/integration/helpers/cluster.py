@@ -62,12 +62,14 @@ def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=su
     err = res.stderr.decode('utf-8')
     if res.returncode != 0:
         # check_call(...) from subprocess does not print stderr, so we do it manually
+        logging.debug(f"Command:{args}")
         logging.debug(f"Stderr:{err}")
         logging.debug(f"Stdout:{out}")
         logging.debug(f"Env: {env}")
         if not nothrow:
             raise Exception(f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}")
     else:
+        logging.debug(f"Command:{args}")
         logging.debug(f"Stderr: {err}")
         logging.debug(f"Stdout: {out}")
         return out
@@ -375,11 +377,11 @@ class ClickHouseCluster:
     def cleanup(self):
         # Just in case kill unstopped containers from previous launch
         try:
-            result = run_and_check(['docker', 'container', 'list', '-a', '-f name={self.project_name}', '|', 'wc', '-l'])
+            result = run_and_check(f'docker container list --all --filter name={self.project_name} | wc -l', shell=True)
             if int(result) > 1:
-                logging.debug("Trying to kill unstopped containers...")
-                run_and_check(['docker', 'kill', f'`docker container list -a -f name={self.project_name}`'])
-                run_and_check(['docker', 'rm', f'`docker container list -a -f name={self.project_name}`'])
+                logging.debug(f"Trying to kill unstopped containers for project{self.project_name}...")
+                run_and_check(f'docker kill $(docker container list --all --quiet --filter name={self.project_name})', shell=True)
+                run_and_check(f'docker rm $(docker container list --all  --quiet --filter name={self.project_name})', shell=True)
                 logging.debug("Unstopped containers killed")
                 run_and_check(['docker-compose', 'ps', '--services', '--all'])
             else:
@@ -409,8 +411,10 @@ class ClickHouseCluster:
         try:
             logging.debug("Trying to prune unused volumes...")
 
-            run_and_check(['docker', 'volume', 'prune', '-f'])
-            logging.debug("Volumes pruned")
+            result = run_and_check(['docker volume ls | wc -l'], shell=True)
+            if int(result>0):
+                run_and_check(['docker', 'volume', 'prune', '-f'])
+            logging.debug(f"Volumes pruned: {result}")
         except:
             pass
 
