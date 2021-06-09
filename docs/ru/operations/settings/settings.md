@@ -987,7 +987,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 -   Положительное целое число.
 -   0 — глубина не ограничена.
 
-Default value: `5`.
+Значение по умолчанию: `5`.
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
