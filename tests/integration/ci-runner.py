@@ -404,8 +404,15 @@ class ClickhouseIntegrationTestsRunner:
                 logging.info("Seems like all tests passed but some of them are skipped or deselected. Ignoring them and finishing group.")
                 break
         else:
+            # Mark all non tried tests as errors, with '::' in name
+            # (example test_partition/test.py::test_partition_simple). For flaky check
+            # we run whole test dirs like "test_odbc_interaction" and don't
+            # want to mark them as error so we filter by '::'.
             for test in tests_in_group:
-                if test not in counters["PASSED"] and test not in counters["ERROR"] and test not in counters["FAILED"]:
+                if (test not in counters["PASSED"] and
+                    test not in counters["ERROR"] and
+                    test not in counters["FAILED"]
+                    and '::' in test):
                     counters["ERROR"].append(test)
 
         return counters, tests_times, log_paths
