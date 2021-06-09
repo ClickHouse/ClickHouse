@@ -31,12 +31,12 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, UInt64 s3_max_single_read_retries_, size_t buffer_size_)
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, UInt64 max_single_read_retries_, size_t buffer_size_)
     : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
-    , s3_max_single_read_retries(s3_max_single_read_retries_)
+    , max_single_read_retries(max_single_read_retries_)
     , buffer_size(buffer_size_)
 {
 }
@@ -45,12 +45,10 @@ bool ReadBufferFromS3::nextImpl()
 {
     Stopwatch watch;
     bool next_result = false;
+    auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
 
-    for (Int64 attempt = static_cast<Int64>(s3_max_single_read_retries); attempt >= 0; --attempt)
+    for (size_t attempt = 0; attempt < max_single_read_retries; ++attempt)
     {
-        if (!impl)
-            impl = initialize();
-
         try
         {
             next_result = impl->next();
@@ -64,14 +62,15 @@ bool ReadBufferFromS3::nextImpl()
         {
             ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
 
-            LOG_INFO(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Remaining attempts: {}, Message: {}",
+            LOG_INFO(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Attempt: {}, Message: {}",
                     bucket, key, getPosition(), attempt, e.message());
 
             impl.reset();
-
-            if (!attempt)
-                throw;
+            impl = initialize();
         }
+
+        std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
+        sleep_time_with_backoff_milliseconds *= 2;
     }
 
     watch.stop();
