@@ -258,6 +258,7 @@ inline constexpr const char * getTypeName(TypeIndex idx)
         case TypeIndex::Float32:    return "Float32";
         case TypeIndex::Float64:    return "Float64";
         case TypeIndex::Date:       return "Date";
+        case TypeIndex::Date32:     return "Date32";
         case TypeIndex::DateTime:   return "DateTime";
         case TypeIndex::DateTime64: return "DateTime64";
         case TypeIndex::String:     return "String";
