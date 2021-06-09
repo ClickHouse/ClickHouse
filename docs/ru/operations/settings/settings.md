@@ -976,6 +976,19 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: 1024.
 
+## max_distributed_depth {#max-distributed-depth}
+
+Максимальная грубина рекурсивных запросов для [Distributed](../../engines/table-engines/special/distributed.md) таблиц.
+
+Если значение превышено, сервер генерирует исключение.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — глубина не ограничена.
+
+Default value: `5`.
+
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 Таймаут в миллисекундах на соединение с удалённым сервером, для движка таблиц Distributed, если используются секции shard и replica в описании кластера.
