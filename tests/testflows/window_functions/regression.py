@@ -66,6 +66,12 @@ xfails = {
     "tests/:/funcs/leadInFrame/with nulls":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
     "tests/:/funcs/leadInFrame/default offset":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/:/funcs/lagInFrame/explicit default value":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
+    "tests/:/funcs/lagInFrame/with nulls":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
+    "tests/:/funcs/lagInFrame/default offset":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")]
 }
 
