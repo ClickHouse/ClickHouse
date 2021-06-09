@@ -135,8 +135,11 @@ bool PartMovesBetweenShardsOrchestrator::step()
         throw;
     }
 
-    LOG_DEBUG(log, "stepEntry on task {} from state {}, try: {}",
-              entry_to_process->znode_name, entry_to_process->state.toString(), entry_to_process->num_tries);
+    LOG_DEBUG(log, "stepEntry on task {} from state {} (rollback: {}), try: {}",
+              entry_to_process->znode_name,
+              entry_to_process->state.toString(),
+              entry_to_process->rollback,
+              entry_to_process->num_tries);
 
     try
     {
@@ -228,10 +231,10 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 String sync_source_log_entry_str;
                 if (zk->tryGet(sync_source_log_entry_barrier_path, sync_source_log_entry_str, &sync_source_log_entry_stat))
                 {
-                    LOG_DEBUG(log, "Log entry was already created will try and watch existing one.");
+                    LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
                     sync_source_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_source_log_entry_str, sync_source_log_entry_stat);
-                    sync_source_log_entry.znode_name = "queue--fake-name";
+                    sync_source_log_entry.znode_name = "queue-ignored-name-and-matching-on-contents";
                 }
                 else
                 {
@@ -254,6 +257,8 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                     sync_source_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
                 }
 
                 Strings unwaited = storage.waitForAllReplicasToProcessLogEntry(sync_source_log_entry, true, make_stop_wait_cond());
@@ -282,10 +287,10 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 String sync_destination_log_entry_str;
                 if (zk->tryGet(sync_destination_log_entry_barrier_path, sync_destination_log_entry_str, &sync_destination_log_entry_stat))
                 {
-                    LOG_DEBUG(log, "Log entry was already created will try and watch existing one.");
+                    LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
                     sync_destination_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_destination_log_entry_str, sync_destination_log_entry_stat);
-                    sync_destination_log_entry.znode_name = "queue--fake-name";
+                    sync_destination_log_entry.znode_name = "queue-ignored-name-and-matching-on-contents";
                 }
                 else
                 {
@@ -309,6 +314,8 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                     sync_destination_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
                 }
 
                 Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, sync_destination_log_entry, true, make_stop_wait_cond());
@@ -343,10 +350,10 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 String fetch_log_entry_str;
                 if (zk->tryGet(fetch_log_entry_barrier_path, fetch_log_entry_str, &fetch_log_entry_stat))
                 {
-                    LOG_DEBUG(log, "Log entry was already created will try and watch existing one.");
+                    LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
                     fetch_log_entry = *ReplicatedMergeTreeLogEntry::parse(fetch_log_entry_str, fetch_log_entry_stat);
-                    fetch_log_entry.znode_name = "queue--fake-name";
+                    fetch_log_entry.znode_name = "queue-ignored-name-and-matching-on-contents";
                 }
                 else
                 {
@@ -369,6 +376,8 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                     fetch_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
                 }
 
                 Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, fetch_log_entry, true, make_stop_wait_cond());
@@ -390,6 +399,8 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 String attach_log_entry_str;
                 if (!zk->tryGet(attach_log_entry_barrier_path, attach_log_entry_str, &attach_log_entry_stat))
                 {
+                    LOG_DEBUG(log, "Log entry for DESTINATION_ATTACH not found. Not sending DROP_RANGE log entry.");
+
                     // ATTACH_PART wasn't issued, nothing to revert.
                     entry.state = EntryState::DESTINATION_FETCH;
                     return entry;
@@ -399,41 +410,61 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     // Need to remove ATTACH_PART from the queue or drop data.
                     // Similar to `StorageReplicatedMergeTree::dropPart` w/o extra
                     // checks as we know drop shall be possible.
-                    const auto attach_log_entry = ReplicatedMergeTreeLogEntry::parse(attach_log_entry_str, attach_log_entry_stat);
+                    ReplicatedMergeTreeLogEntryData attach_rollback_log_entry;
 
-                    Coordination::Requests ops;
-                    ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+                    String attach_rollback_log_entry_barrier_path = fs::path(entry.znode_path) / ("log_" + entry.state.toString() + "_rollback");
+                    Coordination::Stat attach_rollback_log_entry_stat;
+                    String attach_rollback_log_entry_str;
+                    if (zk->tryGet(attach_rollback_log_entry_barrier_path, attach_rollback_log_entry_str, &attach_rollback_log_entry_stat))
+                    {
+                        LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                    // TODO(nv): foreign format_version
-                    //      we are acting on behalf of the remote shard.
-                    auto drop_part_info = MergeTreePartInfo::fromPartName(attach_log_entry->new_part_name, storage.format_version);
+                        attach_rollback_log_entry = *ReplicatedMergeTreeLogEntry::parse(attach_rollback_log_entry_str, attach_rollback_log_entry_stat);
+                        attach_rollback_log_entry.znode_name = "queue-ignored-name-and-matching-on-contents";
+                    }
+                    else
+                    {
+                        const auto attach_log_entry = ReplicatedMergeTreeLogEntry::parse(attach_log_entry_str, attach_log_entry_stat);
 
-                    storage.getClearBlocksInPartitionOps(ops, *zk, drop_part_info.partition_id, drop_part_info.min_block, drop_part_info.max_block);
-                    size_t clear_block_ops_size = ops.size();
+                        Coordination::Requests ops;
+                        ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
-                    /// Set fake level to treat this part as virtual in queue.
-                    drop_part_info.level = MergeTreePartInfo::MAX_LEVEL;
+                        // TODO(nv): foreign format_version
+                        //      we are acting on behalf of the remote shard.
+                        auto drop_part_info = MergeTreePartInfo::fromPartName(attach_log_entry->new_part_name, storage.format_version);
 
-                    ReplicatedMergeTreeLogEntryData log_entry;
-                    log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
-                    log_entry.source_replica = storage.replica_name;
-                    log_entry.source_shard = zookeeper_path;
+                        storage.getClearBlocksInPartitionOps(
+                            ops, *zk, drop_part_info.partition_id, drop_part_info.min_block, drop_part_info.max_block);
+                        size_t clear_block_ops_size = ops.size();
 
-                    // TODO(nv): foreign format_version
-                    // log_entry.new_part_name = storage.getPartNamePossiblyFake(storage.format_version, drop_part_info);
-                    log_entry.new_part_name = drop_part_info.getPartName();
-                    log_entry.create_time = time(nullptr);
+                        /// Set fake level to treat this part as virtual in queue.
+                        drop_part_info.level = MergeTreePartInfo::MAX_LEVEL;
 
-                    ops.emplace_back(zkutil::makeCreateRequest(entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
-                    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
-                    Coordination::Responses responses;
-                    Coordination::Error rc = zk->tryMulti(ops, responses);
-                    zkutil::KeeperMultiException::check(rc, ops, responses);
+                        attach_rollback_log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
+                        attach_rollback_log_entry.source_replica = storage.replica_name;
+                        attach_rollback_log_entry.source_shard = zookeeper_path;
 
-                    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size]).path_created;
-                    log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+                        // TODO(nv): foreign format_version
+                        // attach_rollback_log_entry.new_part_name = storage.getPartNamePossiblyFake(storage.format_version, drop_part_info);
+                        attach_rollback_log_entry.new_part_name = drop_part_info.getPartName();
+                        attach_rollback_log_entry.create_time = time(nullptr);
 
-                    Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true, make_stop_wait_cond());
+                        ops.emplace_back(zkutil::makeCreateRequest(attach_rollback_log_entry_barrier_path, attach_rollback_log_entry.toString(), -1));
+                        ops.emplace_back(zkutil::makeCreateRequest(
+                            entry.to_shard + "/log/log-", attach_rollback_log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+                        ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
+                        Coordination::Responses responses;
+                        Coordination::Error rc = zk->tryMulti(ops, responses);
+                        zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                        String log_znode_path
+                            = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size]).path_created;
+                        attach_rollback_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                        LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
+                    }
+
+                    Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, attach_rollback_log_entry, true, make_stop_wait_cond());
                     if (!unwaited.empty())
                         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
 
@@ -483,13 +514,17 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                     log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
                 }
                 else
                 {
+                    LOG_DEBUG(log, "Log entry was already created will check the existing one.");
+
                     Coordination::Stat stat;
                     String log_entry_str = zk->get(attach_log_entry_barrier_path, &stat);
                     log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, stat);
-                    log_entry.znode_name = "queue--fake-name";
+                    log_entry.znode_name = "queue-ignored-name-and-matching-on-contents";
                 }
 
                 Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true, make_stop_wait_cond());
@@ -534,10 +569,10 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 String source_drop_log_entry_str;
                 if (zk->tryGet(source_drop_log_entry_barrier_path, source_drop_log_entry_str, &source_drop_log_entry_stat))
                 {
-                    LOG_DEBUG(log, "Log entry was already created will try and watch existing one.");
+                    LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
                     source_drop_log_entry = *ReplicatedMergeTreeLogEntry::parse(source_drop_log_entry_str, source_drop_log_entry_stat);
-                    source_drop_log_entry.znode_name = "queue--fake-name";
+                    source_drop_log_entry.znode_name = "queue-ignored-name-and-matching-on-contents";
                 }
                 else
                 {
@@ -567,6 +602,8 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                     source_drop_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
                 }
 
                 Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(zookeeper_path, source_drop_log_entry, true, make_stop_wait_cond());

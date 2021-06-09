@@ -195,7 +195,7 @@ def test_part_move_step_by_step(started_cluster):
 
     # Should hang on SYNC_SOURCE until all source replicas acknowledge new pinned UUIDs.
     wait_for_state("SYNC_SOURCE", s0r0, "test_part_move_step_by_step", "Some replicas haven\\'t processed event")
-    deduplication_invariant.assert_not_exception()
+    deduplication_invariant.assert_no_exception()
 
     # Start all replicas in source shard but stop a replica in destination shard
     # to prevent SYNC_DESTINATION succeeding.
@@ -207,7 +207,7 @@ def test_part_move_step_by_step(started_cluster):
     s0r1.query("SYSTEM START MERGES test_part_move_step_by_step; OPTIMIZE TABLE test_part_move_step_by_step;")
 
     wait_for_state("SYNC_DESTINATION", s0r0, "test_part_move_step_by_step", "Some replicas haven\\'t processed event")
-    deduplication_invariant.assert_not_exception()
+    deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let SYNC_DESTINATION
     # succeed.
@@ -215,7 +215,7 @@ def test_part_move_step_by_step(started_cluster):
     s1r0.stop_clickhouse()
     s1r1.start_clickhouse()
     wait_for_state("DESTINATION_FETCH", s0r0, "test_part_move_step_by_step", "Some replicas haven\\'t processed event")
-    deduplication_invariant.assert_not_exception()
+    deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let DESTINATION_FETCH
     # succeed.
@@ -223,18 +223,18 @@ def test_part_move_step_by_step(started_cluster):
     s1r1.stop_clickhouse()
     s1r0.start_clickhouse()
     wait_for_state("DESTINATION_ATTACH", s0r0, "test_part_move_step_by_step", "Some replicas haven\\'t processed event")
-    deduplication_invariant.assert_not_exception()
+    deduplication_invariant.assert_no_exception()
 
     # Start all replicas in destination shard to let DESTINATION_ATTACH succeed.
     # Stop a source replica to prevent SOURCE_DROP succeeding.
     s1r1.start_clickhouse()
     s0r0.stop_clickhouse()
     wait_for_state("SOURCE_DROP", s0r1, "test_part_move_step_by_step", "Some replicas haven\\'t processed event")
-    deduplication_invariant.assert_not_exception()
+    deduplication_invariant.assert_no_exception()
 
     s0r0.start_clickhouse()
     wait_for_state("DONE", s0r1, "test_part_move_step_by_step")
-    deduplication_invariant.assert_not_exception()
+    deduplication_invariant.assert_no_exception()
 
     # No hung tasks in replication queue. Would timeout otherwise.
     for instance in started_cluster.instances.values():
@@ -302,7 +302,7 @@ def test_part_move_step_by_step_kill(started_cluster):
 
     # Should hang on SYNC_SOURCE until all source replicas acknowledge new pinned UUIDs.
     wait_for_state("SYNC_SOURCE", s0r0, "test_part_move_step_by_step_kill", "Some replicas haven\\'t processed event")
-    deduplication_invariant.assert_not_exception()
+    deduplication_invariant.assert_no_exception()
 
     # Start all replicas in source shard but stop a replica in destination shard
     # to prevent SYNC_DESTINATION succeeding.
@@ -315,7 +315,7 @@ def test_part_move_step_by_step_kill(started_cluster):
 
     wait_for_state("SYNC_DESTINATION", s0r0, "test_part_move_step_by_step_kill",
                    "Some replicas haven\\'t processed event")
-    deduplication_invariant.assert_not_exception()
+    deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let SYNC_DESTINATION
     # succeed.
@@ -332,7 +332,7 @@ def test_part_move_step_by_step_kill(started_cluster):
     s1r0.start_clickhouse()
     wait_for_state("DESTINATION_ATTACH", s0r0, "test_part_move_step_by_step_kill",
                    "Some replicas haven\\'t processed event")
-    deduplication_invariant.assert_not_exception()
+    deduplication_invariant.assert_no_exception()
 
     # Rollback here.
     s0r0.query("""
@@ -347,7 +347,7 @@ def test_part_move_step_by_step_kill(started_cluster):
     s1r1.start_clickhouse()
 
     wait_for_state("CANCELLED", s0r0, "test_part_move_step_by_step_kill", assert_rollback=True)
-    deduplication_invariant.assert_not_exception()
+    deduplication_invariant.assert_no_exception()
 
     # No hung tasks in replication queue. Would timeout otherwise.
     for instance in started_cluster.instances.values():
@@ -431,8 +431,9 @@ def wait_for_state(desired_state, instance, test_table, assert_exception_msg=Non
 
 
 class ConcurrentInvariant:
-    def __init__(self, invariant_test):
+    def __init__(self, invariant_test, loop_sleep=0.1):
         self.invariant_test = invariant_test
+        self.loop_sleep = loop_sleep
 
         self.started = False
         self.exiting = False
@@ -447,8 +448,7 @@ class ConcurrentInvariant:
         self.thread.start()
 
     def stop_and_assert_no_exception(self):
-        if not self.started:
-            raise Exception('invariant thread not started, forgot to call start?')
+        self._assert_started()
 
         self.exiting = True
         self.thread.join()
@@ -456,7 +456,9 @@ class ConcurrentInvariant:
         if self.exception:
             raise self.exception
 
-    def assert_not_exception(self):
+    def assert_no_exception(self):
+        self._assert_started()
+
         if self.exception:
             raise self.exception
 
@@ -464,7 +466,11 @@ class ConcurrentInvariant:
         try:
             while not self.exiting:
                 self.invariant_test()
-                time.sleep(0.1)
+                time.sleep(self.loop_sleep)
         except Exception as e:
             self.exiting = True
             self.exception = e
+
+    def _assert_started(self):
+        if not self.started:
+            raise Exception('invariant thread not started, forgot to call start?')
