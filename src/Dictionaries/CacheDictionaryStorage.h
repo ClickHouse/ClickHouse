@@ -561,7 +561,6 @@ private:
                 attributes.emplace_back();
                 auto & last_attribute = attributes.back();
                 last_attribute.type = attribute_type;
-                last_attribute.is_complex_type = dictionary_attribute.is_nullable || dictionary_attribute.is_array;
 
                 if (dictionary_attribute.is_nullable)
                     last_attribute.attribute_container = std::vector<Field>();
@@ -609,6 +608,8 @@ private:
             PaddedPODArray<Float64>,
             PaddedPODArray<UUID>,
             PaddedPODArray<StringRef>,
+            /// TODO: FIX
+            PaddedPODArray<Array>,
             std::vector<Field>> attribute_container;
     };
 

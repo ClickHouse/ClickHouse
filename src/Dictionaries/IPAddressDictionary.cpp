@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_IS_EMPTY;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -315,8 +316,15 @@ void IPAddressDictionary::createAttributes()
     auto create_attributes_from_dictionary_attributes = [this](const std::vector<DictionaryAttribute> & dict_attrs)
     {
         attributes.reserve(attributes.size() + dict_attrs.size());
+
         for (const auto & attribute : dict_attrs)
         {
+            if (attribute.is_nullable)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "{}: array or nullable attributes not supported for dictionary of type {}",
+                    full_name,
+                    getTypeName());
+
             attribute_index_by_name.emplace(attribute.name, attributes.size());
             attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 

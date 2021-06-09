@@ -116,7 +116,8 @@ private:
             Float32,
             Float64,
             UUID,
-            String>
+            String,
+            Array>
             null_values;
         std::variant<
             ContainerType<UInt8>,
@@ -138,7 +139,8 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
-            ContainerType<StringRef>>
+            ContainerType<StringRef>,
+            ContainerType<Array>>
             maps;
         std::unique_ptr<Arena> string_arena;
     };

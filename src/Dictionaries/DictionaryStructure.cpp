@@ -79,9 +79,7 @@ AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
 
         case TypeIndex::String:         return AttributeUnderlyingType::String;
 
-        // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
-        // TODO: This should be fixed by fully supporting arrays in dictionaries.
-        case TypeIndex::Array:          return AttributeUnderlyingType::String;
+        case TypeIndex::Array:          return AttributeUnderlyingType::Array;
 
         default: break;
     }
@@ -125,7 +123,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         id.emplace(config, structure_prefix + ".id");
     else if (has_key)
     {
-        key.emplace(getAttributes(config, structure_prefix + ".key", true));
+        key.emplace(getAttributes(config, structure_prefix + ".key", /*complex_key_attributes =*/ true));
         if (key->empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'key' supplied");
     }
@@ -173,7 +171,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
             has_expressions = true;
     }
 
-    attributes = getAttributes(config, structure_prefix, false);
+    attributes = getAttributes(config, structure_prefix, /*complex_key_attributes =*/ false);
 
     for (size_t i = 0; i < attributes.size(); ++i)
     {
@@ -375,17 +373,22 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);
-        auto type = initial_type;
-        bool is_array = false;
+        auto nested_type = initial_type;
         bool is_nullable = false;
 
-        if (type->isNullable())
+        // while (const auto * array_type = typeid_cast<const DataTypeArray *>(nested_type.get()))
+        // {
+        //     is_array = true;
+        //     nested_type = array_type->getNestedType();
+        // }
+
+        if (nested_type->isNullable())
         {
             is_nullable = true;
-            type = removeNullable(type);
+            nested_type = removeNullable(nested_type);
         }
 
-        const auto underlying_type = getAttributeUnderlyingType(type);
+        const auto underlying_type = getAttributeUnderlyingType(nested_type);
 
         const auto expression = config.getString(prefix + "expression", "");
         if (!expression.empty())
@@ -399,13 +402,13 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             {
                 if (null_value_string.empty())
                 {
-                    null_value = type->getDefault();
+                    null_value = initial_type->getDefault();
                 }
                 else
                 {
                     ReadBufferFromString null_value_buffer{null_value_string};
-                    auto column_with_null_value = type->createColumn();
-                    type->getDefaultSerialization()->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
+                    auto column_with_null_value = nested_type->createColumn();
+                    initial_type->getDefaultSerialization()->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
                     null_value = (*column_with_null_value)[0];
                 }
             }
@@ -417,6 +420,8 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
                 throw;
             }
         }
+
+        std::cerr << "DictionaryStructure::getAttributes null value " << null_value.dump() << std::endl;
 
         const auto hierarchical = config.getBool(prefix + "hierarchical", false);
         const auto injective = config.getBool(prefix + "injective", false);
@@ -437,14 +442,13 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             underlying_type,
             initial_type,
             initial_type->getDefaultSerialization(),
-            type,
+            nested_type,
             expression,
             null_value,
             hierarchical,
             injective,
             is_object_id,
-            is_nullable,
-            is_array});
+            is_nullable});
     }
 
     return res_attributes;

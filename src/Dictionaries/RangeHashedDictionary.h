@@ -127,7 +127,8 @@ private:
             Float32,
             Float64,
             UUID,
-            StringRef>
+            StringRef,
+            Array>
             null_values;
         std::variant<
             Ptr<UInt8>,
@@ -149,7 +150,8 @@ private:
             Ptr<Float32>,
             Ptr<Float64>,
             Ptr<UUID>,
-            Ptr<StringRef>>
+            Ptr<StringRef>,
+            Ptr<Array>>
             maps;
         std::unique_ptr<Arena> string_arena;
     };
