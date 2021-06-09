@@ -36,7 +36,8 @@ std::string_view getResource(std::string_view name)
     auto sym_start = reinterpret_cast<const char*>(dlsym(RTLD_DEFAULT, symbol_name_start.c_str()));
     auto sym_end = reinterpret_cast<const char*>(dlsym(RTLD_DEFAULT, symbol_name_end.c_str()));
 
-    if (sym_start && sym_end) {
+    if (sym_start && sym_end)
+    {
         auto resource_size = static_cast<size_t>(std::distance(sym_start, sym_end));
         return { sym_start, resource_size };
     }
