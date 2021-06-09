@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeString.h>
@@ -30,7 +30,7 @@ class FunctionBitmaskToList : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToList";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmaskToList>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionBitmaskToList>(); }
 
     String getName() const override
     {

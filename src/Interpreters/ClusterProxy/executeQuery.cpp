@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextPtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log)
+ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -81,6 +81,17 @@ ContextPtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context,
             if (log)
                 LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings.optimize_skip_unused_shards_nesting);
         }
+    }
+
+    if (settings.offset)
+    {
+        new_settings.offset = 0;
+        new_settings.offset.changed = false;
+    }
+    if (settings.limit)
+    {
+        new_settings.limit = 0;
+        new_settings.limit.changed = false;
     }
 
     auto new_context = Context::createCopy(context);

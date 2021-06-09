@@ -1,4 +1,4 @@
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -52,7 +52,7 @@ public:
     /// It is needed to perform type analysis without creation of set.
     static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionIn>();
     }

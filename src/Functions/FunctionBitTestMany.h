@@ -2,7 +2,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <ext/range.h>
@@ -24,7 +24,7 @@ struct FunctionBitTestMany : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitTestMany>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionBitTestMany>(); }
 
     String getName() const override { return name; }
 

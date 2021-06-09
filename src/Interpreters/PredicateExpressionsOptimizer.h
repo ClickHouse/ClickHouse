@@ -15,10 +15,10 @@ struct Settings;
  *      - Move predicates from having to where
  *      - Push the predicate down from the current query to the having of the subquery
  */
-class PredicateExpressionsOptimizer : WithContext
+class PredicateExpressionsOptimizer : WithConstContext
 {
 public:
-    PredicateExpressionsOptimizer(ContextPtr context_, const TablesWithColumns & tables_with_columns_, const Settings & settings_);
+    PredicateExpressionsOptimizer(ContextConstPtr context_, const TablesWithColumns & tables_with_columns_, const Settings & settings_);
 
     bool optimize(ASTSelectQuery & select_query);
 

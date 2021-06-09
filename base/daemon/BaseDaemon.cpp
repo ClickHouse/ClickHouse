@@ -26,8 +26,6 @@
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/PatternFormatter.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
@@ -59,6 +57,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
+#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
@@ -70,6 +69,7 @@
 #endif
 #include <ucontext.h>
 
+namespace fs = std::filesystem;
 
 DB::PipeFDs signal_pipe;
 
@@ -437,11 +437,11 @@ static void sanitizerDeathCallback()
 
 static std::string createDirectory(const std::string & file)
 {
-    auto path = Poco::Path(file).makeParent();
-    if (path.toString().empty())
+    fs::path path = fs::path(file).parent_path();
+    if (path.empty())
         return "";
-    Poco::File(path).createDirectories();
-    return path.toString();
+    fs::create_directories(path);
+    return path;
 };
 
 
@@ -449,7 +449,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 {
     try
     {
-        Poco::File(path).createDirectories();
+        fs::create_directories(path);
         return true;
     }
     catch (...)
@@ -468,9 +468,9 @@ void BaseDaemon::reloadConfiguration()
       *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", "config.xml");
+    config_path = config().getString("config-file", getDefaultConfigFileName());
     DB::ConfigProcessor config_processor(config_path, false, true);
-    config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+    config_processor.setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
@@ -516,21 +516,28 @@ std::string BaseDaemon::getDefaultCorePath() const
     return "/opt/cores/";
 }
 
+std::string BaseDaemon::getDefaultConfigFileName() const
+{
+    return "config.xml";
+}
+
 void BaseDaemon::closeFDs()
 {
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
-    Poco::File proc_path{"/dev/fd"};
+    fs::path proc_path{"/dev/fd"};
 #else
-    Poco::File proc_path{"/proc/self/fd"};
+    fs::path proc_path{"/proc/self/fd"};
 #endif
-    if (proc_path.isDirectory()) /// Hooray, proc exists
+    if (fs::is_directory(proc_path)) /// Hooray, proc exists
     {
-        std::vector<std::string> fds;
-        /// in /proc/self/fd directory filenames are numeric file descriptors
-        proc_path.list(fds);
-        for (const auto & fd_str : fds)
+        /// in /proc/self/fd directory filenames are numeric file descriptors.
+        /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
+        std::vector<int> fds;
+        for (const auto & path : fs::directory_iterator(proc_path))
+            fds.push_back(DB::parse<int>(path.path().filename()));
+
+        for (const auto & fd : fds)
         {
-            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
         }
@@ -592,7 +599,7 @@ void BaseDaemon::initialize(Application & self)
     {
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
-        std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
+        std::string path = fs::path(config().getString("application.path")).replace_filename("");
         if (0 != chdir(path.c_str()))
             throw Poco::Exception("Cannot change directory to " + path);
     }
@@ -640,7 +647,7 @@ void BaseDaemon::initialize(Application & self)
 
     std::string log_path = config().getString("logger.log", "");
     if (!log_path.empty())
-        log_path = Poco::Path(log_path).setFileName("").toString();
+        log_path = fs::path(log_path).replace_filename("");
 
     /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
       * Some libraries write to stderr in case of errors in debug mode,
@@ -703,8 +710,7 @@ void BaseDaemon::initialize(Application & self)
 
         tryCreateDirectories(&logger(), core_path);
 
-        Poco::File cores = core_path;
-        if (!(cores.exists() && cores.isDirectory()))
+        if (!(fs::exists(core_path) && fs::is_directory(core_path)))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
             tryCreateDirectories(&logger(), core_path);

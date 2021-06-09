@@ -1,4 +1,4 @@
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -19,7 +19,7 @@ class FunctionIsNotNull : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionIsNotNull>();
     }

@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -11,7 +11,7 @@ class FunctionMaterialize : public IFunction
 {
 public:
     static constexpr auto name = "materialize";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionMaterialize>();
     }
