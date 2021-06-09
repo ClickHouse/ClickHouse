@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeMap.h>
@@ -34,7 +34,7 @@ class FunctionMap : public IFunction
 public:
     static constexpr auto name = "map";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionMap>();
     }
@@ -146,7 +146,7 @@ class FunctionMapContains : public IFunction
 {
 public:
     static constexpr auto name = NameMapContains::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapContains>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionMapContains>(); }
 
     String getName() const override
     {
@@ -182,18 +182,20 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
+        bool is_const = isColumnConst(*arguments[0].column);
+        const ColumnMap * col_map = is_const ? checkAndGetColumnConstData<ColumnMap>(arguments[0].column.get()) : checkAndGetColumn<ColumnMap>(arguments[0].column.get());
         if (!col_map)
-            return nullptr;
+            throw Exception{"First argument for function " + getName() + " must be a map", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         const auto & nested_column = col_map->getNestedColumn();
         const auto & keys_data = col_map->getNestedData().getColumn(0);
 
         /// Prepare arguments to call arrayIndex for check has the array element.
+        ColumnPtr column_array = ColumnArray::create(keys_data.getPtr(), nested_column.getOffsetsPtr());
         ColumnsWithTypeAndName new_arguments =
         {
             {
-                ColumnArray::create(keys_data.getPtr(), nested_column.getOffsetsPtr()),
+                is_const ? ColumnConst::create(std::move(column_array), keys_data.size()) : std::move(column_array),
                 std::make_shared<DataTypeArray>(result_type),
                 ""
             },
@@ -209,7 +211,7 @@ class FunctionMapKeys : public IFunction
 {
 public:
     static constexpr auto name = "mapKeys";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapKeys>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionMapKeys>(); }
 
     String getName() const override
     {
@@ -256,7 +258,7 @@ class FunctionMapValues : public IFunction
 {
 public:
     static constexpr auto name = "mapValues";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapValues>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionMapValues>(); }
 
     String getName() const override
     {

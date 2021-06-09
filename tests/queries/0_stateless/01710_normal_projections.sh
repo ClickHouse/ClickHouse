@@ -77,3 +77,4 @@ echo "optimize_move_to_prewhere = 1, allow_experimental_projection_optimization 
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order by x FORMAT JSON
                        SETTINGS optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1" | grep rows_read
 
+$CLICKHOUSE_CLIENT -q "DROP TABLE test_sort_proj"
