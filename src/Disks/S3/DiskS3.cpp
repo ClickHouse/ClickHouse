@@ -14,7 +14,6 @@
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
-#include <Poco/File.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
@@ -122,25 +121,25 @@ public:
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         DiskS3::Metadata metadata_,
-        size_t s3_max_single_read_retries_,
+        size_t max_single_read_retries_,
         size_t buf_size_)
         : ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>(metadata_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
-        , s3_max_single_read_retries(s3_max_single_read_retries_)
+        , max_single_read_retries(max_single_read_retries_)
         , buf_size(buf_size_)
     {
     }
 
     std::unique_ptr<ReadBufferFromS3> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, s3_max_single_read_retries, buf_size);
+        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, max_single_read_retries, buf_size);
     }
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     const String & bucket;
-    size_t s3_max_single_read_retries;
+    UInt64 max_single_read_retries;
     size_t buf_size;
 };
 
@@ -215,7 +214,7 @@ void DiskS3::moveFile(const String & from_path, const String & to_path, bool sen
         createFileOperationObject("rename", revision, object_metadata);
     }
 
-    Poco::File(metadata_path + from_path).renameTo(metadata_path + to_path);
+    fs::rename(fs::path(metadata_path) / from_path, fs::path(metadata_path) / to_path);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
@@ -675,8 +674,8 @@ void DiskS3::restore()
         restoreFiles(information);
         restoreFileOperations(information);
 
-        Poco::File restore_file(metadata_path + RESTORE_FILE_NAME);
-        restore_file.remove();
+        fs::path restore_file = fs::path(metadata_path) / RESTORE_FILE_NAME;
+        fs::remove(restore_file);
 
         saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
 
@@ -863,8 +862,9 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
                 continue;
 
             /// Skip not finished parts. They shouldn't be in 'detached' directory, because CH wouldn't be able to finish processing them.
-            Poco::Path directory_path (path);
-            auto directory_name = directory_path.directory(directory_path.depth() - 1);
+            fs::path directory_path(path);
+            auto directory_name = directory_path.parent_path().filename().string();
+
             auto predicate = [&directory_name](String & prefix) { return directory_name.starts_with(prefix); };
             if (std::any_of(not_finished_prefixes.begin(), not_finished_prefixes.end(), predicate))
                 continue;
@@ -873,7 +873,14 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
 
             LOG_DEBUG(log, "Move directory to 'detached' {} -> {}", path, detached_path);
 
-            Poco::File(metadata_path + path).moveTo(metadata_path + detached_path);
+            fs::path from_path = fs::path(metadata_path) / path;
+            fs::path to_path = fs::path(metadata_path) / detached_path;
+            if (path.ends_with('/'))
+                to_path /= from_path.parent_path().filename();
+            else
+                to_path /= from_path.filename();
+            fs::copy(from_path, to_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+            fs::remove_all(from_path);
         }
     }
 
@@ -905,7 +912,9 @@ String DiskS3::revisionToString(UInt64 revision)
 
 String DiskS3::pathToDetached(const String & source_path)
 {
-    return Poco::Path(source_path).parent().append(Poco::Path("detached")).toString() + '/';
+    if (source_path.ends_with('/'))
+        return fs::path(source_path).parent_path().parent_path() / "detached/";
+    return fs::path(source_path).parent_path() / "detached/";
 }
 
 void DiskS3::onFreeze(const String & path)
@@ -928,7 +937,7 @@ void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, 
 
 DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
-    size_t s3_max_single_read_retries_,
+    UInt64 s3_max_single_read_retries_,
     size_t s3_min_upload_part_size_,
     size_t s3_max_single_part_upload_size_,
     size_t min_bytes_for_seek_,

@@ -32,7 +32,7 @@ CREATE TABLE `ontime`
     `Reporting_Airline`               String,
     `DOT_ID_Reporting_Airline`        Int32,
     `IATA_CODE_Reporting_Airline`     String,
-    `Tail_Number`                     Int32,
+    `Tail_Number`                     String,
     `Flight_Number_Reporting_Airline` String,
     `OriginAirportID`                 Int32,
     `OriginAirportSeqID`              Int32,
