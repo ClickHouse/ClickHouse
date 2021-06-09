@@ -114,18 +114,18 @@ def started_cluster():
         node1.exec_in_container(
             ["sqlite3", sqlite_db, "CREATE TABLE tf1(x INTEGER PRIMARY KEY ASC, y, z);"],
             privileged=True, user='root')
-        print("sqlite tables created")
+        logging.debug("sqlite tables created")
         mysql_conn = get_mysql_conn()
-        print("mysql connection received")
+        logging.debug("mysql connection received")
         ## create mysql db and table
         create_mysql_db(mysql_conn, 'clickhouse')
-        print("mysql database created")
+        logging.debug("mysql database created")
 
         postgres_conn = get_postgres_conn(cluster)
-        print("postgres connection received")
+        logging.debug("postgres connection received")
 
         create_postgres_db(postgres_conn, 'clickhouse')
-        print("postgres db created")
+        logging.debug("postgres db created")
 
         cursor = postgres_conn.cursor()
         cursor.execute(
@@ -134,7 +134,7 @@ def started_cluster():
         yield cluster
 
     except Exception as ex:
-        print(ex)
+        logging.exception(ex)
         raise ex
     finally:
         cluster.shutdown()
@@ -270,17 +270,17 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
 
     node1.query("SYSTEM RELOAD DICTIONARY sqlite3_odbc_hashed")
     first_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'")
-    print("First update time", first_update_time)
+    logging.debug(f"First update time {first_update_time}")
 
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(1))", "3")
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(200))", "1")  # default
 
     second_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'")
     # Reloaded with new data
-    print("Second update time", second_update_time)
+    logging.debug(f"Second update time {second_update_time}")
     while first_update_time == second_update_time:
         second_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'")
-        print("Waiting dictionary to update for the second time")
+        logging.debug("Waiting dictionary to update for the second time")
         time.sleep(0.1)
 
     node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t2 values(200, 2, 7);"],
@@ -288,7 +288,7 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
 
     # No reload because of invalidate query
     third_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'")
-    print("Third update time", second_update_time)
+    logging.debug(f"Third update time {second_update_time}")
     counter = 0
     while third_update_time == second_update_time:
         third_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'")
@@ -317,8 +317,8 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
     assert node1.query("select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(1))") == "3\n"
 
     # Allow insert
-    node1.exec_in_container(["chmod a+rw /tmp"], privileged=True, user='root')
-    node1.exec_in_container(["chmod a+rw {}".format(sqlite_db)], privileged=True, user='root')
+    node1.exec_in_container(["chmod", "a+rw", "/tmp"], privileged=True, user='root')
+    node1.exec_in_container(["chmod", "a+rw", sqlite_db], privileged=True, user='root')
 
     node1.query("insert into table function odbc('DSN={};ReadOnly=0', '', 't3') values (200, 2, 7)".format(
         node1.odbc_drivers["SQLite3"]["DSN"]))
@@ -415,8 +415,7 @@ def test_bridge_dies_with_parent(started_cluster):
     if bridge_pid:
         out = node1.exec_in_container(["gdb", "-p", str(bridge_pid), "--ex", "thread apply all bt", "--ex", "q"],
                                       privileged=True, user='root')
-        print("Bridge is running, gdb output:")
-        print(out)
+        logging.debug(f"Bridge is running, gdb output:\n{out}")
 
     assert clickhouse_pid is None
     assert bridge_pid is None
@@ -484,7 +483,7 @@ def test_odbc_postgres_conversions(started_cluster):
 
     expected = node1.query("SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow'), toDecimal32(1.1, 1)")
     result = node1.query("SELECT * FROM test_types")
-    print(result)
+    logging.debug(result)
     cursor.execute("DROP TABLE IF EXISTS clickhouse.test_types")
     assert(result == expected)
 
@@ -557,7 +556,7 @@ def test_concurrent_queries(started_cluster):
     p = busy_pool.map_async(node_insert, range(5))
     p.wait()
     result = node1.query("SELECT count() FROM test_pg_table", user='default')
-    print(result)
+    logging.debug(result)
     assert(int(result) == 5 * 5 * 1000)
 
     def node_insert_select(_):
@@ -569,7 +568,7 @@ def test_concurrent_queries(started_cluster):
     p = busy_pool.map_async(node_insert_select, range(5))
     p.wait()
     result = node1.query("SELECT count() FROM test_pg_table", user='default')
-    print(result)
+    logging.debug(result)
     assert(int(result) == 5 * 5 * 1000  * 2)
 
     node1.query('DROP TABLE test_pg_table;')
