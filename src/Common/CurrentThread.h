@@ -87,7 +87,7 @@ public:
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope
     {
-        explicit QueryScope(ContextPtr query_context);
+        explicit QueryScope(ContextMutablePtr query_context);
         ~QueryScope();
 
         void logPeakMemoryUsage();

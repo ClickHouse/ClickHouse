@@ -123,7 +123,7 @@ inline bool isWhitespaceASCII(char c)
 /// Since |isWhiteSpaceASCII()| is used inside algorithms it's easier to implement another function than add extra argument.
 inline bool isWhitespaceASCIIOneLine(char c)
 {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v';
+    return c == ' ' || c == '\t' || c == '\f' || c == '\v';
 }
 
 inline bool isControlASCII(char c)

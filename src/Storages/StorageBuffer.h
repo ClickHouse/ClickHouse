@@ -88,7 +88,7 @@ public:
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
-    void shutdown() override;
+    void flush() override;
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -179,6 +179,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         ContextPtr context_,
         size_t num_shards_,
         const Thresholds & min_thresholds_,

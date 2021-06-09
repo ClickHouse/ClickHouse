@@ -7,7 +7,7 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <ext/map.h>
 #include <ext/range.h>
@@ -33,8 +33,8 @@ class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    explicit ConcatImpl(ContextPtr context_) : context(context_) {}
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatImpl>(context); }
+    explicit ConcatImpl(ContextConstPtr context_) : context(context_) {}
+    static FunctionPtr create(ContextConstPtr context) { return std::make_shared<ConcatImpl>(context); }
 
     String getName() const override { return name; }
 
@@ -85,7 +85,7 @@ public:
     }
 
 private:
-    ContextWeakPtr context;
+    ContextWeakConstPtr context;
 
     ColumnPtr executeBinary(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
@@ -187,30 +187,30 @@ using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true
 
 
 /// Also works with arrays.
-class ConcatOverloadResolver : public IFunctionOverloadResolverImpl
+class ConcatOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionOverloadResolverImplPtr create(ContextPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
+    static FunctionOverloadResolverPtr create(ContextConstPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
 
-    explicit ConcatOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit ConcatOverloadResolver(ContextConstPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
         {
-            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayConcat", context)).buildImpl(arguments);
+            return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
         }
         else
-            return std::make_unique<DefaultFunction>(
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 FunctionConcat::create(context), ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
     }
 
-    DataTypePtr getReturnType(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(
@@ -223,7 +223,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    ContextConstPtr context;
 };
 
 }

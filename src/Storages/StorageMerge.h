@@ -71,6 +71,7 @@ protected:
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const String & comment,
         const String & source_database_,
         const Strings & source_tables_,
         ContextPtr context_);
@@ -78,6 +79,7 @@ protected:
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const String & comment,
         const String & source_database_,
         const String & source_table_regexp_,
         ContextPtr context_);
@@ -90,7 +92,7 @@ protected:
         const Block & header,
         const StorageWithLockAndName & storage_with_lock,
         Names & real_column_names,
-        ContextPtr modified_context,
+        ContextMutablePtr modified_context,
         size_t streams_num,
         bool has_table_virtual_column,
         bool concat_streams = false);

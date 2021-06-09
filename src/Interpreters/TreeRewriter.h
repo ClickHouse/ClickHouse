@@ -92,10 +92,10 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 ///  * scalar subqueries are executed replaced with constants
 ///  * unneeded columns are removed from SELECT clause
 ///  * duplicated columns are removed from ORDER BY, LIMIT BY, USING(...).
-class TreeRewriter : WithContext
+class TreeRewriter : WithConstContext
 {
 public:
-    explicit TreeRewriter(ContextPtr context_) : WithContext(context_) {}
+    explicit TreeRewriter(ContextConstPtr context_) : WithConstContext(context_) {}
 
     /// Analyze and rewrite not select query
     TreeRewriterResultPtr analyze(
@@ -103,7 +103,8 @@ public:
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage = {},
         const StorageMetadataPtr & metadata_snapshot = {},
-        bool allow_aggregations = false) const;
+        bool allow_aggregations = false,
+        bool allow_self_aliases = true) const;
 
     /// Analyze and rewrite select query
     TreeRewriterResultPtr analyzeSelect(
@@ -115,7 +116,7 @@ public:
         std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings);
+    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases);
 };
 
 }

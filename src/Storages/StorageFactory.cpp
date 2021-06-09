@@ -31,7 +31,7 @@ static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_t
 }
 
 
-ContextPtr StorageFactory::Arguments::getContext() const
+ContextMutablePtr StorageFactory::Arguments::getContext() const
 {
     auto ptr = context.lock();
     if (!ptr)
@@ -39,7 +39,7 @@ ContextPtr StorageFactory::Arguments::getContext() const
     return ptr;
 }
 
-ContextPtr StorageFactory::Arguments::getLocalContext() const
+ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 {
     auto ptr = local_context.lock();
     if (!ptr)
@@ -59,13 +59,13 @@ void StorageFactory::registerStorage(const std::string & name, CreatorFn creator
 StoragePtr StorageFactory::get(
     const ASTCreateQuery & query,
     const String & relative_data_path,
-    ContextPtr local_context,
-    ContextPtr context,
+    ContextMutablePtr local_context,
+    ContextMutablePtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     bool has_force_restore_data_flag) const
 {
-    String name;
+    String name, comment;
     ASTStorage * storage_def = query.storage;
 
     bool has_engine_args = false;
@@ -146,6 +146,9 @@ StoragePtr StorageFactory::get(
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
 
+            if (storage_def->comment)
+                comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
+
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
                 if (!feature_matcher_fn(it->second.features))
@@ -192,8 +195,7 @@ StoragePtr StorageFactory::get(
     }
 
     ASTs empty_engine_args;
-    Arguments arguments
-    {
+    Arguments arguments{
         .engine_name = name,
         .engine_args = has_engine_args ? storage_def->engine->arguments->children : empty_engine_args,
         .storage_def = storage_def,
@@ -205,8 +207,9 @@ StoragePtr StorageFactory::get(
         .columns = columns,
         .constraints = constraints,
         .attach = query.attach,
-        .has_force_restore_data_flag = has_force_restore_data_flag
-    };
+        .has_force_restore_data_flag = has_force_restore_data_flag,
+        .comment = comment};
+
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
     auto res = storages.at(name).creator_fn(arguments);

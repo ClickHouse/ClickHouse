@@ -48,7 +48,7 @@ LIMIT 10
 └────────────────┴───────┘
 ```
 
-Since using ‘xxx’ is highly unusual, this may be changed in the future. We recommend that you don’t rely on the exact format of this fragment.
+Since using ‘xxx’ is highly unusual, this may be changed in the future. We recommend that you do not rely on the exact format of this fragment.
 
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
@@ -422,7 +422,7 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8')
+SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8');
 ```
 
 Result:
@@ -436,7 +436,7 @@ Result:
 Query:
 
 ``` sql
-SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16')
+SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16');
 ```
 
 Result:
