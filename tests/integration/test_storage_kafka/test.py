@@ -1316,7 +1316,7 @@ def test_kafka_recreate_kafka_table(kafka_cluster):
     messages = []
     for i in range(120):
         messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce('recreate_kafka_table', messages)
+    kafka_produce(kafka_cluster,'recreate_kafka_table', messages)
 
     instance.wait_for_log_line('kafka.*Committed offset [0-9]+.*recreate_kafka_table', repetitions=6, look_behind_lines=100)
 
@@ -1324,7 +1324,7 @@ def test_kafka_recreate_kafka_table(kafka_cluster):
         DROP TABLE test.kafka;
     ''')
 
-    kafka_produce('recreate_kafka_table', messages)
+    kafka_produce(kafka_cluster,'recreate_kafka_table', messages)
 
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
