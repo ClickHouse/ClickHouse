@@ -2,6 +2,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/UserDefinedDataType.h>
+#include <DataTypes/Serializations/SerializationUserDefinedType.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/ASTCreateDataTypeQuery.h>
 #include <Parsers/IAST.h>
@@ -30,6 +31,21 @@ String UserDefinedDataType::getTypeName() const
     return type_name;
 }
 
+FunctionOverloadResolverPtr UserDefinedDataType::getInputFunction() const
+{
+    return input_function;
+}
+
+FunctionOverloadResolverPtr UserDefinedDataType::getOutputFunction() const
+{
+    return output_function;
+}
+
+ContextPtr UserDefinedDataType::getContext() const
+{
+    return context;
+}
+
 void UserDefinedDataType::setNested(const DataTypePtr & nested_)
 {
     nested = nested_;
@@ -43,6 +59,21 @@ void UserDefinedDataType::setNestedAST(const ASTPtr & nested_ast_)
 void UserDefinedDataType::setTypeName(const String & type_name_)
 {
     type_name = type_name_;
+}
+
+void UserDefinedDataType::setInputFunction(const FunctionOverloadResolverPtr & function)
+{
+    input_function = function;
+}
+
+void UserDefinedDataType::setOutputFunction(const FunctionOverloadResolverPtr & function)
+{
+    output_function = function;
+}
+
+void UserDefinedDataType::setContext(const ContextPtr & context_)
+{
+    context = context_;
 }
 
 std::string UserDefinedDataType::doGetName() const
@@ -96,13 +127,14 @@ static UserDefinedDataTypePtr create()
 
 void registerUserDefinedDataType(
     DataTypeFactory & factory,
-    const ASTCreateDataTypeQuery & createDataTypeQuery)
+    const ASTCreateDataTypeQuery & createDataTypeQuery,
+    const ContextPtr & context)
 {
     if (factory.hasNameOrAlias(createDataTypeQuery.type_name))
         throw Exception("The data type '" + createDataTypeQuery.type_name + "' already exists", ErrorCodes::TYPE_ALREADY_EXISTS);
 
     factory.get(createDataTypeQuery.nested); // will throw exception if nested type was not registered
-    factory.registerUserDefinedDataType(createDataTypeQuery.type_name, create, createDataTypeQuery);
+    factory.registerUserDefinedDataType(createDataTypeQuery.type_name, create, createDataTypeQuery, context);
 }
 
 UserDefinedDataType::UserDefinedDataType()
@@ -112,7 +144,13 @@ UserDefinedDataType::UserDefinedDataType()
 
 SerializationPtr UserDefinedDataType::doGetDefaultSerialization() const
 {
-    return nested->getDefaultSerialization();
+    return std::make_shared<SerializationUserDefinedType>(
+        nested->getDefaultSerialization(),
+        nested_ast,
+        input_function,
+        output_function,
+        context
+    );
 }
 
 }

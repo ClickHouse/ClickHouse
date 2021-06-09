@@ -9,6 +9,7 @@
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Parsers/ASTDropDataTypeQuery.h>
+#include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -36,6 +37,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateDataTypeQuery.h>
+#include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/InterpreterCreateRoleQuery.h>
@@ -45,6 +47,7 @@
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterDropAccessEntityQuery.h>
 #include <Interpreters/InterpreterDropDataTypeQuery.h>
+#include <Interpreters/InterpreterDropFunctionQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -275,6 +278,14 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTDropDataTypeQuery>())
     {
         return std::make_unique<InterpreterDropDataTypeQuery>(query, context);
+    }
+    else if (query->as<ASTCreateFunctionQuery>())
+    {
+        return std::make_unique<InterpreterCreateFunctionQuery>(query, context);
+    }
+    else if (query->as<ASTDropFunctionQuery>())
+    {
+        return std::make_unique<InterpreterDropFunctionQuery>(query, context);
     }
     else
     {

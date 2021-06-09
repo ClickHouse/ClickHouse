@@ -12,7 +12,7 @@ BlockIO InterpreterCreateDataTypeQuery::execute()
 {
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & create_data_type_query = query_ptr->as<ASTCreateDataTypeQuery &>();
-    registerUserDefinedDataType(DataTypeFactory::instance(), create_data_type_query);
+    registerUserDefinedDataType(DataTypeFactory::instance(), create_data_type_query, getContext());
     if (!internal)
     {
         try

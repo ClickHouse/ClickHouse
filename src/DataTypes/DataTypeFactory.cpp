@@ -160,14 +160,18 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
 void DataTypeFactory::registerUserDefinedDataType(
     const String & name,
     UserDefinedTypeCreator creator,
-    const ASTCreateDataTypeQuery & createDataTypeQuery)
+    const ASTCreateDataTypeQuery & createDataTypeQuery,
+    const ContextPtr & context)
 {
-    registerDataType(name, [this, creator, createDataTypeQuery](const ASTPtr &)
+    registerDataType(name, [this, creator, createDataTypeQuery, context](const ASTPtr &)
     {
         auto res = creator();
         res->setNested(get(createDataTypeQuery.nested));
         res->setNestedAST(createDataTypeQuery.nested);
         res->setTypeName(createDataTypeQuery.type_name);
+        res->setInputFunction(FunctionFactory::instance().get(createDataTypeQuery.input_function, context));
+        res->setOutputFunction(FunctionFactory::instance().get(createDataTypeQuery.output_function, context));
+        res->setContext(context);
         return res;
     }, CaseSensitiveness::CaseSensitive);
     user_defined_data_types.insert(name);

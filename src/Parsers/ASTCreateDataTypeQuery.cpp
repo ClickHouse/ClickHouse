@@ -16,6 +16,11 @@ void ASTCreateDataTypeQuery::formatImpl(const IAST::FormatSettings & settings, I
     settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(type_name) << (settings.hilite ? hilite_none : "");
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
     nested->formatImpl(settings, state, frame);
+    settings.ostr << "(" << (settings.hilite ? hilite_keyword : "") << " INPUT  " << (settings.hilite ? hilite_none : "") << " = ";
+    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(input_function) << (settings.hilite ? hilite_none : "");
+    settings.ostr << "," << (settings.hilite ? hilite_keyword : "") << " OUTPUT  " << (settings.hilite ? hilite_none : "") << " = ";
+    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(output_function) << (settings.hilite ? hilite_none : "") << ")";
+
 }
 
 }

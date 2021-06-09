@@ -55,7 +55,8 @@ public:
     void registerUserDefinedDataType(
         const String & name,
         UserDefinedTypeCreator creator,
-        const ASTCreateDataTypeQuery & createDataTypeQuery);
+        const ASTCreateDataTypeQuery & createDataTypeQuery,
+        const ContextPtr & context);
 
     void unregisterUserDefinedDataType(const String & name);
 
@@ -100,6 +101,6 @@ void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
-void registerUserDefinedDataType(DataTypeFactory & factory, const ASTCreateDataTypeQuery & createDataTypeQuery);
+void registerUserDefinedDataType(DataTypeFactory & factory, const ASTCreateDataTypeQuery & createDataTypeQuery, const ContextPtr & context);
 
 }

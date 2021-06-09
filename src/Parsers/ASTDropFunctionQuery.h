@@ -5,15 +5,12 @@
 namespace DB
 {
 
-class ASTCreateDataTypeQuery : public IAST
+class ASTDropFunctionQuery : public IAST
 {
 public:
-    String type_name;
-    ASTPtr nested;
-    String input_function;
-    String output_function;
+    String function_name;
 
-    String getID(char) const override { return "CreateDataTypeQuery"; }
+    String getID(char) const override { return "DropFunctionQuery"; }
 
     ASTPtr clone() const override;
 

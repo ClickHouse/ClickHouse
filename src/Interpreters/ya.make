@@ -72,6 +72,7 @@ SRCS(
     InterpreterAlterQuery.cpp
     InterpreterCheckQuery.cpp
     InterpreterCreateDataTypeQuery.cpp
+    InterpreterCreateFunctionQuery.cpp
     InterpreterCreateQuery.cpp
     InterpreterCreateQuotaQuery.cpp
     InterpreterCreateRoleQuery.cpp
@@ -81,6 +82,7 @@ SRCS(
     InterpreterDescribeQuery.cpp
     InterpreterDropAccessEntityQuery.cpp
     InterpreterDropDataTypeQuery.cpp
+    InterpreterDropFunctionQuery.cpp
     InterpreterDropQuery.cpp
     InterpreterExistsQuery.cpp
     InterpreterExplainQuery.cpp
@@ -155,6 +157,7 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
+    UserDefinedObjectsOnDisk.cpp
     WindowDescription.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp

@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefinedFunction.h>
 
 #include <Interpreters/Context.h>
 
@@ -15,10 +16,14 @@
 namespace DB
 {
 
+class UserDefinedFunction;
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
+    extern const int FUNCTION_ALREADY_EXISTS;
+    extern const int CANNOT_DROP_SYSTEM_FUNCTION;
 }
 
 const String & getFunctionCanonicalNameIfAny(const String & name)
@@ -130,6 +135,43 @@ FunctionFactory & FunctionFactory::instance()
 {
     static FunctionFactory ret;
     return ret;
+}
+
+void FunctionFactory::registerUserDefinedFunction(const ASTCreateFunctionQuery & create_function_query)
+{
+    if (hasNameOrAlias(create_function_query.function_name))
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function {} already exists", create_function_query.function_name);
+
+    registerFunction(create_function_query.function_name, [create_function_query](ContextPtr context)
+    {
+        auto function = UserDefinedFunction::create(context);
+        function->setName(create_function_query.function_name);
+        function->setFunctionCore(create_function_query.function_core);
+
+        FunctionOverloadResolverPtr res = std::make_unique<FunctionToOverloadResolverAdaptor>(function);
+        return res;
+    }, CaseSensitiveness::CaseSensitive);
+    user_defined_functions.insert(create_function_query.function_name);
+}
+
+void FunctionFactory::unregisterUserDefinedFunction(const String & name)
+{
+    if (functions.contains(name))
+    {
+        if (user_defined_functions.contains(name))
+        {
+            functions.erase(name);
+            user_defined_functions.erase(name);
+            return;
+        } else
+            throw Exception("System functions cannot be dropped", ErrorCodes::CANNOT_DROP_SYSTEM_FUNCTION);
+    }
+
+    auto hints = this->getHints(name);
+    if (!hints.empty())
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}. Maybe you meant: {}", name, toString(hints));
+    else
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}", name);
 }
 
 }
