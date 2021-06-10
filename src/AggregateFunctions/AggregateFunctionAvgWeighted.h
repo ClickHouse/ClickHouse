@@ -80,7 +80,7 @@ public:
         auto * weight_cast_to_denominator = nativeCast(b, arguments_types[1], argument_values[1], numerator_type);
 
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
-        auto * denominator_value_updated = numerator_type->isIntegerTy() ? b.CreateAdd(denominator_value, weight_cast_to_denominator) : b.CreateFAdd(denominator_value, weight_cast_to_denominator);
+        auto * denominator_value_updated = denominator_type->isIntegerTy() ? b.CreateAdd(denominator_value, weight_cast_to_denominator) : b.CreateFAdd(denominator_value, weight_cast_to_denominator);
 
         b.CreateStore(denominator_value_updated, denominator_ptr);
     }

@@ -699,11 +699,8 @@ void NO_INLINE Aggregator::handleAggregationJITV2(
                 emplace_result.setMapped(nullptr);
 
                 aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-
                 create_aggregate_states_function(aggregate_data);
-
                 createAggregateStates(compiled_functions->functions_count, aggregate_data);
-
                 emplace_result.setMapped(aggregate_data);
             }
             else
@@ -968,39 +965,6 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
 bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys)
 {
-    // std::cerr << "Aggregator::executeOnBlock" << std::endl;
-    // std::cerr << "Columns " << columns.size() << std::endl;
-
-    // for (const auto & column : columns)
-    // {
-    //     if (column)
-    //         std::cerr << column->dumpStructure() << "\n";
-    // }
-
-    // std::cerr << "Num rows " << num_rows << std::endl;
-    // std::cerr << "Key columns before " << key_columns.size() << std::endl;
-    // for (const auto & column : key_columns)
-    // {
-    //     if (column)
-    //         std::cerr << column->dumpStructure() << "\n";
-    // }
-
-    // std::cerr << "Aggregate columns before " << aggregate_columns.size() << std::endl;
-    // for (size_t i = 0; i < aggregate_columns.size(); ++i)
-    // {
-    //     const auto & aggregate_function_columns = aggregate_columns[i];
-
-    //     for (const auto & aggregate_function_column : aggregate_function_columns)
-    //     {
-    //         if (aggregate_function_column)
-    //         {
-    //             std::cerr << "Aggregate function column " << static_cast<const void *>(aggregate_function_column) << std::endl;
-    //             std::cerr << aggregate_function_column->dumpStructure() << "\n";
-    //         }
-    //     }
-    // }
-    // std::cerr << "No more keys " << no_more_keys << std::endl;
-
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
@@ -1045,28 +1009,6 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         createAggregateStates(place);
         result.without_key = place;
     }
-
-    // std::cerr << "Key columns after " << key_columns.size() << std::endl;
-    // for (const auto & column : key_columns)
-    // {
-    //     if (column)
-    //         std::cerr << column->dumpStructure() << "\n";
-    // }
-
-    // std::cerr << "Aggregate columns after " << aggregate_columns.size() << std::endl;
-    // for (size_t i = 0; i < aggregate_columns.size(); ++i)
-    // {
-    //     const auto & aggregate_function_columns = aggregate_columns[i];
-
-    //     for (const auto & aggregate_function_column : aggregate_function_columns)
-    //     {
-    //         if (aggregate_function_column)
-    //         {
-    //             std::cerr << "Aggregate function column " << static_cast<const void *>(aggregate_function_column) << std::endl;
-    //             std::cerr << aggregate_function_column->dumpStructure() << "\n";
-    //         }
-    //     }
-    // }
 
     /// We select one of the aggregation methods and call it.
 
@@ -1461,14 +1403,13 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 #if USE_EMBEDDED_COMPILER
     if (compiled_functions)
     {
-        std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[data.size()]);
-        size_t place_index = 0;
+        PaddedPODArray<AggregateDataPtr> places;
+        places.reserve(data.size());
 
         data.forEachValue([&](const auto & key, auto & mapped)
         {
             method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
-            places[place_index] = mapped;
-            ++place_index;
+            places.emplace_back(mapped);
 
             /// Mark the cell as destroyed so it will not be destroyed in destructor.
             mapped = nullptr;
@@ -1488,12 +1429,12 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             for (size_t i = 0; i < compiled_functions->functions_count; ++i)
             {
                 auto & final_aggregate_column = final_aggregate_columns[i];
-                final_aggregate_column = final_aggregate_column->cloneResized(data.size());
+                final_aggregate_column = final_aggregate_column->cloneResized(places.size());
                 columns_data.emplace_back(getColumnData(final_aggregate_column.get()));
             }
 
             auto insert_aggregate_states_function = compiled_functions->insert_aggregates_into_columns_function;
-            insert_aggregate_states_function(data.size(), columns_data.data(), places.get());
+            insert_aggregate_states_function(places.size(), columns_data.data(), places.data());
 
             aggregate_functions_destroy_index = compiled_functions->functions_count;
 
@@ -1512,7 +1453,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
                 bool is_state = aggregate_functions[destroy_index]->isState();
                 bool destroy_place_after_insert = !is_state;
 
-                aggregate_functions[destroy_index]->insertResultIntoAndDestroyBatch(data.size(), places.get(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+                aggregate_functions[destroy_index]->insertResultIntoAndDestroyBatch(places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
             }
         }
         catch (...)
@@ -1523,7 +1464,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         for (; aggregate_functions_destroy_index < params.aggregates_size; ++aggregate_functions_destroy_index)
         {
             size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
-            aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(data.size(), places.get(), offset);
+            aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(places.size(), places.data(), offset);
         }
 
         if (exception)
