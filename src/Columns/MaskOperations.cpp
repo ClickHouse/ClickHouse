@@ -30,7 +30,9 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
 
-            data[index] = data[from];
+            /// Copy only if it makes sense.
+            if (index != from)
+                data[index] = data[from];
             --from;
         }
         else
@@ -70,35 +72,6 @@ INSTANTIATE(char *)
 INSTANTIATE(UUID)
 
 #undef INSTANTIATE
-
-void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<UInt8> & mask, bool inverted)
-{
-    if (mask.size() < offsets.size())
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
-
-    int index = mask.size() - 1;
-    int from = offsets.size() - 1;
-    offsets.resize(mask.size());
-    UInt64 prev_offset = offsets[from];
-    while (index >= 0)
-    {
-        if (mask[index] ^ inverted)
-        {
-            if (from < 0)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
-
-            offsets[index] = offsets[from];
-            --from;
-            prev_offset = offsets[from];
-        }
-        else
-            offsets[index] = prev_offset;
-        --index;
-    }
-
-    if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
-}
 
 MaskInfo getMaskFromColumn(
     const ColumnPtr & column,
