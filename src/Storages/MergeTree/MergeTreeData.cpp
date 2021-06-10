@@ -123,7 +123,6 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
-    extern const int INVALID_PARTITION_ID;
 }
 
 
@@ -905,7 +904,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     std::mutex mutex;
 
-    DataPartsVector broken_parts_to_remove;
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
 
@@ -928,7 +926,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
             auto part = createPart(part_name, part_info, single_disk_volume, part_name);
             bool broken = false;
-            bool invalid_partition_id = false;
 
             String part_path = fs::path(relative_data_path) / part_name;
             String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
@@ -953,9 +950,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 if (isNotEnoughMemoryErrorCode(e.code()))
                     throw;
 
-                if (e.code() == ErrorCodes::INVALID_PARTITION_ID)
-                    invalid_partition_id = true;
-
                 broken = true;
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
@@ -968,62 +962,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             /// Ignore and possibly delete broken parts that can appear as a result of hard server restart.
             if (broken)
             {
-                if (invalid_partition_id)
-                {
-                    /// Special case when calculated partition id differs from partition ID in part name.
-                    /// It may be because we did not notice change in function used in partition key, or the way how we calculate hash.
-                    /// Just detach part in this case.
-                    LOG_ERROR(log, "Detaching broken part {}{} because it has invalid partition id. If it happened after update, it is likely because of backward incompability. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
-                    std::lock_guard loading_lock(mutex);
-                    broken_parts_to_detach.push_back(part);
-                    ++suspicious_broken_parts;
-                }
-                else if (part->info.level == 0)
-                {
-                    /// It is impossible to restore level 0 parts.
-                    LOG_ERROR(log, "Considering to remove broken part {}{} because it's impossible to repair.", getFullPathOnDisk(part_disk_ptr), part_name);
-                    std::lock_guard loading_lock(mutex);
-                    broken_parts_to_remove.push_back(part);
-                }
-                else
-                {
-                    /// Count the number of parts covered by the broken part. If it is at least two, assume that
-                    /// the broken part was created as a result of merging them and we won't lose data if we
-                    /// delete it.
-                    size_t contained_parts = 0;
-
-                    LOG_ERROR(log, "Part {}{} is broken. Looking for parts to replace it.", getFullPathOnDisk(part_disk_ptr), part_name);
-
-                    for (const auto & [contained_name, contained_disk_ptr] : part_names_with_disks)
-                    {
-                        if (contained_name == part_name)
-                            continue;
-
-                        MergeTreePartInfo contained_part_info;
-                        if (!MergeTreePartInfo::tryParsePartName(contained_name, &contained_part_info, format_version))
-                            continue;
-
-                        if (part->info.contains(contained_part_info))
-                        {
-                            LOG_ERROR(log, "Found part {}{}", getFullPathOnDisk(contained_disk_ptr), contained_name);
-                            ++contained_parts;
-                        }
-                    }
-
-                    if (contained_parts >= 2)
-                    {
-                        LOG_ERROR(log, "Considering to remove broken part {}{} because it covers at least 2 other parts", getFullPathOnDisk(part_disk_ptr), part_name);
-                        std::lock_guard loading_lock(mutex);
-                        broken_parts_to_remove.push_back(part);
-                    }
-                    else
-                    {
-                        LOG_ERROR(log, "Detaching broken part {}{} because it covers less than 2 parts. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
-                        std::lock_guard loading_lock(mutex);
-                        broken_parts_to_detach.push_back(part);
-                        ++suspicious_broken_parts;
-                    }
-                }
+                /// Special case when calculated partition id differs from partition ID in part name.
+                /// It may be because we did not notice change in function used in partition key, or the way how we calculate hash.
+                /// Just detach part in this case.
+                LOG_ERROR(log, "Detaching broken part {}{}. If it happened after update, it is likely because of backward incompability. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
+                std::lock_guard loading_lock(mutex);
+                broken_parts_to_detach.push_back(part);
+                ++suspicious_broken_parts;
 
                 return;
             }
@@ -1070,10 +1015,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
             ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
-    for (auto & part : broken_parts_to_remove)
-        part->remove();
     for (auto & part : broken_parts_to_detach)
-        part->renameToDetached("");
+        part->renameToDetached("broken_on_start");
 
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
