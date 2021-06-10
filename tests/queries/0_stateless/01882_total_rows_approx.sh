@@ -51,3 +51,5 @@ check_background_query &
 $CLICKHOUSE_CLIENT -q "select *, sleepEachRow(1) from data_01882" --max_threads=1 --format Null --query_id="$QUERY_ID" --max_block_size=1
 
 wait
+
+$CLICKHOUSE_CLIENT -q "drop table data_01882"
