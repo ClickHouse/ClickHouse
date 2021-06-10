@@ -123,6 +123,7 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int INVALID_PARTITION_ID;
 }
 
 
@@ -927,6 +928,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
             auto part = createPart(part_name, part_info, single_disk_volume, part_name);
             bool broken = false;
+            bool invalid_partition_id = false;
 
             String part_path = fs::path(relative_data_path) / part_name;
             String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
@@ -951,6 +953,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 if (isNotEnoughMemoryErrorCode(e.code()))
                     throw;
 
+                if (e.code() == ErrorCodes::INVALID_PARTITION_ID)
+                    invalid_partition_id = true;
+
                 broken = true;
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
@@ -963,7 +968,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             /// Ignore and possibly delete broken parts that can appear as a result of hard server restart.
             if (broken)
             {
-                if (part->info.level == 0)
+                if (invalid_partition_id)
+                {
+                    /// Special case when calculated partition id differs from partition ID in part name.
+                    /// It may be because we did not notice change in function used in partition key, or the way how we calculate hash.
+                    /// Just detach part in this case.
+                    LOG_ERROR(log, "Detaching broken part {}{} because it has invalid partition id. If it happened after update, it is likely because of backward incompability. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
+                    std::lock_guard loading_lock(mutex);
+                    broken_parts_to_detach.push_back(part);
+                    ++suspicious_broken_parts;
+                }
+                else if (part->info.level == 0)
                 {
                     /// It is impossible to restore level 0 parts.
                     LOG_ERROR(log, "Considering to remove broken part {}{} because it's impossible to repair.", getFullPathOnDisk(part_disk_ptr), part_name);
