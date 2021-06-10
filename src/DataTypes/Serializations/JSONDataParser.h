@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ReadHelpers.h>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -88,7 +89,11 @@ private:
         else if (element.isArray())
         {
             auto array = element.getArray();
-            std::unordered_map<String, Array> arrays_by_path;
+
+            using PathToArray = HashMap<StringRef, Array, StringRefHash>;
+            PathToArray arrays_by_path;
+            Arena strings_pool;
+
             size_t current_size = 0;
 
             for (auto it = array.begin(); it != array.end(); ++it)
@@ -96,27 +101,32 @@ private:
                 ParseResult element_result;
                 traverse(*it, "", element_result);
 
-                NameSet inserted_paths;
-                const auto & [paths, values] = element_result;
+                auto && [paths, values] = element_result;
                 for (size_t i = 0; i < paths.size(); ++i)
                 {
-                    inserted_paths.insert(paths[i]);
+                    const auto & path = paths[i];
 
-                    auto & path_array = arrays_by_path[paths[i]];
-                    assert(path_array.size() == 0 || path_array.size() == current_size);
-
-                    if (path_array.size() == 0)
+                    if (auto found = arrays_by_path.find(path))
                     {
-                        path_array.reserve(paths.size());
-                        path_array.resize(current_size);
+                        auto & path_array = found->getMapped();
+                        assert(path_array.size() == current_size);
+                        path_array.push_back(std::move(values[i]));
                     }
+                    else
+                    {
+                        StringRef ref{strings_pool.insert(path.data(), path.size()), path.size()};
+                        auto & path_array = arrays_by_path[ref];
 
-                    path_array.push_back(values[i]);
+                        path_array.reserve(array.size());
+                        path_array.resize(current_size);
+                        path_array.push_back(std::move(values[i]));
+                    }
                 }
 
                 for (auto & [path, path_array] : arrays_by_path)
                 {
-                    if (!inserted_paths.count(path))
+                    assert(path_array.size() == current_size || path_array.size() == current_size + 1);
+                    if (path_array.size() == current_size)
                         path_array.push_back(Field());
                 }
 
@@ -133,10 +143,10 @@ private:
                 result.paths.reserve(result.paths.size() + arrays_by_path.size());
                 result.values.reserve(result.paths.size() + arrays_by_path.size());
 
-                for (const auto & [path, path_array] : arrays_by_path)
+                for (auto && [path, path_array] : arrays_by_path)
                 {
-                    result.paths.push_back(getNextPath(current_path, path));
-                    result.values.push_back(path_array);
+                    result.paths.push_back(getNextPath(current_path, static_cast<std::string_view>(path)));
+                    result.values.push_back(std::move(path_array));
                 }
             }
         }

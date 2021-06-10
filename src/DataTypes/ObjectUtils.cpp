@@ -43,17 +43,23 @@ size_t getNumberOfDimensions(const IColumn & column)
     return 0;
 }
 
-DataTypePtr getBaseTypeOfArray(DataTypePtr type)
+DataTypePtr getBaseTypeOfArray(const DataTypePtr & type)
 {
-    while (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
-        type = type_array->getNestedType();
-    return type;
+    const DataTypeArray * last_array = nullptr;
+    const IDataType * current_type = type.get();
+    while (const auto * type_array = typeid_cast<const DataTypeArray *>(current_type))
+    {
+        current_type = type_array->getNestedType().get();
+        last_array = type_array;
+    }
+
+    return last_array ? last_array->getNestedType() : type;
 }
 
 DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension)
 {
     for (size_t i = 0; i < dimension; ++i)
-        type = std::make_shared<DataTypeArray>(type);
+        type = std::make_shared<DataTypeArray>(std::move(type));
     return type;
 }
 
