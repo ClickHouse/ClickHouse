@@ -204,7 +204,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 #else
         (void)dict_struct;
         (void)config;
-        (void)root_config_prefix;
+        (void)config_prefix;
         (void)sample_block;
         (void)context;
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
