@@ -31,10 +31,11 @@ namespace
             ColumnString::Offsets & offsets_to = res->getOffsets();
             offsets_to.resize(input_rows_count);
 
+            auto serializer = arguments[0].type->getDefaultSerialization();
             WriteBufferFromVector<ColumnString::Chars> json(data_to);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                arguments[0].type->getDefaultSerialization()->serializeTextJSON(*arguments[0].column, i, json, FormatSettings());
+                serializer->serializeTextJSON(*arguments[0].column, i, json, FormatSettings());
                 writeChar(0, json);
                 offsets_to[i] = json.count();
             }
