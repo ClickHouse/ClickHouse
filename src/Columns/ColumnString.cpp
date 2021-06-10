@@ -183,10 +183,12 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
 
-            int len = offsets_data[from] - offsets_data[from - 1];
-            /// Copy only if it makes sense.
+            size_t len = offsets_data[from] - offsets_data[from - 1];
+
+            /// Copy only if it makes sense. It's important to copy backward, because
+            /// ranges can overlap, but destination is always is more to the right then source
             if (last_offset - len != offsets_data[from - 1])
-                memcpy(&chars_data[last_offset - len], &chars_data[offsets_data[from - 1]], len);
+                std::copy_backward(&chars_data[offsets_data[from - 1]], &chars_data[offsets_data[from]], &chars_data[last_offset]);
             last_offset -= len;
             --from;
         }
