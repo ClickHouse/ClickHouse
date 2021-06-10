@@ -247,7 +247,7 @@ class ClickHouseCluster:
 
         self.with_minio = False
         self.minio_dir = os.path.join(self.instances_dir, "minio")
-        self.minio_certs_dir = None # source for certificates 
+        self.minio_certs_dir = None # source for certificates
         self.minio_host = "minio1"
         self.minio_ip = None
         self.minio_bucket = "root"
@@ -327,7 +327,7 @@ class ClickHouseCluster:
         # available when with_mysql_client == True
         self.mysql_client_host = "mysql_client"
         self.mysql_client_container = None
- 
+
         # available when with_mysql == True
         self.mysql_host = "mysql57"
         self.mysql_port = 3306
@@ -524,7 +524,7 @@ class ClickHouseCluster:
 
         return self.base_mysql8_cmd
 
-    def setup_mysql_cluster_cmd(self, instance, env_variables, docker_compose_yml_dir):      
+    def setup_mysql_cluster_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mysql_cluster = True
         env_variables['MYSQL_CLUSTER_PORT'] = str(self.mysql_port)
         env_variables['MYSQL_CLUSTER_ROOT_HOST'] = '%'
@@ -548,7 +548,7 @@ class ClickHouseCluster:
                                       '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
         return self.base_postgres_cmd
 
-    def setup_postgres_cluster_cmd(self, instance, env_variables, docker_compose_yml_dir):      
+    def setup_postgres_cluster_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_postgres_cluster = True
         env_variables['POSTGRES_PORT'] = str(self.postgres_port)
         env_variables['POSTGRES2_DIR'] = self.postgres2_logs_dir
@@ -644,7 +644,7 @@ class ClickHouseCluster:
         return self.base_mongo_cmd
 
     def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_minio = True        
+        self.with_minio = True
         cert_d = p.join(self.minio_dir, "certs")
         env_variables['MINIO_CERTS_DIR'] = cert_d
         env_variables['MINIO_PORT'] = str(self.minio_port)
@@ -665,7 +665,7 @@ class ClickHouseCluster:
 
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None, with_zookeeper=False, with_zookeeper_secure=False,
-                     with_mysql_client=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False, 
+                     with_mysql_client=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False,
                      with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False, with_kerberized_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
@@ -821,7 +821,7 @@ class ClickHouseCluster:
             if self.minio_certs_dir is None:
                 self.minio_certs_dir = minio_certs_dir
             else:
-                raise Exception("Overwriting minio certs dir") 
+                raise Exception("Overwriting minio certs dir")
 
         if with_cassandra and not self.with_cassandra:
             cmds.append(self.setup_cassandra_cmd(instance, env_variables, docker_compose_yml_dir))
@@ -889,7 +889,10 @@ class ClickHouseCluster:
     def exec_in_container(self, container_id, cmd, detach=False, nothrow=False, use_cli=True, **kwargs):
         if use_cli:
             logging.debug(f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}")
-            result = subprocess_check_call(["docker", "exec", container_id] + cmd, detach=detach, nothrow=nothrow)
+            exec_cmd = ["docker", "exec"]
+            if 'user' in kwargs:
+                exec_cmd += ['-u', kwargs['user']]
+            result = subprocess_check_call(exec_cmd + [container_id] + cmd, detach=detach, nothrow=nothrow)
             return result
         else:
             exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
@@ -1107,7 +1110,7 @@ class ClickHouseCluster:
                               proxy_port=self.hdfs_kerberized_name_port,
                               data_port=self.hdfs_kerberized_data_port,
                               hdfs_ip=hdfs_ip,
-                              kdc_ip=kdc_ip)                         
+                              kdc_ip=kdc_ip)
         else:
             logging.debug("Create HDFSApi host={}".format("localhost"))
             hdfs_api = HDFSApi(user="root", host="localhost", data_port=self.hdfs_data_port, proxy_port=self.hdfs_name_port)
@@ -1209,7 +1212,7 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Schema Registry to start")
 
-        
+
     def wait_cassandra_to_start(self, timeout=180):
         self.cassandra_ip = self.get_instance_ip(self.cassandra_host)
         cass_client = cassandra.cluster.Cluster([self.cassandra_ip], port=self.cassandra_port, load_balancing_policy=RoundRobinPolicy())
@@ -1284,7 +1287,7 @@ class ClickHouseCluster:
 
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
-                
+
                 if self.use_keeper: # TODO: remove hardcoded paths from here
                     for i in range(1,4):
                         shutil.copy(os.path.join(HELPERS_DIR, f'keeper_config{i}.xml'), os.path.join(self.keeper_instance_dir_prefix + f"{i}", "config" ))
@@ -2131,7 +2134,7 @@ class ClickHouseInstance:
             depends_on.append("postgres2")
             depends_on.append("postgres3")
             depends_on.append("postgres4")
-            
+
         if self.with_kafka:
             depends_on.append("kafka1")
             depends_on.append("schema-registry")
