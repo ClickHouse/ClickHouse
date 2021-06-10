@@ -15,10 +15,6 @@ namespace DB
 template <typename T>
 void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted);
 
-/// Expand offsets by mask. Used in expand() method in ColumnArray and ColumnString to expand their offsets.
-/// In places where mask[i] = 0 we insert empty array/string.
-void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<UInt8> & mask, bool inverted);
-
 struct MaskInfo
 {
     bool has_once = false;
