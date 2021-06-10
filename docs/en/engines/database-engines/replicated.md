@@ -12,7 +12,8 @@ One Clickhouse server can have multiple replicated databases running and updatin
 **Engine Parameters**
 
 -   `zoo_path` — ZooKeeper path. The same ZooKeeper path corresponds to the same database.
--   `replica_name` — Replica name. Replica names must be different for all replicas of the same database.
+-   `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
+-   `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
 
 Using this engine, creation of Replicated tables requires no ZooKeeper path and replica name parameters. Table's replica name is the same as database replica name. Table's ZooKeeper path is a concatenation of database's ZooKeeper path, `/tables/`, and `UUID` of the table.
 
