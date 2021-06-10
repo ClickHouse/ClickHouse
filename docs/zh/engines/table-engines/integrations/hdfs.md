@@ -8,7 +8,7 @@ toc_title: HDFS
 # HDFS {#table_engines-hdfs}
 
 这个引擎提供了与 [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) 生态系统的集成，允许通过 ClickHouse 管理 [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) 上的数据。这个引擎类似于
-(.../.../engines/table-engines/special/file.md#table_engines-file) 和 [URL](.../.../engines/table-engines/special/url.md#table_engines-url) 引擎，但提供了 Hadoop 的特定功能。
+(../../engines/table-engines/special/file.md#table_engines-file) 和 [URL](../../engines/table-engines/special/url.md#table_engines-url) 引擎，但提供了 Hadoop 的特定功能。
 
 ## 用法 {#usage}
 
