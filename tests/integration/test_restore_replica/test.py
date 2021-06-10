@@ -113,6 +113,9 @@ def test_restore_replica_parallel(start_cluster):
 
     print("Restoring replicas in parallel")
 
+    node_2.query("SYSTEM RESTART REPLICA test")
+    node_3.query("SYSTEM RESTART REPLICA test")
+
     node_1.query("SYSTEM RESTORE REPLICA test ON CLUSTER test_cluster")
 
     assert zk.exists("/clickhouse/tables/test")
