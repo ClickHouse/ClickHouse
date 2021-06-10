@@ -217,7 +217,7 @@ void MergeTask::prepare()
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    compression_codec = data.getCompressionCodecForPart((*merge_entry)->total_size_bytes_compressed, new_data_part->ttl_infos, time_of_merge);
+    compression_codec = data.getCompressionCodecForPart(merge_entry->total_size_bytes_compressed, new_data_part->ttl_infos, time_of_merge);
 
     tmp_disk = context->getTemporaryVolume()->getDisk();
 
@@ -261,8 +261,8 @@ bool MergeTask::executeHorizontalForBlock()
 
         const_cast<MergedBlockOutputStream &>(*to).write(block);
 
-        (*merge_entry)->rows_written = merged_stream->getProfileInfo().rows;
-        (*merge_entry)->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
+        merge_entry->rows_written = merged_stream->getProfileInfo().rows;
+        merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
 
         /// Reservation updates is not performed yet, during the merge it may lead to higher free space requirements
         if (space_reservation && sum_input_rows_upper_bound)
@@ -271,7 +271,7 @@ bool MergeTask::executeHorizontalForBlock()
             /// But now we are using inaccurate row-based estimation in Horizontal case for backward compatibility
             Float64 progress = (chosen_merge_algorithm == MergeAlgorithm::Horizontal)
                 ? std::min(1., 1. * rows_written / sum_input_rows_upper_bound)
-                : std::min(1., (*merge_entry)->progress.load(std::memory_order_relaxed));
+                : std::min(1., merge_entry->progress.load(std::memory_order_relaxed));
 
             space_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
         }
@@ -286,6 +286,7 @@ bool MergeTask::executeHorizontalForBlock()
 
 void MergeTask::finalizeHorizontalPartOfTheMerge()
 {
+    std::cout << "merged_stream " << &merged_stream << std::endl;
     merged_stream->readSuffix();
     merged_stream.reset();
 
@@ -296,7 +297,7 @@ void MergeTask::finalizeHorizontalPartOfTheMerge()
         throw Exception("Cancelled merging parts with expired TTL", ErrorCodes::ABORTED);
 
     const auto data_settings = data.getSettings();
-    const size_t sum_compressed_bytes_upper_bound = (*merge_entry)->total_size_bytes_compressed;
+    const size_t sum_compressed_bytes_upper_bound = merge_entry->total_size_bytes_compressed;
     need_sync = needSyncPart(sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
 }
 
@@ -309,9 +310,9 @@ void MergeTask::prepareVertical()
     if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return;
 
-    size_t sum_input_rows_exact = (*merge_entry)->rows_read;
-    (*merge_entry)->columns_written = merging_column_names.size();
-    (*merge_entry)->progress.store(column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
+    size_t sum_input_rows_exact = merge_entry->rows_read;
+    merge_entry->columns_written = merging_column_names.size();
+    merge_entry->progress.store(column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
 
     column_part_streams = BlockInputStreams(future_part->parts.size());
 
@@ -343,7 +344,7 @@ void MergeTask::prepareVerticalMergeForOneColumn()
     const String & column_name = it_name_and_type->name;
     Names column_names{column_name};
 
-    progress_before = (*merge_entry)->progress.load(std::memory_order_relaxed);
+    progress_before = merge_entry->progress.load(std::memory_order_relaxed);
 
     MergeStageProgress column_progress(progress_before, column_sizes->columnWeight(column_name));
     for (size_t part_num = 0; part_num < future_part->parts.size(); ++part_num)
@@ -352,7 +353,7 @@ void MergeTask::prepareVerticalMergeForOneColumn()
             data, metadata_snapshot, future_part->parts[part_num], column_names, read_with_direct_io, true);
 
         column_part_source->setProgressCallback(
-            MergeProgressCallback(*merge_entry, watch_prev_elapsed, column_progress));
+            MergeProgressCallback(merge_entry, watch_prev_elapsed, column_progress));
 
         QueryPipeline column_part_pipeline;
         column_part_pipeline.init(Pipe(std::move(column_part_source)));
@@ -416,9 +417,9 @@ void MergeTask::finalizeVerticalMergeForOneColumn()
 
     /// NOTE: 'progress' is modified by single thread, but it may be concurrently read from MergeListElement::getInfo() (StorageSystemMerges).
 
-    (*merge_entry)->columns_written += 1;
-    (*merge_entry)->bytes_written_uncompressed += column_gathered_stream->getProfileInfo().bytes;
-    (*merge_entry)->progress.store(progress_before + column_sizes->columnWeight(column_name), std::memory_order_relaxed);
+    merge_entry->columns_written += 1;
+    merge_entry->bytes_written_uncompressed += column_gathered_stream->getProfileInfo().bytes;
+    merge_entry->progress.store(progress_before + column_sizes->columnWeight(column_name), std::memory_order_relaxed);
 
     /// This is the external cycle increment.
     ++column_num_for_vertical_merge;
@@ -444,16 +445,16 @@ void MergeTask::mergeMinMaxIndex()
 
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
-        double elapsed_seconds = (*merge_entry)->watch.elapsedSeconds();
+        double elapsed_seconds = merge_entry->watch.elapsedSeconds();
         LOG_DEBUG(log,
             "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
-            (*merge_entry)->rows_read,
+            merge_entry->rows_read,
             all_column_names.size(),
             merging_column_names.size(),
             gathering_column_names.size(),
             elapsed_seconds,
-            (*merge_entry)->rows_read / elapsed_seconds,
-            ReadableSize((*merge_entry)->bytes_read_uncompressed / elapsed_seconds));
+            merge_entry->rows_read / elapsed_seconds,
+            ReadableSize(merge_entry->bytes_read_uncompressed / elapsed_seconds));
     }
 }
 
@@ -522,14 +523,12 @@ void MergeTask::prepareProjections()
 
 bool MergeTask::executeProjections()
 {
-    if ((*projections_iterator)->execute())
-        return true;
+    if (projections_iterator == tasks_for_projections.end())
+        return false;
 
+    (*projections_iterator)->execute();
     ++projections_iterator;
-    if (projections_iterator != tasks_for_projections.end())
-        return true;
-
-    return false;
+    return true;
 }
 
 
@@ -605,6 +604,8 @@ bool MergeTask::execute()
         {
             prepare();
             state = MergeTaskState::NEED_EXECUTE_HORIZONTAL;
+
+            std::cerr << "NEED_PREPARE" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_EXECUTE_HORIZONTAL:
@@ -613,16 +614,23 @@ bool MergeTask::execute()
                 return true;
 
             state = MergeTaskState::NEED_FINALIZE_HORIZONTAL;
+            std::cerr << "NEED_EXECUTE_HORIZONTAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINALIZE_HORIZONTAL:
         {
             finalizeHorizontalPartOfTheMerge();
+
+            state = MergeTaskState::NEED_PREPARE_VERTICAL;
+            std::cerr << "NEED_FINALIZE_HORIZONTAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_PREPARE_VERTICAL:
         {
             prepareVertical();
+
+            state = MergeTaskState::NEED_EXECUTE_VERTICAL;
+            std::cerr << "NEED_PREPARE_VERTICAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_EXECUTE_VERTICAL:
@@ -631,24 +639,31 @@ bool MergeTask::execute()
                 return true;
 
             state = MergeTaskState::NEED_FINISH_VERTICAL;
+            std::cerr << "NEED_EXECUTE_VERTICAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINISH_VERTICAL:
         {
             finalizeVerticalMergeForAllColumns();
+
             state = MergeTaskState::NEED_MERGE_MIN_MAX_INDEX;
+            std::cerr << "NEED_FINISH_VERTICAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_MERGE_MIN_MAX_INDEX:
         {
             mergeMinMaxIndex();
+
             state = MergeTaskState::NEED_PREPARE_PROJECTIONS;
+            std::cerr << "NEED_MERGE_MIN_MAX_INDEX" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_PREPARE_PROJECTIONS:
         {
             prepareProjections();
+
             state = MergeTaskState::NEED_EXECUTE_PROJECTIONS;
+            std::cerr << "NEED_PREPARE_PROJECTIONS" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_EXECUTE_PROJECTIONS:
@@ -657,6 +672,7 @@ bool MergeTask::execute()
                 return true;
 
             state = MergeTaskState::NEED_FINISH_PROJECTIONS;
+            std::cerr << "NEED_EXECUTE_PROJECTIONS" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINISH_PROJECTIONS:
@@ -664,13 +680,18 @@ bool MergeTask::execute()
             finalizeProjections();
 
             state = MergeTaskState::NEED_FINISH;
+            std::cerr << "NEED_FINISH_PROJECTIONS" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINISH:
         {
-            return true;
+            finalize();
+
+            std::cerr << "NEED_FINISH" << std::endl;
+            return false;
         }
     }
+    return false;
 }
 
 
@@ -711,7 +732,7 @@ void MergeTask::createMergedStream()
             data, metadata_snapshot, part, merging_column_names, read_with_direct_io, true);
 
         input->setProgressCallback(
-            MergeProgressCallback(*merge_entry, watch_prev_elapsed, horizontal_stage_progress));
+            MergeProgressCallback(merge_entry, watch_prev_elapsed, horizontal_stage_progress));
 
         Pipe pipe(std::move(input));
 
@@ -815,7 +836,7 @@ void MergeTask::createMergedStream()
 std::unique_ptr<MergeTask::MergeImpl> MergeTask::createMergeAlgorithmImplementation()
 {
     chosen_merge_algorithm = chooseMergeAlgorithm();
-    (*merge_entry)->merge_algorithm.store(chosen_merge_algorithm, std::memory_order_relaxed);
+    merge_entry->merge_algorithm.store(chosen_merge_algorithm, std::memory_order_relaxed);
 
     LOG_DEBUG(log, "Selected MergeAlgorithm: {}", toString(chosen_merge_algorithm));
 
@@ -833,7 +854,7 @@ std::unique_ptr<MergeTask::MergeImpl> MergeTask::createMergeAlgorithmImplementat
 
 MergeAlgorithm MergeTask::chooseMergeAlgorithm() const
 {
-    const size_t sum_rows_upper_bound = (*merge_entry)->total_rows_count;
+    const size_t sum_rows_upper_bound = merge_entry->total_rows_count;
     const auto data_settings = data.getSettings();
 
     if (deduplicate)

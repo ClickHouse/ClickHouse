@@ -436,14 +436,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const IMergeTreeDataPart * /*parent_part*/,
     const String & /*prefix*/)
 {
-    auto merge_entry_ptr = std::make_shared<MergeList::Entry>(std::move(merge_entry));
     auto deduplicate_by_columns_ptr = std::make_shared<Names>(deduplicate_by_columns);
 
 
     auto task = std::make_shared<MergeTask>(
         future_part,
         const_cast<StorageMetadataPtr &>(metadata_snapshot),
-        merge_entry_ptr,
+        merge_entry,
         holder,
         time_of_merge,
         context,
@@ -458,7 +457,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     while (task->execute()) {}
 
-    return task->getFuture().get();
+    std::cout << "EXECUTED THE WHOLE TASK" << std::endl;
+
+    auto result = task->getFuture().get();
+
+    std::cout << "CALCULATED RESULT" << std::endl;
+
+    return result;
 }
 
 

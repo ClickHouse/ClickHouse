@@ -63,7 +63,7 @@ public:
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,
-        MergeList::EntryPtr merge_entry_,
+        MergeList::Entry & merge_entry_,
         TableLockHolder & holder_,
         time_t time_of_merge_,
         ContextPtr context_,
@@ -76,7 +76,7 @@ public:
         MergeTreeData & data_)
         : future_part(future_part_)
         , metadata_snapshot(metadata_snapshot_)
-        , merge_entry(std::move(merge_entry_))
+        , merge_entry(merge_entry_)
         , holder(holder_)
         , time_of_merge(time_of_merge_)
         , context(context_)
@@ -133,14 +133,15 @@ private:
 
     std::promise<MergeTreeData::MutableDataPartPtr> promise;
 
-    MergeTaskState state;
+    MergeTaskState state{MergeTaskState::NEED_PREPARE};
     VecticalMergeOneColumnState vertical_merge_one_column_state;
 
     std::unique_ptr<MergeImpl> implementation;
 
     FutureMergedMutatedPartPtr future_part;
     StorageMetadataPtr metadata_snapshot;
-    MergeList::EntryPtr merge_entry;
+    /// MergeEntry lives in a list in global context, so it is safe to save only reference to it.
+    MergeList::Entry & merge_entry;
     TableLockHolder & holder;
     time_t time_of_merge;
     ContextPtr context;
@@ -154,7 +155,7 @@ private:
     /// From MergeTreeDataMergerMutator
 
     MergeTreeData & data;
-    Poco::Logger * log;
+    Poco::Logger * log{&Poco::Logger::get("MergeTask")};
 
 
     /// Previously stack located variables
