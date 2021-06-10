@@ -990,7 +990,7 @@ Default value: 1024.
 
 Limits the maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
 
-If the value is exceeded, the server throws an exeption.
+If the value is exceeded, the server throws an exception.
 
 Possible values:
 
