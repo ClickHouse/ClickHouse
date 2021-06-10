@@ -206,7 +206,7 @@ int checkShirtCircuitArguments(const ColumnsWithTypeAndName & arguments)
     int last_short_circuit_argument_index = -1;
     for (size_t i = 0; i != arguments.size(); ++i)
     {
-        if (const auto * column_function = checkAndGetShortCircuitArgument(arguments[i].column))
+        if (checkAndGetShortCircuitArgument(arguments[i].column))
             last_short_circuit_argument_index = i;
     }
 
