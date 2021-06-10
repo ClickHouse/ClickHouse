@@ -74,25 +74,28 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
-It is possible to use `size0` subcolumns that can be read without reading the whole column:
+## Array Size {#array-size}
+
+It is possible to find the size of an array by using the `size0` subcolumn without reading the whole column. For multi-dimensional arrays you can use size`n-1`, where `n` is the wanted dimension.
+
+Query:
 
 ```sql
-CREATE TABLE t_arr (a Array(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE t_arr (a Array(UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO t_arr VALUES ([1]) ([]) ([1, 2, 3]) ([1, 2]);
+CREATE TABLE t_arr (`arr` Array(Array(Array(UInt32)))) ENGINE = MergeTree ORDER BY tuple();
 
-SELECT a.size0 FROM t_arr;
+insert into t_arr values ([[[12, 13, 0, 1],[12]]]);
+
+SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
 ```
 
 Result:
 
 ``` text
-┌─a.size0─┐
-│       1 │
-│       0 │
-│       3 │
-│       2 │
-└─────────┘
+┌─arr.size0─┬─arr.size1─┬─arr.size2─┐
+│         1 │ [2]       │ [[4,1]]   │
+└───────────┴───────────┴───────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/data_types/array/) <!--hide-->

@@ -47,6 +47,8 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └──────────┴─────────────────────────────────┘
 ```
 
+## Addressing Tuple Element {#addressing-tuple-element}
+
 It is possible to read elements of named tuples using indexes and names:
 
 ``` sql
