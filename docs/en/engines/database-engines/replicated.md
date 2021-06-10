@@ -6,7 +6,7 @@ One Clickhouse server can have multiple replicated databases running and updatin
 
 ## Creating a Database {#creating-a-database}
 ``` sql
-    CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'replica_name')
+    CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
 ```
 
 **Engine Parameters**
