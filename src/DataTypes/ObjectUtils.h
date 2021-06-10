@@ -9,7 +9,7 @@ namespace DB
 
 size_t getNumberOfDimensions(const IDataType & type);
 size_t getNumberOfDimensions(const IColumn & column);
-DataTypePtr getBaseTypeOfArray(DataTypePtr type);
+DataTypePtr getBaseTypeOfArray(const DataTypePtr & type);
 DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension);
 
 DataTypePtr getDataTypeByColumn(const IColumn & column);

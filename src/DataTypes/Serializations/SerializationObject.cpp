@@ -8,6 +8,7 @@
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/FieldVisitors.h>
+#include <Common/HashTable/HashSet.h>
 #include <Columns/ColumnObject.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -73,10 +74,12 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     if (!result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse object");
 
-    const auto & [paths, values] = *result;
+    auto && [paths, values] = *result;
     assert(paths.size() == values.size());
 
-    NameSet paths_set(paths.begin(), paths.end());
+    HashSet<StringRef, StringRefHash> paths_set;
+    for (const auto & path : paths)
+        paths_set.insert(path);
 
     if (paths.size() != paths_set.size())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Object has ambiguous paths");
@@ -120,7 +123,7 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
 
     for (auto & [key, subcolumn] : column_object.getSubcolumns())
     {
-        if (!paths_set.count(key))
+        if (!paths_set.has(key))
             subcolumn.insertDefault();
     }
 }
