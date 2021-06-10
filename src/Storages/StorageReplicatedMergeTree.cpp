@@ -2785,6 +2785,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             log_entry.type = LogEntry::GET_PART;
         else
         {
+            LOG_DEBUG(log, "Obtaining checksum for path {}", name);
+
             // The part we want to fetch is probably present in detached/ folder.
             // However, we need to get part's checksum to check if it's not corrupt.
             log_entry.type = LogEntry::ATTACH_PART;
@@ -2792,6 +2794,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             MinimalisticDataPartChecksums desired_checksums;
 
             const String replica = findReplicaHavingPart(name, true);
+
+            LOG_DEBUG(log, "Selected active replica {}", replica);
 
             // Won't be empty as active_parts are filled from active parts set.
             assert(!replica.empty());
@@ -5076,6 +5080,8 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 
 void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
 {
+    LOG_INFO(log, "Restoring replica metadata");
+
     if (are_restoring_replica.exchange(true))
         throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Replica restoration in progress");
 
@@ -5102,12 +5108,18 @@ void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
         part->makeCloneInDetached("", metadata_snapshot);
     }
 
+    LOG_INFO(log, "Moved all parts to detached/");
+
     const bool is_first_replica = createTableIfNotExists(metadata_snapshot);
+
+    LOG_INFO(log, "Created initial ZK nodes, replica is first: {}", is_first_replica);
 
     if (!is_first_replica)
         createReplica(metadata_snapshot);
 
     createNewZooKeeperNodes();
+
+    LOG_INFO(log, "Created ZK nodes for table");
 
     is_readonly = false;
     has_metadata_in_zookeeper = true;
@@ -5115,6 +5127,8 @@ void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
     if (is_first_replica)
         for (const auto& part : parts)
             attachPartition(std::make_shared<ASTLiteral>(part->name), metadata_snapshot, true, getContext());
+
+    LOG_INFO(log, "Attached all partitions, starting table");
 
     startup();
 
