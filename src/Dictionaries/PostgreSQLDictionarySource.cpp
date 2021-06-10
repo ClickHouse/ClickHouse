@@ -27,18 +27,21 @@ static const UInt64 max_block_size = 8192;
 
 namespace
 {
-    ExternalQueryBuilder makeExternalQueryBuilder(const DictionaryStructure & dict_struct, String & schema, String & table, const String & where)
+    ExternalQueryBuilder makeExternalQueryBuilder(const DictionaryStructure & dict_struct, const String & schema, const String & table, const String & where)
     {
-        if (schema.empty())
+        auto schema_value = schema;
+        auto table_value = table;
+
+        if (schema_value.empty())
         {
-            if (auto pos = table.find('.'); pos != std::string::npos)
+            if (auto pos = table_value.find('.'); pos != std::string::npos)
             {
-                schema = table.substr(0, pos);
-                table = table.substr(pos + 1);
+                schema_value = table_value.substr(0, pos);
+                table_value = table_value.substr(pos + 1);
             }
         }
         /// Do not need db because it is already in a connection string.
-        return {dict_struct, "", schema, table, where, IdentifierQuotingStyle::DoubleQuotes};
+        return {dict_struct, "", schema_value, table_value, where, IdentifierQuotingStyle::DoubleQuotes};
     }
 }
 
@@ -53,7 +56,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     , pool(std::move(pool_))
     , sample_block(sample_block_)
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
-    , query_builder(makeExternalQueryBuilder(dict_struct, schema, table, where))
+    , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
 {
 }
@@ -66,7 +69,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
     , pool(other.pool)
     , sample_block(other.sample_block)
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
-    , query_builder(makeExternalQueryBuilder(dict_struct, schema, table, where))
+    , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
     , update_time(other.update_time)
     , invalidate_query_response(other.invalidate_query_response)
@@ -109,9 +112,9 @@ BlockInputStreamPtr PostgreSQLDictionarySource::loadBase(const String & query)
 
 bool PostgreSQLDictionarySource::isModified() const
 {
-    if (!invalidate_query.empty())
+    if (!configuration.invalidate_query.empty())
     {
-        auto response = doInvalidateQuery(invalidate_query);
+        auto response = doInvalidateQuery(configuration.invalidate_query);
         if (response == invalidate_query_response) //-V1051
             return false;
         invalidate_query_response = response;
@@ -132,7 +135,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
 
 bool PostgreSQLDictionarySource::hasUpdateField() const
 {
-    return !update_field.empty();
+    return !configuration.update_field.empty();
 }
 
 
@@ -143,7 +146,7 @@ std::string PostgreSQLDictionarySource::getUpdateFieldAndDate()
         time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - configuration.update_lag;
         std::string str_time = DateLUT::instance().timeToString(hr_time);
         update_time = std::chrono::system_clock::now();
-        return query_builder.composeUpdateQuery(update_field, str_time);
+        return query_builder.composeUpdateQuery(configuration.update_field, str_time);
     }
     else
     {
@@ -167,7 +170,8 @@ DictionarySourcePtr PostgreSQLDictionarySource::clone() const
 
 std::string PostgreSQLDictionarySource::toString() const
 {
-    return "PostgreSQL: " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
+    const auto & where = configuration.where;
+    return "PostgreSQL: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
 #endif
@@ -193,7 +197,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
         {
             .db = config.getString(fmt::format("{}.db", settings_config_prefix), ""),
             .schema = config.getString(fmt::format("{}.schema", settings_config_prefix), ""),
-            .table = config.getString(fmt::format("{}.table", settings_config_prefix)),
+            .table = config.getString(fmt::format("{}.table", settings_config_prefix), ""),
             .where = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
             .invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), ""),
             .update_field = config.getString(fmt::format("{}.update_field", settings_config_prefix), ""),
