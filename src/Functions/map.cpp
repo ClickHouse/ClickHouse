@@ -185,7 +185,7 @@ public:
         bool is_const = isColumnConst(*arguments[0].column);
         const ColumnMap * col_map = is_const ? checkAndGetColumnConstData<ColumnMap>(arguments[0].column.get()) : checkAndGetColumn<ColumnMap>(arguments[0].column.get());
         if (!col_map)
-            throw Exception{"First argument for function " + getName() + " must be a map", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception{"First argument for function " + getName() + " must be a map.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         const auto & nested_column = col_map->getNestedColumn();
         const auto & keys_data = col_map->getNestedData().getColumn(0);
