@@ -46,7 +46,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int EXPECTED_END_OF_FILE;
-    extern const int CORRUPTED_DATA;
+    extern const int INVALID_PARTITION_ID;
     extern const int NOT_FOUND_EXPECTED_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int BAD_TTL_FILE;
@@ -817,7 +817,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
         throw Exception(
             "While loading part " + getFullPath() + ": calculated partition ID: " + calculated_partition_id
             + " differs from partition ID in part name: " + info.partition_id,
-            ErrorCodes::CORRUPTED_DATA);
+            ErrorCodes::INVALID_PARTITION_ID);
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)
