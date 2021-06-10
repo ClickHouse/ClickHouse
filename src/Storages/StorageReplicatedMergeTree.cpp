@@ -2793,21 +2793,15 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
             MinimalisticDataPartChecksums desired_checksums;
 
-            const String replica = findReplicaHavingPart(name, true);
+            const fs::path part_path = fs::path(source_path) / "parts" / name;
 
-            LOG_DEBUG(log, "Selected active replica {}", replica);
-
-            // Won't be empty as active_parts are filled from active parts set.
-            assert(!replica.empty());
-
-            const String part_path = zookeeper_path + "/replicas/" + replica + "/parts/" + name;
             const String part_znode = zookeeper->get(part_path);
 
             if (!part_znode.empty())
                 desired_checksums = ReplicatedMergeTreePartHeader::fromString(part_znode).getChecksums();
             else
             {
-                String desired_checksums_str = zookeeper->get(part_path + "/checksums");
+                String desired_checksums_str = zookeeper->get(part_path / "checksums");
                 desired_checksums = MinimalisticDataPartChecksums::deserializeFrom(desired_checksums_str);
             }
 
