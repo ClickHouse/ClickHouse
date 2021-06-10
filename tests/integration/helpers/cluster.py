@@ -1852,7 +1852,7 @@ class ClickHouseInstance:
 
         wait_duration = time.time() - start_time
 
-        logging.debug('{} log line matching "{}" appeared in a {} seconds'.format(repetitions, regexp, wait_duration))
+        logging.debug('{} log line(s) matching "{}" appeared in a {:.3f} seconds'.format(repetitions, regexp, wait_duration))
         return wait_duration
 
     def file_exists(self, path):
@@ -2187,6 +2187,7 @@ class ClickHouseInstance:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
             library_bridge_volume = "- " + self.library_bridge_bin_path + ":/usr/share/clickhouse-library-bridge_fresh"
+
 
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
