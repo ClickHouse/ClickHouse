@@ -210,7 +210,7 @@ public:
         auto * denominator_dst_value = b.CreateLoad(denominator_type, denominator_dst_ptr);
         auto * denominator_src_value = b.CreateLoad(denominator_type, denominator_src_ptr);
 
-        auto * denominator_result_value = b.CreateAdd(denominator_src_value, denominator_dst_value);
+        auto * denominator_result_value = denominator_type->isIntegerTy() ? b.CreateAdd(denominator_src_value, denominator_dst_value) : b.CreateFAdd(denominator_src_value, denominator_dst_value);
         b.CreateStore(denominator_result_value, denominator_dst_ptr);
     }
 
