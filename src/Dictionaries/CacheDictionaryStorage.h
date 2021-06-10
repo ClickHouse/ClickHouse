@@ -537,11 +537,11 @@ private:
         return updated_value;
     }
 
-    template <typename ValueType>
-    static constexpr bool is_nullable_or_array_type = std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array>;
-
     template<typename ValueType>
-    using ContainerType = std::conditional_t<is_nullable_or_array_type<ValueType>, std::vector<ValueType>, PaddedPODArray<ValueType>>;
+    using ContainerType = std::conditional_t<
+        std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array>,
+        std::vector<ValueType>,
+        PaddedPODArray<ValueType>>;
 
     struct Attribute
     {
