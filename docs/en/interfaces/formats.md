@@ -1251,11 +1251,11 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `DECIMAL`                    | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                    |
 | `LIST`                       | [Array](../sql-reference/data-types/array.md)             | `LIST`                       |
 
-Elements of value `Array` type can be array or `Nullable` value.
+Arrays can be nested and can have a value of the `Nullable` type as an argument.
 
 ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query treats the Parquet `DECIMAL` type as the ClickHouse `Decimal128` type.
 
-Unsupported Parquet data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+Unsupported Parquet data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
@@ -1300,11 +1300,11 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `DATE32`                   | [Date](../sql-reference/data-types/date.md)         | `UINT16`                   |
 | `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                   |
 | `STRING`, `BINARY`         | [String](../sql-reference/data-types/string.md)     | `UTF8`                     |
-| `STRING`                   | [FixedString](../sql-reference/data-types/fixedstring.md)   | `UTF8`                        |
-| `DECIMAL`                  | [Decimal](../sql-reference/data-types/decimal.md)   | `-`                        |
+| `STRING`, `BINARY`         | [FixedString](../sql-reference/data-types/fixedstring.md)   | `UTF8`                        |
+| `DECIMAL`                  | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                  |
 | `LIST`                     | [Array](../sql-reference/data-types/array.md)       | `LIST`                     |
 
-Elements of value `Array` type can be array or value of the `Nullable` type.
+Arrays can be nested and can have a value of the `Nullable` type as an argument.
 
 ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the Arrow `DECIMAL` type as the ClickHouse `Decimal128` type.
 
@@ -1358,7 +1358,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
 | `LIST`                   | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
 
-Elements of value `Array` type can be array or value of the `Nullable` type.
+Arrays can be nested and can have a value of the `Nullable` type as an argument.
 
 ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
 
