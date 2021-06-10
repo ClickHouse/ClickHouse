@@ -535,7 +535,6 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     UInt8 null_value = Name::name == NameAnd::name ? 1 : 0;
     bool inverted = Name::name != NameAnd::name;
     UInt8 default_value_in_expanding = Name::name == NameAnd::name ? 0 : 1;
-    bool result_is_nullable = result_type->isNullable();
 
     IColumn::Filter mask;
     IColumn::Filter * mask_used_in_expanding = nullptr;
@@ -543,7 +542,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     /// If result is nullable, we need to create null bytemap of the resulting column.
     /// We will fill it while extracting mask from arguments.
     std::unique_ptr<IColumn::Filter> nulls;
-    if (result_is_nullable)
+    if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
     MaskInfo mask_info = {.has_once = true, .has_zeros = false};
@@ -565,13 +564,13 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     else if (inverted)
         inverseMask(mask);
 
-    if (result_is_nullable)
+    if (nulls)
         applyTernaryLogic<Name>(mask, *nulls);
 
     MutableColumnPtr res = ColumnUInt8::create();
     typeid_cast<ColumnUInt8 *>(res.get())->getData() = std::move(mask);
 
-    if (!result_is_nullable)
+    if (!nulls)
         return res;
 
     MutableColumnPtr bytemap = ColumnUInt8::create();

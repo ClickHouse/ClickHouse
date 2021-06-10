@@ -90,11 +90,14 @@ MaskInfo getMaskFromColumn(
         return getMaskFromColumn(col->getNestedColumnPtr(), res, inverted, mask_used_in_expanding, default_value_in_expanding, inverted_mask_used_in_expanding, null_value, &null_map, nulls);
     }
 
+    size_t size = column->size();
+
     bool is_full_column = true;
     if (mask_used_in_expanding && mask_used_in_expanding->size() != column->size())
+    {
         is_full_column = false;
-
-    size_t size = is_full_column ? column->size() : mask_used_in_expanding->size();
+        size = mask_used_in_expanding->size();
+    }
     res.resize(size);
 
     bool only_null = column->onlyNull();
