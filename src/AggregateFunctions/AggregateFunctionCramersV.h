@@ -19,6 +19,12 @@
 
 #include <type_traits>
 
+
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 namespace DB
 {
 
@@ -81,6 +87,9 @@ namespace DB
 
         Float64 get_result() const
         {
+            if (cur_size < 2){
+                throw Exception("Aggregate function cramer's v requires et least 2 values in columns", ErrorCodes::BAD_ARGUMENTS);
+            }
             Float64 phi = 0.0;
             for (const auto & cell : pairs) {
                 UInt128 hash_pair = cell.getKey();

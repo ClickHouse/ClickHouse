@@ -5,6 +5,10 @@
 #include "registerAggregateFunctions.h"
 #include <memory>
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 namespace DB
 {
@@ -16,6 +20,9 @@ struct ContingencyData : public AggregateFunctionCramersVData
 {
     Float64 get_result() const
     {
+        if (cur_size < 2){
+            throw Exception("Aggregate function contingency coefficient requires at least 2 values in columns", ErrorCodes::BAD_ARGUMENTS);
+        }
         Float64 phi = 0.0;
         for (const auto & cell : pairs) {
             UInt128 hash_pair = cell.getKey();
