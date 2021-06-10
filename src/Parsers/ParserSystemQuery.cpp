@@ -136,13 +136,25 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::RESTORE_REPLICA:
         {
+            /// Better form for user: RESTORE REPLICA table ON CLUSTER cluster
+            /// Query rewritten form + form while executing on cluster: RESTORE REPLICA ON CLUSTER cluster table
+            /// Need to support both
+            String cluster;
+            bool parsed_on_cluster = false;
+
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+                    return false;
+
+                parsed_on_cluster = true;
+            }
+
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
                 return false;
 
-            String cluster;
-
             if (ParserKeyword{"ON"}.ignore(pos, expected))
-                if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+                if (parsed_on_cluster || !ASTQueryWithOnCluster::parse(pos, cluster, expected))
                     return false;
 
             res->cluster = cluster;
