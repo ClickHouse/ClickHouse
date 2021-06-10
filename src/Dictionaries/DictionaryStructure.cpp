@@ -375,8 +375,8 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         const auto initial_type = DataTypeFactory::instance().get(type_string);
         bool is_nullable = initial_type->isNullable();
 
-        auto nested_type = removeNullable(initial_type);
-        const auto underlying_type = getAttributeUnderlyingType(nested_type);
+        auto non_nullable_type = removeNullable(initial_type);
+        const auto underlying_type = getAttributeUnderlyingType(non_nullable_type);
 
         const auto expression = config.getString(prefix + "expression", "");
         if (!expression.empty())
@@ -385,18 +385,20 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         Field null_value;
         if (allow_null_values)
         {
+            /// TODO: Fix serialization for nullable type.
             const auto null_value_string = config.getString(prefix + "null_value");
+
             try
             {
                 if (null_value_string.empty())
                 {
-                    null_value = initial_type->getDefault();
+                    null_value = non_nullable_type->getDefault();
                 }
                 else
                 {
                     ReadBufferFromString null_value_buffer{null_value_string};
-                    auto column_with_null_value = initial_type->createColumn();
-                    initial_type->getDefaultSerialization()->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
+                    auto column_with_null_value = non_nullable_type->createColumn();
+                    non_nullable_type->getDefaultSerialization()->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
                     null_value = (*column_with_null_value)[0];
                 }
             }
