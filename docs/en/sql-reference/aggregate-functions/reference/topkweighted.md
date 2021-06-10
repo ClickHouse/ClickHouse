@@ -4,7 +4,7 @@ toc_priority: 109
 
 # topKWeighted {#topkweighted}
 
-Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves). Additionally, every value is accounted `weight` times for frequency calculation.
+Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves). Additionally, the weight of the value is taken into account.
 
 **Syntax**
 
@@ -16,7 +16,7 @@ topKWeighted(N)(x, weight)
 
 -   `N` — The number of elements to return.
 -   `x` — The value.
--   `weight` — The weight. [UInt64](../../../sql-reference/data-types/int-uint.md).
+-   `weight` — The weight. Every value is accounted `weight` times for frequency calculation. [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -40,4 +40,4 @@ Result:
 
 **See Also**
 
--   [topK](topk.md#topk)
+-   [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
