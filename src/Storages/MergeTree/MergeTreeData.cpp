@@ -959,12 +959,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
-            /// Ignore and possibly delete broken parts that can appear as a result of hard server restart.
+            /// Ignore broken parts that can appear as a result of hard server restart.
             if (broken)
             {
-                /// Special case when calculated partition id differs from partition ID in part name.
-                /// It may be because we did not notice change in function used in partition key, or the way how we calculate hash.
-                /// Just detach part in this case.
                 LOG_ERROR(log, "Detaching broken part {}{}. If it happened after update, it is likely because of backward incompability. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
                 std::lock_guard loading_lock(mutex);
                 broken_parts_to_detach.push_back(part);
