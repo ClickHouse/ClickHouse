@@ -959,7 +959,7 @@ public:
     using AggregateColumns = std::vector<ColumnRawPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
     using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
-    using AggregateFunctionsPlainPtrs = std::vector<IAggregateFunction *>;
+    using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block, AggregatedDataVariants & result,
