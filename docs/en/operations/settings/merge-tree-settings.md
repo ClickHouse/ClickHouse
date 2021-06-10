@@ -143,11 +143,13 @@ Possible values:
 
 -   Any positive integer.
 
-Default value: 480.
+Default value: 480. 
+
+After merging several parts into a new part, ClickHouse marks the original parts as inactive and deletes them only after `old_parts_lifetime` seconds.
+Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is zero.
 
 `fsync` is not called for new parts, so for some time new parts exist only in the server's RAM (OS cache). If the server is rebooted spontaneously, new parts can be lost or damaged.
-To protect data parts created by merges source parts are not deleted immediately. After merging several parts into a new part, ClickHouse marks the original parts as inactive and deletes them only after `old_parts_lifetime` seconds.
-Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is zero.
+To protect data inactive parts are not deleted immediately.
 
 During startup ClickHouse checks the integrity of the parts.
 If the merged part is damaged ClickHouse returns the inactive parts to the active list, and later merges them again. Then the damaged part is renamed (the `broken_` prefix is added) and moved to the `detached` folder.
