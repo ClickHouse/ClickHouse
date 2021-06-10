@@ -382,7 +382,7 @@ void RangeHashedDictionary::createAttributeImpl<String>(Attribute & attribute, c
 }
 
 RangeHashedDictionary::Attribute
-RangeHashedDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
+RangeHashedDictionary::createAttribute(const DictionaryAttribute & attribute, const Field & null_value)
 {
     Attribute attr{attribute.underlying_type, attribute.is_nullable, {}, {}, {}};
 
@@ -435,7 +435,7 @@ void RangeHashedDictionary::getItemsImpl(
                 ++keys_found;
                 auto & value = val_it->value;
 
-                if (value)
+                if (value.has_value())
                     set_value(row, *value, false);
                 else
                     set_value(row, default_value_extractor[row], true);
