@@ -13,6 +13,7 @@
         "01193_metadata_loading",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
         "01474_executable_dictionary", /// informational stderr from sanitizer at start
         "functions_bad_arguments", /// Too long for TSan
         "01603_read_with_backoff_bug", /// Too long for TSan
@@ -28,6 +29,7 @@
         "01103_check_cpu_instructions_at_startup",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
         "01193_metadata_loading",
         "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
@@ -39,6 +41,7 @@
         "00900_orc_load",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
         "01193_metadata_loading"
     ],
     "memory-sanitizer": [
@@ -51,6 +54,7 @@
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
         "01193_metadata_loading",
         "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
@@ -397,9 +401,6 @@
         "01475_read_subcolumns_storages",
         "01674_clickhouse_client_query_param_cte",
         "01666_merge_tree_max_query_limit",
-        "01710_projections",
-        "01710_normal_projections",
-        "01710_aggregate_projections",
         "01786_explain_merge_tree",
         "01666_merge_tree_max_query_limit",
         "01802_test_postgresql_protocol_with_row_policy", /// It cannot parse DROP ROW POLICY
@@ -409,7 +410,9 @@
         "01053_ssd_dictionary",
         "01280_ssd_complex_key_dictionary",
         "01684_ssd_cache_dictionary_simple_key",
-        "01685_ssd_cache_dictionary_complex_key"
+        "01685_ssd_cache_dictionary_complex_key",
+        "01889_postgresql_protocol_null_fields",
+        "01889_check_row_policy_defined_using_user_function"
     ],
     "parallel":
     [
@@ -720,6 +723,7 @@
         "01684_ssd_cache_dictionary_simple_key",
         "01685_ssd_cache_dictionary_complex_key",
         "01737_clickhouse_server_wait_server_pool_long", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
+        "01594_too_low_memory_limits", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
         "01760_system_dictionaries",
         "01760_polygon_dictionaries",
         "01778_hierarchical_dictionaries",
@@ -731,6 +735,8 @@
         "01821_table_comment",
         "01710_projection_fetch",
         "01870_modulo_partition_key",
-        "01870_buffer_flush" // creates database
+        "01870_buffer_flush", // creates database
+        "01889_postgresql_protocol_null_fields",
+        "01889_check_row_policy_defined_using_user_function"
     ]
 }
