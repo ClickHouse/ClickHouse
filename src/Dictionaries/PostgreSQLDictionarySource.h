@@ -22,11 +22,21 @@ namespace DB
 class PostgreSQLDictionarySource final : public IDictionarySource
 {
 public:
+    struct Configuration
+    {
+        const String db;
+        const String schema;
+        const String table;
+        const String where;
+        const String invalidate_query;
+        const String update_field;
+        const UInt64 update_lag;
+    };
+
     PostgreSQLDictionarySource(
         const DictionaryStructure & dict_struct_,
+        const Configuration & configuration_,
         postgres::PoolWithFailoverPtr pool_,
-        const Poco::Util::AbstractConfiguration & config_,
-        const std::string & config_prefix,
         const Block & sample_block_);
 
     /// copy-constructor is provided in order to support cloneability
@@ -51,8 +61,9 @@ private:
     BlockInputStreamPtr loadBase(const String & query);
 
     const DictionaryStructure dict_struct;
-    Block sample_block;
+    const Configuration configuration;
     postgres::PoolWithFailoverPtr pool;
+    Block sample_block;
     Poco::Logger * log;
 
     const String db;
