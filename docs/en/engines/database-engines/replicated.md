@@ -1,5 +1,5 @@
 
-# Replicated {#replicated}
+# [experimental] Replicated {#replicated}
 
 Supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 One Clickhouse server can have multiple replicated databases running and updating at the same time.
