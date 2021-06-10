@@ -26,6 +26,8 @@ public:
     BackgroundProcessListEntry(const BackgroundProcessListEntry &) = delete;
     BackgroundProcessListEntry & operator=(const BackgroundProcessListEntry &) = delete;
 
+    BackgroundProcessListEntry(BackgroundProcessListEntry &&) = default;
+
     BackgroundProcessListEntry(BackgroundProcessList<ListElement, Info> & list_, const typename container_t::iterator it_, const CurrentMetrics::Metric & metric)
         : list(list_), it{it_}, metric_increment{metric}
     {

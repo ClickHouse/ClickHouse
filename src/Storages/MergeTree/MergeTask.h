@@ -64,7 +64,7 @@ public:
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,
         MergeList::EntryPtr merge_entry_,
-        TableLockHolderPtr holder_,
+        TableLockHolder & holder_,
         time_t time_of_merge_,
         ContextPtr context_,
         ReservationPtr space_reservation_,
@@ -141,7 +141,7 @@ private:
     FutureMergedMutatedPartPtr future_part;
     StorageMetadataPtr metadata_snapshot;
     MergeList::EntryPtr merge_entry;
-    TableLockHolderPtr holder;
+    TableLockHolder & holder;
     time_t time_of_merge;
     ContextPtr context;
     ReservationPtr space_reservation;

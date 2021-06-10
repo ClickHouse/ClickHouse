@@ -305,6 +305,10 @@ void MergeTask::finalizeHorizontalPartOfTheMerge()
 
 void MergeTask::prepareVertical()
 {
+     /// No need to execute this part if it is horizontal merge.
+    if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
+        return;
+
     size_t sum_input_rows_exact = (*merge_entry)->rows_read;
     (*merge_entry)->columns_written = merging_column_names.size();
     (*merge_entry)->progress.store(column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
@@ -425,6 +429,10 @@ void MergeTask::finalizeVerticalMergeForOneColumn()
 
 void MergeTask::finalizeVerticalMergeForAllColumns()
 {
+    /// No need to execute this part if it is horizontal merge.
+    if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
+        return;
+
     tmp_disk->removeFile(rows_sources_file_path);
 }
 

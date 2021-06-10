@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeProgress.h>
+#include <Storages/MergeTree/MergeTask.h>
 
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
@@ -413,107 +414,6 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 }
 
 
-/// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-static void extractMergingAndGatheringColumns(
-    const NamesAndTypesList & storage_columns,
-    const ExpressionActionsPtr & sorting_key_expr,
-    const IndicesDescription & indexes,
-    const ProjectionsDescription & projections,
-    const MergeTreeData::MergingParams & merging_params,
-    NamesAndTypesList & gathering_columns, Names & gathering_column_names,
-    NamesAndTypesList & merging_columns, Names & merging_column_names)
-{
-    Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
-    std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
-    for (const auto & index : indexes)
-    {
-        Names index_columns_vec = index.expression->getRequiredColumns();
-        std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
-                  std::inserter(key_columns, key_columns.end()));
-    }
-
-    for (const auto & projection : projections)
-    {
-        Names projection_columns_vec = projection.required_columns;
-        std::copy(projection_columns_vec.cbegin(), projection_columns_vec.cend(),
-                  std::inserter(key_columns, key_columns.end()));
-    }
-
-    /// Force sign column for Collapsing mode
-    if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-        key_columns.emplace(merging_params.sign_column);
-
-    /// Force version column for Replacing mode
-    if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
-        key_columns.emplace(merging_params.version_column);
-
-    /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
-    if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-        key_columns.emplace(merging_params.sign_column);
-
-    /// Force to merge at least one column in case of empty key
-    if (key_columns.empty())
-        key_columns.emplace(storage_columns.front().name);
-
-    /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
-
-    for (const auto & column : storage_columns)
-    {
-        if (key_columns.count(column.name))
-        {
-            merging_columns.emplace_back(column);
-            merging_column_names.emplace_back(column.name);
-        }
-        else
-        {
-            gathering_columns.emplace_back(column);
-            gathering_column_names.emplace_back(column.name);
-        }
-    }
-}
-
-/* Allow to compute more accurate progress statistics */
-class ColumnSizeEstimator
-{
-    ColumnToSize map;
-public:
-
-    /// Stores approximate size of columns in bytes
-    /// Exact values are not required since it used for relative values estimation (progress).
-    size_t sum_total = 0;
-    size_t sum_index_columns = 0;
-    size_t sum_ordinary_columns = 0;
-
-    ColumnSizeEstimator(const ColumnToSize & map_, const Names & key_columns, const Names & ordinary_columns)
-        : map(map_)
-    {
-        for (const auto & name : key_columns)
-            if (!map.count(name)) map[name] = 0;
-        for (const auto & name : ordinary_columns)
-            if (!map.count(name)) map[name] = 0;
-
-        for (const auto & name : key_columns)
-            sum_index_columns += map.at(name);
-
-        for (const auto & name : ordinary_columns)
-            sum_ordinary_columns += map.at(name);
-
-        sum_total = std::max(static_cast<decltype(sum_index_columns)>(1), sum_index_columns + sum_ordinary_columns);
-    }
-
-    Float64 columnWeight(const String & column) const
-    {
-        return static_cast<Float64>(map.at(column)) / sum_total;
-    }
-
-    Float64 keyColumnsWeight() const
-    {
-        return static_cast<Float64>(sum_index_columns) / sum_total;
-    }
-};
-
-
-
 static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
 {
     return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
@@ -533,16 +433,32 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     bool deduplicate,
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
-    const IMergeTreeDataPart * parent_part,
-    const String & prefix)
+    const IMergeTreeDataPart * /*parent_part*/,
+    const String & /*prefix*/)
 {
-    auto merge_entry_ptr = std::make_shared<MergeEntry>(merge_entry);
+    auto merge_entry_ptr = std::make_shared<MergeList::Entry>(std::move(merge_entry));
+    auto deduplicate_by_columns_ptr = std::make_shared<Names>(deduplicate_by_columns);
+
+
     auto task = std::make_shared<MergeTask>(
         future_part,
         const_cast<StorageMetadataPtr &>(metadata_snapshot),
         merge_entry_ptr,
-
+        holder,
+        time_of_merge,
+        context,
+        const_cast<ReservationPtr &>(space_reservation),
+        deduplicate,
+        deduplicate_by_columns_ptr,
+        merging_params,
+        nullptr,
+        "",
+        data
         );
+
+    while (task->execute()) {}
+
+    return task->getFuture().get();
 }
 
 
