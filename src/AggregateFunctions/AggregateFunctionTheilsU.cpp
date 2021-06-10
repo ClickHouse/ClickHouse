@@ -5,6 +5,10 @@
 #include "registerAggregateFunctions.h"
 #include <memory>
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 namespace DB
 {
@@ -16,6 +20,9 @@ namespace
 {
     Float64 get_result() const
     {
+        if (cur_size < 2){
+            throw Exception("Aggregate function theil's u requires at least 2 values in columns", ErrorCodes::BAD_ARGUMENTS);
+        }
         Float64 h_x = 0.0;
         for (const auto & cell : n_i) {
             UInt64 count_x_tmp = cell.getMapped();
