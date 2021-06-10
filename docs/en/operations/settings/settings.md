@@ -3087,26 +3087,29 @@ Possible values:
 
 Default value: `300`.
 
-## database_replicated_ddl_output {#database_replicated_ddl_output}
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
 
-Returns table with query execution status as a result of DDL query.
-
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: `1`.
-
-## background_replicated_schedule_pool_size {#background_replicated_schedule_pool_size}
-
-Number of threads performing background tasks in replicated databases. One task corresponds to one replicated database replica. Only has meaning at server startup.
+Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite. 
 
 Possible values:
 
--   Any positive integer.
--   0 — Unlimited.
+-   Positive integer.
+-   0 — Async mode.
+-   Negative integer — infinite timeout.
 
-Default value: `4`.
+Default value: `180`.
+
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
+
+Sets format of distributed DDL query result.
+
+Possible values:
+
+-   `throw` — Returns result set with query execution status for all hosts where query is finished. If query has failed on some hosts, then it will rethrow the first exception. If query is not finished yet on some hosts and [distributed_ddl_task_timeout](#distributed_ddl_task_timeout) exceeded, then it throws `TIMEOUT_EXCEEDED` exception.
+-   `none` — Is similar to throw, but distributed DDL query returns no result set.
+-   `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
+-   `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
+
+Default value: `throw`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
