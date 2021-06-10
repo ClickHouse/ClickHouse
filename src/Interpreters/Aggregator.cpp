@@ -856,9 +856,9 @@ void NO_INLINE Aggregator::executeImplBatch(
 #if USE_EMBEDDED_COMPILER
     if (compiled_functions)
     {
-        if (params.aggregation_method == 0)
-            handleAggregationJIT<no_more_keys>(method, state, aggregates_pool, rows, aggregate_instructions);
-        else
+        // if (params.aggregation_method == 0)
+        //     handleAggregationJIT<no_more_keys>(method, state, aggregates_pool, rows, aggregate_instructions);
+        // else
             handleAggregationJITV2<no_more_keys>(method, state, aggregates_pool, rows, aggregate_instructions);
     }
     else
