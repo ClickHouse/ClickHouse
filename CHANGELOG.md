@@ -2,7 +2,7 @@
 
 #### Upgrade Notes
 
-* One bug has been found after release: #25187.
+* One bug has been found after release: [#25187](https://github.com/ClickHouse/ClickHouse/issues/25187).
 * Do not upgrade if you have partition key with `UUID`.
 * `zstd` compression library is updated to v1.5.0. You may get messages about "checksum does not match" in replication. These messages are expected due to update of compression algorithm and you can ignore them. These messages are informational and do not indicate any kinds of undesired behaviour.
 * The setting `compile_expressions` is enabled by default. Although it has been heavily tested on variety of scenarios, if you find some undesired behaviour on your servers, you can try turning this setting off.
