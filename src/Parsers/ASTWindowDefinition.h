@@ -16,8 +16,14 @@ struct ASTWindowDefinition : public IAST
 
     ASTPtr order_by;
 
-    WindowFrame frame;
-
+    bool frame_is_default = true;
+    WindowFrame::FrameType frame_type = WindowFrame::FrameType::Range;
+    WindowFrame::BoundaryType frame_begin_type = WindowFrame::BoundaryType::Unbounded;
+    ASTPtr frame_begin_offset;
+    bool frame_begin_preceding = true;
+    WindowFrame::BoundaryType frame_end_type = WindowFrame::BoundaryType::Current;
+    ASTPtr frame_end_offset;
+    bool frame_end_preceding = false;
 
     ASTPtr clone() const override;
 
