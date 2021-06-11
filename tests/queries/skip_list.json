@@ -504,7 +504,8 @@
         "01883_subcolumns_distributed",
         "01889_postgresql_protocol_null_fields",
         "01889_check_row_policy_defined_using_user_function",
-        "01892_setting_limit_offset_distributed"
+        "01892_setting_limit_offset_distributed",
+        "01903_ssd_cache_dictionary_array_type"
     ],
     "parallel":
     [
