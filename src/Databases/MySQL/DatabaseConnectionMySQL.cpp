@@ -20,14 +20,13 @@
 #    include <Parsers/parseQuery.h>
 #    include <Parsers/queryToString.h>
 #    include <Storages/StorageMySQL.h>
-#    include <Storages/MySQL/MySQLSettings.h>
 #    include <Common/escapeForFileName.h>
 #    include <Common/parseAddress.h>
 #    include <Common/setThreadName.h>
-#    include <filesystem>
-#    include <Common/filesystemHelpers.h>
 
-namespace fs = std::filesystem;
+#    include <Poco/DirectoryIterator.h>
+#    include <Poco/File.h>
+
 
 namespace DB
 {
@@ -199,7 +198,7 @@ ASTPtr DatabaseConnectionMySQL::getCreateDatabaseQuery() const
 
 void DatabaseConnectionMySQL::fetchTablesIntoLocalCache(ContextPtr local_context) const
 {
-    const auto & tables_with_modification_time = fetchTablesWithModificationTime(local_context);
+    const auto & tables_with_modification_time = fetchTablesWithModificationTime();
 
     destroyLocalCacheExtraTables(tables_with_modification_time);
     fetchLatestTablesStructureIntoCache(tables_with_modification_time, local_context);
@@ -247,24 +246,13 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
             local_tables_cache.erase(iterator);
         }
 
-        local_tables_cache[table_name] = std::make_pair(
-            table_modification_time,
-            StorageMySQL::create(
-                StorageID(database_name, table_name),
-                std::move(mysql_pool),
-                database_name_in_mysql,
-                table_name,
-                /* replace_query_ */ false,
-                /* on_duplicate_clause = */ "",
-                ColumnsDescription{columns_name_and_type},
-                ConstraintsDescription{},
-                String{},
-                getContext(),
-                MySQLSettings{}));
+        local_tables_cache[table_name] = std::make_pair(table_modification_time, StorageMySQL::create(
+            StorageID(database_name, table_name), std::move(mysql_pool), database_name_in_mysql, table_name,
+            false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, getContext()));
     }
 }
 
-std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTime(ContextPtr local_context) const
+std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTime() const
 {
     Block tables_status_sample_block
     {
@@ -280,8 +268,7 @@ std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTim
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
-    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
+    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
 
     while (Block block = result.read())
     {
@@ -305,7 +292,7 @@ DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tabl
             mysql_pool,
             database_name_in_mysql,
             tables_name,
-            settings,
+            settings.external_table_functions_use_nulls,
             database_settings->mysql_datatypes_support_level);
 }
 
@@ -318,7 +305,7 @@ void DatabaseConnectionMySQL::shutdown()
     }
 
     for (const auto & [table_name, modify_time_and_storage] : tables_snapshot)
-        modify_time_and_storage.second->flushAndShutdown();
+        modify_time_and_storage.second->shutdown();
 
     std::lock_guard lock(mutex);
     local_tables_cache.clear();
@@ -326,7 +313,7 @@ void DatabaseConnectionMySQL::shutdown()
 
 void DatabaseConnectionMySQL::drop(ContextPtr /*context*/)
 {
-    fs::remove_all(getMetadataPath());
+    Poco::File(getMetadataPath()).remove(true);
 }
 
 void DatabaseConnectionMySQL::cleanOutdatedTables()
@@ -345,7 +332,7 @@ void DatabaseConnectionMySQL::cleanOutdatedTables()
             {
                 const auto table_lock = (*iterator)->lockExclusively(RWLockImpl::NO_QUERY, lock_acquire_timeout);
 
-                (*iterator)->flushAndShutdown();
+                (*iterator)->shutdown();
                 (*iterator)->is_dropped = true;
                 iterator = outdated_tables.erase(iterator);
             }
@@ -372,10 +359,10 @@ void DatabaseConnectionMySQL::attachTable(const String & table_name, const Stora
     local_tables_cache[table_name].second = storage;
 
     remove_or_detach_tables.erase(table_name);
-    fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+    Poco::File remove_flag(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
 
-    if (fs::exists(remove_flag))
-        fs::remove(remove_flag);
+    if (remove_flag.exists())
+        remove_flag.remove();
 }
 
 StoragePtr DatabaseConnectionMySQL::detachTable(const String & table_name)
@@ -399,17 +386,17 @@ String DatabaseConnectionMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseConnectionMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/)
+void DatabaseConnectionMySQL::loadStoredObjects(ContextPtr, bool, bool /*force_attach*/)
 {
 
     std::lock_guard<std::mutex> lock{mutex};
-    fs::directory_iterator iter(getMetadataPath());
+    Poco::DirectoryIterator iterator(getMetadataPath());
 
-    for (fs::directory_iterator end; iter != end; ++iter)
+    for (Poco::DirectoryIterator end; iterator != end; ++iterator)
     {
-        if (fs::is_regular_file(iter->path()) && endsWith(iter->path().filename(), suffix))
+        if (iterator->isFile() && endsWith(iterator.name(), suffix))
         {
-            const auto & filename = iter->path().filename().string();
+            const auto & filename = iterator.name();
             const auto & table_name = unescapeForFileName(filename.substr(0, filename.size() - strlen(suffix)));
             remove_or_detach_tables.emplace(table_name);
         }
@@ -420,25 +407,27 @@ void DatabaseConnectionMySQL::detachTablePermanently(ContextPtr, const String & 
 {
     std::lock_guard<std::mutex> lock{mutex};
 
-    fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+    Poco::File remove_flag(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
 
     if (remove_or_detach_tables.count(table_name))
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
+        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " is dropped",
+            ErrorCodes::TABLE_IS_DROPPED);
 
-    if (fs::exists(remove_flag))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exists remove tables, it is bug.",
-                        backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
+    if (remove_flag.exists())
+        throw Exception("The remove flag file already exists but the " + backQuoteIfNeed(database_name) +
+            "." + backQuoteIfNeed(table_name) + " does not exists remove tables, it is bug.", ErrorCodes::LOGICAL_ERROR);
 
     auto table_iter = local_tables_cache.find(table_name);
     if (table_iter == local_tables_cache.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
+        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
+            ErrorCodes::UNKNOWN_TABLE);
 
     remove_or_detach_tables.emplace(table_name);
 
     try
     {
         table_iter->second.second->drop();
-        FS::createFile(remove_flag);
+        remove_flag.createFile();
     }
     catch (...)
     {

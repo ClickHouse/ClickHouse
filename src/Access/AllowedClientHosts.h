@@ -7,9 +7,7 @@
 #include <boost/range/algorithm/find.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/predicate.hpp>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -200,9 +198,9 @@ inline String AllowedClientHosts::IPSubnet::toString() const
     if (isMaskAllBitsOne())
         return prefix.toString();
     else if (IPAddress{prefix_length, mask.family()} == mask)
-        return fs::path(prefix.toString()) / std::to_string(prefix_length);
+        return prefix.toString() + "/" + std::to_string(prefix_length);
     else
-        return fs::path(prefix.toString()) / mask.toString();
+        return prefix.toString() + "/" + mask.toString();
 }
 
 inline bool AllowedClientHosts::IPSubnet::isMaskAllBitsOne() const

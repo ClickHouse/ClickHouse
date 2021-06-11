@@ -6,6 +6,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Common/typeid_cast.h>
+#include <Poco/File.h>
 
 
 namespace DB

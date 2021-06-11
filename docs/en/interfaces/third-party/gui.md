@@ -169,20 +169,21 @@ Features:
 
 ### SeekTable {#seektable}
 
-[SeekTable](https://www.seektable.com) is a self-service BI tool for data exploration and operational reporting. It is available both as a cloud service and a self-hosted version. Reports from SeekTable may be embedded into any web-app.
+[SeekTable](https://www.seektable.com) is a self-service BI tool for data exploration and operational reporting. SeekTable is available both as a cloud service and a self-hosted version. SeekTable reports may be embedded into any web-app.
 
 Features:
 
 -   Business users-friendly reports builder.
 -   Powerful report parameters for SQL filtering and report-specific query customizations.
 -   Can connect to ClickHouse both with a native TCP/IP endpoint and a HTTP(S) interface (2 different drivers).
--   It is possible to use all power of ClickHouse SQL dialect in dimensions/measures definitions.
+-   It is possible to use all power of CH SQL dialect in dimensions/measures definitions
 -   [Web API](https://www.seektable.com/help/web-api-integration) for automated reports generation.
--   Supports reports development flow with account data [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore); data models (cubes) / reports configuration is a human-readable XML and can be stored under version control system.
+-   Supports reports development flow with account data [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore), data models (cubes) / reports configuration is a human-readable XML and can be stored under version control.
 
 SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/individual usage.
 
 [How to configure ClickHouse connection in SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
+
 
 ### Chadmin {#chadmin}
 

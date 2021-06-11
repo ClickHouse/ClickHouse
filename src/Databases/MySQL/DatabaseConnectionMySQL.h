@@ -6,7 +6,6 @@
 #include <mysqlxx/Pool.h>
 
 #include <Core/MultiEnum.h>
-#include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/MySQL/ConnectionMySQLSettings.h>
@@ -74,7 +73,7 @@ public:
 
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
 
-    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach) override;
+    void loadStoredObjects(ContextPtr, bool, bool force_attach) override;
 
     StoragePtr detachTable(const String & table_name) override;
 
@@ -109,7 +108,7 @@ private:
 
     void fetchTablesIntoLocalCache(ContextPtr context) const;
 
-    std::map<String, UInt64> fetchTablesWithModificationTime(ContextPtr local_context) const;
+    std::map<String, UInt64> fetchTablesWithModificationTime() const;
 
     std::map<String, NamesAndTypesList> fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr context) const;
 

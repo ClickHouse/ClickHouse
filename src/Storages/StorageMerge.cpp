@@ -102,7 +102,6 @@ TreeRewriterResult modifySelect(ASTSelectQuery & select, const TreeRewriterResul
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
-    const String & comment,
     const String & source_database_,
     const Strings & source_tables_,
     ContextPtr context_)
@@ -113,14 +112,12 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
-    const String & comment,
     const String & source_database_,
     const String & source_table_regexp_,
     ContextPtr context_)
@@ -131,7 +128,6 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -183,11 +179,8 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, Cont
 }
 
 
-QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
-    ContextPtr local_context,
-    QueryProcessingStage::Enum to_stage,
-    const StorageMetadataPtr &,
-    SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum
+StorageMerge::getQueryProcessingStage(ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
     /// In case of JOIN the first stage (which includes JOIN)
     /// should be done on the initiator always.
@@ -211,9 +204,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
         if (table && table.get() != this)
         {
             ++selected_table_size;
-            stage_in_source_tables = std::max(
-                stage_in_source_tables,
-                table->getQueryProcessingStage(local_context, to_stage, table->getInMemoryMetadataPtr(), query_info));
+            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(local_context, to_stage, query_info));
         }
 
         iterator->next();
@@ -250,7 +241,7 @@ Pipe StorageMerge::read(
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
     auto modified_context = Context::createCopy(local_context);
-    modified_context->setSetting("optimize_move_to_prewhere", Field{false});
+    modified_context->setSetting("optimize_move_to_prewhere", false);
 
     /// What will be result structure depending on query processed stage in source tables?
     Block header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, local_context, processed_stage);
@@ -332,7 +323,7 @@ Pipe StorageMerge::createSources(
     const Block & header,
     const StorageWithLockAndName & storage_with_lock,
     Names & real_column_names,
-    ContextMutablePtr modified_context,
+    ContextPtr modified_context,
     size_t streams_num,
     bool has_table_virtual_column,
     bool concat_streams)
@@ -361,8 +352,7 @@ Pipe StorageMerge::createSources(
         return pipe;
     }
 
-    auto storage_stage
-        = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, metadata_snapshot, modified_query_info);
+    auto storage_stage = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, modified_query_info);
     if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
@@ -415,7 +405,7 @@ Pipe StorageMerge::createSources(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto adding_column_actions = std::make_shared<ExpressionActions>(
                 std::move(adding_column_dag),
-                ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
+                ExpressionActionsSettings::fromContext(modified_context));
 
             pipe.addSimpleTransform([&](const Block & stream_header)
             {
@@ -559,7 +549,7 @@ void StorageMerge::convertingSourceStream(
             pipe.getHeader().getColumnsWithTypeAndName(),
             header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
-    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context));
 
     pipe.addSimpleTransform([&](const Block & stream_header)
     {
@@ -627,7 +617,9 @@ void registerStorageMerge(StorageFactory & factory)
         String source_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageMerge::create(args.table_id, args.columns, args.comment, source_database, table_name_regexp, args.getContext());
+        return StorageMerge::create(
+            args.table_id, args.columns,
+            source_database, table_name_regexp, args.getContext());
     });
 }
 

@@ -108,9 +108,6 @@ public:
     /// Returns true if the storage is a view of a table or another view.
     virtual bool isView() const { return false; }
 
-    /// Returns true if the storage is dictionary
-    virtual bool isDictionary() const { return false; }
-
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
 
@@ -224,19 +221,16 @@ public:
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
-      *  for example, the request can be partially processed on a remote server, or an aggregate projection.)
+      *  for example, the request can be partially processed on a remote server.)
       *
       * SelectQueryInfo is required since the stage can depends on the query
-      * (see Distributed() engine and optimize_skip_unused_shards,
-      *  see also MergeTree engine and allow_experimental_projection_optimization).
+      * (see Distributed() engine and optimize_skip_unused_shards).
       * And to store optimized cluster (after optimize_skip_unused_shards).
-      * It will also store needed stuff for projection query pipeline.
       *
       * QueryProcessingStage::Enum required for Distributed over Distributed,
       * since it cannot return Complete for intermediate queries never.
       */
-    virtual QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
     {
         return QueryProcessingStage::FetchColumns;
     }
@@ -444,31 +438,12 @@ public:
       */
     virtual void startup() {}
 
-    /**
-      * If the storage requires some complicated work on destroying,
-      * then you have two virtual methods:
-      * - flush()
-      * - shutdown()
-      *
-      * @see shutdown()
-      * @see flush()
-      */
-    void flushAndShutdown()
-    {
-        flush();
-        shutdown();
-    }
-
     /** If the table have to do some complicated work when destroying an object - do it in advance.
       * For example, if the table contains any threads for background work - ask them to complete and wait for completion.
       * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
     virtual void shutdown() {}
-
-    /// Called before shutdown() to flush data to underlying storage
-    /// (for Buffer)
-    virtual void flush() {}
 
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned
@@ -515,7 +490,7 @@ public:
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
-    /// - Simple count() optimization
+    /// - Simple count() opimization
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.

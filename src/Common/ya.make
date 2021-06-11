@@ -32,7 +32,6 @@ SRCS(
     Config/AbstractConfigurationComparison.cpp
     Config/ConfigProcessor.cpp
     Config/ConfigReloader.cpp
-    Config/YAMLParser.cpp
     Config/configReadClient.cpp
     CurrentMemoryTracker.cpp
     CurrentMetrics.cpp
@@ -46,10 +45,8 @@ SRCS(
     ExternalLoaderStatus.cpp
     FieldVisitors.cpp
     FileChecker.cpp
-    IO.cpp
     IPv6ToBinary.cpp
     IntervalKind.cpp
-    JSONBuilder.cpp
     Macros.cpp
     MemoryStatisticsOS.cpp
     MemoryTracker.cpp
@@ -59,7 +56,6 @@ SRCS(
     PipeFDs.cpp
     ProcfsMetricsProvider.cpp
     ProfileEvents.cpp
-    ProgressBar.cpp
     QueryProfiler.cpp
     RWLock.cpp
     RemoteHostFilter.cpp
@@ -81,7 +77,6 @@ SRCS(
     ThreadPool.cpp
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
-    Throttler.cpp
     TimerDescriptor.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp

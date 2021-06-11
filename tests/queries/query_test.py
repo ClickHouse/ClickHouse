@@ -15,7 +15,6 @@ SKIP_LIST = [
 
     # just fail
     "00133_long_shard_memory_tracker_and_exception_safety",
-    "00463_long_sessions_in_http_interface",
     "00505_secure",
     "00505_shard_secure",
     "00646_url_engine",
@@ -57,10 +56,8 @@ SKIP_LIST = [
     "01098_temporary_and_external_tables",
     "01099_parallel_distributed_insert_select",
     "01103_check_cpu_instructions_at_startup",
-    "01107_atomic_db_detach_attach",
     "01114_database_atomic",
     "01148_zookeeper_path_macros_unfolding",
-    "01152_cross_replication",  # tcp port in reference
     "01175_distributed_ddl_output_mode_long",
     "01181_db_atomic_drop_on_cluster",  # tcp port in reference
     "01280_ssd_complex_key_dictionary",
@@ -102,30 +99,19 @@ SKIP_LIST = [
     "01601_custom_tld",
     "01606_git_import",
     "01610_client_spawn_editor",  # expect-test
-    "01654_test_writer_block_sequence",  # No module named 'pandas'
     "01658_read_file_to_stringcolumn",
     "01666_merge_tree_max_query_limit",
     "01674_unicode_asan",
     "01676_clickhouse_client_autocomplete",  # expect-test (partially)
-    "01676_long_clickhouse_client_autocomplete",
     "01683_text_log_deadlock",  # secure tcp
     "01684_ssd_cache_dictionary_simple_key",
     "01685_ssd_cache_dictionary_complex_key",
-    "01737_clickhouse_server_wait_server_pool_long",
     "01746_executable_pool_dictionary",
     "01747_executable_pool_dictionary_implicit_key",
     "01747_join_view_filter_dictionary",
     "01748_dictionary_table_dot",
     "01754_cluster_all_replicas_shard_num",
     "01759_optimize_skip_unused_shards_zero_shards",
-    "01763_max_distributed_depth",  # BROKEN
-    "01780_clickhouse_dictionary_source_loop",
-    "01801_s3_cluster",
-    "01802_test_postgresql_protocol_with_row_policy",
-    "01804_dictionary_decimal256_type",  # hardcoded path
-    "01848_http_insert_segfault",
-    "01875_ssd_cache_dictionary_decimal256_type",
-    "01880_remote_ipv6",
 ]
 
 
@@ -168,7 +154,6 @@ def run_shell(bin_prefix, server, database, path, reference, replace_map=None):
         'CLICKHOUSE_PORT_TCP_WITH_PROXY': str(server.proxy_port),
         'CLICKHOUSE_PORT_HTTP': str(server.http_port),
         'CLICKHOUSE_PORT_INTERSERVER': str(server.inter_port),
-        'CLICKHOUSE_PORT_POSTGRESQL': str(server.postgresql_port),
         'CLICKHOUSE_TMP': server.tmp_dir,
         'CLICKHOUSE_CONFIG_CLIENT': server.client_config
     }

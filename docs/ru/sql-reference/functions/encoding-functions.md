@@ -153,60 +153,8 @@ Result:
 
 ## unhex(str) {#unhexstr}
 
-Выполняет операцию, обратную [hex](#hex). Функция интерпретирует каждую пару шестнадцатеричных цифр аргумента как число и преобразует его в символ. Возвращаемое значение представляет собой двоичную строку (BLOB).
-
-Если вы хотите преобразовать результат в число, вы можете использовать функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions).
-
-!!! note "Примечание"
-    Если `unhex` вызывается из `clickhouse-client`, двоичные строки отображаются с использованием UTF-8.
-
-Синоним: `UNHEX`.
-
-**Синтаксис**
-
-``` sql
-unhex(arg)
-```
-
-**Аргументы**
-
--   `arg` — Строка, содержащая любое количество шестнадцатеричных цифр. Тип: [String](../../sql-reference/data-types/string.md).
-
-Поддерживаются как прописные, так и строчные буквы `A-F`. Количество шестнадцатеричных цифр не обязательно должно быть четным. Если оно нечетное, последняя цифра интерпретируется как наименее значимая половина байта `00-0F`. Если строка аргумента содержит что-либо, кроме шестнадцатеричных цифр, возвращается некоторый результат, определенный реализацией (исключение не создается).
-
-**Возвращаемое значение**
-
--   Бинарная строка (BLOB).
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-``` sql
-SELECT unhex('303132'), UNHEX('4D7953514C');
-```
-
-Результат:
-``` text
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
-│ 012             │ MySQL               │
-└─────────────────┴─────────────────────┘
-```
-
-Запрос:
-
-``` sql
-SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num;
-```
-
-Результат:
-
-``` text
-┌──num─┐
-│ 4095 │
-└──────┘
-```
+Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown).
+If you want to convert the result to a number, you can use the ‘reverse’ and ‘reinterpretAsType’ functions.
 
 ## UUIDStringToNum(str) {#uuidstringtonumstr}
 
@@ -223,3 +171,4 @@ SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num;
 ## bitmaskToArray(num) {#bitmasktoarraynum}
 
 Принимает целое число. Возвращает массив чисел типа UInt64, содержащий степени двойки, в сумме дающих исходное число; числа в массиве идут по возрастанию.
+

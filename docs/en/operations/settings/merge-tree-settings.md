@@ -123,19 +123,6 @@ The `Insert` command creates one or more blocks (parts). When inserting into Rep
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the inserted part (stream of bytes).
 
-## non_replicated_deduplication_window {#non-replicated-deduplication-window}
-
-The number of the most recently inserted blocks in the non-replicated [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table for which hash sums are stored to check for duplicates.
-
-Possible values:
-
--   Any positive integer.
--   0 (disable deduplication).
-
-Default value: 0.
-
-A deduplication mechanism is used, similar to replicated tables (see [replicated_deduplication_window](#replicated-deduplication-window) setting). The hash sums of the created parts are written to a local file on a disk.
-
 ## replicated_deduplication_window_seconds {#replicated-deduplication-window-seconds}
 
 The number of seconds after which the hash sums of the inserted blocks are removed from Zookeeper.
@@ -147,39 +134,6 @@ Possible values:
 Default value: 604800 (1 week).
 
 Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
-
-## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout}
-
-HTTP connection timeout (in seconds) for part fetch requests. Inherited from default profile [http_connection_timeout](./settings.md#http_connection_timeout) if not set explicitly.
-
-Possible values:
-
--   Any positive integer.
--   0 - Use value of `http_connection_timeout`.
-
-Default value: 0.
-
-## replicated_fetches_http_send_timeout {#replicated_fetches_http_send_timeout}
-
-HTTP send timeout (in seconds) for part fetch requests. Inherited from default profile [http_send_timeout](./settings.md#http_send_timeout) if not set explicitly.
-
-Possible values:
-
--   Any positive integer.
--   0 - Use value of `http_send_timeout`.
-
-Default value: 0.
-
-## replicated_fetches_http_receive_timeout {#replicated_fetches_http_receive_timeout}
-
-HTTP receive timeout (in seconds) for fetch part requests. Inherited from default profile [http_receive_timeout](./settings.md#http_receive_timeout) if not set explicitly.
-
-Possible values:
-
--   Any positive integer.
--   0 - Use value of `http_receive_timeout`.
-
-Default value: 0.
 
 ## old_parts_lifetime {#old-parts-lifetime}
 
@@ -263,16 +217,5 @@ Possible values:
 -   Any positive integer.
 
 Default value: -1 (unlimited).
-
-## allow_floating_point_partition_key {#allow_floating_point_partition_key}
-
-Enables to allow floating-point number as a partition key.
-
-Possible values:
-
--   0 — Floating-point partition key not allowed.
--   1 — Floating-point partition key allowed.
-
-Default value: `0`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/merge_tree_settings/) <!--hide-->

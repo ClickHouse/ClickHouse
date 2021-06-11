@@ -17,9 +17,9 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
-                                                    ContextConstPtr /* context */,
+                                                    ContextPtr /* context */,
                                                     const std::string & /* default_database */,
-                                                    bool /*created_from_ddl*/) -> DictionarySourcePtr
+                                                    bool /*check_config*/) -> DictionarySourcePtr
     {
 #if USE_CASSANDRA
     setupCassandraDriverLibraryLogging(CASS_LOG_INFO);

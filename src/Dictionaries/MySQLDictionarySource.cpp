@@ -4,15 +4,9 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
-
-[[maybe_unused]]
-static const size_t default_num_tries_on_connection_loss = 3;
-
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
@@ -20,20 +14,20 @@ namespace ErrorCodes
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
-                                   [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
-                                   [[maybe_unused]] const std::string & config_prefix,
-                                   [[maybe_unused]] Block & sample_block,
-                                   [[maybe_unused]] ContextConstPtr context,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 ContextPtr /* context */,
                                  const std::string & /* default_database */,
-                                 bool /* created_from_ddl */) -> DictionarySourcePtr {
+                                 bool /* check_config */) -> DictionarySourcePtr {
 #if USE_MYSQL
-        StreamSettings mysql_input_stream_settings(context->getSettingsRef()
-            , config.getBool(config_prefix + ".mysql.close_connection", false) || config.getBool(config_prefix + ".mysql.share_connection", false)
-            , false
-            , config.getBool(config_prefix + ".mysql.fail_on_connection_loss", false) ? 1 : default_num_tries_on_connection_loss);
-        return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block, mysql_input_stream_settings);
+        return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
 #else
+        (void)dict_struct;
+        (void)config;
+        (void)config_prefix;
+        (void)sample_block;
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary source of type `mysql` is disabled because ClickHouse was built without mysql support.");
 #endif
@@ -51,21 +45,22 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #    include <IO/WriteHelpers.h>
 #    include <common/LocalDateTime.h>
 #    include <common/logger_useful.h>
+#    include <Formats/MySQLBlockInputStream.h>
 #    include "readInvalidateQuery.h"
 #    include <mysqlxx/Exception.h>
 #    include <mysqlxx/PoolFactory.h>
-#    include <Core/Settings.h>
 
 namespace DB
 {
+static const UInt64 max_block_size = 8192;
+static const size_t default_num_tries_on_connection_loss = 3;
 
 
 MySQLDictionarySource::MySQLDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const Block & sample_block_,
-    const StreamSettings & settings_)
+    const Block & sample_block_)
     : log(&Poco::Logger::get("MySQLDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
@@ -79,7 +74,10 @@ MySQLDictionarySource::MySQLDictionarySource(
     , query_builder{dict_struct, db, "", table, where, IdentifierQuotingStyle::Backticks}
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
-    , settings(settings_)
+    , close_connection(
+            config.getBool(config_prefix + ".close_connection", false) || config.getBool(config_prefix + ".share_connection", false))
+    , max_tries_for_mysql_block_input_stream(
+            config.getBool(config_prefix + ".fail_on_connection_loss", false) ? 1 : default_num_tries_on_connection_loss)
 {
 }
 
@@ -100,7 +98,8 @@ MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other
     , last_modification{other.last_modification}
     , invalidate_query{other.invalidate_query}
     , invalidate_query_response{other.invalidate_query_response}
-    , settings(other.settings)
+    , close_connection{other.close_connection}
+    , max_tries_for_mysql_block_input_stream{other.max_tries_for_mysql_block_input_stream}
 {
 }
 
@@ -123,7 +122,7 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
 BlockInputStreamPtr MySQLDictionarySource::loadFromQuery(const String & query)
 {
     return std::make_shared<MySQLWithFailoverBlockInputStream>(
-            pool, query, sample_block, settings);
+            pool, query, sample_block, max_block_size, close_connection, false, max_tries_for_mysql_block_input_stream);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadAll()
@@ -164,7 +163,7 @@ bool MySQLDictionarySource::isModified() const
     if (!invalidate_query.empty())
     {
         auto response = doInvalidateQuery(invalidate_query);
-        if (response == invalidate_query_response) //-V1051
+        if (response == invalidate_query_response)
             return false;
         invalidate_query_response = response;
         return true;
@@ -246,7 +245,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
                 ++fetched_rows;
         }
 
-        if (settings.auto_close && allow_connection_closure)
+        if (close_connection && allow_connection_closure)
         {
             connection.disconnect();
         }
@@ -270,7 +269,7 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    MySQLBlockInputStream block_input_stream(pool->get(), request, invalidate_sample_block, settings);
+    MySQLBlockInputStream block_input_stream(pool->get(), request, invalidate_sample_block, 1, close_connection);
     return readInvalidateQuery(block_input_stream);
 }
 

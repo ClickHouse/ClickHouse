@@ -1,3 +1,4 @@
+# Third-party libraries may have substandard code.
 
 # Put all targets defined here and in added subfolders under "contrib/" folder in GUI-based IDEs by default.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they will
@@ -10,10 +11,8 @@ else ()
 endif ()
 unset (_current_dir_name)
 
-# Third-party libraries may have substandard code.
-# Also remove a possible source of nondeterminism.
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
 if (WITH_COVERAGE)
   set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
@@ -48,11 +47,6 @@ add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
-add_subdirectory (nanodbc-cmake)
-
-if (USE_YAML_CPP)
-    add_subdirectory (yaml-cpp-cmake)
-endif()
 
 if (USE_INTERNAL_XZ_LIBRARY)
     add_subdirectory (xz)
@@ -60,6 +54,7 @@ endif()
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
+
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -208,12 +203,11 @@ elseif(GTEST_SRC_DIR)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 endif()
 
-if (USE_EMBEDDED_COMPILER)
+if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
-
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
@@ -228,6 +222,8 @@ if (USE_EMBEDDED_COMPILER)
 
     set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
     unset (CMAKE_CXX_STANDARD_bak)
+
+    target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
@@ -322,6 +318,10 @@ endif()
 if (USE_LIBPQXX)
     add_subdirectory (libpq-cmake)
     add_subdirectory (libpqxx-cmake)
+endif()
+
+if (USE_NANODBC)
+    add_subdirectory (nanodbc-cmake)
 endif()
 
 if (USE_NURAFT)

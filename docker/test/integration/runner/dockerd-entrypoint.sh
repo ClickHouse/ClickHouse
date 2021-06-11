@@ -1,18 +1,7 @@
 #!/bin/bash
 set -e
 
-mkdir -p /etc/docker/
-echo '{
-    "ipv6": true,
-    "fixed-cidr-v6": "fd00::/8",
-    "ip-forward": true,
-    "log-level": "debug",
-    "storage-driver": "overlay2",
-    "insecure-registries" : ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
-    "registry-mirrors" : ["http://dockerhub-proxy.sas.yp-c.yandex.net:5000"]
-}' | dd of=/etc/docker/daemon.json
-
-dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 &>/ClickHouse/tests/integration/dockerd.log &
+dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &>/var/log/somefile &
 
 set +e
 reties=0
@@ -26,10 +15,6 @@ while true; do
     sleep 0.1
 done
 set -e
-
-# cleanup for retry run if volume is not recreated
-docker kill "$(docker ps -aq)" || true
-docker rm "$(docker ps -aq)" || true
 
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse

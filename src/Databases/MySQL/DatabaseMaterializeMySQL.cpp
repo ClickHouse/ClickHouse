@@ -13,11 +13,9 @@
 #    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Storages/StorageMaterializeMySQL.h>
+#    include <Poco/File.h>
 #    include <Poco/Logger.h>
 #    include <Common/setThreadName.h>
-#    include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -94,7 +92,7 @@ void DatabaseMaterializeMySQL<Base>::setException(const std::exception_ptr & exc
 }
 
 template<typename Base>
-void DatabaseMaterializeMySQL<Base>::loadStoredObjects(ContextMutablePtr context_, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseMaterializeMySQL<Base>::loadStoredObjects(ContextPtr context_, bool has_force_restore_data_flag, bool force_attach)
 {
     Base::loadStoredObjects(context_, has_force_restore_data_flag, force_attach);
     if (!force_attach)
@@ -160,10 +158,10 @@ template<typename Base>
 void DatabaseMaterializeMySQL<Base>::drop(ContextPtr context_)
 {
     /// Remove metadata info
-    fs::path metadata(Base::getMetadataPath() + "/.metadata");
+    Poco::File metadata(Base::getMetadataPath() + "/.metadata");
 
-    if (fs::exists(metadata))
-        fs::remove(metadata);
+    if (metadata.exists())
+        metadata.remove(false);
 
     Base::drop(context_);
 }

@@ -121,9 +121,6 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
-    void executeGenericRequest(
-        const ZooKeeperRequestPtr & request,
-        ResponseCallback callback);
 
     /// See the documentation about semantics of these methods in IKeeper class.
 

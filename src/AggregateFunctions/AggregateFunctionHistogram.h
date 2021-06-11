@@ -26,7 +26,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -221,7 +220,7 @@ private:
     }
 
 public:
-    AggregateFunctionHistogramData() //-V730
+    AggregateFunctionHistogramData()
         : size(0)
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())

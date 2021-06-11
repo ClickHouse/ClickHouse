@@ -1,7 +1,3 @@
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#endif
-
 #include <Compression/CompressionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -17,7 +13,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -39,8 +34,8 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
 {
     if (level)
     {
-        auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
+        auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
+        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {});
     }
     else
     {
@@ -49,8 +44,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     }
 }
 
-void CompressionCodecFactory::validateCodec(
-    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
+void CompressionCodecFactory::validateCodec(const String & family_name, std::optional<int> level, bool sanity_check) const
 {
     if (family_name.empty())
         throw Exception("Compression codec name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -58,19 +52,16 @@ void CompressionCodecFactory::validateCodec(
     if (level)
     {
         auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
-            {}, sanity_check, allow_experimental_codecs);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {}, sanity_check);
     }
     else
     {
         auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
-            {}, sanity_check, allow_experimental_codecs);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier), {}, sanity_check);
     }
 }
 
-ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
-    const ASTPtr & ast, const IDataType * column_type, bool sanity_check, bool allow_experimental_codecs) const
+ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const IDataType * column_type, bool sanity_check) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -81,7 +72,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         std::optional<size_t> generic_compression_codec_pos;
 
         bool can_substitute_codec_arguments = true;
-        for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
+        for (size_t i = 0; i < func->arguments->children.size(); ++i)
         {
             const auto & inner_codec_ast = func->arguments->children[i];
             String codec_family_name;
@@ -116,8 +107,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 if (column_type)
                 {
                     CompressionCodecPtr prev_codec;
-                    IDataType::StreamCallbackWithType callback = [&](
-                        const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
+                    IDataType::StreamCallbackWithType callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
                     {
                         if (ISerialization::isSpecialCompressionAllowed(substream_path))
                         {
@@ -141,12 +131,6 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 {
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
                 }
-
-                if (!allow_experimental_codecs && result_codec->isExperimental())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Codec {} is experimental and not meant to be used in production."
-                        " You can enable it with the 'allow_experimental_codecs' setting.",
-                        codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
@@ -188,7 +172,6 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
         }
-
         /// For columns with nested types like Tuple(UInt32, UInt64) we
         /// obviously cannot substitute parameters for codecs which depend on
         /// data type, because for the first column Delta(4) is suitable and
@@ -212,9 +195,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
     throw Exception("Unknown codec family: " + queryToString(ast), ErrorCodes::UNKNOWN_CODEC);
 }
 
-
-CompressionCodecPtr CompressionCodecFactory::get(
-    const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default, bool only_generic) const
+CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default, bool only_generic) const
 {
     if (current_default == nullptr)
         current_default = default_codec;
@@ -264,7 +245,6 @@ CompressionCodecPtr CompressionCodecFactory::get(
 
     throw Exception("Unexpected AST structure for compression codec: " + queryToString(ast), ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
-
 
 CompressionCodecPtr CompressionCodecFactory::get(const uint8_t byte_code) const
 {
@@ -323,7 +303,7 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
     registerCompressionCodec(family_name, byte_code, [family_name, creator](const ASTPtr & ast)
     {
         if (ast)
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Compression codec {} cannot have arguments", family_name);
+            throw Exception("Compression codec " + family_name + " cannot have arguments", ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS);
         return creator();
     });
 }

@@ -44,8 +44,7 @@ public:
         const ASTPtr & query_ast_,
         const ClusterPtr & cluster_,
         bool insert_sync_,
-        UInt64 insert_timeout_,
-        StorageID main_table_);
+        UInt64 insert_timeout_);
 
     Block getHeader() const override;
     void write(const Block & block) override;
@@ -84,7 +83,7 @@ private:
     /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
     std::string getCurrentStateDescription();
 
-    ContextMutablePtr context;
+    ContextPtr context;
     StorageDistributed & storage;
     StorageMetadataPtr metadata_snapshot;
     ASTPtr query_ast;
@@ -97,7 +96,6 @@ private:
 
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds
-    StorageID main_table;
     Stopwatch watch;
     Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;

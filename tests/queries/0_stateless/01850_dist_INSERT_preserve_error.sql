@@ -13,6 +13,3 @@ insert into dist_01850 values (1); -- { serverError 60 }
 
 drop table if exists dist_01850;
 drop table shard_0.data_01850;
-
-drop database shard_0;
-drop database shard_1;

@@ -3,23 +3,18 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 
-#include <Common/FieldVisitors.h>
-
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <functional>
-
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -105,11 +100,6 @@ namespace
 
         if (argument_types.empty())
             throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        const WhichDataType t(argument_types[0]);
-        if (t.isAggregateFunction())
-            throw Exception(
-                "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         switch (precision)
         {
@@ -141,16 +131,8 @@ namespace
 void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
 {
     using namespace std::placeholders;
-    factory.registerFunction("uniqCombined",
-        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return createAggregateFunctionUniqCombined(false, name, argument_types, parameters);
-        });
-    factory.registerFunction("uniqCombined64",
-        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return createAggregateFunctionUniqCombined(true, name, argument_types, parameters);
-        });
+    factory.registerFunction("uniqCombined", std::bind(createAggregateFunctionUniqCombined, false, _1, _2, _3)); // NOLINT
+    factory.registerFunction("uniqCombined64", std::bind(createAggregateFunctionUniqCombined, true, _1, _2, _3)); // NOLINT
 }
 
 }

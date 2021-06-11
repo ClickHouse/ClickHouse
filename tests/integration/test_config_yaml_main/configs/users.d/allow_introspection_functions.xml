@@ -1,8 +1,0 @@
-<?xml version="1.0"?>
-<yandex>
-    <profiles>
-        <default>
-            <allow_introspection_functions>1</allow_introspection_functions>
-        </default>
-    </profiles>
-</yandex>

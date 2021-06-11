@@ -12,9 +12,8 @@
 #include <common/logger_useful.h>
 #include <ext/scope_guard_safe.h>
 #include <iomanip>
-#include <filesystem>
+#include <Poco/File.h>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -36,7 +35,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 
 void DatabaseLazy::loadStoredObjects(
-    ContextMutablePtr local_context,
+    ContextPtr local_context,
     bool /* has_force_restore_data_flag */,
     bool /*force_attach*/)
 {
@@ -44,8 +43,8 @@ void DatabaseLazy::loadStoredObjects(
     {
         const std::string table_name = file_name.substr(0, file_name.size() - 4);
 
-        fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
-        if (fs::exists(detached_permanently_flag))
+        auto detached_permanently_flag = Poco::File(getMetadataPath() + "/" + file_name + detached_suffix);
+        if (detached_permanently_flag.exists())
         {
             LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
             return;
@@ -204,7 +203,7 @@ void DatabaseLazy::shutdown()
     for (const auto & kv : tables_snapshot)
     {
         if (kv.second.table)
-            kv.second.table->flushAndShutdown();
+            kv.second.table->shutdown();
     }
 
     std::lock_guard lock(mutex);
@@ -229,7 +228,7 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
 
     LOG_DEBUG(log, "Load table {} to cache.", backQuote(table_name));
 
-    const String table_metadata_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + ".sql");
+    const String table_metadata_path = getMetadataPath() + "/" + escapeForFileName(table_name) + ".sql";
 
     try
     {

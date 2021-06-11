@@ -3,7 +3,6 @@
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
 #include <Common/ZooKeeper/Types.h>
-#include <filesystem>
 
 namespace Poco
 {
@@ -14,8 +13,6 @@ namespace zkutil
 {
 class ZooKeeper;
 }
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -101,11 +98,11 @@ struct DDLTaskBase
 
     virtual String getShardID() const = 0;
 
-    virtual ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
+    virtual ContextPtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
 
-    inline String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
-    inline String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
-    inline String getShardNodePath() const { return fs::path(entry_path) / "shards" / getShardID(); }
+    inline String getActiveNodePath() const { return entry_path + "/active/" + host_id_str; }
+    inline String getFinishedNodePath() const { return entry_path + "/finished/" + host_id_str; }
+    inline String getShardNodePath() const { return entry_path + "/shards/" + getShardID(); }
 
     static String getLogEntryName(UInt32 log_entry_number);
     static UInt32 getLogEntryNumber(const String & log_entry_name);
@@ -129,8 +126,8 @@ private:
     String cluster_name;
     ClusterPtr cluster;
     Cluster::Address address_in_cluster;
-    size_t host_shard_num = 0;
-    size_t host_replica_num = 0;
+    size_t host_shard_num;
+    size_t host_replica_num;
 };
 
 struct DatabaseReplicatedTask : public DDLTaskBase
@@ -139,7 +136,7 @@ struct DatabaseReplicatedTask : public DDLTaskBase
 
     String getShardID() const override;
     void parseQueryFromEntry(ContextPtr context) override;
-    ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
+    ContextPtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
 
     DatabaseReplicated * database;
 };

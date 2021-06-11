@@ -35,6 +35,13 @@ def started_cluster():
 
 def get_connection_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
+    def reset_listener(state):
+        nonlocal _fake_zk_instance
+        print("Fake zk callback called for state", state)
+        if state != KazooState.CONNECTED:
+            _fake_zk_instance._reset()
+
+    _fake_zk_instance.add_listener(reset_listener)
     _fake_zk_instance.start()
     return _fake_zk_instance
 

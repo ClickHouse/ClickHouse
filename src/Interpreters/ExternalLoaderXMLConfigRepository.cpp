@@ -3,12 +3,11 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/getMultipleKeysFromConfig.h>
+
 #include <Poco/Glob.h>
-#include <Common/filesystemHelpers.h>
-#include <filesystem>
+#include <Poco/File.h>
+#include <Poco/Path.h>
 
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -20,7 +19,7 @@ ExternalLoaderXMLConfigRepository::ExternalLoaderXMLConfigRepository(
 
 Poco::Timestamp ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
 {
-    return FS::getModificationTimestamp(definition_entity_name);
+    return Poco::File(definition_entity_name).getLastModified();
 }
 
 std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefinitionNames()
@@ -37,8 +36,8 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
         if (pattern[0] != '/')
         {
             const auto app_config_path = main_config.getString("config-file", "config.xml");
-            const String config_dir = fs::path(app_config_path).parent_path();
-            const String absolute_path = fs::path(config_dir) / pattern;
+            const auto config_dir = Poco::Path{app_config_path}.parent().toString();
+            const auto absolute_path = config_dir + pattern;
             Poco::Glob::glob(absolute_path, files, 0);
             if (!files.empty())
                 continue;
@@ -60,7 +59,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
 
 bool ExternalLoaderXMLConfigRepository::exists(const std::string & definition_entity_name)
 {
-    return fs::exists(fs::path(definition_entity_name));
+    return Poco::File(definition_entity_name).exists();
 }
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderXMLConfigRepository::load(

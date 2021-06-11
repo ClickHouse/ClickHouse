@@ -38,7 +38,6 @@ class ServerThread(threading.Thread):
         self.https_port = port_base + 5
         self.odbc_port = port_base + 6
         self.proxy_port = port_base + 7
-        self.postgresql_port = port_base + 8
 
         self._args = [
             '--config-file={config_path}'.format(config_path=self.server_config),
@@ -47,7 +46,6 @@ class ServerThread(threading.Thread):
             '--http_port={http_port}'.format(http_port=self.http_port),
             '--interserver_http_port={inter_port}'.format(inter_port=self.inter_port),
             '--tcp_with_proxy_port={proxy_port}'.format(proxy_port=self.proxy_port),
-            '--postgresql_port={psql_port}'.format(psql_port=self.postgresql_port),
             # TODO: SSL certificate is not specified '--tcp_port_secure={tcps_port}'.format(tcps_port=self.tcps_port),
         ]
 
@@ -77,7 +75,7 @@ class ServerThread(threading.Thread):
                     time.sleep(ServerThread.DEFAULT_SERVER_DELAY)
                     s = socket.create_connection(('localhost', self.tcp_port), ServerThread.DEFAULT_CONNECTION_TIMEOUT)
                     s.sendall(b'G')  # trigger expected "bad" HELLO response
-                    s.recv(1024)  # FIXME: read whole buffered response
+                    print('Successful server response:', s.recv(1024))  # FIXME: read whole buffered response
                     s.shutdown(socket.SHUT_RDWR)
                     s.close()
                 except Exception:
@@ -118,7 +116,7 @@ class ServerThread(threading.Thread):
         if self._proc.returncode is None:
             self._proc.terminate()
         self.join()
-        print('Stopped clickhouse-server')
+        print('Stop clickhouse-server')
 
 
 ServerThread.DEFAULT_SERVER_CONFIG = \
@@ -291,21 +289,6 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
                  </replica>
              </shard>
          </test_cluster_with_incorrect_pw>
-
-         <test_cluster_two_replicas_different_databases>
-             <shard>
-                 <replica>
-                     <default_database>shard_0</default_database>
-                     <host>localhost</host>
-                     <port>{tcp_port}</port>
-                 </replica>
-                 <replica>
-                     <default_database>shard_1</default_database>
-                     <host>localhost</host>
-                     <port>{tcp_port}</port>
-                 </replica>
-             </shard>
-         </test_cluster_two_replicas_different_databases>
     </remote_servers>
 
     <storage_configuration>

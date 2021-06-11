@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/PostgreSQL/ConnectionHolder.h>

@@ -18,6 +18,7 @@ select count() from x where _partition_id in (select partitionId(number + 1) fro
 
 drop table x;
 
+                                                                                          
 drop table if exists mt;
 
 create table mt (n UInt64) engine=MergeTree order by n partition by n % 10;
