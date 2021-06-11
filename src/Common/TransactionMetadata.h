@@ -53,7 +53,7 @@ const CSN PrehistoricCSN = 1;
 const LocalTID PrehistoricLocalTID = 1;
 
 const TransactionID EmptyTID = {0, 0, UUIDHelpers::Nil};
-const TransactionID PrehistoricTID = {0, PrehistoricLocalTID, UUIDHelpers::Nil};
+const TransactionID PrehistoricTID = {PrehistoricCSN, PrehistoricLocalTID, UUIDHelpers::Nil};
 
 /// So far, that changes will never become visible
 const CSN RolledBackCSN = std::numeric_limits<CSN>::max();
@@ -83,6 +83,8 @@ struct VersionMetadata
 
     /// It can be called only from MergeTreeTransaction or on server startup
     void setMinTID(const TransactionID & tid);
+
+    bool canBeRemoved(Snapshot oldest_snapshot_version);
 };
 
 }

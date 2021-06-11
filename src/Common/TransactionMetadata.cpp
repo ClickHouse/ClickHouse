@@ -186,4 +186,39 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
     return min <= snapshot_version && (!max || snapshot_version < max);
 }
 
+bool VersionMetadata::canBeRemoved(Snapshot oldest_snapshot_version)
+{
+    CSN min = mincsn.load(std::memory_order_relaxed);
+    if (min == Tx::RolledBackCSN)
+        return true;
+
+    if (!min)
+    {
+        min = TransactionLog::instance().getCSN(mintid);
+        if (min)
+            mincsn.store(min, std::memory_order_relaxed);
+        else
+            return false;
+    }
+
+    if (oldest_snapshot_version < min)
+        return false;
+
+    TIDHash max_lock = maxtid_lock.load(std::memory_order_relaxed);
+    if (!max_lock)
+        return false;
+
+    CSN max = maxcsn.load(std::memory_order_relaxed);
+    if (!max)
+    {
+        max = TransactionLog::instance().getCSN(max_lock);
+        if (max)
+            maxcsn.store(max, std::memory_order_relaxed);
+        else
+            return false;
+    }
+
+    return max <= oldest_snapshot_version;
+}
+
 }
