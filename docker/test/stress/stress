@@ -37,10 +37,10 @@ def get_options(i):
     if i % 7 == 0:
         options.append(" --client-option='join_use_nulls=1'")
 
-    if i % 2 * 7 == 0:
+    if i % 14 == 0:
         options.append(' --client-option="join_algorithm=\'partial_merge\'"')
 
-    if i % 3 * 7 == 0:
+    if i % 21 == 0:
         options.append(' --client-option="join_algorithm=\'auto\'"')
         options.append(' --client-option="max_rows_in_join=1000"')
 
