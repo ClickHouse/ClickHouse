@@ -1210,7 +1210,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             const DataPartPtr & part = *it;
 
             /// Do not remove outdated part if it may be visible for some transaction
-            if (part->versions.isVisible(TransactionLog::instance().getOldestSnapshot()))
+            if (!part->versions.canBeRemoved(TransactionLog::instance().getOldestSnapshot()))
                 continue;
 
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
@@ -2417,8 +2417,15 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(
                             part->name, drop_range.getPartName());
         }
 
-        if (part->getState() != DataPartState::Deleting)
-            parts_to_remove.emplace_back(part);
+        if (part->getState() == DataPartState::Deleting)
+            continue;
+
+        /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
+        TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
+        if (!part->versions.isVisible(tid.start_csn, tid))
+            continue;
+
+        parts_to_remove.emplace_back(part);
     }
 
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);

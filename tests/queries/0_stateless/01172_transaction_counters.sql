@@ -5,6 +5,9 @@ create table txn_counters (n Int64, mintid DEFAULT transactionID()) engine=Merge
 insert into txn_counters(n) values (1);
 select transactionID();
 
+-- stop background cleanup
+system stop merges txn_counters;
+
 begin transaction;
 insert into txn_counters(n) values (2);
 select 1, system.parts.name, txn_counters.mintid = system.parts.mintid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;

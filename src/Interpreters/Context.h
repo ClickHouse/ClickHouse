@@ -844,6 +844,7 @@ struct NamedSession
     NamedSession(NamedSessionKey key_, ContextPtr context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
         : key(key_), context(Context::createCopy(context_)), timeout(timeout_), parent(parent_)
     {
+        context->setSessionContext(context);
     }
 
     void release();
