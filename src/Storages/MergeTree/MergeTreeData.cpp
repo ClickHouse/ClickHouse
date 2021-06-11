@@ -912,12 +912,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     ThreadPool pool(num_threads);
 
-    for (size_t i = 0; i < part_names_with_disks.size(); ++i)
+    for (auto & part_names_with_disk : part_names_with_disks)
     {
-        pool.scheduleOrThrowOnError([&, i]
+        pool.scheduleOrThrowOnError([&]
         {
-            const auto & part_name = part_names_with_disks[i].first;
-            const auto part_disk_ptr = part_names_with_disks[i].second;
+            const auto & part_name = part_names_with_disk.first;
+            const auto part_disk_ptr = part_names_with_disk.second;
 
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
