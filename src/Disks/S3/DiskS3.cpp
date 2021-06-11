@@ -1,5 +1,6 @@
 #include "DiskS3.h"
 
+#if USE_AWS_S3
 #include "Disks/DiskFactory.h"
 
 #include <bitset>
@@ -19,11 +20,11 @@
 #include <Common/thread_local_rng.h>
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/CopyObjectRequest.h> // Y_IGNORE
+#include <aws/s3/model/DeleteObjectsRequest.h> // Y_IGNORE
+#include <aws/s3/model/GetObjectRequest.h> // Y_IGNORE
+#include <aws/s3/model/ListObjectsV2Request.h> // Y_IGNORE
+#include <aws/s3/model/HeadObjectRequest.h> // Y_IGNORE
 
 
 namespace DB
@@ -958,3 +959,5 @@ DiskS3Settings::DiskS3Settings(
 }
 
 }
+
+#endif
