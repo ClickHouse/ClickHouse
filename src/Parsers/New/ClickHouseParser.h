@@ -3064,7 +3064,7 @@ public:
   public:
     TableArgExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    IdentifierContext *identifier();
+    NestedIdentifierContext *nestedIdentifier();
     TableFunctionExprContext *tableFunctionExpr();
     LiteralContext *literal();
 
