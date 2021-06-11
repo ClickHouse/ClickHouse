@@ -283,6 +283,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
+    // bool useDefaultImplementationForNulls() const final { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
     bool isDeterministic() const override { return false; }
@@ -331,6 +332,8 @@ public:
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
+
+        std::cerr << "FunctionDictGetNoType " << input_rows_count << std::endl;
 
         String dictionary_name;
 
@@ -453,26 +456,13 @@ public:
                      getName(),
                      key_col_with_type.type->getName());
 
-            if (attribute_names.size() > 1)
-            {
-                const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
-
-                Columns result_columns = dictionary->getColumns(
-                    attribute_names,
-                    result_tuple_type.getElements(),
-                    {key_column},
-                    {std::make_shared<DataTypeUInt64>()},
-                    default_cols);
-
-                result = ColumnTuple::create(std::move(result_columns));
-            }
-            else
-                result = dictionary->getColumn(
-                    attribute_names[0],
-                    result_type,
-                    {key_column},
-                    {std::make_shared<DataTypeUInt64>()},
-                    default_cols.front());
+            result = executeDictionaryRequest(
+                dictionary,
+                attribute_names,
+                {key_column},
+                {std::make_shared<DataTypeUInt64>()},
+                result_type,
+                default_cols);
         }
         else if (dictionary_key_type == DictionaryKeyType::complex)
         {
@@ -486,36 +476,16 @@ public:
             /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
             ColumnPtr key_column_full = key_col_with_type.column->convertToFullColumnIfConst();
 
-            if (!isTuple(key_col_with_type.type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Third argument of function {} must be tuple when dictionary is complex. Actual type {}.",
-                    getName(),
-                    key_col_with_type.type->getName());
-
             const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_column_full).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-            if (attribute_names.size() > 1)
-            {
-                const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
-
-                Columns result_columns = dictionary->getColumns(
-                    attribute_names,
-                    result_tuple_type.getElements(),
-                    key_columns,
-                    key_types,
-                    default_cols);
-
-                result = ColumnTuple::create(std::move(result_columns));
-            }
-            else
-                result = dictionary->getColumn(
-                    attribute_names[0],
-                    result_type,
-                    key_columns,
-                    key_types,
-                    default_cols.front());
+            result = executeDictionaryRequest(
+                dictionary,
+                attribute_names,
+                key_columns,
+                key_types,
+                result_type,
+                default_cols);
         }
         else if (dictionary_key_type == DictionaryKeyType::range)
         {
@@ -526,26 +496,13 @@ public:
                      getName(),
                      key_col_with_type.type->getName());
 
-            if (attribute_names.size() > 1)
-            {
-                const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
-
-                Columns result_columns = dictionary->getColumns(
-                    attribute_names,
-                    result_tuple_type.getElements(),
-                    {key_column, range_col},
-                    {std::make_shared<DataTypeUInt64>(), range_col_type},
-                    default_cols);
-
-                result = ColumnTuple::create(std::move(result_columns));
-            }
-            else
-                result = dictionary->getColumn(
-                    attribute_names[0],
-                    result_type,
-                    {key_column, range_col},
-                    {std::make_shared<DataTypeUInt64>(), range_col_type},
-                    default_cols.front());
+            result = executeDictionaryRequest(
+                dictionary,
+                attribute_names,
+                {key_column, range_col},
+                {std::make_shared<DataTypeUInt64>(), range_col_type},
+                result_type,
+                default_cols);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown dictionary identifier type");
@@ -554,6 +511,40 @@ public:
     }
 
 private:
+
+    ColumnPtr executeDictionaryRequest(
+        std::shared_ptr<const IDictionary> & dictionary,
+        const Strings & attribute_names,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const DataTypePtr & result_type,
+        const Columns & default_cols) const
+    {
+        ColumnPtr result;
+
+        if (attribute_names.size() > 1)
+        {
+            const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
+
+            Columns result_columns = dictionary->getColumns(
+                attribute_names,
+                result_tuple_type.getElements(),
+                key_columns,
+                key_types,
+                default_cols);
+
+            result = ColumnTuple::create(std::move(result_columns));
+        }
+        else
+            result = dictionary->getColumn(
+                attribute_names[0],
+                result_type,
+                key_columns,
+                key_types,
+                default_cols.front());
+
+        return result;
+    }
 
     Strings getAttributeNamesFromColumn(const ColumnPtr & column, const DataTypePtr & type) const
     {
