@@ -39,7 +39,7 @@ class Task:
         for instance_name, _ in cluster.instances.items():
             instance = cluster.instances[instance_name]
             instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_taxi_data.xml'), self.container_task_file)
-            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
+            logging.debug(f"Copied task file to container of '{instance_name}' instance. Path {self.container_task_file}")
 
 
     def start(self):
@@ -187,10 +187,10 @@ def execute_task(started_cluster, task, cmd_options):
     task.start()
 
     zk = started_cluster.get_kazoo_client('zoo1')
-    print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
+    logging.debug("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
     # Run cluster-copier processes on each node
-    docker_api = docker.from_env().api
+    docker_api = started_cluster.docker_client.api
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
@@ -201,9 +201,9 @@ def execute_task(started_cluster, task, cmd_options):
            '--base-dir', '/var/log/clickhouse-server/copier']
     cmd += cmd_options
 
-    print(cmd)
+    logging.debug(f"execute_task cmd: {cmd}")
 
-    for instance_name, instance in started_cluster.instances.items():
+    for instance_name in started_cluster.instances.keys():
         instance = started_cluster.instances[instance_name]
         container = instance.get_docker_handle()
         instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs_three_nodes/config-copier.xml"), "/etc/clickhouse-server/config-copier.xml")
