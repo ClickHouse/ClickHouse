@@ -33,8 +33,9 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
+    extern const int NOT_IsMPLEMENTED;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace MySQLInterpreter
@@ -124,7 +125,7 @@ static ColumnsDescription getColumnsDescription(const NamesAndTypesList & column
 
     ColumnsDescription columns_description;
     ColumnDescription column_description;
-    
+
     for (
         auto [column_name_and_type, declare_column_ast] = std::tuple{columns_name_and_type.begin(), columns_definition->children.begin()};
         column_name_and_type != columns_name_and_type.end();
@@ -138,7 +139,7 @@ static ColumnsDescription getColumnsDescription(const NamesAndTypesList & column
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
                 if (options->changes.count("comment"))
                     comment = options->changes.at("comment")->as<ASTLiteral>()->value.safeGet<String>();
-        
+
         column_description.name = column_name_and_type->name;
         column_description.type = column_name_and_type->type;
         column_description.comment = std::move(comment);
