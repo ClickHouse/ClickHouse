@@ -425,8 +425,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
                 for (const auto & f : value_field.get<Array>())
                 {
-                    if (f.isNull() && !is_nullable)
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} can't contain NULLs.", function_name);
+                    if ((f.isNull() && !is_nullable) || f.IsDecimal(f.getType()))
+                        return false;
 
                     mutable_column->insert(convertFieldToType(f, *actual_type, value_type.get()));
                 }
