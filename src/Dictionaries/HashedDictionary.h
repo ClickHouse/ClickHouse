@@ -173,7 +173,8 @@ private:
             Float32,
             Float64,
             UUID,
-            StringRef>
+            StringRef,
+            Array>
             null_values;
 
         std::variant<
@@ -196,7 +197,8 @@ private:
             CollectionType<Float32>,
             CollectionType<Float64>,
             CollectionType<UUID>,
-            CollectionType<StringRef>>
+            CollectionType<StringRef>,
+            CollectionType<Array>>
             container;
 
         std::unique_ptr<Arena> string_arena;
