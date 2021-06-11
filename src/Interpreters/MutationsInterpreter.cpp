@@ -849,8 +849,11 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
         }
     }
 
+    QueryPlanOptimizationSettings do_not_optimize_plan;
+    do_not_optimize_plan.optimize_plan = false;
+
     auto pipeline = plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
+        do_not_optimize_plan,
         BuildQueryPipelineSettings::fromContext(context));
 
     pipeline->addSimpleTransform([&](const Block & header)
