@@ -1,6 +1,4 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: HDFS
 ---
@@ -8,7 +6,7 @@ toc_title: HDFS
 # HDFS {#table_engines-hdfs}
 
 这个引擎提供了与 [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) 生态系统的集成，允许通过 ClickHouse 管理 [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) 上的数据。这个引擎类似于
-(../../engines/table-engines/special/file.md#table_engines-file) 和 [URL](../../engines/table-engines/special/url.md#table_engines-url) 引擎，但提供了 Hadoop 的特定功能。
+[文件](../../../engines/table-engines/special/file.md#table_engines-file) 和 [URL](../../../engines/table-engines/special/url.md#table_engines-url) 引擎，但提供了 Hadoop 的特定功能。
 
 ## 用法 {#usage}
 
@@ -16,8 +14,8 @@ toc_title: HDFS
 ENGINE = HDFS(URI, format)
 ```
 
-该 `URI` 参数是 HDFS 中整个文件的 URI。
-该 `format` 参数指定一种可用的文件格式。 执行
+`URI` 参数是 HDFS 中整个文件的 URI。
+`format` 参数指定一种可用的文件格式。 执行
 `SELECT` 查询时，格式必须支持输入，以及执行
 `INSERT` 查询时，格式必须支持输出. 你可以在 [格式](../../../interfaces/formats.md#formats) 章节查看可用的格式。
 路径部分 `URI` 可能包含 glob 通配符。 在这种情况下，表将是只读的。
