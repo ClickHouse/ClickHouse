@@ -36,26 +36,32 @@ struct TaskTable
 
     String getPartitionAttachIsDonePath(const String & partition_name) const;
 
-    String getPartitionPiecePath(const String & partition_name, const size_t piece_number) const;
+    String getPartitionPiecePath(const String & partition_name, size_t piece_number) const;
 
     String getCertainPartitionIsDirtyPath(const String & partition_name) const;
 
-    String getCertainPartitionPieceIsDirtyPath(const String & partition_name, const size_t piece_number) const;
+    String getCertainPartitionPieceIsDirtyPath(const String & partition_name, size_t piece_number) const;
 
     String getCertainPartitionIsCleanedPath(const String & partition_name) const;
 
-    String getCertainPartitionPieceIsCleanedPath(const String & partition_name, const size_t piece_number) const;
+    String getCertainPartitionPieceIsCleanedPath(const String & partition_name, size_t piece_number) const;
 
     String getCertainPartitionTaskStatusPath(const String & partition_name) const;
 
-    String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const;
-
+    String getCertainPartitionPieceTaskStatusPath(const String & partition_name, size_t piece_number) const;
 
     bool isReplicatedTable() const { return is_replicated_table; }
+
+    /// These nodes are used for check-status option
+    String getStatusAllPartitionCount() const;
+    String getStatusProcessedPartitionsCount() const;
 
     /// Partitions will be split into number-of-splits pieces.
     /// Each piece will be copied independently. (10 by default)
     size_t number_of_splits;
+
+    bool allow_to_copy_alias_and_materialized_columns{false};
+    bool allow_to_drop_target_partitions{false};
 
     String name_in_config;
 
@@ -83,7 +89,7 @@ struct TaskTable
     String engine_push_zk_path;
     bool is_replicated_table;
 
-    ASTPtr rewriteReplicatedCreateQueryToPlain();
+    ASTPtr rewriteReplicatedCreateQueryToPlain() const;
 
     /*
      * A Distributed table definition used to split data
@@ -181,6 +187,7 @@ struct TaskShard
 
     /// Last CREATE TABLE query of the table of the shard
     ASTPtr current_pull_table_create_query;
+    ASTPtr current_push_table_create_query;
 
     /// Internal distributed tables
     DatabaseAndTableName table_read_shard;
@@ -242,6 +249,16 @@ inline String TaskTable::getCertainPartitionPieceTaskStatusPath(const String & p
     return getPartitionPiecePath(partition_name, piece_number) + "/shards";
 }
 
+inline String TaskTable::getStatusAllPartitionCount() const
+{
+    return task_cluster.task_zookeeper_path + "/status/all_partitions_count";
+}
+
+inline String TaskTable::getStatusProcessedPartitionsCount() const
+{
+    return task_cluster.task_zookeeper_path + "/status/processed_partitions_count";
+}
+
 inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfiguration & config,
                      const String & prefix_, const String & table_key)
         : task_cluster(parent)
@@ -250,7 +267,10 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
 
     name_in_config = table_key;
 
-    number_of_splits = config.getUInt64(table_prefix + "number_of_splits", 10);
+    number_of_splits = config.getUInt64(table_prefix + "number_of_splits", 3);
+
+    allow_to_copy_alias_and_materialized_columns = config.getBool(table_prefix + "allow_to_copy_alias_and_materialized_columns", false);
+    allow_to_drop_target_partitions = config.getBool(table_prefix + "allow_to_drop_target_partitions", false);
 
     cluster_pull_name = config.getString(table_prefix + "cluster_pull");
     cluster_push_name = config.getString(table_prefix + "cluster_push");
@@ -343,7 +363,7 @@ inline void TaskTable::initShards(RandomEngine && random_engine)
     std::uniform_int_distribution<UInt8> get_urand(0, std::numeric_limits<UInt8>::max());
 
     // Compute the priority
-    for (auto & shard_info : cluster_pull->getShardsInfo())
+    for (const auto & shard_info : cluster_pull->getShardsInfo())
     {
         TaskShardPtr task_shard = std::make_shared<TaskShard>(*this, shard_info);
         const auto & replicas = cluster_pull->getShardsAddresses().at(task_shard->indexInCluster());
@@ -369,7 +389,7 @@ inline void TaskTable::initShards(RandomEngine && random_engine)
     local_shards.assign(all_shards.begin(), it_first_remote);
 }
 
-inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain()
+inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain() const
 {
     ASTPtr prev_engine_push_ast = engine_push_ast->clone();
 
@@ -383,9 +403,15 @@ inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain()
     {
         auto & replicated_table_arguments = new_engine_ast.arguments->children;
 
-        /// Delete first two arguments of Replicated...MergeTree() table.
-        replicated_table_arguments.erase(replicated_table_arguments.begin());
-        replicated_table_arguments.erase(replicated_table_arguments.begin());
+
+        /// In some cases of Atomic database engine usage ReplicatedMergeTree tables
+        /// could be created without arguments.
+        if (!replicated_table_arguments.empty())
+        {
+            /// Delete first two arguments of Replicated...MergeTree() table.
+            replicated_table_arguments.erase(replicated_table_arguments.begin());
+            replicated_table_arguments.erase(replicated_table_arguments.begin());
+        }
     }
 
     return new_storage_ast.clone();
@@ -400,7 +426,7 @@ inline String DB::TaskShard::getDescription() const
 
 inline String DB::TaskShard::getHostNameExample() const
 {
-    auto & replicas = task_table.cluster_pull->getShardsAddresses().at(indexInCluster());
+    const auto & replicas = task_table.cluster_pull->getShardsAddresses().at(indexInCluster());
     return replicas.at(0).readableString();
 }
 

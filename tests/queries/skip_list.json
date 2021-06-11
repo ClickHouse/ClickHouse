@@ -411,7 +411,9 @@
         "01280_ssd_complex_key_dictionary",
         "01684_ssd_cache_dictionary_simple_key",
         "01685_ssd_cache_dictionary_complex_key",
-        "01889_postgresql_protocol_null_fields"
+        "01889_postgresql_protocol_null_fields",
+        "01889_check_row_policy_defined_using_user_function",
+        "01903_ssd_cache_dictionary_array_type"
     ],
     "parallel":
     [
@@ -735,6 +737,7 @@
         "01710_projection_fetch",
         "01870_modulo_partition_key",
         "01870_buffer_flush", // creates database
-        "01889_postgresql_protocol_null_fields"
+        "01889_postgresql_protocol_null_fields",
+        "01889_check_row_policy_defined_using_user_function"
     ]
 }

@@ -68,7 +68,7 @@ int main(int argc, char ** argv)
     using namespace DB;
 
     using Key = UInt64;
-    using Value = std::vector<IAggregateFunction*>;
+    using Value = std::vector<const IAggregateFunction*>;
 
     size_t n = argc < 2 ? 10000000 : std::stol(argv[1]);
     //size_t m = std::stol(argv[2]);
