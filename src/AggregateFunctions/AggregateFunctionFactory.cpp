@@ -17,9 +17,9 @@
 #include <Common/CurrentThread.h>
 
 #include <Poco/String.h>
-#include "registerAggregateFunctions.h"
 
 #include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
@@ -95,7 +95,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         // nullability themselves. Another special case is functions from Nothing
         // that are rewritten to AggregateFunctionNothing, in this case
         // nested_function is nullptr.
-        if (nested_function && nested_function->asWindowFunction())
+        if (nested_function && nested_function->isOnlyWindowFunction())
         {
             return nested_function;
         }
