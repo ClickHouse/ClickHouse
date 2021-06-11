@@ -2,7 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Common/typeid_cast.h>
-#include "registerAggregateFunctions.h"
+
 
 namespace DB
 {
