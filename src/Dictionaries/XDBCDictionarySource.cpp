@@ -86,7 +86,7 @@ namespace
         {
             if (!schema.empty())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Dictionary source of type {0} specifies a schema but schema is not supported by {0}-driver",
+                    "Dictionary source of type {} specifies a schema but schema is not supported by {}-driver",
                     bridge_.getName());
         }
 
@@ -99,29 +99,22 @@ static const UInt64 max_block_size = 8192;
 
 XDBCDictionarySource::XDBCDictionarySource(
     const DictionaryStructure & dict_struct_,
-    const Poco::Util::AbstractConfiguration & config_,
-    const std::string & config_prefix_,
+    const Configuration & configuration_,
     const Block & sample_block_,
     ContextConstPtr context_,
     const BridgeHelperPtr bridge_)
     : WithContext(context_->getGlobalContext())
     , log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
-    , update_time{std::chrono::system_clock::from_time_t(0)}
-    , dict_struct{dict_struct_}
-    , db{config_.getString(config_prefix_ + ".db", "")}
-    , schema{config_.getString(config_prefix_ + ".schema", "")}
-    , table{config_.getString(config_prefix_ + ".table")}
-    , where{config_.getString(config_prefix_ + ".where", "")}
-    , update_field{config_.getString(config_prefix_ + ".update_field", "")}
-    , sample_block{sample_block_}
-    , query_builder{makeExternalQueryBuilder(dict_struct, db, schema, table, where, *bridge_)}
-    , load_all_query{query_builder.composeLoadAllQuery()}
-    , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}
-    , bridge_helper{bridge_}
-    , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_)}
+    , update_time(std::chrono::system_clock::from_time_t(0))
+    , dict_struct(dict_struct_)
+    , configuration(configuration_)
+    , sample_block(sample_block_)
+    , query_builder(makeExternalQueryBuilder(dict_struct, configuration.db, configuration.schema, configuration.table, configuration.where, *bridge_))
+    , load_all_query(query_builder.composeLoadAllQuery())
+    , bridge_helper(bridge_)
+    , bridge_url(bridge_helper->getMainURI())
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_))
 {
-    bridge_url = bridge_helper->getMainURI();
-
     auto url_params = bridge_helper->getURLParams(max_block_size);
     for (const auto & [name, value] : url_params)
         bridge_url.addQueryParameter(name, value);
@@ -131,20 +124,16 @@ XDBCDictionarySource::XDBCDictionarySource(
 XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
     : WithContext(other.getContext())
     , log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
-    , update_time{other.update_time}
-    , dict_struct{other.dict_struct}
-    , db{other.db}
-    , table{other.table}
-    , where{other.where}
-    , update_field{other.update_field}
-    , sample_block{other.sample_block}
-    , query_builder{other.query_builder}
-    , load_all_query{other.load_all_query}
-    , invalidate_query{other.invalidate_query}
-    , invalidate_query_response{other.invalidate_query_response}
-    , bridge_helper{other.bridge_helper}
-    , bridge_url{other.bridge_url}
-    , timeouts{other.timeouts}
+    , update_time(other.update_time)
+    , dict_struct(other.dict_struct)
+    , configuration(other.configuration)
+    , sample_block(other.sample_block)
+    , query_builder(other.query_builder)
+    , load_all_query(other.load_all_query)
+    , invalidate_query_response(other.invalidate_query_response)
+    , bridge_helper(other.bridge_helper)
+    , bridge_url(other.bridge_url)
+    , timeouts(other.timeouts)
 {
 }
 
@@ -153,10 +142,10 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
 {
     if (update_time != std::chrono::system_clock::from_time_t(0))
     {
-        time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - 1;
+        time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - configuration.update_lag;
         std::string str_time = DateLUT::instance().timeToString(hr_time);
         update_time = std::chrono::system_clock::now();
-        return query_builder.composeUpdateQuery(update_field, str_time);
+        return query_builder.composeUpdateQuery(configuration.update_field, str_time);
     }
     else
     {
@@ -204,7 +193,7 @@ bool XDBCDictionarySource::supportsSelectiveLoad() const
 
 bool XDBCDictionarySource::hasUpdateField() const
 {
-    return !update_field.empty();
+    return !configuration.update_field.empty();
 }
 
 
@@ -216,15 +205,16 @@ DictionarySourcePtr XDBCDictionarySource::clone() const
 
 std::string XDBCDictionarySource::toString() const
 {
-    return bridge_helper->getName() + ": " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
+    const auto & where = configuration.where;
+    return bridge_helper->getName() + ": " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
 
 bool XDBCDictionarySource::isModified() const
 {
-    if (!invalidate_query.empty())
+    if (!configuration.invalidate_query.empty())
     {
-        auto response = doInvalidateQuery(invalidate_query);
+        auto response = doInvalidateQuery(configuration.invalidate_query);
         if (invalidate_query_response == response) //-V1051
             return false;
         invalidate_query_response = response;
@@ -250,7 +240,7 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
 }
 
 
-BlockInputStreamPtr XDBCDictionarySource::loadFromQuery(const Poco::URI url, const Block & required_sample_block, const std::string & query) const
+BlockInputStreamPtr XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const
 {
     bridge_helper->startBridgeSync();
 
@@ -284,7 +274,21 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 #if USE_ODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
             context, context->getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
-        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context, bridge);
+
+        std::string settings_config_prefix = config_prefix + ".odbc";
+
+        XDBCDictionarySource::Configuration configuration
+        {
+            .db = config.getString(settings_config_prefix + ".db", ""),
+            .schema = config.getString(settings_config_prefix + ".schema", ""),
+            .table = config.getString(settings_config_prefix + ".table"),
+            .where = config.getString(settings_config_prefix + ".where", ""),
+            .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
+            .update_field = config.getString(settings_config_prefix + ".update_field", ""),
+            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1)
+        };
+
+        return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, context, bridge);
 #else
         (void)dict_struct;
         (void)config;

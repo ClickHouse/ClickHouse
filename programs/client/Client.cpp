@@ -1336,7 +1336,7 @@ private:
 
                     fmt::print(
                         stderr,
-                        "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
+                        "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
                     exit(1);
                 }
@@ -1461,7 +1461,7 @@ private:
                     const auto text_3 = ast_3->formatForErrorMessage();
                     if (text_3 != text_2)
                     {
-                        fmt::print(stderr, "The query formatting is broken.\n");
+                        fmt::print(stderr, "Found error: The query formatting is broken.\n");
 
                         printChangedSettings();
 
