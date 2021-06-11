@@ -1,5 +1,6 @@
 <test>
     <preconditions>
+        <table_exists>hits_100m_single</table_exists>
         <table_exists>hits_10m_single</table_exists>
         <ram_size>30000000000</ram_size>
     </preconditions>
@@ -53,10 +54,10 @@
                <value>uniqUpTo(10)</value>
                <value>uniqUpTo(25)</value>
                <value>uniqUpTo(100)</value>
-               <value>uniqTheta</value>
            </values>
        </substitution>
     </substitutions>
 
-    <query>SELECT {key} AS k, {func}(UserID) FROM hits_10m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT {key} AS k, {func}(UserID) FROM hits_100m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT {key} AS k, uniqTheta(UserID) FROM hits_10m_single GROUP BY k FORMAT Null</query>
 </test>
