@@ -89,7 +89,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
         {
             if (identifier->isShort())
             {
-                auto name = identifier->shortName();
+                const auto & name = identifier->shortName();
                 auto subquery_it = data.subqueries.find(name);
                 if (subquery_it != data.subqueries.end())
                 {
