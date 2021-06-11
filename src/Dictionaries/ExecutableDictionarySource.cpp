@@ -71,8 +71,6 @@ ExecutableDictionarySource::ExecutableDictionarySource(
 {
     /// Remove keys from sample_block for implicit_key dictionary because
     /// these columns will not be returned from source
-    /// Implicit key means that the source script will return only values,
-    /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
     if (configuration.implicit_key)
     {
         auto keys_names = dict_struct.getKeysNames();
@@ -277,11 +275,11 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 
         ExecutableDictionarySource::Configuration configuration
         {
-            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
             .command = config.getString(settings_config_prefix + ".command"),
             .format = config.getString(settings_config_prefix + ".format"),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
+            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false)
         };
 
         return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);
