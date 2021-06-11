@@ -26,7 +26,6 @@
 #include <Parsers/formatAST.h>
 #include <Common/Macros.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
