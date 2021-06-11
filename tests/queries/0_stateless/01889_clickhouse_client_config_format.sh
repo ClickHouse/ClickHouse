@@ -5,13 +5,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # use $CLICKHOUSE_DATABASE so that clickhouse-test will replace it with default to match .reference
-config=$CUR_DIR/config_$CLICKHOUSE_DATABASE
-xml_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.xml
-XML_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.XML
-conf_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.conf
-yml_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.yml
-yaml_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.yaml
-ini_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.ini
+config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE
+xml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.xml
+XML_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.XML
+conf_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.conf
+yml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.yml
+yaml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.yaml
+ini_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.ini
 
 function cleanup()
 {
@@ -74,4 +74,4 @@ $CLICKHOUSE_CLIENT --config "$yml_config" -q "select getSetting('max_threads')"
 echo 'yaml'
 $CLICKHOUSE_CLIENT --config "$yaml_config" -q "select getSetting('max_threads')"
 echo 'ini'
-$CLICKHOUSE_CLIENT --config "$ini_config" -q "select getSetting('max_threads')" 2>&1 |& sed -e "s#$CUR_DIR##" -e "s#DB::Exception: ##"
+$CLICKHOUSE_CLIENT --config "$ini_config" -q "select getSetting('max_threads')" 2>&1 |& sed -e "s#$CLICKHOUSE_TMP##" -e "s#DB::Exception: ##"
