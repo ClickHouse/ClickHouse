@@ -232,6 +232,6 @@ TEST(MySQLCreateRewritten, QueryWithColumnComments)
     EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
         "CREATE TABLE `test_database`.`test_table_1`(`key` INT NOT NULL PRIMARY KEY, `test` INT COMMENT 'test_comment')", context_holder.context)),
         "CREATE TABLE test_database.test_table_1 (`key` Int32, `test` Nullable(Int32) COMMENT 'test_comment'" +
-        std::string(MATERIALIZEMYSQL_TABLE_COLUMNS) + 
+        std::string(MATERIALIZEMYSQL_TABLE_COLUMNS) +
         ") ENGINE = ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
 }
