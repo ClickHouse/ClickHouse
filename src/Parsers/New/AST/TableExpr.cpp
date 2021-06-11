@@ -149,7 +149,7 @@ antlrcpp::Any ParseTreeVisitor::visitTableArgExpr(ClickHouseParser::TableArgExpr
 {
     if (ctx->literal()) return std::make_shared<TableArgExpr>(visit(ctx->literal()).as<PtrTo<Literal>>());
     if (ctx->tableFunctionExpr()) return std::make_shared<TableArgExpr>(visit(ctx->tableFunctionExpr()).as<PtrTo<TableFunctionExpr>>());
-    if (ctx->identifier()) return std::make_shared<TableArgExpr>(visit(ctx->identifier()).as<PtrTo<Identifier>>());
+    if (ctx->nestedIdentifier()) return std::make_shared<TableArgExpr>(visit(ctx->nestedIdentifier()).as<PtrTo<Identifier>>());
     __builtin_unreachable();
 }
 
