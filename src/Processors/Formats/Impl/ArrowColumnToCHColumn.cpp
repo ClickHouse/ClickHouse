@@ -428,7 +428,7 @@ namespace DB
             default:
                 throw Exception
                     {
-                        fmt::format("Unsupported {} type \"{}\" of an input column \"{}\".", format_name, arrow_column->type()->name(), column_name),
+                        fmt::format(R"(Unsupported {} type "{}" of an input column "{}".)", format_name, arrow_column->type()->name(), column_name),
                         ErrorCodes::UNKNOWN_TYPE
                     };
         }
@@ -518,7 +518,7 @@ namespace DB
         }
         throw Exception
             {
-                fmt::format("The type \"{}\" of an input column \"{}\" is not supported for conversion from a {} data format.", arrow_type->name(), column_name, format_name),
+                fmt::format(R"(The type "{}" of an input column "{}" is not supported for conversion from a {} data format.)", arrow_type->name(), column_name, format_name),
                 ErrorCodes::CANNOT_CONVERT_TYPE
             };
     }
