@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 
 import pytest
@@ -6,10 +7,27 @@ import pytest
 from .server import ServerThread
 
 
+# Command-line arguments
+
 def pytest_addoption(parser):
     parser.addoption("--builddir", action="store", default=None, help="Path to build directory to use binaries from")
     parser.addoption("--antlr", action="store_true", default=False, help="Use ANTLR parser")
 
+
+# HTML report hooks
+
+def pytest_html_report_title(report):
+    report.title = "ClickHouse Functional Stateless Tests (PyTest)"
+
+
+RE_TEST_NAME = re.compile(r"\[(.*)\]")
+def pytest_itemcollected(item):
+    match = RE_TEST_NAME.search(item.name)
+    if match:
+        item._nodeid = match.group(1)
+
+
+# Fixtures
 
 @pytest.fixture(scope='module')
 def cmdopts(request):
