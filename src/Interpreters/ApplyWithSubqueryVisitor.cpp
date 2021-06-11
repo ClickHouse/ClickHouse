@@ -89,7 +89,8 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
         {
             if (identifier->isShort())
             {
-                const auto & name = identifier->shortName();
+                /// Clang-tidy is wrong on this line, because `func.arguments->children.at(1)` gets replaced before last use of `name`.
+                auto name = identifier->shortName();  // NOLINT
                 auto subquery_it = data.subqueries.find(name);
                 if (subquery_it != data.subqueries.end())
                 {
