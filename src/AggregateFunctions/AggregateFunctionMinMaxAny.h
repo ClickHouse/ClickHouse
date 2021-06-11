@@ -1114,7 +1114,7 @@ public:
         if constexpr (!Data::is_compilable)
             return false;
 
-        return canBeNativeType(*type);
+        return canBeNativeType(*this->argument_types[0]);
     }
 
 
