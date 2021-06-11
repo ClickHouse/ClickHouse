@@ -110,7 +110,7 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
     IFunctionBase::ShortCircuitSettings short_circuit_settings;
     for (const auto & node : nodes)
     {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(&short_circuit_settings, node.children.size()))
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(&short_circuit_settings, node.children.size()) && !node.children.empty())
         {
             /// We should enable lazy execution for all actions that are used only in arguments of
             /// short-circuit function. To determine if an action is used somewhere else we use
@@ -121,16 +121,36 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
             std::deque<const ActionsDAG::Node *> queue;
 
             /// For some short-circuit function we shouldn't enable lazy execution for actions that are common
-            /// descendants of different function arguments (example: if(cond, expr1(..., expr, ...), expr2(..., expr, ...))).
+            /// descendants of different function arguments. Example: if(cond, expr1(..., expr, ...), expr2(..., expr, ...))).
             /// For each node we will store the index of argument that is it's ancestor. If node has two
             /// parents with different argument ancestor, this node is common descendants of two different function arguments.
             std::unordered_map<const ActionsDAG::Node *, int> argument_ancestor;
 
-            size_t i = short_circuit_settings.enable_lazy_execution_for_first_argument ? 0 : 1;
+            /// The set of nodes to skip in BFS. It's used in two cases:
+            /// 1) To skip first argument if enable_lazy_execution_for_first_argument is false and it's used in the other arguments.
+            /// Examples: and(expr, expr), and(expr, expr1(..., expr, ...)).
+            /// 2) To skip repeated arguments if enable_lazy_execution_for_common_descendants_of_arguments is false.
+            /// Example: if(cond, expr, expr).
+            std::unordered_set<const ActionsDAG::Node *> skip_nodes;
+
+            size_t i = 0;
+            if (!short_circuit_settings.enable_lazy_execution_for_first_argument)
+            {
+                ++i;
+                skip_nodes.insert(node.children[0]);
+            }
+
             for (; i < node.children.size(); ++i)
             {
                 queue.push_back(node.children[i]);
-                argument_ancestor[node.children[i]] = i;
+                if (!short_circuit_settings.enable_lazy_execution_for_common_descendants_of_arguments)
+                {
+                    /// Check repeated argument.
+                    if (argument_ancestor.contains(node.children[i]))
+                        skip_nodes.insert(node.children[i]);
+                    else
+                        argument_ancestor[node.children[i]] = i;
+                }
             }
 
             need_outside[&node] = false;
@@ -139,10 +159,7 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
                 const ActionsDAG::Node * cur = queue.front();
                 queue.pop_front();
 
-                /// If lazy execution is disabled for the first argument, we should check case
-                /// when the other arguments use it.
-                /// Examples: and(expr, expr), and(expr, expr1(..., expr, ...))
-                if (!short_circuit_settings.enable_lazy_execution_for_first_argument && cur == node.children[0])
+                if (skip_nodes.contains(cur))
                     continue;
 
                 bool is_need_outside = false;
@@ -161,6 +178,8 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
 
                         if (!short_circuit_settings.enable_lazy_execution_for_common_descendants_of_arguments && argument_ancestor.contains(parent))
                         {
+                            /// If this node already has argument ancestor index and it doesn't match
+                            /// the index of the parent argument ancestor, mark this node as needed outside.
                             if (argument_ancestor.contains(cur) && argument_ancestor[cur] != argument_ancestor[parent])
                             {
                                 is_need_outside = true;
@@ -470,8 +489,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             ///  - It's is enabled and function is suitable for lazy execution or it has lazy executed arguments.
             if (action.node->lazy_execution == ActionsDAG::LazyExecution::FORCE_ENABLED
                 || (action.node->lazy_execution == ActionsDAG::LazyExecution::ENABLED
-                    /*&& (action.node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
-                        || checkShirtCircuitArguments(arguments) != -1)*/))
+                    && (action.node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
+                        || checkShirtCircuitArguments(arguments) != -1)))
             {
                 res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true);
             }

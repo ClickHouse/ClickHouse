@@ -115,67 +115,6 @@ public:
         return getLeastSupertype(types_of_branches);
     }
 
-    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const
-    {
-        int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
-        if (last_short_circuit_argument_index < 0)
-            return;
-
-        /// In multiIf we should execute the next condition only
-        /// if all previous once are false. So, we will filter
-        /// the next condition by inverted disjunction of previous once.
-        /// The next expression should be executed only if it's condition is
-        /// true and all previous conditions are false. So, we will
-        /// use default_value_in_expanding = 0 while extracting mask from
-        /// executed condition and filter expression by this mask.
-
-        IColumn::Filter current_mask;
-        MaskInfo current_mask_info = {.has_once = true, .has_zeros = false};
-        IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);
-        MaskInfo disjunctions_mask_info = {.has_once = false, .has_zeros = true};
-
-        int i = 1;
-        while (i <= last_short_circuit_argument_index)
-        {
-            auto & cond_column = arguments[i - 1].column;
-            /// If condition is const or null and value is false, we can skip execution of expression after this condition.
-            if ((isColumnConst(*cond_column) || cond_column->onlyNull()) && !cond_column->empty() && !cond_column->getBool(0))
-            {
-                current_mask_info.has_once = false;
-                current_mask_info.has_zeros = true;
-            }
-            else
-            {
-                current_mask_info = getMaskFromColumn(arguments[i - 1].column, current_mask, false, &mask_disjunctions, 0, true);
-                maskedExecute(arguments[i], current_mask, current_mask_info, false);
-            }
-
-            /// Check if the condition is always true and we don't need to execute the rest arguments.
-            if (!current_mask_info.has_zeros)
-                break;
-
-            ++i;
-            if (i > last_short_circuit_argument_index)
-                break;
-
-            /// Make a disjunction only if it make sense.
-            if (current_mask_info.has_once)
-                disjunctions_mask_info = disjunctionMasks(mask_disjunctions, current_mask);
-
-            /// If current disjunction of previous conditions doesn't have zeros, we don't need to execute the rest arguments.
-            if (!disjunctions_mask_info.has_zeros)
-                break;
-
-            maskedExecute(arguments[i], mask_disjunctions, disjunctions_mask_info, true);
-            ++i;
-        }
-
-        /// We could skip some arguments execution, but we cannot leave them as ColumnFunction.
-        /// So, create an empty column with the execution result type.
-        for (; i <= last_short_circuit_argument_index; ++i)
-            executeColumnIfNeeded(arguments[i], true);
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName arguments = std::move(args);
@@ -320,6 +259,68 @@ public:
         }
 
         return res;
+    }
+
+private:
+    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const
+    {
+        int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
+        if (last_short_circuit_argument_index < 0)
+            return;
+
+        /// In multiIf we should execute the next condition only
+        /// if all previous once are false. So, we will filter
+        /// the next condition by inverted disjunction of previous once.
+        /// The next expression should be executed only if it's condition is
+        /// true and all previous conditions are false. So, we will
+        /// use default_value_in_expanding = 0 while extracting mask from
+        /// executed condition and filter expression by this mask.
+
+        IColumn::Filter current_mask;
+        MaskInfo current_mask_info = {.has_once = true, .has_zeros = false};
+        IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);
+        MaskInfo disjunctions_mask_info = {.has_once = false, .has_zeros = true};
+
+        int i = 1;
+        while (i <= last_short_circuit_argument_index)
+        {
+            auto & cond_column = arguments[i - 1].column;
+            /// If condition is const or null and value is false, we can skip execution of expression after this condition.
+            if ((isColumnConst(*cond_column) || cond_column->onlyNull()) && !cond_column->empty() && !cond_column->getBool(0))
+            {
+                current_mask_info.has_once = false;
+                current_mask_info.has_zeros = true;
+            }
+            else
+            {
+                current_mask_info = getMaskFromColumn(arguments[i - 1].column, current_mask, false, &mask_disjunctions, 0, true);
+                maskedExecute(arguments[i], current_mask, current_mask_info, false);
+            }
+
+            /// Check if the condition is always true and we don't need to execute the rest arguments.
+            if (!current_mask_info.has_zeros)
+                break;
+
+            ++i;
+            if (i > last_short_circuit_argument_index)
+                break;
+
+            /// Make a disjunction only if it make sense.
+            if (current_mask_info.has_once)
+                disjunctions_mask_info = disjunctionMasks(mask_disjunctions, current_mask);
+
+            /// If current disjunction of previous conditions doesn't have zeros, we don't need to execute the rest arguments.
+            if (!disjunctions_mask_info.has_zeros)
+                break;
+
+            maskedExecute(arguments[i], mask_disjunctions, disjunctions_mask_info, true);
+            ++i;
+        }
+
+        /// We could skip some arguments execution, but we cannot leave them as ColumnFunction.
+        /// So, create an empty column with the execution result type.
+        for (; i <= last_short_circuit_argument_index; ++i)
+            executeColumnIfNeeded(arguments[i], true);
     }
 };
 
