@@ -3,18 +3,26 @@ import time
 import psycopg2
 import pymysql.cursors
 import pytest
+import logging
+import os.path
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True,
+node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True, with_postgres=True,
                              main_configs=['configs/openssl.xml', 'configs/odbc_logging.xml',
                                            'configs/enable_dictionaries.xml',
                                            'configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml',
                                            'configs/dictionaries/sqlite3_odbc_cached_dictionary.xml',
                                            'configs/dictionaries/postgres_odbc_hashed_dictionary.xml'], stay_alive=True)
+
+
+drop_table_sql_template = """
+    DROP TABLE IF EXISTS `clickhouse`.`{}`
+    """
 
 create_table_sql_template = """
     CREATE TABLE `clickhouse`.`{}` (
@@ -33,27 +41,50 @@ def skip_test_msan(instance):
 
 
 def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
-    return conn
-
+    errors = []
+    conn = None
+    for _ in range(15):
+        try:
+            if conn is None:
+                conn = pymysql.connect(user='root', password='clickhouse', host=cluster.mysql_ip, port=cluster.mysql_port)
+            else:
+                conn.ping(reconnect=True)
+            logging.debug(f"MySQL Connection establised: {cluster.mysql_ip}:{cluster.mysql_port}")
+            return conn
+        except Exception as e:
+            errors += [str(e)]
+            time.sleep(1)
+    
+    raise Exception("Connection not establised, {}".format(errors))
+ 
 
 def create_mysql_db(conn, name):
     with conn.cursor() as cursor:
-        cursor.execute(
-            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+        cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
+        cursor.execute("CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
 
 
 def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
+        cursor.execute(drop_table_sql_template.format(table_name))
         cursor.execute(create_table_sql_template.format(table_name))
 
 
-def get_postgres_conn():
-    conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
-    conn = psycopg2.connect(conn_string)
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    conn.autocommit = True
-    return conn
+def get_postgres_conn(started_cluster):
+    conn_string = "host={} port={} user='postgres' password='mysecretpassword'".format(started_cluster.postgres_ip, started_cluster.postgres_port)
+    errors = []
+    for _ in range(15):
+        try:
+            conn = psycopg2.connect(conn_string)
+            logging.debug("Postgre Connection establised: {}".format(conn_string))
+            conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+            conn.autocommit = True
+            return conn
+        except Exception as e:
+            errors += [str(e)]
+            time.sleep(1)
+    
+    raise Exception("Postgre connection not establised DSN={}, {}".format(conn_string, errors))
 
 
 def create_postgres_db(conn, name):
@@ -90,7 +121,7 @@ def started_cluster():
         create_mysql_db(mysql_conn, 'clickhouse')
         print("mysql database created")
 
-        postgres_conn = get_postgres_conn()
+        postgres_conn = get_postgres_conn(cluster)
         print("postgres connection received")
 
         create_postgres_db(postgres_conn, 'clickhouse')
@@ -130,7 +161,7 @@ def test_mysql_simple_select_works(started_cluster):
                        settings={"external_table_functions_use_nulls": "0"}) == '0\n511\n'
 
     node1.query('''
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse');
+CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse');
 '''.format(table_name, table_name))
 
     node1.query(
@@ -303,7 +334,7 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
 def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
     cursor.execute("truncate table clickhouse.test_table")
     cursor.execute("insert into clickhouse.test_table values(1, 'hello'),(2, 'world')")
@@ -315,13 +346,13 @@ def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
 def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
     cursor.execute("truncate table clickhouse.test_table")
     cursor.execute("insert into clickhouse.test_table values(3, 'xxx')")
     for i in range(100):
         try:
-            node1.query("system reload dictionary postgres_odbc_hashed", timeout=5)
+            node1.query("system reload dictionary postgres_odbc_hashed", timeout=15)
         except Exception as ex:
             assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
 
@@ -331,7 +362,7 @@ def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
 def test_postgres_insert(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     conn.cursor().execute("truncate table clickhouse.test_table")
 
     # Also test with Servername containing '.' and '-' symbols (defined in
@@ -342,12 +373,13 @@ def test_postgres_insert(started_cluster):
         "create table pg_insert (column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')")
     node1.query("insert into pg_insert values (1, 'hello'), (2, 'world')")
     assert node1.query("select * from pg_insert") == '1\thello\n2\tworld\n'
-    node1.query("insert into table function odbc('DSN=postgresql_odbc;', 'clickhouse', 'test_table') format CSV 3,test")
+    node1.query("insert into table function odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table') format CSV 3,test")
     node1.query(
-        "insert into table function odbc('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table') select number, 's' || toString(number) from numbers (4, 7)")
+        "insert into table function odbc('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')" \
+        " select number, 's' || toString(number) from numbers (4, 7)")
     assert node1.query("select sum(column1), count(column1) from pg_insert") == "55\t10\n"
     assert node1.query(
-        "select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc;', 'clickhouse', 'test_table')))") == "55\t10\n"
+        "select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table')))") == "55\t10\n"
 
 
 def test_bridge_dies_with_parent(started_cluster):
@@ -394,7 +426,7 @@ def test_bridge_dies_with_parent(started_cluster):
 def test_odbc_postgres_date_data_type(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn();
+    conn = get_postgres_conn(started_cluster);
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS clickhouse.test_date (column1 integer, column2 date)")
 
@@ -418,7 +450,7 @@ def test_odbc_postgres_date_data_type(started_cluster):
 def test_odbc_postgres_conversions(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
 
     cursor.execute(
@@ -460,7 +492,7 @@ def test_odbc_postgres_conversions(started_cluster):
 def test_odbc_cyrillic_with_varchar(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
 
     cursor.execute("DROP TABLE IF EXISTS clickhouse.test_cyrillic")
@@ -482,7 +514,7 @@ def test_odbc_cyrillic_with_varchar(started_cluster):
 def test_many_connections(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
 
     cursor.execute('DROP TABLE IF EXISTS clickhouse.test_pg_table')
@@ -506,7 +538,7 @@ def test_many_connections(started_cluster):
 def test_concurrent_queries(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
 
     node1.query('''
@@ -547,7 +579,7 @@ def test_concurrent_queries(started_cluster):
 def test_odbc_long_column_names(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn();
+    conn = get_postgres_conn(started_cluster);
     cursor = conn.cursor()
 
     column_name = "column" * 8
@@ -581,7 +613,7 @@ def test_odbc_long_column_names(started_cluster):
 def test_odbc_long_text(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
     cursor.execute("drop table if exists clickhouse.test_long_text")
     cursor.execute("create table clickhouse.test_long_text(flen int, field1 text)");
