@@ -937,7 +937,7 @@ void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, 
 
 DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
-    UInt64 s3_max_single_read_retries_,
+    size_t s3_max_single_read_retries_,
     size_t s3_min_upload_part_size_,
     size_t s3_max_single_part_upload_size_,
     size_t min_bytes_for_seek_,
