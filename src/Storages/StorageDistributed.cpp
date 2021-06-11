@@ -1017,7 +1017,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
 
     if (!limit)
     {
-        LOG_TRACE(log,
+        LOG_DEBUG(log,
             "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
             "try to increase it, but note that this may increase query processing time.",
             local_context->getSettingsRef().optimize_skip_unused_shards_limit);
