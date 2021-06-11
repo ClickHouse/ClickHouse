@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.3">
+<test>
     <create_query>
         CREATE TABLE simple_key_direct_dictionary_source_table
         (

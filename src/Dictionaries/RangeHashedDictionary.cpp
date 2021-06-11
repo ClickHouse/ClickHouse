@@ -125,17 +125,30 @@ ColumnPtr RangeHashedDictionary::getColumn(
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
+        const auto & attribute_null_value = std::get<ValueType>(attribute.null_values);
         AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
         DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
-        if constexpr (std::is_same_v<AttributeType, String>)
+        if constexpr (std::is_same_v<ValueType, Array>)
         {
             auto * out = column.get();
 
-            getItemsImpl<ValueType, ValueType>(
+            getItemsImpl<ValueType>(
+                attribute,
+                modified_key_columns,
+                [&](const size_t, const Array & value, bool)
+                {
+                    out->insert(value);
+                },
+                default_value_extractor);
+        }
+        else if constexpr (std::is_same_v<ValueType, StringRef>)
+        {
+            auto * out = column.get();
+
+            getItemsImpl<ValueType>(
                 attribute,
                 modified_key_columns,
                 [&](const size_t row, const StringRef value, bool is_null)
@@ -151,7 +164,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
         {
             auto & out = column->getData();
 
-            getItemsImpl<ValueType, ValueType>(
+            getItemsImpl<ValueType>(
                 attribute,
                 modified_key_columns,
                 [&](const size_t row, const auto value, bool is_null)
@@ -369,7 +382,7 @@ void RangeHashedDictionary::createAttributeImpl<String>(Attribute & attribute, c
 }
 
 RangeHashedDictionary::Attribute
-RangeHashedDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
+RangeHashedDictionary::createAttribute(const DictionaryAttribute & attribute, const Field & null_value)
 {
     Attribute attr{attribute.underlying_type, attribute.is_nullable, {}, {}, {}};
 
@@ -385,7 +398,7 @@ RangeHashedDictionary::createAttribute(const DictionaryAttribute& attribute, con
     return attr;
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
 void RangeHashedDictionary::getItemsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
@@ -422,8 +435,8 @@ void RangeHashedDictionary::getItemsImpl(
                 ++keys_found;
                 auto & value = val_it->value;
 
-                if (value)
-                    set_value(row, static_cast<OutputType>(*value), false); // NOLINT
+                if (value.has_value())
+                    set_value(row, *value, false);
                 else
                     set_value(row, default_value_extractor[row], true);
             }
@@ -636,7 +649,9 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+                             DictionarySourcePtr source_ptr,
+                             ContextConstPtr /* context */,
+                             bool /*created_from_ddl*/) -> DictionaryPtr
     {
         if (dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'range_hashed'");

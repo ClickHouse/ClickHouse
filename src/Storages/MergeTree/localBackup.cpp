@@ -29,7 +29,7 @@ static void localBackupImpl(const DiskPtr & disk, const String & source_path, co
     for (auto it = disk->iterateDirectory(source_path); it->isValid(); it->next())
     {
         auto source = it->path();
-        auto destination = destination_path + "/" + it->name();
+        auto destination = fs::path(destination_path) / it->name();
 
         if (!disk->isDirectory(source))
         {
@@ -74,13 +74,16 @@ void localBackup(const DiskPtr & disk, const String & source_path, const String 
 
             continue;
         }
-        catch (const Poco::FileNotFoundException &)
+        catch (const fs::filesystem_error & e)
         {
-            ++try_no;
-            if (try_no == max_tries)
-                throw;
-
-            continue;
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                ++try_no;
+                if (try_no == max_tries)
+                    throw;
+                continue;
+            }
+            throw;
         }
 
         break;

@@ -24,12 +24,12 @@ class FunctionCoalesce : public IFunction
 public:
     static constexpr auto name = "coalesce";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(ContextPtr context_) : context(context_) {}
+    explicit FunctionCoalesce(ContextConstPtr context_) : context(context_) {}
 
     std::string getName() const override
     {
@@ -160,7 +160,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    ContextConstPtr context;
 };
 
 }

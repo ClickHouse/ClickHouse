@@ -1,11 +1,11 @@
 #include <AggregateFunctions/AggregateFunctionOrFill.h>
 
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+
 namespace
 {
 

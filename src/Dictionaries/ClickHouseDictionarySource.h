@@ -28,8 +28,9 @@ public:
         const std::string db;
         const std::string table;
         const std::string where;
-        const std::string update_field;
         const std::string invalidate_query;
+        const std::string update_field;
+        const UInt64 update_lag;
         const bool is_local;
     };
 
@@ -37,7 +38,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         const Block & sample_block_,
-        ContextPtr context);
+        ContextConstPtr context);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
@@ -79,7 +80,7 @@ private:
     mutable std::string invalidate_query_response;
     ExternalQueryBuilder query_builder;
     Block sample_block;
-    ContextPtr context;
+    ContextMutablePtr context;
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;
     Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");

@@ -28,7 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 static CHJIT & getJITInstance()
@@ -43,13 +42,36 @@ static Poco::Logger * getLogger()
     return &logger;
 }
 
+class CompiledFunction
+{
+public:
+
+    CompiledFunction(void * compiled_function_, CHJIT::CompiledModuleInfo module_info_)
+        : compiled_function(compiled_function_)
+        , module_info(std::move(module_info_))
+    {}
+
+    void * getCompiledFunction() const { return compiled_function; }
+
+    ~CompiledFunction()
+    {
+        getJITInstance().deleteCompiledModule(module_info);
+    }
+
+private:
+
+    void * compiled_function;
+
+    CHJIT::CompiledModuleInfo module_info;
+};
+
 class LLVMExecutableFunction : public IExecutableFunction
 {
 public:
 
-    explicit LLVMExecutableFunction(const std::string & name_, JITCompiledFunction function_)
+    explicit LLVMExecutableFunction(const std::string & name_, std::shared_ptr<CompiledFunction> compiled_function_)
         : name(name_)
-        , function(function_)
+        , compiled_function(compiled_function_)
     {
     }
 
@@ -81,7 +103,9 @@ public:
             }
 
             columns[arguments.size()] = getColumnData(result_column.get());
-            function(input_rows_count, columns.data());
+
+            JITCompiledFunction jit_compiled_function_typed = reinterpret_cast<JITCompiledFunction>(compiled_function->getCompiledFunction());
+            jit_compiled_function_typed(input_rows_count, columns.data());
 
             #if defined(MEMORY_SANITIZER)
             /// Memory sanitizer don't know about stores from JIT-ed code.
@@ -111,7 +135,7 @@ public:
 
 private:
     std::string name;
-    JITCompiledFunction function = nullptr;
+    std::shared_ptr<CompiledFunction> compiled_function;
 };
 
 class LLVMFunction : public IFunctionBase
@@ -131,16 +155,12 @@ public:
             else if (node.type == CompileDAG::CompileType::INPUT)
                 argument_types.emplace_back(node.result_type);
         }
-
-        module_info = compileFunction(getJITInstance(), *this);
     }
 
-    ~LLVMFunction() override
+    void setCompiledFunction(std::shared_ptr<CompiledFunction> compiled_function_)
     {
-        getJITInstance().deleteCompiledModule(module_info);
+        compiled_function = compiled_function_;
     }
-
-    size_t getCompiledSize() const { return module_info.size; }
 
     bool isCompilable() const override { return true; }
 
@@ -157,13 +177,10 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        void * function = getJITInstance().findCompiledFunction(module_info, name);
+        if (!compiled_function)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Compiled function was not initialized {}", name);
 
-        if (!function)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot find compiled function {}", name);
-
-        JITCompiledFunction function_typed = reinterpret_cast<JITCompiledFunction>(function);
-        return std::make_unique<LLVMExecutableFunction>(name, function_typed);
+        return std::make_unique<LLVMExecutableFunction>(name, compiled_function);
     }
 
     bool isDeterministic() const override
@@ -252,7 +269,7 @@ private:
     CompileDAG dag;
     DataTypes argument_types;
     std::vector<FunctionBasePtr> nested_functions;
-    CHJIT::CompiledModuleInfo module_info;
+    std::shared_ptr<CompiledFunction> compiled_function;
 };
 
 static FunctionBasePtr compile(
@@ -269,50 +286,37 @@ static FunctionBasePtr compile(
             return nullptr;
     }
 
-    LOG_TRACE(getLogger(), "Try to compile expression {}", dag.dump());
-
-    FunctionBasePtr fn;
+    auto llvm_function = std::make_shared<LLVMFunction>(dag);
 
     if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
     {
-        auto [compiled_function, was_inserted] = compilation_cache->getOrSet(hash_key, [&dag] ()
+        auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(hash_key, [&] ()
         {
-            auto llvm_function = std::make_unique<LLVMFunction>(dag);
-            size_t compiled_size = llvm_function->getCompiledSize();
+            LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
+            CHJIT::CompiledModuleInfo compiled_module_info = compileFunction(getJITInstance(), *llvm_function);
+            auto * compiled_jit_function = getJITInstance().findCompiledFunction(compiled_module_info, llvm_function->getName());
+            auto compiled_function = std::make_shared<CompiledFunction>(compiled_jit_function, compiled_module_info);
 
-            CompiledFunction function
-            {
-                .function = std::move(llvm_function),
-                .compiled_size = compiled_size
-            };
-
-            return std::make_shared<CompiledFunction>(function);
+            return std::make_shared<CompiledFunctionCacheEntry>(std::move(compiled_function), compiled_module_info.size);
         });
 
-        if (was_inserted)
-            LOG_TRACE(getLogger(),
-                "Put compiled expression {} in cache used cache size {} total cache size {}",
-                compiled_function->function->getName(),
-                compilation_cache->weight(),
-                compilation_cache->maxSize());
-        else
-            LOG_TRACE(getLogger(), "Get compiled expression {} from cache", compiled_function->function->getName());
-
-        fn = compiled_function->function;
+        llvm_function->setCompiledFunction(compiled_function_cache_entry->getCompiledFunction());
     }
     else
     {
-        fn = std::make_unique<LLVMFunction>(dag);
+        LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
+        CHJIT::CompiledModuleInfo compiled_module_info = compileFunction(getJITInstance(), *llvm_function);
+        auto * compiled_jit_function = getJITInstance().findCompiledFunction(compiled_module_info, llvm_function->getName());
+        auto compiled_function = std::make_shared<CompiledFunction>(compiled_jit_function, compiled_module_info);
+        llvm_function->setCompiledFunction(compiled_function);
     }
 
-    LOG_TRACE(getLogger(), "Use compiled expression {}", fn->getName());
-
-    return fn;
+    return llvm_function;
 }
 
 static bool isCompilableConstant(const ActionsDAG::Node & node)
 {
-    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type) && node.allow_constant_folding;
+    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
 }
 
 static bool isCompilableFunction(const ActionsDAG::Node & node)
@@ -334,16 +338,11 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
     return function.isCompilable();
 }
 
-static bool isCompilableInput(const ActionsDAG::Node & node)
-{
-    return node.type == ActionsDAG::ActionType::INPUT || node.type == ActionsDAG::ActionType::ALIAS;
-}
-
 static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children)
 {
-    /// Extract CompileDAG from root actions dag node, it is important that each root child is compilable.
+    /// Extract CompileDAG from root actions dag node.
 
     CompileDAG dag;
 
@@ -362,6 +361,32 @@ static CompileDAG getCompilableDAG(
     {
         auto & frame = stack.top();
         const auto * node = frame.node;
+
+        bool is_compilable_constant = isCompilableConstant(*node);
+        bool is_compilable_function = isCompilableFunction(*node);
+
+        if (!is_compilable_function || is_compilable_constant)
+        {
+           CompileDAG::Node compile_node;
+           compile_node.function = node->function_base;
+           compile_node.result_type = node->result_type;
+
+           if (is_compilable_constant)
+           {
+               compile_node.type = CompileDAG::CompileType::CONSTANT;
+               compile_node.column = node->column;
+           }
+           else
+           {
+                compile_node.type = CompileDAG::CompileType::INPUT;
+                children.emplace_back(node);
+           }
+
+           visited_node_to_compile_dag_position[node] = dag.getNodesCount();
+           dag.addNode(std::move(compile_node));
+           stack.pop();
+           continue;
+        }
 
         while (frame.next_child_to_visit < node->children.size())
         {
@@ -382,26 +407,15 @@ static CompileDAG getCompilableDAG(
         if (!all_children_visited)
             continue;
 
+        /// Here we process only functions that are not compiled constants
+
         CompileDAG::Node compile_node;
         compile_node.function = node->function_base;
         compile_node.result_type = node->result_type;
+        compile_node.type = CompileDAG::CompileType::FUNCTION;
 
-        if (isCompilableConstant(*node))
-        {
-            compile_node.type = CompileDAG::CompileType::CONSTANT;
-            compile_node.column = node->column;
-        }
-        else if (node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            compile_node.type = CompileDAG::CompileType::FUNCTION;
-            for (const auto * child : node->children)
-                compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);
-        }
-        else
-        {
-            compile_node.type = CompileDAG::CompileType::INPUT;
-            children.emplace_back(node);
-        }
+        for (const auto * child : node->children)
+            compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);
 
         visited_node_to_compile_dag_position[node] = dag.getNodesCount();
 
@@ -417,8 +431,8 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     struct Data
     {
         bool is_compilable_in_isolation = false;
-        bool all_children_compilable = false;
         bool all_parents_compilable = true;
+        size_t compilable_children_size = 0;
         size_t children_size = 0;
     };
 
@@ -428,7 +442,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
     for (const auto & node : nodes)
     {
-        bool node_is_compilable_in_isolation = isCompilableConstant(node) || isCompilableFunction(node) || isCompilableInput(node);
+        bool node_is_compilable_in_isolation = isCompilableFunction(node) && !isCompilableConstant(node);
         node_to_data[&node].is_compilable_in_isolation = node_is_compilable_in_isolation;
     }
 
@@ -441,8 +455,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     std::stack<Frame> stack;
     std::unordered_set<const Node *> visited_nodes;
 
-    /** Algorithm is to iterate over each node in ActionsDAG, and update node compilable status.
-      * Node is compilable if all its children are compilable and node is also compilable.
+    /** Algorithm is to iterate over each node in ActionsDAG, and update node compilable_children_size.
       * After this procedure data for each node is initialized.
       */
 
@@ -479,14 +492,18 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
             auto & current_node_data = node_to_data[current_node];
 
-            current_node_data.all_children_compilable = true;
-
             if (current_node_data.is_compilable_in_isolation)
             {
                 for (const auto * child : current_node->children)
                 {
-                    current_node_data.all_children_compilable &= node_to_data[child].is_compilable_in_isolation;
-                    current_node_data.all_children_compilable &= node_to_data[child].all_children_compilable;
+                    auto & child_data = node_to_data[child];
+
+                    if (child_data.is_compilable_in_isolation)
+                    {
+                        current_node_data.compilable_children_size += child_data.compilable_children_size;
+                        current_node_data.compilable_children_size += 1;
+                    }
+
                     current_node_data.children_size += node_to_data[child].children_size;
                 }
 
@@ -501,10 +518,10 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     for (const auto & node : nodes)
     {
         auto & node_data = node_to_data[&node];
-        bool is_compilable = node_data.is_compilable_in_isolation && node_data.all_children_compilable;
+        bool node_is_valid_for_compilation = node_data.is_compilable_in_isolation && node_data.compilable_children_size > 0;
 
         for (const auto & child : node.children)
-            node_to_data[child].all_parents_compilable &= is_compilable;
+            node_to_data[child].all_parents_compilable &= node_is_valid_for_compilation;
     }
 
     for (const auto & node : index)
@@ -519,11 +536,10 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     {
         auto & node_data = node_to_data[&node];
 
-        bool node_is_valid_for_compilation = !isCompilableConstant(node) && node.children.size() > 1;
-        bool can_be_compiled = node_data.is_compilable_in_isolation && node_data.all_children_compilable && node_is_valid_for_compilation;
+        bool node_is_valid_for_compilation = node_data.is_compilable_in_isolation && node_data.compilable_children_size > 0;
 
         /// If all parents are compilable then this node should not be standalone compiled
-        bool should_compile = can_be_compiled && !node_data.all_parents_compilable;
+        bool should_compile = node_is_valid_for_compilation && !node_data.all_parents_compilable;
 
         if (!should_compile)
             continue;

@@ -38,6 +38,7 @@ MESSAGES_TO_RETRY = [
     "Coordination::Exception: Operation timeout",
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
+    "DB::Exception: New table appeared in database being dropped or detached. Try again"
 ]
 
 class Terminated(KeyboardInterrupt):
@@ -169,7 +170,7 @@ def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
     return testcase_args
 
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
-    client = args.client
+    client = args.testcase_client
     start_time = args.testcase_start_time
     database = args.testcase_database
 
@@ -185,9 +186,10 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         'stderr': stderr_file,
     }
 
-    # >> append to stdout and stderr, because there are also output of per test database creation
+    # >> append to stderr (but not stdout since it is not used there),
+    # because there are also output of per test database creation
     if not args.database:
-        pattern = '{test} >> {stdout} 2>> {stderr}'
+        pattern = '{test} > {stdout} 2>> {stderr}'
     else:
         pattern = '{test} > {stdout} 2> {stderr}'
 
@@ -233,7 +235,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     # Normalize randomized database names in stdout, stderr files.
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
-    if not args.show_db_name:
+    if args.hide_db_name:
         os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
     if args.replicated_database:
         os.system("LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {file}".format(file=stdout_file))
@@ -1043,7 +1045,7 @@ if __name__ == '__main__':
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')
     parser.add_argument('--no-drop-if-fail', action='store_true', help='Do not drop database for test if test has failed')
-    parser.add_argument('--show-db-name', action='store_true', help='Do not replace random database name with "default"')
+    parser.add_argument('--hide-db-name', action='store_true', help='Replace random database name with "default" in stderr')
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
     parser.add_argument('--test-runs', default=1, nargs='?', type=int, help='Run each test many times (useful for e.g. flaky check)')

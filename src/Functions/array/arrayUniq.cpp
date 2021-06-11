@@ -31,7 +31,7 @@ class FunctionArrayUniq : public IFunction
 public:
     static constexpr auto name = "arrayUniq";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayUniq>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionArrayUniq>(); }
 
     String getName() const override { return name; }
 
