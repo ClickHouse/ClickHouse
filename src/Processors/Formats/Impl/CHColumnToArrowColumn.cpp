@@ -439,7 +439,7 @@ namespace DB
         {
             throw Exception
                 {
-                    fmt::format("Internal type \"{}\" of a column \"{}\" is not supported for conversion into a {} data format.", column_type_name, column_name, format_name),
+                    fmt::format(R"(Internal type "{}" of a column "{}" is not supported for conversion into a {} data format.)", column_type_name, column_name, format_name),
                     ErrorCodes::UNKNOWN_TYPE
                 };
         }
@@ -580,7 +580,7 @@ namespace DB
             return arrow_type_it->second;
         }
 
-        throw Exception{fmt::format("The type \"{}\" of a column \"{}\" is not supported for conversion into a {} data format.", column_type->getName(), column_name, format_name),
+        throw Exception{fmt::format(R"(The type "{}" of a column "{}" is not supported for conversion into a {} data format.)", column_type->getName(), column_name, format_name),
                              ErrorCodes::UNKNOWN_TYPE};
     }
 
