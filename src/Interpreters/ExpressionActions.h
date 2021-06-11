@@ -136,7 +136,7 @@ private:
 
     /// Enable lazy execution for short-circuit function arguments.
     void rewriteShortCircuitArguments(
-        const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & need_outside, bool force_rewrite);
+        const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & need_outside, bool force_enable_lazy_execution);
 
     /// Find short-circuit functions in actions and enable lazy execution for actions that are used in their arguments.
     void rewriteArgumentsForShortCircuitFunctions(

@@ -72,12 +72,7 @@ static inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, 
     bool a_is_short = a.size() < size;
     size_t a_index = 0;
     for (size_t i = 0; i < size; ++i)
-    {
-        if (cond[i])
-            res[i] = a_is_short ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(a[i]);
-        else
-            res[i] = static_cast<ResultType>(b);
-    }
+        res[i] = !cond[i] ? static_cast<ResultType>(b) : a_is_short ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(a[i]);
 }
 
 template <typename ArrayCond, typename A, typename ArrayB, typename ArrayResult, typename ResultType>
@@ -87,12 +82,7 @@ static inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB 
     bool b_is_short = b.size() < size;
     size_t b_index = 0;
     for (size_t i = 0; i < size; ++i)
-    {
-        if (cond[i])
-            res[i] = static_cast<ResultType>(a);
-        else
-            res[i] = b_is_short ? static_cast<ResultType>(b[b_index++]) : static_cast<ResultType>(b[i]);
-    }
+        res[i] = cond[i] ? static_cast<ResultType>(a) : b_is_short ? static_cast<ResultType>(b[b_index++]) : static_cast<ResultType>(b[i]);
 }
 
 template <typename A, typename B, typename ResultType>

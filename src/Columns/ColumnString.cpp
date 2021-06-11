@@ -200,7 +200,7 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
 
         --index;
     }
-    
+
     if (from != -1)
         throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
 }
