@@ -33,8 +33,8 @@ std::string_view getResource(std::string_view name)
     std::string symbol_name_start = prefix + name_replaced + "_start";
     std::string symbol_name_end = prefix + name_replaced + "_end";
 
-    auto sym_start = reinterpret_cast<const char*>(dlsym(RTLD_DEFAULT, symbol_name_start.c_str()));
-    auto sym_end = reinterpret_cast<const char*>(dlsym(RTLD_DEFAULT, symbol_name_end.c_str()));
+    const char* sym_start = reinterpret_cast<const char*>(dlsym(RTLD_DEFAULT, symbol_name_start.c_str()));
+    const char* sym_end = reinterpret_cast<const char*>(dlsym(RTLD_DEFAULT, symbol_name_end.c_str()));
 
     if (sym_start && sym_end)
     {
