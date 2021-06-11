@@ -354,11 +354,13 @@ ColumnPtr getColumnAsMask(const Block & block, const String & column_name)
     if (column_name.empty())
         return nullptr;
 
-    DataTypePtr col_type = block.getByName(column_name).type;
+    const auto & src_col = block.getByName(column_name);
+
+    DataTypePtr col_type = recursiveRemoveLowCardinality(src_col.type);
     if (isNothing(col_type))
         return ColumnUInt8::create(block.rows(), 0);
 
-    const auto & join_condition_col = JoinCommon::materializeColumn(block, column_name);
+    const auto & join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
 
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
     {
