@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Field.h>
@@ -6,15 +6,13 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Dump the structure of type and column.
 class FunctionDumpColumnStructure : public IFunction
 {
 public:
     static constexpr auto name = "dumpColumnStructure";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionDumpColumnStructure>();
     }
@@ -36,18 +34,18 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto & elem = arguments[0];
+        const auto & elem = block.getByPosition(arguments[0]);
 
-        /// Note that the result is not a constant, because it contains columns size.
+        /// Note that the result is not a constant, because it contains block size.
 
-        return DataTypeString().createColumnConst(input_rows_count,
+        block.getByPosition(result).column
+            = DataTypeString().createColumnConst(input_rows_count,
                 elem.type->getName() + ", " + elem.column->dumpStructure())->convertToFullColumnIfConst();
     }
 };
 
-}
 
 void registerFunctionDumpColumnStructure(FunctionFactory & factory)
 {

@@ -9,7 +9,7 @@ ClickHouse allows sending a server the data that is needed for processing a quer
 
 For example, if you have a text file with important user identifiers, you can upload it to the server along with a query that uses filtration by this list.
 
-If you need to run more than one query with a large volume of external data, do not use this feature. It is better to upload the data to the DB ahead of time.
+If you need to run more than one query with a large volume of external data, don’t use this feature. It is better to upload the data to the DB ahead of time.
 
 External data can be uploaded using the command-line client (in non-interactive mode), or using the HTTP interface.
 
@@ -25,10 +25,10 @@ You may have multiple sections like this, for the number of tables being transmi
 **–file** – Path to the file with the table dump, or -, which refers to stdin.
 Only a single table can be retrieved from stdin.
 
-The following parameters are optional: **–name**– Name of the table. If omitted, _data is used.
+The following parameters are optional: **–name**– Name of the table. If omitted, \_data is used.
 **–format** – Data format in the file. If omitted, TabSeparated is used.
 
-One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, …
+One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named \_1, \_2, …
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. Defines the column names and types.
 
 The files specified in ‘file’ will be parsed by the format specified in ‘format’, using the data types specified in ‘types’ or ‘structure’. The table will be uploaded to the server and accessible there as a temporary table with the name in ‘name’.

@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/FieldToDataType.h>
@@ -9,23 +9,21 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
-
 /// Get the value of a setting.
-class FunctionGetSetting : public IFunction, WithConstContext
+class FunctionGetSetting : public IFunction
 {
 public:
     static constexpr auto name = "getSetting";
 
-    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionGetSetting>(context_); }
-    explicit FunctionGetSetting(ContextConstPtr context_) : WithConstContext(context_) {}
+    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionGetSetting>(context_); }
+    explicit FunctionGetSetting(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
@@ -43,23 +41,23 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN};
 
         std::string_view setting_name{column->getDataAt(0)};
-        value = getContext()->getSettingsRef().get(setting_name);
+        value = context.getSettingsRef().get(setting_name);
 
         DataTypePtr type = applyVisitor(FieldToDataType{}, value);
         value = convertFieldToType(value, *type);
         return type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        return result_type->createColumnConst(input_rows_count, value);
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, value);
     }
 
 private:
     mutable Field value;
+    const Context & context;
 };
 
-}
 
 void registerFunctionGetSetting(FunctionFactory & factory)
 {

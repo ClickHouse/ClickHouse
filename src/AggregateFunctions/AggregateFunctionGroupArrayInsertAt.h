@@ -20,7 +20,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -56,8 +55,7 @@ class AggregateFunctionGroupArrayInsertAtGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>
 {
 private:
-    DataTypePtr type;
-    SerializationPtr serialization;
+    DataTypePtr & type;
     Field default_value;
     UInt64 length_to_resize = 0;    /// zero means - do not do resizing.
 
@@ -65,7 +63,6 @@ public:
     AggregateFunctionGroupArrayInsertAtGeneric(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params)
         , type(argument_types[0])
-        , serialization(type->getDefaultSerialization())
     {
         if (!params.empty())
         {
@@ -83,7 +80,7 @@ public:
         }
 
         if (!isUnsignedInteger(arguments[1]))
-            throw Exception("Second argument of aggregate function " + getName() + " must be unsigned integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (default_value.isNull())
             default_value = type->getDefault();
@@ -105,14 +102,12 @@ public:
         return std::make_shared<DataTypeArray>(type);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         /// TODO Do positions need to be 1-based for this function?
         size_t position = columns[1]->getUInt(row_num);
 
-        /// If position is larger than size to which array will be cut - simply ignore value.
+        /// If position is larger than size to which array will be cutted - simply ignore value.
         if (length_to_resize && position >= length_to_resize)
             return;
 
@@ -131,7 +126,7 @@ public:
         columns[0]->get(row_num, arr[position]);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         Array & arr_lhs = data(place).value;
         const Array & arr_rhs = data(rhs).value;
@@ -144,7 +139,7 @@ public:
                 arr_lhs[i] = arr_rhs[i];
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         const Array & arr = data(place).value;
         size_t size = arr.size();
@@ -159,12 +154,12 @@ public:
             else
             {
                 writeBinary(UInt8(0), buf);
-                serialization->serializeBinary(elem, buf);
+                type->serializeBinary(elem, buf);
             }
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
         size_t size = 0;
         readVarUInt(size, buf);
@@ -180,11 +175,11 @@ public:
             UInt8 is_null = 0;
             readBinary(is_null, buf);
             if (!is_null)
-                serialization->deserializeBinary(arr[i], buf);
+                type->deserializeBinary(arr[i], buf);
         }
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         ColumnArray & to_array = assert_cast<ColumnArray &>(to);
         IColumn & to_data = to_array.getData();

@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -6,14 +6,12 @@
 
 namespace DB
 {
-namespace
-{
 
 class FunctionRowNumberInBlock : public IFunction
 {
 public:
     static constexpr auto name = "rowNumberInBlock";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionRowNumberInBlock>();
     }
@@ -46,7 +44,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
         auto column = ColumnUInt64::create();
         auto & data = column->getData();
@@ -54,11 +52,9 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
             data[i] = i;
 
-        return column;
+        block.getByPosition(result).column = std::move(column);
     }
 };
-
-}
 
 void registerFunctionRowNumberInBlock(FunctionFactory & factory)
 {

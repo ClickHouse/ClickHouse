@@ -7,5 +7,5 @@ services:
             MONGO_INITDB_ROOT_USERNAME: root
             MONGO_INITDB_ROOT_PASSWORD: clickhouse
         ports:
-            - ${MONGO_EXTERNAL_PORT}:${MONGO_INTERNAL_PORT}
+          - 27018:27017
         command: --profile=2 --verbose

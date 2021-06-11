@@ -1,10 +1,10 @@
 #include <Functions/FunctionJoinGet.h>
 
-#include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin.h>
+#include <Columns/ColumnString.h>
 #include <Storages/StorageJoin.h>
 
 
@@ -16,43 +16,25 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <bool or_null>
-ColumnPtr ExecutableFunctionJoinGet<or_null>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+static auto getJoin(const ColumnsWithTypeAndName & arguments, const Context & context)
 {
-    ColumnsWithTypeAndName keys;
-    for (size_t i = 2; i < arguments.size(); ++i)
-    {
-        auto key = arguments[i];
-        keys.emplace_back(std::move(key));
-    }
-    return storage_join->joinGet(keys, result_columns).column;
-}
+    if (arguments.size() != 3)
+        throw Exception{"Function joinGet takes 3 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-template <bool or_null>
-ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
-{
-    Block result_columns {{return_type->createColumn(), return_type, attr_name}};
-    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(table_lock, storage_join, result_columns);
-}
-
-static std::pair<std::shared_ptr<StorageJoin>, String>
-getJoin(const ColumnsWithTypeAndName & arguments, ContextConstPtr context)
-{
     String join_name;
     if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
     {
         join_name = name_col->getValue<String>();
     }
     else
-        throw Exception(
-            "Illegal type " + arguments[0].type->getName() + " of first argument of function joinGet, expected a const string.",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function joinGet, expected a const string.",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
     size_t dot = join_name.find('.');
     String database_name;
     if (dot == String::npos)
     {
-        database_name = context->getCurrentDatabase();
+        database_name = context.getCurrentDatabase();
         dot = 0;
     }
     else
@@ -61,12 +43,10 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextConstPtr context)
         ++dot;
     }
     String table_name = join_name.substr(dot);
-    if (table_name.empty())
-        throw Exception("joinGet does not allow empty table name", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    auto table = DatabaseCatalog::instance().getTable({database_name, table_name}, std::const_pointer_cast<Context>(context));
+    auto table = DatabaseCatalog::instance().getTable({database_name, table_name}, context);
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
-        throw Exception("Table " + join_name + " should have engine StorageJoin", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception{"Table " + join_name + " should have engine StorageJoin", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
     String attr_name;
     if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
@@ -74,27 +54,55 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextConstPtr context)
         attr_name = name_col->getValue<String>();
     }
     else
-        throw Exception(
-            "Illegal type " + arguments[1].type->getName() + " of second argument of function joinGet, expected a const string.",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception{"Illegal type " + arguments[1].type->getName()
+                            + " of second argument of function joinGet, expected a const string.",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     return std::make_pair(storage_join, attr_name);
 }
 
 template <bool or_null>
-FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+FunctionBaseImplPtr JoinGetOverloadResolver<or_null>::build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
 {
-    if (arguments.size() < 3)
-        throw Exception(
-            "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                + ", should be greater or equal to 3",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    auto [storage_join, attr_name] = getJoin(arguments, getContext());
-    DataTypes data_types(arguments.size() - 2);
-    for (size_t i = 2; i < arguments.size(); ++i)
-        data_types[i - 2] = arguments[i].type;
-    auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null);
-    auto table_lock = storage_join->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
-    return std::make_unique<FunctionJoinGet<or_null>>(table_lock, storage_join, attr_name, data_types, return_type);
+    auto [storage_join, attr_name] = getJoin(arguments, context);
+    auto join = storage_join->getJoin();
+    DataTypes data_types(arguments.size());
+
+    auto table_lock = storage_join->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    for (size_t i = 0; i < arguments.size(); ++i)
+        data_types[i] = arguments[i].type;
+
+    auto return_type = join->joinGetReturnType(attr_name, or_null);
+    return std::make_unique<FunctionJoinGet<or_null>>(table_lock, storage_join, join, attr_name, data_types, return_type);
+}
+
+template <bool or_null>
+DataTypePtr JoinGetOverloadResolver<or_null>::getReturnType(const ColumnsWithTypeAndName & arguments) const
+{
+    auto [storage_join, attr_name] = getJoin(arguments, context);
+    auto join = storage_join->getJoin();
+    return join->joinGetReturnType(attr_name, or_null);
+}
+
+
+template <bool or_null>
+void ExecutableFunctionJoinGet<or_null>::execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+{
+    auto ctn = block.getByPosition(arguments[2]);
+    if (isColumnConst(*ctn.column))
+        ctn.column = ctn.column->cloneResized(1);
+    ctn.name = ""; // make sure the key name never collide with the join columns
+    Block key_block = {ctn};
+    join->joinGet(key_block, attr_name, or_null);
+    auto & result_ctn = key_block.getByPosition(1);
+    if (isColumnConst(*ctn.column))
+        result_ctn.column = ColumnConst::create(result_ctn.column, input_rows_count);
+    block.getByPosition(result) = result_ctn;
+}
+
+template <bool or_null>
+ExecutableFunctionImplPtr FunctionJoinGet<or_null>::prepare(const Block &, const ColumnNumbers &, size_t) const
+{
+    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(join, attr_name);
 }
 
 void registerFunctionJoinGet(FunctionFactory & factory)

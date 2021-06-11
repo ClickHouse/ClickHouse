@@ -64,12 +64,12 @@ struct Progress
     std::atomic<size_t> written_rows {0};
     std::atomic<size_t> written_bytes {0};
 
-    Progress() = default;
+    Progress() {}
     Progress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0)
         : read_rows(read_rows_), read_bytes(read_bytes_), total_rows_to_read(total_rows_to_read_) {}
-    explicit Progress(ReadProgress read_progress)
+    Progress(ReadProgress read_progress)
         : read_rows(read_progress.read_rows), read_bytes(read_progress.read_bytes), total_rows_to_read(read_progress.total_rows_to_read) {}
-    explicit Progress(WriteProgress write_progress)
+    Progress(WriteProgress write_progress)
         : written_rows(write_progress.written_rows), written_bytes(write_progress.written_bytes)  {}
 
     void read(ReadBuffer & in, UInt64 server_revision);
@@ -86,7 +86,7 @@ struct Progress
         written_rows += rhs.written_rows;
         written_bytes += rhs.written_bytes;
 
-        return rhs.read_rows || rhs.written_rows;
+        return rhs.read_rows || rhs.written_rows ? true : false;
     }
 
     void reset()

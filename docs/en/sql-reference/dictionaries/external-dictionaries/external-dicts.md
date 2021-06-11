@@ -13,9 +13,9 @@ ClickHouse:
 -   Periodically updates dictionaries and dynamically loads missing values. In other words, dictionaries can be loaded dynamically.
 -   Allows to create external dictionaries with xml files or [DDL queries](../../../sql-reference/statements/create/dictionary.md).
 
-The configuration of external dictionaries can be located in one or more xml-files. The path to the configuration is specified in the [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parameter.
+The configuration of external dictionaries can be located in one or more xml-files. The path to the configuration is specified in the [dictionaries\_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parameter.
 
-Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries_lazy_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) setting.
+Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) setting.
 
 The [dictionaries](../../../operations/system-tables/dictionaries.md#system_tables-dictionaries) system table contains information about dictionaries configured at server. For each dictionary you can find there:
 
@@ -43,7 +43,7 @@ The dictionary configuration file has the following format:
 
 You can [configure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict.md) any number of dictionaries in the same file.
 
-[DDL queries for dictionaries](../../../sql-reference/statements/create/dictionary.md) does not require any additional records in server configuration. They allow to work with dictionaries as first-class entities, like tables or views.
+[DDL queries for dictionaries](../../../sql-reference/statements/create/dictionary.md) doesn’t require any additional records in server configuration. They allow to work with dictionaries as first-class entities, like tables or views.
 
 !!! attention "Attention"
     You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../../sql-reference/functions/other-functions.md) function). This functionality is not related to external dictionaries.
@@ -57,3 +57,4 @@ You can [configure](../../../sql-reference/dictionaries/external-dictionaries/ex
 -   [Dictionary Key and Fields](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md)
 -   [Functions for Working with External Dictionaries](../../../sql-reference/functions/ext-dict-functions.md)
 
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts/) <!--hide-->

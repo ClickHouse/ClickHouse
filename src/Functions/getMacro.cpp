@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -10,14 +10,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
-
-namespace
-{
 
 /** Get the value of macro from configuration file.
   * For example, it may be used as a sophisticated replacement for the function 'hostName' if servers have complicated hostnames
@@ -30,9 +28,9 @@ private:
 
 public:
     static constexpr auto name = "getMacro";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionGetMacro>(context->getMacros());
+        return std::make_shared<FunctionGetMacro>(context.getMacros());
     }
 
     explicit FunctionGetMacro(MultiVersion<Macros>::Version macros_) : macros(std::move(macros_)) {}
@@ -64,20 +62,19 @@ public:
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.
       */
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IColumn * arg_column = arguments[0].column.get();
+        const IColumn * arg_column = block.getByPosition(arguments[0]).column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
 
         if (!arg_string)
             throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
-        return result_type->createColumnConst(
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
             input_rows_count, macros->getValue(arg_string->getDataAt(0).toString()))->convertToFullColumnIfConst();
     }
 };
 
-}
 
 void registerFunctionGetMacro(FunctionFactory & factory)
 {

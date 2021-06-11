@@ -6,7 +6,7 @@ toc_priority: 204
 
 With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
-The result is deterministic (it does not depend on the query processing order). The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
+The result is deterministic (it doesn’t depend on the query processing order). The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
 
@@ -18,7 +18,7 @@ quantileTiming(level)(expr)
 
 Alias: `medianTiming`.
 
-**Arguments**
+**Parameters**
 
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 
@@ -31,7 +31,7 @@ Alias: `medianTiming`.
 
 The calculation is accurate if:
 
--   Total number of values does not exceed 5670.
+-   Total number of values doesn’t exceed 5670.
 -   Total number of values exceeds 5670, but the page loading time is less than 1024ms.
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.

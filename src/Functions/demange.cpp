@@ -18,16 +18,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 class FunctionDemangle : public IFunction
 {
 public:
     static constexpr auto name = "demangle";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(const Context & context)
     {
-        context->checkAccess(AccessType::demangle);
+        context.checkAccess(AccessType::demangle);
         return std::make_shared<FunctionDemangle>();
     }
 
@@ -61,9 +58,9 @@ public:
         return true;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr & column = arguments[0].column;
+        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnString * column_concrete = checkAndGetColumn<ColumnString>(column.get());
 
         if (!column_concrete)
@@ -85,11 +82,9 @@ public:
             }
         }
 
-        return result_column;
+        block.getByPosition(result).column = std::move(result_column);
     }
 };
-
-}
 
 void registerFunctionDemangle(FunctionFactory & factory)
 {

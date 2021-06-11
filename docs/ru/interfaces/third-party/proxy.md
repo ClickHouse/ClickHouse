@@ -1,8 +1,3 @@
----
-toc_priority: 29
-toc_title: "Прокси-серверы от сторонних разработчиков"
----
-
 # Прокси-серверы от сторонних разработчиков {#proksi-servery-ot-storonnikh-razrabotchikov}
 
 ## chproxy {#chproxy}
@@ -41,3 +36,4 @@ toc_title: "Прокси-серверы от сторонних разработ
 
 Реализован на Go.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/proxy/) <!--hide-->

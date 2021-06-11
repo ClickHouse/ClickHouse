@@ -7,15 +7,11 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-namespace
-{
 
 class AggregateFunctionCombinatorState final : public IAggregateFunctionCombinator
 {
@@ -36,8 +32,6 @@ public:
         return std::make_shared<AggregateFunctionState>(nested_function, arguments, params);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory & factory)
 {

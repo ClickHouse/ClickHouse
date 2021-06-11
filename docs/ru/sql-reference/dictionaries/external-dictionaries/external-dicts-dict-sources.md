@@ -1,8 +1,3 @@
----
-toc_priority: 43
-toc_title: "Источники внешних словарей"
----
-
 # Источники внешних словарей {#dicts-external-dicts-dict-sources}
 
 Внешний словарь можно подключить из множества источников.
@@ -53,7 +48,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 или
 
 ``` sql
-SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
@@ -65,11 +60,9 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 -   СУБД:
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
     -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
-    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
-    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
 
 ## Локальный файл {#dicts-external_dicts_dict_sources-local_file}
 
@@ -87,19 +80,13 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 или
 
 ``` sql
-SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 ```
 
 Поля настройки:
 
--   `path` — абсолютный путь к файлу.
--   `format` — формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
-
-Если словарь с источником `FILE` создается с помощью DDL-команды (`CREATE DICTIONARY ...`), источник словаря должен быть расположен в каталоге `user_files`. Иначе пользователи базы данных будут иметь доступ к произвольному файлу на узле ClickHouse.
-
-**Смотрите также**
-
--   [Функция dictionary](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
+-   `path` — Абсолютный путь к файлу.
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
 
 ## Исполняемый файл {#dicts-external_dicts_dict_sources-executable}
 
@@ -116,12 +103,16 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 </source>
 ```
 
+или
+
+``` sql
+SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
+```
+
 Поля настройки:
 
--   `command` — абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
--   `format` — формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
-
-Этот источник словаря может быть настроен только с помощью XML-конфигурации. Создание словарей с исполняемым источником с помощью DDL отключено. Иначе пользователь базы данных сможет выполнить произвольный бинарный файл на узле ClickHouse.
+-   `command` — Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
 
 ## HTTP(s) {#dicts-external_dicts_dict_sources-http}
 
@@ -164,16 +155,7 @@ SOURCE(HTTP(
 Поля настройки:
 
 -   `url` — URL источника.
--   `format` — формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
--   `credentials` – базовая HTTP-аутентификация. Необязательный параметр.
--   `user` – имя пользователя, необходимое для аутентификации.
--   `password` – пароль, необходимый для аутентификации.
--   `headers` – все пользовательские записи HTTP-заголовков, используемые для HTTP-запроса. Необязательный параметр.
--   `header` – одна запись HTTP-заголовка.
--   `name` – идентифицирующее имя, используемое для отправки заголовка запроса.
--   `value` – значение, заданное для конкретного идентифицирующего имени.
-
-При создании словаря с помощью DDL-команды (`CREATE DICTIONARY ...`) удаленные хосты для HTTP-словарей проверяются в разделе `remote_url_allow_hosts` из конфигурации сервера. Иначе пользователи базы данных будут иметь доступ к произвольному HTTP-серверу.
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
@@ -212,7 +194,7 @@ SOURCE(ODBC(
 
 ClickHouse получает от ODBC-драйвера информацию о квотировании и квотирует настройки в запросах к драйверу, поэтому имя таблицы нужно указывать в соответствии с регистром имени таблицы в базе данных.
 
-Если у вас есть проблемы с кодировками при использовании Oracle, ознакомьтесь с соответствующим разделом [FAQ](../../../faq/integration/oracle-odbc.md).
+Если у вас есть проблемы с кодировками при использовании Oracle, ознакомьтесь с соответствующим разделом [FAQ](../../../faq/general.md#oracle-odbc-encodings).
 
 ### Выявленная уязвимость в функционировании ODBC словарей {#vyiavlennaia-uiazvimost-v-funktsionirovanii-odbc-slovarei}
 
@@ -319,7 +301,6 @@ PRIMARY KEY id
 SOURCE(ODBC(connection_string 'DSN=myconnection' table 'postgresql_table'))
 LAYOUT(HASHED())
 LIFETIME(MIN 300 MAX 360)
-```
 
 Может понадобиться в `odbc.ini` указать полный путь до библиотеки с драйвером `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
@@ -327,15 +308,15 @@ LIFETIME(MIN 300 MAX 360)
 
 ОС Ubuntu.
 
-Установка драйвера:
+Установка драйвера: :
 
 ```bash
 $ sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
-Настройка драйвера:
+Настройка драйвера: :
 
-```bash
+``` bash
     $ cat /etc/freetds/freetds.conf
     ...
 
@@ -345,11 +326,8 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
     tds version = 7.0
     client charset = UTF-8
 
-    # тестирование TDS соединения
-    $ sqsh -S MSSQL -D database -U user -P password
-
-
     $ cat /etc/odbcinst.ini
+    ...
 
     [FreeTDS]
     Description     = FreeTDS
@@ -358,8 +336,8 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
     FileUsage       = 1
     UsageCount      = 5
 
-    $ cat /etc/odbc.ini
-    # $ cat ~/.odbc.ini # если вы вошли из под пользователя из под которого запущен ClickHouse
+    $ cat ~/.odbc.ini
+    ...
 
     [MSSQL]
     Description     = FreeTDS
@@ -369,14 +347,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
     UID             = test
     PWD             = test
     Port            = 1433
-
-
-    # (не обязательно) тест ODBC соединения (используйте isql поставляемый вместе с [unixodbc](https://packages.debian.org/sid/unixodbc)-package)
-    $ isql -v MSSQL "user" "password"
 ```
-
-Примечание:
-- чтобы определить самую раннюю версию TDS, которая поддерживается определенной версией SQL Server, обратитесь к документации продукта или посмотрите на [MS-TDS Product Behavior](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/135d0ebe-5c4c-4a94-99bf-1811eccb9f4a)
 
 Настройка словаря в ClickHouse:
 
@@ -589,7 +560,7 @@ SOURCE(CLICKHOUSE(
 или
 
 ``` sql
-SOURCE(MONGODB(
+SOURCE(MONGO(
     host 'localhost'
     port 27017
     user ''
@@ -641,92 +612,4 @@ SOURCE(REDIS(
 -   `storage_type` – способ хранения ключей. Необходимо использовать `simple` для источников с одним столбцом ключей, `hash_map` – для источников с двумя столбцами ключей. Источники с более, чем двумя столбцами ключей, не поддерживаются. Может отсутствовать, значение по умолчанию `simple`.
 -   `db_index` – номер базы данных. Может отсутствовать, значение по умолчанию 0.
 
-### Cassandra {#dicts-external_dicts_dict_sources-cassandra}
-
-Пример настройки:
-
-``` xml
-<source>
-    <cassandra>
-        <host>localhost</host>
-        <port>9042</port>
-        <user>username</user>
-        <password>qwerty123</password>
-        <keyspase>database_name</keyspase>
-        <column_family>table_name</column_family>
-        <allow_filering>1</allow_filering>
-        <partition_key_prefix>1</partition_key_prefix>
-        <consistency>One</consistency>
-        <where>"SomeColumn" = 42</where>
-        <max_threads>8</max_threads>
-    </cassandra>
-</source>
-```
-
-Поля настройки:
-- `host` – Имя хоста с установленной Cassandra или разделенный через запятую список хостов.
-- `port` – Порт на серверах Cassandra. Если не указан, используется значение по умолчанию 9042.
-- `user` – Имя пользователя  для соединения с Cassandra.
-- `password` – Пароль для соединения с Cassandra.
-- `keyspace` – Имя keyspace (база данных).
-- `column_family` – Имя семейства столбцов (таблица).
-- `allow_filering` – Флаг, разрешающий или не разрешающий потенциально дорогостоящие условия на кластеризации ключевых столбцов. Значение по умолчанию 1.
-- `partition_key_prefix` – Количество партиций ключевых столбцов в первичном ключе таблицы Cassandra.
-Необходимо для составления ключей словаря. Порядок ключевых столбцов в определении словеря должен быть таким же как в Cassandra.
-Значение по умолчанию 1 (первый ключевой столбец это ключ партицирования, остальные ключевые столбцы - ключи кластеризации).
-- `consistency` – Уровень консистентности. Возмодные значения: `One`, `Two`, `Three`,
-  `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Значение по умолчанию `One`.
-- `where` – Опциональный критерий выборки.
-- `max_threads` – Максимальное кол-во тредов для загрузки данных из нескольких партиций в словарь.
-
-### PosgreSQL {#dicts-external_dicts_dict_sources-postgresql}
-
-Пример настройки:
-
-``` xml
-<source>
-  <postgresql>
-      <port>5432</port>
-      <user>clickhouse</user>
-      <password>qwerty</password>
-      <db>db_name</db>
-      <table>table_name</table>
-      <where>id=10</where>
-      <invalidate_query>SQL_QUERY</invalidate_query>
-  </postgresql>
-</source>
-```
-
-или
-
-``` sql
-SOURCE(POSTGRESQL(
-    port 5432
-    host 'postgresql-hostname'
-    user 'postgres_user'
-    password 'postgres_password'
-    db 'db_name'
-    table 'table_name'
-    replica(host 'example01-1' port 5432 priority 1)
-    replica(host 'example01-2' port 5432 priority 2)
-    where 'id=10'
-    invalidate_query 'SQL_QUERY'
-))
-```
-
-Setting fields:
-
--   `host` – Хост для соединения с PostgreSQL. Вы можете указать его для всех реплик или задать индивидуально для каждой релпики (внутри `<replica>`).
--   `port` – Порт для соединения с PostgreSQL. Вы можете указать его для всех реплик или задать индивидуально для каждой релпики (внутри `<replica>`).
--   `user` – Имя пользователя для соединения с PostgreSQL. Вы можете указать его для всех реплик или задать индивидуально для каждой релпики (внутри `<replica>`).
--   `password` – Пароль для пользователя PostgreSQL.
--   `replica` – Section of replica configurations. There can be multiple sections.
-    - `replica/host` – хост PostgreSQL.
-    - `replica/port` – порт PostgreSQL .
-    - `replica/priority` – Приоритет реплики. Во время попытки соединения, ClickHouse будет перебирать реплики в порядке приоритет. Меньшее значение означает более высокий приоритет.
--   `db` – Имя базы данных.
--   `table` – Имя таблицы.
--   `where` – Условие выборки. Синтаксис для условий такой же как для `WHERE` выражения в PostgreSQL, для примера, `id > 10 AND id < 20`. Необязательный параметр.
--   `invalidate_query` – Запрос для проверки условия загрузки словаря. Необязательный параметр. Читайте больше в разделе [Обновление словарей](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
-
-
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

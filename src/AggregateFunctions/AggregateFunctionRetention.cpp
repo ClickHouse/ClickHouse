@@ -7,8 +7,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -17,7 +15,7 @@ namespace ErrorCodes
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionRetention(const std::string & name, const DataTypes & arguments, const Array & params, const Settings *)
+AggregateFunctionPtr createAggregateFunctionRetention(const std::string & name, const DataTypes & arguments, const Array & params)
 {
     assertNoParameters(name, params);
 
@@ -34,7 +32,7 @@ AggregateFunctionPtr createAggregateFunctionRetention(const std::string & name, 
 
 void registerAggregateFunctionRetention(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("retention", createAggregateFunctionRetention);
+    factory.registerFunction("retention", createAggregateFunctionRetention, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

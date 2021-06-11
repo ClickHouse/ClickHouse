@@ -6,6 +6,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Common/typeid_cast.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -41,14 +42,7 @@ IMergeTreeReader::IMergeTreeReader(
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
-    auto part_columns = data_part->getColumns();
-    if (settings.convert_nested_to_subcolumns)
-    {
-        columns = Nested::convertToSubcolumns(columns);
-        part_columns = Nested::collect(part_columns);
-    }
-
-    for (const NameAndTypePair & column_from_part : part_columns)
+    for (const NameAndTypePair & column_from_part : data_part->getColumns())
         columns_from_part[column_from_part.name] = column_from_part.type;
 }
 
@@ -79,6 +73,7 @@ static bool arrayHasNoElementsRead(const IColumn & column)
     size_t last_offset = column_array->getOffsets()[size - 1];
     return last_offset != 0;
 }
+
 
 void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows)
 {
@@ -185,15 +180,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
         }
 
-        auto dag = DB::evaluateMissingDefaults(
-                additional_columns, columns, metadata_snapshot->getColumns(), storage.getContext());
-        if (dag)
-        {
-            auto actions = std::make_shared<
-                ExpressionActions>(std::move(dag),
-                ExpressionActionsSettings::fromSettings(storage.getContext()->getSettingsRef()));
-            actions->execute(additional_columns);
-        }
+        DB::evaluateMissingDefaults(additional_columns, columns, metadata_snapshot->getColumns(), storage.global_context);
 
         /// Move columns from block.
         name_and_type = columns.begin();
@@ -210,34 +197,19 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
 NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & required_column) const
 {
-    auto name_in_storage = required_column.getNameInStorage();
-
-    decltype(columns_from_part.begin()) it;
-    if (alter_conversions.isColumnRenamed(name_in_storage))
+    if (alter_conversions.isColumnRenamed(required_column.name))
     {
-        String old_name = alter_conversions.getColumnOldName(name_in_storage);
-        it = columns_from_part.find(old_name);
+        String old_name = alter_conversions.getColumnOldName(required_column.name);
+        auto it = columns_from_part.find(old_name);
+        if (it != columns_from_part.end())
+            return {it->first, it->second};
     }
-    else
+    else if (auto it = columns_from_part.find(required_column.name); it != columns_from_part.end())
     {
-        it = columns_from_part.find(name_in_storage);
-    }
-
-    if (it == columns_from_part.end())
-        return required_column;
-
-    if (required_column.isSubcolumn())
-    {
-        auto subcolumn_name = required_column.getSubcolumnName();
-        auto subcolumn_type = it->second->tryGetSubcolumnType(subcolumn_name);
-
-        if (!subcolumn_type)
-            return required_column;
-
-        return {it->first, subcolumn_name, it->second, subcolumn_type};
+        return {it->first, it->second};
     }
 
-    return {it->first, it->second};
+    return required_column;
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
@@ -269,7 +241,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
             copy_block.insert({res_columns[pos], getColumnFromPart(*name_and_type).type, name_and_type->name});
         }
 
-        DB::performRequiredConversions(copy_block, columns, storage.getContext());
+        DB::performRequiredConversions(copy_block, columns, storage.global_context);
 
         /// Move columns from block.
         name_and_type = columns.begin();

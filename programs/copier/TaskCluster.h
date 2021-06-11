@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Aliases.h"
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -13,9 +12,7 @@ namespace ErrorCodes
 struct TaskCluster
 {
     TaskCluster(const String & task_zookeeper_path_, const String & default_local_database_)
-            : task_zookeeper_path(task_zookeeper_path_)
-            , default_local_database(default_local_database_)
-    {}
+            : task_zookeeper_path(task_zookeeper_path_), default_local_database(default_local_database_) {}
 
     void loadTasks(const Poco::Util::AbstractConfiguration & config, const String & base_key = "");
 
@@ -77,8 +74,6 @@ inline void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfigurat
     if (config.has(prefix + "settings"))
         settings_common.loadSettingsFromConfig(prefix + "settings", config);
 
-    settings_common.prefer_localhost_replica = 0;
-
     settings_pull = settings_common;
     if (config.has(prefix + "settings_pull"))
         settings_pull.loadSettingsFromConfig(prefix + "settings_pull", config);
@@ -94,17 +89,12 @@ inline void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfigurat
 
     /// Override important settings
     settings_pull.readonly = 1;
-    settings_pull.prefer_localhost_replica = false;
-    settings_push.insert_distributed_sync = true;
-    settings_push.prefer_localhost_replica = false;
-
+    settings_push.insert_distributed_sync = 1;
     set_default_value(settings_pull.load_balancing, LoadBalancing::NEAREST_HOSTNAME);
     set_default_value(settings_pull.max_threads, 1);
     set_default_value(settings_pull.max_block_size, 8192UL);
     set_default_value(settings_pull.preferred_block_size_bytes, 0);
-
     set_default_value(settings_push.insert_distributed_timeout, 0);
-    set_default_value(settings_push.replication_alter_partitions_sync, 2);
 }
 
 }

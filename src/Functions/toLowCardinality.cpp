@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -7,14 +7,12 @@
 
 namespace DB
 {
-namespace
-{
 
 class FunctionToLowCardinality: public IFunction
 {
 public:
     static constexpr auto name = "toLowCardinality";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionToLowCardinality>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToLowCardinality>(); }
 
     String getName() const override { return name; }
 
@@ -32,23 +30,23 @@ public:
         return std::make_shared<DataTypeLowCardinality>(arguments[0]);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         auto arg_num = arguments[0];
-        const auto & arg = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
 
         if (arg.type->lowCardinality())
-            return arg.column;
+            res.column = arg.column;
         else
         {
-            auto column = res_type->createColumn();
+            auto column = res.type->createColumn();
             typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
-            return column;
+            res.column = std::move(column);
         }
     }
 };
 
-}
 
 void registerFunctionToLowCardinality(FunctionFactory & factory)
 {

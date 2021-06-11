@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -21,7 +21,7 @@ namespace ErrorCodes
 struct FunctionPort : public IFunction
 {
     static constexpr auto name = "port";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionPort>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionPort>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -48,18 +48,18 @@ struct FunctionPort : public IFunction
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         UInt16 default_port = 0;
         if (arguments.size() == 2)
         {
-            const auto * port_column = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
+            const auto * port_column = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[1]).column.get());
             if (!port_column)
                 throw Exception("Second argument for function " + getName() + " must be constant UInt16", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             default_port = port_column->getValue<UInt16>();
         }
 
-        const ColumnPtr url_column = arguments[0].column;
+        const ColumnPtr url_column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * url_strs = checkAndGetColumn<ColumnString>(url_column.get()))
         {
             auto col_res = ColumnVector<UInt16>::create();
@@ -67,11 +67,11 @@ struct FunctionPort : public IFunction
             vec_res.resize(url_column->size());
 
             vector(default_port, url_strs->getChars(), url_strs->getOffsets(), vec_res);
-            return col_res;
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 }
 

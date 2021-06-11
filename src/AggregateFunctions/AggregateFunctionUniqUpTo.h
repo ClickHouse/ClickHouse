@@ -1,7 +1,6 @@
 #pragma once
 
-#include <common/unaligned.h>
-
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -18,14 +17,13 @@
 #include <IO/WriteHelpers.h>
 
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
 
 namespace DB
 {
-struct Settings;
 
 
 /** Counts the number of unique values up to no more than specified in the parameter.
@@ -37,7 +35,7 @@ struct Settings;
   */
 
 template <typename T>
-struct AggregateFunctionUniqUpToData
+struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 {
 /** If count == threshold + 1 - this means that it is "overflowed" (values greater than threshold).
   * In this case (for example, after calling the merge function), the `data` array does not necessarily contain the initialized values
@@ -45,17 +43,7 @@ struct AggregateFunctionUniqUpToData
   *   then set count to `threshold + 1`, and values from another state are not copied.
   */
     UInt8 count = 0;
-    char data_ptr[0];
-
-    T load(size_t i) const
-    {
-        return unalignedLoad<T>(data_ptr + i * sizeof(T));
-    }
-
-    void store(size_t i, const T & x)
-    {
-        unalignedStore<T>(data_ptr + i * sizeof(T), x);
-    }
+    T data[0];
 
     size_t size() const
     {
@@ -72,12 +60,12 @@ struct AggregateFunctionUniqUpToData
 
         /// Linear search for the matching element.
         for (size_t i = 0; i < count; ++i)
-            if (load(i) == x)
+            if (data[i] == x)
                 return;
 
         /// Did not find the matching element. If there is room for one more element, insert it.
         if (count < threshold)
-            store(count, x);
+            data[count] = x;
 
         /// After increasing count, the state may be overflowed.
         ++count;
@@ -96,7 +84,7 @@ struct AggregateFunctionUniqUpToData
         }
 
         for (size_t i = 0; i < rhs.count; ++i)
-            insert(rhs.load(i), threshold);
+            insert(rhs.data[i], threshold);
     }
 
     void write(WriteBuffer & wb, UInt8 threshold) const
@@ -105,7 +93,7 @@ struct AggregateFunctionUniqUpToData
 
         /// Write values only if the state is not overflowed. Otherwise, they are not needed, and only the fact that the state is overflowed is important.
         if (count <= threshold)
-            wb.write(data_ptr, count * sizeof(T));
+            wb.write(reinterpret_cast<const char *>(data), count * sizeof(data[0]));
     }
 
     void read(ReadBuffer & rb, UInt8 threshold)
@@ -113,7 +101,7 @@ struct AggregateFunctionUniqUpToData
         readBinary(count, rb);
 
         if (count <= threshold)
-            rb.read(data_ptr, count * sizeof(T));
+            rb.read(reinterpret_cast<char *>(data), count * sizeof(data[0]));
     }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
@@ -196,30 +184,28 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
-    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void ALWAYS_INLINE add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).add(*columns[0], row_num, threshold);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs), threshold);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         this->data(place).write(buf, threshold);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).read(buf, threshold);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
@@ -261,29 +247,27 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs), threshold);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         this->data(place).write(buf, threshold);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).read(buf, threshold);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
@@ -292,7 +276,7 @@ public:
 
 }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 

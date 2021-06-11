@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ClickHouseRevision.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -22,7 +23,7 @@ struct TemporaryFileStream
     explicit TemporaryFileStream(const std::string & path)
         : file_in(path)
         , compressed_in(file_in)
-        , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+        , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get()))
     {}
 
     TemporaryFileStream(const std::string & path, const Block & header_)

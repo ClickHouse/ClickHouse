@@ -1,18 +1,20 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Formats/FormatSettings.h>
-#include <Interpreters/Context.h>
-#include <IO/PeekableReadBuffer.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
+
+#include <IO/PeekableReadBuffer.h>
+#include <Parsers/ExpressionListParsers.h>
 
 namespace DB
 {
 
+class Context;
 class ReadBuffer;
+
 
 /** Stream to read data in VALUES format (as in INSERT query).
   */
@@ -34,7 +36,7 @@ public:
     void resetParser() override;
 
     /// TODO: remove context somehow.
-    void setContext(ContextConstPtr context_) { context = Context::createCopy(context_); }
+    void setContext(const Context & context_) { context = std::make_unique<Context>(context_); }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
@@ -46,7 +48,7 @@ private:
         SingleExpressionEvaluation
     };
 
-    using ConstantExpressionTemplates = std::vector<std::optional<ConstantExpressionTemplate>>;
+    typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
 
     Chunk generate() override;
 
@@ -61,16 +63,16 @@ private:
 
     bool shouldDeduceNewTemplate(size_t column_idx);
 
-    void readPrefix();
     void readSuffix();
 
     bool skipToNextRow(size_t min_chunk_bytes = 0, int balance = 0);
 
+private:
     PeekableReadBuffer buf;
 
     const RowInputFormatParams params;
 
-    ContextPtr context;   /// pimpl
+    std::unique_ptr<Context> context;   /// pimpl
     const FormatSettings format_settings;
 
     const size_t num_columns;
@@ -86,7 +88,6 @@ private:
     ConstantExpressionTemplate::Cache templates_cache;
 
     const DataTypes types;
-    Serializations serializations;
 
     BlockMissingValues block_missing_values;
 };

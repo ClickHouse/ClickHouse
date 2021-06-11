@@ -1,8 +1,3 @@
----
-toc_priority: 41
-toc_title: "Применение модели CatBoost в ClickHouse"
----
-
 # Применение модели CatBoost в ClickHouse {#applying-catboost-model-in-clickhouse}
 
 [CatBoost](https://catboost.ai) — открытая программная библиотека разработанная компанией [Яндекс](https://yandex.ru/company/) для машинного обучения, которая использует схему градиентного бустинга.
@@ -17,8 +12,6 @@ toc_title: "Применение модели CatBoost в ClickHouse"
 4.  [Запустите вывод модели из SQL](#run-model-inference).
 
 Подробнее об обучении моделей в CatBoost, см. [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training).
-
-Вы можете перегрузить модели CatBoost, если их конфигурация была обновлена, без перезагрузки сервера. Для этого используйте системные запросы [RELOAD MODEL](../sql-reference/statements/system.md#query_language-system-reload-model) и [RELOAD MODELS](../sql-reference/statements/system.md#query_language-system-reload-models).
 
 ## Перед началом работы {#prerequisites}
 
@@ -160,9 +153,7 @@ FROM amazon_train
 <catboost_dynamic_library_path>/home/catboost/data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
-!!! note "Примечание"
-    Вы можете позднее изменить путь к конфигурации модели CatBoost без перезагрузки сервера.
-    
+
 ## 4. Запустите вывод модели из SQL {#run-model-inference}
 
 Для тестирования модели запустите клиент ClickHouse `$ clickhouse client`.

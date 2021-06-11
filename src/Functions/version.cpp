@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Field.h>
@@ -16,7 +16,7 @@ class FunctionVersion : public IFunction
 {
 public:
     static constexpr auto name = "version";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionVersion>();
     }
@@ -25,10 +25,6 @@ public:
     {
         return name;
     }
-
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool isSuitableForConstantFolding() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
@@ -40,16 +36,16 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        return DataTypeString().createColumnConst(input_rows_count, VERSION_STRING);
+        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, VERSION_STRING);
     }
 };
 
 
 void registerFunctionVersion(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionVersion>();
 }
 
 }

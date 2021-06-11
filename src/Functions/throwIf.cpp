@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
@@ -10,6 +10,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -18,15 +19,13 @@ namespace ErrorCodes
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
 }
 
-namespace
-{
 
 /// Throw an exception if the argument is non zero.
 class FunctionThrowIf : public IFunction
 {
 public:
     static constexpr auto name = "throwIf";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionThrowIf>();
     }
@@ -65,37 +64,34 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         std::optional<String> custom_message;
         if (arguments.size() == 2)
         {
-            const auto * msg_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+            const auto * msg_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
             if (!msg_column)
                 throw Exception{"Second argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN};
             custom_message = msg_column->getValue<String>();
         }
 
-        const auto * in = arguments.front().column.get();
+        const auto * in = block.getByPosition(arguments.front()).column.get();
 
-        ColumnPtr res;
-        if (!((res = execute<UInt8>(in, custom_message))
-            || (res = execute<UInt16>(in, custom_message))
-            || (res = execute<UInt32>(in, custom_message))
-            || (res = execute<UInt64>(in, custom_message))
-            || (res = execute<Int8>(in, custom_message))
-            || (res = execute<Int16>(in, custom_message))
-            || (res = execute<Int32>(in, custom_message))
-            || (res = execute<Int64>(in, custom_message))
-            || (res = execute<Float32>(in, custom_message))
-            || (res = execute<Float64>(in, custom_message))))
+        if (   !execute<UInt8>(block, in, result, custom_message)
+            && !execute<UInt16>(block, in, result, custom_message)
+            && !execute<UInt32>(block, in, result, custom_message)
+            && !execute<UInt64>(block, in, result, custom_message)
+            && !execute<Int8>(block, in, result, custom_message)
+            && !execute<Int16>(block, in, result, custom_message)
+            && !execute<Int32>(block, in, result, custom_message)
+            && !execute<Int64>(block, in, result, custom_message)
+            && !execute<Float32>(block, in, result, custom_message)
+            && !execute<Float64>(block, in, result, custom_message))
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
-
-        return res;
     }
 
     template <typename T>
-    ColumnPtr execute(const IColumn * in_untyped, const std::optional<String> & message) const
+    bool execute(Block & block, const IColumn * in_untyped, const size_t result, const std::optional<String> & message) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {
@@ -105,14 +101,14 @@ public:
                                 ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO};
 
             /// We return non constant to avoid constant folding.
-            return  ColumnUInt8::create(in_data.size(), 0);
+            block.getByPosition(result).column = ColumnUInt8::create(in_data.size(), 0);
+            return true;
         }
 
-        return nullptr;
+        return false;
     }
 };
 
-}
 
 void registerFunctionThrowIf(FunctionFactory & factory)
 {

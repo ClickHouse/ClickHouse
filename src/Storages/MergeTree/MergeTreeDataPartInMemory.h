@@ -15,15 +15,13 @@ public:
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_ = {},
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const std::optional<String> & relative_path_ = {});
 
     MergeTreeDataPartInMemory(
         MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_ = {},
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const std::optional<String> & relative_path_ = {});
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
@@ -34,7 +32,6 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
-
     MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
@@ -44,7 +41,7 @@ public:
         const MergeTreeIndexGranularity & computed_index_granularity) const override;
 
     bool isStoredOnDisk() const override { return false; }
-    bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.name); }
+    bool hasColumnFiles(const String & column_name, const IDataType & /* type */) const override { return !!getColumnPosition(column_name); }
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const override;
     void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;

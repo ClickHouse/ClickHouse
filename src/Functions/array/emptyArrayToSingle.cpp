@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -27,7 +27,7 @@ class FunctionEmptyArrayToSingle : public IFunction
 {
 public:
     static constexpr auto name = "emptyArrayToSingle";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
 
     String getName() const override { return name; }
 
@@ -45,7 +45,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 };
 
 
@@ -53,23 +53,25 @@ namespace
 {
     namespace FunctionEmptyArrayToSingleImpl
     {
-        ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
         {
-            if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get()))
+            if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
             {
                 if (const_array->getValue<Array>().empty())
                 {
-                    auto nested_type = typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
+                    auto nested_type = typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
-                    return result_type->createColumnConst(
+                    block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
                         input_rows_count,
                         Array{nested_type->getDefault()});
                 }
                 else
-                    return arguments[0].column;
+                    block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
+
+                return true;
             }
             else
-                return nullptr;
+                return false;
         }
 
         template <typename T, bool nullable>
@@ -367,14 +369,14 @@ namespace
 }
 
 
-ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
-    if (auto res = FunctionEmptyArrayToSingleImpl::executeConst(arguments, result_type, input_rows_count))
-        return res;
+    if (FunctionEmptyArrayToSingleImpl::executeConst(block, arguments, result, input_rows_count))
+        return;
 
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+    const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
     if (!array)
-        throw Exception("Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
+        throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
     MutableColumnPtr res_ptr = array->cloneEmpty();
@@ -412,7 +414,7 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
     else
         FunctionEmptyArrayToSingleImpl::executeDispatch<false>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
 
-    return res_ptr;
+    block.getByPosition(result).column = std::move(res_ptr);
 }
 
 

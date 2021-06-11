@@ -12,21 +12,15 @@ create table data_01527 engine=Memory() as select toUInt64(number) key from numb
 create table dist_01527 as data_01527 engine=Distributed('test_cluster_two_shards', currentDatabase(), data_01527, dictGetUInt64('db_01527_ranges.dict', 'shard', key));
 
 create table db_01527_ranges.data engine=Memory() as select number key, number shard from numbers(100);
-create dictionary db_01527_ranges.dict (key UInt64, shard UInt64) primary key key source(clickhouse(host '127.0.0.1' port tcpPort() table 'data' db 'db_01527_ranges' user 'default' password '')) lifetime(0) layout(hashed());
+create dictionary db_01527_ranges.dict (key UInt64, shard UInt64) primary key key source(clickhouse(host '127.0.0.1' port 9000 table 'data' db 'db_01527_ranges' user 'default' password '')) lifetime(0) layout(hashed());
 system reload dictionary db_01527_ranges.dict;
 
 select _shard_num from dist_01527 where key=0;
 select _shard_num from dist_01527 where key=1;
 
-drop table db_01527_ranges.data sync;
+drop table db_01527_ranges.data;
 create table db_01527_ranges.data engine=Memory() as select number key, number+1 shard from numbers(100);
 system reload dictionary db_01527_ranges.dict;
 
 select _shard_num from dist_01527 where key=0;
 select _shard_num from dist_01527 where key=1;
-
-drop table data_01527;
-drop table dist_01527;
-drop table db_01527_ranges.data;
-drop dictionary db_01527_ranges.dict;
-drop database db_01527_ranges;

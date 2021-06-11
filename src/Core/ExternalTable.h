@@ -1,31 +1,40 @@
 #pragma once
 
-#include <Client/Connection.h>
-#include <Core/Block.h>
-#include <Interpreters/Context_fwd.h>
-#include <IO/ReadBuffer.h>
-#include <Server/HTTP/HTMLForm.h>
-
-#include <iosfwd>
-#include <memory>
 #include <string>
 #include <vector>
+#include <memory>
+#include <iosfwd>
+
+#include <Poco/Net/PartHandler.h>
+
+#include <Core/Block.h>
+#include <Client/Connection.h>
+#include <IO/ReadBuffer.h>
 
 
-namespace Poco::Net
+namespace Poco
 {
-class NameValueCollection;
-class MessageHeader;
+    namespace Net
+    {
+        class NameValueCollection;
+        class MessageHeader;
+    }
 }
 
-namespace boost::program_options
+namespace boost
 {
-class variables_map;
+    namespace program_options
+    {
+        class variables_map;
+    }
 }
 
 
 namespace DB
 {
+
+class Context;
+
 
 /// The base class containing the basic information about external table and
 /// basic functions for extracting this information from text fields.
@@ -42,17 +51,20 @@ public:
     std::unique_ptr<ReadBuffer> read_buffer;
     Block sample_block;
 
-    virtual ~BaseExternalTable() = default;
+    virtual ~BaseExternalTable() {}
 
     /// Initialize read_buffer, depending on the data source. By default, does nothing.
     virtual void initReadBuffer() {}
 
     /// Get the table data - a pair (a stream with the contents of the table, the name of the table)
-    ExternalTableDataPtr getData(ContextPtr context);
+    ExternalTableDataPtr getData(const Context & context);
 
 protected:
     /// Clear all accumulated information
-    void clear();
+    void clean();
+
+    /// Function for debugging information output
+    void write();
 
     /// Construct the `structure` vector from the text field `structure`
     virtual void parseStructureFromStructureField(const std::string & argument);
@@ -73,22 +85,24 @@ public:
     void initReadBuffer() override;
 
     /// Extract parameters from variables_map, which is built on the client command line
-    explicit ExternalTable(const boost::program_options::variables_map & external_options);
+    ExternalTable(const boost::program_options::variables_map & external_options);
 };
 
 
 /// Parsing of external table used when sending tables via http
 /// The `handlePart` function will be called for each table passed,
 /// so it's also necessary to call `clean` at the end of the `handlePart`.
-class ExternalTablesHandler : public HTMLForm::PartHandler, BaseExternalTable, WithMutableContext
+class ExternalTablesHandler : public Poco::Net::PartHandler, BaseExternalTable
 {
 public:
-    ExternalTablesHandler(ContextMutablePtr context_, const Poco::Net::NameValueCollection & params_) : WithMutableContext(context_), params(params_) {}
+    ExternalTablesHandler(Context & context_, const Poco::Net::NameValueCollection & params_) : context(context_), params(params_) {}
 
-    void handlePart(const Poco::Net::MessageHeader & header, ReadBuffer & stream) override;
+    void handlePart(const Poco::Net::MessageHeader & header, std::istream & stream) override;
 
 private:
+    Context & context;
     const Poco::Net::NameValueCollection & params;
+    std::unique_ptr<ReadBuffer> read_buffer_impl;
 };
 
 

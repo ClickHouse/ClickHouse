@@ -5,18 +5,19 @@
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -28,7 +29,7 @@ namespace
   * It differs, for example, in that it uses a trivial hash function, since `uniq` of many arguments first hashes them out itself.
   */
 template <typename Data, typename DataForVariadic>
-AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     assertNoParameters(name, params);
 
@@ -37,12 +38,6 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     bool use_exact_hash_function = !isAllArgumentsContiguousInMemory(argument_types);
-
-    const WhichDataType t(argument_types[0]);
-    if (t.isAggregateFunction())
-        throw Exception(
-            "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     if (argument_types.size() == 1)
     {
@@ -78,19 +73,13 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 }
 
 template <bool is_exact, template <typename> class Data, typename DataForVariadic>
-AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     assertNoParameters(name, params);
 
     if (argument_types.empty())
         throw Exception("Incorrect number of arguments for aggregate function " + name,
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-    const WhichDataType t(argument_types[0]);
-    if (t.isAggregateFunction())
-        throw Exception(
-            "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     /// We use exact hash function if the user wants it;
     /// or if the arguments are not contiguous in memory, because only exact hash function have support for this case.
@@ -143,12 +132,6 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 
     factory.registerFunction("uniqExact",
         {createAggregateFunctionUniq<true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>, properties});
-
-#if USE_DATASKETCHES
-    factory.registerFunction("uniqTheta",
-        {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaData>, properties});
-#endif
-
 }
 
 }

@@ -1,6 +1,6 @@
 #include <Common/renameat2.h>
 #include <Common/Exception.h>
-#include <filesystem>
+#include <Poco/File.h>
 
 #if defined(linux) || defined(__linux) || defined(__linux__)
 #include <unistd.h>
@@ -9,8 +9,6 @@
 #include <linux/fs.h>
 #include <sys/utsname.h>
 #endif
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -69,10 +67,6 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
     /// Other cases when EINVAL can be returned should never happen.
     if (errno == EINVAL)
         return false;
-    /// We should never get ENOSYS on Linux, because we check kernel version in supportsRenameat2Impl().
-    /// However, we can get in on WSL.
-    if (errno == ENOSYS)
-        return false;
 
     if (errno == EEXIST)
         throwFromErrno("Cannot rename " + old_path + " to " + new_path + " because the second path already exists", ErrorCodes::ATOMIC_RENAME_FAIL);
@@ -95,9 +89,9 @@ static bool renameat2(const std::string &, const std::string &, int)
 static void renameNoReplaceFallback(const std::string & old_path, const std::string & new_path)
 {
     /// NOTE it's unsafe
-    if (fs::exists(new_path))
+    if (Poco::File{new_path}.exists())
         throw Exception("File " + new_path + " exists", ErrorCodes::FILE_ALREADY_EXISTS);
-    fs::rename(old_path, new_path);
+    Poco::File{old_path}.renameTo(new_path);
 }
 
 /// Do not use [[noreturn]] to avoid warnings like "code will never be executed" in other places

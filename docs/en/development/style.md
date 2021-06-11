@@ -195,7 +195,7 @@ std::cerr << static_cast<int>(c) << std::endl;
 
 The same is true for small methods in any classes or structs.
 
-For templated classes and structs, do not separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
+For templated classes and structs, don’t separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
 
 **31.** You can wrap lines at 140 characters, instead of 80.
 
@@ -354,7 +354,7 @@ In all other cases, use a name that describes the meaning.
 bool info_successfully_loaded = false;
 ```
 
-**9.** Names of `define`s and global constants use ALL_CAPS with underscores.
+**9.** Names of `define`s and global constants use ALL\_CAPS with underscores.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -394,7 +394,7 @@ The underscore suffix can be omitted if the argument is not used in the construc
 timer (not m_timer)
 ```
 
-**14.** For the constants in an `enum`, use CamelCase with a capital letter. ALL_CAPS is also acceptable. If the `enum` is non-local, use an `enum class`.
+**14.** For the constants in an `enum`, use CamelCase with a capital letter. ALL\_CAPS is also acceptable. If the `enum` is non-local, use an `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -442,7 +442,7 @@ Use `RAII` and see above.
 
 **3.** Error handling.
 
-Use exceptions. In most cases, you only need to throw an exception, and do not need to catch it (because of `RAII`).
+Use exceptions. In most cases, you only need to throw an exception, and don’t need to catch it (because of `RAII`).
 
 In offline data processing applications, it’s often acceptable to not catch exceptions.
 
@@ -577,7 +577,7 @@ If a function captures ownership of an object created in the heap, make the argu
 
 **14.** Return values.
 
-In most cases, just use `return`. Do not write `return std::move(res)`.
+In most cases, just use `return`. Do not write `[return std::move(res)]{.strike}`.
 
 If the function allocates an object on heap and returns it, use `shared_ptr` or `unique_ptr`.
 
@@ -599,7 +599,7 @@ public:
 
 There is no need to use a separate `namespace` for application code.
 
-Small libraries do not need this, either.
+Small libraries don’t need this, either.
 
 For medium to large libraries, put everything in a `namespace`.
 
@@ -671,7 +671,7 @@ Always use `#pragma once` instead of include guards.
 **24.** Do not use `trailing return type` for functions unless necessary.
 
 ``` cpp
-auto f() -> void
+[auto f() -&gt; void;]{.strike}
 ```
 
 **25.** Declaration and initialization of variables.
@@ -701,17 +701,17 @@ But other things being equal, cross-platform or portable code is preferred.
 
 **2.** Language: C++20 (see the list of available [C++20 features](https://en.cppreference.com/w/cpp/compiler_support#C.2B.2B20_features)).
 
-**3.** Compiler: `clang`. At this time (April 2021), the code is compiled using clang version 11. (It can also be compiled using `gcc` version 10, but it's untested and not suitable for production usage).
+**3.** Compiler: `gcc`. At this time (August 2020), the code is compiled using version 9.3. (It can also be compiled using `clang 8`.)
 
 The standard library is used (`libc++`).
 
 **4.**OS: Linux Ubuntu, not older than Precise.
 
-**5.**Code is written for x86_64 CPU architecture.
+**5.**Code is written for x86\_64 CPU architecture.
 
 The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 
-**6.** Use `-Wall -Wextra -Werror` compilation flags. Also `-Weverything` is used with few exceptions.
+**6.** Use `-Wall -Wextra -Werror` compilation flags.
 
 **7.** Use static linking with all libraries except those that are difficult to connect to statically (see the output of the `ldd` command).
 
@@ -755,9 +755,9 @@ If there is a good solution already available, then use it, even if it means you
 
 (But be prepared to remove bad libraries from code.)
 
-**3.** You can install a library that isn’t in the packages, if the packages do not have what you need or have an outdated version or the wrong type of compilation.
+**3.** You can install a library that isn’t in the packages, if the packages don’t have what you need or have an outdated version or the wrong type of compilation.
 
-**4.** If the library is small and does not have its own complex build system, put the source files in the `contrib` folder.
+**4.** If the library is small and doesn’t have its own complex build system, put the source files in the `contrib` folder.
 
 **5.** Preference is always given to libraries that are already in use.
 

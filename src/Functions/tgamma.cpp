@@ -3,13 +3,9 @@
 
 namespace DB
 {
-namespace
-{
 
 struct TGammaName { static constexpr auto name = "tgamma"; };
 using FunctionTGamma = FunctionMathUnary<UnaryFunctionPlain<TGammaName, std::tgamma>>;
-
-}
 
 void registerFunctionTGamma(FunctionFactory & factory)
 {

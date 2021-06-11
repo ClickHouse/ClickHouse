@@ -11,7 +11,7 @@ By going through this tutorial, you’ll learn how to set up a simple ClickHouse
 
 ## Single Node Setup {#single-node-setup}
 
-To postpone the complexities of a distributed environment, we’ll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](../getting-started/install.md#install-from-deb-packages) or [rpm](../getting-started/install.md#from-rpm-packages) packages, but there are [alternatives](../getting-started/install.md#from-docker-image) for the operating systems that do not support them.
+To postpone the complexities of a distributed environment, we’ll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](../getting-started/install.md#install-from-deb-packages) or [rpm](../getting-started/install.md#from-rpm-packages) packages, but there are [alternatives](../getting-started/install.md#from-docker-image) for the operating systems that do no support them.
 
 For example, you have chosen `deb` packages and executed:
 
@@ -85,8 +85,8 @@ Now it’s time to fill our ClickHouse server with some sample data. In this tut
 ### Download and Extract Table Data {#download-and-extract-table-data}
 
 ``` bash
-curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
-curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 The extracted files are about 10GB in size.
@@ -105,7 +105,7 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 2.  Table schema, i.e. list of columns and their [data types](../sql-reference/data-types/index.md).
 3.  [Table engine](../engines/table-engines/index.md) and its settings, which determines all the details on how queries to this table will be physically executed.
 
-Yandex.Metrica is a web analytics service, and sample dataset does not cover its full functionality, so there are only two tables to create:
+Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
 
 -   `hits` is a table with each action done by all users on all websites covered by the service.
 -   `visits` is a table that contains pre-built sessions instead of individual actions.
@@ -254,6 +254,7 @@ ENGINE = MergeTree()
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
+SETTINGS index_granularity = 8192
 ```
 
 ``` sql
@@ -449,6 +450,7 @@ ENGINE = CollapsingMergeTree(Sign)
 PARTITION BY toYYYYMM(StartDate)
 ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 SAMPLE BY intHash32(UserID)
+SETTINGS index_granularity = 8192
 ```
 
 You can execute those queries using the interactive mode of `clickhouse-client` (just launch it in a terminal without specifying a query in advance) or try some [alternative interface](../interfaces/index.md) if you want.
@@ -644,7 +646,7 @@ If there are no replicas at the moment on replicated table creation, a new first
 
 ``` sql
 CREATE TABLE tutorial.hits_replica (...)
-ENGINE = ReplicatedMergeTree(
+ENGINE = ReplcatedMergeTree(
     '/clickhouse_perftest/tables/{shard}/hits',
     '{replica}'
 )

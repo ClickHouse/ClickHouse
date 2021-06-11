@@ -8,8 +8,6 @@ namespace DB
 {
 class ASTRowPolicyNames;
 
-using Strings = std::vector<String>;
-
 /** SHOW CREATE USER [name | CURRENT_USER]
   * SHOW CREATE USERS [name [, name2 ...]
   * SHOW CREATE ROLE name
@@ -40,7 +38,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
 
-    void replaceEmptyDatabase(const String & current_database);
+    void replaceEmptyDatabaseWithCurrent(const String & current_database);
 
 protected:
     String getKeyword() const;

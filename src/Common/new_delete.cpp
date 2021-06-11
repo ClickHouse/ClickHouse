@@ -1,5 +1,5 @@
 #include <common/memory.h>
-#include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryTracker.h>
 
 #include <iostream>
 #include <new>
@@ -41,9 +41,9 @@ struct InitializeJemallocZoneAllocatorForOSX
 namespace Memory
 {
 
-inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size)
+inline ALWAYS_INLINE void trackMemory(std::size_t size)
 {
-    size_t actual_size = size;
+    std::size_t actual_size = size;
 
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 5
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
@@ -52,13 +52,21 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size)
         actual_size = nallocx(size, 0);
 #endif
 
-    return actual_size;
+    CurrentMemoryTracker::alloc(actual_size);
 }
 
-inline ALWAYS_INLINE void trackMemory(std::size_t size)
+inline ALWAYS_INLINE bool trackMemoryNoExcept(std::size_t size) noexcept
 {
-    std::size_t actual_size = getActualAllocationSize(size);
-    CurrentMemoryTracker::allocNoThrow(actual_size);
+    try
+    {
+        trackMemory(size);
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    return true;
 }
 
 inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]] = 0) noexcept
@@ -90,29 +98,27 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
 void * operator new(std::size_t size)
 {
     Memory::trackMemory(size);
-
     return Memory::newImpl(size);
 }
 
 void * operator new[](std::size_t size)
 {
     Memory::trackMemory(size);
-
     return Memory::newImpl(size);
 }
 
 void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
-    Memory::trackMemory(size);
-
-    return Memory::newNoExept(size);
+    if (likely(Memory::trackMemoryNoExcept(size)))
+        return Memory::newNoExept(size);
+    return nullptr;
 }
 
 void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 {
-    Memory::trackMemory(size);
-
-    return Memory::newNoExept(size);
+    if (likely(Memory::trackMemoryNoExcept(size)))
+        return Memory::newNoExept(size);
+    return nullptr;
 }
 
 /// delete

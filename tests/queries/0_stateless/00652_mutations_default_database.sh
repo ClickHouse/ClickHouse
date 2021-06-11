@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --multiquery --mutations_sync=1 << EOF
+. "$CURDIR"/mergetree_mutations.lib
+
+${CLICKHOUSE_CLIENT} --multiquery << EOF
 DROP TABLE IF EXISTS mutations;
 DROP TABLE IF EXISTS for_subquery;
 
@@ -17,6 +18,8 @@ INSERT INTO for_subquery VALUES (234), (345);
 ALTER TABLE mutations UPDATE y = y + 1 WHERE x IN for_subquery;
 ALTER TABLE mutations UPDATE y = y + 1 WHERE x IN (SELECT x FROM for_subquery);
 EOF
+
+wait_for_mutation "mutations" "mutation_3.txt"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM mutations"
 

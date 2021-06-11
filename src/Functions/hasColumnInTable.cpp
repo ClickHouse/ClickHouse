@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
@@ -12,6 +12,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -19,22 +20,20 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-namespace
-{
 
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction, WithConstContext
+class FunctionHasColumnInTable : public IFunction
 {
 public:
     static constexpr auto name = "hasColumnInTable";
-    static FunctionPtr create(ContextConstPtr context_)
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext());
+        return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext());
     }
 
-    explicit FunctionHasColumnInTable(ContextConstPtr global_context_) : WithConstContext(global_context_)
+    explicit FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
     {
     }
 
@@ -56,7 +55,10 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+
+private:
+    const Context & global_context;
 };
 
 
@@ -82,11 +84,12 @@ DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAnd
 }
 
 
-ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
-    auto get_string_from_columns = [&](const ColumnWithTypeAndName & column) -> String
+    auto get_string_from_block = [&](size_t column_pos) -> String
     {
-        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.column.get());
+        ColumnPtr column = block.getByPosition(column_pos).column;
+        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.get());
         return const_column->getValue<String>();
     };
 
@@ -96,17 +99,17 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     String password;
 
     if (arguments.size() > 3)
-        host_name = get_string_from_columns(arguments[arg++]);
+        host_name = get_string_from_block(arguments[arg++]);
 
     if (arguments.size() > 4)
-        user_name = get_string_from_columns(arguments[arg++]);
+        user_name = get_string_from_block(arguments[arg++]);
 
     if (arguments.size() > 5)
-        password = get_string_from_columns(arguments[arg++]);
+        password = get_string_from_block(arguments[arg++]);
 
-    String database_name = get_string_from_columns(arguments[arg++]);
-    String table_name = get_string_from_columns(arguments[arg++]);
-    String column_name = get_string_from_columns(arguments[arg++]);
+    String database_name = get_string_from_block(arguments[arg++]);
+    String table_name = get_string_from_block(arguments[arg++]);
+    String column_name = get_string_from_block(arguments[arg++]);
 
     if (table_name.empty())
         throw Exception("Table name is empty", ErrorCodes::UNKNOWN_TABLE);
@@ -114,12 +117,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     bool has_column;
     if (host_name.empty())
     {
-        // FIXME this (probably) needs a non-constant access to query context,
-        // because it might initialized a storage. Ideally, the tables required
-        // by the query should be initialized at an earlier stage.
-        const StoragePtr & table = DatabaseCatalog::instance().getTable(
-            {database_name, table_name},
-            const_pointer_cast<Context>(getContext()));
+        const StoragePtr & table = DatabaseCatalog::instance().getTable({database_name, table_name}, global_context);
         auto table_metadata = table->getInMemoryMetadataPtr();
         has_column = table_metadata->getColumns().hasPhysical(column_name);
     }
@@ -128,27 +126,20 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         std::vector<std::vector<String>> host_names = {{ host_name }};
 
         auto cluster = std::make_shared<Cluster>(
-            getContext()->getSettings(),
+            global_context.getSettings(),
             host_names,
             !user_name.empty() ? user_name : "default",
             password,
-            getContext()->getTCPPort(),
+            global_context.getTCPPort(),
             false);
 
-        // FIXME this (probably) needs a non-constant access to query context,
-        // because it might initialized a storage. Ideally, the tables required
-        // by the query should be initialized at an earlier stage.
-        auto remote_columns = getStructureOfRemoteTable(*cluster,
-            {database_name, table_name},
-            const_pointer_cast<Context>(getContext()));
-
+        auto remote_columns = getStructureOfRemoteTable(*cluster, {database_name, table_name}, global_context);
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    return DataTypeUInt8().createColumnConst(input_rows_count, Field{UInt64(has_column)});
+    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
 }
 
-}
 
 void registerFunctionHasColumnInTable(FunctionFactory & factory)
 {

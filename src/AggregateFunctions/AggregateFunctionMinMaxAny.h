@@ -15,8 +15,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -52,14 +50,14 @@ public:
             assert_cast<ColVecType &>(to).insertDefault();
     }
 
-    void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
+    void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
     {
         writeBinary(has(), buf);
         if (has())
             writeBinary(value, buf);
     }
 
-    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena *)
+    void read(ReadBuffer & buf, const IDataType & /*data_type*/, Arena *)
     {
         readBinary(has_value, buf);
         if (has())
@@ -183,7 +181,7 @@ public:
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct SingleValueDataString //-V730
+struct SingleValueDataString
 {
 private:
     using Self = SingleValueDataString;
@@ -223,14 +221,14 @@ public:
             assert_cast<ColumnString &>(to).insertDefault();
     }
 
-    void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
+    void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
     {
         writeBinary(size, buf);
         if (has())
             buf.write(getData(), size);
     }
 
-    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
+    void read(ReadBuffer & buf, const IDataType & /*data_type*/, Arena * arena)
     {
         Int32 rhs_size;
         readBinary(rhs_size, buf);
@@ -429,24 +427,24 @@ public:
             to.insertDefault();
     }
 
-    void write(WriteBuffer & buf, const ISerialization & serialization) const
+    void write(WriteBuffer & buf, const IDataType & data_type) const
     {
         if (!value.isNull())
         {
             writeBinary(true, buf);
-            serialization.serializeBinary(value, buf);
+            data_type.serializeBinary(value, buf);
         }
         else
             writeBinary(false, buf);
     }
 
-    void read(ReadBuffer & buf, const ISerialization & serialization, Arena *)
+    void read(ReadBuffer & buf, const IDataType & data_type, Arena *)
     {
         bool is_not_null;
         readBinary(is_not_null, buf);
 
         if (is_not_null)
-            serialization.deserializeBinary(value, buf);
+            data_type.deserializeBinary(value, buf);
     }
 
     void change(const IColumn & column, size_t row_num, Arena *)
@@ -637,7 +635,7 @@ struct AggregateFunctionAnyLastData : Data
 template <typename Data>
 struct AggregateFunctionAnyHeavyData : Data
 {
-    UInt64 counter = 0;
+    size_t counter = 0;
 
     using Self = AggregateFunctionAnyHeavyData;
 
@@ -680,15 +678,15 @@ struct AggregateFunctionAnyHeavyData : Data
         return false;
     }
 
-    void write(WriteBuffer & buf, const ISerialization & serialization) const
+    void write(WriteBuffer & buf, const IDataType & data_type) const
     {
-        Data::write(buf, serialization);
+        Data::write(buf, data_type);
         writeBinary(counter, buf);
     }
 
-    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena)
+    void read(ReadBuffer & buf, const IDataType & data_type, Arena * arena)
     {
-        Data::read(buf, serialization, arena);
+        Data::read(buf, data_type, arena);
         readBinary(counter, buf);
     }
 
@@ -700,14 +698,12 @@ template <typename Data>
 class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
 private:
-    DataTypePtr type;
-    SerializationPtr serialization;
+    DataTypePtr & type;
 
 public:
     AggregateFunctionsSingleValue(const DataTypePtr & type_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type_}, {})
         , type(this->argument_types[0])
-        , serialization(type->getDefaultSerialization())
     {
         if (StringRef(Data::name()) == StringRef("min")
             || StringRef(Data::name()) == StringRef("max"))
@@ -725,24 +721,24 @@ public:
         return type;
     }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         this->data(place).changeIfBetter(*columns[0], row_num, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         this->data(place).changeIfBetter(this->data(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        this->data(place).write(buf, *serialization);
+        this->data(place).write(buf, *type.get());
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *type.get(), arena);
     }
 
     bool allocatesMemoryInArena() const override
@@ -750,7 +746,7 @@ public:
         return Data::allocatesMemoryInArena();
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         this->data(place).insertResultInto(to);
     }

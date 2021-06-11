@@ -2,18 +2,19 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
+#include <optional>
 
 
 namespace DB
 {
-
 class ASTCreateQuotaQuery;
 struct Quota;
 
-class InterpreterCreateQuotaQuery : public IInterpreter, WithMutableContext
+
+class InterpreterCreateQuotaQuery : public IInterpreter
 {
 public:
-    InterpreterCreateQuotaQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
+    InterpreterCreateQuotaQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
@@ -24,6 +25,6 @@ public:
 
 private:
     ASTPtr query_ptr;
+    Context & context;
 };
-
 }

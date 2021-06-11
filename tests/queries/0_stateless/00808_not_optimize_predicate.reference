@@ -15,12 +15,12 @@
 3	87
 4	112
 5	137
-SELECT
+SELECT 
     n,
     `finalizeAggregation(s)`
-FROM
+FROM 
 (
-    SELECT
+    SELECT 
         n,
         finalizeAggregation(s)
     FROM test_00808_push_down_with_finalizeAggregation

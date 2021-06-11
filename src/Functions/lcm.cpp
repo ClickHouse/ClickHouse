@@ -1,8 +1,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <Functions/GCDLCMImpl.h>
 
-#include <boost/integer/common_factor.hpp>
+#include <numeric>
+#include <limits>
+#include <type_traits>
 
 
 namespace
@@ -27,20 +28,30 @@ constexpr T abs(T value) noexcept
 namespace DB
 {
 
-namespace
+namespace ErrorCodes
 {
-
-struct NameLCM { static constexpr auto name = "lcm"; };
+    extern const int NOT_IMPLEMENTED;
+}
 
 template <typename A, typename B>
-struct LCMImpl : public GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>
+struct LCMImpl
 {
-    using ResultType = typename GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>::ResultType;
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+    static const constexpr bool allow_fixed_string = false;
 
-    static ResultType applyImpl(A a, B b)
+    template <typename Result = ResultType>
+    static inline std::enable_if_t<is_big_int_v<A> || is_big_int_v<B> || is_big_int_v<Result>, Result>
+    apply([[maybe_unused]] A a, [[maybe_unused]] B b)
     {
-        using Int = typename NumberTraits::ToInteger<ResultType>::Type;
-        using Unsigned = make_unsigned_t<Int>;
+        throw Exception("LCM is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    template <typename Result = ResultType>
+    static inline std::enable_if_t<!is_big_int_v<A> && !is_big_int_v<B> && !is_big_int_v<Result>, Result>
+    apply([[maybe_unused]] A a, [[maybe_unused]] B b)
+    {
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
 
         /** It's tempting to use std::lcm function.
           * But it has undefined behaviour on overflow.
@@ -49,17 +60,23 @@ struct LCMImpl : public GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>
           * (example: throw an exception or overflow in implementation specific way).
           */
 
-        Unsigned val1 = abs<Int>(a) / boost::integer::gcd(Int(a), Int(b));
+        using Int = typename NumberTraits::ToInteger<Result>::Type;
+        using Unsigned = make_unsigned_t<Int>;
+
+        Unsigned val1 = abs<Int>(a) / std::gcd(Int(a), Int(b));
         Unsigned val2 = abs<Int>(b);
 
         /// Overflow in implementation specific way.
-        return ResultType(val1 * val2);
+        return Result(val1 * val2);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// exceptions (and a non-trivial algorithm)
+#endif
 };
 
-using FunctionLCM = BinaryArithmeticOverloadResolver<LCMImpl, NameLCM, false, false>;
-
-}
+struct NameLCM { static constexpr auto name = "lcm"; };
+using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM, false>;
 
 void registerFunctionLCM(FunctionFactory & factory)
 {

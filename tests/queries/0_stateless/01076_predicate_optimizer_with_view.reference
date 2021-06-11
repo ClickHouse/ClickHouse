@@ -1,21 +1,21 @@
-SELECT
+SELECT 
     date,
     id,
     name,
     value
-FROM
+FROM 
 (
     SELECT *
     FROM default.test
     HAVING id = 1
 ) AS test_view
 WHERE id = 1
-SELECT
+SELECT 
     date,
     id,
     name,
     value
-FROM
+FROM 
 (
     SELECT *
     FROM default.test
@@ -23,7 +23,7 @@ FROM
 ) AS test_view
 WHERE id = 2
 SELECT id
-FROM
+FROM 
 (
     SELECT *
     FROM default.test
@@ -31,7 +31,7 @@ FROM
 ) AS test_view
 WHERE id = 1
 SELECT id
-FROM
+FROM 
 (
     SELECT *
     FROM default.test

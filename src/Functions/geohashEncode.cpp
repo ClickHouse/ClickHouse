@@ -20,15 +20,12 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-namespace
-{
-
 // geohashEncode(lon float32/64, lat float32/64, length UInt8) => string
 class FunctionGeohashEncode : public IFunction
 {
 public:
     static constexpr auto name = "geohashEncode";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionGeohashEncode>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashEncode>(); }
 
     String getName() const override
     {
@@ -100,28 +97,28 @@ public:
 
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IColumn * longitude = arguments[0].column.get();
-        const IColumn * latitude = arguments[1].column.get();
+        const IColumn * longitude = block.getByPosition(arguments[0]).column.get();
+        const IColumn * latitude = block.getByPosition(arguments[1]).column.get();
 
         const UInt64 precision_value = std::min<UInt64>(GEOHASH_MAX_TEXT_LENGTH,
-                arguments.size() == 3 ? arguments[2].column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
+                arguments.size() == 3 ? block.getByPosition(arguments[2]).column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
 
-        ColumnPtr res_column;
+        ColumnPtr & res_column = block.getByPosition(result).column;
 
         if (tryExecute<Float32, Float32>(longitude, latitude, precision_value, res_column) ||
             tryExecute<Float64, Float32>(longitude, latitude, precision_value, res_column) ||
             tryExecute<Float32, Float64>(longitude, latitude, precision_value, res_column) ||
             tryExecute<Float64, Float64>(longitude, latitude, precision_value, res_column))
-            return res_column;
+            return;
 
         std::string arguments_description;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             if (i != 0)
                 arguments_description += ", ";
-            arguments_description += arguments[i].column->getName();
+            arguments_description += block.getByPosition(arguments[i]).column->getName();
         }
 
         throw Exception("Unsupported argument types: " + arguments_description +
@@ -130,7 +127,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionGeohashEncode(FunctionFactory & factory)
 {

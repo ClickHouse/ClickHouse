@@ -1,20 +1,18 @@
 #pragma once
 
-#include <Core/Names.h>
-#include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
-#include <Storages/MergeTree/MergeType.h>
-#include <Storages/MergeTree/MergeAlgorithm.h>
-#include <Storages/MergeTree/BackgroundProcessList.h>
-#include <Interpreters/StorageID.h>
-#include <boost/noncopyable.hpp>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <memory>
 #include <list>
 #include <mutex>
 #include <atomic>
 
+
+/** Maintains a list of currently running merges.
+  * For implementation of system.merges table.
+  */
 
 namespace CurrentMetrics
 {
@@ -47,15 +45,14 @@ struct MergeInfo
     UInt64 columns_written;
     UInt64 memory_usage;
     UInt64 thread_id;
-    std::string merge_type;
-    std::string merge_algorithm;
 };
 
 struct FutureMergedMutatedPart;
 
 struct MergeListElement : boost::noncopyable
 {
-    const StorageID table_id;
+    const std::string database;
+    const std::string table;
     std::string partition_id;
 
     const std::string result_part_name;
@@ -90,68 +87,88 @@ struct MergeListElement : boost::noncopyable
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
 
     UInt64 thread_id;
-    MergeType merge_type;
-    /// Detected after merge already started
-    std::atomic<MergeAlgorithm> merge_algorithm;
 
-    MergeListElement(const StorageID & table_id_, const FutureMergedMutatedPart & future_part);
+
+    MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
 
     MergeInfo getInfo() const;
 
     ~MergeListElement();
 };
 
-using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
 
-/** Maintains a list of currently running merges.
-  * For implementation of system.merges table.
-  */
-class MergeList final : public BackgroundProcessList<MergeListElement, MergeInfo>
+class MergeList;
+
+class MergeListEntry
 {
-private:
-    using Parent = BackgroundProcessList<MergeListElement, MergeInfo>;
-    std::atomic<size_t> merges_with_ttl_counter = 0;
+    MergeList & list;
+
+    using container_t = std::list<MergeListElement>;
+    container_t::iterator it;
+
+    CurrentMetrics::Increment num_merges {CurrentMetrics::Merge};
+
 public:
-    MergeList()
-        : Parent(CurrentMetrics::Merge)
-    {}
+    MergeListEntry(const MergeListEntry &) = delete;
+    MergeListEntry & operator=(const MergeListEntry &) = delete;
 
-    void onEntryDestroy(const Parent::Entry & entry) override
-    {
-        if (isTTLMergeType(entry->merge_type))
-            --merges_with_ttl_counter;
-    }
+    MergeListEntry(MergeList & list_, const container_t::iterator it_) : list(list_), it{it_} {}
+    ~MergeListEntry();
 
-    void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
+    MergeListElement * operator->() { return &*it; }
+    const MergeListElement * operator->() const { return &*it; }
+};
+
+
+class MergeList
+{
+    friend class MergeListEntry;
+
+    using container_t = std::list<MergeListElement>;
+    using info_container_t = std::list<MergeInfo>;
+
+    mutable std::mutex mutex;
+    container_t merges;
+
+public:
+    using Entry = MergeListEntry;
+    using EntryPtr = std::unique_ptr<Entry>;
+
+    template <typename... Args>
+    EntryPtr insert(Args &&... args)
     {
         std::lock_guard lock{mutex};
-        for (auto & merge_element : entries)
+        return std::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
+    }
+
+    info_container_t get() const
+    {
+        std::lock_guard lock{mutex};
+        info_container_t res;
+        for (const auto & merge_element : merges)
+            res.emplace_back(merge_element.getInfo());
+        return res;
+    }
+
+    void cancelPartMutations(const String & partition_id, Int64 mutation_version)
+    {
+        std::lock_guard lock{mutex};
+        for (auto & merge_element : merges)
         {
             if ((partition_id.empty() || merge_element.partition_id == partition_id)
-                && merge_element.table_id == table_id
                 && merge_element.source_data_version < mutation_version
                 && merge_element.result_data_version >= mutation_version)
                 merge_element.is_cancelled = true;
         }
     }
-
-    /// Merge consists of two parts: assignment and execution. We add merge to
-    /// merge list on execution, but checking merge list during merge
-    /// assignment. This lead to the logical race condition (we can assign more
-    /// merges with TTL than allowed). So we "book" merge with ttl during
-    /// assignment, and remove from list after merge execution.
-    ///
-    /// NOTE: Not important for replicated merge tree, we check count of merges twice:
-    /// in assignment and in queue before execution.
-    void bookMergeWithTTL()
-    {
-        ++merges_with_ttl_counter;
-    }
-
-    size_t getMergesWithTTLCount() const
-    {
-        return merges_with_ttl_counter;
-    }
 };
+
+
+inline MergeListEntry::~MergeListEntry()
+{
+    std::lock_guard lock{list.mutex};
+    list.merges.erase(it);
+}
+
 
 }

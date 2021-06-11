@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Functions/FunctionsRandom.h>
 #include <pcg_random.hpp>
@@ -21,8 +21,6 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
 }
 
-namespace
-{
 
 /* Generate random fixed string with fully random bytes (including zero). */
 template <typename RandImpl>
@@ -52,15 +50,18 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const size_t n = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<UInt64>();
+        const size_t n = assert_cast<const ColumnConst &>(*block.getByPosition(arguments[0]).column).getValue<UInt64>();
 
         auto col_to = ColumnFixedString::create(n);
         ColumnFixedString::Chars & data_to = col_to->getChars();
 
         if (input_rows_count == 0)
-            return col_to;
+        {
+            block.getByPosition(result).column = std::move(col_to);
+            return;
+        }
 
         size_t total_size;
         if (common::mulOverflow(input_rows_count, n, total_size))
@@ -70,14 +71,14 @@ public:
         data_to.resize(total_size);
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), total_size);
 
-        return col_to;
+        block.getByPosition(result).column = std::move(col_to);
     }
 };
 
 class FunctionRandomFixedString : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
 {
 public:
-    explicit FunctionRandomFixedString(ContextConstPtr context) : selector(context)
+    explicit FunctionRandomFixedString(const Context & context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
@@ -88,12 +89,12 @@ public:
     #endif
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionRandomFixedString>(context);
     }
@@ -101,8 +102,6 @@ public:
 private:
     ImplementationSelector<IFunction> selector;
 };
-
-}
 
 void registerFunctionRandomFixedString(FunctionFactory & factory)
 {

@@ -24,7 +24,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -162,7 +161,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     return res;
 }
 
-MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, ContextConstPtr context) const
+MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const
 {
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
@@ -173,7 +172,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
         if (data.size() == 1)
         {
             /// Case for const column. Predict using single model.
-            machine_learning_function->predictValues(data[0], *res, arguments, 0, arguments.front().column->size(), context);
+            machine_learning_function->predictValues(data[0], *res, block, 0, block.rows(), arguments, context);
         }
         else
         {
@@ -181,7 +180,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
             size_t row_num = 0;
             for (auto * val : data)
             {
-                machine_learning_function->predictValues(val, *res, arguments, row_num, 1, context);
+                machine_learning_function->predictValues(val, *res, block, row_num, 1, arguments, context);
                 ++row_num;
             }
         }
@@ -394,12 +393,6 @@ size_t ColumnAggregateFunction::byteSize() const
             + (my_arena ? my_arena->size() : 0);
 }
 
-size_t ColumnAggregateFunction::byteSizeAt(size_t) const
-{
-    /// Lower estimate as aggregate function can allocate more data in Arena.
-    return sizeof(data[0]) + func->sizeOfData();
-}
-
 /// Like in byteSize(), the size is underestimated.
 size_t ColumnAggregateFunction::allocatedBytes() const
 {
@@ -554,11 +547,6 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
     return read_buffer.position();
 }
 
-const char * ColumnAggregateFunction::skipSerializedInArena(const char *) const
-{
-    throw Exception("Method skipSerializedInArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
 void ColumnAggregateFunction::popBack(size_t n)
 {
     size_t size = data.size();
@@ -674,34 +662,6 @@ ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction &
     foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
     func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
-}
-
-MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
-{
-    if (size == 0)
-        return cloneEmpty();
-
-    size_t from_size = data.size();
-
-    if (size <= from_size)
-    {
-        auto res = createView();
-        auto & res_data = res->data;
-        res_data.assign(data.begin(), data.begin() + size);
-        return res;
-    }
-    else
-    {
-        /// Create a new column to return.
-        MutableColumnPtr cloned_col = cloneEmpty();
-        auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
-
-        res->insertRangeFrom(*this, 0, from_size);
-        for (size_t i = from_size; i < size; ++i)
-            res->insertDefault();
-
-        return cloned_col;
-    }
 }
 
 }

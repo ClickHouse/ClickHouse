@@ -1,11 +1,9 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
-{
-namespace
 {
 
 /** ignore(...) is a function that takes any arguments, and always returns 0.
@@ -14,7 +12,7 @@ class FunctionIgnore : public IFunction
 {
 public:
     static constexpr auto name = "ignore";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIgnore>();
     }
@@ -29,11 +27,6 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForConstantFolding() const override { return false; }
-
-    /// We should never return LowCardinality result, cause we declare that result is always constant zero.
-    /// (in getResultIfAlwaysReturnsConstantAndHasArguments)
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     String getName() const override
     {
@@ -45,13 +38,17 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+    }
+
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block &, const ColumnNumbers &) const override
+    {
+        return DataTypeUInt8().createColumnConst(1, 0u);
     }
 };
 
-}
 
 void registerFunctionIgnore(FunctionFactory & factory)
 {

@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -11,15 +11,14 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
 
-namespace
-{
+    namespace ErrorCodes
+    {
+        extern const int BAD_ARGUMENTS;
+        extern const int ILLEGAL_COLUMN;
+        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    }
+
 
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
 * Takes state of aggregate function. Returns result of aggregation (finalized state).
@@ -28,11 +27,11 @@ class FunctionEvalMLMethod : public IFunction
 {
 public:
     static constexpr auto name = "evalMLMethod";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionEvalMLMethod>(context);
     }
-    explicit FunctionEvalMLMethod(ContextConstPtr context_) : context(context_)
+    explicit FunctionEvalMLMethod(const Context & context_) : context(context_)
     {}
 
     String getName() const override
@@ -62,12 +61,12 @@ public:
         return type->getReturnTypeToPredict();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
 
-        const auto * model = arguments[0].column.get();
+        const auto * model = block.getByPosition(arguments[0]).column.get();
 
         if (const auto * column_with_states = typeid_cast<const ColumnConst *>(model))
             model = column_with_states->getDataColumnPtr().get();
@@ -75,16 +74,14 @@ public:
         const auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(model);
 
         if (!agg_function)
-            throw Exception("Illegal column " + arguments[0].column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        return agg_function->predictValues(arguments, context);
+        block.getByPosition(result).column = agg_function->predictValues(block, arguments, context);
     }
 
-    ContextConstPtr context;
+    const Context & context;
 };
-
-}
 
 void registerFunctionEvalMLMethod(FunctionFactory & factory)
 {

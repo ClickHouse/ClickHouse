@@ -1,9 +1,3 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
-#if USE_H3
-
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -20,16 +14,12 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
-
 class FunctionH3ToString : public IFunction
 {
 public:
     static constexpr auto name = "h3ToString";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionH3ToString>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3ToString>(); }
 
     std::string getName() const override { return name; }
 
@@ -48,9 +38,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
         auto col_res = ColumnString::create();
         auto & vec_res = col_res->getChars();
@@ -80,11 +70,10 @@ public:
             vec_offsets[i] = ++pos - begin;
         }
         vec_res.resize(pos - begin);
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
-}
 
 void registerFunctionH3ToString(FunctionFactory & factory)
 {
@@ -92,5 +81,3 @@ void registerFunctionH3ToString(FunctionFactory & factory)
 }
 
 }
-
-#endif

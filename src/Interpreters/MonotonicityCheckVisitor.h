@@ -26,7 +26,7 @@ public:
     struct Data
     {
         const TablesWithColumns & tables;
-        ContextConstPtr context;
+        const Context & context;
         const std::unordered_set<String> & group_by_function_hashes;
         Monotonicity monotonicity{true, true, true};
         ASTIdentifier * identifier = nullptr;
@@ -43,14 +43,9 @@ public:
             if (group_by_function_hashes.count(key))
                 return false;
 
-            /// if ORDER BY contains aggregate function or window functions, it
-            /// shouldn't be optimized
-            if (ast_function.is_window_function
-                || AggregateFunctionFactory::instance().isAggregateFunctionName(
-                    ast_function.name))
-            {
+            /// if ORDER BY contains aggregate function it shouldn't be optimized
+            if (AggregateFunctionFactory::instance().isAggregateFunctionName(ast_function.name))
                 return false;
-            }
 
             return true;
         }
@@ -92,7 +87,8 @@ public:
             return;
 
         /// TODO: monotonicity for functions of several arguments
-        if (!ast_function.arguments || ast_function.arguments->children.size() != 1)
+        auto arguments = ast_function.arguments;
+        if (arguments->children.size() != 1)
         {
             data.reject();
             return;
@@ -129,7 +125,7 @@ public:
 
             if (!is_positive)
                 data.monotonicity.is_positive = !data.monotonicity.is_positive;
-            data.arg_data_type = function_base->getResultType();
+            data.arg_data_type = function_base->getReturnType();
         }
         else
             data.reject();

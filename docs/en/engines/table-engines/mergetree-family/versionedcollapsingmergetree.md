@@ -121,7 +121,7 @@ To find out why we need two rows for each change, see [Algorithm](#table_engines
 
 **Notes on Usage**
 
-1.  The program that writes the data should remember the state of an object to be able to cancel it. “Cancel” string should contain copies of the primary key fields and the version of the “state” string and the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
+1.  The program that writes the data should remember the state of an object in order to cancel it. The “cancel” string should be a copy of the “state” string with the opposite `Sign`. This increases the initial size of storage but allows to write the data quickly.
 2.  Long growing arrays in columns reduce the efficiency of the engine due to the load for writing. The more straightforward the data, the better the efficiency.
 3.  `SELECT` results depend strongly on the consistency of the history of object changes. Be accurate when preparing data for inserting. You can get unpredictable results with inconsistent data, such as negative values for non-negative metrics like session depth.
 
@@ -133,7 +133,7 @@ When ClickHouse inserts data, it orders rows by the primary key. If the `Version
 
 ## Selecting Data {#selecting-data}
 
-ClickHouse does not guarantee that all of the rows with the same primary key will be in the same resulting data part or even on the same physical server. This is true both for writing the data and for subsequent merging of the data parts. In addition, ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. This means that aggregation is required if there is a need to get completely “collapsed” data from a `VersionedCollapsingMergeTree` table.
+ClickHouse doesn’t guarantee that all of the rows with the same primary key will be in the same resulting data part or even on the same physical server. This is true both for writing the data and for subsequent merging of the data parts. In addition, ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. This means that aggregation is required if there is a need to get completely “collapsed” data from a `VersionedCollapsingMergeTree` table.
 
 To finalize collapsing, write a query with a `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and add `HAVING sum(Sign) > 0`.
 
@@ -219,7 +219,7 @@ HAVING sum(Sign) > 0
 └─────────────────────┴───────────┴──────────┴─────────┘
 ```
 
-If we do not need aggregation and want to force collapsing, we can use the `FINAL` modifier for the `FROM` clause.
+If we don’t need aggregation and want to force collapsing, we can use the `FINAL` modifier for the `FROM` clause.
 
 ``` sql
 SELECT * FROM UAct FINAL

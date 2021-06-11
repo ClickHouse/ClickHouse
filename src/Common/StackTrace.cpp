@@ -23,8 +23,7 @@
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
-    std::stringstream error;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    error.exceptions(std::ios::failbit);
+    std::stringstream error;
     switch (sig)
     {
         case SIGSEGV:
@@ -35,7 +34,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             else
                 error << "Address: " << info.si_addr;
 
-#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__) && !defined(__powerpc__)
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__)
             auto err_mask = context.uc_mcontext.gregs[REG_ERR];
             if ((err_mask & 0x02))
                 error << " Access: write.";
@@ -184,14 +183,8 @@ static void * getCallerAddress(const ucontext_t & context)
 #    else
     return reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
 #    endif
-
-#elif defined(__APPLE__) && defined(__aarch64__)
-    return reinterpret_cast<void *>(context.uc_mcontext->__ss.__pc);
-
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
-#elif defined(__powerpc64__)
-    return reinterpret_cast<void *>(context.uc_mcontext.gp_regs[PT_NIP]);
 #else
     return nullptr;
 #endif
@@ -201,8 +194,7 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
 {
 #if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
 
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     for (size_t i = 0; i < offset; ++i)
@@ -223,12 +215,10 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
             current_frame.object = object->name;
             if (std::filesystem::exists(current_frame.object.value()))
             {
-                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
+                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
-                if (dwarf_it->second.findAddress(
-                        uintptr_t(current_frame.physical_addr), location, DB::Dwarf::LocationInfoMode::FAST, inline_frames))
+                if (dwarf_it->second.findAddress(uintptr_t(current_frame.physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
                 {
                     current_frame.file = location.file.toString();
                     current_frame.line = location.line;
@@ -268,9 +258,6 @@ StackTrace::StackTrace()
 StackTrace::StackTrace(const ucontext_t & signal_context)
 {
     tryCapture();
-
-    /// This variable from signal handler is not instrumented by Memory Sanitizer.
-    __msan_unpoison(&signal_context, sizeof(signal_context));
 
     void * caller_address = getCallerAddress(signal_context);
 
@@ -322,26 +309,19 @@ const StackTrace::FramePointers & StackTrace::getFramePointers() const
 }
 
 static void toStringEveryLineImpl(
-    bool fatal,
-    const StackTrace::FramePointers & frame_pointers,
-    size_t offset,
-    size_t size,
-    std::function<void(const std::string &)> callback)
+    const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size, std::function<void(const std::string &)> callback)
 {
     if (size == 0)
         return callback("<Empty trace>");
 
 #if defined(__ELF__) && !defined(__FreeBSD__)
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
-    std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
+    std::stringstream out;
 
     for (size_t i = offset; i < size; ++i)
     {
-        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         const void * virtual_addr = frame_pointers[i];
         const auto * object = symbol_index.findObject(virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
@@ -353,11 +333,10 @@ static void toStringEveryLineImpl(
         {
             if (std::filesystem::exists(object->name))
             {
-                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
+                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                auto mode = fatal ? DB::Dwarf::LocationInfoMode::FULL_WITH_INLINE : DB::Dwarf::LocationInfoMode::FAST;
-                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, mode, inline_frames))
+                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
                     out << location.file.toString() << ":" << location.line << ": ";
             }
         }
@@ -374,21 +353,11 @@ static void toStringEveryLineImpl(
         out << " @ " << physical_addr;
         out << " in " << (object ? object->name : "?");
 
-        for (size_t j = 0; j < inline_frames.size(); ++j)
-        {
-            const auto & frame = inline_frames[j];
-            int status = 0;
-            callback(fmt::format("{}.{}. inlined from {}:{}: {}",
-                     i, j+1, frame.location.file.toString(), frame.location.line, demangle(frame.name, status)));
-        }
-
         callback(out.str());
         out.str({});
     }
 #else
-    UNUSED(fatal);
-    std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
+    std::stringstream out;
 
     for (size_t i = offset; i < size; ++i)
     {
@@ -403,15 +372,14 @@ static void toStringEveryLineImpl(
 
 static std::string toStringImpl(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
 {
-    std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
-    toStringEveryLineImpl(false, frame_pointers, offset, size, [&](const std::string & str) { out << str << '\n'; });
+    std::stringstream out;
+    toStringEveryLineImpl(frame_pointers, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
 }
 
 void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
 {
-    toStringEveryLineImpl(true, frame_pointers, offset, size, std::move(callback));
+    toStringEveryLineImpl(frame_pointers, offset, size, std::move(callback));
 }
 
 

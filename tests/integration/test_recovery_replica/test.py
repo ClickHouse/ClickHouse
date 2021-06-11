@@ -1,6 +1,6 @@
 import time
-
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -14,7 +14,6 @@ def fill_nodes(nodes):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/replicated', '{replica}') ORDER BY id PARTITION BY toYYYYMM(date) 
                 {settings};
             '''.format(replica=node.name, settings=SETTINGS))
-
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=True)
@@ -36,11 +35,10 @@ def start_cluster():
         yield cluster
 
     except Exception as ex:
-        print(ex)
+        print ex
 
     finally:
         cluster.shutdown()
-
 
 def test_recovery(start_cluster):
     node1.query("INSERT INTO test_table VALUES (1, 0)")
@@ -50,8 +48,7 @@ def test_recovery(start_cluster):
     for i in range(1, 11):
         node1.query("INSERT INTO test_table VALUES (1, {})".format(i))
 
-    node2.query_with_retry("ATTACH TABLE test_table",
-                           check_callback=lambda x: len(node2.query("select * from test_table")) > 0)
+    node2.query_with_retry("ATTACH TABLE test_table", check_callback=lambda x: len(node2.query("select * from test_table")) > 0)
 
     assert_eq_with_retry(node2, "SELECT count(*) FROM test_table", node1.query("SELECT count(*) FROM test_table"))
     lost_marker = "Will mark replica node2 as lost"

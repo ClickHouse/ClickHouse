@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class Context;
+
 /// Adds defaults to columns using BlockDelayedDefaults bitmask attached to Block by child InputStream.
 class AddingDefaultsBlockInputStream : public IBlockInputStream
 {
@@ -14,7 +16,7 @@ public:
     AddingDefaultsBlockInputStream(
         const BlockInputStreamPtr & input,
         const ColumnsDescription & columns_,
-        ContextPtr context_);
+        const Context & context_);
 
     String getName() const override { return "AddingDefaults"; }
     Block getHeader() const override { return header; }
@@ -26,7 +28,7 @@ private:
     Block header;
     const ColumnsDescription columns;
     const ColumnDefaults column_defaults;
-    ContextPtr context;
+    const Context & context;
 };
 
 }

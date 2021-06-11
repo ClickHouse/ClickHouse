@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -7,19 +7,18 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
 
 class FunctionLowCardinalityKeys: public IFunction
 {
 public:
     static constexpr auto name = "lowCardinalityKeys";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionLowCardinalityKeys>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionLowCardinalityKeys>(); }
 
     String getName() const override { return name; }
 
@@ -33,21 +32,22 @@ public:
     {
         const auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].get());
         if (!type)
-            throw Exception("First first argument of function lowCardinalityKeys must be ColumnLowCardinality, but got "
+            throw Exception("First first argument of function lowCardinalityKeys must be ColumnLowCardinality, but got"
                             + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type->getDictionaryType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const auto & arg = arguments[0];
+        auto arg_num = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
         const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(arg.column.get());
-        return low_cardinality_column->getDictionary().getNestedColumn()->cloneResized(arg.column->size());
+        res.column = low_cardinality_column->getDictionary().getNestedColumn()->cloneResized(arg.column->size());
     }
 };
 
-}
 
 void registerFunctionLowCardinalityKeys(FunctionFactory & factory)
 {

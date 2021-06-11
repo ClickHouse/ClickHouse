@@ -6,7 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -28,7 +28,7 @@ class FunctionMathBinaryFloat64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionMathBinaryFloat64>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathBinaryFloat64>(); }
     static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -54,7 +54,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    ColumnPtr executeTyped(const ColumnConst * left_arg, const IColumn * right_arg) const
+    bool executeTyped(Block & block, const size_t result, const ColumnConst * left_arg, const IColumn * right_arg) const
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -76,8 +76,18 @@ private:
             if (rows_remaining != 0)
             {
                 RightType right_src_remaining[Impl::rows_per_iteration];
-                memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
-                memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
+                if constexpr (!is_big_int_v<RightType> && !std::is_same_v<RightType, Decimal256>)
+                {
+                    memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
+                    memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
+                }
+                else
+                {
+                    for (size_t i = 0; i < rows_remaining; i++)
+                        right_src_remaining[i] = right_src_data[rows_size + i];
+                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
+                        right_src_remaining[i] = 0;
+                }
                 Float64 dst_remaining[Impl::rows_per_iteration];
 
                 Impl::execute(left_src_data, right_src_remaining, dst_remaining);
@@ -85,14 +95,15 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            return dst;
+            block.getByPosition(result).column = std::move(dst);
+            return true;
         }
 
-        return nullptr;
+        return false;
     }
 
     template <typename LeftType, typename RightType>
-    ColumnPtr executeTyped(const ColumnVector<LeftType> * left_arg, const IColumn * right_arg) const
+    bool executeTyped(Block & block, const size_t result, const ColumnVector<LeftType> * left_arg, const IColumn * right_arg) const
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -113,13 +124,32 @@ private:
             if (rows_remaining != 0)
             {
                 LeftType left_src_remaining[Impl::rows_per_iteration];
-                memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
-                memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
+                if constexpr (!is_big_int_v<LeftType> && !std::is_same_v<LeftType, Decimal256>)
+                {
+                    memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
+                    memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
+                }
+                else
+                {
+                    for (size_t i = 0; i < rows_remaining; i++)
+                        left_src_remaining[i] = left_src_data[rows_size + i];
+                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
+                        left_src_remaining[i] = 0;
+                }
 
                 RightType right_src_remaining[Impl::rows_per_iteration];
-                memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
-                memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
-
+                if constexpr (!is_big_int_v<RightType> && !std::is_same_v<RightType, Decimal256>)
+                {
+                    memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
+                    memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
+                }
+                else
+                {
+                    for (size_t i = 0; i < rows_remaining; i++)
+                        right_src_remaining[i] = right_src_data[rows_size + i];
+                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
+                        right_src_remaining[i] = 0;
+                }
                 Float64 dst_remaining[Impl::rows_per_iteration];
 
                 Impl::execute(left_src_remaining, right_src_remaining, dst_remaining);
@@ -127,7 +157,8 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            return dst;
+            block.getByPosition(result).column = std::move(dst);
+            return true;
         }
         if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
@@ -149,8 +180,18 @@ private:
             if (rows_remaining != 0)
             {
                 LeftType left_src_remaining[Impl::rows_per_iteration];
-                memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
-                memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
+                if constexpr (!is_big_int_v<LeftType> && !std::is_same_v<LeftType, Decimal256>)
+                {
+                    memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
+                    memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
+                }
+                else
+                {
+                    for (size_t i = 0; i < rows_remaining; i++)
+                        left_src_remaining[i] = left_src_data[rows_size + i];
+                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
+                        left_src_remaining[i] = 0;
+                }
 
                 Float64 dst_remaining[Impl::rows_per_iteration];
 
@@ -159,17 +200,17 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            return dst;
+            block.getByPosition(result).column = std::move(dst);
+            return true;
         }
 
-        return nullptr;
+        return false;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & col_left = arguments[0];
-        const ColumnWithTypeAndName & col_right = arguments[1];
-        ColumnPtr res;
+        const ColumnWithTypeAndName & col_left = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & col_right = block.getByPosition(arguments[1]);
 
         auto call = [&](const auto & types) -> bool
         {
@@ -183,7 +224,7 @@ private:
 
             if (const auto left_arg_typed = checkAndGetColumn<ColVecLeft>(left_arg))
             {
-                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
+                if (executeTyped<LeftType, RightType>(block, result, left_arg_typed, right_arg))
                     return true;
 
                 throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
@@ -191,7 +232,7 @@ private:
             }
             if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
             {
-                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
+                if (executeTyped<LeftType, RightType>(block, result, left_arg_typed, right_arg))
                     return true;
 
                 throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
@@ -207,8 +248,6 @@ private:
         if (!callOnBasicTypes<true, true, false, false>(left_index, right_index, call))
             throw Exception{"Illegal column " + col_left.column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
-
-        return res;
     }
 };
 

@@ -9,11 +9,10 @@ using Poco::Message;
 struct TextLogElement
 {
     time_t event_time{};
-    Decimal64 event_time_microseconds{};
-    UInt32 microseconds{};
+    UInt32 microseconds;
 
     String thread_name;
-    UInt64 thread_id{};
+    UInt64 thread_id;
 
     Message::Priority level = Message::PRIO_TRACE;
 
@@ -22,7 +21,7 @@ struct TextLogElement
     String message;
 
     String source_file;
-    UInt64 source_line{};
+    UInt64 source_line;
 
     static std::string name() { return "TextLog"; }
     static Block createBlock();
@@ -33,7 +32,7 @@ class TextLog : public SystemLog<TextLogElement>
 {
 public:
     TextLog(
-        ContextPtr context_,
+        Context & context_,
         const String & database_name_,
         const String & table_name_,
         const String & storage_def_,

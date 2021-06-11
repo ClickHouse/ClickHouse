@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/Exception.h>
 
 #include <filesystem>
@@ -29,22 +29,4 @@ String getFilesystemName([[maybe_unused]] const String & mount_point);
 
 struct statvfs getStatVFS(const String & path);
 
-/// Returns true if path starts with prefix path
-bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path);
-
-/// Returns true if path starts with prefix path
-bool pathStartsWith(const String & path, const String & prefix_path);
-
-}
-
-namespace FS
-{
-bool createFile(const std::string & path);
-
-bool canRead(const std::string & path);
-bool canWrite(const std::string & path);
-
-time_t getModificationTime(const std::string & path);
-Poco::Timestamp getModificationTimestamp(const std::string & path);
-void setModificationTime(const std::string & path, time_t time);
 }

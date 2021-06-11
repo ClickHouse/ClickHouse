@@ -7,8 +7,6 @@
 #include <Core/Defines.h>
 #include <Core/Field.h>
 
-#include <Common/LRUCache.h>
-
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/HTTPCommon.h>
@@ -162,8 +160,7 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
 
 static std::string nodeToJson(avro::NodePtr root_node)
 {
-    std::ostringstream ss;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ss.exceptions(std::ios::failbit);
+    std::ostringstream ss;
     root_node->printJson(ss, 0);
     return ss.str();
 }
@@ -190,7 +187,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 {
                     decoder.decodeString(tmp);
                     if (tmp.length() != 36)
-                        throw ParsingException(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
+                        throw Exception(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
 
                     UUID uuid;
                     parseUUID(reinterpret_cast<const UInt8 *>(tmp.data()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
@@ -344,7 +341,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             if (target.isEnum())
             {
                 const auto & enum_type = dynamic_cast<const IDataTypeEnum &>(*target_type);
-                Row symbol_mapping;
+                std::vector<Field> symbol_mapping;
                 for (size_t i = 0; i < root_node->names(); i++)
                 {
                     symbol_mapping.push_back(enum_type.castToValue(root_node->nameAt(i)));
@@ -554,7 +551,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, const FormatSettings & format_settings)
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
@@ -565,7 +562,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     column_found.resize(header.columns());
     row_action = createAction(header, schema_root);
     // fail on missing fields when allow_missing_fields = false
-    if (!allow_missing_fields)
+    if (!format_settings.avro.allow_missing_fields)
     {
         for (size_t i = 0; i < header.columns(); ++i)
         {
@@ -592,24 +589,19 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 
 
 AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, params_),
-      allow_missing_fields(format_settings_.avro.allow_missing_fields)
+    : IRowInputFormat(header_, in_, params_)
+    , file_reader(std::make_unique<InputStreamReadBufferAdapter>(in_))
+    , deserializer(output.getHeader(), file_reader.dataSchema(), format_settings_)
 {
-}
-
-void AvroRowInputFormat::readPrefix()
-{
-    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(in));
-    deserializer_ptr = std::make_unique<AvroDeserializer>(output.getHeader(), file_reader_ptr->dataSchema(), allow_missing_fields);
-    file_reader_ptr->init();
+    file_reader.init();
 }
 
 bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
 {
-    if (file_reader_ptr->hasMore())
+    if (file_reader.hasMore())
     {
-        file_reader_ptr->decr();
-        deserializer_ptr->deserializeRow(columns, file_reader_ptr->decoder(), ext);
+        file_reader.decr();
+        deserializer.deserializeRow(columns, file_reader.decoder(), ext);
         return true;
     }
     return false;
@@ -786,7 +778,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     if (it == deserializer_cache.end())
     {
         auto schema = schema_registry->getSchema(schema_id);
-        AvroDeserializer deserializer(output.getHeader(), schema, format_settings.avro.allow_missing_fields);
+        AvroDeserializer deserializer(output.getHeader(), schema, format_settings);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
     }
     return it->second;

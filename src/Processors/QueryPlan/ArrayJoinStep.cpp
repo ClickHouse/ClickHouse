@@ -1,11 +1,10 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/Transforms/ArrayJoinTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
+
 namespace DB
 {
 
@@ -46,7 +45,7 @@ void ArrayJoinStep::updateInputStream(DataStream input_stream, Block result_head
     res_header = std::move(result_header);
 }
 
-void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
+void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
@@ -56,16 +55,9 @@ void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQuery
 
     if (res_header && !blocksHaveEqualStructure(res_header, output_stream->header))
     {
-        auto actions_dag = ActionsDAG::makeConvertingActions(
-                pipeline.getHeader().getColumnsWithTypeAndName(),
-                res_header.getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
-
-        auto actions = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
-
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<ExpressionTransform>(header, actions);
+            return std::make_shared<ConvertingTransform>(header, res_header, ConvertingTransform::MatchColumnsMode::Name);
         });
     }
 }
@@ -86,17 +78,6 @@ void ArrayJoinStep::describeActions(FormatSettings & settings) const
         settings.out << column;
     }
     settings.out << '\n';
-}
-
-void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    map.add("Left", array_join->is_left);
-
-    auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
-    for (const auto & column : array_join->columns)
-        columns_array->add(column);
-
-    map.add("Columns", std::move(columns_array));
 }
 
 }

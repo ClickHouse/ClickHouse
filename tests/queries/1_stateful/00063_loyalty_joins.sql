@@ -1,12 +1,12 @@
 SET any_join_distinct_right_table_keys = 1;
 SET joined_subquery_requires_alias = 0;
 
-SELECT
+SELECT 
     loyalty, 
     count()
 FROM test.hits ANY LEFT JOIN 
 (
-    SELECT
+    SELECT 
         UserID, 
         sum(SearchEngineID = 2) AS yandex, 
         sum(SearchEngineID = 3) AS google, 
@@ -20,16 +20,16 @@ GROUP BY loyalty
 ORDER BY loyalty ASC;
 
 
-SELECT
+SELECT 
     loyalty, 
     count()
-FROM
+FROM 
 (
     SELECT UserID
     FROM test.hits
 ) ANY LEFT JOIN 
 (
-    SELECT
+    SELECT 
         UserID, 
         sum(SearchEngineID = 2) AS yandex, 
         sum(SearchEngineID = 3) AS google, 
@@ -43,21 +43,21 @@ GROUP BY loyalty
 ORDER BY loyalty ASC;
 
 
-SELECT
+SELECT 
     loyalty, 
     count()
-FROM
+FROM 
 (
-    SELECT
+    SELECT 
         loyalty, 
         UserID
-    FROM
+    FROM 
     (
         SELECT UserID
         FROM test.hits
     ) ANY LEFT JOIN 
     (
-        SELECT
+        SELECT 
             UserID, 
             sum(SearchEngineID = 2) AS yandex, 
             sum(SearchEngineID = 3) AS google, 
@@ -72,18 +72,18 @@ GROUP BY loyalty
 ORDER BY loyalty ASC;
 
 
-SELECT
+SELECT 
     loyalty, 
     count() AS c, 
     bar(log(c + 1) * 1000, 0, log(3000000) * 1000, 80)
 FROM test.hits ANY INNER JOIN 
 (
-    SELECT
+    SELECT 
         UserID, 
         toInt8(if(yandex > google, yandex / (yandex + google), -google / (yandex + google)) * 10) AS loyalty
-    FROM
+    FROM 
     (
-        SELECT
+        SELECT 
             UserID, 
             sum(SearchEngineID = 2) AS yandex, 
             sum(SearchEngineID = 3) AS google

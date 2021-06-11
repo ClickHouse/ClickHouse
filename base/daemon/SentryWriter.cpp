@@ -1,17 +1,15 @@
 #include <daemon/SentryWriter.h>
 
+#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <common/defines.h>
 #include <common/getFQDNOrHostName.h>
-#include <common/getMemoryAmount.h>
 #include <common/logger_useful.h>
 
-#include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "Common/config_version.h"
@@ -24,20 +22,20 @@
 #    include <stdio.h>
 #    include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace
 {
 
 bool initialized = false;
 bool anonymize = false;
-std::string server_data_path;
 
 void setExtras()
 {
-    if (!anonymize)
-        sentry_set_extra("server_name", sentry_value_new_string(getFQDNOrHostName().c_str()));
 
+    if (!anonymize)
+    {
+        sentry_set_extra("server_name", sentry_value_new_string(getFQDNOrHostName().c_str()));
+    }
     sentry_set_tag("version", VERSION_STRING);
     sentry_set_extra("version_githash", sentry_value_new_string(VERSION_GITHASH));
     sentry_set_extra("version_describe", sentry_value_new_string(VERSION_DESCRIBE));
@@ -46,14 +44,6 @@ void setExtras()
     sentry_set_extra("version_major", sentry_value_new_int32(VERSION_MAJOR));
     sentry_set_extra("version_minor", sentry_value_new_int32(VERSION_MINOR));
     sentry_set_extra("version_patch", sentry_value_new_int32(VERSION_PATCH));
-    sentry_set_extra("version_official", sentry_value_new_string(VERSION_OFFICIAL));
-
-    /// Sentry does not support 64-bit integers.
-    sentry_set_extra("total_ram", sentry_value_new_string(formatReadableSizeWithBinarySuffix(getMemoryAmountOrZero()).c_str()));
-    sentry_set_extra("physical_cpu_cores", sentry_value_new_int32(getNumberOfPhysicalCPUCores()));
-
-    if (!server_data_path.empty())
-        sentry_set_extra("disk_free_space", sentry_value_new_string(formatReadableSizeWithBinarySuffix(fs::space(server_data_path).free).c_str()));
 }
 
 void sentry_logger(sentry_level_e level, const char * message, va_list args, void *)
@@ -101,20 +91,19 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     auto * logger = &Poco::Logger::get("SentryWriter");
     if (config.getBool("send_crash_reports.enabled", false))
     {
-        if (debug || (strlen(VERSION_OFFICIAL) > 0)) //-V560
+        if (debug || (strlen(VERSION_OFFICIAL) > 0))
         {
             enabled = true;
         }
     }
     if (enabled)
     {
-        server_data_path = config.getString("path", "");
-        const std::filesystem::path & default_tmp_path = fs::path(config.getString("tmp_path", fs::temp_directory_path())) / "sentry";
+        const std::filesystem::path & default_tmp_path = std::filesystem::path(config.getString("tmp_path", Poco::Path::temp())) / "sentry";
         const std::string & endpoint
             = config.getString("send_crash_reports.endpoint");
         const std::string & temp_folder_path
             = config.getString("send_crash_reports.tmp_path", default_tmp_path);
-        fs::create_directories(temp_folder_path);
+        Poco::File(temp_folder_path).createDirectories();
 
         sentry_options_t * options = sentry_options_new();  /// will be freed by sentry_init or sentry_shutdown
         sentry_options_set_release(options, VERSION_STRING_SHORT);
@@ -179,7 +168,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
         sentry_set_extra("signal_number", sentry_value_new_int32(sig));
 
         #if defined(__ELF__) && !defined(__FreeBSD__)
-            const String & build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
+            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
             sentry_set_tag("build_id", build_id_hex.c_str());
         #endif
 

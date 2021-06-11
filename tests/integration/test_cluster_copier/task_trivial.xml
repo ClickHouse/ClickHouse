@@ -44,7 +44,7 @@
         <source_trivial_cluster>
             <shard>
                 <replica>
-                    <host>first_trivial</host>
+                    <host>s0_0_0</host>
                     <port>9000</port>
                 </replica>
             </shard>
@@ -54,7 +54,7 @@
         <destination_trivial_cluster>
             <shard>
                 <replica>
-                    <host>second_trivial</host>
+                    <host>s1_0_0</host>
                     <port>9000</port>
                 </replica>
             </shard>

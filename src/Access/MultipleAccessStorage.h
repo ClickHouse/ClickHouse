@@ -18,7 +18,6 @@ public:
     using ConstStoragePtr = std::shared_ptr<const Storage>;
 
     MultipleAccessStorage(const String & storage_name_ = STORAGE_TYPE);
-    ~MultipleAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
@@ -48,8 +47,6 @@ protected:
     ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
     bool hasSubscriptionImpl(EntityType type) const override;
-    UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
-    UUID getIDOfLoggedUserImpl(const String & user_name) const override;
 
 private:
     using Storages = std::vector<StoragePtr>;

@@ -7,19 +7,13 @@
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <IO/ConnectionTimeoutsContext.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 #include <common/logger_useful.h>
 #include <Processors/Pipe.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/DelayedSource.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-
 
 namespace ProfileEvents
 {
@@ -75,164 +69,74 @@ SelectStreamFactory::SelectStreamFactory(
 namespace
 {
 
-/// Special support for the case when `_shard_num` column is used in GROUP BY key expression.
-/// This column is a constant for shard.
-/// Constant expression with this column may be removed from intermediate header.
-/// However, this column is not constant for initiator, and it expect intermediate header has it.
-///
-/// To fix it, the following trick is applied.
-/// We check all GROUP BY keys which depend only on `_shard_num`.
-/// Calculate such expression for current shard if it is used in header.
-/// Those columns will be added to modified header as already known constants.
-///
-/// For local shard, missed constants will be added by converting actions.
-/// For remote shard, RemoteQueryExecutor will automatically add missing constant.
-Block evaluateConstantGroupByKeysWithShardNumber(
-    const ContextPtr & context, const ASTPtr & query_ast, const Block & header, UInt32 shard_num)
-{
-    Block res;
-
-    ColumnWithTypeAndName shard_num_col;
-    shard_num_col.type = std::make_shared<DataTypeUInt32>();
-    shard_num_col.column = shard_num_col.type->createColumnConst(0, shard_num);
-    shard_num_col.name = "_shard_num";
-
-    if (auto group_by = query_ast->as<ASTSelectQuery &>().groupBy())
-    {
-        for (const auto & elem : group_by->children)
-        {
-            String key_name = elem->getColumnName();
-            if (header.has(key_name))
-            {
-                auto ast = elem->clone();
-
-                RequiredSourceColumnsVisitor::Data columns_context;
-                RequiredSourceColumnsVisitor(columns_context).visit(ast);
-
-                auto required_columns = columns_context.requiredColumns();
-                if (required_columns.size() != 1 || required_columns.count("_shard_num") == 0)
-                    continue;
-
-                Block block({shard_num_col});
-                auto syntax_result = TreeRewriter(context).analyze(ast, {NameAndTypePair{shard_num_col.name, shard_num_col.type}});
-                ExpressionAnalyzer(ast, syntax_result, context).getActions(true, false)->execute(block);
-
-                res.insert(block.getByName(key_name));
-            }
-        }
-    }
-
-    /// We always add _shard_num constant just in case.
-    /// For initial query it is considered as a column from table, and may be required by intermediate block.
-    if (!res.has(shard_num_col.name))
-        res.insert(std::move(shard_num_col));
-
-    return res;
-}
-
-ActionsDAGPtr getConvertingDAG(const Block & block, const Block & header)
-{
-    /// Convert header structure to expected.
-    /// Also we ignore constants from result and replace it with constants from header.
-    /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
-    return ActionsDAG::makeConvertingActions(
-        block.getColumnsWithTypeAndName(),
-        header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        true);
-}
-
-void addConvertingActions(QueryPlan & plan, const Block & header)
-{
-    if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
-        return;
-
-    auto convert_actions_dag = getConvertingDAG(plan.getCurrentDataStream().header, header);
-    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), convert_actions_dag);
-    plan.addStep(std::move(converting));
-}
-
-void addConvertingActions(Pipe & pipe, const Block & header)
-{
-    if (blocksHaveEqualStructure(pipe.getHeader(), header))
-        return;
-
-    auto convert_actions = std::make_shared<ExpressionActions>(getConvertingDAG(pipe.getHeader(), header));
-    pipe.addSimpleTransform([&](const Block & cur_header, Pipe::StreamType) -> ProcessorPtr
-    {
-        return std::make_shared<ExpressionTransform>(cur_header, convert_actions);
-    });
-}
-
-std::unique_ptr<QueryPlan> createLocalPlan(
-    const ASTPtr & query_ast,
-    const Block & header,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage)
+auto createLocalPipe(
+    const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
     checkStackSize();
 
+    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage));
     auto query_plan = std::make_unique<QueryPlan>();
 
-    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage));
     interpreter.buildQueryPlan(*query_plan);
+    auto pipeline = std::move(*query_plan->buildQueryPipeline());
 
-    addConvertingActions(*query_plan, header);
+    /// Avoid going it out-of-scope for EXPLAIN
+    pipeline.addQueryPlan(std::move(query_plan));
 
-    return query_plan;
+    pipeline.addSimpleTransform([&](const Block & source_header)
+    {
+        return std::make_shared<ConvertingTransform>(
+                source_header, header, ConvertingTransform::MatchColumnsMode::Name, true);
+    });
+
+    /** Materialization is needed, since from remote servers the constants come materialized.
+      * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
+      * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
+      */
+
+    /* Now we don't need to materialize constants, because RemoteBlockInputStream will ignore constant and take it from header.
+     * So, streams from different threads will always have the same header.
+     */
+    /// return std::make_shared<MaterializingBlockInputStream>(stream);
+
+    pipeline.setMaxThreads(1);
+    return QueryPipeline::getPipe(std::move(pipeline));
 }
 
 String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return {};
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, false, true);
-    return buf.str();
+    std::stringstream ss;
+    formatAST(*ast, ss, false, true);
+    return ss.str();
 }
 
 }
 
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
-    const ASTPtr & query_ast,
-    ContextPtr context, const ThrottlerPtr & throttler,
+    const String &, const ASTPtr & query_ast,
+    const Context & context, const ThrottlerPtr & throttler,
     const SelectQueryInfo &,
-    std::vector<QueryPlanPtr> & plans,
-    Pipes & remote_pipes,
-    Pipes & delayed_pipes,
-    Poco::Logger * log)
+    Pipes & pipes)
 {
     bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
     if (processed_stage == QueryProcessingStage::Complete)
     {
         add_totals = query_ast->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
+        add_extremes = context.getSettingsRef().extremes;
     }
 
     auto modified_query_ast = query_ast->clone();
-    auto modified_header = header;
     if (has_virtual_shard_num_column)
-    {
         VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num, "toUInt32");
-        auto shard_num_constants = evaluateConstantGroupByKeysWithShardNumber(context, query_ast, modified_header, shard_info.shard_num);
-
-        for (auto & col : shard_num_constants)
-        {
-            if (modified_header.has(col.name))
-                modified_header.getByName(col.name).column = std::move(col.column);
-            else
-                modified_header.insert(std::move(col));
-        }
-    }
 
     auto emplace_local_stream = [&]()
     {
-        plans.emplace_back(createLocalPlan(modified_query_ast, modified_header, context, processed_stage));
-        addConvertingActions(*plans.back(), header);
+        pipes.emplace_back(createLocalPipe(modified_query_ast, header, context, processed_stage));
     };
 
     String modified_query = formattedAST(modified_query_ast);
@@ -240,19 +144,15 @@ void SelectStreamFactory::createForShard(
     auto emplace_remote_stream = [&]()
     {
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard_info.pool, modified_query, modified_header, context, throttler, scalars, external_tables, processed_stage);
-        remote_query_executor->setLogger(log);
-
+            shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
         remote_query_executor->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
             remote_query_executor->setMainTable(main_table);
 
-        remote_pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
-        remote_pipes.back().addInterpreterContext(context);
-        addConvertingActions(remote_pipes.back(), header);
+        pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes));
     };
 
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
 
     if (settings.prefer_localhost_replica && shard_info.isLocal())
     {
@@ -260,12 +160,13 @@ void SelectStreamFactory::createForShard(
 
         if (table_func_ptr)
         {
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
+            const auto * table_function = table_func_ptr->as<ASTFunction>();
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
             main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
         }
         else
         {
-            auto resolved_id = context->resolveStorageID(main_table);
+            auto resolved_id = context.resolveStorageID(main_table);
             main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
         }
 
@@ -341,13 +242,12 @@ void SelectStreamFactory::createForShard(
         /// Do it lazily to avoid connecting in the main thread.
 
         auto lazily_create_stream = [
-                pool = shard_info.pool, shard_num = shard_info.shard_num, modified_query, header = modified_header, modified_query_ast,
-                context, throttler,
+                pool = shard_info.pool, shard_num = shard_info.shard_num, modified_query, header = header, modified_query_ast, context, throttler,
                 main_table = main_table, table_func_ptr = table_func_ptr, scalars = scalars, external_tables = external_tables,
-                stage = processed_stage, local_delay, add_agg_info, add_totals, add_extremes, async_read]()
+                stage = processed_stage, local_delay, add_agg_info, add_totals, add_extremes]()
             -> Pipe
         {
-            auto current_settings = context->getSettingsRef();
+            auto current_settings = context.getSettingsRef();
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
                 current_settings).getSaturated(
                     current_settings.max_execution_time);
@@ -376,12 +276,7 @@ void SelectStreamFactory::createForShard(
             }
 
             if (try_results.empty() || local_delay < max_remote_delay)
-            {
-                auto plan = createLocalPlan(modified_query_ast, header, context, stage);
-                return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(context),
-                    BuildQueryPipelineSettings::fromContext(context))));
-            }
+                return createLocalPipe(modified_query_ast, header, context, stage);
             else
             {
                 std::vector<IConnectionPool::Entry> connections;
@@ -390,15 +285,13 @@ void SelectStreamFactory::createForShard(
                     connections.emplace_back(std::move(try_result.entry));
 
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    std::move(connections), modified_query, header, context, throttler, scalars, external_tables, stage);
+                    std::move(connections), modified_query, header, context, nullptr, throttler, scalars, external_tables, stage);
 
-                return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
+                return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes);
             }
         };
 
-        delayed_pipes.emplace_back(createDelayedPipe(modified_header, lazily_create_stream, add_totals, add_extremes));
-        delayed_pipes.back().addInterpreterContext(context);
-        addConvertingActions(delayed_pipes.back(), header);
+        pipes.emplace_back(createDelayedPipe(header, lazily_create_stream, add_totals, add_extremes));
     }
     else
         emplace_remote_stream();

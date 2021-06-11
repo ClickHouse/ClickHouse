@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -6,8 +6,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
-{
-namespace
 {
 
 struct FilesystemAvailable
@@ -34,9 +32,9 @@ class FilesystemImpl : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FilesystemImpl<Impl>>(std::filesystem::space(context->getConfigRef().getString("path")));
+        return std::make_shared<FilesystemImpl<Impl>>(std::filesystem::space(context.getConfigRef().getString("path")));
     }
 
     explicit FilesystemImpl(std::filesystem::space_info spaceinfo_) : spaceinfo(spaceinfo_) { }
@@ -50,16 +48,15 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        return DataTypeUInt64().createColumnConst(input_rows_count, static_cast<UInt64>(Impl::get(spaceinfo)));
+        block.getByPosition(result).column = DataTypeUInt64().createColumnConst(input_rows_count, static_cast<UInt64>(Impl::get(spaceinfo)));
     }
 
 private:
     std::filesystem::space_info spaceinfo;
 };
 
-}
 
 void registerFunctionFilesystem(FunctionFactory & factory)
 {

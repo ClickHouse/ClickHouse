@@ -19,6 +19,7 @@ class MergeTreeDataPartCompact : public IMergeTreeDataPart
 {
 public:
     static constexpr auto DATA_FILE_NAME = "data";
+    static constexpr auto DATA_FILE_EXTENSION = ".bin";
     static constexpr auto DATA_FILE_NAME_WITH_EXTENSION = "data.bin";
 
     MergeTreeDataPartCompact(
@@ -26,15 +27,13 @@ public:
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_ = {},
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const std::optional<String> & relative_path_ = {});
 
     MergeTreeDataPartCompact(
         MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_ = {},
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const std::optional<String> & relative_path_ = {});
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
@@ -56,7 +55,7 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
-    bool hasColumnFiles(const NameAndTypePair & column) const override;
+    bool hasColumnFiles(const String & column_name, const IDataType & type) const override;
 
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 

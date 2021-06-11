@@ -1,16 +1,16 @@
-SELECT
+SELECT 
     k,
     v,
     d,
     i
-FROM
+FROM 
 (
-    SELECT
+    SELECT 
         t.1 AS k,
         t.2 AS v,
         runningDifference(v) AS d,
         runningDifference(cityHash64(t.1)) AS i
-    FROM
+    FROM 
     (
         SELECT arrayJoin([(\'a\', 1), (\'a\', 2), (\'a\', 3), (\'b\', 11), (\'b\', 13), (\'b\', 15)]) AS t
     )
@@ -21,26 +21,26 @@ a	2	1	0
 a	3	1	0
 b	13	2	0
 b	15	2	0
-SELECT
+SELECT 
     co,
     co2,
     co3,
     num
-FROM
+FROM 
 (
-    SELECT
+    SELECT 
         co,
         co2,
         co3,
         count() AS num
-    FROM
+    FROM 
     (
-        SELECT
+        SELECT 
             1 AS co,
             2 AS co2,
             3 AS co3
     )
-    GROUP BY
+    GROUP BY 
         co,
         co2,
         co3
@@ -51,13 +51,13 @@ WHERE (co != 0) AND (co2 != 2)
 1	0	3	1
 1	0	0	1
 SELECT alias AS name
-FROM
+FROM 
 (
     SELECT name AS alias
     FROM system.settings
     WHERE alias = \'enable_optimize_predicate_expression\'
 )
-ANY INNER JOIN
+ANY INNER JOIN 
 (
     SELECT name
     FROM system.settings
@@ -66,17 +66,17 @@ WHERE name = \'enable_optimize_predicate_expression\'
 enable_optimize_predicate_expression
 1	val11	val21	val31
 SELECT ccc
-FROM
+FROM 
 (
     SELECT 1 AS ccc
     WHERE 0
     UNION ALL
     SELECT ccc
-    FROM
+    FROM 
     (
         SELECT 2 AS ccc
     )
-    ANY INNER JOIN
+    ANY INNER JOIN 
     (
         SELECT 2 AS ccc
     ) USING (ccc)
@@ -84,16 +84,16 @@ FROM
 )
 WHERE ccc > 1
 2
-SELECT
+SELECT 
     ts,
     id,
     id_b,
     b.ts,
     b.id,
     id_c
-FROM
+FROM 
 (
-    SELECT
+    SELECT 
         ts,
         id,
         id_b
@@ -102,16 +102,16 @@ FROM
 ) AS a
 ALL LEFT JOIN B AS b ON b.id = id_b
 WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
-SELECT
+SELECT 
     ts AS `--a.ts`,
     id AS `--a.id`,
     id_b AS `--a.id_b`,
     b.ts AS `--b.ts`,
     b.id AS `--b.id`,
     id_c AS `--b.id_c`
-FROM
+FROM 
 (
-    SELECT
+    SELECT 
         ts,
         id,
         id_b
@@ -129,7 +129,7 @@ WHERE `--a.ts` <= toDateTime(\'1970-01-01 03:00:00\')
 2	3
 4	5
 SELECT dummy
-FROM
+FROM 
 (
     SELECT dummy
     FROM system.one
@@ -137,19 +137,19 @@ FROM
 )
 WHERE arrayMap(x -> (x + 1), [dummy]) = [1]
 0
-SELECT
+SELECT 
     id,
     value,
     value_1
-FROM
+FROM 
 (
-    SELECT
+    SELECT 
         1 AS id,
         2 AS value
 )
-ALL INNER JOIN
+ALL INNER JOIN 
 (
-    SELECT
+    SELECT 
         1 AS id,
         3 AS value_1
 ) USING (id)

@@ -76,9 +76,8 @@ private:
 
     std::string config_xml_path;
     std::string task_path;
-    std::string log_level = "info";
+    std::string log_level = "trace";
     bool is_safe_mode = false;
-    bool is_status_mode = false;
     double copy_fault_probability = 0.0;
     double move_fault_probability = 0.0;
     bool is_help = false;

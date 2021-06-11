@@ -7,9 +7,9 @@ toc_title: Installation
 
 ## System Requirements {#system-requirements}
 
-ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture.
+ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86\_64, AArch64, or PowerPC64LE CPU architecture.
 
-Official pre-built binaries are typically compiled for x86_64 and leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports it becomes an additional system requirement. Here’s the command to check if current CPU has support for SSE 4.2:
+Official pre-built binaries are typically compiled for x86\_64 and leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports it becomes an additional system requirement. Here’s the command to check if current CPU has support for SSE 4.2:
 
 ``` bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
@@ -102,9 +102,7 @@ For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse buil
 -   [FreeBSD](https://builds.clickhouse.tech/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
 -   [AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
 
-After downloading, you can use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
-
-Run `sudo ./clickhouse install` if you want to install clickhouse system-wide (also with needed configuration files, configuring users etc.). After that run `clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it. 
+After downloading, you can use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data. To run `clickhouse server`, you have to additionally download [server](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) and [users](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/users.xml) configuration files from GitHub.
 
 These builds are not recommended for use in production environments because they are less thoroughly tested, but you can do so on your own risk. They also have only a subset of ClickHouse features available.
 
@@ -119,8 +117,8 @@ You can compile packages and install them or use programs without installing pac
 
 You’ll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
-      /var/lib/clickhouse/data/default/
-      /var/lib/clickhouse/metadata/default/
+      /opt/clickhouse/data/default/
+      /opt/clickhouse/metadata/default/
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 
@@ -132,7 +130,7 @@ To start the server as a daemon, run:
 $ sudo service clickhouse-server start
 ```
 
-If you do not have `service` command, run as
+If you don’t have `service` command, run as
 
 ``` bash
 $ sudo /etc/init.d/clickhouse-server start
@@ -140,7 +138,7 @@ $ sudo /etc/init.d/clickhouse-server start
 
 See the logs in the `/var/log/clickhouse-server/` directory.
 
-If the server does not start, check the configurations in the file `/etc/clickhouse-server/config.xml`.
+If the server doesn’t start, check the configurations in the file `/etc/clickhouse-server/config.xml`.
 
 You can also manually launch the server from the console:
 
@@ -149,7 +147,7 @@ $ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
 In this case, the log will be printed to the console, which is convenient during development.
-If the configuration file is in the current directory, you do not need to specify the `--config-file` parameter. By default, it uses `./config.xml`.
+If the configuration file is in the current directory, you don’t need to specify the `--config-file` parameter. By default, it uses `./config.xml`.
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
 By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
