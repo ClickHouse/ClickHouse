@@ -137,17 +137,19 @@ def check_result(result, error, return_code, reference, replace_map):
             pytrace=False)
 
 
-def run_client(bin_prefix, port, database, query, reference, replace_map=None):
+def run_client(use_antlr, bin_prefix, port, database, query, reference, replace_map=None):
     # We can't use `text=True` since some tests may return binary data
-    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-d', database, '-m', '-n', '--testmode'],
-                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    cmd = [bin_prefix + '-client', '--port', str(port), '-d', database, '-m', '-n', '--testmode']
+    if use_antlr:
+        cmd.append('--use_antlr_parser=1')
+    client = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = client.communicate(query.encode('utf-8'))
     assert client.returncode is not None, "Client should exit after processing all queries"
 
     check_result(result, error, client.returncode, reference, replace_map)
 
 
-def run_shell(bin_prefix, server, database, path, reference, replace_map=None):
+def run_shell(use_antlr, bin_prefix, server, database, path, reference, replace_map=None):
     env = {
         'CLICKHOUSE_BINARY': bin_prefix,
         'CLICKHOUSE_DATABASE': database,
@@ -160,6 +162,8 @@ def run_shell(bin_prefix, server, database, path, reference, replace_map=None):
         'CLICKHOUSE_CONFIG_CLIENT': server.client_config,
         'PROTOC_BINARY': os.path.abspath(os.path.join(os.path.dirname(bin_prefix), '..', 'contrib', 'protobuf', 'protoc')),  # FIXME: adhoc solution
     }
+    if use_antlr:
+        env['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
     shell = subprocess.Popen([path], env=env, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = shell.communicate()
     assert shell.returncode is not None, "Script should exit after executing all commands"
@@ -173,7 +177,7 @@ def random_str(length=10):
     return ''.join(random.choice(alphabet) for _ in range(length))
 
 
-def test_sql_query(bin_prefix, sql_query, standalone_server):
+def test_sql_query(use_antlr, bin_prefix, sql_query, standalone_server):
     for test in SKIP_LIST:
         if test in sql_query:
             pytest.skip("Test matches skip-list: " + test)
@@ -193,21 +197,21 @@ def test_sql_query(bin_prefix, sql_query, standalone_server):
         reference = file.read()
 
     random_name = 'test_{random}'.format(random=random_str())
-    run_client(bin_prefix, tcp_port, 'default', 'CREATE DATABASE {random};'.format(random=random_name), b'')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', 'CREATE DATABASE {random};'.format(random=random_name), b'')
 
-    run_client(bin_prefix, tcp_port, random_name, query, reference, {random_name: 'default'})
+    run_client(use_antlr, bin_prefix, tcp_port, random_name, query, reference, {random_name: 'default'})
 
     query = "SELECT 'SHOW ORPHANED TABLES'; SELECT name FROM system.tables WHERE database != 'system' ORDER BY (database, name);"
-    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED TABLES\n')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED TABLES\n')
 
     query = 'DROP DATABASE {random};'.format(random=random_name)
-    run_client(bin_prefix, tcp_port, 'default', query, b'')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'')
 
     query = "SELECT 'SHOW ORPHANED DATABASES'; SHOW DATABASES;"
-    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
 
 
-def test_shell_query(bin_prefix, shell_query, standalone_server):
+def test_shell_query(use_antlr, bin_prefix, shell_query, standalone_server):
     for test in SKIP_LIST:
         if test in shell_query:
             pytest.skip("Test matches skip-list: " + test)
@@ -226,15 +230,15 @@ def test_shell_query(bin_prefix, shell_query, standalone_server):
 
     random_name = 'test_{random}'.format(random=random_str())
     query = 'CREATE DATABASE {random};'.format(random=random_name)
-    run_client(bin_prefix, tcp_port, 'default', query, b'')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'')
 
-    run_shell(bin_prefix, standalone_server, random_name, shell_path, reference, {random_name: 'default'})
+    run_shell(use_antlr, bin_prefix, standalone_server, random_name, shell_path, reference, {random_name: 'default'})
 
     query = "SELECT 'SHOW ORPHANED TABLES'; SELECT name FROM system.tables WHERE database != 'system' ORDER BY (database, name);"
-    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED TABLES\n')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED TABLES\n')
 
     query = 'DROP DATABASE {random};'.format(random=random_name)
-    run_client(bin_prefix, tcp_port, 'default', query, b'')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'')
 
     query = "SELECT 'SHOW ORPHANED DATABASES'; SHOW DATABASES;"
-    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
