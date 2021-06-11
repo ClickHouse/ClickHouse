@@ -161,6 +161,21 @@ void MergeTask::prepare()
     storage_columns = metadata_snapshot->getColumns().getAllPhysical();
 
 
+    //std::cerr << "StorageColumns" << std::endl;
+    // for (auto & col : storage_columns) {
+        //std::cerr << col.name << std::endl;
+    // }
+
+    //std::cerr << "SortingKeyExpression" << std::endl;
+    //std::cerr << metadata_snapshot->getSortingKey().expression->dumpActions() << std::endl;
+
+    //std::cerr << "IndicesDescription" << std::endl;
+    //std::cerr << metadata_snapshot->getSecondaryIndices().toString() << std::endl;
+
+    //std::cerr << "MergingParams" << std::endl;
+    //std::cerr << merging_params.getModeName() << std::endl;
+
+
     extractMergingAndGatheringColumns(
         storage_columns,
         metadata_snapshot->getSortingKey().expression,
@@ -171,6 +186,19 @@ void MergeTask::prepare()
         gathering_column_names,
         merging_columns,
         merging_column_names);
+
+
+    //std::cerr << "GatheringColumnsNames" << std::endl;
+    // for (auto & col : gathering_column_names) {
+        //std::cerr << col << std::endl;
+    // }
+
+
+    //std::cerr << "MergingColumsnNames" << std::endl;
+    // for (auto & col : merging_column_names) {
+        //std::cerr << col << std::endl;
+    // }
+
 
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part->name, disk, 0);
@@ -220,6 +248,9 @@ void MergeTask::prepare()
     compression_codec = data.getCompressionCodecForPart(merge_entry->total_size_bytes_compressed, new_data_part->ttl_infos, time_of_merge);
 
     tmp_disk = context->getTemporaryVolume()->getDisk();
+
+
+    implementation->begin();
 
     /// If merge is vertical we cannot calculate it
     blocks_are_granules_size = (chosen_merge_algorithm == MergeAlgorithm::Vertical);
@@ -605,7 +636,7 @@ bool MergeTask::execute()
             prepare();
             state = MergeTaskState::NEED_EXECUTE_HORIZONTAL;
 
-            std::cerr << "NEED_PREPARE" << std::endl;
+            //std::cerr << "NEED_PREPARE" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_EXECUTE_HORIZONTAL:
@@ -614,7 +645,7 @@ bool MergeTask::execute()
                 return true;
 
             state = MergeTaskState::NEED_FINALIZE_HORIZONTAL;
-            std::cerr << "NEED_EXECUTE_HORIZONTAL" << std::endl;
+            //std::cerr << "NEED_EXECUTE_HORIZONTAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINALIZE_HORIZONTAL:
@@ -622,7 +653,7 @@ bool MergeTask::execute()
             finalizeHorizontalPartOfTheMerge();
 
             state = MergeTaskState::NEED_PREPARE_VERTICAL;
-            std::cerr << "NEED_FINALIZE_HORIZONTAL" << std::endl;
+            //std::cerr << "NEED_FINALIZE_HORIZONTAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_PREPARE_VERTICAL:
@@ -630,7 +661,7 @@ bool MergeTask::execute()
             prepareVertical();
 
             state = MergeTaskState::NEED_EXECUTE_VERTICAL;
-            std::cerr << "NEED_PREPARE_VERTICAL" << std::endl;
+            //std::cerr << "NEED_PREPARE_VERTICAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_EXECUTE_VERTICAL:
@@ -639,7 +670,7 @@ bool MergeTask::execute()
                 return true;
 
             state = MergeTaskState::NEED_FINISH_VERTICAL;
-            std::cerr << "NEED_EXECUTE_VERTICAL" << std::endl;
+            //std::cerr << "NEED_EXECUTE_VERTICAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINISH_VERTICAL:
@@ -647,7 +678,7 @@ bool MergeTask::execute()
             finalizeVerticalMergeForAllColumns();
 
             state = MergeTaskState::NEED_MERGE_MIN_MAX_INDEX;
-            std::cerr << "NEED_FINISH_VERTICAL" << std::endl;
+            //std::cerr << "NEED_FINISH_VERTICAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_MERGE_MIN_MAX_INDEX:
@@ -655,7 +686,7 @@ bool MergeTask::execute()
             mergeMinMaxIndex();
 
             state = MergeTaskState::NEED_PREPARE_PROJECTIONS;
-            std::cerr << "NEED_MERGE_MIN_MAX_INDEX" << std::endl;
+            //std::cerr << "NEED_MERGE_MIN_MAX_INDEX" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_PREPARE_PROJECTIONS:
@@ -663,7 +694,7 @@ bool MergeTask::execute()
             prepareProjections();
 
             state = MergeTaskState::NEED_EXECUTE_PROJECTIONS;
-            std::cerr << "NEED_PREPARE_PROJECTIONS" << std::endl;
+            //std::cerr << "NEED_PREPARE_PROJECTIONS" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_EXECUTE_PROJECTIONS:
@@ -672,7 +703,7 @@ bool MergeTask::execute()
                 return true;
 
             state = MergeTaskState::NEED_FINISH_PROJECTIONS;
-            std::cerr << "NEED_EXECUTE_PROJECTIONS" << std::endl;
+            //std::cerr << "NEED_EXECUTE_PROJECTIONS" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINISH_PROJECTIONS:
@@ -680,14 +711,14 @@ bool MergeTask::execute()
             finalizeProjections();
 
             state = MergeTaskState::NEED_FINISH;
-            std::cerr << "NEED_FINISH_PROJECTIONS" << std::endl;
+            //std::cerr << "NEED_FINISH_PROJECTIONS" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINISH:
         {
             finalize();
 
-            std::cerr << "NEED_FINISH" << std::endl;
+            //std::cerr << "NEED_FINISH" << std::endl;
             return false;
         }
     }
@@ -725,6 +756,12 @@ void MergeTask::createMergedStream()
 
     MergeStageProgress horizontal_stage_progress(
         column_sizes ? column_sizes->keyColumnsWeight() : 1.0);
+
+
+    //std::cerr << "Merging Columns Names " << std::endl;
+    // for (auto & name : merging_column_names) {
+        //std::cerr << name << std::endl;
+    // }
 
     for (const auto & part : future_part->parts)
     {
@@ -768,6 +805,21 @@ void MergeTask::createMergedStream()
     blocks_are_granules_size = (chosen_merge_algorithm == MergeAlgorithm::Vertical);
 
     UInt64 merge_block_size = data_settings->merge_max_block_size;
+
+
+    //std::cerr << "merging_params.mode " << merging_params.mode << std::endl;
+
+    // for (auto & col : merging_params.columns_to_sum) {
+        //std::cerr << col << std::endl;
+    // }
+
+    //std::cerr << "version column " << merging_params.version_column << std::endl;
+
+
+    //std::cerr << header.dumpStructure() << std::endl;
+
+    //std::cerr << "chosen merge algorithm " << toString(chosen_merge_algorithm) << std::endl;
+
     switch (merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
