@@ -78,6 +78,15 @@ void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
     addJoinKeys(asof_left_key, asof_right_key, {JoinIdentifierPos::Left, JoinIdentifierPos::Right});
 }
 
+void CollectJoinOnKeysMatcher::visit(const ASTIdentifier & ident, const ASTPtr & ast, CollectJoinOnKeysMatcher::Data & data)
+{
+    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); expr_from_table != JoinIdentifierPos::Unknown)
+        data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(expr_from_table));
+    else
+        throw Exception("Unexpected identifier '" + ident.name() + "' in JOIN ON section",
+                        ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+}
+
 void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & ast, Data & data)
 {
     if (func.name == "and")
@@ -93,8 +102,6 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
             throw Exception("Function " + func.name + " takes two arguments, got '" + func.formatForErrorMessage() + "' instead",
                             ErrorCodes::SYNTAX_ERROR);
     }
-    else
-        throw Exception("Expected equality or inequality, got '" + queryToString(ast) + "'", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 
     if (func.name == "equals")
     {

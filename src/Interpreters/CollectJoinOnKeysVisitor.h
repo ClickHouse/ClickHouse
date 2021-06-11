@@ -58,7 +58,17 @@ public:
     static void visit(const ASTPtr & ast, Data & data)
     {
         if (auto * func = ast->as<ASTFunction>())
+        {
             visit(*func, ast, data);
+        }
+        else if (auto * ident = ast->as<ASTIdentifier>())
+        {
+            visit(*ident, ast, data);
+        }
+        else
+        {
+            /// visit children
+        }
     }
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
@@ -70,6 +80,7 @@ public:
 
 private:
     static void visit(const ASTFunction & func, const ASTPtr & ast, Data & data);
+    static void visit(const ASTIdentifier & ident, const ASTPtr & ast, Data & data);
 
     static void getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out);
     static JoinIdentifierPosPair getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);

@@ -190,8 +190,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 {
     LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
 
-    JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys,
-                                       sample_block_with_columns_to_add);
+    JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, sample_block_with_columns_to_add);
 
     required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
 
@@ -1340,7 +1339,8 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     const Names & key_names_left = table_join->keyNamesLeft();
-    JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
+    JoinCommon::checkTypesOfKeys(block, key_names_left, condition_mask_column_name_left,
+                                 right_sample_block, key_names_right, condition_mask_column_name_right);
 
     if (overDictionary())
     {

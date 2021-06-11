@@ -34,8 +34,17 @@ void restoreLowCardinalityInplace(Block & block);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
 
-/// Throw an exception if blocks have different types of key columns. Compare up to Nullability.
-void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right);
+/// Throw an exception if join condition column is not UIint8
+void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
+                       const Block & block_right, const String & condition_name_right);
+
+/// Throw an exception if blocks have different types of key columns . Compare up to Nullability.
+void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
+                      const Block & block_right, const Names & key_names_right);
+
+/// Check both keys and conditions
+void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const String & condition_name_left,
+                      const Block & block_right, const Names & key_names_right, const String & condition_name_right);
 
 void createMissedColumns(Block & block);
 void joinTotals(const Block & totals, const Block & columns_to_add, const TableJoin & table_join, Block & block);

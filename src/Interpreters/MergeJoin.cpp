@@ -513,6 +513,8 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     /// Input boolean column converted to nullable and only rows with non NULLS value will be joined
     if (!mask_column_name_left.empty() || !mask_column_name_right.empty())
     {
+        JoinCommon::checkTypesOfMasks({}, "", right_sample_block, mask_column_name_right);
+
         key_names_left.push_back(deriveTempName(mask_column_name_left));
         key_names_right.push_back(deriveTempName(mask_column_name_right));
     }
@@ -669,10 +671,13 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     if (block)
     {
+        JoinCommon::checkTypesOfMasks(block, mask_column_name_left, right_sample_block, mask_column_name_right);
+
         /// Add auxiliary column, will be removed after joining
         addConditionJoinColumn(block, JoinTableSide::Left);
 
         JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
+
         materializeBlockInplace(block);
         JoinCommon::removeLowCardinalityInplace(block, key_names_left, false);
 

@@ -1,21 +1,29 @@
 #include <Interpreters/join_common.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Columns/ColumnNullable.h>
+
 #include <Columns/ColumnLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/getLeastSupertype.h>
+#include <Columns/ColumnNullable.h>
+
 #include <DataStreams/materializeBlock.h>
+
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
+
 #include <IO/WriteHelpers.h>
 
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/TableJoin.h>
+
+#include <common/logger_useful.h>
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
+    extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -264,7 +272,8 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
     return key_columns;
 }
 
-void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right)
+void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
+                      const Block & block_right, const Names & key_names_right)
 {
     size_t keys_size = key_names_left.size();
 
@@ -275,10 +284,36 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, co
 
         if (!left_type->equals(*right_type))
             throw Exception("Type mismatch of columns to JOIN by: "
-                + key_names_left[i] + " " + left_type->getName() + " at left, "
-                + key_names_right[i] + " " + right_type->getName() + " at right",
-                ErrorCodes::TYPE_MISMATCH);
+                            + key_names_left[i] + " " + left_type->getName() + " at left, "
+                            + key_names_right[i] + " " + right_type->getName() + " at right",
+                            ErrorCodes::TYPE_MISMATCH);
     }
+}
+
+void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const String & condition_name_left,
+                      const Block & block_right, const Names & key_names_right, const String & condition_name_right)
+{
+    checkTypesOfKeys(block_left, key_names_left,block_right,key_names_right);
+    checkTypesOfMasks(block_left, condition_name_left, block_right, condition_name_right);
+}
+
+void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
+                       const Block & block_right, const String & condition_name_right)
+{
+    auto check_cond_column_type = [](const Block & block, const String & col_name)
+    {
+        if (col_name.empty())
+            return;
+
+        DataTypePtr dtype = removeNullable(recursiveRemoveLowCardinality(block.getByName(col_name).type));
+
+        if (!dtype->equals(DataTypeUInt8{}))
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                            "Expected logical expression in JOIN ON section, got unexpected column '{}' of type '{}'",
+                            col_name, dtype->getName());
+    };
+    check_cond_column_type(block_left, condition_name_left);
+    check_cond_column_type(block_right, condition_name_right);
 }
 
 void createMissedColumns(Block & block)
