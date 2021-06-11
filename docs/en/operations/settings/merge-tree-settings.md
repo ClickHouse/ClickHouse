@@ -143,7 +143,7 @@ Possible values:
 
 -   Any positive integer.
 
-Default value: 480. 
+Default value: 480.
 
 After merging several parts into a new part, ClickHouse marks the original parts as inactive and deletes them only after `old_parts_lifetime` seconds.
 Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is zero.
