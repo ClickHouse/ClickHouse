@@ -151,7 +151,7 @@ public:
                 }
             }
 
-            inserter->stream.write_values(row);
+            inserter->stream.write_values(row);  // NOLINT
         }
     }
 
@@ -273,7 +273,7 @@ private:
         StreamTo(pqxx::connection & connection, pqxx::table_path table_, Names columns_)
             : tx(connection)
             , columns(std::move(columns_))
-            , stream(pqxx::stream_to::raw_table(tx, connection.quote_table(table_), connection.quote_columns(columns)))
+            , stream(pqxx::stream_to::raw_table(tx, connection.quote_table(table_), connection.quote_columns(columns)))  // NOLINT
         {
         }
 
