@@ -20,7 +20,7 @@ Install the latest [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12
 
 Open it at least once to accept the end-user license agreement and automatically install the required components.
 
-Then, make sure that the latest Comman Line Tools are installed and selected in the system:
+Then, make sure that the latest Command Line Tools are installed and selected in the system:
 
 ``` bash
 sudo rm -rf /Library/Developer/CommandLineTools

@@ -428,8 +428,6 @@ public:
                 /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
                 /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
                 aws_client_configuration.connectTimeoutMs = 1000;
-
-                /// FIXME. Somehow this timeout does not work in docker without --net=host.
                 aws_client_configuration.requestTimeoutMs = 1000;
 
                 aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
@@ -639,8 +637,6 @@ namespace S3
                 key = uri.getPath().substr(1);
             }
 
-            if (key.empty() || key == "/")
-                throw Exception("Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
             boost::to_upper(name);
             if (name != S3 && name != COS)
             {
@@ -665,9 +661,6 @@ namespace S3
             if (bucket.length() < 3 || bucket.length() > 63)
                 throw Exception(
                     "Bucket name length is out of bounds in path style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
-
-            if (key.empty() || key == "/")
-                throw Exception("Key name is empty in path style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
         }
         else
             throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);

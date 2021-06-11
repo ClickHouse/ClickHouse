@@ -36,6 +36,7 @@ function run_test_once()
 
     $CLICKHOUSE_CLIENT -nm -q "
         DROP DICTIONARY simple_key_cache_dictionary_01863;
+        DROP TABLE simple_key_source_table_01863;
     "
 
     if [ "$prev" == "$curr" ]; then

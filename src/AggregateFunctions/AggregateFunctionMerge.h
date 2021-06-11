@@ -9,6 +9,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -46,6 +48,11 @@ public:
     DataTypePtr getReturnType() const override
     {
         return nested_func->getReturnType();
+    }
+
+    DataTypePtr getStateType() const override
+    {
+        return nested_func->getStateType();
     }
 
     void create(AggregateDataPtr __restrict place) const override

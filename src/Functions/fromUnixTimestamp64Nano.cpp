@@ -7,7 +7,7 @@ namespace DB
 void registerFromUnixTimestamp64Nano(FunctionFactory & factory)
 {
     factory.registerFunction("fromUnixTimestamp64Nano",
-        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
+        [](ContextConstPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
             std::make_shared<FunctionFromUnixTimestamp64>(9, "fromUnixTimestamp64Nano")); });
 }
 
