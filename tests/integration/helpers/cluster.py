@@ -1124,7 +1124,7 @@ class ClickHouseCluster:
                 time.sleep(1)
 
 
-    def wait_hdfs_to_start(self, timeout=120):
+    def wait_hdfs_to_start(self, timeout=300):
         start = time.time()
         while time.time() - start < timeout:
             try:
