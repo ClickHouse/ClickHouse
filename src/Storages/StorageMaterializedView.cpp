@@ -47,6 +47,17 @@ static inline String generateInnerTableName(const StorageID & view_id)
     return ".inner." + view_id.getTableName();
 }
 
+/// Remove columns from target_header that does not exists in src_header
+static void removeNonCommonColumns(const Block & src_header, Block & target_header)
+{
+    std::set<size_t> target_only_positions;
+    for (const auto & column : target_header)
+    {
+        if (!src_header.has(column.name))
+            target_only_positions.insert(target_header.getPositionByName(column.name));
+    }
+    target_header.erase(target_only_positions);
+}
 
 StorageMaterializedView::StorageMaterializedView(
     const StorageID & table_id_,
@@ -168,26 +179,14 @@ void StorageMaterializedView::read(
         auto target_header = query_plan.getCurrentDataStream().header;
 
         /// No need to convert columns that does not exists in MV
-        std::set<size_t> target_only_positions;
-        for (const auto & column : target_header)
-        {
-            if (!mv_header.has(column.name))
-                target_only_positions.insert(target_header.getPositionByName(column.name));
-        }
-        target_header.erase(target_only_positions);
+        removeNonCommonColumns(mv_header, target_header);
 
         /// No need to convert columns that does not exists in the result header.
         ///
         /// Distributed storage may process query up to the specific stage, and
         /// so the result header may not include all the columns from the
         /// materialized view.
-        std::set<size_t> source_only_positions;
-        for (const auto & column : mv_header)
-        {
-            if (!target_header.has(column.name))
-                source_only_positions.insert(mv_header.getPositionByName(column.name));
-        }
-        mv_header.erase(source_only_positions);
+        removeNonCommonColumns(target_header, mv_header);
 
         if (!blocksHaveEqualStructure(mv_header, target_header))
         {
