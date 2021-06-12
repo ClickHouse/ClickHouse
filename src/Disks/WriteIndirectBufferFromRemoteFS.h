@@ -1,5 +1,8 @@
 #pragma once
+
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_AWS_S3 || USE_HDFS
 
@@ -10,7 +13,7 @@
 namespace DB
 {
 
-/// Stores data in S3/HDFS and adds the object key (S3 path) and object size to metadata file on local FS.
+/// Stores data in S3/HDFS and adds the object path and object size to metadata file on local FS.
 template <typename T>
 class WriteIndirectBufferFromRemoteFS final : public WriteBufferFromFileDecorator
 {

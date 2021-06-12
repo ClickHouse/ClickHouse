@@ -11,6 +11,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
 #include <Coordination/KeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
@@ -74,7 +75,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <filesystem>
 
+
+namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -360,6 +364,10 @@ struct ContextSharedPart
     mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     mutable std::optional<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+
+    mutable ThrottlerPtr replicated_fetches_throttler; /// A server-wide throttler for replicated fetches
+    mutable ThrottlerPtr replicated_sends_throttler; /// A server-wide throttler for replicated sends
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -535,7 +543,7 @@ ContextMutablePtr Context::createCopy(const ContextPtr & other)
     return std::shared_ptr<Context>(new Context(*other));
 }
 
-ContextMutablePtr Context::createCopy(const ContextWeakConstPtr & other)
+ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 {
     auto ptr = other.lock();
     if (!ptr) throw Exception("Can't copy an expired context", ErrorCodes::LOGICAL_ERROR);
@@ -1625,6 +1633,26 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     return *shared->message_broker_schedule_pool;
 }
 
+ThrottlerPtr Context::getReplicatedFetchesThrottler() const
+{
+    auto lock = getLock();
+    if (!shared->replicated_fetches_throttler)
+        shared->replicated_fetches_throttler = std::make_shared<Throttler>(
+            settings.max_replicated_fetches_network_bandwidth_for_server);
+
+    return shared->replicated_fetches_throttler;
+}
+
+ThrottlerPtr Context::getReplicatedSendsThrottler() const
+{
+    auto lock = getLock();
+    if (!shared->replicated_sends_throttler)
+        shared->replicated_sends_throttler = std::make_shared<Throttler>(
+            settings.max_replicated_sends_network_bandwidth_for_server);
+
+    return shared->replicated_sends_throttler;
+}
+
 bool Context::hasDistributedDDL() const
 {
     return getConfigRef().has("distributed_ddl");
@@ -2212,14 +2240,14 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
 
-    Poco::File force_file(getFlagsPath() + "force_drop_table");
-    bool force_file_exists = force_file.exists();
+    fs::path force_file(getFlagsPath() + "force_drop_table");
+    bool force_file_exists = fs::exists(force_file);
 
     if (force_file_exists)
     {
         try
         {
-            force_file.remove();
+            fs::remove(force_file);
             return;
         }
         catch (...)
@@ -2241,9 +2269,9 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
                     "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
                     backQuoteIfNeed(database), backQuoteIfNeed(table),
                     size_str, max_size_to_drop_str,
-                    force_file.path(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
-                    force_file.path(),
-                    force_file.path(), force_file.path());
+                    force_file.string(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
+                    force_file.string(),
+                    force_file.string(), force_file.string());
 }
 
 
@@ -2580,7 +2608,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
 
         auto resolved_id = StorageID::createEmpty();
-        auto try_resolve = [&](ContextConstPtr context) -> bool
+        auto try_resolve = [&](ContextPtr context) -> bool
         {
             const auto & tables = context->external_tables_mapping;
             auto it = tables.find(storage_id.getTableName());

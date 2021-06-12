@@ -1,19 +1,19 @@
 #include "LibraryDictionarySource.h"
 
-#include <Poco/File.h>
-
+#include <DataStreams/OneBlockInputStream.h>
+#include <Interpreters/Context.h>
 #include <common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <Interpreters/Context.h>
+#include <filesystem>
 
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/registerDictionaries.h>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -31,7 +31,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix_,
     Block & sample_block_,
-    ContextConstPtr context_,
+    ContextPtr context_,
     bool created_from_ddl)
     : log(&Poco::Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
@@ -44,8 +44,8 @@ LibraryDictionarySource::LibraryDictionarySource(
     if (created_from_ddl && !pathStartsWith(path, context->getDictionariesLibPath()))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, context->getDictionariesLibPath());
 
-    if (!Poco::File(path).exists())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", Poco::File(path).path());
+    if (!fs::exists(path))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", path);
 
     description.init(sample_block);
     bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id);
@@ -172,7 +172,7 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextConstPtr context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {

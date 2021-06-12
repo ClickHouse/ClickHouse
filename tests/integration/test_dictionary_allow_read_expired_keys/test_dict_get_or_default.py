@@ -7,11 +7,10 @@ from helpers.cluster import ClickHouseCluster
 from helpers.cluster import ClickHouseKiller
 from helpers.network import PartitionManager
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="default")
 
 dictionary_node = cluster.add_instance('dictionary_node', stay_alive=True)
-main_node = cluster.add_instance('main_node', main_configs=['configs/enable_dictionaries.xml',
-                                                            'configs/dictionaries/cache_ints_dictionary.xml'])
+main_node = cluster.add_instance('main_node', dictionaries=['configs/dictionaries/cache_ints_dictionary.xml'])
 
 
 @pytest.fixture(scope="module")
