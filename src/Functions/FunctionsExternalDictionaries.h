@@ -333,8 +333,6 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        std::cerr << "FunctionDictGetNoType " << input_rows_count << std::endl;
-
         String dictionary_name;
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))

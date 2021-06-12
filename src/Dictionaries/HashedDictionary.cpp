@@ -155,7 +155,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
+        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
 
     return result;
 }
@@ -528,7 +528,10 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
         else
         {
             if constexpr (is_nullable)
-                set_value(key_index, default_value_extractor[key_index], default_value_extractor.isNullAt(key_index));
+            {
+                bool is_value_nullable = (attribute.is_nullable_set->find(key) != nullptr) || default_value_extractor.isNullAt(key_index);
+                set_value(key_index, default_value_extractor[key_index], is_value_nullable);
+            }
             else
                 set_value(key_index, default_value_extractor[key_index], false);
         }

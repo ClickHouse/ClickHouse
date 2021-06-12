@@ -199,7 +199,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
+        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
 
     return result;
 }
@@ -388,7 +388,7 @@ RangeHashedDictionary::Attribute RangeHashedDictionary::createAttribute(const Di
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
-        if constexpr (std::is_same_v<AttributeType, StringRef>)
+        if constexpr (std::is_same_v<AttributeType, String>)
             attribute.string_arena = std::make_unique<Arena>();
 
         attribute.maps = std::make_unique<Collection<ValueType>>();
