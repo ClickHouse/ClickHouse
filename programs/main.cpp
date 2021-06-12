@@ -19,6 +19,7 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <Common/IO.h>
 
 #include <common/phdr_cache.h>
 #include <ext/scope_guard.h>
@@ -172,11 +173,11 @@ enum class InstructionFail
     AVX512 = 8
 };
 
-std::pair<const char *, size_t> instructionFailToString(InstructionFail fail)
+auto instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
-#define ret(x) return std::make_pair(x, ARRAY_SIZE(x) - 1)
+#define ret(x) return std::make_tuple(STDERR_FILENO, x, ARRAY_SIZE(x) - 1)
         case InstructionFail::NONE:
             ret("NONE");
         case InstructionFail::SSE3:
@@ -260,28 +261,12 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
     fail = InstructionFail::NONE;
 }
 
-/// This function is safe to use in static initializers.
-void writeErrorLen(const char * data, size_t size)
-{
-    while (size != 0)
-    {
-        ssize_t res = ::write(STDERR_FILENO, data, size);
-
-        if ((-1 == res || 0 == res) && errno != EINTR)
-            _Exit(1);
-
-        if (res > 0)
-        {
-            data += res;
-            size -= res;
-        }
-    }
-}
 /// Macros to avoid using strlen(), since it may fail if SSE is not supported.
 #define writeError(data) do \
     { \
         static_assert(__builtin_constant_p(data)); \
-        writeErrorLen(data, ARRAY_SIZE(data) - 1); \
+        if (!writeRetry(STDERR_FILENO, data, ARRAY_SIZE(data) - 1)) \
+            _Exit(1); \
     } while (false)
 
 /// Check SSE and others instructions availability. Calls exit on fail.
@@ -310,7 +295,8 @@ void checkRequiredInstructions()
     if (sigsetjmp(jmpbuf, 1))
     {
         writeError("Instruction check fail. The CPU does not support ");
-        std::apply(writeErrorLen, instructionFailToString(fail));
+        if (!std::apply(writeRetry, instructionFailToString(fail)))
+            _Exit(1);
         writeError(" instruction set.\n");
         _Exit(1);
     }

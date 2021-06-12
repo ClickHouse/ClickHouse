@@ -1,5 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#include <Common/config.h>
+#endif
+
+#if USE_AWS_S3
+
 #include "ProxyConfiguration.h"
 
 namespace DB::S3
@@ -25,3 +31,5 @@ private:
 };
 
 }
+
+#endif

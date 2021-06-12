@@ -10,7 +10,7 @@ echo '{
     "storage-driver": "overlay2",
     "insecure-registries" : ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
     "registry-mirrors" : ["http://dockerhub-proxy.sas.yp-c.yandex.net:5000"]
-}' | dd of=/etc/docker/daemon.json
+}' | dd of=/etc/docker/daemon.json 2>/dev/null
 
 dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 &>/ClickHouse/tests/integration/dockerd.log &
 

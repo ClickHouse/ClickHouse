@@ -1,5 +1,6 @@
 #include "DiskS3.h"
 
+#if USE_AWS_S3
 #include "Disks/DiskFactory.h"
 
 #include <bitset>
@@ -19,11 +20,11 @@
 #include <Common/thread_local_rng.h>
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/CopyObjectRequest.h> // Y_IGNORE
+#include <aws/s3/model/DeleteObjectsRequest.h> // Y_IGNORE
+#include <aws/s3/model/GetObjectRequest.h> // Y_IGNORE
+#include <aws/s3/model/ListObjectsV2Request.h> // Y_IGNORE
+#include <aws/s3/model/HeadObjectRequest.h> // Y_IGNORE
 
 
 namespace DB
@@ -121,25 +122,25 @@ public:
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         DiskS3::Metadata metadata_,
-        size_t s3_max_single_read_retries_,
+        size_t max_single_read_retries_,
         size_t buf_size_)
         : ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>(metadata_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
-        , s3_max_single_read_retries(s3_max_single_read_retries_)
+        , max_single_read_retries(max_single_read_retries_)
         , buf_size(buf_size_)
     {
     }
 
     std::unique_ptr<ReadBufferFromS3> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, s3_max_single_read_retries, buf_size);
+        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, max_single_read_retries, buf_size);
     }
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     const String & bucket;
-    size_t s3_max_single_read_retries;
+    UInt64 max_single_read_retries;
     size_t buf_size;
 };
 
@@ -958,3 +959,5 @@ DiskS3Settings::DiskS3Settings(
 }
 
 }
+
+#endif
