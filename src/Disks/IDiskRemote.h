@@ -17,6 +17,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /// Helper class to collect paths into chunks of maximum size.
 /// For s3 it is Aws::vector<ObjectIdentifier>, for hdfs it is std::vector<std::string>.
 class RemoteFSPathKeeper
@@ -35,21 +40,21 @@ protected:
 using RemoteFSPathKeeperPtr = std::shared_ptr<RemoteFSPathKeeper>;
 
 
-/// Base Disk class for remote FS's, which are not posix-compatible (DiskS3 and DiskHDFS)
+/// Base Disk class for remote FS's, which are not posix-compatible.
+/// Used for s3, hdfs, static.
 class IDiskRemote : public IDisk
 {
-
 friend class DiskRemoteReservation;
 
 public:
+    struct Metadata;
+
     IDiskRemote(
         const String & name_,
         const String & remote_fs_root_path_,
         const String & metadata_path_,
         const String & log_name_,
         size_t thread_pool_size);
-
-    struct Metadata;
 
     const String & getName() const final override { return name; }
 
@@ -61,21 +66,33 @@ public:
 
     Metadata readOrCreateMetaForWriting(const String & path, WriteMode mode);
 
-    UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
+    UInt64 getTotalSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
-    UInt64 getAvailableSpace() const override { return std::numeric_limits<UInt64>::max(); }
+    UInt64 getAvailableSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
-    UInt64 getUnreservedSpace() const override { return std::numeric_limits<UInt64>::max(); }
+    UInt64 getUnreservedSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
-    UInt64 getKeepingFreeSpace() const override { return 0; }
+    /// Read-only part
 
-    bool exists(const String & path) const override;
+    bool exists(const String & path) const final override;
 
-    bool isFile(const String & path) const override;
+    bool isFile(const String & path) const final override;
 
-    void createFile(const String & path) override;
+    size_t getFileSize(const String & path) const final override;
 
-    size_t getFileSize(const String & path) const override;
+    void listFiles(const String & path, std::vector<String> & file_names) override;
+
+    void setReadOnly(const String & path) override;
+
+    bool isDirectory(const String & path) const override;
+
+    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+
+    Poco::Timestamp getLastModified(const String & path) override;
+
+    ReservationPtr reserve(UInt64 bytes) override;
+
+    /// Write and modification part
 
     void moveFile(const String & from_path, const String & to_path) override;
 
@@ -91,41 +108,46 @@ public:
 
     void removeSharedRecursive(const String & path, bool keep_in_remote_fs) override;
 
-    void listFiles(const String & path, std::vector<String> & file_names) override;
-
-    void setReadOnly(const String & path) override;
-
-    bool isDirectory(const String & path) const override;
-
-    void createDirectory(const String & path) override;
-
-    void createDirectories(const String & path) override;
-
     void clearDirectory(const String & path) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
 
     void removeDirectory(const String & path) override;
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
-
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
-    Poco::Timestamp getLastModified(const String & path) override;
+    /// Overriden by disks s3 and hdfs.
+    virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr /* fs_paths_keeper */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} does not support removing remote files", getName());
+    }
+
+    /// Overriden by disks s3 and hdfs.
+    virtual RemoteFSPathKeeperPtr createFSPathKeeper() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} does not support storage keeper", getName());
+    }
+
+    /// Create part
+
+    void createFile(const String & path) final override;
+
+    void createDirectory(const String & path) override;
+
+    void createDirectories(const String & path) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
-    ReservationPtr reserve(UInt64 bytes) override;
-
-    virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
-
-    virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
-
 protected:
     Poco::Logger * log;
+
+    /// Disk name
     const String name;
+
+    /// URL + root path to store files in remote FS.
     const String remote_fs_root_path;
 
+    /// Path to store remote FS metadata, i.e. file name in remote FS, its size, etc.
     const String metadata_path;
 
 private:
@@ -142,8 +164,9 @@ private:
 
 using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
 
-/// Remote FS (S3, HDFS) metadata file layout:
-/// Number of FS objects, Total size of all FS objects.
+
+/// Remote FS (S3, HDFS, WEB-server) metadata file layout:
+/// Number of FS objects, total size of all FS objects.
 /// Each FS object represents path where object located in FS and size of object.
 
 struct IDiskRemote::Metadata
@@ -155,7 +178,7 @@ struct IDiskRemote::Metadata
 
     using PathAndSize = std::pair<String, size_t>;
 
-    /// Remote FS (S3, HDFS) root path.
+    /// Remote FS (S3, HDFS, WEB-server) root path (uri + files directory path).
     const String & remote_fs_root_path;
 
     /// Disk path.
@@ -164,10 +187,10 @@ struct IDiskRemote::Metadata
     /// Relative path to metadata file on local FS.
     String metadata_file_path;
 
-    /// Total size of all remote FS (S3, HDFS) objects.
+    /// Total size of all remote FS objects.
     size_t total_size = 0;
 
-    /// Remote FS (S3, HDFS) objects paths and their sizes.
+    /// Remote FS objects paths and their sizes.
     std::vector<PathAndSize> remote_fs_objects;
 
     /// Number of references (hardlinks) to this metadata file.
