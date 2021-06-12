@@ -14,11 +14,11 @@ postgres_table_template = """
     id Integer NOT NULL, value Integer, PRIMARY KEY (id))
     """
 
-def get_postgres_conn(database=False):
+def get_postgres_conn(cluster, database=False):
     if database == True:
-        conn_string = "host='localhost' dbname='test_database' user='postgres' password='mysecretpassword'"
+        conn_string = f"host={cluster.postgres_ip} port={cluster.postgres_port} dbname='test_database' user='postgres' password='mysecretpassword'"
     else:
-        conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
+        conn_string = f"host={cluster.postgres_ip} port={cluster.postgres_port} user='postgres' password='mysecretpassword'"
     conn = psycopg2.connect(conn_string)
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     conn.autocommit = True
@@ -36,7 +36,7 @@ def create_postgres_table(cursor, table_name):
 def started_cluster():
     try:
         cluster.start()
-        conn = get_postgres_conn()
+        conn = get_postgres_conn(cluster)
         cursor = conn.cursor()
         create_postgres_db(cursor, 'test_database')
         yield cluster
@@ -47,7 +47,7 @@ def started_cluster():
 
 def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     # connect to database as well
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(started_cluster, True)
     cursor = conn.cursor()
 
     node1.query(
@@ -68,7 +68,7 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
 
 
 def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(started_cluster, True)
     cursor = conn.cursor()
 
     node1.query(
@@ -94,7 +94,7 @@ def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
 
 
 def test_postgresql_database_engine_queries(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(started_cluster, True)
     cursor = conn.cursor()
 
     node1.query(
@@ -114,7 +114,7 @@ def test_postgresql_database_engine_queries(started_cluster):
 
 
 def test_get_create_table_query_with_multidim_arrays(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(started_cluster, True)
     cursor = conn.cursor()
 
     node1.query(
@@ -147,7 +147,7 @@ def test_get_create_table_query_with_multidim_arrays(started_cluster):
 
 
 def test_postgresql_database_engine_table_cache(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(started_cluster, True)
     cursor = conn.cursor()
 
     node1.query(

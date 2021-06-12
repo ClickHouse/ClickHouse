@@ -1,5 +1,8 @@
 #pragma once
+
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #include <atomic>
 #include "Disks/DiskFactory.h"

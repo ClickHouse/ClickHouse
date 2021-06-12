@@ -43,7 +43,7 @@ class FunctionMapOp : public IFunction
 {
 public:
     static constexpr auto name = (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionMapOp>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapOp>(); }
 
 private:
     String getName() const override { return name; }
