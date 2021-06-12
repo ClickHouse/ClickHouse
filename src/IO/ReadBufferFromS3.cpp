@@ -48,7 +48,7 @@ bool ReadBufferFromS3::nextImpl()
     auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
 
     impl = initialize();
-    
+
     for (size_t attempt = 0; attempt < max_single_read_retries; ++attempt)
     {
         try
