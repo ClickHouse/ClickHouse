@@ -75,8 +75,8 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
 
     auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, function.getName(), module);
     auto * args = func->args().begin();
-    llvm::Value * counter_arg = &*args++;
-    llvm::Value * columns_arg = &*args++;
+    llvm::Value * rows_count_arg = args++;
+    llvm::Value * columns_arg = args++;
 
     /// Initialize ColumnDataPlaceholder llvm representation of ColumnData
 
@@ -94,12 +94,14 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
 
     /// Initialize loop
 
+    auto * end = llvm::BasicBlock::Create(b.getContext(), "end", func);
     auto * loop = llvm::BasicBlock::Create(b.getContext(), "loop", func);
-    b.CreateBr(loop);
+    b.CreateCondBr(b.CreateICmpEQ(rows_count_arg, llvm::ConstantInt::get(size_type, 0)), end, loop);
+
     b.SetInsertPoint(loop);
 
-    auto * counter_phi = b.CreatePHI(counter_arg->getType(), 2);
-    counter_phi->addIncoming(counter_arg, entry);
+    auto * counter_phi = b.CreatePHI(rows_count_arg->getType(), 2);
+    counter_phi->addIncoming(llvm::ConstantInt::get(size_type, 0), entry);
 
     for (auto & col : columns)
     {
@@ -158,10 +160,11 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
             col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
     }
 
-    counter_phi->addIncoming(b.CreateSub(counter_phi, llvm::ConstantInt::get(size_type, 1)), cur_block);
+    auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1));
+    counter_phi->addIncoming(value, cur_block);
 
-    auto * end = llvm::BasicBlock::Create(b.getContext(), "end", func);
-    b.CreateCondBr(b.CreateICmpNE(counter_phi, llvm::ConstantInt::get(size_type, 1)), loop, end);
+    b.CreateCondBr(b.CreateICmpEQ(value, rows_count_arg), end, loop);
+
     b.SetInsertPoint(end);
     b.CreateRetVoid();
 }
