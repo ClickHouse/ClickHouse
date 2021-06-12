@@ -106,7 +106,7 @@ public:
 
 private:
     template <typename Value>
-    using ContainerType = PaddedPODArray<Value>;
+    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
 
     using NullableSet = HashSet<UInt64, DefaultHash<UInt64>>;
 
@@ -135,8 +135,10 @@ private:
             Float32,
             Float64,
             UUID,
-            StringRef>
+            StringRef,
+            Array>
             null_values;
+
         std::variant<
             ContainerType<UInt8>,
             ContainerType<UInt16>,
@@ -157,7 +159,8 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
-            ContainerType<StringRef>>
+            ContainerType<StringRef>,
+            ContainerType<Array>>
             container;
 
         std::unique_ptr<Arena> string_arena;
@@ -172,7 +175,7 @@ private:
 
     Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & keys,

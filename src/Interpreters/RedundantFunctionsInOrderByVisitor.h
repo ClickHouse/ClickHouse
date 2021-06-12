@@ -16,7 +16,7 @@ public:
     struct Data
     {
         std::unordered_set<String> & keys;
-        ContextConstPtr context;
+        ContextPtr context;
         bool redundant = true;
         bool done = false;
 

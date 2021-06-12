@@ -35,7 +35,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         Block & sample_block,
-        ContextConstPtr context,
+        ContextPtr context,
         const std::string & default_database,
         bool check_config)>;
 
@@ -48,7 +48,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const DictionaryStructure & dict_struct,
-        ContextConstPtr context,
+        ContextPtr context,
         const std::string & default_database,
         bool check_config) const;
 

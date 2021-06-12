@@ -319,12 +319,11 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Разрешает выполнять запросы [DROP](misc.md#drop) и [DETACH](misc.md#detach-statement) в соответствии со следующей иерархией привилегий:
 
-- `DROP`. Уровень: 
+- `DROP`. Уровень: `GROUP`
     - `DROP DATABASE`. Уровень: `DATABASE`
     - `DROP TABLE`. Уровень: `TABLE`
     - `DROP VIEW`. Уровень: `VIEW`
     - `DROP DICTIONARY`. Уровень: `DICTIONARY`
-
 
 ### TRUNCATE {#grant-truncate}
 
