@@ -1,5 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#include <Common/config.h>
+#endif
+
+#if USE_AWS_S3
+
 #include <atomic>
 #include <common/logger_useful.h>
 #include "Disks/DiskFactory.h"
@@ -168,3 +174,5 @@ private:
 };
 
 }
+
+#endif

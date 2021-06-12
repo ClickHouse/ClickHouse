@@ -32,7 +32,6 @@ public:
         const String command;
         const String format;
         const size_t pool_size;
-        const String update_field;
         const bool implicit_key;
         const size_t command_termination_timeout;
         const size_t max_command_execution_time;

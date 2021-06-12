@@ -28,8 +28,9 @@ public:
         const std::string db;
         const std::string table;
         const std::string where;
-        const std::string update_field;
         const std::string invalidate_query;
+        const std::string update_field;
+        const UInt64 update_lag;
         const bool is_local;
     };
 
