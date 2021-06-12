@@ -6,11 +6,8 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnArray.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -234,45 +231,25 @@ class DictionaryAttributeColumnProvider
 {
 public:
     using ColumnType =
-        std::conditional_t<std::is_same_v<DictionaryAttributeType, Array>, ColumnArray,
-            std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
-                std::conditional_t<IsDecimalNumber<DictionaryAttributeType>, ColumnDecimal<DictionaryAttributeType>,
-                    ColumnVector<DictionaryAttributeType>>>>;
+        std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
+            std::conditional_t<IsDecimalNumber<DictionaryAttributeType>, ColumnDecimal<DictionaryAttributeType>,
+                ColumnVector<DictionaryAttributeType>>>;
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
     static ColumnPtr getColumn(const DictionaryAttribute & dictionary_attribute, size_t size)
     {
-        if constexpr (std::is_same_v<DictionaryAttributeType, Array>)
-        {
-            if (const auto * array_type = typeid_cast<const DataTypeArray *>(dictionary_attribute.type.get()))
-            {
-                auto nested_column = array_type->getNestedType()->createColumn();
-                return ColumnArray::create(std::move(nested_column));
-            }
-            else
-            {
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
-            }
-        }
         if constexpr (std::is_same_v<DictionaryAttributeType, String>)
         {
             return ColumnType::create();
         }
-        else if constexpr (std::is_same_v<DictionaryAttributeType, UUID>)
+        if constexpr (IsDecimalNumber<DictionaryAttributeType>)
         {
-            return ColumnType::create(size);
-        }
-        else if constexpr (IsDecimalNumber<DictionaryAttributeType>)
-        {
-            auto nested_type = removeNullable(dictionary_attribute.type);
-            auto scale = getDecimalScale(*nested_type);
+            auto scale = getDecimalScale(*dictionary_attribute.nested_type);
             return ColumnType::create(size, scale);
         }
-        else if constexpr (is_arithmetic_v<DictionaryAttributeType>)
-        {
+        else if constexpr (IsNumber<DictionaryAttributeType>)
             return ColumnType::create(size);
-        }
         else
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
     }
@@ -297,18 +274,18 @@ public:
         : default_value(std::move(attribute_default_value))
     {
         if (default_values_column_ == nullptr)
-            use_attribute_default_value = true;
+            use_default_value_from_column = false;
         else
         {
             if (const auto * const default_col = checkAndGetColumn<DefaultColumnType>(*default_values_column_))
             {
                 default_values_column = default_col;
-                use_attribute_default_value = false;
+                use_default_value_from_column = true;
             }
             else if (const auto * const default_col_const = checkAndGetColumnConst<DefaultColumnType>(default_values_column_.get()))
             {
                 default_value = default_col_const->template getValue<DictionaryAttributeType>();
-                use_attribute_default_value = true;
+                use_default_value_from_column = false;
             }
             else
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Type of default column is not the same as dictionary attribute type.");
@@ -317,17 +294,12 @@ public:
 
     DefaultValueType operator[](size_t row)
     {
-        if (use_attribute_default_value)
+        if (!use_default_value_from_column)
             return static_cast<DefaultValueType>(default_value);
 
         assert(default_values_column != nullptr);
 
-        if constexpr (std::is_same_v<DefaultColumnType, ColumnArray>)
-        {
-            Field field = (*default_values_column)[row];
-            return field.get<Array>();
-        }
-        else if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
+        if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);
         else
             return default_values_column->getData()[row];
@@ -335,7 +307,7 @@ public:
 private:
     DictionaryAttributeType default_value;
     const DefaultColumnType * default_values_column = nullptr;
-    bool use_attribute_default_value = false;
+    bool use_default_value_from_column = false;
 };
 
 template <DictionaryKeyType key_type>
@@ -591,7 +563,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "{}: type mismatch: column has wrong type expected {}",
             dictionary->getDictionaryID().getNameForLogs(),
-            TypeName<T>);
+            TypeName<T>::get());
     }
 
     if (is_const_column)

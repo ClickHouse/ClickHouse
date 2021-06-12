@@ -1,7 +1,7 @@
+#include "TestHint.h"
 #include "ConnectionParameters.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
-#include "TestHint.h"
 
 #if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
@@ -25,6 +25,7 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
+#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
@@ -85,9 +86,6 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/ProgressBar.h>
-#include <filesystem>
-#include <Common/filesystemHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -97,10 +95,13 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
-namespace fs = std::filesystem;
+/// http://en.wikipedia.org/wiki/ANSI_escape_code
+#define CLEAR_TO_END_OF_LINE "\033[K"
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
@@ -118,7 +119,8 @@ namespace ErrorCodes
 
 static bool queryHasWithClause(const IAST * ast)
 {
-    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(ast); select && select->with())
+    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(ast);
+        select && select->with())
     {
         return true;
     }
@@ -150,22 +152,28 @@ public:
 
 private:
     using StringSet = std::unordered_set<String>;
-    StringSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж",
-                           "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
-    bool is_interactive = true; /// Use either interactive line editing interface or batch mode.
-    bool echo_queries = false; /// Print queries before execution in batch mode.
-    bool ignore_error
-        = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
-    bool print_time_to_stderr = false; /// Output execution time to stderr in batch mode.
-    bool stdin_is_a_tty = false; /// stdin is a terminal.
-    bool stdout_is_a_tty = false; /// stdout is a terminal.
+    StringSet exit_strings
+    {
+        "exit", "quit", "logout",
+        "учше", "йгше", "дщпщге",
+        "exit;", "quit;", "logout;",
+        "учшеж", "йгшеж", "дщпщгеж",
+        "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
+    };
+    bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
+    bool need_render_progress = true;    /// Render query execution progress.
+    bool echo_queries = false;           /// Print queries before execution in batch mode.
+    bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
+    bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
+    bool stdin_is_a_tty = false;         /// stdin is a terminal.
+    bool stdout_is_a_tty = false;        /// stdout is a terminal.
 
     /// If not empty, queries will be read from these files
     std::vector<std::string> queries_files;
     /// If not empty, run queries from these files before processing every file from 'queries_files'.
     std::vector<std::string> interleave_queries_files;
 
-    std::unique_ptr<Connection> connection; /// Connection to DB.
+    std::unique_ptr<Connection> connection;    /// Connection to DB.
     String full_query; /// Current query as it was given to the client.
 
     // Current query as it will be sent to the server. It may differ from the
@@ -173,23 +181,23 @@ private:
     // is stripped and sent separately.
     String query_to_send;
 
-    String format; /// Query results output format.
-    bool is_default_format = true; /// false, if format is set in the config or command line.
-    size_t format_max_block_size = 0; /// Max block size for console output.
-    String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
+    String format;                       /// Query results output format.
+    bool is_default_format = true;       /// false, if format is set in the config or command line.
+    size_t format_max_block_size = 0;    /// Max block size for console output.
+    String insert_format;                /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
     SharedContextHolder shared_context = Context::createShared();
-    ContextMutablePtr context = Context::createGlobal(shared_context.get());
+    ContextPtr context = Context::createGlobal(shared_context.get());
 
     /// Buffer that reads from stdin in batch mode.
-    ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
+    ReadBufferFromFileDescriptor std_in {STDIN_FILENO};
 
     /// Console output.
-    WriteBufferFromFileDescriptor std_out{STDOUT_FILENO};
+    WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
@@ -234,9 +242,10 @@ private:
 
     /// The server periodically sends information about how much data was read since last time.
     Progress progress;
+    bool show_progress_bar = false;
 
-    /// Progress bar
-    ProgressBar progress_bar;
+    size_t written_progress_chars = 0;
+    bool written_first_block = false;
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
@@ -278,7 +287,7 @@ private:
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
-            context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+            context->setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
 
         /// Initialize query_id_formats if any
         if (config().has("query_id_formats"))
@@ -313,13 +322,16 @@ private:
             if (std::string::npos != embedded_stack_trace_pos && !print_stack_trace)
                 text.resize(embedded_stack_trace_pos);
 
-            std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
+             std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
 
             /// Don't print the stack trace on the client if it was logged on the server.
             /// Also don't print the stack trace in case of network errors.
-            if (print_stack_trace && e.code() != ErrorCodes::NETWORK_ERROR && std::string::npos == embedded_stack_trace_pos)
+            if (print_stack_trace
+                && e.code() != ErrorCodes::NETWORK_ERROR
+                && std::string::npos == embedded_stack_trace_pos)
             {
-                std::cerr << "Stack trace:" << std::endl << e.getStackTraceString();
+                std::cerr << "Stack trace:" << std::endl
+                    << e.getStackTraceString();
             }
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
@@ -342,7 +354,8 @@ private:
             return false;
 
         LocalDate now(current_time);
-        return (now.month() == 12 && now.day() >= 20) || (now.month() == 1 && now.day() <= 5);
+        return (now.month() == 12 && now.day() >= 20)
+            || (now.month() == 1 && now.day() <= 5);
     }
 
     static bool isChineseNewYearMode(const String & local_tz)
@@ -393,9 +406,9 @@ private:
 
         if (chineseNewYearTimeZoneIndicators + M
             == std::find_if(chineseNewYearTimeZoneIndicators, chineseNewYearTimeZoneIndicators + M, [&local_tz](const char * tz)
-                            {
-                                return tz == local_tz;
-                            }))
+            {
+                return tz == local_tz;
+            }))
             return false;
 
         /// It's bad to be intrusive.
@@ -419,51 +432,52 @@ private:
     {
         using namespace replxx;
 
-        static const std::unordered_map<TokenType, Replxx::Color> token_to_color
-            = {{TokenType::Whitespace, Replxx::Color::DEFAULT},
-               {TokenType::Comment, Replxx::Color::GRAY},
-               {TokenType::BareWord, Replxx::Color::DEFAULT},
-               {TokenType::Number, Replxx::Color::GREEN},
-               {TokenType::StringLiteral, Replxx::Color::CYAN},
-               {TokenType::QuotedIdentifier, Replxx::Color::MAGENTA},
-               {TokenType::OpeningRoundBracket, Replxx::Color::BROWN},
-               {TokenType::ClosingRoundBracket, Replxx::Color::BROWN},
-               {TokenType::OpeningSquareBracket, Replxx::Color::BROWN},
-               {TokenType::ClosingSquareBracket, Replxx::Color::BROWN},
-               {TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE},
-               {TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE},
+        static const std::unordered_map<TokenType, Replxx::Color> token_to_color =
+        {
+            { TokenType::Whitespace, Replxx::Color::DEFAULT },
+            { TokenType::Comment, Replxx::Color::GRAY },
+            { TokenType::BareWord, Replxx::Color::DEFAULT },
+            { TokenType::Number, Replxx::Color::GREEN },
+            { TokenType::StringLiteral, Replxx::Color::CYAN },
+            { TokenType::QuotedIdentifier, Replxx::Color::MAGENTA },
+            { TokenType::OpeningRoundBracket, Replxx::Color::BROWN },
+            { TokenType::ClosingRoundBracket, Replxx::Color::BROWN },
+            { TokenType::OpeningSquareBracket, Replxx::Color::BROWN },
+            { TokenType::ClosingSquareBracket, Replxx::Color::BROWN },
+            { TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE },
+            { TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE },
 
-               {TokenType::Comma, Replxx::Color::INTENSE},
-               {TokenType::Semicolon, Replxx::Color::INTENSE},
-               {TokenType::Dot, Replxx::Color::INTENSE},
-               {TokenType::Asterisk, Replxx::Color::INTENSE},
-               {TokenType::Plus, Replxx::Color::INTENSE},
-               {TokenType::Minus, Replxx::Color::INTENSE},
-               {TokenType::Slash, Replxx::Color::INTENSE},
-               {TokenType::Percent, Replxx::Color::INTENSE},
-               {TokenType::Arrow, Replxx::Color::INTENSE},
-               {TokenType::QuestionMark, Replxx::Color::INTENSE},
-               {TokenType::Colon, Replxx::Color::INTENSE},
-               {TokenType::Equals, Replxx::Color::INTENSE},
-               {TokenType::NotEquals, Replxx::Color::INTENSE},
-               {TokenType::Less, Replxx::Color::INTENSE},
-               {TokenType::Greater, Replxx::Color::INTENSE},
-               {TokenType::LessOrEquals, Replxx::Color::INTENSE},
-               {TokenType::GreaterOrEquals, Replxx::Color::INTENSE},
-               {TokenType::Concatenation, Replxx::Color::INTENSE},
-               {TokenType::At, Replxx::Color::INTENSE},
-               {TokenType::DoubleAt, Replxx::Color::MAGENTA},
+            { TokenType::Comma, Replxx::Color::INTENSE },
+            { TokenType::Semicolon, Replxx::Color::INTENSE },
+            { TokenType::Dot, Replxx::Color::INTENSE },
+            { TokenType::Asterisk, Replxx::Color::INTENSE },
+            { TokenType::Plus, Replxx::Color::INTENSE },
+            { TokenType::Minus, Replxx::Color::INTENSE },
+            { TokenType::Slash, Replxx::Color::INTENSE },
+            { TokenType::Percent, Replxx::Color::INTENSE },
+            { TokenType::Arrow, Replxx::Color::INTENSE },
+            { TokenType::QuestionMark, Replxx::Color::INTENSE },
+            { TokenType::Colon, Replxx::Color::INTENSE },
+            { TokenType::Equals, Replxx::Color::INTENSE },
+            { TokenType::NotEquals, Replxx::Color::INTENSE },
+            { TokenType::Less, Replxx::Color::INTENSE },
+            { TokenType::Greater, Replxx::Color::INTENSE },
+            { TokenType::LessOrEquals, Replxx::Color::INTENSE },
+            { TokenType::GreaterOrEquals, Replxx::Color::INTENSE },
+            { TokenType::Concatenation, Replxx::Color::INTENSE },
+            { TokenType::At, Replxx::Color::INTENSE },
+            { TokenType::DoubleAt, Replxx::Color::MAGENTA },
 
-               {TokenType::EndOfStream, Replxx::Color::DEFAULT},
+            { TokenType::EndOfStream, Replxx::Color::DEFAULT },
 
-               {TokenType::Error, Replxx::Color::RED},
-               {TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED},
-               {TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED},
-               {TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED},
-               {TokenType::ErrorSinglePipeMark, Replxx::Color::RED},
-               {TokenType::ErrorWrongNumber, Replxx::Color::RED},
-               { TokenType::ErrorMaxQuerySizeExceeded,
-                 Replxx::Color::RED }};
+            { TokenType::Error, Replxx::Color::RED },
+            { TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorSinglePipeMark, Replxx::Color::RED },
+            { TokenType::ErrorWrongNumber, Replxx::Color::RED },
+            { TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }
+        };
 
         const Replxx::Color unknown_token_color = Replxx::Color::RED;
 
@@ -536,7 +550,7 @@ private:
 
         if (!is_interactive)
         {
-            progress_bar.need_render_progress = config().getBool("progress", false);
+            need_render_progress = config().getBool("progress", false);
             echo_queries = config().getBool("echo", false);
             ignore_error = config().getBool("ignore-error", false);
         }
@@ -561,16 +575,16 @@ private:
                 catch (...)
                 {
                     std::cerr << "Warning: could not switch to server time zone: " << time_zone
-                              << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
-                              << "Proceeding with local time zone." << std::endl
-                              << std::endl;
+                        << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
+                        << "Proceeding with local time zone."
+                        << std::endl << std::endl;
                 }
             }
             else
             {
                 std::cerr << "Warning: could not determine server time zone. "
-                          << "Proceeding with local time zone." << std::endl
-                          << std::endl;
+                    << "Proceeding with local time zone."
+                    << std::endl << std::endl;
             }
         }
 
@@ -598,7 +612,8 @@ private:
         }
 
         /// Prompt may contain the following substitutions in a form of {name}.
-        std::map<String, String> prompt_substitutions{
+        std::map<String, String> prompt_substitutions
+        {
             {"host", connection_parameters.host},
             {"port", toString(connection_parameters.port)},
             {"user", connection_parameters.user},
@@ -606,7 +621,7 @@ private:
         };
 
         /// Quite suboptimal.
-        for (const auto & [key, value] : prompt_substitutions)
+        for (const auto & [key, value]: prompt_substitutions)
             boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
         if (is_interactive)
@@ -635,8 +650,8 @@ private:
                     history_file = home_path + "/.clickhouse-client-history";
             }
 
-            if (!history_file.empty() && !fs::exists(history_file))
-                FS::createFile(history_file);
+            if (!history_file.empty() && !Poco::File(history_file).exists())
+                Poco::File(history_file).createFile();
 
             LineReader::Patterns query_extenders = {"\\"};
             LineReader::Patterns query_delimiters = {";", "\\G"};
@@ -646,7 +661,13 @@ private:
             if (config().getBool("highlight"))
                 highlight_callback = highlight;
 
-            ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
+            ReplxxLineReader lr(
+                *suggest,
+                history_file,
+                config().has("multiline"),
+                query_extenders,
+                query_delimiters,
+                highlight_callback);
 
 #elif defined(USE_READLINE) && USE_READLINE
             ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
@@ -683,8 +704,8 @@ private:
                     // We don't need to handle the test hints in the interactive
                     // mode.
                     std::cerr << std::endl
-                              << "Exception on client:" << std::endl
-                              << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+                        << "Exception on client:" << std::endl
+                        << "Code: " << e.code() << ". " << e.displayText() << std::endl;
 
                     if (config().getBool("stacktrace", false))
                         std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
@@ -702,7 +723,8 @@ private:
                     /// So we reconnect and allow to enter the next query.
                     connect();
                 }
-            } while (true);
+            }
+            while (true);
 
             if (isNewYearMode())
                 std::cout << "Happy new year." << std::endl;
@@ -722,7 +744,8 @@ private:
 
             // If exception code isn't zero, we should return non-zero return
             // code anyway.
-            const auto * exception = server_exception ? server_exception.get() : client_exception.get();
+            const auto * exception = server_exception
+                ? server_exception.get() : client_exception.get();
             if (exception)
             {
                 return exception->code() != 0 ? exception->code() : -1;
@@ -745,10 +768,10 @@ private:
 
         if (is_interactive)
             std::cout << "Connecting to "
-                      << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
-                                                                          : "")
-                      << connection_parameters.host << ":" << connection_parameters.port
-                      << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+                << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at " : "")
+                << connection_parameters.host << ":" << connection_parameters.port
+                << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "")
+                << "." << std::endl;
 
         connection = std::make_unique<Connection>(
             connection_parameters.host,
@@ -773,8 +796,8 @@ private:
             connection->setThrottler(throttler);
         }
 
-        connection->getServerVersion(
-            connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+        connection->getServerVersion(connection_parameters.timeouts,
+                                     server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
@@ -785,9 +808,10 @@ private:
 
         if (is_interactive)
         {
-            std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                      << std::endl
-                      << std::endl;
+            std::cout << "Connected to " << server_name
+                << " server version " << server_version
+                << " revision " << server_revision
+                << "." << std::endl << std::endl;
 
             auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
             auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
@@ -795,14 +819,14 @@ private:
             if (client_version_tuple < server_version_tuple)
             {
                 std::cout << "ClickHouse client version is older than ClickHouse server. "
-                          << "It may lack support for new features." << std::endl
-                          << std::endl;
+                    << "It may lack support for new features."
+                    << std::endl << std::endl;
             }
             else if (client_version_tuple > server_version_tuple)
             {
                 std::cout << "ClickHouse server version is older than ClickHouse client. "
-                          << "It may indicate that the server is out of date and can be upgraded." << std::endl
-                          << std::endl;
+                    << "It may indicate that the server is out of date and can be upgraded."
+                    << std::endl << std::endl;
             }
         }
     }
@@ -859,7 +883,7 @@ private:
 
     bool processQueryText(const String & text)
     {
-        if (exit_strings.end() != exit_strings.find(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+        if (exit_strings.end() != exit_strings.find(trim(text, [](char c){ return isWhitespaceASCII(c) || c == ';'; })))
             return false;
 
         if (!config().has("multiquery"))
@@ -880,13 +904,15 @@ private:
 
     // Consumes trailing semicolons and tries to consume the same-line trailing
     // comment.
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth)
+    static void adjustQueryEnd(const char *& this_query_end,
+        const char * all_queries_end, int max_parser_depth)
     {
         // We have to skip the trailing semicolon that might be left
         // after VALUES parsing or just after a normal semicolon-terminated query.
         Tokens after_query_tokens(this_query_end, all_queries_end);
         IParser::Pos after_query_iterator(after_query_tokens, max_parser_depth);
-        while (after_query_iterator.isValid() && after_query_iterator->type == TokenType::Semicolon)
+        while (after_query_iterator.isValid()
+           && after_query_iterator->type == TokenType::Semicolon)
         {
             this_query_end = after_query_iterator->end;
             ++after_query_iterator;
@@ -903,7 +929,8 @@ private:
         // newline is some trailing whitespace or comment, and we should
         // add it to our query. There are also several special cases
         // that are described below.
-        const auto * newline = find_first_symbols<'\n'>(this_query_end, all_queries_end);
+        const auto * newline = find_first_symbols<'\n'>(this_query_end,
+            all_queries_end);
         const char * next_query_begin = after_query_iterator->begin;
 
         // We include the entire line if the next query starts after
@@ -929,12 +956,14 @@ private:
         {
             std::string text = server_exception->displayText();
             auto embedded_stack_trace_pos = text.find("Stack trace");
-            if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
+            if (std::string::npos != embedded_stack_trace_pos
+                && !config().getBool("stacktrace", false))
             {
                 text.resize(embedded_stack_trace_pos);
             }
-            std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-                      << "Code: " << server_exception->code() << ". " << text << std::endl;
+            std::cerr << "Received exception from server (version "
+                << server_version << "):" << std::endl << "Code: "
+                << server_exception->code() << ". " << text << std::endl;
             if (is_interactive)
             {
                 std::cerr << std::endl;
@@ -943,7 +972,9 @@ private:
 
         if (client_exception)
         {
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", full_query, client_exception->message());
+            fmt::print(stderr,
+                "Error on processing query '{}':\n{}\n",
+                full_query, client_exception->message());
             if (is_interactive)
             {
                 fmt::print(stderr, "\n");
@@ -987,7 +1018,8 @@ private:
             // Remove leading empty newlines and other whitespace, because they
             // are annoying to filter in query log. This is mostly relevant for
             // the tests.
-            while (this_query_begin < all_queries_end && isWhitespaceASCII(*this_query_begin))
+            while (this_query_begin < all_queries_end
+                 && isWhitespaceASCII(*this_query_begin))
             {
                 ++this_query_begin;
             }
@@ -1005,7 +1037,8 @@ private:
             // and it makes more sense to treat them as such.
             {
                 Tokens tokens(this_query_begin, all_queries_end);
-                IParser::Pos token_iterator(tokens, context->getSettingsRef().max_parser_depth);
+                IParser::Pos token_iterator(tokens,
+                    context->getSettingsRef().max_parser_depth);
                 if (!token_iterator.isValid())
                 {
                     break;
@@ -1023,14 +1056,17 @@ private:
                 // Try to find test hint for syntax error. We don't know where
                 // the query ends because we failed to parse it, so we consume
                 // the entire line.
-                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
+                this_query_end = find_first_symbols<'\n'>(this_query_end,
+                    all_queries_end);
 
-                TestHint hint(test_mode, String(this_query_begin, this_query_end - this_query_begin));
+                TestHint hint(test_mode,
+                    String(this_query_begin, this_query_end - this_query_begin));
 
                 if (hint.serverError())
                 {
                     // Syntax errors are considered as client errors
-                    e.addMessage("\nExpected server error '{}'.", hint.serverError());
+                    e.addMessage("\nExpected server error '{}'.",
+                        hint.serverError());
                     throw;
                 }
 
@@ -1076,13 +1112,18 @@ private:
             auto * insert_ast = parsed_query->as<ASTInsertQuery>();
             if (insert_ast && insert_ast->data)
             {
-                this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
+                this_query_end = find_first_symbols<'\n'>(insert_ast->data,
+                    all_queries_end);
                 insert_ast->end = this_query_end;
-                query_to_send = all_queries_text.substr(this_query_begin - all_queries_text.data(), insert_ast->data - this_query_begin);
+                query_to_send = all_queries_text.substr(
+                    this_query_begin - all_queries_text.data(),
+                    insert_ast->data - this_query_begin);
             }
             else
             {
-                query_to_send = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+                query_to_send = all_queries_text.substr(
+                    this_query_begin - all_queries_text.data(),
+                    this_query_end - this_query_begin);
             }
 
             // Try to include the trailing comment with test hints. It is just
@@ -1091,11 +1132,14 @@ private:
             // after we have processed the query. But even this guess is
             // beneficial so that we see proper trailing comments in "echo" and
             // server log.
-            adjustQueryEnd(this_query_end, all_queries_end, context->getSettingsRef().max_parser_depth);
+            adjustQueryEnd(this_query_end, all_queries_end,
+                context->getSettingsRef().max_parser_depth);
 
             // full_query is the query + inline INSERT data + trailing comments
             // (the latter is our best guess for now).
-            full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+            full_query = all_queries_text.substr(
+                this_query_begin - all_queries_text.data(),
+                this_query_end - this_query_begin);
 
             if (query_fuzzer_runs)
             {
@@ -1114,7 +1158,8 @@ private:
             {
                 // Surprisingly, this is a client error. A server error would
                 // have been reported w/o throwing (see onReceiveSeverException()).
-                client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                client_exception = std::make_unique<Exception>(
+                    getCurrentExceptionMessage(true), getCurrentExceptionCode());
                 have_error = true;
             }
 
@@ -1127,7 +1172,8 @@ private:
             if (insert_ast && insert_ast->data)
             {
                 this_query_end = insert_ast->end;
-                adjustQueryEnd(this_query_end, all_queries_end, context->getSettingsRef().max_parser_depth);
+                adjustQueryEnd(this_query_end, all_queries_end,
+                    context->getSettingsRef().max_parser_depth);
             }
 
             // Now we know for sure where the query ends.
@@ -1135,7 +1181,8 @@ private:
             // comments,
             // e.g. insert into t format CSV 'a' -- { serverError 123 }.
             // Use the updated query boundaries we just calculated.
-            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
+            TestHint test_hint(test_mode, std::string(this_query_begin,
+                this_query_end - this_query_begin));
 
             // Check whether the error (or its absence) matches the test hints
             // (or their absence).
@@ -1147,13 +1194,16 @@ private:
                     if (!server_exception)
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected server error code '{}' but got no server error.\n", test_hint.serverError());
+                        fmt::print(stderr,
+                            "Expected server error code '{}' but got no server error.\n",
+                            test_hint.serverError());
                     }
                     else if (server_exception->code() != test_hint.serverError())
                     {
                         error_matches_hint = false;
-                        std::cerr << "Expected server error code: " << test_hint.serverError() << " but got: " << server_exception->code()
-                                  << "." << std::endl;
+                        std::cerr << "Expected server error code: " <<
+                            test_hint.serverError() << " but got: " <<
+                            server_exception->code() << "." << std::endl;
                     }
                 }
 
@@ -1162,13 +1212,17 @@ private:
                     if (!client_exception)
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected client error code '{}' but got no client error.\n", test_hint.clientError());
+                        fmt::print(stderr,
+                            "Expected client error code '{}' but got no client error.\n",
+                            test_hint.clientError());
                     }
                     else if (client_exception->code() != test_hint.clientError())
                     {
                         error_matches_hint = false;
-                        fmt::print(
-                            stderr, "Expected client error code '{}' but got '{}'.\n", test_hint.clientError(), client_exception->code());
+                        fmt::print(stderr,
+                            "Expected client error code '{}' but got '{}'.\n",
+                            test_hint.clientError(),
+                            client_exception->code());
                     }
                 }
 
@@ -1184,13 +1238,17 @@ private:
             {
                 if (test_hint.clientError())
                 {
-                    fmt::print(stderr, "The query succeeded but the client error '{}' was expected.\n", test_hint.clientError());
+                    fmt::print(stderr,
+                        "The query succeeded but the client error '{}' was expected.\n",
+                        test_hint.clientError());
                     error_matches_hint = false;
                 }
 
                 if (test_hint.serverError())
                 {
-                    fmt::print(stderr, "The query succeeded but the server error '{}' was expected.\n", test_hint.serverError());
+                    fmt::print(stderr,
+                        "The query succeeded but the server error '{}' was expected.\n",
+                        test_hint.serverError());
                     error_matches_hint = false;
                 }
             }
@@ -1242,7 +1300,8 @@ private:
                 {
                     fmt::print(stderr, ", ");
                 }
-                fmt::print(stderr, "{} = '{}'", changes[i].name, toString(changes[i].value));
+                fmt::print(stderr, "{} = '{}'", changes[i].name,
+                           toString(changes[i].value));
             }
             fmt::print(stderr, "\n");
         }
@@ -1290,7 +1349,8 @@ private:
         ASTPtr fuzz_base = orig_ast;
         for (size_t fuzz_step = 0; fuzz_step < this_query_runs; ++fuzz_step)
         {
-            fmt::print(stderr, "Fuzzing step {} out of {}\n", fuzz_step, this_query_runs);
+            fmt::print(stderr, "Fuzzing step {} out of {}\n",
+                fuzz_step, this_query_runs);
 
             ASTPtr ast_to_process;
             try
@@ -1320,12 +1380,10 @@ private:
                 {
                     printChangedSettings();
 
-                    fmt::print(
-                        stderr,
+                    fmt::print(stderr,
                         "Base before fuzz: {}\n"
                         "Base after fuzz: {}\n",
-                        base_before_fuzz,
-                        base_after_fuzz);
+                        base_before_fuzz, base_after_fuzz);
                     fmt::print(stderr, "Dump before fuzz:\n{}\n", dump_before_fuzz.str());
                     fmt::print(stderr, "Dump of cloned AST:\n{}\n", dump_of_cloned_ast.str());
                     fmt::print(stderr, "Dump after fuzz:\n");
@@ -1334,9 +1392,7 @@ private:
                     fuzz_base->dumpTree(cerr_buf);
                     cerr_buf.next();
 
-                    fmt::print(
-                        stderr,
-                        "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
+                    fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
                     exit(1);
                 }
@@ -1360,35 +1416,18 @@ private:
                 // uniformity.
                 // Surprisingly, this is a client exception, because we get the
                 // server exception w/o throwing (see onReceiveException()).
-                client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                client_exception = std::make_unique<Exception>(
+                    getCurrentExceptionMessage(true), getCurrentExceptionCode());
                 have_error = true;
             }
 
             if (have_error)
             {
-                const auto * exception = server_exception ? server_exception.get() : client_exception.get();
-                fmt::print(stderr, "Error on processing query '{}': {}\n", ast_to_process->formatForErrorMessage(), exception->message());
-
-                // Try to reconnect after errors, for two reasons:
-                // 1. We might not have realized that the server died, e.g. if
-                //    it sent us a <Fatal> trace and closed connection properly.
-                // 2. The connection might have gotten into a wrong state and
-                //    the next query will get false positive about
-                //    "Unknown packet from server".
-                try
-                {
-                    connection->forceConnected(connection_parameters.timeouts);
-                }
-                catch (...)
-                {
-                    // Just report it, we'll terminate below.
-                    fmt::print(stderr,
-                        "Error while reconnecting to the server: Code: {}: {}\n",
-                        getCurrentExceptionCode(),
-                        getCurrentExceptionMessage(true));
-
-                    assert(!connection->isConnected());
-                }
+                const auto * exception = server_exception
+                    ? server_exception.get() : client_exception.get();
+                fmt::print(stderr, "Error on processing query '{}': {}\n",
+                    ast_to_process->formatForErrorMessage(),
+                    exception->message());
             }
 
             if (!connection->isConnected())
@@ -1422,26 +1461,18 @@ private:
             // when `lambda()` function gets substituted into a wrong place.
             // To avoid dealing with these cases, run the check only for the
             // queries we were able to successfully execute.
-            // Another caveat is that sometimes WITH queries are not executed,
+            // The final caveat is that sometimes WITH queries are not executed,
             // if they are not referenced by the main SELECT, so they can still
             // have the aforementioned problems. Disable this check for such
             // queries, for lack of a better solution.
-            // There is also a problem that fuzzer substitutes positive Int64
-            // literals or Decimal literals, which are then parsed back as
-            // UInt64, and suddenly duplicate alias substitition starts or stops
-            // working (ASTWithAlias::formatImpl) or something like that.
-            // So we compare not even the first and second formatting of the
-            // query, but second and third.
-            // If you have to add any more workarounds to this check, just remove
-            // it altogether, it's not so useful.
-            if (!have_error && !queryHasWithClause(parsed_query.get()))
+            if (!have_error && queryHasWithClause(parsed_query.get()))
             {
-                ASTPtr ast_2;
+                ASTPtr parsed_formatted_query;
                 try
                 {
                     const auto * tmp_pos = query_to_send.c_str();
-
-                    ast_2 = parseQuery(tmp_pos, tmp_pos + query_to_send.size(),
+                    parsed_formatted_query = parseQuery(tmp_pos,
+                        tmp_pos + query_to_send.size(),
                         false /* allow_multi_statements */);
                 }
                 catch (Exception & e)
@@ -1452,30 +1483,25 @@ private:
                     }
                 }
 
-                if (ast_2)
+                if (parsed_formatted_query)
                 {
-                    const auto text_2 = ast_2->formatForErrorMessage();
-                    const auto * tmp_pos = text_2.c_str();
-                    const auto ast_3 = parseQuery(tmp_pos, tmp_pos + text_2.size(),
-                        false /* allow_multi_statements */);
-                    const auto text_3 = ast_3->formatForErrorMessage();
-                    if (text_3 != text_2)
+                    const auto formatted_twice
+                        = parsed_formatted_query->formatForErrorMessage();
+
+                    if (formatted_twice != query_to_send)
                     {
-                        fmt::print(stderr, "Found error: The query formatting is broken.\n");
+                        fmt::print(stderr, "The query formatting is broken.\n");
 
                         printChangedSettings();
 
-                        fmt::print(stderr,
-                            "Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
-                            text_3, text_2);
+                        fmt::print(stderr, "Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
+                            formatted_twice, query_to_send);
                         fmt::print(stderr, "In more detail:\n");
-                        fmt::print(stderr, "AST-1 (generated by fuzzer):\n'{}'\n", parsed_query->dumpTree());
+                        fmt::print(stderr, "AST-1:\n'{}'\n", parsed_query->dumpTree());
                         fmt::print(stderr, "Text-1 (AST-1 formatted):\n'{}'\n", query_to_send);
-                        fmt::print(stderr, "AST-2 (Text-1 parsed):\n'{}'\n", ast_2->dumpTree());
-                        fmt::print(stderr, "Text-2 (AST-2 formatted):\n'{}'\n", text_2);
-                        fmt::print(stderr, "AST-3 (Text-2 parsed):\n'{}'\n", ast_3->dumpTree());
-                        fmt::print(stderr, "Text-3 (AST-3 formatted):\n'{}'\n", text_3);
-                        fmt::print(stderr, "Text-3 must be equal to Text-2, but it is not.\n");
+                        fmt::print(stderr, "AST-2 (Text-1 parsed):\n'{}'\n", parsed_formatted_query->dumpTree());
+                        fmt::print(stderr, "Text-2 (AST-2 formatted):\n'{}'\n", formatted_twice);
+                        fmt::print(stderr, "Text-1 must be equal to Text-2, but it is not.\n");
 
                         exit(1);
                     }
@@ -1577,17 +1603,14 @@ private:
         watch.restart();
         processed_rows = 0;
         progress.reset();
-        progress_bar.show_progress_bar = false;
-        progress_bar.written_progress_chars = 0;
-        progress_bar.written_first_block = false;
+        show_progress_bar = false;
+        written_progress_chars = 0;
+        written_first_block = false;
 
         {
             /// Temporarily apply query settings to context.
             std::optional<Settings> old_settings;
-            SCOPE_EXIT_SAFE({
-                if (old_settings)
-                    context->setSettings(*old_settings);
-            });
+            SCOPE_EXIT_SAFE({ if (old_settings) context->setSettings(*old_settings); });
             auto apply_query_settings = [&](const IAST & settings_ast)
             {
                 if (!old_settings)
@@ -1646,7 +1669,8 @@ private:
 
         if (is_interactive)
         {
-            std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
+            std::cout << std::endl
+                << processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
 
             if (progress.read_rows >= 1000)
                 writeFinalProgress();
@@ -1716,10 +1740,12 @@ private:
             {
                 /// Retry when the server said "Client should retry" and no rows
                 /// has been received yet.
-                if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
+                if (processed_rows == 0
+                    && e.code() == ErrorCodes::DEADLOCK_AVOIDED
+                    && --retries_left)
                 {
                     std::cerr << "Got a transient error from the server, will"
-                              << " retry (" << retries_left << " retries left)";
+                        << " retry (" << retries_left << " retries left)";
                 }
                 else
                 {
@@ -1761,7 +1787,7 @@ private:
     }
 
 
-    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements)
+    ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
         ParserQuery parser(end);
         ASTPtr res;
@@ -1854,7 +1880,8 @@ private:
                 current_format = insert->format;
         }
 
-        BlockInputStreamPtr block_input = context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+        BlockInputStreamPtr block_input = context->getInputFormat(
+            current_format, buf, sample, insert_format_max_block_size);
 
         if (columns_description.hasDefaults())
             block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, context);
@@ -1947,12 +1974,13 @@ private:
                 /// to avoid losing sync.
                 if (!cancelled)
                 {
-                    auto cancel_query = [&] {
+                    auto cancel_query = [&]
+                    {
                         connection->sendCancel();
                         cancelled = true;
                         if (is_interactive)
                         {
-                            progress_bar.clearProgress();
+                            clearProgress();
                             std::cout << "Cancelling query." << std::endl;
                         }
 
@@ -2041,8 +2069,8 @@ private:
                 return false;
 
             default:
-                throw Exception(
-                    ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                    packet.type, connection->getDescription());
         }
     }
 
@@ -2073,10 +2101,8 @@ private:
                     return receiveSampleBlock(out, columns_description);
 
                 default:
-                    throw NetException(
-                        "Unexpected packet from server (expected Data, Exception or Log, got "
-                            + String(Protocol::Server::toString(packet.type)) + ")",
-                        ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                    throw NetException("Unexpected packet from server (expected Data, Exception or Log, got "
+                        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
             }
         }
     }
@@ -2104,10 +2130,8 @@ private:
                     break;
 
                 default:
-                    throw NetException(
-                        "Unexpected packet from server (expected Exception, EndOfStream or Log, got "
-                            + String(Protocol::Server::toString(packet.type)) + ")",
-                        ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                    throw NetException("Unexpected packet from server (expected Exception, EndOfStream or Log, got "
+                        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
             }
         }
     }
@@ -2179,7 +2203,7 @@ private:
                 current_format = "Vertical";
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-            if (!progress_bar.need_render_progress)
+            if (!need_render_progress)
                 block_out_stream = context->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
             else
                 block_out_stream = context->getOutputStream(current_format, *out_buf, block);
@@ -2210,8 +2234,8 @@ private:
                 }
                 else
                 {
-                    out_logs_buf
-                        = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    out_logs_buf = std::make_unique<WriteBufferFromFile>(
+                        server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
                     wb = out_logs_buf.get();
                 }
             }
@@ -2228,35 +2252,38 @@ private:
             return;
 
         processed_rows += block.rows();
-
-        /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
         initBlockOutputStream(block);
 
         /// The header block containing zero rows was used to initialize
         /// block_out_stream, do not output it.
         /// Also do not output too much data if we're fuzzing.
-        if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
-            return;
+        if (block.rows() != 0
+            && (query_fuzzer_runs == 0 || processed_rows < 100))
+        {
+            block_out_stream->write(block);
+            written_first_block = true;
+        }
 
-        if (progress_bar.need_render_progress)
-            progress_bar.clearProgress();
+        bool clear_progress = false;
+        if (need_render_progress)
+            clear_progress = std_out.offset() > 0;
 
-        block_out_stream->write(block);
-        progress_bar.written_first_block = true;
+        if (clear_progress)
+            clearProgress();
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (progress_bar.need_render_progress)
-            progress_bar.writeProgress(progress, watch.elapsed());
+        if (clear_progress)
+            writeProgress();
     }
 
 
     void onLogData(Block & block)
     {
         initLogsOutputStream();
-        progress_bar.clearProgress();
+        clearProgress();
         logs_out_stream->write(block);
         logs_out_stream->flush();
     }
@@ -2277,26 +2304,128 @@ private:
 
     void onProgress(const Progress & value)
     {
-        if (!progress_bar.updateProgress(progress, value))
+        if (!progress.incrementPiecewiseAtomically(value))
         {
             // Just a keep-alive update.
             return;
         }
         if (block_out_stream)
             block_out_stream->onProgress(value);
-        progress_bar.writeProgress(progress, watch.elapsed());
+
+        writeProgress();
+    }
+
+
+    void clearProgress()
+    {
+        if (written_progress_chars)
+        {
+            written_progress_chars = 0;
+            std::cerr << "\r" CLEAR_TO_END_OF_LINE;
+        }
+    }
+
+
+    void writeProgress()
+    {
+        if (!need_render_progress)
+            return;
+
+        /// Output all progress bar commands to stderr at once to avoid flicker.
+        WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
+
+        static size_t increment = 0;
+        static const char * indicators[8] =
+        {
+            "\033[1;30m→\033[0m",
+            "\033[1;31m↘\033[0m",
+            "\033[1;32m↓\033[0m",
+            "\033[1;33m↙\033[0m",
+            "\033[1;34m←\033[0m",
+            "\033[1;35m↖\033[0m",
+            "\033[1;36m↑\033[0m",
+            "\033[1m↗\033[0m",
+        };
+
+        const char * indicator = indicators[increment % 8];
+
+        size_t terminal_width = getTerminalWidth();
+
+        if (!written_progress_chars)
+        {
+            /// If the current line is not empty, the progress must be output on the next line.
+            /// The trick is found here: https://www.vidarholen.net/contents/blog/?p=878
+            message << std::string(terminal_width, ' ');
+        }
+        message << '\r';
+
+        size_t prefix_size = message.count();
+
+        message << indicator << " Progress: ";
+
+        message
+            << formatReadableQuantity(progress.read_rows) << " rows, "
+            << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
+
+        size_t elapsed_ns = watch.elapsed();
+        if (elapsed_ns)
+            message << " ("
+                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+        else
+            message << ". ";
+
+        written_progress_chars = message.count() - prefix_size - (strlen(indicator) - 2); /// Don't count invisible output (escape sequences).
+
+        /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
+        if (progress.total_rows_to_read > 0)
+        {
+            size_t total_rows_corrected = std::max(progress.read_rows, progress.total_rows_to_read);
+
+            /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start
+            ///  and the query is less than halfway done.
+
+            if (elapsed_ns > 500000000)
+            {
+                /// Trigger to start displaying progress bar. If query is mostly done, don't display it.
+                if (progress.read_rows * 2 < total_rows_corrected)
+                    show_progress_bar = true;
+
+                if (show_progress_bar)
+                {
+                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
+                    if (width_of_progress_bar > 0)
+                    {
+                        std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
+                        message << "\033[0;32m" << bar << "\033[0m";
+                        if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
+                            message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
+                    }
+                }
+            }
+
+            /// Underestimate percentage a bit to avoid displaying 100%.
+            message << ' ' << (99 * progress.read_rows / total_rows_corrected) << '%';
+        }
+
+        message << CLEAR_TO_END_OF_LINE;
+        ++increment;
+
+        message.next();
     }
 
 
     void writeFinalProgress()
     {
-        std::cout << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
-                  << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
+        std::cout << "Processed "
+            << formatReadableQuantity(progress.read_rows) << " rows, "
+            << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
-            std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                      << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
+            std::cout << " ("
+                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
         else
             std::cout << ". ";
     }
@@ -2319,7 +2448,7 @@ private:
 
     void onEndOfStream()
     {
-        progress_bar.clearProgress();
+        clearProgress();
 
         if (block_out_stream)
             block_out_stream->writeSuffix();
@@ -2329,9 +2458,9 @@ private:
 
         resetOutput();
 
-        if (is_interactive && !progress_bar.written_first_block)
+        if (is_interactive && !written_first_block)
         {
-            progress_bar.clearProgress();
+            clearProgress();
             std::cout << "Ok." << std::endl;
         }
     }
@@ -2347,8 +2476,9 @@ private:
         /// It is needed if garbage is left in terminal.
         /// Show cursor. It can be left hidden by invocation of previous programs.
         /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
-        std::cout << "\033[0J"
-                     "\033[?25h";
+        std::cout <<
+            "\033[0J"
+            "\033[?25h";
     }
 
 public:
@@ -2366,7 +2496,7 @@ public:
           */
         using Arguments = std::vector<std::string>;
 
-        Arguments common_arguments{""}; /// 0th argument is ignored.
+        Arguments common_arguments{""};        /// 0th argument is ignored.
         std::vector<Arguments> external_tables_arguments;
 
         bool in_external_group = false;
@@ -2380,19 +2510,22 @@ public:
                 external_tables_arguments.emplace_back(Arguments{""});
             }
             /// Options with value after equal sign.
-            else if (
-                in_external_group
-                && (0 == strncmp(arg, "--file=", strlen("--file=")) || 0 == strncmp(arg, "--name=", strlen("--name="))
-                    || 0 == strncmp(arg, "--format=", strlen("--format=")) || 0 == strncmp(arg, "--structure=", strlen("--structure="))
-                    || 0 == strncmp(arg, "--types=", strlen("--types="))))
+            else if (in_external_group
+                && (0 == strncmp(arg, "--file=", strlen("--file="))
+                 || 0 == strncmp(arg, "--name=", strlen("--name="))
+                 || 0 == strncmp(arg, "--format=", strlen("--format="))
+                 || 0 == strncmp(arg, "--structure=", strlen("--structure="))
+                 || 0 == strncmp(arg, "--types=", strlen("--types="))))
             {
                 external_tables_arguments.back().emplace_back(arg);
             }
             /// Options with value after whitespace.
-            else if (
-                in_external_group
-                && (0 == strcmp(arg, "--file") || 0 == strcmp(arg, "--name") || 0 == strcmp(arg, "--format")
-                    || 0 == strcmp(arg, "--structure") || 0 == strcmp(arg, "--types")))
+            else if (in_external_group
+                && (0 == strcmp(arg, "--file")
+                 || 0 == strcmp(arg, "--name")
+                 || 0 == strcmp(arg, "--format")
+                 || 0 == strcmp(arg, "--structure")
+                 || 0 == strcmp(arg, "--types")))
             {
                 if (arg_num + 1 < argc)
                 {
@@ -2503,10 +2636,13 @@ public:
 
         /// Commandline options related to external tables.
         po::options_description external_description = createOptionsDescription("External tables options", terminal_width);
-        external_description.add_options()("file", po::value<std::string>(), "data file or - for stdin")(
-            "name",
-            po::value<std::string>()->default_value("_data"),
-            "name of the table")("format", po::value<std::string>()->default_value("TabSeparated"), "data format")("structure", po::value<std::string>(), "structure")("types", po::value<std::string>(), "types");
+        external_description.add_options()
+            ("file", po::value<std::string>(), "data file or - for stdin")
+            ("name", po::value<std::string>()->default_value("_data"), "name of the table")
+            ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
+            ("structure", po::value<std::string>(), "structure")
+            ("types", po::value<std::string>(), "types")
+        ;
 
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
@@ -2534,7 +2670,7 @@ public:
 
         /// Output of help message.
         if (options.count("help")
-            || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
+            || (options.count("host") && options["host"].as<std::string>() == "elp"))    /// If user writes -help instead of --help.
         {
             std::cout << main_description << "\n";
             std::cout << external_description << "\n";
@@ -2671,15 +2807,19 @@ public:
         {
             std::string traceparent = options["opentelemetry-traceparent"].as<std::string>();
             std::string error;
-            if (!context->getClientInfo().client_trace_context.parseTraceparentHeader(traceparent, error))
+            if (!context->getClientInfo().client_trace_context.parseTraceparentHeader(
+                traceparent, error))
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse OpenTelemetry traceparent '{}': {}", traceparent, error);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot parse OpenTelemetry traceparent '{}': {}",
+                    traceparent, error);
             }
         }
 
         if (options.count("opentelemetry-tracestate"))
         {
-            context->getClientInfo().client_trace_context.tracestate = options["opentelemetry-tracestate"].as<std::string>();
+            context->getClientInfo().client_trace_context.tracestate =
+                options["opentelemetry-tracestate"].as<std::string>();
         }
 
         argsToConfig(common_arguments, config(), 100);
@@ -2687,6 +2827,7 @@ public:
         clearPasswordFromCommandLine(argc, argv);
     }
 };
+
 }
 
 #pragma GCC diagnostic ignored "-Wunused-function"

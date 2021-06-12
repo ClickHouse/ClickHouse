@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -37,7 +37,7 @@ class FunctionArrayReduce : public IFunction
 {
 public:
     static constexpr auto name = "arrayReduce";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionArrayReduce>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReduce>(); }
 
     String getName() const override { return name; }
 
@@ -107,7 +107,7 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
 
 ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    const IAggregateFunction & agg_func = *aggregate_function;
+    IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
     /// Aggregate functions do not support constant columns. Therefore, we materialize them.
@@ -178,9 +178,9 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
     });
 
     {
-        const auto * that = &agg_func;
+        auto * that = &agg_func;
         /// Unnest consecutive trailing -State combinators
-        while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
+        while (auto * func = typeid_cast<AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
 
         that->addBatchArray(input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());

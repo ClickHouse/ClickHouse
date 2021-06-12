@@ -117,17 +117,16 @@ using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHo
 class BackgroundSchedulePoolTaskHolder;
 
 /// For some reason Context is required to get Storage from Database object
-class DatabaseCatalog : boost::noncopyable, WithMutableContext
+class DatabaseCatalog : boost::noncopyable, WithContext
 {
 public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
 
-    static DatabaseCatalog & init(ContextMutablePtr global_context_);
+    static DatabaseCatalog & init(ContextPtr global_context_);
     static DatabaseCatalog & instance();
     static void shutdown();
 
-    void initializeAndLoadTemporaryDatabase();
     void loadDatabases();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
@@ -209,7 +208,7 @@ private:
     // make emplace(global_context_) compile with private constructor ¯\_(ツ)_/¯.
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
-    explicit DatabaseCatalog(ContextMutablePtr global_context_);
+    explicit DatabaseCatalog(ContextPtr global_context_);
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 
@@ -227,7 +226,7 @@ private:
 
     static inline size_t getFirstLevelIdx(const UUID & uuid)
     {
-        return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
+        return uuid.toUnderType().low >> (64 - bits_for_first_level);
     }
 
     struct TableMarkedAsDropped
@@ -235,7 +234,7 @@ private:
         StorageID table_id = StorageID::createEmpty();
         StoragePtr table;
         String metadata_path;
-        time_t drop_time{};
+        time_t drop_time;
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 

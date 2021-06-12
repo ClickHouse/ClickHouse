@@ -1,6 +1,6 @@
 if (SANITIZE OR NOT (
     ((OS_LINUX OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_ARM OR ARCH_PPC64LE)) OR
-    (OS_DARWIN AND (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo" OR CMAKE_BUILD_TYPE STREQUAL "Debug"))
+    (OS_DARWIN AND CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
 ))
     if (ENABLE_JEMALLOC)
         message (${RECONFIGURE_MESSAGE_LEVEL}
@@ -52,46 +52,46 @@ message (STATUS "jemalloc malloc_conf: ${JEMALLOC_CONFIG_MALLOC_CONF}")
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
 
 set (SRCS
-    "${LIBRARY_DIR}/src/arena.c"
-    "${LIBRARY_DIR}/src/background_thread.c"
-    "${LIBRARY_DIR}/src/base.c"
-    "${LIBRARY_DIR}/src/bin.c"
-    "${LIBRARY_DIR}/src/bitmap.c"
-    "${LIBRARY_DIR}/src/ckh.c"
-    "${LIBRARY_DIR}/src/ctl.c"
-    "${LIBRARY_DIR}/src/div.c"
-    "${LIBRARY_DIR}/src/extent.c"
-    "${LIBRARY_DIR}/src/extent_dss.c"
-    "${LIBRARY_DIR}/src/extent_mmap.c"
-    "${LIBRARY_DIR}/src/hash.c"
-    "${LIBRARY_DIR}/src/hook.c"
-    "${LIBRARY_DIR}/src/jemalloc.c"
-    "${LIBRARY_DIR}/src/large.c"
-    "${LIBRARY_DIR}/src/log.c"
-    "${LIBRARY_DIR}/src/malloc_io.c"
-    "${LIBRARY_DIR}/src/mutex.c"
-    "${LIBRARY_DIR}/src/mutex_pool.c"
-    "${LIBRARY_DIR}/src/nstime.c"
-    "${LIBRARY_DIR}/src/pages.c"
-    "${LIBRARY_DIR}/src/prng.c"
-    "${LIBRARY_DIR}/src/prof.c"
-    "${LIBRARY_DIR}/src/rtree.c"
-    "${LIBRARY_DIR}/src/sc.c"
-    "${LIBRARY_DIR}/src/stats.c"
-    "${LIBRARY_DIR}/src/sz.c"
-    "${LIBRARY_DIR}/src/tcache.c"
-    "${LIBRARY_DIR}/src/test_hooks.c"
-    "${LIBRARY_DIR}/src/ticker.c"
-    "${LIBRARY_DIR}/src/tsd.c"
-    "${LIBRARY_DIR}/src/witness.c"
-    "${LIBRARY_DIR}/src/safety_check.c"
+    ${LIBRARY_DIR}/src/arena.c
+    ${LIBRARY_DIR}/src/background_thread.c
+    ${LIBRARY_DIR}/src/base.c
+    ${LIBRARY_DIR}/src/bin.c
+    ${LIBRARY_DIR}/src/bitmap.c
+    ${LIBRARY_DIR}/src/ckh.c
+    ${LIBRARY_DIR}/src/ctl.c
+    ${LIBRARY_DIR}/src/div.c
+    ${LIBRARY_DIR}/src/extent.c
+    ${LIBRARY_DIR}/src/extent_dss.c
+    ${LIBRARY_DIR}/src/extent_mmap.c
+    ${LIBRARY_DIR}/src/hash.c
+    ${LIBRARY_DIR}/src/hook.c
+    ${LIBRARY_DIR}/src/jemalloc.c
+    ${LIBRARY_DIR}/src/large.c
+    ${LIBRARY_DIR}/src/log.c
+    ${LIBRARY_DIR}/src/malloc_io.c
+    ${LIBRARY_DIR}/src/mutex.c
+    ${LIBRARY_DIR}/src/mutex_pool.c
+    ${LIBRARY_DIR}/src/nstime.c
+    ${LIBRARY_DIR}/src/pages.c
+    ${LIBRARY_DIR}/src/prng.c
+    ${LIBRARY_DIR}/src/prof.c
+    ${LIBRARY_DIR}/src/rtree.c
+    ${LIBRARY_DIR}/src/sc.c
+    ${LIBRARY_DIR}/src/stats.c
+    ${LIBRARY_DIR}/src/sz.c
+    ${LIBRARY_DIR}/src/tcache.c
+    ${LIBRARY_DIR}/src/test_hooks.c
+    ${LIBRARY_DIR}/src/ticker.c
+    ${LIBRARY_DIR}/src/tsd.c
+    ${LIBRARY_DIR}/src/witness.c
+    ${LIBRARY_DIR}/src/safety_check.c
 )
 if (OS_DARWIN)
-    list(APPEND SRCS "${LIBRARY_DIR}/src/zone.c")
+    list(APPEND SRCS ${LIBRARY_DIR}/src/zone.c)
 endif ()
 
 add_library(jemalloc ${SRCS})
-target_include_directories(jemalloc PRIVATE "${LIBRARY_DIR}/include")
+target_include_directories(jemalloc PRIVATE ${LIBRARY_DIR}/include)
 target_include_directories(jemalloc SYSTEM PUBLIC include)
 
 set (JEMALLOC_INCLUDE_PREFIX)
@@ -119,7 +119,7 @@ endif ()
 configure_file(${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h.in
     ${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h)
 target_include_directories(jemalloc SYSTEM PRIVATE
-    "${CMAKE_CURRENT_BINARY_DIR}/${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal")
+    ${CMAKE_CURRENT_BINARY_DIR}/${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal)
 
 target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 

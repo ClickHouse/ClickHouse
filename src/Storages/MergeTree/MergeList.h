@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/BackgroundProcessList.h>
-#include <Interpreters/StorageID.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <list>
@@ -55,7 +54,8 @@ struct FutureMergedMutatedPart;
 
 struct MergeListElement : boost::noncopyable
 {
-    const StorageID table_id;
+    const std::string database;
+    const std::string table;
     std::string partition_id;
 
     const std::string result_part_name;
@@ -94,7 +94,7 @@ struct MergeListElement : boost::noncopyable
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    MergeListElement(const StorageID & table_id_, const FutureMergedMutatedPart & future_part);
+    MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
 
     MergeInfo getInfo() const;
 
@@ -122,13 +122,12 @@ public:
             --merges_with_ttl_counter;
     }
 
-    void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
+    void cancelPartMutations(const String & partition_id, Int64 mutation_version)
     {
         std::lock_guard lock{mutex};
         for (auto & merge_element : entries)
         {
             if ((partition_id.empty() || merge_element.partition_id == partition_id)
-                && merge_element.table_id == table_id
                 && merge_element.source_data_version < mutation_version
                 && merge_element.result_data_version >= mutation_version)
                 merge_element.is_cancelled = true;

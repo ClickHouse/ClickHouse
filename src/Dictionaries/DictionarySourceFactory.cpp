@@ -25,10 +25,9 @@ namespace
         Block block;
 
         if (dict_struct.id)
-        {
             block.insert(ColumnWithTypeAndName{ColumnUInt64::create(1, 0), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
-        }
-        else if (dict_struct.key)
+
+        if (dict_struct.key)
         {
             for (const auto & attribute : *dict_struct.key)
             {
@@ -80,7 +79,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const DictionaryStructure & dict_struct,
-    ContextConstPtr context,
+    ContextPtr context,
     const std::string & default_database,
     bool check_config) const
 {

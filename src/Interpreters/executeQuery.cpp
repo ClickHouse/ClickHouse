@@ -174,7 +174,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal)
             comment,
             joinLines(query));
 
-        if (client_info.client_trace_context.trace_id != UUID())
+        if (client_info.client_trace_context.trace_id)
         {
             LOG_TRACE(&Poco::Logger::get("executeQuery"),
                 "OpenTelemetry traceparent '{}'",
@@ -289,7 +289,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
             query_log->add(elem);
 
     if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-        context->query_trace_context.trace_id != UUID()
+        context->query_trace_context.trace_id
             && opentelemetry_span_log)
     {
         OpenTelemetrySpanLogElement span;
@@ -335,7 +335,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
     }
 }
 
-static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
+static void setQuerySpecificSettings(ASTPtr & ast, ContextPtr context)
 {
     if (auto * ast_insert_into = dynamic_cast<ASTInsertQuery *>(ast.get()))
     {
@@ -347,26 +347,13 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
-    ContextMutablePtr context,
+    ContextPtr context,
     bool internal,
     QueryProcessingStage::Enum stage,
     bool has_query_tail,
     ReadBuffer * istr)
 {
     const auto current_time = std::chrono::system_clock::now();
-
-    auto & client_info = context->getClientInfo();
-
-    // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it
-    // to current time. Internal queries are those executed without an independent client context,
-    // thus should not set initial_query_start_time, because it might introduce data race. It's also
-    // possible to have unset initial_query_start_time for non-internal and non-initial queries. For
-    // example, the query is from an initiator that is running an old version of clickhouse.
-    if (!internal && client_info.initial_query_start_time == 0)
-    {
-        client_info.initial_query_start_time = time_in_seconds(current_time);
-        client_info.initial_query_start_time_microseconds = time_in_microseconds(current_time);
-    }
 
 #if !defined(ARCADIA_BUILD)
     assert(internal || CurrentThread::get().getQueryContext());
@@ -565,7 +552,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         StreamLocalLimits limits;
         if (!interpreter->ignoreLimits())
         {
-            limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
+            limits.mode = LimitsMode::LIMITS_CURRENT;
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
@@ -645,7 +632,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             QueryLogElement elem;
 
-            elem.type = QueryLogElementType::QUERY_START; //-V1048
+            elem.type = QueryLogElementType::QUERY_START;
 
             elem.event_time = time_in_seconds(current_time);
             elem.event_time_microseconds = time_in_microseconds(current_time);
@@ -656,7 +643,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.query = query_for_logging;
             elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
-            elem.client_info = client_info;
+            elem.client_info = context->getClientInfo();
 
             bool log_queries = settings.log_queries && !internal;
 
@@ -669,7 +656,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_databases = info.databases;
                     elem.query_tables = info.tables;
                     elem.query_columns = info.columns;
-                    elem.query_projections = info.projections;
                 }
 
                 interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
@@ -806,7 +792,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-                    context->query_trace_context.trace_id != UUID()
+                    context->query_trace_context.trace_id
                         && opentelemetry_span_log)
                 {
                     OpenTelemetrySpanLogElement span;
@@ -923,7 +909,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 BlockIO executeQuery(
     const String & query,
-    ContextMutablePtr context,
+    ContextPtr context,
     bool internal,
     QueryProcessingStage::Enum stage,
     bool may_have_embedded_data)
@@ -948,7 +934,7 @@ BlockIO executeQuery(
 
 BlockIO executeQuery(
     const String & query,
-    ContextMutablePtr context,
+    ContextPtr context,
     bool internal,
     QueryProcessingStage::Enum stage,
     bool may_have_embedded_data,
@@ -967,7 +953,7 @@ void executeQuery(
     ReadBuffer & istr,
     WriteBuffer & ostr,
     bool allow_into_outfile,
-    ContextMutablePtr context,
+    ContextPtr context,
     std::function<void(const String &, const String &, const String &, const String &)> set_result_details)
 {
     PODArray<char> parse_buf;

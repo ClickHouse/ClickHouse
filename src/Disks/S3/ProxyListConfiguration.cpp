@@ -1,7 +1,5 @@
 #include "ProxyListConfiguration.h"
 
-#if USE_AWS_S3
-
 #include <utility>
 #include <common/logger_useful.h>
 
@@ -28,5 +26,3 @@ Aws::Client::ClientConfigurationPerRequest ProxyListConfiguration::getConfigurat
 }
 
 }
-
-#endif

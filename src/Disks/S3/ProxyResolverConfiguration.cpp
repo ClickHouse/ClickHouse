@@ -1,7 +1,5 @@
 #include "ProxyResolverConfiguration.h"
 
-#if USE_AWS_S3
-
 #include <utility>
 #include <IO/HTTPCommon.h>
 #include "Poco/StreamCopier.h"
@@ -68,5 +66,3 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
 }
 
 }
-
-#endif

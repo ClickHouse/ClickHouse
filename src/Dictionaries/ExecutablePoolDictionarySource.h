@@ -32,6 +32,7 @@ public:
         const String command;
         const String format;
         const size_t pool_size;
+        const String update_field;
         const bool implicit_key;
         const size_t command_termination_timeout;
         const size_t max_command_execution_time;
@@ -41,7 +42,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         Block & sample_block_,
-        ContextConstPtr context_);
+        ContextPtr context_);
 
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
     ExecutablePoolDictionarySource & operator=(const ExecutablePoolDictionarySource &) = delete;
@@ -77,7 +78,7 @@ private:
     const Configuration configuration;
 
     Block sample_block;
-    ContextConstPtr context;
+    ContextPtr context;
     std::shared_ptr<ProcessPool> process_pool;
 };
 

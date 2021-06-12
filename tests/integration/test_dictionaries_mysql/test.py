@@ -2,13 +2,12 @@
 import pymysql.cursors
 import pytest
 from helpers.cluster import ClickHouseCluster
-import time
-import logging
 
-DICTS = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml']
-CONFIG_FILES = ['configs/log_conf.xml', 'configs/remote_servers.xml']
+CONFIG_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml',
+                'configs/remote_servers.xml']
+CONFIG_FILES += ['configs/enable_dictionaries.xml', 'configs/log_conf.xml']
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql=True, dictionaries=DICTS)
+instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql=True)
 
 create_table_mysql_template = """
     CREATE TABLE IF NOT EXISTS `test`.`{}` (
@@ -30,7 +29,7 @@ def started_cluster():
         cluster.start()
 
         # Create a MySQL database
-        mysql_connection = get_mysql_conn(cluster)
+        mysql_connection = get_mysql_conn()
         create_mysql_db(mysql_connection, 'test')
         mysql_connection.close()
 
@@ -38,7 +37,7 @@ def started_cluster():
         instance.query("CREATE DATABASE IF NOT EXISTS test")
 
         # Create database in ClickChouse using MySQL protocol (will be used for data insertion)
-        instance.query("CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql57:3306', 'test', 'root', 'clickhouse')")
+        instance.query("CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql1:3306', 'test', 'root', 'clickhouse')")
 
         yield cluster
 
@@ -53,7 +52,7 @@ def test_load_mysql_dictionaries(started_cluster):
 
     for n in range(0, 5):
         # Create MySQL tables, fill them and create CH dict tables
-        prepare_mysql_table(started_cluster, 'test', str(n))
+        prepare_mysql_table('test', str(n))
 
     # Check dictionaries are loaded and have correct number of elements
     for n in range(0, 100):
@@ -67,12 +66,11 @@ def test_load_mysql_dictionaries(started_cluster):
 
 def create_mysql_db(mysql_connection, name):
     with mysql_connection.cursor() as cursor:
-        cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
-        cursor.execute("CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+        cursor.execute("CREATE DATABASE IF NOT EXISTS {} DEFAULT CHARACTER SET 'utf8'".format(name))
 
 
-def prepare_mysql_table(started_cluster, table_name, index):
-    mysql_connection = get_mysql_conn(started_cluster)
+def prepare_mysql_table(table_name, index):
+    mysql_connection = get_mysql_conn()
 
     # Create table
     create_mysql_table(mysql_connection, table_name + str(index))
@@ -88,22 +86,11 @@ def prepare_mysql_table(started_cluster, table_name, index):
     # Create CH Dictionary tables based on MySQL tables
     query(create_clickhouse_dictionary_table_template.format(table_name + str(index), 'dict' + str(index)))
 
-def get_mysql_conn(started_cluster):
-    errors = []
-    conn = None
-    for _ in range(5):
-        try:
-            if conn is None:
-                conn = pymysql.connect(user='root', password='clickhouse', host=started_cluster.mysql_ip, port=started_cluster.mysql_port)
-            else:
-                conn.ping(reconnect=True)
-            logging.debug(f"MySQL Connection establised: {started_cluster.mysql_ip}:{started_cluster.mysql_port}")
-            return conn
-        except Exception as e:
-            errors += [str(e)]
-            time.sleep(1)
-    
-    raise Exception("Connection not establised, {}".format(errors))
+
+def get_mysql_conn():
+    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.10', port=3308)
+    return conn
+
 
 def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:

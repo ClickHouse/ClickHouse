@@ -8,7 +8,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsConversion.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
@@ -281,7 +281,7 @@ private:
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
 
     String getName() const override
     {
@@ -309,7 +309,7 @@ public:
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + " when arguments size is 1. Should be integer",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDateTime64(arguments[0].type)))
+            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || WhichDataType(arguments[0].type).isDateOrDateTime()))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + " when arguments size is 2 or 3. Should be a integer or a date with time",
@@ -322,7 +322,7 @@ public:
                     "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
                         + ", should be 2 or 3",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!WhichDataType(arguments[0].type).isDateOrDateTime())
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + ". Should be a date or a date with time",

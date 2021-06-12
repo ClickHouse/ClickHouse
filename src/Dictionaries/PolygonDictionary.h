@@ -49,7 +49,6 @@ public:
         Array,
         Tuple,
     };
-
     IPolygonDictionary(
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
@@ -63,14 +62,6 @@ public:
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
-
-    double getFoundRate() const override
-    {
-        size_t queries = query_count.load(std::memory_order_relaxed);
-        if (!queries)
-            return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
-    }
 
     double getHitRate() const override { return 1.0; }
 
@@ -139,10 +130,10 @@ private:
     size_t getAttributeIndex(const std::string & attribute_name) const;
 
     /** Helper function for retrieving the value of an attribute by key. */
-    template <typename AttributeType, typename ValueGetter, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
-        const std::vector<IPolygonDictionary::Point> & requested_key_points,
-        ValueGetter && get_value,
+        size_t attribute_ind,
+        const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
@@ -150,7 +141,6 @@ private:
 
     size_t bytes_allocated = 0;
     mutable std::atomic<size_t> query_count{0};
-    mutable std::atomic<size_t> found_count{0};
 
     /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
      *  corresponding to the row in which any other attributes for this entry are located.

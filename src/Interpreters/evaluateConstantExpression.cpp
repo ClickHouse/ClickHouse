@@ -19,6 +19,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
+
 namespace DB
 {
 
@@ -224,28 +225,24 @@ namespace
                     }
                 }
             }
-            else if (const auto * tuple_literal = right->as<ASTLiteral>(); tuple_literal)
+            else if (const auto * tuple_literal = right->as<ASTLiteral>();
+                tuple_literal && tuple_literal->value.getType() == Field::Types::Tuple)
             {
-                if (tuple_literal->value.getType() == Field::Types::Tuple)
+                const auto & tuple = tuple_literal->value.get<const Tuple &>();
+                for (const auto & child : tuple)
                 {
-                    const auto & tuple = tuple_literal->value.get<const Tuple &>();
-                    for (const auto & child : tuple)
+                    const auto dnf = analyzeEquals(identifier, child, expr);
+
+                    if (dnf.empty())
                     {
-                        const auto dnf = analyzeEquals(identifier, child, expr);
+                        return {};
+                    }
 
-                        if (dnf.empty())
-                        {
-                            return {};
-                        }
-
-                        if (!add_dnf(dnf))
-                        {
-                            return {};
-                        }
+                    if (!add_dnf(dnf))
+                    {
+                        return {};
                     }
                 }
-                else
-                    return analyzeEquals(identifier, tuple_literal, expr);
             }
             else
             {

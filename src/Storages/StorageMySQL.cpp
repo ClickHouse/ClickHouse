@@ -15,7 +15,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
@@ -50,22 +49,18 @@ StorageMySQL::StorageMySQL(
     const std::string & on_duplicate_clause_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
-    ContextPtr context_,
-    const MySQLSettings & mysql_settings_)
+    ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
-    , mysql_settings(mysql_settings_)
     , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -76,7 +71,7 @@ Pipe StorageMySQL::read(
     SelectQueryInfo & query_info_,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t /*max_block_size*/,
+    size_t max_block_size_,
     unsigned)
 {
     metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
@@ -100,11 +95,8 @@ Pipe StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-
-    StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
-        mysql_settings.connection_auto_close);
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MySQLWithFailoverBlockInputStream>(pool, query, sample_block, mysql_input_stream_settings)));
+            std::make_shared<MySQLWithFailoverBlockInputStream>(pool, query, sample_block, max_block_size_, /* auto_close = */ true)));
 }
 
 
@@ -152,9 +144,7 @@ public:
     {
         WriteBufferFromOwnString sqlbuf;
         sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
-        if (!remote_database_name.empty())
-            sqlbuf << backQuoteMySQL(remote_database_name) << ".";
-        sqlbuf << backQuoteMySQL(remote_table_name);
+        sqlbuf << backQuoteMySQL(remote_database_name) << "." << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
         auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
@@ -254,22 +244,8 @@ void registerStorageMySQL(StorageFactory & factory)
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
         size_t max_addresses = args.getContext()->getSettingsRef().glob_expansion_max_elements;
 
-        /// TODO: move some arguments from the arguments to the SETTINGS.
-        MySQLSettings mysql_settings;
-        if (args.storage_def->settings)
-        {
-            mysql_settings.loadFromQuery(*args.storage_def);
-        }
-
-        if (!mysql_settings.connection_pool_size)
-            throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
-
         auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-        mysqlxx::PoolWithFailover pool(remote_database, addresses,
-            username, password,
-            MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-            mysql_settings.connection_pool_size,
-            mysql_settings.connection_max_tries);
+        mysqlxx::PoolWithFailover pool(remote_database, addresses, username, password);
 
         bool replace_query = false;
         std::string on_duplicate_clause;
@@ -292,12 +268,9 @@ void registerStorageMySQL(StorageFactory & factory)
             on_duplicate_clause,
             args.columns,
             args.constraints,
-            args.comment,
-            args.getContext(),
-            mysql_settings);
+            args.getContext());
     },
     {
-        .supports_settings = true,
         .source_access_type = AccessType::MYSQL,
     });
 }

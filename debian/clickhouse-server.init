@@ -229,7 +229,6 @@ status()
 case "$1" in
 status)
     status
-    exit 0
     ;;
 esac
 

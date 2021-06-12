@@ -27,7 +27,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
-
 namespace DB
 {
 
@@ -325,14 +324,14 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // the generic recursion into IAST.children.
 }
 
-void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
+void QueryFuzzer::fuzzWindowFrame(WindowFrame & frame)
 {
     switch (fuzz_rand() % 40)
     {
         case 0:
         {
             const auto r = fuzz_rand() % 3;
-            def.frame_type = r == 0 ? WindowFrame::FrameType::Rows
+            frame.type = r == 0 ? WindowFrame::FrameType::Rows
                 : r == 1 ? WindowFrame::FrameType::Range
                     : WindowFrame::FrameType::Groups;
             break;
@@ -340,65 +339,44 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
         case 1:
         {
             const auto r = fuzz_rand() % 3;
-            def.frame_begin_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
+            frame.begin_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
                 : r == 1 ? WindowFrame::BoundaryType::Current
                     : WindowFrame::BoundaryType::Offset;
-
-            if (def.frame_begin_type == WindowFrame::BoundaryType::Offset)
-            {
-                // The offsets are fuzzed normally through 'children'.
-                def.frame_begin_offset
-                    = std::make_shared<ASTLiteral>(getRandomField(0));
-            }
-            else
-            {
-                def.frame_begin_offset = nullptr;
-            }
             break;
         }
         case 2:
         {
             const auto r = fuzz_rand() % 3;
-            def.frame_end_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
+            frame.end_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
                 : r == 1 ? WindowFrame::BoundaryType::Current
                     : WindowFrame::BoundaryType::Offset;
-
-            if (def.frame_end_type == WindowFrame::BoundaryType::Offset)
-            {
-                def.frame_end_offset
-                    = std::make_shared<ASTLiteral>(getRandomField(0));
-            }
-            else
-            {
-                def.frame_end_offset = nullptr;
-            }
+            break;
+        }
+        case 3:
+        {
+            frame.begin_offset = getRandomField(0).get<Int64>();
+            break;
+        }
+        case 4:
+        {
+            frame.end_offset = getRandomField(0).get<Int64>();
             break;
         }
         case 5:
         {
-            def.frame_begin_preceding = fuzz_rand() % 2;
+            frame.begin_preceding = fuzz_rand() % 2;
             break;
         }
         case 6:
         {
-            def.frame_end_preceding = fuzz_rand() % 2;
+            frame.end_preceding = fuzz_rand() % 2;
             break;
         }
         default:
             break;
     }
 
-    if (def.frame_type == WindowFrame::FrameType::Range
-        && def.frame_begin_type == WindowFrame::BoundaryType::Unbounded
-        && def.frame_begin_preceding
-        && def.frame_end_type == WindowFrame::BoundaryType::Current)
-    {
-        def.frame_is_default = true; /* NOLINT clang-tidy could you just shut up please */
-    }
-    else
-    {
-        def.frame_is_default = false;
-    }
+    frame.is_default = (frame == WindowFrame{});
 }
 
 void QueryFuzzer::fuzz(ASTs & asts)
@@ -485,7 +463,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             auto & def = fn->window_definition->as<ASTWindowDefinition &>();
             fuzzColumnLikeExpressionList(def.partition_by.get());
             fuzzOrderByList(def.order_by.get());
-            fuzzWindowFrame(def);
+            fuzzWindowFrame(def.frame);
         }
 
         fuzz(fn->children);

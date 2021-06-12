@@ -28,10 +28,7 @@ struct ExtractTopLevelDomain
                 return;
 
             /// For IPv4 addresses select nothing.
-            ///
-            /// NOTE: it is safe to access last_dot[1]
-            /// since getURLHost() will not return a host if there is symbol after dot.
-            if (isNumericASCII(last_dot[1]))
+            if (last_dot[1] <= '9')
                 return;
 
             res_data = last_dot + 1;

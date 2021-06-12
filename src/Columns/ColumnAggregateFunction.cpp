@@ -162,12 +162,12 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     return res;
 }
 
-MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, ContextConstPtr context) const
+MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, ContextPtr context) const
 {
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    const auto * machine_learning_function = func.get();
+    auto * machine_learning_function = func.get();
     if (machine_learning_function)
     {
         if (data.size() == 1)
@@ -485,7 +485,7 @@ Arena & ColumnAggregateFunction::createOrGetArena()
 }
 
 
-static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, const IAggregateFunction * func)
+static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, IAggregateFunction * func)
 {
     data.push_back(arena.alignedAlloc(func->sizeOfData(), func->alignOfData()));
     try

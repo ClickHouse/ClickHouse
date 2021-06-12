@@ -3,13 +3,13 @@
 #include <city.h>
 #include <Core/Defines.h>
 #include <Common/SipHash.h>
+#include <Common/UInt128.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnTuple.h>
 
 
 namespace DB
 {
-struct Settings;
 
 /** Hashes a set of arguments to the aggregate function
   *  to calculate the number of unique values
@@ -107,7 +107,7 @@ struct UniqVariadicHash<true, false>
         }
 
         UInt128 key;
-        hash.get128(key);
+        hash.get128(key.low, key.high);
         return key;
     }
 };
@@ -131,7 +131,7 @@ struct UniqVariadicHash<true, true>
         }
 
         UInt128 key;
-        hash.get128(key);
+        hash.get128(key.low, key.high);
         return key;
     }
 };

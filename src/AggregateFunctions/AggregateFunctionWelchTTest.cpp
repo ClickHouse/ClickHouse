@@ -3,6 +3,8 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Moments.h>
 
+#include "registerAggregateFunctions.h"
+
 
 namespace ErrorCodes
 {
@@ -12,7 +14,6 @@ namespace ErrorCodes
 
 namespace DB
 {
-struct Settings;
 
 namespace
 {
@@ -52,8 +53,7 @@ struct WelchTTestData : public TTestMoments<Float64>
     }
 };
 
-AggregateFunctionPtr createAggregateFunctionWelchTTest(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertBinary(name, argument_types);
     assertNoParameters(name, parameters);

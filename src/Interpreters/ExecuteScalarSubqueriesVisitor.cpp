@@ -3,6 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>

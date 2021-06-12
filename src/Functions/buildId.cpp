@@ -1,6 +1,6 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/SymbolIndex.h>
@@ -18,7 +18,7 @@ class FunctionBuildId : public IFunction
 {
 public:
     static constexpr auto name = "buildId";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBuildId>();
     }

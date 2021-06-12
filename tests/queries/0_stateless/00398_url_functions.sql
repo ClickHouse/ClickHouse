@@ -38,9 +38,6 @@ SELECT topLevelDomain('svn+ssh://example.ru.?q=hello%20world') AS Domain;
 SELECT topLevelDomain('//www.example.com') AS Domain;
 SELECT topLevelDomain('www.example.com') as Domain;
 SELECT topLevelDomain('example.com') as Domain;
-SELECT topLevelDomain('example.рф') as Domain;
-SELECT topLevelDomain('example.') as Domain;
-SELECT topLevelDomain('example') as Domain;
 
 SELECT '====PATH====';
 SELECT decodeURLComponent('%D0%9F');

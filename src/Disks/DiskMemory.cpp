@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Poco/Path.h>
 
 
 namespace DB
@@ -23,7 +24,7 @@ namespace ErrorCodes
 class DiskMemoryDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
-    explicit DiskMemoryDirectoryIterator(std::vector<fs::path> && dir_file_paths_)
+    explicit DiskMemoryDirectoryIterator(std::vector<Poco::Path> && dir_file_paths_)
         : dir_file_paths(std::move(dir_file_paths_)), iter(dir_file_paths.begin())
     {
     }
@@ -32,13 +33,13 @@ public:
 
     bool isValid() const override { return iter != dir_file_paths.end(); }
 
-    String path() const override { return iter->string(); }
+    String path() const override { return (*iter).toString(); }
 
-    String name() const override { return iter->filename(); }
+    String name() const override { return (*iter).getFileName(); }
 
 private:
-    std::vector<fs::path> dir_file_paths;
-    std::vector<fs::path>::iterator iter;
+    std::vector<Poco::Path> dir_file_paths;
+    std::vector<Poco::Path>::iterator iter;
 };
 
 
@@ -267,7 +268,7 @@ DiskDirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path)
     if (!path.empty() && files.find(path) == files.end())
         throw Exception("Directory '" + path + "' does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
-    std::vector<fs::path> dir_file_paths;
+    std::vector<Poco::Path> dir_file_paths;
     for (const auto & file : files)
         if (parentPath(file.first) == path)
             dir_file_paths.emplace_back(file.first);

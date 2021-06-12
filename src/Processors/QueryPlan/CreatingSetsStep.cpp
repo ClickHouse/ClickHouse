@@ -3,7 +3,6 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -55,20 +54,11 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     settings.out << prefix;
     if (subquery_for_set.set)
         settings.out << "Set: ";
-    // else if (subquery_for_set.join)
-    //     settings.out << "Join: ";
+    else if (subquery_for_set.join)
+        settings.out << "Join: ";
 
     settings.out << description << '\n';
 }
-
-void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    if (subquery_for_set.set)
-        map.add("Set", description);
-    // else if (subquery_for_set.join)
-    //     map.add("Join", description);
-}
-
 
 CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
 {
@@ -134,6 +124,8 @@ void addCreatingSetsStep(
             continue;
 
         auto plan = std::move(set.source);
+        std::string type = (set.join != nullptr) ? "JOIN"
+                                                 : "subquery";
 
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
@@ -141,7 +133,7 @@ void addCreatingSetsStep(
                 std::move(set),
                 limits,
                 context);
-        creating_set->setStepDescription("Create set for subquery");
+        creating_set->setStepDescription("Create set for " + type);
         plan->addStep(std::move(creating_set));
 
         input_streams.emplace_back(plan->getCurrentDataStream());

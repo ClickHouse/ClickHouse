@@ -81,18 +81,18 @@ select query from system.query_log where
     type = 'QueryFinish'
 order by query;
 
--- not tuple
-select * from dist_01756 where dummy in (0);
-select * from dist_01756 where dummy in ('0');
-
 --
 -- errors
 --
 select 'errors';
 
+-- not tuple
+select * from dist_01756 where dummy in (0); -- { serverError 507 }
 -- optimize_skip_unused_shards does not support non-constants
 select * from dist_01756 where dummy in (select * from system.one); -- { serverError 507 }
 select * from dist_01756 where dummy in (toUInt8(0)); -- { serverError 507 }
+-- wrong type (tuple)
+select * from dist_01756 where dummy in ('0'); -- { serverError 507 }
 -- intHash64 does not accept string
 select * from dist_01756 where dummy in ('0', '2'); -- { serverError 43 }
 -- NOT IN does not supported

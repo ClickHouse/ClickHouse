@@ -38,14 +38,6 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
-    double getFoundRate() const override
-    {
-        size_t queries = query_count.load(std::memory_order_relaxed);
-        if (!queries)
-            return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
-    }
-
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
@@ -102,22 +94,17 @@ private:
             UInt32,
             UInt64,
             UInt128,
-            UInt256,
             Int8,
             Int16,
             Int32,
             Int64,
-            Int128,
-            Int256,
             Decimal32,
             Decimal64,
             Decimal128,
             Decimal256,
             Float32,
             Float64,
-            UUID,
-            String,
-            Array>
+            String>
             null_values;
         std::variant<
             ContainerType<UInt8>,
@@ -125,22 +112,17 @@ private:
             ContainerType<UInt32>,
             ContainerType<UInt64>,
             ContainerType<UInt128>,
-            ContainerType<UInt256>,
             ContainerType<Int8>,
             ContainerType<Int16>,
             ContainerType<Int32>,
             ContainerType<Int64>,
-            ContainerType<Int128>,
-            ContainerType<Int256>,
             ContainerType<Decimal32>,
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
             ContainerType<Float32>,
             ContainerType<Float64>,
-            ContainerType<UUID>,
-            ContainerType<StringRef>,
-            ContainerType<Array>>
+            ContainerType<StringRef>>
             maps;
         std::unique_ptr<Arena> string_arena;
     };
@@ -159,14 +141,14 @@ private:
 
     static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
-    template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsByTwoKeyColumnsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType,typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
@@ -220,7 +202,6 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
-    mutable std::atomic<size_t> found_count{0};
 
     Poco::Logger * logger;
 };

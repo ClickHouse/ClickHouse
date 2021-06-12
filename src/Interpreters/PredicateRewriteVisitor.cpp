@@ -17,12 +17,12 @@ namespace DB
 {
 
 PredicateRewriteVisitorData::PredicateRewriteVisitorData(
-    ContextConstPtr context_,
+    ContextPtr context_,
     const ASTs & predicates_,
     const TableWithColumnNamesAndTypes & table_columns_,
     bool optimize_final_,
     bool optimize_with_)
-    : WithConstContext(context_)
+    : WithContext(context_)
     , predicates(predicates_)
     , table_columns(table_columns_)
     , optimize_final(optimize_final_)
@@ -72,9 +72,7 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
     }
 
     const Names & internal_columns = InterpreterSelectQuery(
-        temp_internal_select,
-        const_pointer_cast<Context>(getContext()),
-        SelectQueryOptions().analyze()).getSampleBlock().getNames();
+        temp_internal_select, getContext(), SelectQueryOptions().analyze()).getSampleBlock().getNames();
 
     if (rewriteSubquery(*temp_select_query, internal_columns))
     {

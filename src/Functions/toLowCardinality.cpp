@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -14,7 +14,7 @@ class FunctionToLowCardinality: public IFunction
 {
 public:
     static constexpr auto name = "toLowCardinality";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionToLowCardinality>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToLowCardinality>(); }
 
     String getName() const override { return name; }
 

@@ -10,8 +10,6 @@ The list of available `SYSTEM` statements:
 -   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
--   [RELOAD MODELS](#query_language-system-reload-models)
--   [RELOAD MODEL](#query_language-system-reload-model)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
@@ -60,26 +58,6 @@ The status of the dictionary can be checked by querying the `system.dictionaries
 
 ``` sql
 SELECT name, status FROM system.dictionaries;
-```
-
-## RELOAD MODELS {#query_language-system-reload-models}
-
-Reloads all [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) models if the configuration was updated without restarting the server.
-
-**Syntax**
-
-```sql
-SYSTEM RELOAD MODELS
-```
-
-## RELOAD MODEL {#query_language-system-reload-model}
-
-Completely reloads a CatBoost model `model_name` if the configuration was updated without restarting the server.
-
-**Syntax**
-
-```sql
-SYSTEM RELOAD MODEL <model_name>
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
@@ -191,7 +169,7 @@ SYSTEM START MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name
 ### STOP TTL MERGES {#query_language-stop-ttl-merges}
 
 Provides possibility to stop background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
-Returns `Ok.` even if table does not exist or table has not MergeTree engine. Returns error when database does not exist:
+Returns `Ok.` even if table doesn’t exist or table has not MergeTree engine. Returns error when database doesn’t exist:
 
 ``` sql
 SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
@@ -200,7 +178,7 @@ SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
 ### START TTL MERGES {#query_language-start-ttl-merges}
 
 Provides possibility to start background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
-Returns `Ok.` even if table does not exist. Returns error when database does not exist:
+Returns `Ok.` even if table doesn’t exist. Returns error when database doesn’t exist:
 
 ``` sql
 SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
@@ -209,7 +187,7 @@ SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
 ### STOP MOVES {#query_language-stop-moves}
 
 Provides possibility to stop background move data according to [TTL table expression with TO VOLUME or TO DISK clause](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) for tables in the MergeTree family:
-Returns `Ok.` even if table does not exist. Returns error when database does not exist:
+Returns `Ok.` even if table doesn’t exist. Returns error when database doesn’t exist:
 
 ``` sql
 SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
@@ -218,10 +196,10 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 ### START MOVES {#query_language-start-moves}
 
 Provides possibility to start background move data according to [TTL table expression with TO VOLUME and TO DISK clause](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) for tables in the MergeTree family:
-Returns `Ok.` even if table does not exist. Returns error when database does not exist:
+Returns `Ok.` even if table doesn’t exist. Returns error when database doesn’t exist:
 
 ``` sql
-SYSTEM START MOVES [[db.]merge_tree_family_table_name]
+SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 ```
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
@@ -231,7 +209,7 @@ ClickHouse can manage background replication related processes in [ReplicatedMer
 ### STOP FETCHES {#query_language-system-stop-fetches}
 
 Provides possibility to stop background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
-Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
+Always returns `Ok.` regardless of the table engine and even if table or database doesn’t exist.
 
 ``` sql
 SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
@@ -240,7 +218,7 @@ SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ### START FETCHES {#query_language-system-start-fetches}
 
 Provides possibility to start background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
-Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
+Always returns `Ok.` regardless of the table engine and even if table or database doesn’t exist.
 
 ``` sql
 SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
@@ -286,7 +264,9 @@ Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a
 SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
-After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands.
+After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from
+the common replicated log into its own replication queue, and then the query waits till the replica processes all
+of the fetched commands.
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 

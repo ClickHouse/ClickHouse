@@ -26,4 +26,5 @@
     <path>./clickhouse/</path>
     <users_config>users.xml</users_config>
 
+    <dictionaries_config>/etc/clickhouse-server/config.d/*.xml</dictionaries_config>
 </yandex>

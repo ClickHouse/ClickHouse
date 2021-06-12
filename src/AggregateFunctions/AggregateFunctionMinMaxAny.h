@@ -15,8 +15,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -183,7 +181,7 @@ public:
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct SingleValueDataString //-V730
+struct SingleValueDataString
 {
 private:
     using Self = SingleValueDataString;
@@ -637,7 +635,7 @@ struct AggregateFunctionAnyLastData : Data
 template <typename Data>
 struct AggregateFunctionAnyHeavyData : Data
 {
-    UInt64 counter = 0;
+    size_t counter = 0;
 
     using Self = AggregateFunctionAnyHeavyData;
 
@@ -700,11 +698,13 @@ template <typename Data>
 class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
 private:
+    DataTypePtr type;
     SerializationPtr serialization;
 
 public:
-    AggregateFunctionsSingleValue(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {})
+    AggregateFunctionsSingleValue(const DataTypePtr & type_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type_}, {})
+        , type(this->argument_types[0])
         , serialization(type->getDefaultSerialization())
     {
         if (StringRef(Data::name()) == StringRef("min")
@@ -720,7 +720,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return this->argument_types.at(0);
+        return type;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override

@@ -15,6 +15,8 @@
 
 #include <Core/iostream_debug_helpers.h>
 
+namespace std
+{
 
 template <typename T>
 inline std::ostream& operator<<(std::ostream & ostr, const std::vector<T> & v)
@@ -25,6 +27,8 @@ inline std::ostream& operator<<(std::ostream & ostr, const std::vector<T> & v)
         ostr << i << ", ";
     }
     return ostr << "] (" << v.size() << ") items";
+}
+
 }
 
 using namespace DB;

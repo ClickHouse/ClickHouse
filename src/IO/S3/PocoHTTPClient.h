@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
@@ -31,14 +29,13 @@ class ClientFactory;
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
-    String force_region;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
 
     void updateSchemeAndRegion();
 
 private:
-    PocoHTTPClientConfiguration(const String & force_region_, const RemoteHostFilter & remote_host_filter_, unsigned int s3_max_redirects_);
+    PocoHTTPClientConfiguration(const RemoteHostFilter & remote_host_filter_, unsigned int s3_max_redirects_);
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
     friend ClientFactory;

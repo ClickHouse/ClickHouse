@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionForEach.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <Common/typeid_cast.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB

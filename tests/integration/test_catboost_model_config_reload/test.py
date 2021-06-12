@@ -42,9 +42,6 @@ def change_config(model_config):
 
 
 def test(started_cluster):
-    if node.is_built_with_memory_sanitizer():
-        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
-
     # Set config with the path to the first model.
     change_config("model_config.xml")
 

@@ -70,27 +70,17 @@ ColumnPtr FlatDictionary::getColumn(
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto & attribute_null_value = std::get<ValueType>(attribute.null_values);
+        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
         AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
         DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
-        if constexpr (std::is_same_v<ValueType, Array>)
+        if constexpr (std::is_same_v<ValueType, StringRef>)
         {
             auto * out = column.get();
 
-            getItemsImpl<ValueType>(
-                attribute,
-                ids,
-                [&](const size_t, const Array & value) { out->insert(value); },
-                default_value_extractor);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
-
-            getItemsImpl<ValueType>(
+            getItemsImpl<ValueType, ValueType>(
                 attribute,
                 ids,
                 [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -100,7 +90,7 @@ ColumnPtr FlatDictionary::getColumn(
         {
             auto & out = column->getData();
 
-            getItemsImpl<ValueType>(
+            getItemsImpl<ValueType, ValueType>(
                 attribute,
                 ids,
                 [&](const size_t row, const auto value) { out[row] = value; },
@@ -140,17 +130,13 @@ ColumnUInt8::Ptr FlatDictionary::hasKeys(const Columns & key_columns, const Data
     auto result = ColumnUInt8::create(keys_size);
     auto & out = result->getData();
 
-    size_t keys_found = 0;
-
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
         const auto key = keys[key_index];
         out[key_index] = key < loaded_keys.size() && loaded_keys[key];
-        keys_found += out[key_index];
     }
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -168,20 +154,16 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
 
     auto is_key_valid_func = [&, this](auto & key) { return key < loaded_keys.size() && loaded_keys[key]; };
 
-    size_t keys_found = 0;
-
     auto get_parent_key_func = [&, this](auto & hierarchy_key)
     {
         bool is_key_valid = hierarchy_key < loaded_keys.size() && loaded_keys[hierarchy_key];
         std::optional<UInt64> result = is_key_valid ? std::make_optional(parent_keys[hierarchy_key]) : std::nullopt;
-        keys_found += result.has_value();
         return result;
     };
 
     auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_key_func);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return dictionary_hierarchy_array;
 }
@@ -205,20 +187,16 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
 
     auto is_key_valid_func = [&, this](auto & key) { return key < loaded_keys.size() && loaded_keys[key]; };
 
-    size_t keys_found = 0;
-
     auto get_parent_key_func = [&, this](auto & hierarchy_key)
     {
         bool is_key_valid = hierarchy_key < loaded_keys.size() && loaded_keys[hierarchy_key];
         std::optional<UInt64> result = is_key_valid ? std::make_optional(parent_keys[hierarchy_key]) : std::nullopt;
-        keys_found += result.has_value();
         return result;
     };
 
     auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_key_func);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -245,11 +223,9 @@ ColumnPtr FlatDictionary::getDescendants(
             parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
     }
 
-    size_t keys_found;
-    auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+    auto result = getKeysDescendantsArray(keys, parent_to_child, level);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -285,7 +261,6 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
             if (already_processed_keys.find(key) != nullptr)
                 continue;
-
             already_processed_keys.insert(key);
 
             setAttributeValue(attribute, key, attribute_column[i]);
@@ -363,18 +338,7 @@ void FlatDictionary::calculateBytesAllocated()
             using ValueType = DictionaryValueType<AttributeType>;
 
             const auto & container = std::get<ContainerType<ValueType>>(attribute.container);
-            bytes_allocated += sizeof(ContainerType<ValueType>);
-
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                /// It is not accurate calculations
-                bytes_allocated += sizeof(Array) * container.size();
-            }
-            else
-            {
-                bytes_allocated += container.allocated_bytes();
-            }
-
+            bytes_allocated += sizeof(PaddedPODArray<ValueType>) + container.allocated_bytes();
             bucket_count = container.capacity();
 
             if constexpr (std::is_same_v<ValueType, StringRef>)
@@ -418,7 +382,7 @@ FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttrib
     return attribute;
 }
 
-template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void FlatDictionary::getItemsImpl(
     const Attribute & attribute,
     const PaddedPODArray<UInt64> & keys,
@@ -428,23 +392,17 @@ void FlatDictionary::getItemsImpl(
     const auto & container = std::get<ContainerType<AttributeType>>(attribute.container);
     const auto rows = keys.size();
 
-    size_t keys_found = 0;
-
     for (size_t row = 0; row < rows; ++row)
     {
         const auto key = keys[row];
 
         if (key < loaded_keys.size() && loaded_keys[key])
-        {
-            set_value(row, container[key]);
-            ++keys_found;
-        }
+            set_value(row, static_cast<OutputType>(container[key]));
         else
             set_value(row, default_value_extractor[row]);
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -462,11 +420,7 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
     {
         const size_t elements_count = key + 1; //id=0 -> elements_count=1
         loaded_keys.resize(elements_count, false);
-
-        if constexpr (std::is_same_v<T, Array>)
-            container.resize(elements_count, std::get<T>(attribute.null_values));
-        else
-            container.resize_fill(elements_count, std::get<T>(attribute.null_values));
+        container.resize_fill(elements_count, std::get<T>(attribute.null_values));
     }
 }
 
@@ -487,13 +441,13 @@ void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, UInt64
 
 void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, const Field & value)
 {
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
+        using ResizeType = std::conditional_t<std::is_same_v<AttributeType, String>, StringRef, AttributeType>;
 
-        resize<ValueType>(attribute, key);
+        resize<ResizeType>(attribute, key);
 
         if (attribute.nullable_set)
         {
@@ -528,12 +482,10 @@ BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_nam
 void registerDictionaryFlat(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & full_name,
-                            const DictionaryStructure & dict_struct,
-                            const Poco::Util::AbstractConfiguration & config,
-                            const std::string & config_prefix,
-                            DictionarySourcePtr source_ptr,
-                            ContextConstPtr /* context */,
-                            bool /* created_from_ddl */) -> DictionaryPtr
+                             const DictionaryStructure & dict_struct,
+                             const Poco::Util::AbstractConfiguration & config,
+                             const std::string & config_prefix,
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
         if (dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'flat'");
