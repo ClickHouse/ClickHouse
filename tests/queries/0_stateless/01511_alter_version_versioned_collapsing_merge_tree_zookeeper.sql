@@ -8,7 +8,7 @@ CREATE TABLE table_with_version_replicated_1
     version UInt8,
     sign Int8
 )
-ENGINE ReplicatedVersionedCollapsingMergeTree('/clickhouse/test_01511/t', '1', sign, version)
+ENGINE ReplicatedVersionedCollapsingMergeTree('/clickhouse/' || currentDatabase() || '/test_01511/t', '1', sign, version)
 ORDER BY key;
 
 CREATE TABLE table_with_version_replicated_2
@@ -18,7 +18,7 @@ CREATE TABLE table_with_version_replicated_2
     version UInt8,
     sign Int8
 )
-ENGINE ReplicatedVersionedCollapsingMergeTree('/clickhouse/test_01511/t', '2', sign, version)
+ENGINE ReplicatedVersionedCollapsingMergeTree('/clickhouse/' || currentDatabase() || '/test_01511/t', '2', sign, version)
 ORDER BY key;
 
 INSERT INTO table_with_version_replicated_1 VALUES (1, '1', 1, -1);
