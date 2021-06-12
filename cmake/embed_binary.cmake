@@ -33,6 +33,14 @@ macro(clickhouse_embed_binaries)
         message(FATAL_ERROR "The list of binary resources to embed may not be empty")
     endif()
 
+    # If cross-compiling, ensure we use the toolchain file and target the
+    # actual target architecture
+    if (CMAKE_CROSSCOMPILING)
+        set(CROSS_COMPILE_FLAGS "--target=${CMAKE_C_COMPILER_TARGET} --gcc-toolchain=${TOOLCHAIN_FILE}")
+    else()
+        set(CROSS_COMPILE_FLAGS "")
+    endif()
+
     set(EMBED_TEMPLATE_FILE "${PROJECT_SOURCE_DIR}/programs/embed_binary.S.in")
     set(RESOURCE_OBJS)
     foreach(RESOURCE_FILE ${EMBED_RESOURCES})
@@ -56,7 +64,7 @@ macro(clickhouse_embed_binaries)
         add_custom_command(
             OUTPUT ${RESOURCE_OBJ}
             COMMAND cd "${EMBED_RESOURCE_DIR}" &&
-                ${CMAKE_C_COMPILER} -c -o
+                 ${CMAKE_C_COMPILER} "${CROSS_COMPILE_FLAGS}" -c -o
                     "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}"
                     "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}"
         )
