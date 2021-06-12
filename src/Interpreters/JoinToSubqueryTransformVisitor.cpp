@@ -92,7 +92,20 @@ public:
             {
                 if (should_add_column_predicate(column.name))
                 {
-                    auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name});
+                    ASTPtr identifier;
+                    if (it->first.empty())
+                        /// We want tables from JOIN to have aliases.
+                        /// But it is possible to set joined_subquery_requires_alias = 0,
+                        /// and write a query like `select * FROM (SELECT 1), (SELECT 1), (SELECT 1)`.
+                        /// If so, table name will be empty here.
+                        ///
+                        /// We cannot create compound identifier with empty part (there is an assert).
+                        /// So, try our luck and use only column name.
+                        /// (Rewriting AST for JOIN is not an efficient design).
+                        identifier = std::make_shared<ASTIdentifier>(column.name);
+                    else
+                        identifier = std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name});
+
                     new_select_expression_list->children.emplace_back(std::move(identifier));
                 }
             }
