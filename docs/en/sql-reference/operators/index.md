@@ -188,6 +188,45 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 └─────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
+You can set the period without using `INTERVAL` by multiplying seconds, minutes, and hours. For example, a period of one day can be set at `60*60*24`.
+
+!!! note "Note"
+    Syntax `now() + 60*60*24` doesn't consider time settings. For example, daylight saving time.
+
+The `INTERVAL` syntax or `addDays`-function is always preferred.
+
+Examples:
+
+``` sql
+SELECT now() AS current_date_time, current_date_time + 60*60*96;
+```
+
+``` text
+┌───current_date_time─┬─plus(now(), multiply(multiply(60, 60), 96))─┐
+│ 2021-06-12 17:34:49 │                         2021-06-16 17:34:49 │
+└─────────────────────┴─────────────────────────────────────────────┘
+```
+
+``` sql
+SELECT now() AS current_date_time, current_date_time + 60*60*24 + 60*60*2;
+```
+
+``` text
+┌───current_date_time─┬─plus(plus(now(), multiply(multiply(60, 60), 24)), multiply(multiply(60, 60), 2))─┐
+│ 2021-06-12 17:36:30 │                                                              2021-06-13 19:36:30 │
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+``` sql
+SELECT now() AS current_date_time, current_date_time + 60*23;
+```
+
+``` text
+┌───current_date_time─┬─plus(now(), multiply(60, 23))─┐
+│ 2021-06-12 17:38:02 │           2021-06-12 18:01:02 │
+└─────────────────────┴───────────────────────────────┘
+```
+
 **See Also**
 
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
