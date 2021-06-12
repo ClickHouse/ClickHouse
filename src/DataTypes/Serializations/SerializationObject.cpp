@@ -2,15 +2,12 @@
 #include <DataTypes/Serializations/JSONDataParser.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/FieldToDataType.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/ObjectUtils.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
-#include <Common/FieldVisitors.h>
 #include <Common/HashTable/HashSet.h>
 #include <Columns/ColumnObject.h>
-#include <Interpreters/convertFieldToType.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -25,40 +22,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int TYPE_MISMATCH;
-}
-
-namespace
-{
-
-class FieldVisitorReplaceNull : public StaticVisitor<Field>
-{
-public:
-    [[maybe_unused]] explicit FieldVisitorReplaceNull(const Field & replacement_)
-        : replacement(replacement_)
-    {
-    }
-
-    Field operator() (const Null &) const { return replacement; }
-
-    template <typename T>
-    Field operator() (const T & x) const
-    {
-        if constexpr (std::is_base_of_v<FieldVector, T>)
-        {
-            const size_t size = x.size();
-            T res(size);
-            for (size_t i = 0; i < size; ++i)
-                res[i] = applyVisitor(*this, x[i]);
-            return res;
-        }
-        else
-            return x;
-    }
-
-private:
-    Field replacement;
-};
-
 }
 
 template <typename Parser>
@@ -87,38 +50,13 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     size_t column_size = column_object.size();
     for (size_t i = 0; i < paths.size(); ++i)
     {
-        Field value = std::move(values[i]);
-
-        auto value_type = applyVisitor(FieldToDataType(/*allow_conversion_to_string=*/ true), value);
-        auto value_dim = getNumberOfDimensions(*value_type);
-        auto base_type = getBaseTypeOfArray(value_type);
-
-        if (base_type->isNullable())
-        {
-            base_type = removeNullable(base_type);
-            auto default_field = isNothing(base_type) ? Field(String()) : base_type->getDefault();
-            value = applyVisitor(FieldVisitorReplaceNull(default_field), value);
-            value_type = createArrayOfType(base_type, value_dim);
-        }
-
-        auto array_type = createArrayOfType(std::make_shared<DataTypeString>(), value_dim);
-        auto converted_value = isNothing(base_type)
-            ? std::move(value)
-            : convertFieldToTypeOrThrow(value, *array_type);
-
         if (!column_object.hasSubcolumn(paths[i]))
-            column_object.addSubcolumn(paths[i], array_type->createColumn(), column_size);
+            column_object.addSubcolumn(paths[i], column_size);
 
         auto & subcolumn = column_object.getSubcolumn(paths[i]);
-        size_t column_dim = getNumberOfDimensions(*subcolumn.data);
+        assert(subcolumn.size() == column_size);
 
-        if (value_dim != column_dim)
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Dimension of types mismatched beetwen inserted value and column at key '{}'. "
-                "Dimension of value: {}. Dimension of column: {}",
-                paths[i], value_dim, column_dim);
-
-        subcolumn.insert(converted_value, value_type);
+        subcolumn.insert(std::move(values[i]));
     }
 
     for (auto & [key, subcolumn] : column_object.getSubcolumns())
@@ -206,6 +144,9 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     checkSerializationIsSupported(settings, state);
     const auto & column_object = assert_cast<const ColumnObject &>(column);
 
+    if (!column_object.isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write non-finalized ColumnObject");
+
     settings.path.push_back(Substream::ObjectStructure);
     if (auto * stream = settings.getter(settings.path))
         writeVarUInt(column_object.getSubcolumns().size(), *stream);
@@ -215,9 +156,9 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
         settings.path.back() = Substream::ObjectStructure;
         settings.path.back().object_key_name = key;
 
+        auto type = getDataTypeByColumn(subcolumn.getFinalizedColumn());
         if (auto * stream = settings.getter(settings.path))
         {
-            auto type = getDataTypeByColumn(*subcolumn.data);
             writeStringBinary(key, *stream);
             writeStringBinary(type->getName(), *stream);
         }
@@ -227,9 +168,9 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
 
         if (auto * stream = settings.getter(settings.path))
         {
-            auto type = getDataTypeByColumn(*subcolumn.data);
             auto serialization = type->getDefaultSerialization();
-            serialization->serializeBinaryBulkWithMultipleStreams(*subcolumn.data, offset, limit, settings, state);
+            serialization->serializeBinaryBulkWithMultipleStreams(
+                subcolumn.getFinalizedColumn(), offset, limit, settings, state);
         }
     }
 
@@ -295,7 +236,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
     column_object.checkConsistency();
-    column_object.optimizeTypesOfSubcolumns();
+    column_object.finalize();
     column = std::move(mutable_column);
 }
 

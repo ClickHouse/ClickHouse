@@ -198,7 +198,7 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
-    optimizeTypesOfObjectColumns(columns);
+    finalizeObjectColumns(columns);
     Chunk chunk(std::move(columns), num_rows);
     //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;

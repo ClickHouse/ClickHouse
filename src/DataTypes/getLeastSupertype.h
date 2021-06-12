@@ -15,4 +15,7 @@ namespace DB
   */
 DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_string = false);
 
+using TypeIndexSet = std::unordered_set<TypeIndex>;
+DataTypePtr getLeastSupertype(const TypeIndexSet & types, bool allow_conversion_to_string = false);
+
 }

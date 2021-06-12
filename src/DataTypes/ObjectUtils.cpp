@@ -110,9 +110,16 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
             const auto & column_object = assert_cast<const ColumnObject &>(*column.column);
             const auto & subcolumns_map = column_object.getSubcolumns();
 
+            if (!column_object.isFinalized())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot convert to tuple column '{}' from type {}. Column should be finalized firts",
+                    name_type.name, name_type.type->getName());
+
             std::vector<std::tuple<String, DataTypePtr, ColumnPtr>> tuple_elements;
             for (const auto & [key, subcolumn] : subcolumns_map)
-                tuple_elements.emplace_back(key, getDataTypeByColumn(*subcolumn.data), subcolumn.data);
+                tuple_elements.emplace_back(key,
+                    subcolumn.getLeastCommonType(),
+                    subcolumn.getFinalizedColumnPtr());
 
             std::sort(tuple_elements.begin(), tuple_elements.end(),
                 [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); } );
@@ -183,11 +190,11 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
     return std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
 }
 
-void optimizeTypesOfObjectColumns(MutableColumns & columns)
+void finalizeObjectColumns(MutableColumns & columns)
 {
     for (auto & column : columns)
         if (auto * column_object = typeid_cast<ColumnObject *>(column.get()))
-            column_object->optimizeTypesOfSubcolumns();
+            column_object->finalize();
 }
 
 }

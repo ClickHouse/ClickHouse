@@ -19,26 +19,41 @@ namespace ErrorCodes
 class ColumnObject final : public COWHelper<IColumn, ColumnObject>
 {
 public:
-    struct Subcolumn
+    class Subcolumn
     {
+    public:
         Subcolumn() = default;
-        Subcolumn(const Subcolumn & other);
+        Subcolumn(size_t size_);
         Subcolumn(MutableColumnPtr && data_);
+        Subcolumn(const Subcolumn & other);
         Subcolumn & operator=(Subcolumn && other) = default;
 
-        WrappedPtr data;
-        DataTypePtr least_common_type;
+        size_t size() const;
+        size_t byteSize() const;
+        size_t allocatedBytes() const;
 
-        size_t size() const { return data->size(); }
-        void insert(const Field & field, const DataTypePtr & value_type);
+        bool isFinalized() const { return data.size() == 1 && num_of_defaults_in_prefix == 0; }
+        const DataTypePtr & getLeastCommonType() const { return least_common_type; }
+        void checkTypes() const;
+
+        void insert(Field && field);
         void insertDefault();
+        void finalize();
+
+        IColumn & getFinalizedColumn();
+        const IColumn & getFinalizedColumn() const;
+        const ColumnPtr & getFinalizedColumnPtr() const;
+
+    private:
+        DataTypePtr least_common_type;
+        std::vector<WrappedPtr> data;
+        size_t num_of_defaults_in_prefix = 0;
     };
 
     using SubcolumnsMap = std::unordered_map<String, Subcolumn>;
 
 private:
     SubcolumnsMap subcolumns;
-    bool optimized_types_of_subcolumns = false;
 
 public:
     static constexpr auto COLUMN_NAME_DUMMY = "_dummy";
@@ -53,15 +68,14 @@ public:
     const Subcolumn & getSubcolumn(const String & key) const;
     Subcolumn & getSubcolumn(const String & key);
 
-    void addSubcolumn(const String & key, const ColumnPtr & column_sample, size_t new_size, bool check_size = false);
+    void addSubcolumn(const String & key, size_t new_size, bool check_size = false);
     void addSubcolumn(const String & key, Subcolumn && subcolumn, bool check_size = false);
 
     const SubcolumnsMap & getSubcolumns() const { return subcolumns; }
     SubcolumnsMap & getSubcolumns() { return subcolumns; }
 
-    Names getKeys() const;
-
-    void optimizeTypesOfSubcolumns();
+    bool isFinalized() const;
+    void finalize();
 
     /// Part of interface
 
@@ -116,4 +130,3 @@ private:
 };
 
 }
-
