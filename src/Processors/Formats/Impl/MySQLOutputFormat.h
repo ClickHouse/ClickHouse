@@ -18,14 +18,14 @@ class WriteBuffer;
 
 /** A stream for outputting data in a binary line-by-line format.
   */
-class MySQLOutputFormat final : public IOutputFormat, WithConstContext
+class MySQLOutputFormat final : public IOutputFormat, WithContext
 {
 public:
     MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
 
     String getName() const override { return "MySQLOutputFormat"; }
 
-    void setContext(ContextConstPtr context_)
+    void setContext(ContextPtr context_)
     {
         context = context_;
         packet_endpoint = std::make_unique<MySQLProtocol::PacketEndpoint>(out, const_cast<uint8_t &>(getContext()->mysql.sequence_id)); /// TODO: fix it

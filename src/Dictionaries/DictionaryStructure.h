@@ -39,6 +39,7 @@
     M(Decimal256) \
     M(UUID) \
     M(String) \
+    M(Array) \
 
 
 namespace DB
@@ -74,15 +75,12 @@ struct DictionaryAttribute final
     const std::string name;
     const AttributeUnderlyingType underlying_type;
     const DataTypePtr type;
-    const SerializationPtr serialization;
-    const DataTypePtr nested_type;
     const std::string expression;
     const Field null_value;
     const bool hierarchical;
     const bool injective;
     const bool is_object_id;
     const bool is_nullable;
-    const bool is_array;
 };
 
 template <typename Type>
@@ -92,7 +90,7 @@ struct DictionaryAttributeType
 };
 
 template <typename F>
-void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
+void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
     switch (type)
     {

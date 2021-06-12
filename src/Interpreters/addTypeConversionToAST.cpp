@@ -35,7 +35,9 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
 ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, ContextPtr context)
 {
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, all_columns);
-    const auto actions = ExpressionAnalyzer(ast, syntax_analyzer_result, context).getActions(true);
+    const auto actions = ExpressionAnalyzer(ast,
+        syntax_analyzer_result,
+        const_pointer_cast<Context>(context)).getActions(true);
 
     for (const auto & action : actions->getActions())
         if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)

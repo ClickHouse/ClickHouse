@@ -16,6 +16,7 @@ The following operations with [partitions](../../../engines/table-engines/merget
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — Resets the value of a specified column in a partition.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — Resets the specified secondary index in a partition.
 -   [FREEZE PARTITION](#alter_freeze-partition) — Creates a backup of a partition.
+-   [UNFREEZE PARTITION](#alter_unfreeze-partition) — Removes a backup of a partition.
 -   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
 -   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
 
@@ -160,7 +161,7 @@ This query creates a local backup of a specified partition. If the `PARTITION` c
 !!! note "Note"
     The entire backup process is performed without stopping the server.
 
-Note that for old-styled tables you can specify the prefix of the partition name (for example, ‘2019’) - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Note that for old-styled tables you can specify the prefix of the partition name (for example, `2019`) - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
 At the time of execution, for a data snapshot, the query creates hardlinks to a table data. Hardlinks are placed in the directory `/var/lib/clickhouse/shadow/N/...`, where:
 
@@ -170,7 +171,7 @@ At the time of execution, for a data snapshot, the query creates hardlinks to a 
 !!! note "Note"
     If you use [a set of disks for data storage in a table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.
 
-The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. The query performs ‘chmod’ for all files, forbidding writing into them.
+The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. The query performs `chmod` for all files, forbidding writing into them.
 
 After creating the backup, you can copy the data from `/var/lib/clickhouse/shadow/` to the remote server and then delete it from the local server. Note that the `ALTER t FREEZE PARTITION` query is not replicated. It creates a local backup only on the local server.
 
@@ -184,9 +185,17 @@ To restore data from a backup, do the following:
 2.  Copy the data from the `data/database/table/` directory inside the backup to the `/var/lib/clickhouse/data/database/table/detached/` directory.
 3.  Run `ALTER TABLE t ATTACH PARTITION` queries to add the data to a table.
 
-Restoring from a backup doesn’t require stopping the server.
+Restoring from a backup does not require stopping the server.
 
 For more information about backups and restoring data, see the [Data Backup](../../../operations/backup.md) section.
+
+## UNFREEZE PARTITION {#alter_unfreeze-partition}
+
+``` sql
+ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
+```
+
+Removes `freezed` partitions with the specified name from the disk. If the `PARTITION` clause is omitted, the query removes the backup of all partitions at once.
 
 ## CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
 

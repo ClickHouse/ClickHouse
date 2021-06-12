@@ -230,26 +230,27 @@ def test_recover_staled_replica(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(dummy_node)
         dummy_node.query_and_get_error("RENAME TABLE recover.t1 TO recover.m1")
-        main_node.query("RENAME TABLE recover.t1 TO recover.m1", settings=settings)
-        main_node.query("ALTER TABLE recover.mt1  ADD COLUMN m int", settings=settings)
-        main_node.query("ALTER TABLE recover.rmt1 ADD COLUMN m int", settings=settings)
-        main_node.query("RENAME TABLE recover.rmt3 TO recover.rmt4", settings=settings)
-        main_node.query("DROP TABLE recover.rmt5", settings=settings)
-        main_node.query("DROP DICTIONARY recover.d2", settings=settings)
-        main_node.query("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
+
+        main_node.query_with_retry("RENAME TABLE recover.t1 TO recover.m1", settings=settings)
+        main_node.query_with_retry("ALTER TABLE recover.mt1  ADD COLUMN m int", settings=settings)
+        main_node.query_with_retry("ALTER TABLE recover.rmt1 ADD COLUMN m int", settings=settings)
+        main_node.query_with_retry("RENAME TABLE recover.rmt3 TO recover.rmt4", settings=settings)
+        main_node.query_with_retry("DROP TABLE recover.rmt5", settings=settings)
+        main_node.query_with_retry("DROP DICTIONARY recover.d2", settings=settings)
+        main_node.query_with_retry("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
                         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) "
                         "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());", settings=settings)
 
-        inner_table = ".inner_id." + dummy_node.query("SELECT uuid FROM system.tables WHERE database='recover' AND name='mv1'").strip()
-        main_node.query("ALTER TABLE recover.`{}` MODIFY COLUMN n int DEFAULT 42".format(inner_table), settings=settings)
-        main_node.query("ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1".format(inner_table), settings=settings)
-        main_node.query("RENAME TABLE recover.mv2 TO recover.mv3".format(inner_table), settings=settings)
+        inner_table = ".inner_id." + dummy_node.query_with_retry("SELECT uuid FROM system.tables WHERE database='recover' AND name='mv1'").strip()
+        main_node.query_with_retry("ALTER TABLE recover.`{}` MODIFY COLUMN n int DEFAULT 42".format(inner_table), settings=settings)
+        main_node.query_with_retry("ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1".format(inner_table), settings=settings)
+        main_node.query_with_retry("RENAME TABLE recover.mv2 TO recover.mv3".format(inner_table), settings=settings)
 
-        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
-        main_node.query("DROP TABLE recover.tmp", settings=settings)
-        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
-        main_node.query("DROP TABLE recover.tmp", settings=settings)
-        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query_with_retry("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query_with_retry("DROP TABLE recover.tmp", settings=settings)
+        main_node.query_with_retry("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query_with_retry("DROP TABLE recover.tmp", settings=settings)
+        main_node.query_with_retry("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
 
     assert main_node.query("SELECT name FROM system.tables WHERE database='recover' AND name NOT LIKE '.inner_id.%' ORDER BY name") == \
            "d1\nd2\nm1\nmt1\nmt2\nmv1\nmv3\nrmt1\nrmt2\nrmt4\nt2\ntmp\n"
