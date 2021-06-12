@@ -233,7 +233,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextConstPtr) {}
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr) {}
 
 protected:
     friend class DiskDecorator;

@@ -133,7 +133,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         is_case_insensitive = true;
     }
 
-    ContextConstPtr query_context;
+    ContextPtr query_context;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 
