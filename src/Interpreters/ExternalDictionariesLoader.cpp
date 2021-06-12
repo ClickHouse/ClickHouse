@@ -66,8 +66,15 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
     std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
 
     auto load_result = getLoadResult(resolved_name);
+
+    if (load_result.object)
+    {
+        const auto dictionary = std::static_pointer_cast<const IDictionary>(load_result.object);
+        return dictionary->getStructure();
+    }
+
     if (!load_result.config)
-        throw Exception("Dictionary " + backQuote(dictionary_name) + " config not found", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
 
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 }
@@ -109,7 +116,10 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     std::string maybe_database_name = name.substr(0, pos);
     std::string maybe_table_name = name.substr(pos + 1);
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, getContext());
+    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
+        {maybe_database_name, maybe_table_name},
+        const_pointer_cast<Context>(getContext()));
+
     if (!db)
         return name;
     assert(table);
@@ -125,7 +135,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
 DictionaryStructure
 ExternalDictionariesLoader::getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config)
 {
-    return {config, key_in_config};
+    return DictionaryStructure(config, key_in_config);
 }
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const ObjectConfig & config)

@@ -1,5 +1,9 @@
 #pragma once
+
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
+
 #if USE_HDFS
 
 #include <Storages/IStorage.h>
