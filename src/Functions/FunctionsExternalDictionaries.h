@@ -283,7 +283,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
-    // bool useDefaultImplementationForNulls() const final { return false; }
+    bool useDefaultImplementationForNulls() const final { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
     bool isDeterministic() const override { return false; }
@@ -395,27 +395,9 @@ public:
                     arguments.size() + 1);
 
             const auto & column_before_cast = arguments[current_arguments_index];
-
-            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(column_before_cast.type.get()))
-            {
-                const DataTypes & nested_types = type_tuple->getElements();
-
-                for (const auto & nested_type : nested_types)
-                    if (nested_type->isNullable())
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Wrong argument for function {} default values column nullable is not supported",
-                            getName());
-            }
-            else if (column_before_cast.type->isNullable())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Wrong argument for function {} default values column nullable is not supported",
-                    getName());
-
-            auto result_type_no_nullable = removeNullable(result_type);
-
             ColumnWithTypeAndName column_to_cast = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-            auto result = castColumnAccurate(column_to_cast, result_type_no_nullable);
+            auto result = castColumnAccurate(column_to_cast, result_type);
 
             if (attribute_names.size() > 1)
             {
