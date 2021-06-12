@@ -37,7 +37,7 @@ public:
         const Configuration & configuration,
         const Poco::Net::HTTPBasicCredentials & credentials_,
         Block & sample_block_,
-        ContextConstPtr context_,
+        ContextPtr context_,
         bool created_from_ddl);
 
     HTTPDictionarySource(const HTTPDictionarySource & other);
@@ -76,7 +76,7 @@ private:
     const Configuration configuration;
     Poco::Net::HTTPBasicCredentials credentials;
     Block sample_block;
-    ContextConstPtr context;
+    ContextPtr context;
     ConnectionTimeouts timeouts;
 };
 

@@ -40,7 +40,7 @@ class FunctionArrayReduceInRanges : public IFunction
 public:
     static const size_t minimum_step = 64;
     static constexpr auto name = "arrayReduceInRanges";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionArrayReduceInRanges>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReduceInRanges>(); }
 
     String getName() const override { return name; }
 
