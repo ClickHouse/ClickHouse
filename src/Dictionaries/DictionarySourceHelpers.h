@@ -3,13 +3,12 @@
 #include <vector>
 
 #include <common/types.h>
-
-#include <Poco/File.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
+
 
 namespace DB
 {
@@ -37,9 +36,9 @@ Block blockForKeys(
     const std::vector<size_t> & requested_rows);
 
 /// Used for applying settings to copied context in some register[...]Source functions
-ContextPtr copyContextAndApplySettings(
+ContextMutablePtr copyContextAndApplySettings(
     const std::string & config_prefix,
-    ContextConstPtr context,
+    ContextPtr context,
     const Poco::Util::AbstractConfiguration & config);
 
 /** A stream, adds additional columns to each block that it will read from inner stream.

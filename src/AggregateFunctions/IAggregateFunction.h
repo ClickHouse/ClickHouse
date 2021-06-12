@@ -38,7 +38,7 @@ using AggregateDataPtr = char *;
 using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 struct AggregateFunctionProperties;
 
 /** Aggregate functions interface.
@@ -49,7 +49,7 @@ struct AggregateFunctionProperties;
   *  (which can be created in some memory pool),
   *  and IAggregateFunction is the external interface for manipulating them.
   */
-class IAggregateFunction
+class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunction>
 {
 public:
     IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_)
@@ -60,6 +60,9 @@ public:
 
     /// Get the result type.
     virtual DataTypePtr getReturnType() const = 0;
+
+    /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
+    virtual DataTypePtr getStateType() const;
 
     /// Get type which will be used for prediction result in case if function is an ML method.
     virtual DataTypePtr getReturnTypeToPredict() const
@@ -125,7 +128,7 @@ public:
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
-        ContextConstPtr /*context*/) const
+        ContextPtr /*context*/) const
     {
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -238,9 +241,7 @@ public:
     // aggregate functions implement IWindowFunction interface and so on. This
     // would be more logically correct, but more complex. We only have a handful
     // of true window functions, so this hack-ish interface suffices.
-    virtual IWindowFunction * asWindowFunction() { return nullptr; }
-    virtual const IWindowFunction * asWindowFunction() const
-    { return const_cast<IAggregateFunction *>(this)->asWindowFunction(); }
+    virtual bool isOnlyWindowFunction() const { return false; }
 
 protected:
     DataTypes argument_types;

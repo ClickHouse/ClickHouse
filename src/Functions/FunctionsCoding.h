@@ -69,7 +69,7 @@ class FunctionIPv6NumToString : public IFunction
 {
 public:
     static constexpr auto name = "IPv6NumToString";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIPv6NumToString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv6NumToString>(); }
 
     String getName() const override { return name; }
 
@@ -139,7 +139,7 @@ class FunctionCutIPv6 : public IFunction
 {
 public:
     static constexpr auto name = "cutIPv6";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionCutIPv6>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCutIPv6>(); }
 
     String getName() const override { return name; }
 
@@ -262,7 +262,7 @@ class FunctionIPv6StringToNum : public IFunction
 {
 public:
     static constexpr auto name = "IPv6StringToNum";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIPv6StringToNum>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv6StringToNum>(); }
 
     static inline bool tryParseIPv4(const char * pos)
     {
@@ -340,7 +340,7 @@ class FunctionIPv4NumToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIPv4NumToString<mask_tail_octets, Name>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4NumToString<mask_tail_octets, Name>>(); }
 
     String getName() const override
     {
@@ -401,7 +401,7 @@ class FunctionIPv4StringToNum : public IFunction
 {
 public:
     static constexpr auto name = "IPv4StringToNum";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIPv4StringToNum>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4StringToNum>(); }
 
     String getName() const override
     {
@@ -464,7 +464,7 @@ class FunctionIPv4ToIPv6 : public IFunction
 {
 public:
      static constexpr auto name = "IPv4ToIPv6";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIPv4ToIPv6>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4ToIPv6>(); }
 
     String getName() const override { return name; }
 
@@ -519,7 +519,7 @@ class FunctionToIPv4 : public FunctionIPv4StringToNum
 {
 public:
     static constexpr auto name = "toIPv4";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionToIPv4>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToIPv4>(); }
 
     String getName() const override
     {
@@ -542,7 +542,7 @@ class FunctionToIPv6 : public FunctionIPv6StringToNum
 {
 public:
     static constexpr auto name = "toIPv6";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionToIPv6>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToIPv6>(); }
 
     String getName() const override { return name; }
 
@@ -560,7 +560,7 @@ class FunctionMACNumToString : public IFunction
 {
 public:
     static constexpr auto name = "MACNumToString";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionMACNumToString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMACNumToString>(); }
 
     String getName() const override
     {
@@ -690,7 +690,7 @@ class FunctionMACStringTo : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionMACStringTo<Impl>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMACStringTo<Impl>>(); }
 
     String getName() const override
     {
@@ -753,7 +753,7 @@ class FunctionUUIDNumToString : public IFunction
 
 public:
     static constexpr auto name = "UUIDNumToString";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionUUIDNumToString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDNumToString>(); }
 
     String getName() const override
     {
@@ -851,7 +851,7 @@ private:
 
 public:
     static constexpr auto name = "UUIDStringToNum";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionUUIDStringToNum>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDStringToNum>(); }
 
     String getName() const override
     {
@@ -955,7 +955,7 @@ class FunctionHex : public IFunction
 {
 public:
     static constexpr auto name = "hex";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionHex>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHex>(); }
 
     String getName() const override
     {
@@ -970,7 +970,9 @@ public:
         WhichDataType which(arguments[0]);
 
         if (!which.isStringOrFixedString() &&
-            !which.isDateOrDateTime() &&
+            !which.isDate() &&
+            !which.isDateTime() &&
+            !which.isDateTime64() &&
             !which.isUInt() &&
             !which.isFloat() &&
             !which.isDecimal())
@@ -1238,7 +1240,7 @@ class FunctionUnhex : public IFunction
 {
 public:
     static constexpr auto name = "unhex";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionUnhex>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnhex>(); }
 
     String getName() const override
     {
@@ -1327,7 +1329,7 @@ class FunctionChar : public IFunction
 {
 public:
     static constexpr auto name = "char";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionChar>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionChar>(); }
 
     String getName() const override
     {
@@ -1422,7 +1424,7 @@ class FunctionBitmaskToArray : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToArray";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionBitmaskToArray>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmaskToArray>(); }
 
     String getName() const override
     {
@@ -1508,7 +1510,7 @@ class FunctionToStringCutToZero : public IFunction
 {
 public:
     static constexpr auto name = "toStringCutToZero";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionToStringCutToZero>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStringCutToZero>(); }
 
     String getName() const override
     {
@@ -1673,7 +1675,7 @@ private:
 
 public:
     static constexpr auto name = "IPv6CIDRToRange";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIPv6CIDRToRange>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv6CIDRToRange>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -1787,7 +1789,7 @@ private:
 
 public:
     static constexpr auto name = "IPv4CIDRToRange";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIPv4CIDRToRange>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4CIDRToRange>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -1868,7 +1870,7 @@ class FunctionIsIPv4String : public FunctionIPv4StringToNum
 public:
     static constexpr auto name = "isIPv4String";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIsIPv4String>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPv4String>(); }
 
     String getName() const override { return name; }
 
@@ -1914,7 +1916,7 @@ class FunctionIsIPv6String : public FunctionIPv6StringToNum
 public:
     static constexpr auto name = "isIPv6String";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIsIPv6String>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPv6String>(); }
 
     String getName() const override { return name; }
 

@@ -111,7 +111,7 @@ class FunctionUnaryArithmetic : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
 
     String getName() const override
     {
