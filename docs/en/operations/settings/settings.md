@@ -986,6 +986,19 @@ The maximum number of simultaneous connections with remote servers for distribut
 
 Default value: 1024.
 
+## max_distributed_depth {#max-distributed-depth}
+
+Limits the maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
+
+If the value is exceeded, the server throws an exception.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited depth.
+
+Default value: `5`.
+
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
