@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -30,25 +31,173 @@ namespace ErrorCodes
 
 namespace
 {
-    String getExceptionMessagePrefix(const DataTypes & types)
+
+template <typename DataType>
+String typeToString(const DataType & type);
+
+template<> String typeToString(const DataTypePtr & type) { return type->getName(); }
+template<> String typeToString(const TypeIndex & type) { return getTypeName(type); }
+
+template <typename DataTypes>
+String getExceptionMessagePrefix(const DataTypes & types)
+{
+    WriteBufferFromOwnString res;
+    res << "There is no supertype for types ";
+
+    bool first = true;
+    for (const auto & type : types)
     {
-        WriteBufferFromOwnString res;
-        res << "There is no supertype for types ";
+        if (!first)
+            res << ", ";
+        first = false;
 
-        bool first = true;
-        for (const auto & type : types)
-        {
-            if (!first)
-                res << ", ";
-            first = false;
-
-            res << type->getName();
-        }
-
-        return res.str();
+        res << typeToString(type);
     }
+
+    return res.str();
 }
 
+DataTypePtr getNumericType(const TypeIndexSet & types, bool allow_conversion_to_string)
+{
+    auto throw_or_return = [&](std::string_view message, int error_code)
+    {
+        if (allow_conversion_to_string)
+            return std::make_shared<DataTypeString>();
+
+        throw Exception(String(message), error_code);
+    };
+
+    bool all_numbers = true;
+
+    size_t max_bits_of_signed_integer = 0;
+    size_t max_bits_of_unsigned_integer = 0;
+    size_t max_mantissa_bits_of_floating = 0;
+
+    auto maximize = [](size_t & what, size_t value)
+    {
+        if (value > what)
+            what = value;
+    };
+
+    for (const auto & type : types)
+    {
+        if (type == TypeIndex::UInt8)
+            maximize(max_bits_of_unsigned_integer, 8);
+        else if (type == TypeIndex::UInt16)
+            maximize(max_bits_of_unsigned_integer, 16);
+        else if (type == TypeIndex::UInt32)
+            maximize(max_bits_of_unsigned_integer, 32);
+        else if (type == TypeIndex::UInt64)
+            maximize(max_bits_of_unsigned_integer, 64);
+        else if (type == TypeIndex::UInt128)
+            maximize(max_bits_of_unsigned_integer, 128);
+        else if (type == TypeIndex::UInt256)
+            maximize(max_bits_of_unsigned_integer, 256);
+        else if (type == TypeIndex::Int8 || type == TypeIndex::Enum8)
+            maximize(max_bits_of_signed_integer, 8);
+        else if (type == TypeIndex::Int16 || type == TypeIndex::Enum16)
+            maximize(max_bits_of_signed_integer, 16);
+        else if (type == TypeIndex::Int32)
+            maximize(max_bits_of_signed_integer, 32);
+        else if (type == TypeIndex::Int64)
+            maximize(max_bits_of_signed_integer, 64);
+        else if (type == TypeIndex::Int128)
+            maximize(max_bits_of_signed_integer, 128);
+        else if (type == TypeIndex::Int256)
+            maximize(max_bits_of_signed_integer, 256);
+        else if (type == TypeIndex::Float32)
+            maximize(max_mantissa_bits_of_floating, 24);
+        else if (type == TypeIndex::Float64)
+            maximize(max_mantissa_bits_of_floating, 53);
+        else
+            all_numbers = false;
+    }
+
+    if (max_bits_of_signed_integer || max_bits_of_unsigned_integer || max_mantissa_bits_of_floating)
+    {
+        if (!all_numbers)
+            return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are numbers and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+
+        /// If there are signed and unsigned types of same bit-width, the result must be signed number with at least one more bit.
+        /// Example, common of Int32, UInt32 = Int64.
+
+        size_t min_bit_width_of_integer = std::max(max_bits_of_signed_integer, max_bits_of_unsigned_integer);
+
+        /// If unsigned is not covered by signed.
+        if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer) //-V1051
+        {
+            // Because 128 and 256 bit integers are significantly slower, we should not promote to them.
+            // But if we already have wide numbers, promotion is necessary.
+            if (min_bit_width_of_integer != 64)
+                ++min_bit_width_of_integer;
+            else
+                return throw_or_return(
+                    getExceptionMessagePrefix(types)
+                        + " because some of them are signed integers and some are unsigned integers,"
+                            " but there is no signed integer type, that can exactly represent all required unsigned integer values",
+                    ErrorCodes::NO_COMMON_TYPE);
+        }
+
+        /// If the result must be floating.
+        if (max_mantissa_bits_of_floating)
+        {
+            size_t min_mantissa_bits = std::max(min_bit_width_of_integer, max_mantissa_bits_of_floating);
+            if (min_mantissa_bits <= 24)
+                return std::make_shared<DataTypeFloat32>();
+            else if (min_mantissa_bits <= 53)
+                return std::make_shared<DataTypeFloat64>();
+            else
+                return throw_or_return(getExceptionMessagePrefix(types)
+                    + " because some of them are integers and some are floating point,"
+                    " but there is no floating point type, that can exactly represent all required integers", ErrorCodes::NO_COMMON_TYPE);
+        }
+
+        /// If the result must be signed integer.
+        if (max_bits_of_signed_integer)
+        {
+            if (min_bit_width_of_integer <= 8)
+                return std::make_shared<DataTypeInt8>();
+            else if (min_bit_width_of_integer <= 16)
+                return std::make_shared<DataTypeInt16>();
+            else if (min_bit_width_of_integer <= 32)
+                return std::make_shared<DataTypeInt32>();
+            else if (min_bit_width_of_integer <= 64)
+                return std::make_shared<DataTypeInt64>();
+            else if (min_bit_width_of_integer <= 128)
+                return std::make_shared<DataTypeInt128>();
+            else if (min_bit_width_of_integer <= 256)
+                return std::make_shared<DataTypeInt256>();
+            else
+                return throw_or_return(getExceptionMessagePrefix(types)
+                    + " because some of them are signed integers and some are unsigned integers,"
+                    " but there is no signed integer type, that can exactly represent all required unsigned integer values", ErrorCodes::NO_COMMON_TYPE);
+        }
+
+        /// All unsigned.
+        {
+            if (min_bit_width_of_integer <= 8)
+                return std::make_shared<DataTypeUInt8>();
+            else if (min_bit_width_of_integer <= 16)
+                return std::make_shared<DataTypeUInt16>();
+            else if (min_bit_width_of_integer <= 32)
+                return std::make_shared<DataTypeUInt32>();
+            else if (min_bit_width_of_integer <= 64)
+                return std::make_shared<DataTypeUInt64>();
+            else if (min_bit_width_of_integer <= 128)
+                return std::make_shared<DataTypeUInt128>();
+            else if (min_bit_width_of_integer <= 256)
+                return std::make_shared<DataTypeUInt256>();
+            else
+                return throw_or_return("Logical error: " + getExceptionMessagePrefix(types)
+                    + " but as all data types are unsigned integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);
+
+        }
+    }
+
+    return {};
+}
+
+}
 
 DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_string)
 {
@@ -264,7 +413,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
 
     /// Non-recursive rules
 
-    std::unordered_set<TypeIndex> type_ids;
+    TypeIndexSet type_ids;
     for (const auto & type : types)
         type_ids.insert(type->getTypeId());
 
@@ -378,132 +527,53 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
 
     /// For numeric types, the most complicated part.
     {
-        bool all_numbers = true;
-
-        size_t max_bits_of_signed_integer = 0;
-        size_t max_bits_of_unsigned_integer = 0;
-        size_t max_mantissa_bits_of_floating = 0;
-
-        auto maximize = [](size_t & what, size_t value)
-        {
-            if (value > what)
-                what = value;
-        };
-
-        for (const auto & type : types)
-        {
-            if (typeid_cast<const DataTypeUInt8 *>(type.get()))
-                maximize(max_bits_of_unsigned_integer, 8);
-            else if (typeid_cast<const DataTypeUInt16 *>(type.get()))
-                maximize(max_bits_of_unsigned_integer, 16);
-            else if (typeid_cast<const DataTypeUInt32 *>(type.get()))
-                maximize(max_bits_of_unsigned_integer, 32);
-            else if (typeid_cast<const DataTypeUInt64 *>(type.get()))
-                maximize(max_bits_of_unsigned_integer, 64);
-            else if (typeid_cast<const DataTypeUInt128 *>(type.get()))
-                maximize(max_bits_of_unsigned_integer, 128);
-            else if (typeid_cast<const DataTypeUInt256 *>(type.get()))
-                maximize(max_bits_of_unsigned_integer, 256);
-            else if (typeid_cast<const DataTypeInt8 *>(type.get()) || typeid_cast<const DataTypeEnum8 *>(type.get()))
-                maximize(max_bits_of_signed_integer, 8);
-            else if (typeid_cast<const DataTypeInt16 *>(type.get()) || typeid_cast<const DataTypeEnum16 *>(type.get()))
-                maximize(max_bits_of_signed_integer, 16);
-            else if (typeid_cast<const DataTypeInt32 *>(type.get()))
-                maximize(max_bits_of_signed_integer, 32);
-            else if (typeid_cast<const DataTypeInt64 *>(type.get()))
-                maximize(max_bits_of_signed_integer, 64);
-            else if (typeid_cast<const DataTypeInt128 *>(type.get()))
-                maximize(max_bits_of_signed_integer, 128);
-            else if (typeid_cast<const DataTypeInt256 *>(type.get()))
-                maximize(max_bits_of_signed_integer, 256);
-            else if (typeid_cast<const DataTypeFloat32 *>(type.get()))
-                maximize(max_mantissa_bits_of_floating, 24);
-            else if (typeid_cast<const DataTypeFloat64 *>(type.get()))
-                maximize(max_mantissa_bits_of_floating, 53);
-            else
-                all_numbers = false;
-        }
-
-        if (max_bits_of_signed_integer || max_bits_of_unsigned_integer || max_mantissa_bits_of_floating)
-        {
-            if (!all_numbers)
-                return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are numbers and some of them are not", ErrorCodes::NO_COMMON_TYPE);
-
-            /// If there are signed and unsigned types of same bit-width, the result must be signed number with at least one more bit.
-            /// Example, common of Int32, UInt32 = Int64.
-
-            size_t min_bit_width_of_integer = std::max(max_bits_of_signed_integer, max_bits_of_unsigned_integer);
-
-            /// If unsigned is not covered by signed.
-            if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer) //-V1051
-            {
-                // Because 128 and 256 bit integers are significantly slower, we should not promote to them.
-                // But if we already have wide numbers, promotion is necessary.
-                if (min_bit_width_of_integer != 64)
-                    ++min_bit_width_of_integer;
-                else
-                    return throw_or_return(
-                        getExceptionMessagePrefix(types)
-                            + " because some of them are signed integers and some are unsigned integers,"
-                              " but there is no signed integer type, that can exactly represent all required unsigned integer values",
-                        ErrorCodes::NO_COMMON_TYPE);
-            }
-
-            /// If the result must be floating.
-            if (max_mantissa_bits_of_floating)
-            {
-                size_t min_mantissa_bits = std::max(min_bit_width_of_integer, max_mantissa_bits_of_floating);
-                if (min_mantissa_bits <= 24)
-                    return std::make_shared<DataTypeFloat32>();
-                else if (min_mantissa_bits <= 53)
-                    return std::make_shared<DataTypeFloat64>();
-                else
-                    return throw_or_return(getExceptionMessagePrefix(types)
-                        + " because some of them are integers and some are floating point,"
-                        " but there is no floating point type, that can exactly represent all required integers", ErrorCodes::NO_COMMON_TYPE);
-            }
-
-            /// If the result must be signed integer.
-            if (max_bits_of_signed_integer)
-            {
-                if (min_bit_width_of_integer <= 8)
-                    return std::make_shared<DataTypeInt8>();
-                else if (min_bit_width_of_integer <= 16)
-                    return std::make_shared<DataTypeInt16>();
-                else if (min_bit_width_of_integer <= 32)
-                    return std::make_shared<DataTypeInt32>();
-                else if (min_bit_width_of_integer <= 64)
-                    return std::make_shared<DataTypeInt64>();
-                else if (min_bit_width_of_integer <= 128)
-                    return std::make_shared<DataTypeInt128>();
-                else if (min_bit_width_of_integer <= 256)
-                    return std::make_shared<DataTypeInt256>();
-                else
-                    return throw_or_return(getExceptionMessagePrefix(types)
-                        + " because some of them are signed integers and some are unsigned integers,"
-                        " but there is no signed integer type, that can exactly represent all required unsigned integer values", ErrorCodes::NO_COMMON_TYPE);
-            }
-
-            /// All unsigned.
-            {
-                if (min_bit_width_of_integer <= 8)
-                    return std::make_shared<DataTypeUInt8>();
-                else if (min_bit_width_of_integer <= 16)
-                    return std::make_shared<DataTypeUInt16>();
-                else if (min_bit_width_of_integer <= 32)
-                    return std::make_shared<DataTypeUInt32>();
-                else if (min_bit_width_of_integer <= 64)
-                    return std::make_shared<DataTypeUInt64>();
-                else if (min_bit_width_of_integer <= 128)
-                    return std::make_shared<DataTypeUInt128>();
-                else if (min_bit_width_of_integer <= 256)
-                    return std::make_shared<DataTypeUInt256>();
-                else
-                    return throw_or_return("Logical error: " + getExceptionMessagePrefix(types)
-                        + " but as all data types are unsigned integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);
-            }
-        }
+        auto numeric_type = getNumericType(type_ids, allow_conversion_to_string);
+        if (numeric_type)
+            return numeric_type;
     }
+
+    /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).
+    return throw_or_return(getExceptionMessagePrefix(types), ErrorCodes::NO_COMMON_TYPE);
+}
+
+DataTypePtr getLeastSupertype(const TypeIndexSet & types, bool allow_conversion_to_string)
+{
+    auto throw_or_return = [&](std::string_view message, int error_code)
+    {
+        if (allow_conversion_to_string)
+            return std::make_shared<DataTypeString>();
+
+        throw Exception(String(message), error_code);
+    };
+
+    TypeIndexSet types_set;
+    for (const auto & type : types)
+    {
+        if (WhichDataType(type).isNothing())
+            continue;
+
+        if (!WhichDataType(type).isSimple())
+            throw Exception(ErrorCodes::NO_COMMON_TYPE,
+                "Cannot get common type by type ids with parametric type {}", getTypeName(type));
+
+        types_set.insert(type);
+    }
+
+    if (types_set.empty())
+        return std::make_shared<DataTypeNothing>();
+
+    if (types.count(TypeIndex::String))
+    {
+        if (types.size() != 1)
+            return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are String and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    /// For numeric types, the most complicated part.
+    auto numeric_type = getNumericType(types, allow_conversion_to_string);
+    if (numeric_type)
+        return numeric_type;
 
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).
     return throw_or_return(getExceptionMessagePrefix(types), ErrorCodes::NO_COMMON_TYPE);

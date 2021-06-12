@@ -1474,7 +1474,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        if (!getLeastSupertype({argument_types[0], argument_types[2]}))
+        if (!getLeastSupertype(DataTypes{argument_types[0], argument_types[2]}))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The default value type '{}' is not convertible to the argument type '{}'",

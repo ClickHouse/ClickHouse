@@ -109,6 +109,7 @@ template <> inline constexpr TypeIndex TypeId<Int128> = TypeIndex::Int128;
 template <> inline constexpr TypeIndex TypeId<Int256> = TypeIndex::Int256;
 template <> inline constexpr TypeIndex TypeId<Float32> = TypeIndex::Float32;
 template <> inline constexpr TypeIndex TypeId<Float64> = TypeIndex::Float64;
+template <> inline constexpr TypeIndex TypeId<String> = TypeIndex::String;
 template <> inline constexpr TypeIndex TypeId<UUID> = TypeIndex::UUID;
 
 

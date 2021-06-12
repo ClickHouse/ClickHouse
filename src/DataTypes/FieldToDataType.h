@@ -48,5 +48,32 @@ private:
     bool allow_convertion_to_string;
 };
 
-}
 
+// template <Field::Types::Which which> struct FieldTypeToTypeIndex;
+
+// #define DEFINE_FOR_TYPE(T) \
+// template <> struct FieldTypeToTypeIndex<Field::Types::T> { static constexpr auto value = TypeIndex::T; };
+
+// DEFINE_FOR_TYPE(UInt64)
+// DEFINE_FOR_TYPE(UInt128)
+// DEFINE_FOR_TYPE(UInt256)
+// DEFINE_FOR_TYPE(Int64)
+// DEFINE_FOR_TYPE(Int128)
+// DEFINE_FOR_TYPE(Int256)
+// DEFINE_FOR_TYPE(UUID)
+// DEFINE_FOR_TYPE(Float64)
+// DEFINE_FOR_TYPE(String)
+// DEFINE_FOR_TYPE(Array)
+// DEFINE_FOR_TYPE(Tuple)
+// DEFINE_FOR_TYPE(Map)
+// DEFINE_FOR_TYPE(Decimal32)
+// DEFINE_FOR_TYPE(Decimal64)
+// DEFINE_FOR_TYPE(Decimal128)
+// DEFINE_FOR_TYPE(Decimal256)
+
+// template <> struct FieldTypeToTypeIndex<Field::Types::Null> { static constexpr auto value = TypeIndex::Nothing; };
+// template <> struct FieldTypeToTypeIndex<Field::Types::AggregateFunctionState> { static constexpr auto value = TypeIndex::AggregateFunction; };
+
+// #undef DEFINE_FOR_TYPE
+
+}
