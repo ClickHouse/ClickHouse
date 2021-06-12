@@ -72,10 +72,9 @@ IDiskRemote::Metadata::Metadata(
             readEscapedString(remote_fs_object_path, buf);
             if (version == VERSION_ABSOLUTE_PATHS)
             {
-                if (!boost::algorithm::starts_with(remote_fs_object_path, remote_fs_root_path))
-                    throw Exception(
-                        ErrorCodes::UNKNOWN_FORMAT,
-                        "Path in metadata does not correspond S3 root path. Path: {}, root path: {}, disk path: {}",
+                if (!remote_fs_object_path.starts_with(remote_fs_root_path))
+                    throw Exception(ErrorCodes::UNKNOWN_FORMAT,
+                        "Path in metadata does not correspond to root path. Path: {}, root path: {}, disk path: {}",
                         remote_fs_object_path, remote_fs_root_path, disk_path_);
 
                 remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());

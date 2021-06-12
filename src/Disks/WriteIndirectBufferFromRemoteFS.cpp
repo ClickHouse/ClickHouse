@@ -1,8 +1,8 @@
 #include "WriteIndirectBufferFromRemoteFS.h"
 
-#if USE_AWS_S3 || USE_HDFS
 #include <IO/WriteBufferFromS3.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
+#include <IO/WriteBufferFromHTTP.h>
 
 
 namespace DB
@@ -65,6 +65,7 @@ template
 class WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>;
 #endif
 
-}
+template
+class WriteIndirectBufferFromRemoteFS<WriteBufferFromHTTP>;
 
-#endif
+}
