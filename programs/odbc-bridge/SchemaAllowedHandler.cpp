@@ -18,9 +18,10 @@ namespace DB
 {
 namespace
 {
-    bool isSchemaAllowed(nanodbc::connection & connection)
+    bool isSchemaAllowed(nanodbc::ConnectionHolderPtr connection_holder)
     {
-        uint32_t result = connection.get_info<uint32_t>(SQL_SCHEMA_USAGE);
+        uint32_t result = execute<uint32_t>(connection_holder,
+                    [&](nanodbc::connection & connection) { return connection.get_info<uint32_t>(SQL_SCHEMA_USAGE); });
         return result != 0;
     }
 }
@@ -53,7 +54,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
-        bool result = isSchemaAllowed(connection->get());
+        bool result = isSchemaAllowed(std::move(connection));
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try
