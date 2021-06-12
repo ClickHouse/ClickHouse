@@ -75,6 +75,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
     const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     auto & attribute = attributes[attribute_index];
 
+    bool is_attribute_nullable = attribute.is_nullable_set.has_value();
+
     ColumnUInt8::MutablePtr col_null_map_to;
     ColumnUInt8::Container * vec_null_map_to = nullptr;
     if (attribute.is_nullable_set)
@@ -90,9 +92,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto & attribute_null_value = std::get<ValueType>(attribute.null_values);
-        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
-        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(dictionary_attribute.null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
@@ -100,44 +100,53 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
         {
             auto * out = column.get();
 
-            getItemsImpl<ValueType>(
+            getItemsImpl<ValueType, false>(
                 attribute,
                 extractor,
-                [&](const size_t, const Array & value) { out->insert(value); },
-                [&](const size_t)
-                {
-                },
+                [&](const size_t, const Array & value, bool) { out->insert(value); },
                 default_value_extractor);
         }
         else if constexpr (std::is_same_v<ValueType, StringRef>)
         {
             auto * out = column.get();
 
-            getItemsImpl<ValueType>(
-                attribute,
-                extractor,
-                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                [&](const size_t row)
-                {
-                    out->insertDefault();
-                    (*vec_null_map_to)[row] = true;
-                },
-                default_value_extractor);
+            if (is_attribute_nullable)
+                getItemsImpl<ValueType, true>(
+                    attribute,
+                    extractor,
+                    [&](size_t row, const StringRef value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out->insertData(value.data, value.size);
+                    },
+                    default_value_extractor);
+            else
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    extractor,
+                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
+                    default_value_extractor);
         }
         else
         {
             auto & out = column->getData();
 
-            getItemsImpl<ValueType>(
-                attribute,
-                extractor,
-                [&](const size_t row, const auto value) { return out[row] = value; },
-                [&](const size_t row)
-                {
-                    out[row] = ValueType();
-                    (*vec_null_map_to)[row] = true;
-                },
-                default_value_extractor);
+            if (is_attribute_nullable)
+                getItemsImpl<ValueType, true>(
+                    attribute,
+                    extractor,
+                    [&](size_t row, const auto value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out[row] = value;
+                    },
+                    default_value_extractor);
+            else
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    extractor,
+                    [&](size_t row, const auto value, bool) { out[row] = value; },
+                    default_value_extractor);
         }
 
         result = std::move(column);
@@ -145,7 +154,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
-    if (attribute.is_nullable_set)
+    if (is_attribute_nullable)
         result = ColumnNullable::create(result, std::move(col_null_map_to));
 
     return result;
@@ -343,23 +352,7 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 
             auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
             std::unique_ptr<Arena> string_arena = std::is_same_v<AttributeType, String> ? std::make_unique<Arena>() : nullptr;
-
-            ValueType default_value;
-
-            if constexpr (std::is_same_v<ValueType, StringRef>)
-            {
-                string_arena = std::make_unique<Arena>();
-
-                const auto & string_null_value = dictionary_attribute.null_value.template get<String>();
-                const size_t string_null_value_size = string_null_value.size();
-
-                const char * string_in_arena = string_arena->insert(string_null_value.data(), string_null_value_size);
-                default_value = {string_in_arena, string_null_value_size};
-            }
-            else
-                default_value = dictionary_attribute.null_value.template get<NearestFieldType<ValueType>>();
-
-            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), default_value, CollectionType<ValueType>(), std::move(string_arena)};
+            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), CollectionType<ValueType>(), std::move(string_arena)};
             attributes.emplace_back(std::move(attribute));
         };
 
@@ -509,18 +502,15 @@ void HashedDictionary<dictionary_key_type, sparse>::resize(size_t added_rows)
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
-template <typename AttributeType, typename ValueSetter, typename NullableValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
 void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
     const Attribute & attribute,
     DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
     ValueSetter && set_value [[maybe_unused]],
-    NullableValueSetter && set_nullable_value [[maybe_unused]],
     DefaultValueExtractor & default_value_extractor) const
 {
     const auto & attribute_container = std::get<CollectionType<AttributeType>>(attribute.container);
     const size_t keys_size = keys_extractor.getKeysSize();
-
-    bool is_attribute_nullable = attribute.is_nullable_set.has_value();
 
     size_t keys_found = 0;
 
@@ -532,15 +522,15 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
 
         if (it != attribute_container.end())
         {
-            set_value(key_index, getValueFromCell(it));
+            set_value(key_index, getValueFromCell(it), false);
             ++keys_found;
         }
         else
         {
-            if (is_attribute_nullable && attribute.is_nullable_set->find(key) != nullptr)
-                set_nullable_value(key_index);
+            if constexpr (is_nullable)
+                set_value(key_index, default_value_extractor[key_index], default_value_extractor.isNullAt(key_index));
             else
-                set_value(key_index, default_value_extractor[key_index]);
+                set_value(key_index, default_value_extractor[key_index], false);
         }
 
         keys_extractor.rollbackCurrentKey();

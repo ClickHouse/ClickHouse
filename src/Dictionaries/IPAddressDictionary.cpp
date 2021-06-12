@@ -205,7 +205,6 @@ IPAddressDictionary::IPAddressDictionary(
     , logger(&Poco::Logger::get("IPAddressDictionary"))
 {
     createAttributes();
-
     loadData();
     calculateBytesAllocated();
 }
