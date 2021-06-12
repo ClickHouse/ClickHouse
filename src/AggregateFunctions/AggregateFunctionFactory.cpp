@@ -17,9 +17,9 @@
 #include <Common/CurrentThread.h>
 
 #include <Poco/String.h>
-#include "registerAggregateFunctions.h"
 
 #include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
@@ -89,6 +89,17 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
         AggregateFunctionPtr nested_function = getImpl(
             name, nested_types, nested_parameters, out_properties, has_null_arguments);
+
+        // Pure window functions are not real aggregate functions. Applying
+        // combinators doesn't make sense for them, they must handle the
+        // nullability themselves. Another special case is functions from Nothing
+        // that are rewritten to AggregateFunctionNothing, in this case
+        // nested_function is nullptr.
+        if (nested_function && nested_function->isOnlyWindowFunction())
+        {
+            return nested_function;
+        }
+
         return combinator->transformAggregateFunction(nested_function, out_properties, type_without_low_cardinality, parameters);
     }
 

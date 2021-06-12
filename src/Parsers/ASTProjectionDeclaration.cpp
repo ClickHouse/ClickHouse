@@ -4,11 +4,14 @@
 
 namespace DB
 {
+
 ASTPtr ASTProjectionDeclaration::clone() const
 {
-    auto clone = std::make_shared<ASTProjectionDeclaration>(*this);
-    clone->cloneChildren();
-    return clone;
+    auto res = std::make_shared<ASTProjectionDeclaration>();
+    res->name = name;
+    if (query)
+        res->set(res->query, query->clone());
+    return res;
 }
 
 

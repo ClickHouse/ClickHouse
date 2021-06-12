@@ -22,10 +22,12 @@ class Context;
 
 /// Most used types have shorter names
 /// TODO: in the first part of refactoring all the context pointers are non-const.
-using ContextPtr = std::shared_ptr<Context>;
-using ContextConstPtr = std::shared_ptr<const Context>;
-using ContextWeakPtr = std::weak_ptr<Context>;
-using ContextWeakConstPtr = std::weak_ptr<const Context>;
+using ContextPtr = std::shared_ptr<const Context>;
+using ContextConstPtr = ContextPtr; /// For compatibility. Use ContextPtr.
+using ContextMutablePtr = std::shared_ptr<Context>;
+using ContextWeakPtr = std::weak_ptr<const Context>;
+using ContextWeakConstPtr = ContextWeakPtr; /// For compatibility. Use ContextWeakPtr.
+using ContextWeakMutablePtr = std::weak_ptr<Context>;
 
 template <class Shared = ContextPtr>
 struct WithContextImpl
@@ -49,6 +51,7 @@ protected:
 };
 
 using WithContext = WithContextImpl<>;
-using WithConstContext = WithContextImpl<ContextConstPtr>;
+using WithConstContext = WithContext; /// For compatibility. Use WithContext.
+using WithMutableContext = WithContextImpl<ContextMutablePtr>;
 
 }

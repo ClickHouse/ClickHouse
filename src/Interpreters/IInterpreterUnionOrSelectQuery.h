@@ -32,7 +32,7 @@ public:
 
 protected:
     ASTPtr query_ptr;
-    ContextPtr context;
+    ContextMutablePtr context;
     Block result_header;
     SelectQueryOptions options;
     size_t max_streams = 1;

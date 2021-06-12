@@ -197,7 +197,7 @@ public:
         bool first_argument_is_date = false;
         auto check_first_argument = [&]
         {
-            if (!isDateOrDateTime(arguments[0].type))
+            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",

@@ -347,7 +347,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
         {
             {
                 ReplicatedMergeTreeLogEntry log_entry;
-                if (storage.dropPart(zk, entry.part_name, log_entry,false, false))
+                if (storage.dropPartImpl(zk, entry.part_name, log_entry, false, false))
                     storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
             }
 

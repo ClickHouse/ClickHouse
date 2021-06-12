@@ -18,9 +18,11 @@ To apply a CatBoost model in ClickHouse:
 
 For more information about training CatBoost models, see [Training and applying models](https://catboost.ai/docs/features/training.html#training).
 
+You can reload CatBoost models if the configuration was updated without restarting the server using [RELOAD MODEL](../sql-reference/statements/system.md#query_language-system-reload-model) and [RELOAD MODELS](../sql-reference/statements/system.md#query_language-system-reload-models) system queries.
+
 ## Prerequisites {#prerequisites}
 
-If you don’t have the [Docker](https://docs.docker.com/install/) yet, install it.
+If you do not have the [Docker](https://docs.docker.com/install/) yet, install it.
 
 !!! note "Note"
     [Docker](https://www.docker.com) is a software platform that allows you to create containers that isolate a CatBoost and ClickHouse installation from the rest of the system.

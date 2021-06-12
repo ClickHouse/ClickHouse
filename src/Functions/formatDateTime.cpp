@@ -309,7 +309,7 @@ public:
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + " when arguments size is 1. Should be integer",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || WhichDataType(arguments[0].type).isDateOrDateTime()))
+            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDateTime64(arguments[0].type)))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + " when arguments size is 2 or 3. Should be a integer or a date with time",
@@ -322,7 +322,7 @@ public:
                     "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
                         + ", should be 2 or 3",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            if (!WhichDataType(arguments[0].type).isDateOrDateTime())
+            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + ". Should be a date or a date with time",
