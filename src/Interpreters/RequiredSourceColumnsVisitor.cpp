@@ -4,6 +4,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -74,6 +75,12 @@ void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
     {
         data.addColumnAliasIfAny(*ast);
         visit(*t, ast, data);
+        return;
+    }
+    /// Literal alias might mask some required column, record it too.
+    if (auto * t = ast->as<ASTLiteral>())
+    {
+        data.addColumnAliasIfAny(*t);
         return;
     }
 
