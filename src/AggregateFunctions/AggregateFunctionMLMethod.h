@@ -46,7 +46,7 @@ public:
         size_t limit,
         const std::vector<Float64> & weights,
         Float64 bias,
-        ContextConstPtr context) const = 0;
+        ContextPtr context) const = 0;
 };
 
 
@@ -71,7 +71,7 @@ public:
         size_t limit,
         const std::vector<Float64> & weights,
         Float64 bias,
-        ContextConstPtr context) const override;
+        ContextPtr context) const override;
 };
 
 
@@ -96,7 +96,7 @@ public:
         size_t limit,
         const std::vector<Float64> & weights,
         Float64 bias,
-        ContextConstPtr context) const override;
+        ContextPtr context) const override;
 };
 
 
@@ -266,7 +266,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        ContextConstPtr context) const;
+        ContextPtr context) const;
 
     void returnWeights(IColumn & to) const;
 private:
@@ -367,7 +367,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        ContextConstPtr context) const override
+        ContextPtr context) const override
     {
         if (arguments.size() != param_num + 1)
             throw Exception(

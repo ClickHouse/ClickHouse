@@ -79,7 +79,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionOverloadResolverPtr create(ContextConstPtr)
+    static FunctionOverloadResolverPtr create(ContextPtr)
     {
         return std::make_unique<RandomConstantOverloadResolver<ToType, Name>>();
     }
