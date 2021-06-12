@@ -41,18 +41,6 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
-namespace
-{
-
-TreeRewriterResult modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_result, ContextPtr context)
-{
-    TreeRewriterResult new_rewriter_result = rewriter_result;
-    removeJoin(select, new_rewriter_result, context);
-    return new_rewriter_result;
-}
-
-}
-
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
@@ -147,7 +135,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     /// should be done on the initiator always.
     ///
     /// Since in case of JOIN query on shards will receive query w/o JOIN (and their columns).
-    /// (see modifySelect()/removeJoin())
+    /// (see removeJoin())
     ///
     /// And for this we need to return FetchColumns.
     if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
@@ -297,7 +285,9 @@ Pipe StorageMerge::createSources(
 
     /// Original query could contain JOIN but we need only the first joined table and its columns.
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
-    auto new_analyzer_res = modifySelect(modified_select, *query_info.syntax_analyzer_result, modified_context);
+
+    TreeRewriterResult new_analyzer_res = *query_info.syntax_analyzer_result;
+    removeJoin(modified_select, new_analyzer_res, modified_context);
     modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
