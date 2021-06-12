@@ -16,13 +16,25 @@ namespace ErrorCodes
 }
 
 
-std::string getIdentifierQuote(nanodbc::connection & connection)
+std::string getIdentifierQuote(nanodbc::ConnectionHolderPtr connection_holder)
 {
-    return connection.get_info<std::string>(SQL_IDENTIFIER_QUOTE_CHAR);
+    std::string quote;
+    try
+    {
+        quote = execute<std::string>(connection_holder,
+                    [&](nanodbc::connection & connection) { return connection.get_info<std::string>(SQL_IDENTIFIER_QUOTE_CHAR); });
+    }
+    catch (...)
+    {
+        LOG_WARNING(&Poco::Logger::get("ODBCGetIdentifierQuote"), "Cannot fetch identifier quote. Default double quote is used. Reason: {}", getCurrentExceptionMessage(false));
+        return "\"";
+    }
+
+    return quote;
 }
 
 
-IdentifierQuotingStyle getQuotingStyle(nanodbc::connection & connection)
+IdentifierQuotingStyle getQuotingStyle(nanodbc::ConnectionHolderPtr connection)
 {
     auto identifier_quote = getIdentifierQuote(connection);
     if (identifier_quote.length() == 0)
