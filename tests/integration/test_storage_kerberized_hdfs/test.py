@@ -22,8 +22,9 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_read_table(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api(kerberized=True)
+    hdfs_api = started_cluster.hdfs_api
 
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/simple_table_function", data)
@@ -34,9 +35,8 @@ def test_read_table(started_cluster):
     select_read = node1.query("select * from hdfs('hdfs://kerberizedhdfs1:9010/simple_table_function', 'TSV', 'id UInt64, text String, number Float64')")
     assert select_read == data
 
-
 def test_read_write_storage(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api(kerberized=True)
+    hdfs_api = started_cluster.hdfs_api
 
     node1.query("create table SimpleHDFSStorage2 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://kerberizedhdfs1:9010/simple_storage1', 'TSV')")
     node1.query("insert into SimpleHDFSStorage2 values (1, 'Mark', 72.53)")
@@ -47,9 +47,8 @@ def test_read_write_storage(started_cluster):
     select_read = node1.query("select * from SimpleHDFSStorage2")
     assert select_read == "1\tMark\t72.53\n"
 
-
 def test_write_storage_not_expired(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api(kerberized=True)
+    hdfs_api = started_cluster.hdfs_api
 
     node1.query("create table SimpleHDFSStorageNotExpired (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://kerberizedhdfs1:9010/simple_storage_not_expired', 'TSV')")
 
@@ -62,9 +61,8 @@ def test_write_storage_not_expired(started_cluster):
     select_read = node1.query("select * from SimpleHDFSStorageNotExpired")
     assert select_read == "1\tMark\t72.53\n"
 
-
 def test_two_users(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api(kerberized=True)
+    hdfs_api = started_cluster.hdfs_api
 
     node1.query("create table HDFSStorOne (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://kerberizedhdfs1:9010/storage_user_one', 'TSV')")
     node1.query("insert into HDFSStorOne values (1, 'Real', 86.00)")
@@ -77,7 +75,7 @@ def test_two_users(started_cluster):
     select_read_2 = node1.query("select * from hdfs('hdfs://suser@kerberizedhdfs1:9010/storage_user_one', 'TSV', 'id UInt64, text String, number Float64')")
 
 def test_read_table_expired(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api(kerberized=True)
+    hdfs_api = started_cluster.hdfs_api
 
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/simple_table_function_relogin", data)
@@ -93,7 +91,6 @@ def test_read_table_expired(started_cluster):
 
     started_cluster.unpause_container('hdfskerberos')
 
-
 def test_prohibited(started_cluster):
     node1.query("create table HDFSStorTwoProhibited (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://suser@kerberizedhdfs1:9010/storage_user_two_prohibited', 'TSV')")
     try:
@@ -101,7 +98,6 @@ def test_prohibited(started_cluster):
         assert False, "Exception have to be thrown"
     except Exception as ex:
         assert "Unable to open HDFS file: /storage_user_two_prohibited error: Permission denied: user=specuser, access=WRITE" in str(ex)
-
 
 def test_cache_path(started_cluster):
     node1.query("create table HDFSStorCachePath (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://dedicatedcachepath@kerberizedhdfs1:9010/storage_dedicated_cache_path', 'TSV')")

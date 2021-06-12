@@ -5,10 +5,8 @@ from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
-node_memory = cluster.add_instance('node_memory', main_configs=['configs/enable_dictionaries.xml',
-                                   'configs/dictionaries/complex_key_cache_string.xml'])
-node_ssd = cluster.add_instance('node_ssd', main_configs=['configs/enable_dictionaries.xml',
-                                'configs/dictionaries/ssd_complex_key_cache_string.xml'])
+node_memory = cluster.add_instance('node_memory', dictionaries=['configs/dictionaries/complex_key_cache_string.xml'])
+node_ssd = cluster.add_instance('node_ssd', dictionaries=['configs/dictionaries/ssd_complex_key_cache_string.xml'])
 
 @pytest.fixture()
 def started_cluster():

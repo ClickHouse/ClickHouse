@@ -15,10 +15,19 @@ namespace DB
 class ExecutableDictionarySource final : public IDictionarySource
 {
 public:
+
+    struct Configuration
+    {
+        bool implicit_key;
+        const std::string command;
+        const std::string format;
+        const std::string update_field;
+        const UInt64 update_lag;
+    };
+
     ExecutableDictionarySource(
         const DictionaryStructure & dict_struct_,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
+        const Configuration & configuration_,
         Block & sample_block_,
         ContextConstPtr context_);
 
@@ -53,10 +62,7 @@ private:
     Poco::Logger * log;
     time_t update_time = 0;
     const DictionaryStructure dict_struct;
-    bool implicit_key;
-    const std::string command;
-    const std::string update_field;
-    const std::string format;
+    const Configuration configuration;
     Block sample_block;
     ContextConstPtr context;
 };
