@@ -2,19 +2,18 @@
     #include <Common/config.h>
 #endif
 
+#include <common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
-
+#include "Disks/DiskFactory.h"
 
 #if USE_AWS_S3
 
-#include <aws/core/client/DefaultRetryStrategy.h>
+#include <aws/core/client/DefaultRetryStrategy.h> // Y_IGNORE
 #include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
-#include "Disks/DiskFactory.h"
 #include "Storages/StorageS3Settings.h"
 #include "ProxyConfiguration.h"
 #include "ProxyListConfiguration.h"
