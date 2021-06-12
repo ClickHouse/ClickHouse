@@ -51,6 +51,7 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool isRemote() const override { return true; }

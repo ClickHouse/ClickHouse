@@ -970,7 +970,9 @@ public:
         WhichDataType which(arguments[0]);
 
         if (!which.isStringOrFixedString() &&
-            !which.isDateOrDateTime() &&
+            !which.isDate() &&
+            !which.isDateTime() &&
+            !which.isDateTime64() &&
             !which.isUInt() &&
             !which.isFloat() &&
             !which.isDecimal())
