@@ -21,14 +21,27 @@ using ConnectionPtr = std::unique_ptr<nanodbc::connection>;
 using Pool = BorrowedObjectPool<ConnectionPtr>;
 using PoolPtr = std::shared_ptr<Pool>;
 
+static constexpr inline auto ODBC_CONNECT_TIMEOUT = 100;
+
+
 class ConnectionHolder
 {
 public:
-    ConnectionHolder(PoolPtr pool_, ConnectionPtr connection_) : pool(pool_), connection(std::move(connection_)) {}
+    ConnectionHolder(PoolPtr pool_,
+                     ConnectionPtr connection_,
+                     const String & connection_string_)
+        : pool(pool_)
+        , connection(std::move(connection_))
+        , connection_string(connection_string_)
+    {
+    }
 
     ConnectionHolder(const ConnectionHolder & other) = delete;
 
-    ~ConnectionHolder() { pool->returnObject(std::move(connection)); }
+    ~ConnectionHolder()
+    {
+        pool->returnObject(std::move(connection));
+    }
 
     nanodbc::connection & get() const
     {
@@ -36,12 +49,19 @@ public:
         return *connection;
     }
 
+    void updateConnection()
+    {
+        connection = std::make_unique<nanodbc::connection>(connection_string, ODBC_CONNECT_TIMEOUT);
+    }
+
 private:
     PoolPtr pool;
     ConnectionPtr connection;
+    const String & connection_string;
 };
 
-using ConnectionHolderPtr = std::unique_ptr<ConnectionHolder>;
+using ConnectionHolderPtr = std::shared_ptr<ConnectionHolder>;
+
 }
 
 
@@ -50,6 +70,26 @@ namespace DB
 
 static constexpr inline auto ODBC_CONNECT_TIMEOUT = 100;
 static constexpr inline auto ODBC_POOL_WAIT_TIMEOUT = 10000;
+
+template <typename T>
+T execute(nanodbc::ConnectionHolderPtr connection_holder, std::function<T(nanodbc::connection &)> query_func)
+{
+    try
+    {
+        return query_func(connection_holder->get());
+    }
+    catch (const nanodbc::database_error & e)
+    {
+        /// SQLState, connection related errors start with 08S0.
+        if (e.state().starts_with("08S0"))
+        {
+            connection_holder->updateConnection();
+            return query_func(connection_holder->get());
+        }
+        throw;
+    }
+}
+
 
 class ODBCConnectionFactory final : private boost::noncopyable
 {
@@ -77,15 +117,16 @@ public:
 
         try
         {
-            if (!connection || !connection->connected())
+            if (!connection)
                 connection = std::make_unique<nanodbc::connection>(connection_string, ODBC_CONNECT_TIMEOUT);
         }
         catch (...)
         {
             pool->returnObject(std::move(connection));
+            throw;
         }
 
-        return std::make_unique<nanodbc::ConnectionHolder>(factory[connection_string], std::move(connection));
+        return std::make_unique<nanodbc::ConnectionHolder>(factory[connection_string], std::move(connection), connection_string);
     }
 
 private:
