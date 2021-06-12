@@ -308,9 +308,9 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command = config.getString(settings_config_prefix + ".command"),
             .format = config.getString(settings_config_prefix + ".format"),
             .pool_size = config.getUInt64(settings_config_prefix + ".size"),
-            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
             .command_termination_timeout = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
-            .max_command_execution_time = max_command_execution_time
+            .max_command_execution_time = max_command_execution_time,
+            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
         };
 
         return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);
