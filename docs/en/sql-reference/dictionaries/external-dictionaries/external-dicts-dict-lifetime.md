@@ -94,6 +94,8 @@ It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to onl
 -   If source is Executable then `update_field` will be added as executable script argument with last update time as argument value.
 -   If source is ClickHouse, MySQL, PostgreSQL, ODBC there will be additional part of WHERE, where `update_field` is compared as greater or equal with last update time.
 
+If `update_field` option is set. Additional option `update_lag` can be set. Value of `update_lag` option is subtracted from previous update time before request updated data.
+
 Example of settings:
 
 ``` xml
@@ -102,6 +104,7 @@ Example of settings:
         <clickhouse>
             ...
             <update_field>added_time</update_field>
+            <update_lag>15</update_lag>
         </clickhouse>
     ...
 </dictionary>
@@ -111,6 +114,6 @@ or
 
 ``` sql
 ...
-SOURCE(CLICKHOUSE(... update_field 'added_time'))
+SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
 ...
 ```
