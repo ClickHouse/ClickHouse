@@ -127,14 +127,14 @@ That dictionary source can be configured only via XML configuration. Creating di
 
 ## Executable Pool {#dicts-external_dicts_dict_sources-executable_pool}
 
-Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary is stored using `cache`, `ssd_cache`, `direct` layouts. Executable pool will spawn pool of processes with specified command and keep them running until they exit. The program should read data from STDIN while it is available and output result to STDOUT, and it can wait for next block of data on stdin. ClickHouse will not close STDIN after processing a block of data but will pipe another chunk of data when needed. The executable script should be ready for this way of data processing - it should poll STDIN and flush data to STDOUT early.
+Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary is stored using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct` layouts. Executable pool will spawn pool of processes with specified command and keep them running until they exit. The program should read data from STDIN while it is available and output result to STDOUT, and it can wait for next block of data on stdin. ClickHouse will not close STDIN after processing a block of data but will pipe another chunk of data when needed. The executable script should be ready for this way of data processing - it should poll STDIN and flush data to STDOUT early.
 
 Example of settings:
 
 ``` xml
 <source>
     <executable_pool>
-        <command>cat /opt/dictionaries/os.tsv</command>
+        <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
         <format>TabSeparated</format>
         <pool_size>10</pool_size>
         <max_command_execution_time>10<max_command_execution_time>
