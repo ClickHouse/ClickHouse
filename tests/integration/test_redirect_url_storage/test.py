@@ -1,6 +1,5 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.hdfs_api import HDFSApi
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=False, with_hdfs=True)
@@ -17,8 +16,10 @@ def started_cluster():
 
 
 def test_url_without_redirect(started_cluster):
-    started_cluster.hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
-    assert started_cluster.hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
+    hdfs_api = started_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
 
     # access datanode port directly
     node1.query(
@@ -27,12 +28,14 @@ def test_url_without_redirect(started_cluster):
 
 
 def test_url_with_globs(started_cluster):
-    started_cluster.hdfs_api.write_data("/simple_storage_1_1", "1\n")
-    started_cluster.hdfs_api.write_data("/simple_storage_1_2", "2\n")
-    started_cluster.hdfs_api.write_data("/simple_storage_1_3", "3\n")
-    started_cluster.hdfs_api.write_data("/simple_storage_2_1", "4\n")
-    started_cluster.hdfs_api.write_data("/simple_storage_2_2", "5\n")
-    started_cluster.hdfs_api.write_data("/simple_storage_2_3", "6\n")
+    hdfs_api = started_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage_1_1", "1\n")
+    hdfs_api.write_data("/simple_storage_1_2", "2\n")
+    hdfs_api.write_data("/simple_storage_1_3", "3\n")
+    hdfs_api.write_data("/simple_storage_2_1", "4\n")
+    hdfs_api.write_data("/simple_storage_2_2", "5\n")
+    hdfs_api.write_data("/simple_storage_2_3", "6\n")
 
     result = node1.query(
         "select * from url('http://hdfs1:50075/webhdfs/v1/simple_storage_{1..2}_{1..3}?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'data String') as data order by data")
@@ -40,12 +43,14 @@ def test_url_with_globs(started_cluster):
 
 
 def test_url_with_globs_and_failover(started_cluster):
-    started_cluster.hdfs_api.write_data("/simple_storage_1_1", "1\n")
-    started_cluster.hdfs_api.write_data("/simple_storage_1_2", "2\n")
-    started_cluster.hdfs_api.write_data("/simple_storage_1_3", "3\n")
-    started_cluster.hdfs_api.write_data("/simple_storage_3_1", "4\n")
-    started_cluster.hdfs_api.write_data("/simple_storage_3_2", "5\n")
-    started_cluster.hdfs_api.write_data("/simple_storage_3_3", "6\n")
+    hdfs_api = started_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage_1_1", "1\n")
+    hdfs_api.write_data("/simple_storage_1_2", "2\n")
+    hdfs_api.write_data("/simple_storage_1_3", "3\n")
+    hdfs_api.write_data("/simple_storage_3_1", "4\n")
+    hdfs_api.write_data("/simple_storage_3_2", "5\n")
+    hdfs_api.write_data("/simple_storage_3_3", "6\n")
 
     result = node1.query(
         "select * from url('http://hdfs1:50075/webhdfs/v1/simple_storage_{0|1|2|3}_{1..3}?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'data String') as data order by data")
@@ -53,8 +58,10 @@ def test_url_with_globs_and_failover(started_cluster):
 
 
 def test_url_with_redirect_not_allowed(started_cluster):
-    started_cluster.hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
-    assert started_cluster.hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
+    hdfs_api = started_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
 
     # access proxy port without allowing redirects
     node1.query(
@@ -64,8 +71,10 @@ def test_url_with_redirect_not_allowed(started_cluster):
 
 
 def test_url_with_redirect_allowed(started_cluster):
-    started_cluster.hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
-    assert started_cluster.hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
+    hdfs_api = started_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
 
     # access proxy port with allowing redirects
     # http://localhost:50070/webhdfs/v1/b?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0

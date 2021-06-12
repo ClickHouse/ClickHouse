@@ -24,7 +24,7 @@ class FunctionValidateNestedArraySizes : public IFunction
 {
 public:
     static constexpr auto name = "validateNestedArraySizes";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionValidateNestedArraySizes>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionValidateNestedArraySizes>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

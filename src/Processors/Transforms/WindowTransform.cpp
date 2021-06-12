@@ -215,7 +215,9 @@ WindowTransform::WindowTransform(const Block & input_header_,
         }
         workspace.argument_columns.assign(f.argument_names.size(), nullptr);
 
-        workspace.window_function_impl = aggregate_function->asWindowFunction();
+        /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
+        workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
+
         if (!workspace.window_function_impl)
         {
             workspace.aggregate_function_state.reset(
@@ -1343,13 +1345,12 @@ struct WindowFunction
 {
     std::string name;
 
-    WindowFunction(const std::string & name_, const DataTypes & argument_types_,
-               const Array & parameters_)
+    WindowFunction(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunctionHelper<WindowFunction>(argument_types_, parameters_)
         , name(name_)
     {}
 
-    IWindowFunction * asWindowFunction() override { return this; }
+    bool isOnlyWindowFunction() const override { return true; }
 
     [[noreturn]] void fail() const
     {

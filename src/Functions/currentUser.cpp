@@ -16,7 +16,7 @@ class FunctionCurrentUser : public IFunction
 
 public:
     static constexpr auto name = "currentUser";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionCurrentUser>(context->getClientInfo().initial_user);
     }
