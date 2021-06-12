@@ -144,7 +144,7 @@ class _NetworkManager:
             res = subprocess.run("iptables -D DOCKER-USER 1", shell=True)
 
             if res.returncode != 0:
-                logging.info("All iptables rules cleared, " + str(iptables_iter) + "iterations, last error: " + str(res.stderr))
+                logging.info("All iptables rules cleared, " + str(iptables_iter) + " iterations, last error: " + str(res.stderr))
                 return
 
     @staticmethod
@@ -248,6 +248,7 @@ class NetThroughput(object):
             if not check:
                 raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
         except:
+            logging.error("All available interfaces %s", subprocess.check_output("cat /proc/net/dev", shell=True))
             raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
 
         self.current_in = self._get_in_bytes()

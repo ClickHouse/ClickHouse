@@ -33,7 +33,7 @@ class FunctionsStringSimilarity : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionsStringSimilarity>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSimilarity>(); }
 
     String getName() const override { return name; }
 

@@ -413,10 +413,10 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
 }
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(ASTPtr & query, ContextConstPtr context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
+void executeScalarSubqueries(ASTPtr & query, ContextPtr context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{WithConstContext{context}, subquery_depth, scalars, only_analyze};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{WithContext{context}, subquery_depth, scalars, only_analyze};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -924,8 +924,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, select_options.only_analyze);
 
-    TreeOptimizer::apply(
-        query, result.aliases, source_columns_set, tables_with_columns, getContext(), result.metadata_snapshot, result.rewrite_subqueries);
+    TreeOptimizer::apply(query, result, tables_with_columns, getContext());
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);

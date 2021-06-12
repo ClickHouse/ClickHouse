@@ -15,7 +15,7 @@ class FunctionBlockSize : public IFunction
 {
 public:
     static constexpr auto name = "blockSize";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBlockSize>();
     }

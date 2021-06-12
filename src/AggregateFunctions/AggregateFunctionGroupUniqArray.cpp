@@ -4,7 +4,6 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -73,7 +72,8 @@ inline AggregateFunctionPtr createAggregateFunctionGroupUniqArrayImpl(const std:
 
 }
 
-AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
 
