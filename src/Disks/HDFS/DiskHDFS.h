@@ -32,9 +32,6 @@ struct DiskHDFSSettings
  */
 class DiskHDFS final : public IDiskRemote
 {
-
-friend class DiskHDFSReservation;
-
 public:
     using SettingsPtr = std::unique_ptr<DiskHDFSSettings>;
 

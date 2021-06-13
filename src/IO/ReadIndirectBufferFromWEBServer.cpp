@@ -1,4 +1,4 @@
-#include "ReadBufferFromStatic.h"
+#include "ReadIndirectBufferFromWEBServer.h"
 
 #include <Core/Types.h>
 #include <common/logger_useful.h>
@@ -16,21 +16,21 @@ namespace ErrorCodes
 }
 
 
-ReadBufferFromStatic::ReadBufferFromStatic(const String & url_,
+ReadIndirectBufferFromWEBServer::ReadIndirectBufferFromWEBServer(const String & url_,
                                            ContextPtr context_,
                                            size_t max_read_tries_,
-                                           size_t buffer_size_)
-    : SeekableReadBuffer(nullptr, 0)
-    , log(&Poco::Logger::get("ReadBufferFromStaticFilesWebServer"))
+                                           size_t buf_size_)
+    : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
+    , log(&Poco::Logger::get("ReadIndirectBufferFromWEBServer"))
     , context(context_)
     , url(url_)
-    , buffer_size(buffer_size_)
+    , buffer_size(buf_size_)
     , max_read_tries(max_read_tries_)
 {
 }
 
 
-std::unique_ptr<ReadBuffer> ReadBufferFromStatic::initialize()
+std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWEBServer::initialize()
 {
     Poco::URI uri(url);
     return std::make_unique<ReadWriteBufferFromHTTP>(
@@ -44,7 +44,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromStatic::initialize()
 }
 
 
-bool ReadBufferFromStatic::nextImpl()
+bool ReadIndirectBufferFromWEBServer::nextImpl()
 {
     if (!impl)
         impl = initialize();
@@ -76,8 +76,7 @@ bool ReadBufferFromStatic::nextImpl()
 
     if (ret)
     {
-        internal_buffer = impl->buffer();
-        working_buffer = internal_buffer;
+        working_buffer = internal_buffer = impl->buffer();
         /// Do not update pos here, because it is anyway overwritten after nextImpl() in ReadBuffer::next().
     }
 
@@ -85,7 +84,7 @@ bool ReadBufferFromStatic::nextImpl()
 }
 
 
-off_t ReadBufferFromStatic::seek(off_t offset_, int whence)
+off_t ReadIndirectBufferFromWEBServer::seek(off_t offset_, int whence)
 {
     if (impl)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek is allowed only before first read attempt from the buffer");
@@ -102,7 +101,7 @@ off_t ReadBufferFromStatic::seek(off_t offset_, int whence)
 }
 
 
-off_t ReadBufferFromStatic::getPosition()
+off_t ReadIndirectBufferFromWEBServer::getPosition()
 {
     return offset + count();
 }

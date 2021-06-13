@@ -67,7 +67,7 @@ public:
 
     std::unique_ptr<ReadBufferFromHDFS> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size);
+        return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_directory + path, config, buf_size);
     }
 
 private:
@@ -97,8 +97,9 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
 {
     auto metadata = readMeta(path);
 
-    LOG_DEBUG(log, "Read from file by path: {}. Existing HDFS objects: {}",
-        backQuote((fs::path(metadata_path) / path).string()), metadata.remote_fs_objects.size());
+    LOG_DEBUG(log,
+        "Read from file by path: {}. Existing HDFS objects: {}",
+        backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
     auto reader = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, metadata, buf_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
@@ -111,10 +112,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 
     /// Path to store new HDFS object.
     auto file_name = getRandomName();
-    String hdfs_path = fs::path(remote_fs_root_path) / file_name;
+    auto hdfs_path = remote_fs_root_path + file_name;
 
     LOG_DEBUG(log, "{} to file by path: {}. HDFS path: {}", mode == WriteMode::Rewrite ? "Write" : "Append",
-              backQuote((fs::path(metadata_path) / path).string()), remote_fs_root_path + hdfs_path);
+              backQuote(metadata_path + path), remote_fs_root_path + hdfs_path);
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
@@ -177,7 +178,7 @@ void registerDiskHDFS(DiskFactory & factory)
         String uri{config.getString(config_prefix + ".endpoint")};
 
         if (uri.back() != '/')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must end with '/', but '{}' doesn't.", uri);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
         String metadata_path = context_->getPath() + "disks/" + name + "/";
 

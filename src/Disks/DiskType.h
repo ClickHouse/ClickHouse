@@ -13,7 +13,7 @@ struct DiskType
         RAM,
         S3,
         HDFS,
-        Static
+        WEBServer
     };
 
     static String toString(Type disk_type)
@@ -28,8 +28,8 @@ struct DiskType
                 return "s3";
             case Type::HDFS:
                 return "hdfs";
-            case Type::Static:
-                return "static";
+            case Type::WEBServer:
+                return "web";
         }
         __builtin_unreachable();
     }

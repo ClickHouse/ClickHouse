@@ -20,7 +20,7 @@ def test_insert_select(cluster):
     node.query("""
         CREATE TABLE test1 (id Int32)
         ENGINE = MergeTree() ORDER BY id
-        SETTINGS storage_policy = 'static';
+        SETTINGS storage_policy = 'web';
     """)
 
     node.query("INSERT INTO test1 SELECT number FROM numbers(100)")
@@ -36,15 +36,18 @@ def test_insert_select(cluster):
     node.query("""
         CREATE TABLE test2 (id Int32)
         ENGINE = MergeTree() ORDER BY id
-        SETTINGS storage_policy = 'static';
+        SETTINGS storage_policy = 'web';
     """)
 
     node.query("INSERT INTO test2 SELECT number FROM numbers(500000)")
     result = node.query("SELECT id FROM test2 ORDER BY id")
     expected = node.query("SELECT number FROM numbers(500000)")
     assert(result == expected)
-
+    node.query("INSERT INTO test2 SELECT number FROM numbers(500000, 500000)")
     node.query("DETACH TABLE test2")
     node.query("ATTACH TABLE test2")
+    node.query("INSERT INTO test2 SELECT number FROM numbers(1000000, 500000)")
     result = node.query("SELECT count() FROM test2")
-    assert(int(result) == 500000)
+    assert(int(result) == 1500000)
+    result = node.query("SELECT id FROM test2 WHERE id % 100 = 0 ORDER BY id")
+    assert(result == node.query("SELECT number FROM numbers(1500000) WHERE number % 100 = 0 ORDER BY number"))

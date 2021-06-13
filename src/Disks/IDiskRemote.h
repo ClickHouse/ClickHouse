@@ -23,7 +23,8 @@ namespace ErrorCodes
 }
 
 /// Helper class to collect paths into chunks of maximum size.
-/// For s3 it is Aws::vector<ObjectIdentifier>, for hdfs it is std::vector<std::string>.
+/// For diskS3 it is Aws::vector<ObjectIdentifier>, for diskHDFS it is std::vector<std::string>.
+/// For DiskWEBServer not implemented.
 class RemoteFSPathKeeper
 {
 public:
@@ -41,14 +42,12 @@ using RemoteFSPathKeeperPtr = std::shared_ptr<RemoteFSPathKeeper>;
 
 
 /// Base Disk class for remote FS's, which are not posix-compatible.
-/// Used for s3, hdfs, static.
+/// Used for s3, hdfs, web-server.
 class IDiskRemote : public IDisk
 {
 friend class DiskRemoteReservation;
 
 public:
-    struct Metadata;
-
     IDiskRemote(
         const String & name_,
         const String & remote_fs_root_path_,
@@ -56,15 +55,21 @@ public:
         const String & log_name_,
         size_t thread_pool_size);
 
-    const String & getName() const final override { return name; }
+    /// Methods to manage metadata of remote FS objects.
 
-    const String & getPath() const final override { return metadata_path; }
+    struct Metadata;
 
     Metadata readMeta(const String & path) const;
 
     Metadata createMeta(const String & path) const;
 
     Metadata readOrCreateMetaForWriting(const String & path, WriteMode mode);
+
+    /// Disk info
+
+    const String & getName() const final override { return name; }
+
+    const String & getPath() const final override { return metadata_path; }
 
     UInt64 getTotalSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
@@ -74,9 +79,9 @@ public:
 
     /// Read-only part
 
-    bool exists(const String & path) const final override;
+    bool exists(const String & path) const override;
 
-    bool isFile(const String & path) const final override;
+    bool isFile(const String & path) const override;
 
     size_t getFileSize(const String & path) const final override;
 
