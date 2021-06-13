@@ -10,6 +10,7 @@
 #include <Poco/Logger.h>
 
 #include <array>
+#include <condition_variable>
 #include <list>
 #include <map>
 #include <memory>
