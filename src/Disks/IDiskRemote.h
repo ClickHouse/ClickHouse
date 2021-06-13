@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 /// Helper class to collect paths into chunks of maximum size.
 /// For diskS3 it is Aws::vector<ObjectIdentifier>, for diskHDFS it is std::vector<std::string>.
-/// For DiskWEBServer not implemented.
+/// For diskWEBServer not implemented.
 class RemoteFSPathKeeper
 {
 public:
@@ -42,7 +42,7 @@ using RemoteFSPathKeeperPtr = std::shared_ptr<RemoteFSPathKeeper>;
 
 
 /// Base Disk class for remote FS's, which are not posix-compatible.
-/// Used for s3, hdfs, web-server.
+/// Used to implement disks over s3, hdfs, web-server.
 class IDiskRemote : public IDisk
 {
 friend class DiskRemoteReservation;
@@ -55,7 +55,7 @@ public:
         const String & log_name_,
         size_t thread_pool_size);
 
-    /// Methods to manage metadata of remote FS objects.
+    /// Methods to manage local metadata of remote FS objects.
 
     struct Metadata;
 
@@ -83,7 +83,7 @@ public:
 
     bool isFile(const String & path) const override;
 
-    size_t getFileSize(const String & path) const final override;
+    size_t getFileSize(const String & path) const override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
@@ -130,7 +130,7 @@ public:
     /// Overriden by disks s3 and hdfs.
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} does not support storage keeper", getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} does not support FS paths keeper", getName());
     }
 
     /// Create part
@@ -148,11 +148,9 @@ protected:
 
     /// Disk name
     const String name;
-
     /// URL + root path to store files in remote FS.
     const String remote_fs_root_path;
 
-    /// Path to store remote FS metadata, i.e. file name in remote FS, its size, etc.
     const String metadata_path;
 
 private:
@@ -171,8 +169,8 @@ using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
 
 
 /// Remote FS (S3, HDFS, WEB-server) metadata file layout:
-/// Number of FS objects, total size of all FS objects.
-/// Each FS object represents path where object located in FS and size of object.
+/// FS objects, their number and total size of all FS objects.
+/// Each FS object represents a file path in remote FS and its size.
 
 struct IDiskRemote::Metadata
 {

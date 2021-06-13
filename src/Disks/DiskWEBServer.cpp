@@ -9,10 +9,8 @@
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
 
 #include <IO/WriteBufferFromHTTP.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadIndirectBufferFromWEBServer.h>
 #include <IO/SeekAvoidingReadBuffer.h>
-#include <IO/SeekableReadBuffer.h>
 
 
 namespace DB

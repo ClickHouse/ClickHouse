@@ -21,7 +21,7 @@ struct DiskWEBServerSettings
 };
 
 
-/// Disk to store data on a web server and metadata on the local disk.
+/// Storage to store data on a web server and metadata on the local disk.
 
 class DiskWEBServer : public IDiskRemote, WithContext
 {

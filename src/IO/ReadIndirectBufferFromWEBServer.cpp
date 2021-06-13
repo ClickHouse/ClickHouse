@@ -1,7 +1,8 @@
 #include "ReadIndirectBufferFromWEBServer.h"
 
-#include <Core/Types.h>
 #include <common/logger_useful.h>
+#include <Core/Types.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <thread>
 
 
