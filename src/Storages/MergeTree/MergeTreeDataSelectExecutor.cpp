@@ -303,7 +303,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.min_free_disk_space_for_temporary_data,
                     settings.compile_expressions,
                     settings.min_count_to_compile_aggregate_expression,
-                    settings.aggregation_method,
                     header_before_aggregation); // The source header is also an intermediate header
 
                 transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
@@ -334,8 +333,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.max_threads,
                     settings.min_free_disk_space_for_temporary_data,
                     settings.compile_aggregate_expressions,
-                    settings.min_count_to_compile_aggregate_expression,
-                    settings.aggregation_method);
+                    settings.min_count_to_compile_aggregate_expression);
 
                 transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
             }

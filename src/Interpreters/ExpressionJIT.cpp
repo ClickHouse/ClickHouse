@@ -1,4 +1,6 @@
-#include <Interpreters/ExpressionJIT.h>
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_EMBEDDED_COMPILER
 
@@ -20,6 +22,7 @@
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileDAG.h>
 #include <Interpreters/JIT/compileFunction.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ActionsDAG.h>
 
 namespace DB
@@ -42,15 +45,16 @@ static Poco::Logger * getLogger()
     return &logger;
 }
 
-class CompiledFunctionHolder
+class CompiledFunctionHolder : public CompiledExpressionCacheEntry
 {
 public:
 
     explicit CompiledFunctionHolder(CompiledFunction compiled_function_)
-        : compiled_function(compiled_function_)
+        : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
+        , compiled_function(compiled_function_)
     {}
 
-    ~CompiledFunctionHolder()
+    ~CompiledFunctionHolder() override
     {
         getJITInstance().deleteCompiledModule(compiled_function.compiled_module);
     }
@@ -287,19 +291,18 @@ static FunctionBasePtr compile(
         {
             LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
             auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
-            auto compiled_function_holder = std::make_shared<CompiledFunctionHolder>(compiled_function);
-
-            return std::make_shared<CompiledFunctionCacheEntry>(std::move(compiled_function_holder), compiled_function.compiled_module.size);
+            return std::make_shared<CompiledFunctionHolder>(compiled_function);
         });
 
-        llvm_function->setCompiledFunction(compiled_function_cache_entry->getCompiledFunctionHolder());
+        std::shared_ptr<CompiledFunctionHolder> compiled_function_holder = std::static_pointer_cast<CompiledFunctionHolder>(compiled_function_cache_entry);
+        llvm_function->setCompiledFunction(std::move(compiled_function_holder));
     }
     else
     {
         auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
-        auto compiled_function_ptr = std::make_shared<CompiledFunctionHolder>(compiled_function);
+        auto compiled_function_holder = std::make_shared<CompiledFunctionHolder>(compiled_function);
 
-        llvm_function->setCompiledFunction(compiled_function_ptr);
+        llvm_function->setCompiledFunction(std::move(compiled_function_holder));
     }
 
     return llvm_function;
@@ -566,25 +569,6 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
             node->column = nullptr;
         }
     }
-}
-
-CompiledExpressionCacheFactory & CompiledExpressionCacheFactory::instance()
-{
-    static CompiledExpressionCacheFactory factory;
-    return factory;
-}
-
-void CompiledExpressionCacheFactory::init(size_t cache_size)
-{
-    if (cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompiledExpressionCache was already initialized");
-
-    cache = std::make_unique<CompiledExpressionCache>(cache_size);
-}
-
-CompiledExpressionCache * CompiledExpressionCacheFactory::tryGetCache()
-{
-    return cache.get();
 }
 
 }

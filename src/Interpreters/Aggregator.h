@@ -852,6 +852,8 @@ using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
+class CompiledAggregateFunctionsHolder;
+
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
   *
@@ -911,7 +913,6 @@ public:
 
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
-        size_t aggregation_method;
 
         Params(
             const Block & src_header_,
@@ -924,7 +925,6 @@ public:
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
-            size_t aggregation_method_,
             const Block & intermediate_header_ = {})
             : src_header(src_header_),
             intermediate_header(intermediate_header_),
@@ -936,15 +936,14 @@ public:
             tmp_volume(tmp_volume_), max_threads(max_threads_),
             min_free_disk_space(min_free_disk_space_),
             compile_aggregate_expressions(compile_aggregate_expressions_),
-            min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_),
-            aggregation_method(aggregation_method_)
+            min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, 0)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0)
         {
             intermediate_header = intermediate_header_;
         }
@@ -1087,7 +1086,7 @@ private:
     TemporaryFiles temporary_files;
 
 #if USE_EMBEDDED_COMPILER
-    std::optional<CompiledAggregateFunctions> compiled_functions;
+    std::shared_ptr<CompiledAggregateFunctionsHolder> compiled_aggregate_functions_holder;
 #endif
 
     /** Try to compile aggregate functions.
@@ -1121,33 +1120,8 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool no_more_keys, typename Method>
+    template <bool no_more_keys, bool use_compiled_expressions, typename Method>
     void executeImplBatch(
-        Method & method,
-        typename Method::State & state,
-        Arena * aggregates_pool,
-        size_t rows,
-        AggregateFunctionInstruction * aggregate_instructions,
-        AggregateDataPtr overflow_row) const;
-
-    template <bool no_more_keys, typename Method>
-    void handleAggregationJIT(
-        Method & method,
-        typename Method::State & state,
-        Arena * aggregates_pool,
-        size_t rows,
-        AggregateFunctionInstruction * aggregate_instructions) const;
-
-    template <bool no_more_keys, typename Method>
-    void handleAggregationJITV2(
-        Method & method,
-        typename Method::State & state,
-        Arena * aggregates_pool,
-        size_t rows,
-        AggregateFunctionInstruction * aggregate_instructions) const;
-
-    template <bool no_more_keys, typename Method>
-    void handleAggregationDefault(
         Method & method,
         typename Method::State & state,
         Arena * aggregates_pool,
@@ -1183,7 +1157,7 @@ private:
             Arena * arena) const;
 
     /// Merge data from hash table `src` into `dst`.
-    template <typename Method, typename Table>
+    template <typename Method, bool use_compiled_functions, typename Table>
     void mergeDataImpl(
         Table & table_dst,
         Table & table_src,
@@ -1227,7 +1201,7 @@ private:
         MutableColumns & final_aggregate_columns,
         Arena * arena) const;
 
-    template <typename Method, typename Table>
+    template <typename Method, bool use_compiled_functions, typename Table>
     void convertToBlockImplFinal(
         Method & method,
         Table & data,

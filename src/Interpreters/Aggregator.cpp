@@ -24,6 +24,7 @@
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <IO/Operators.h>
 #include <Interpreters/JIT/compileFunction.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 
 
 namespace ProfileEvents
@@ -222,6 +223,30 @@ static CHJIT & getJITInstance()
     return jit;
 }
 
+class CompiledAggregateFunctionsHolder final : public CompiledExpressionCacheEntry
+{
+public:
+    explicit CompiledAggregateFunctionsHolder(CompiledAggregateFunctions compiled_function_)
+        : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
+        , compiled_aggregate_functions(compiled_function_)
+    {}
+
+    ~CompiledAggregateFunctionsHolder() override
+    {
+        std::string symbol_names;
+        for (const auto & [name, _] : compiled_aggregate_functions.compiled_module.function_name_to_symbol)
+        {
+            symbol_names += name;
+            symbol_names += ' ';
+        }
+
+        std::cerr << "CompiledAggregateFunctionsHolder::~CompiledAggregateFunctionsHolder " << symbol_names << std::endl;
+        getJITInstance().deleteCompiledModule(compiled_aggregate_functions.compiled_module);
+    }
+
+    CompiledAggregateFunctions compiled_aggregate_functions;
+};
+
 #endif
 
 Aggregator::Aggregator(const Params & params_)
@@ -287,7 +312,6 @@ Aggregator::Aggregator(const Params & params_)
 void Aggregator::compileAggregateFunctions()
 {
     static std::unordered_map<UInt128, UInt64, UInt128Hash> aggregate_functions_description_to_count;
-    static std::unordered_map<std::string, CompiledAggregateFunctions> aggregation_functions_dump_to_add_compiled;
     static std::mutex mtx;
 
     if (!params.compile_aggregate_expressions || params.overflow_row)
@@ -324,36 +348,37 @@ void Aggregator::compileAggregateFunctions()
     if (functions_to_compile.empty() || functions_to_compile.size() != aggregate_functions.size())
         return;
 
-    CompiledAggregateFunctions compiled_aggregate_functions;
+    SipHash aggregate_functions_description_hash;
+    aggregate_functions_description_hash.update(functions_description);
 
-    SipHash aggregate_function_description_hash;
-    aggregate_function_description_hash.update(functions_description);
-
-    UInt128 aggregate_function_description_hash_result;
-    aggregate_function_description_hash.get128(aggregate_function_description_hash_result);
+    UInt128 aggregate_functions_description_hash_key;
+    aggregate_functions_description_hash.get128(aggregate_functions_description_hash_key);
 
     {
         std::lock_guard<std::mutex> lock(mtx);
 
-        if (aggregate_functions_description_to_count[aggregate_function_description_hash_result]++ < params.min_count_to_compile_aggregate_expression)
+        if (aggregate_functions_description_to_count[aggregate_functions_description_hash_key]++ < params.min_count_to_compile_aggregate_expression)
             return;
 
-        auto it = aggregation_functions_dump_to_add_compiled.find(functions_description);
-        if (it != aggregation_functions_dump_to_add_compiled.end())
+        if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
         {
-            compiled_aggregate_functions = it->second;
+            auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(aggregate_functions_description_hash_key, [&] ()
+            {
+                LOG_TRACE(log, "Compile expression {}", functions_description);
+
+                auto compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_description);
+                return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
+            });
+
+            compiled_aggregate_functions_holder = std::static_pointer_cast<CompiledAggregateFunctionsHolder>(compiled_function_cache_entry);
         }
         else
         {
             LOG_TRACE(log, "Compile expression {}", functions_description);
-
-            compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_description);
-            aggregation_functions_dump_to_add_compiled[functions_description] = compiled_aggregate_functions;
+            auto compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_description);
+            compiled_aggregate_functions_holder = std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
         }
     }
-
-    LOG_TRACE(log, "Use compiled expression {}", functions_description);
-    compiled_functions.emplace(std::move(compiled_aggregate_functions));
 }
 
 #endif
@@ -568,232 +593,34 @@ void NO_INLINE Aggregator::executeImpl(
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
     if (!no_more_keys)
-        executeImplBatch<false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
-    else
-        executeImplBatch<true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
-}
-
+    {
 #if USE_EMBEDDED_COMPILER
-
-template <bool no_more_keys, typename Method>
-void NO_INLINE Aggregator::handleAggregationJIT(
-    Method & method,
-    typename Method::State & state,
-    Arena * aggregates_pool,
-    size_t rows,
-    AggregateFunctionInstruction * aggregate_instructions) const
-{
-    std::vector<ColumnData> columns_data;
-    columns_data.reserve(aggregate_functions.size());
-
-    /// Add values to the aggregate functions.
-    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-    {
-        size_t arguments_size = inst->that->getArgumentTypes().size();
-        for (size_t i = 0; i < arguments_size; ++i)
-            columns_data.emplace_back(getColumnData(inst->batch_arguments[i]));
-    }
-
-    auto add_into_aggregate_states_function = compiled_functions->add_into_aggregate_states_function;
-    auto create_aggregate_states_function = compiled_functions->create_aggregate_states_function;
-
-    std::unique_ptr<AggregateDataPtr[]> places;
-
-    bool not_all_functions_compiled = compiled_functions->functions_count != offsets_of_aggregate_states.size();
-    if (not_all_functions_compiled)
-        places.reset(new AggregateDataPtr[rows]);
-
-    auto get_aggregate_data = [&](size_t row) -> AggregateDataPtr
-    {
-        AggregateDataPtr aggregate_data;
-
-        if constexpr (!no_more_keys)
+        if (compiled_aggregate_functions_holder)
         {
-            auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
-
-            /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
-            if (emplace_result.isInserted())
-            {
-                /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
-                emplace_result.setMapped(nullptr);
-
-                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                create_aggregate_states_function(aggregate_data);
-
-                emplace_result.setMapped(aggregate_data);
-            }
-            else
-                aggregate_data = emplace_result.getMapped();
-
-            assert(aggregate_data != nullptr);
+            executeImplBatch<false, true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
         }
         else
-        {
-            /// Add only if the key already exists.
-            /// Overflow row is disabled for JIT.
-            auto find_result = state.findKey(method.data, row, *aggregates_pool);
-            assert(find_result.getMapped() != nullptr);
-
-            aggregate_data = find_result.getMapped();
-        }
-
-        if (not_all_functions_compiled)
-            places[row] = aggregate_data;
-
-        return aggregate_data;
-    };
-
-    GetAggregateDataFunction get_aggregate_data_function = FunctorToStaticMethodAdaptor<decltype(get_aggregate_data)>::unsafeCall;
-    GetAggregateDataContext get_aggregate_data_context = reinterpret_cast<char *>(&get_aggregate_data);
-
-    add_into_aggregate_states_function(rows, columns_data.data(), get_aggregate_data_function, get_aggregate_data_context);
-
-    /// Add values to the aggregate functions.
-    AggregateFunctionInstruction * inst = aggregate_instructions + compiled_functions->functions_count;
-    for (; inst->that; ++inst)
-    {
-        if (inst->offsets)
-            inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
-        else
-            inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
-    }
-}
-
-template <bool no_more_keys, typename Method>
-void NO_INLINE Aggregator::handleAggregationJITV2(
-    Method & method,
-    typename Method::State & state,
-    Arena * aggregates_pool,
-    size_t rows,
-    AggregateFunctionInstruction * aggregate_instructions) const
-{
-    std::vector<ColumnData> columns_data;
-    columns_data.reserve(aggregate_functions.size());
-
-    /// Add values to the aggregate functions.
-    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-    {
-        size_t arguments_size = inst->that->getArgumentTypes().size();
-        for (size_t i = 0; i < arguments_size; ++i)
-            columns_data.emplace_back(getColumnData(inst->batch_arguments[i]));
-    }
-
-    auto add_into_aggregate_states_function = compiled_functions->add_into_aggregate_states_function_v2;
-    auto create_aggregate_states_function = compiled_functions->create_aggregate_states_function;
-
-    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
-
-    /// For all rows.
-    for (size_t i = 0; i < rows; ++i)
-    {
-        AggregateDataPtr aggregate_data = nullptr;
-
-        if constexpr (!no_more_keys)
-        {
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
-
-            /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
-            if (emplace_result.isInserted())
-            {
-                /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
-                emplace_result.setMapped(nullptr);
-
-                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                create_aggregate_states_function(aggregate_data);
-                createAggregateStates(compiled_functions->functions_count, aggregate_data);
-                emplace_result.setMapped(aggregate_data);
-            }
-            else
-                aggregate_data = emplace_result.getMapped();
-
-            assert(aggregate_data != nullptr);
-        }
-        else
-        {
-            /// Add only if the key already exists.
-            auto find_result = state.findKey(method.data, i, *aggregates_pool);
-            if (find_result.isFound())
-                aggregate_data = find_result.getMapped();
-        }
-
-        places[i] = aggregate_data;
-    }
-
-    add_into_aggregate_states_function(rows, columns_data.data(), places.get());
-
-    /// Add values to the aggregate functions.
-    AggregateFunctionInstruction * inst = aggregate_instructions + compiled_functions->functions_count;
-    for (; inst->that; ++inst)
-    {
-        if (inst->offsets)
-            inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
-        else
-            inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
-    }
-}
-
 #endif
-
-template <bool no_more_keys, typename Method>
-void NO_INLINE Aggregator::handleAggregationDefault(
-    Method & method,
-    typename Method::State & state,
-    Arena * aggregates_pool,
-    size_t rows,
-    AggregateFunctionInstruction * aggregate_instructions,
-    AggregateDataPtr overflow_row) const
-{
-    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
-
-    /// For all rows.
-    for (size_t i = 0; i < rows; ++i)
-    {
-        AggregateDataPtr aggregate_data;
-
-        if constexpr (!no_more_keys)
         {
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
-
-            /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
-            if (emplace_result.isInserted())
-            {
-                /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
-                emplace_result.setMapped(nullptr);
-
-                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                createAggregateStates(aggregate_data);
-
-                emplace_result.setMapped(aggregate_data);
-            }
-            else
-                aggregate_data = emplace_result.getMapped();
-
-            assert(aggregate_data != nullptr);
+            executeImplBatch<false, false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
         }
-        else
-        {
-            /// Add only if the key already exists.
-            auto find_result = state.findKey(method.data, i, *aggregates_pool);
-            if (find_result.isFound())
-                aggregate_data = find_result.getMapped();
-            else
-                aggregate_data = overflow_row;
-        }
-
-        places[i] = aggregate_data;
     }
-
-    /// Add values to the aggregate functions.
-    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+    else
     {
-        if (inst->offsets)
-            inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+#if USE_EMBEDDED_COMPILER
+        if (compiled_aggregate_functions_holder)
+        {
+            executeImplBatch<false, true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+        }
         else
-            inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+#endif
+        {
+            executeImplBatch<true, false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+        }
     }
 }
 
-template <bool no_more_keys, typename Method>
+template <bool no_more_keys, bool use_compiled_functions, typename Method>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     typename Method::State & state,
@@ -850,18 +677,86 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
+    size_t compiled_functions_count = 0;
+
 #if USE_EMBEDDED_COMPILER
-    if (compiled_functions)
-    {
-        // if (params.aggregation_method == 0)
-        //     handleAggregationJIT<no_more_keys>(method, state, aggregates_pool, rows, aggregate_instructions);
-        // else
-            handleAggregationJITV2<no_more_keys>(method, state, aggregates_pool, rows, aggregate_instructions);
-    }
-    else
+    if constexpr (use_compiled_functions)
+        compiled_functions_count = compiled_aggregate_functions_holder->compiled_aggregate_functions.functions_count;
 #endif
+
+    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
+
+    /// For all rows.
+    for (size_t i = 0; i < rows; ++i)
     {
-        handleAggregationDefault<no_more_keys>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+        AggregateDataPtr aggregate_data = nullptr;
+
+        if constexpr (!no_more_keys)
+        {
+            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+
+            /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+            if (emplace_result.isInserted())
+            {
+                /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+                emplace_result.setMapped(nullptr);
+
+                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+
+#if USE_EMBEDDED_COMPILER
+                if constexpr (use_compiled_functions)
+                    compiled_aggregate_functions_holder->compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
+#endif
+                createAggregateStates(compiled_functions_count, aggregate_data);
+
+                emplace_result.setMapped(aggregate_data);
+            }
+            else
+                aggregate_data = emplace_result.getMapped();
+
+            assert(aggregate_data != nullptr);
+        }
+        else
+        {
+            /// Add only if the key already exists.
+            auto find_result = state.findKey(method.data, i, *aggregates_pool);
+            if (find_result.isFound())
+                aggregate_data = find_result.getMapped();
+            else
+                aggregate_data = overflow_row;
+        }
+
+        places[i] = aggregate_data;
+    }
+
+#if USE_EMBEDDED_COMPILER
+    if constexpr (use_compiled_functions)
+    {
+        std::vector<ColumnData> columns_data;
+        columns_data.reserve(aggregate_functions.size());
+
+        for (size_t compiled_function_index = 0; compiled_function_index < compiled_functions_count; ++compiled_function_index)
+        {
+            AggregateFunctionInstruction * inst = aggregate_instructions + compiled_function_index;
+            size_t arguments_size = inst->that->getArgumentTypes().size();
+
+            for (size_t i = 0; i < arguments_size; ++i)
+                columns_data.emplace_back(getColumnData(inst->batch_arguments[i]));
+        }
+
+        auto add_into_aggregate_states_function = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function;
+        add_into_aggregate_states_function(rows, columns_data.data(), places.get());
+    }
+#endif
+
+    /// Add values to the aggregate functions.
+    AggregateFunctionInstruction * inst = aggregate_instructions + compiled_functions_count;
+    for (; inst->that; ++inst)
+    {
+        if (inst->offsets)
+            inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+        else
+            inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
     }
 }
 
@@ -1304,9 +1199,22 @@ void Aggregator::convertToBlockImpl(
         raw_key_columns.push_back(column.get());
 
     if (final)
-        convertToBlockImplFinal(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
+    {
+#if USE_EMBEDDED_COMPILER
+        if (compiled_aggregate_functions_holder)
+        {
+            convertToBlockImplFinal<Method, true>(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
+        }
+        else
+#endif
+        {
+            convertToBlockImplFinal<Method, false>(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
+        }
+    }
     else
+    {
         convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
+    }
     /// In order to release memory early.
     data.clearAndShrink();
 }
@@ -1380,7 +1288,7 @@ inline void Aggregator::insertAggregatesIntoColumns(
 }
 
 
-template <typename Method, typename Table>
+template <typename Method, bool use_compiled_functions, typename Table>
 void NO_INLINE Aggregator::convertToBlockImplFinal(
     Method & method,
     Table & data,
@@ -1400,85 +1308,81 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     auto shuffled_key_sizes = method.shuffleKeyColumns(key_columns, key_sizes);
     const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes :  key_sizes;
 
-#if USE_EMBEDDED_COMPILER
-    if (compiled_functions)
+    PaddedPODArray<AggregateDataPtr> places;
+    places.reserve(data.size());
+
+    data.forEachValue([&](const auto & key, auto & mapped)
     {
-        PaddedPODArray<AggregateDataPtr> places;
-        places.reserve(data.size());
+        method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
+        places.emplace_back(mapped);
 
-        data.forEachValue([&](const auto & key, auto & mapped)
-        {
-            method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
-            places.emplace_back(mapped);
+        /// Mark the cell as destroyed so it will not be destroyed in destructor.
+        mapped = nullptr;
+    });
 
-            /// Mark the cell as destroyed so it will not be destroyed in destructor.
-            mapped = nullptr;
-        });
+    std::exception_ptr exception;
+    size_t aggregate_functions_destroy_index = 0;
 
-        std::exception_ptr exception;
-        size_t aggregate_functions_destroy_index = 0;
-
-        try
+    try
+    {
+#if USE_EMBEDDED_COMPILER
+        if constexpr (use_compiled_functions)
         {
             /** For JIT compiled functions we need to resize columns before pass them into compiled code.
               * insert_aggregates_into_columns_function function does not throw exception.
               */
             std::vector<ColumnData> columns_data;
+
+            auto compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+
             columns_data.reserve(final_aggregate_columns.size());
 
-            for (size_t i = 0; i < compiled_functions->functions_count; ++i)
+            for (size_t i = 0; i < compiled_functions.functions_count; ++i)
             {
                 auto & final_aggregate_column = final_aggregate_columns[i];
                 final_aggregate_column = final_aggregate_column->cloneResized(places.size());
                 columns_data.emplace_back(getColumnData(final_aggregate_column.get()));
             }
 
-            auto insert_aggregate_states_function = compiled_functions->insert_aggregates_into_columns_function;
-            insert_aggregate_states_function(places.size(), columns_data.data(), places.data());
+            auto insert_aggregates_into_columns_function = compiled_functions.insert_aggregates_into_columns_function;
+            insert_aggregates_into_columns_function(places.size(), columns_data.data(), places.data());
 
-            aggregate_functions_destroy_index = compiled_functions->functions_count;
+            aggregate_functions_destroy_index = compiled_functions.functions_count;
+        }
+#endif
 
-            for (; aggregate_functions_destroy_index < params.aggregates_size;)
-            {
-                auto & final_aggregate_column = final_aggregate_columns[aggregate_functions_destroy_index];
-                size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
+        for (; aggregate_functions_destroy_index < params.aggregates_size;)
+        {
+            auto & final_aggregate_column = final_aggregate_columns[aggregate_functions_destroy_index];
+            size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
 
-                /** We increase aggregate_functions_destroy_index because by function contract if insertResultIntoAndDestroyBatch
+            /** We increase aggregate_functions_destroy_index because by function contract if insertResultIntoAndDestroyBatch
                   * throws exception, it also must destroy all necessary states.
                   * Then code need to continue to destroy other aggregate function states with next function index.
                   */
-                size_t destroy_index = aggregate_functions_destroy_index;
-                ++aggregate_functions_destroy_index;
+            size_t destroy_index = aggregate_functions_destroy_index;
+            ++aggregate_functions_destroy_index;
 
-                bool is_state = aggregate_functions[destroy_index]->isState();
-                bool destroy_place_after_insert = !is_state;
+            bool is_state = aggregate_functions[destroy_index]->isState();
+            bool destroy_place_after_insert = !is_state;
 
-                aggregate_functions[destroy_index]->insertResultIntoAndDestroyBatch(places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
-            }
+            aggregate_functions[destroy_index]->insertResultIntoAndDestroyBatch(
+                places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
         }
-        catch (...)
-        {
-            exception = std::current_exception();
-        }
-
-        for (; aggregate_functions_destroy_index < params.aggregates_size; ++aggregate_functions_destroy_index)
-        {
-            size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
-            aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(places.size(), places.data(), offset);
-        }
-
-        if (exception)
-            std::rethrow_exception(exception);
     }
-    else
-#endif
+    catch (...)
     {
-        data.forEachValue([&](const auto & key, auto & mapped)
-        {
-            method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
-            insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
-        });
+        exception = std::current_exception();
     }
+
+    for (; aggregate_functions_destroy_index < params.aggregates_size; ++aggregate_functions_destroy_index)
+    {
+        size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
+        aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(places.size(), places.data(), offset);
+    }
+
+    if (exception)
+        std::rethrow_exception(exception);
 }
 
 template <typename Method, typename Table>
@@ -1898,7 +1802,7 @@ void NO_INLINE Aggregator::mergeDataNullKey(
 }
 
 
-template <typename Method, typename Table>
+template <typename Method, bool use_compiled_functions, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst,
     Table & table_src,
@@ -1907,52 +1811,34 @@ void NO_INLINE Aggregator::mergeDataImpl(
     if constexpr (Method::low_cardinality_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
+    table_src.mergeToViaEmplace(table_dst, [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
+    {
+        if (!inserted)
+        {
+            size_t compiled_functions_count = 0;
+
 #if USE_EMBEDDED_COMPILER
-    if (compiled_functions)
-    {
-        auto merge_aggregate_states_function_typed = compiled_functions->merge_aggregate_states_function;
-
-        table_src.mergeToViaEmplace(table_dst, [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
-        {
-            if (!inserted)
+            if constexpr (use_compiled_functions)
             {
-                merge_aggregate_states_function_typed(dst, src);
-
-                for (size_t i = compiled_functions->functions_count; i < params.aggregates_size; ++i)
-                    aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
-
-                for (size_t i = compiled_functions->functions_count; i < params.aggregates_size; ++i)
-                    aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
+                const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+                compiled_functions.merge_aggregate_states_function(dst, src);
+                compiled_functions_count = compiled_aggregate_functions_holder->compiled_aggregate_functions.functions_count;
             }
-            else
-            {
-                dst = src;
-            }
-
-            src = nullptr;
-        });
-    }
-    else
 #endif
-    {
-        table_src.mergeToViaEmplace(table_dst, [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
+
+            for (size_t i = compiled_functions_count; i < params.aggregates_size; ++i)
+                aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+
+            for (size_t i = compiled_functions_count; i < params.aggregates_size; ++i)
+                aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
+        }
+        else
         {
-            if (!inserted)
-            {
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                    aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+            dst = src;
+        }
 
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                    aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
-            }
-            else
-            {
-                dst = src;
-            }
-
-            src = nullptr;
-        });
-    }
+        src = nullptr;
+    });
 
     table_src.clearAndShrink();
 }
@@ -2056,21 +1942,41 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
         AggregatedDataVariants & current = *non_empty_data[result_num];
 
         if (!no_more_keys)
-            mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data,
-                getDataVariant<Method>(current).data,
-                res->aggregates_pool);
+        {
+#if USE_EMBEDDED_COMPILER
+            if (compiled_aggregate_functions_holder)
+            {
+                mergeDataImpl<Method, true>(
+                    getDataVariant<Method>(*res).data,
+                    getDataVariant<Method>(current).data,
+                    res->aggregates_pool);
+            }
+            else
+#endif
+            {
+                mergeDataImpl<Method, false>(
+                    getDataVariant<Method>(*res).data,
+                    getDataVariant<Method>(current).data,
+                    res->aggregates_pool);
+            }
+        }
         else if (res->without_key)
+        {
+            /// TODO: Use compile function
             mergeDataNoMoreKeysImpl<Method>(
                 getDataVariant<Method>(*res).data,
                 res->without_key,
                 getDataVariant<Method>(current).data,
                 res->aggregates_pool);
+        }
         else
+        {
+            /// TODO: Use compile function
             mergeDataOnlyExistingKeysImpl<Method>(
                 getDataVariant<Method>(*res).data,
                 getDataVariant<Method>(current).data,
                 res->aggregates_pool);
+        }
 
         /// `current` will not destroy the states of aggregate functions in the destructor
         current.aggregator = nullptr;
@@ -2095,11 +2001,22 @@ void NO_INLINE Aggregator::mergeBucketImpl(
             return;
 
         AggregatedDataVariants & current = *data[result_num];
-
-        mergeDataImpl<Method>(
-            getDataVariant<Method>(*res).data.impls[bucket],
-            getDataVariant<Method>(current).data.impls[bucket],
-            arena);
+#if USE_EMBEDDED_COMPILER
+        if (compiled_aggregate_functions_holder)
+        {
+            mergeDataImpl<Method, true>(
+                getDataVariant<Method>(*res).data.impls[bucket],
+                getDataVariant<Method>(current).data.impls[bucket],
+                arena);
+        }
+        else
+#endif
+        {
+            mergeDataImpl<Method, false>(
+                getDataVariant<Method>(*res).data.impls[bucket],
+                getDataVariant<Method>(current).data.impls[bucket],
+                arena);
+        }
     }
 }
 
