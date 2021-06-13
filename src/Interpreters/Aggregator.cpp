@@ -240,7 +240,6 @@ public:
             symbol_names += ' ';
         }
 
-        std::cerr << "CompiledAggregateFunctionsHolder::~CompiledAggregateFunctionsHolder " << symbol_names << std::endl;
         getJITInstance().deleteCompiledModule(compiled_aggregate_functions.compiled_module);
     }
 
