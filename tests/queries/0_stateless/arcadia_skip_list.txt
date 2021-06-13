@@ -241,3 +241,4 @@
 01882_scalar_subquery_exception
 01882_check_max_parts_to_merge_at_once
 01892_setting_limit_offset_distributed
+01901_test_attach_partition_from
