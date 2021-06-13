@@ -61,7 +61,88 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     /** Algorithm is to create a loop that iterate over ColumnDataRowsSize size_t argument and
      * over ColumnData data and null_data. On each step compiled expression from function
      * will be executed over column data and null_data row.
+     *
+     * Example of preudocode of generated instructions of function with 1 input column.
+     * In case of multiple columns more column_i_data, column_i_null_data is created.
+     *
+     * void compiled_function(size_t rows_count, ColumnData * columns)
+     * {
+     *     /// Initialize column values
+     *
+     *     Column0Type * column_0_data = static_cast<Column0Type *>(columns[0].data);
+     *     UInt8 * column_0_null_data = static_cast<UInt8>(columns[0].null_data);
+     *
+     *     /// Initialize other input columns data with indexes < input_columns_count
+     *
+     *     ResultType * result_column_data = static_cast<ResultType *>(columns[input_columns_count].data);
+     *     UInt8 * result_column_null_data = static_cast<UInt8 *>(columns[input_columns_count].data);
+     *
+     *     if (rows_count == 0)
+     *         goto end;
+     *
+     *     /// Loop
+     *
+     *     size_t counter = 0;
+     *
+     *     loop:
+     *
+     *     /// Create column values tuple in case of non nullable type it is just column value
+     *     /// In case of nullable type it is tuple of column value and is column row nullable
+     *
+     *     Column0Tuple column_0_value;
+     *     if (Column0Type is nullable)
+     *     {
+     *         value[0] = column_0_data;
+     *         value[1] = static_cast<bool>(column_1_null_data);
+     *     }
+     *     else
+     *     {
+     *         value[0] = column_0_data
+     *     }
+     *
+     *     /// Initialize other input column values tuple with indexes < input_columns_count
+     *     /// execute_compiled_expressions function takes input columns values and must return single result value
+     *
+     *     if (ResultType is nullable)
+     *     {
+     *         (ResultType, bool) result_column_value = execute_compiled_expressions(column_0_value, ...);
+     *         *result_column_data = result_column_value[0];
+     *         *result_column_null_data = static_cast<UInt8>(result_column_value[1]);
+     *     }
+     *     else
+     *     {
+     *         ResultType result_column_value = execute_compiled_expressions(column_0_value, ...);
+     *         *result_column_data = result_column_value;
+     *     }
+     *
+     *     /// Increment input and result column current row pointer
+     *
+     *     ++column_0_data;
+     *     if (Column 0 type is nullable)
+     *     {
+     *         ++column_0_null_data;
+     *     }
+     *
+     *     ++result_column_data;
+     *     if  (ResultType  is nullable)
+     *     {
+     *         ++result_column_null_data;
+     *     }
+     *
+     *     /// Increment loop counter and check if we should exit.
+     *
+     *     ++counter;
+     *     if (counter == rows_count)
+     *         goto end;
+     *     else
+     *         goto loop;
+     *
+     *   /// End
+     *   end:
+     *       return;
+     * }
      */
+
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
     const auto & arg_types = function.getArgumentTypes();
