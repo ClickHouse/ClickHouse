@@ -1,15 +1,18 @@
 #pragma once
 
 #include <IO/SeekableReadBuffer.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
 
-/// Read buffer, which reads via http, but is used as ReadBufferFromFileBase.
-/// Used to read files, hosted on a WEB server with static files.
-
+/* Read buffer, which reads via http, but is used as ReadBufferFromFileBase.
+ * Used to read files, hosted on a WEB server with static files.
+ *
+ * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadIndirectBufferFromWEBServer -> ReadWriteBufferFromHTTP.
+ */
 class ReadIndirectBufferFromWEBServer : public BufferWithOwnMemory<SeekableReadBuffer>
 {
 public:
