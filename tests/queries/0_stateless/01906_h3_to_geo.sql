@@ -2,8 +2,8 @@ DROP TABLE IF EXISTS h3_indexes;
 
 CREATE TABLE h3_indexes (h3_index UInt64) ENGINE = Memory;
 
--- values are random h3 indexes at various resolutions from 0 to 15.
--- generated using h3 tool: https://github.com/ClickHouse-Extras/h3/blob/master/src/apps/testapps/mkRandGeo.c
+-- Random geo coordinates were generated using the H3 tool: https://github.com/ClickHouse-Extras/h3/blob/master/src/apps/testapps/mkRandGeo.c at various resolutions from 0 to 15.
+-- Corresponding H3 index values were in turn generated with those geo coordinates using `geoToH3(lon, lat, res)` ClickHouse function for the following test.
 
 INSERT INTO h3_indexes VALUES (579205133326352383);
 INSERT INTO h3_indexes VALUES (581263419093549055);
