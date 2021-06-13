@@ -108,29 +108,6 @@ private:
         bool is_nullable;
 
         std::variant<
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            UInt128,
-            UInt256,
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            Int128,
-            Int256,
-            Decimal32,
-            Decimal64,
-            Decimal128,
-            Decimal256,
-            Float32,
-            Float64,
-            UUID,
-            StringRef,
-            Array>
-            null_values;
-        std::variant<
             Ptr<UInt8>,
             Ptr<UInt16>,
             Ptr<UInt32>,
@@ -165,12 +142,9 @@ private:
 
     void calculateBytesAllocated();
 
-    template <typename T>
-    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
+    static Attribute createAttribute(const DictionaryAttribute & dictionary_attribute);
 
-    static Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
-
-    template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
