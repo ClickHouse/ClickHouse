@@ -35,7 +35,7 @@ from helpers.test_tools import assert_eq_with_retry
 import docker
 
 from .client import Client
-#from .hdfs_api import HDFSApi
+from .hdfs_api import HDFSApi
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -310,7 +310,7 @@ class ClickHouseCluster:
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
 
-        # available when with_rabbitmq == True
+        # available when with_nginx == True
         self.nginx_host = "nginx"
         self.nginx_ip = None
         self.nginx_port = 80

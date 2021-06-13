@@ -2,26 +2,26 @@
 <yandex>
     <storage_configuration>
         <disks>
-            <static>
-                <type>static</type>
+            <web>
+                <type>web</type>
                 <endpoint>http://nginx:80/</endpoint>
-            </static>
+            </web>
             <hdd>
                 <type>local</type>
                 <path>/</path>
             </hdd>
         </disks>
         <policies>
-            <static>
+            <web>
                 <volumes>
                     <main>
-                        <disk>static</disk>
+                        <disk>web</disk>
                     </main>
                     <external>
                         <disk>hdd</disk>
                     </external>
                 </volumes>
-            </static>
+            </web>
         </policies>
     </storage_configuration>
 </yandex>

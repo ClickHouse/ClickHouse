@@ -7,10 +7,13 @@
 namespace DB
 {
 
-class ReadBufferFromStatic : public SeekableReadBuffer
+/// Read buffer, which reads via http, but is used as ReadBufferFromFileBase.
+/// Used to read files, hosted on a WEB server with static files.
+
+class ReadIndirectBufferFromWEBServer : public BufferWithOwnMemory<SeekableReadBuffer>
 {
 public:
-    explicit ReadBufferFromStatic(const String & url_,
+    explicit ReadIndirectBufferFromWEBServer(const String & url_,
                                   ContextPtr context,
                                   UInt64 max_read_tries_,
                                   size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);

@@ -73,6 +73,7 @@ class IColumn;
     M(UInt64, s3_max_single_read_retries, 4, "The maximum number of retries during single S3 read.", 0) \
     M(UInt64, s3_max_redirects, 10, "Max number of S3 redirects hops allowed.", 0) \
     M(UInt64, s3_max_connections, 1024, "The maximum number of connections per server.", 0) \
+    M(UInt64, http_max_single_read_retries, 4, "The maximum number of retries during single http read.", 0) \
     M(Bool, extremes, false, "Calculate minimums and maximums of the result columns. They can be output in JSON-formats.", IMPORTANT) \
     M(Bool, use_uncompressed_cache, false, "Whether to use the cache of uncompressed blocks.", 0) \
     M(Bool, replace_running_query, false, "Whether the running request should be canceled with the same id as the new one.", 0) \

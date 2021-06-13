@@ -7,34 +7,34 @@
 namespace DB
 {
 
-struct DiskStaticSettings
+struct DiskWEBServerSettings
 {
+    /// Number of read attempts before throw that network is unreachable.
+    size_t max_read_tries;
+    /// Passed to SeekAvoidingReadBuffer.
     size_t min_bytes_for_seek;
-    int thread_pool_size;
-    int objects_chunk_size_to_delete;
+    /// Used by IDiskRemote.
+    size_t thread_pool_size;
 
-    DiskStaticSettings(
-            int min_bytes_for_seek_,
-            int thread_pool_size_)
-        : min_bytes_for_seek(min_bytes_for_seek_)
-        , thread_pool_size(thread_pool_size_) {}
+    DiskWEBServerSettings(size_t max_read_tries_, size_t min_bytes_for_seek_, size_t thread_pool_size_)
+        : max_read_tries(max_read_tries_) , min_bytes_for_seek(min_bytes_for_seek_) , thread_pool_size(thread_pool_size_) {}
 };
 
 
-class DiskStatic : public IDiskRemote, WithContext
+/// Disk to store data on a web server and metadata on the local disk.
+
+class DiskWEBServer : public IDiskRemote, WithContext
 {
-using SettingsPtr = std::unique_ptr<DiskStaticSettings>;
+using SettingsPtr = std::unique_ptr<DiskWEBServerSettings>;
 
 public:
-    DiskStatic(const String & disk_name_,
+    DiskWEBServer(const String & disk_name_,
                const String & files_root_path_url_,
                const String & metadata_path_,
                ContextPtr context,
                SettingsPtr settings_);
 
-    DiskType::Type getType() const override { return DiskType::Type::Static; }
-
-    virtual void startup() override;
+    DiskType::Type getType() const override { return DiskType::Type::WEBServer; }
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
