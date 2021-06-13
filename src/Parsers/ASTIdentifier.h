@@ -48,7 +48,7 @@ public:
     const String & name() const;
 
     void restoreTable();  // TODO(ilezhankin): get rid of this
-    std::shared_ptr<ASTTableIdentifier> createTable() const;  // return |nullptr| if identifier is not table.
+    std::shared_ptr<ASTTableIdentifier> createTable() const;  // returns |nullptr| if identifier is not table.
 
 protected:
     String full_name;
