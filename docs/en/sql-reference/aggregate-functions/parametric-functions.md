@@ -718,7 +718,7 @@ CREATE TABLE test_flow_basecond
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(dt)
-ORDER BY id
+ORDER BY id;
 
 INSERT INTO test_flow_basecond VALUES (1, 1, 'A', 'ref4') (2, 1, 'A', 'ref3') (3, 1, 'B', 'ref2') (4, 1, 'B', 'ref1');
 ```
@@ -727,7 +727,7 @@ INSERT INTO test_flow_basecond VALUES (1, 1, 'A', 'ref4') (2, 1, 'A', 'ref3') (3
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, ref = 'ref1', page = 'A') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref 
- 1970-01-01 09:00:01    1   A      ref4 // The head can't be base point becasue the ref column of the head unmatched with 'ref1'.
+ 1970-01-01 09:00:01    1   A      ref4 // The head can not be base point because the ref column of the head unmatched with 'ref1'.
  1970-01-01 09:00:02    1   A      ref3 
  1970-01-01 09:00:03    1   B      ref2 
  1970-01-01 09:00:04    1   B      ref1 
@@ -740,14 +740,14 @@ SELECT id, sequenceNextNode('backward', 'tail')(dt, page, ref = 'ref4', page = '
  1970-01-01 09:00:01    1   A      ref4
  1970-01-01 09:00:02    1   A      ref3 
  1970-01-01 09:00:03    1   B      ref2 
- 1970-01-01 09:00:04    1   B      ref1 // The tail can't be base point becasue the ref column of the tail unmatched with 'ref4'.
+ 1970-01-01 09:00:04    1   B      ref1 // The tail can not be base point because the ref column of the tail unmatched with 'ref4'.
 ```
 
 ``` sql
 SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, ref = 'ref3', page = 'A') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref 
- 1970-01-01 09:00:01    1   A      ref4 // This row can't be base point becasue the ref column unmatched with 'ref3'.
+ 1970-01-01 09:00:01    1   A      ref4 // This row can not be base point because the ref column unmatched with 'ref3'.
  1970-01-01 09:00:02    1   A      ref3 // Base point
  1970-01-01 09:00:03    1   B      ref2 // The result
  1970-01-01 09:00:04    1   B      ref1 
@@ -760,5 +760,5 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, ref = 'ref2', pa
  1970-01-01 09:00:01    1   A      ref4
  1970-01-01 09:00:02    1   A      ref3 // The result
  1970-01-01 09:00:03    1   B      ref2 // Base point
- 1970-01-01 09:00:04    1   B      ref1 // This row can't be base point becasue the ref column unmatched with 'ref2'. 
+ 1970-01-01 09:00:04    1   B      ref1 // This row can not be base point because the ref column unmatched with 'ref2'. 
 ```
