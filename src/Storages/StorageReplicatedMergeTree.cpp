@@ -1105,7 +1105,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
 
     /// There are no PreCommitted parts at startup.
-    auto parts = getDataParts(MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated);
+    auto parts = getDataParts({MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
 
     /** Local parts that are not in ZK.
       * In very rare cases they may cover missing parts
@@ -5099,6 +5099,7 @@ void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
         }
 
         // It may happen part with specified name was in detached, but we don't care about it
+        LOG_TRACE(log, "Detaching part {}", part->getNameWithState());
         part->makeCloneInDetached("", metadata_snapshot);
     }
 

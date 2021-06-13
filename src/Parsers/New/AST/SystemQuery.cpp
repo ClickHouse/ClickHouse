@@ -133,7 +133,7 @@ ASTPtr SystemQuery::convertToOld() const
             {
                 auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
                 query->database = table_id.database_name;
-                query->target_dictionary = table_id.table_name;
+                query->table = table_id.table_name;
             }
             break;
         case QueryType::REPLICATED_SENDS:

@@ -3640,9 +3640,23 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
         static_cast<double>(part_size_compressed) / getTotalActiveSizeInBytes());
 }
 
+MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
+{
+    DataParts res;
+    {
+        auto lock = lockParts();
+        for (auto state : affordable_states)
+        {
+            auto range = getDataPartsStateRange(state);
+            res.insert(range.begin(), range.end());
+        }
+    }
+    return res;
+}
+
 MergeTreeData::DataParts MergeTreeData::getDataParts() const
 {
-    return getDataParts(DataPartState::Committed);
+    return getDataParts({DataPartState::Committed});
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector() const

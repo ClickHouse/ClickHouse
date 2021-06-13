@@ -213,11 +213,16 @@ BlockIO InterpreterSystemQuery::execute()
     system_context->setSetting("profile", getContext()->getSystemProfileName());
 
     /// Make canonical query for simpler processing
-    if (!query.table.empty())
+    if (query.type == Type::RELOAD_DICTIONARY)
+    {
+        if (!query.database.empty())
+            query.table = query.database + "." + query.table;
+    }
+    else if (!query.table.empty())
+    {
         table_id = getContext()->resolveStorageID(StorageID(query.database, query.table), Context::ResolveOrdinary);
+    }
 
-    if (!query.target_dictionary.empty() && !query.database.empty())
-        query.target_dictionary = query.database + "." + query.target_dictionary;
 
     volume_ptr = {};
     if (!query.storage_policy.empty() && !query.volume.empty())
@@ -287,7 +292,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.reloadDictionary(query.target_dictionary, getContext());
+            external_dictionaries_loader.reloadDictionary(query.table, getContext());
 
 
             ExternalDictionariesLoader::resetAll();

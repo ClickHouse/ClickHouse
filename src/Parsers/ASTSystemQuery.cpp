@@ -121,18 +121,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "");
     };
 
-    auto print_database_dictionary = [&]
-    {
-        settings.ostr << " ";
-        if (!database.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
-                          << (settings.hilite ? hilite_none : "") << ".";
-        }
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_dictionary)
-                      << (settings.hilite ? hilite_none : "");
-    };
-
     auto print_drop_replica = [&]
     {
         settings.ostr << " " << quoteString(replica);
@@ -192,13 +180,10 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     else if (  type == Type::RESTART_REPLICA
             || type == Type::RESTORE_REPLICA
             || type == Type::SYNC_REPLICA
-            || type == Type::FLUSH_DISTRIBUTED)
+            || type == Type::FLUSH_DISTRIBUTED
+            || type == Type::RELOAD_DICTIONARY)
     {
         print_database_table();
-    }
-    else if (type == Type::RELOAD_DICTIONARY)
-    {
-        print_database_dictionary();
     }
     else if (type == Type::DROP_REPLICA)
     {

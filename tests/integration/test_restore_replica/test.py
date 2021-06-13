@@ -21,12 +21,27 @@ configs =["configs/remote_servers.xml"]
 node_1 = cluster.add_instance('replica1', with_zookeeper=True, main_configs=configs)
 node_2 = cluster.add_instance('replica2', with_zookeeper=True, main_configs=configs)
 node_3 = cluster.add_instance('replica3', with_zookeeper=True, main_configs=configs)
+nodes = [node_1, node_2, node_3]
+
+def fill_table():
+    node_1.query("TRUNCATE TABLE test")
+    for node in nodes:
+        node.query("SYSTEM SYNC REPLICA test")
+
+    check_data(0, 0)
+    # it will create multiple parts in each partition and probably cause merges
+    node_1.query("INSERT INTO test SELECT number + 0 FROM numbers(200)")
+    node_1.query("INSERT INTO test SELECT number + 200 FROM numbers(200)")
+    node_1.query("INSERT INTO test SELECT number + 400 FROM numbers(200)")
+    node_1.query("INSERT INTO test SELECT number + 600 FROM numbers(200)")
+    node_1.query("INSERT INTO test SELECT number + 800 FROM numbers(200)")
+    check_data(499500, 1000)
 
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
         cluster.start()
-        fill_nodes([node_1, node_2, node_3])
+        fill_nodes(nodes)
         yield cluster
 
     except Exception as ex:
@@ -36,19 +51,15 @@ def start_cluster():
         cluster.shutdown()
 
 def check_data(_sum: int, count: int) -> None:
-    res: str = node_1.query("SELECT sum(n), count() FROM test")
-
-    test_sum, test_count = map(int, res.split()) # integrity
-    assert test_count == count
-    assert test_sum == _sum
-
-    assert_eq_with_retry(node_2, "SELECT sum(n), count() FROM test", res) # consistency
+    res = "{}\t{}\n".format(_sum, count)
+    assert_eq_with_retry(node_1, "SELECT sum(n), count() FROM test", res)
+    assert_eq_with_retry(node_2, "SELECT sum(n), count() FROM test", res)
     assert_eq_with_retry(node_3, "SELECT sum(n), count() FROM test", res)
 
 def check_after_restoration():
     check_data(1999000, 2000)
 
-    for node in [node_1, node_2, node_3]:
+    for node in nodes:
         node.query_and_get_error("SYSTEM RESTORE REPLICA test")
 
 
@@ -60,10 +71,7 @@ def test_restore_replica_invalid_tables(start_cluster):
 
 def test_restore_replica_sequential(start_cluster):
     zk = cluster.get_kazoo_client('zoo1')
-
-    check_data(0, 0)
-    node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
-    check_data(499500, 1000)
+    fill_table()
 
     print("Deleting root ZK path metadata")
     zk.delete("/clickhouse/tables/test", recursive=True)
@@ -95,14 +103,7 @@ def test_restore_replica_sequential(start_cluster):
 
 def test_restore_replica_parallel(start_cluster):
     zk = cluster.get_kazoo_client('zoo1')
-
-    node_1.query("TRUNCATE TABLE test")
-    node_2.query("TRUNCATE TABLE test")
-    node_3.query("TRUNCATE TABLE test")
-
-    check_data(0, 0)
-    node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
-    check_data(499500, 1000)
+    fill_table()
 
     print("Deleting root ZK path metadata")
     zk.delete("/clickhouse/tables/test", recursive=True)
@@ -125,33 +126,30 @@ def test_restore_replica_parallel(start_cluster):
 
     check_after_restoration()
 
-# def test_restore_replica_alive_replicas(start_cluster):
-#     zk = cluster.get_kazoo_client('zoo1')
-#
-#     check_data(0, 0)
-#     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
-#     check_data(499500, 1000)
-#
-#     # 1. Delete individual replicas paths in ZK and check the invocation
-#     print("Deleting replica2 path, trying to restore replica1")
-#     zk.delete("/clickhouse/tables/test/replicas/replica2", recursive=True)
-#     assert zk.exists("/clickhouse/tables/test/replicas/replica2") is None
-#     node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
-#
-#     print("Deleting replica1 path, trying to restore replica1")
-#     zk.delete("/clickhouse/tables/test/replicas/replica1", recursive=True)
-#     assert zk.exists("/clickhouse/tables/test/replicas/replica1") is None
-#
-#     node_1.query("SYSTEM RESTART REPLICA test")
-#     node_1.query("SYSTEM RESTORE REPLICA test")
-#
-#     node_2.query("SYSTEM RESTART REPLICA test")
-#     node_2.query("SYSTEM RESTORE REPLICA test")
-#
-#     check_data(499500, 1000)
-#
-#     node_1.query("INSERT INTO test SELECT number + 1000 FROM numbers(1000)") # assert all the tables are working
-#
-#     node_2.query("SYSTEM SYNC REPLICA test")
-#     node_3.query("SYSTEM SYNC REPLICA test")
-#     check_data(1999000, 2000)
+def test_restore_replica_alive_replicas(start_cluster):
+    zk = cluster.get_kazoo_client('zoo1')
+    fill_table()
+
+    # 1. Delete individual replicas paths in ZK and check the invocation
+    print("Deleting replica2 path, trying to restore replica1")
+    zk.delete("/clickhouse/tables/test/replicas/replica2", recursive=True)
+    assert zk.exists("/clickhouse/tables/test/replicas/replica2") is None
+    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
+
+    print("Deleting replica1 path, trying to restore replica1")
+    zk.delete("/clickhouse/tables/test/replicas/replica1", recursive=True)
+    assert zk.exists("/clickhouse/tables/test/replicas/replica1") is None
+
+    node_1.query("SYSTEM RESTART REPLICA test")
+    node_1.query("SYSTEM RESTORE REPLICA test")
+
+    node_2.query("SYSTEM RESTART REPLICA test")
+    node_2.query("SYSTEM RESTORE REPLICA test")
+
+    check_data(499500, 1000)
+
+    node_1.query("INSERT INTO test SELECT number + 1000 FROM numbers(1000)") # assert all the tables are working
+
+    node_2.query("SYSTEM SYNC REPLICA test")
+    node_3.query("SYSTEM SYNC REPLICA test")
+    check_data(1999000, 2000)
