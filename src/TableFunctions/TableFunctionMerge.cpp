@@ -49,15 +49,11 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    auto db_arg = evaluateConstantExpressionForDatabaseName(args[0], context);
-    auto table_arg = evaluateConstantExpressionAsLiteral(args[1], context);
+    args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
+    args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
 
-    source_database_regexp = db_arg->as<ASTLiteral &>().value.safeGet<String>();
-    source_table_regexp = table_arg->as<ASTLiteral &>().value.safeGet<String>();
-
-    /// If database argument is not String literal, we should not treat it as regexp
-    if (!args[0]->as<ASTLiteral>())
-        source_database_regexp = "^" + source_database_regexp + "$";
+    source_database_regexp = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    source_table_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
 
@@ -66,11 +62,10 @@ const std::unordered_map<String, std::unordered_set<String>> & TableFunctionMerg
     if (source_databases_and_tables)
         return *source_databases_and_tables;
 
-
     OptimizedRegularExpression database_re(source_database_regexp);
     OptimizedRegularExpression table_re(source_table_regexp);
 
-    auto table_name_match = [&](const String & table_name_) { return table_re.match(table_name_); };
+    auto table_name_match = [&](const String & table_name_) { return table_re.fullMatch(table_name_); };
 
     auto access = context->getAccess();
 
@@ -78,7 +73,7 @@ const std::unordered_map<String, std::unordered_set<String>> & TableFunctionMerg
 
     for (const auto & db : databases)
     {
-        if (database_re.match(db.first))
+        if (database_re.fullMatch(db.first))
         {
             bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, db.first);
             bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, db.first);

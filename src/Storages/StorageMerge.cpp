@@ -144,8 +144,8 @@ StoragePtr StorageMerge::getFirstTable(F && predicate) const
     {
         while (iterator->isValid())
         {
-			const auto & table = iterator->table();
-			if (table.get() != this && predicate(table))
+            const auto & table = iterator->table();
+            if (table.get() != this && predicate(table))
 			  return table;
 
             iterator->next();
@@ -552,7 +552,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(Context
 
     for (const auto & db : databases)
     {
-        if (source_database_regexp->match(db.first))
+        if (source_database_regexp->fullMatch(db.first))
         {
             auto table_name_match = [this, &db](const String & table_name_) -> bool {
                 if (source_databases_and_tables)
@@ -561,7 +561,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(Context
                     return source_tables.count(table_name_);
                 }
                 else
-                    return source_table_regexp->match(table_name_);
+                    return source_table_regexp->fullMatch(table_name_);
             };
             database_table_iterators.emplace_back(db.second->getTablesIterator(local_context, table_name_match));
         }
@@ -687,10 +687,6 @@ void registerStorageMerge(StorageFactory & factory)
 
         String source_database_regexp = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-
-        /// If database argument is not String literal, we should not treat it as regexp
-        if (!engine_args[0]->as<ASTLiteral>())
-            source_database_regexp = "^" + source_database_regexp + "$";
 
         return StorageMerge::create(
             args.table_id, args.columns, args.comment, source_database_regexp, table_name_regexp, args.getContext());

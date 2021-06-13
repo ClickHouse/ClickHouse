@@ -64,6 +64,8 @@ public:
 
     OptimizedRegularExpressionImpl(const std::string & regexp_, int options = 0);
 
+    bool fullMatch(const std::string & subject) const;
+
     bool match(const std::string & subject) const
     {
         return match(subject.data(), subject.size());
