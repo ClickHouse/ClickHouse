@@ -522,15 +522,15 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
     
 **Аргументы**
 
--   `timestamp` — название столбца, содержащего `timestamp`. Поддерживаемые типы данных: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types.
--   `event_column` — название столбца, содержащего значение следующего возвращаемого события. Поддерживаемые типы данных: [String](../../sql-reference/data-types/string.md) and [Nullable(String)](../../sql-reference/data-types/nullable.md).
+-   `timestamp` — название столбца, содержащего `timestamp`. Поддерживаемые типы данных: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) и другие беззнаковые целые типы.
+-   `event_column` — название столбца, содержащего значение следующего возвращаемого события. Поддерживаемые типы данных: [String](../../sql-reference/data-types/string.md) и [Nullable(String)](../../sql-reference/data-types/nullable.md).
 -   `base_condition` — условие, которому должна соответствовать исходная точка.
 -   `cond` — условия, описывающие цепочку событий. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
 -  `event_column[next_index]` — если шаблон совпал и существует следующее значение.
--  `NULL` - если шаблон не совпал или следующее значение не существует.
+-  `NULL` — если шаблон не совпал или следующее значение не существует.
 
 Тип: [Nullable(String)](../../sql-reference/data-types/nullable.md).
 
