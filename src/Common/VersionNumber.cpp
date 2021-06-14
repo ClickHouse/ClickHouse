@@ -16,7 +16,7 @@ VersionNumber::VersionNumber(std::string version_string)
 
     do
     {
-        long value = strtol(start, &end, 10);
+        Int64 value = strtol(start, &end, 10);
         components.push_back(value);
         start = end + 1;
     }
@@ -26,7 +26,7 @@ VersionNumber::VersionNumber(std::string version_string)
 std::string VersionNumber::toString() const
 {
     std::string str;
-    for (long v : components)
+    for (Int64 v : components)
     {
         if (!str.empty())
             str += '.';

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <common/types.h>
 
 namespace DB
 {
@@ -15,13 +16,13 @@ struct VersionNumber
 {
     explicit VersionNumber() = default;
 
-    VersionNumber(const std::initializer_list<long> & init)
+    VersionNumber(const std::initializer_list<Int64> & init)
         : components(init)
     {}
-    VersionNumber(long major, long minor = 0, long patch = 0)
+    VersionNumber(Int64 major, Int64 minor = 0, Int64 patch = 0)
         : components{major, minor, patch}
     {}
-    VersionNumber(const std::vector<long> & components_)
+    VersionNumber(const std::vector<Int64> & components_)
         : components(components_)
     {}
 
@@ -42,7 +43,7 @@ struct VersionNumber
     }
 
 private:
-    using Components = std::vector<long>;
+    using Components = std::vector<Int64>;
     Components components;
 
     int compare(const VersionNumber & rhs) const;
