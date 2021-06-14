@@ -127,7 +127,8 @@ void UserDefinedObjectsOnDisk::storeUserDefinedDataType(ContextPtr context, cons
         re2::StringPiece input(it.name());
         re2::RE2 re("[0-9]+_" + escapeForFileName(ast.type_name) + "\\.sql");
 
-        if (re2::RE2::FullMatch(input, re)) {
+        if (re2::RE2::FullMatch(input, re))
+        {
             throw Exception("User defined data type " + backQuote(it.name()) + " already stored on disk", ErrorCodes::TYPE_ALREADY_STORED_ON_DISK);
         }
     }
@@ -165,7 +166,8 @@ void UserDefinedObjectsOnDisk::removeUserDefinedDataType(ContextPtr context, con
         re2::StringPiece input(file_name);
         re2::RE2 re("[0-9]+_" + escapeForFileName(name) + "\\.sql");
 
-        if (re2::RE2::FullMatch(input, re)) {
+        if (re2::RE2::FullMatch(input, re))
+        {
             it->remove();
             LOG_DEBUG(log, "Removed file {}", dir_path + file_name);
             return;
