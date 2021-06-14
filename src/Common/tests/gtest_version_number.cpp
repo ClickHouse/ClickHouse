@@ -1,5 +1,4 @@
 #include <Common/VersionNumber.h>
-#include <Common/Exception.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -17,18 +16,11 @@ TEST(VersionNumber, VersionNumber)
 
 TEST(VersionNumber, fromString)
 {
-    EXPECT_EQ(VersionNumber("1.1.1", true), VersionNumber(1, 1, 1));
-    EXPECT_EQ(VersionNumber("5.5.13prefix", true), VersionNumber(5, 5, 13));
+    EXPECT_EQ(VersionNumber("1.1.1"), VersionNumber(1, 1, 1));
+    EXPECT_EQ(VersionNumber("5.5.13prefix"), VersionNumber(5, 5, 13));
 
-#ifdef ABORT_ON_LOGICAL_ERROR
-    EXPECT_EXIT(VersionNumber("1.1.1.1", true), testing::KilledBySignal(SIGABRT), "");
-#else
-    EXPECT_THROW(VersionNumber("1.1.1.1", true), Exception);
-#endif
-    EXPECT_NO_THROW(VersionNumber("1.1.1.1", false));
-
-    EXPECT_EQ(VersionNumber("1.1.1.1", false), VersionNumber(1, 1, 1));
-    EXPECT_EQ(VersionNumber("1.1", true), VersionNumber(1, 1, 0));
-    EXPECT_EQ(VersionNumber("1", true), VersionNumber(1, 0, 0));
-    EXPECT_EQ(VersionNumber("", true), VersionNumber(0, 0, 0));
+    EXPECT_GT(VersionNumber("1.1.1.1"), VersionNumber(1, 1, 1));
+    EXPECT_LT(VersionNumber("1.1"), VersionNumber(1, 1, 0));
+    EXPECT_LT(VersionNumber("1"), VersionNumber(1, 0, 0));
+    EXPECT_LT(VersionNumber(""), VersionNumber(0, 0, 0));
 }
