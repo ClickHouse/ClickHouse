@@ -7,7 +7,7 @@
 namespace DB
 {
 
-struct DiskWEBServerSettings
+struct DiskWebServerSettings
 {
     /// Number of read attempts before throw that network is unreachable.
     size_t max_read_tries;
@@ -16,25 +16,25 @@ struct DiskWEBServerSettings
     /// Used by IDiskRemote.
     size_t thread_pool_size;
 
-    DiskWEBServerSettings(size_t max_read_tries_, size_t min_bytes_for_seek_, size_t thread_pool_size_)
+    DiskWebServerSettings(size_t max_read_tries_, size_t min_bytes_for_seek_, size_t thread_pool_size_)
         : max_read_tries(max_read_tries_) , min_bytes_for_seek(min_bytes_for_seek_) , thread_pool_size(thread_pool_size_) {}
 };
 
 
 /// Storage to store data on a web server and metadata on the local disk.
 
-class DiskWEBServer : public IDiskRemote, WithContext
+class DiskWebServer : public IDiskRemote, WithContext
 {
-using SettingsPtr = std::unique_ptr<DiskWEBServerSettings>;
+using SettingsPtr = std::unique_ptr<DiskWebServerSettings>;
 
 public:
-    DiskWEBServer(const String & disk_name_,
+    DiskWebServer(const String & disk_name_,
                const String & files_root_path_url_,
                const String & metadata_path_,
                ContextPtr context,
                SettingsPtr settings_);
 
-    DiskType::Type getType() const override { return DiskType::Type::WEBServer; }
+    DiskType::Type getType() const override { return DiskType::Type::WebServer; }
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,

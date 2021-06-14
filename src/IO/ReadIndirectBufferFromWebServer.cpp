@@ -1,4 +1,4 @@
-#include "ReadIndirectBufferFromWEBServer.h"
+#include "ReadIndirectBufferFromWebServer.h"
 
 #include <common/logger_useful.h>
 #include <Core/Types.h>
@@ -17,21 +17,21 @@ namespace ErrorCodes
 }
 
 
-ReadIndirectBufferFromWEBServer::ReadIndirectBufferFromWEBServer(const String & url_,
-                                           ContextPtr context_,
-                                           size_t max_read_tries_,
-                                           size_t buf_size_)
+ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(const String & url_,
+                                                                 ContextPtr context_,
+                                                                 size_t max_read_tries_,
+                                                                 size_t buf_size_)
     : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
-    , log(&Poco::Logger::get("ReadIndirectBufferFromWEBServer"))
+    , log(&Poco::Logger::get("ReadIndirectBufferFromWebServer"))
     , context(context_)
     , url(url_)
-    , buffer_size(buf_size_)
+    , buf_size(buf_size_)
     , max_read_tries(max_read_tries_)
 {
 }
 
 
-std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWEBServer::initialize()
+std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
 {
     Poco::URI uri(url);
     return std::make_unique<ReadWriteBufferFromHTTP>(
@@ -41,11 +41,11 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWEBServer::initialize()
         ConnectionTimeouts::getHTTPTimeouts(context),
         0,
         Poco::Net::HTTPBasicCredentials{},
-        buffer_size);
+        buf_size);
 }
 
 
-bool ReadIndirectBufferFromWEBServer::nextImpl()
+bool ReadIndirectBufferFromWebServer::nextImpl()
 {
     if (!impl)
         impl = initialize();
@@ -85,7 +85,7 @@ bool ReadIndirectBufferFromWEBServer::nextImpl()
 }
 
 
-off_t ReadIndirectBufferFromWEBServer::seek(off_t offset_, int whence)
+off_t ReadIndirectBufferFromWebServer::seek(off_t offset_, int whence)
 {
     if (impl)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek is allowed only before first read attempt from the buffer");
@@ -102,7 +102,7 @@ off_t ReadIndirectBufferFromWEBServer::seek(off_t offset_, int whence)
 }
 
 
-off_t ReadIndirectBufferFromWEBServer::getPosition()
+off_t ReadIndirectBufferFromWebServer::getPosition()
 {
     return offset + count();
 }

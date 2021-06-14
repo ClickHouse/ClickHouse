@@ -20,7 +20,7 @@ void registerDiskS3(DiskFactory & factory);
 void registerDiskHDFS(DiskFactory & factory);
 #endif
 
-void registerDiskWEBServer(DiskFactory & factory);
+void registerDiskWebServer(DiskFactory & factory);
 
 
 void registerDisks()
@@ -38,7 +38,7 @@ void registerDisks()
     registerDiskHDFS(factory);
 #endif
 
-    registerDiskWEBServer(factory);
+    registerDiskWebServer(factory);
 }
 
 }

@@ -121,13 +121,13 @@ public:
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
-    /// Overriden by disks s3 and hdfs.
+    /// Overridden by disks s3 and hdfs.
     virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr /* fs_paths_keeper */)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} does not support removing remote files", getName());
     }
 
-    /// Overriden by disks s3 and hdfs.
+    /// Overridden by disks s3 and hdfs.
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} does not support FS paths keeper", getName());

@@ -2,7 +2,7 @@
 
 #include <IO/ReadBufferFromS3.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
-#include <IO/ReadIndirectBufferFromWEBServer.h>
+#include <IO/ReadIndirectBufferFromWebServer.h>
 
 
 namespace DB
@@ -125,6 +125,6 @@ class ReadIndirectBufferFromRemoteFS<ReadBufferFromHDFS>;
 #endif
 
 template
-class ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWEBServer>;
+class ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>;
 
 }
