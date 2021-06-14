@@ -1,4 +1,4 @@
-#include "DiskWEBServer.h"
+#include "DiskWebServer.h"
 
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -9,23 +9,29 @@
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
 
 #include <IO/WriteBufferFromHTTP.h>
-#include <IO/ReadIndirectBufferFromWEBServer.h>
+#include <IO/ReadIndirectBufferFromWebServer.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 
 
 namespace DB
 {
 
-class ReadBufferFromWEBServer final : public ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWEBServer>
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
+class ReadBufferFromWebServer final : public ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>
 {
 public:
-    ReadBufferFromWEBServer(
+    ReadBufferFromWebServer(
             const String & url_,
-            DiskWEBServer::Metadata metadata_,
+            DiskWebServer::Metadata metadata_,
             ContextPtr context_,
             size_t max_read_tries_,
             size_t buf_size_)
-        : ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWEBServer>(metadata_)
+        : ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>(metadata_)
         , url(url_)
         , context(context_)
         , max_read_tries(max_read_tries_)
@@ -33,9 +39,9 @@ public:
     {
     }
 
-    std::unique_ptr<ReadIndirectBufferFromWEBServer> createReadBuffer(const String & path) override
+    std::unique_ptr<ReadIndirectBufferFromWebServer> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadIndirectBufferFromWEBServer>(fs::path(url) / path, context, max_read_tries, buf_size);
+        return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(url) / path, context, max_read_tries, buf_size);
     }
 
 private:
@@ -46,31 +52,31 @@ private:
 };
 
 
-DiskWEBServer::DiskWEBServer(
+DiskWebServer::DiskWebServer(
             const String & disk_name_,
             const String & files_root_path_url_,
             const String & metadata_path_,
             ContextPtr context_,
             SettingsPtr settings_)
-        : IDiskRemote(disk_name_, files_root_path_url_, metadata_path_, "DiskWEBServer", settings_->thread_pool_size)
+        : IDiskRemote(disk_name_, files_root_path_url_, metadata_path_, "DiskWebServer", settings_->thread_pool_size)
         , WithContext(context_->getGlobalContext())
         , settings(std::move(settings_))
 {
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskWEBServer::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
+std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
 {
     auto metadata = readMeta(path);
 
     LOG_DEBUG(log, "Read from file by path: {}. Existing objects: {}", backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto reader = std::make_unique<ReadBufferFromWEBServer>(remote_fs_root_path, metadata, getContext(), 1, buf_size);
+    auto reader = std::make_unique<ReadBufferFromWebServer>(remote_fs_root_path, metadata, getContext(), 1, buf_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
 
-std::unique_ptr<WriteBufferFromFileBase> DiskWEBServer::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskWebServer::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     auto metadata = readOrCreateMetaForWriting(path, mode);
 
@@ -87,7 +93,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskWEBServer::writeFile(const String &
 }
 
 
-void registerDiskWEBServer(DiskFactory & factory)
+void registerDiskWebServer(DiskFactory & factory)
 {
     auto creator = [](const String & disk_name,
                       const Poco::Util::AbstractConfiguration & config,
@@ -101,14 +107,14 @@ void registerDiskWEBServer(DiskFactory & factory)
         if (!url.ends_with('/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "URL must end with '/', but '{}' doesn't.", url);
 
-        auto settings = std::make_unique<DiskWEBServerSettings>(
+        auto settings = std::make_unique<DiskWebServerSettings>(
             context->getGlobalContext()->getSettingsRef().http_max_single_read_retries,
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
             config.getInt(config_prefix + ".thread_pool_size", 16));
 
         String metadata_path = fs::path(context->getPath()) / "disks" / disk_name / "";
 
-        return std::make_shared<DiskWEBServer>(disk_name, url, metadata_path, context, std::move(settings));
+        return std::make_shared<DiskWebServer>(disk_name, url, metadata_path, context, std::move(settings));
     };
 
     factory.registerDiskType("web", creator);
