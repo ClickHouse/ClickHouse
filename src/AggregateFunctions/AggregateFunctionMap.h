@@ -6,6 +6,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -15,6 +17,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include "common/types.h"
 #include <Common/Arena.h>
 #include "AggregateFunctions/AggregateFunctionFactory.h"
 
@@ -29,6 +32,7 @@ namespace ErrorCodes
 template <typename KeyType>
 struct AggregateFunctionMapCombinatorData
 {
+    using SearchType = KeyType;
     std::unordered_map<KeyType, AggregateDataPtr> merged_maps;
 
     static void writeKey(KeyType key, WriteBuffer & buf) { writeBinary(key, buf); }
@@ -38,10 +42,29 @@ struct AggregateFunctionMapCombinatorData
 template <>
 struct AggregateFunctionMapCombinatorData<String>
 {
-    std::unordered_map<String, AggregateDataPtr> merged_maps;
+    struct StringHash
+    {
+        using hash_type = std::hash<std::string_view>;
+        using is_transparent = void;
 
-    static void writeKey(String key, WriteBuffer & buf) { writeString(key, buf); }
-    static void readKey(String & key, ReadBuffer & buf) { readString(key, buf); }
+        size_t operator()(std::string_view str) const   { return hash_type{}(str); }
+    };
+
+    using SearchType = std::string_view;
+    std::unordered_map<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
+
+    static void writeKey(String key, WriteBuffer & buf)
+    {
+        writeVarUInt(key.size(), buf);
+        writeString(key, buf);
+    }
+    static void readKey(String & key, ReadBuffer & buf)
+    {
+        UInt64 size;
+        readVarUInt(size, buf);
+        key.resize(size);
+        buf.readStrict(key.data(), size);
+    }
 };
 
 template <typename KeyType>
@@ -51,7 +74,9 @@ class AggregateFunctionMap final
 private:
     DataTypePtr key_type;
     AggregateFunctionPtr nested_func;
-    using Base = IAggregateFunctionDataHelper<AggregateFunctionMapCombinatorData<KeyType>, AggregateFunctionMap<KeyType>>;
+
+    using Data = AggregateFunctionMapCombinatorData<KeyType>;
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionMap<KeyType>>;
 
 public:
     AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types) : Base(types, nested->getParameters()), nested_func(nested)
@@ -91,10 +116,17 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
-            KeyType key;
+            typename Data::SearchType key;
+
             if constexpr (std::is_same<KeyType, String>::value)
             {
-                key = key_column.operator[](offset + i).get<KeyType>();
+                StringRef key_ref;
+                if (key_type->getTypeId() == TypeIndex::FixedString)
+                    key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(offset + i);
+                else
+                    key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
+
+                key = static_cast<std::string_view>(key_ref);
             }
             else
             {
@@ -152,10 +184,10 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
-        size_t size;
+        UInt64 size;
 
         readVarUInt(size, buf);
-        for (size_t i = 0; i < size; ++i)
+        for (UInt64 i = 0; i < size; ++i)
         {
             KeyType key;
             AggregateDataPtr nested_place;
