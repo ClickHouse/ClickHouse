@@ -1,7 +1,6 @@
 #include <Parsers/ASTWindowDefinition.h>
 
 #include <Common/quoteString.h>
-#include <Common/FieldVisitors.h>
 #include <IO/Operators.h>
 
 

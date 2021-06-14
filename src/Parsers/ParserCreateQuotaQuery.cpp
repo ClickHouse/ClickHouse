@@ -9,6 +9,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 

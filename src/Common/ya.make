@@ -44,7 +44,11 @@ SRCS(
     ErrorCodes.cpp
     Exception.cpp
     ExternalLoaderStatus.cpp
-    FieldVisitors.cpp
+    FieldVisitorDump.cpp
+    FieldVisitorHash.cpp
+    FieldVisitorSum.cpp
+    FieldVisitorToString.cpp
+    FieldVisitorWriteBinary.cpp
     FileChecker.cpp
     IO.cpp
     IPv6ToBinary.cpp

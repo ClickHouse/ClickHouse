@@ -3,7 +3,7 @@
 #include <Core/Field.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/TokenIterator.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorDump.h>
 
 #include <optional>
 
