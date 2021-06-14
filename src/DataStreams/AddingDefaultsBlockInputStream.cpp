@@ -174,7 +174,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
     auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
     if (dag)
     {
-        auto actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context));
+        auto actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
         actions->execute(evaluate_block);
     }
 
