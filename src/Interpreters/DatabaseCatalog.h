@@ -10,6 +10,7 @@
 #include <Poco/Logger.h>
 
 #include <array>
+#include <condition_variable>
 #include <list>
 #include <map>
 #include <memory>
@@ -127,7 +128,7 @@ public:
     static DatabaseCatalog & instance();
     static void shutdown();
 
-    void loadTemporaryDatabase();
+    void initializeAndLoadTemporaryDatabase();
     void loadDatabases();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.

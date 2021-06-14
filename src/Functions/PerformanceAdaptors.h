@@ -172,7 +172,7 @@ namespace detail
  * /// default implementation.
  * class MyFunction : public MyDefaultImpl
  * {
- *     MyFunction(ContextConstPtr context) : selector(context) {
+ *     MyFunction(ContextPtr context) : selector(context) {
  *         /// Register all implementations in constructor.
  *         /// There could be as many implementation for every target as you want.
  *         selector.registerImplementation<TargetArch::Default, MyDefaultImpl>();
@@ -185,7 +185,7 @@ namespace detail
  *         selector.selectAndExecute(...);
  *     }
  *
- *     static FunctionPtr create(ContextConstPtr context) {
+ *     static FunctionPtr create(ContextPtr context) {
  *         return std::make_shared<MyFunction>(context);
  *     }
  * private:
@@ -193,12 +193,12 @@ namespace detail
  * };
  */
 template <typename FunctionInterface>
-class ImplementationSelector : WithConstContext
+class ImplementationSelector : WithContext
 {
 public:
     using ImplementationPtr = std::shared_ptr<FunctionInterface>;
 
-    ImplementationSelector(ContextConstPtr context_) : WithConstContext(context_) {}
+    ImplementationSelector(ContextPtr context_) : WithContext(context_) {}
 
     /* Select the best implementation based on previous runs.
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called

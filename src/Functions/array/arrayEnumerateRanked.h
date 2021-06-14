@@ -90,7 +90,7 @@ template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
 {
 public:
-    static FunctionPtr create(ContextConstPtr /* context */) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(ContextPtr /* context */) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 

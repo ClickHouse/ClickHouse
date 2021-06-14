@@ -488,6 +488,7 @@ SRCS(
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp
+    toJSONString.cpp
     toLowCardinality.cpp
     toMinute.cpp
     toModifiedJulianDay.cpp

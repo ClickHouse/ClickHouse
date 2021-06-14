@@ -3,30 +3,28 @@ import os
 import pytest
 from helpers.cluster import ClickHouseCluster
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+cluster = ClickHouseCluster(__file__)
+node_memory = cluster.add_instance('node_memory', dictionaries=['configs/dictionaries/complex_key_cache_string.xml'])
+node_ssd = cluster.add_instance('node_ssd', dictionaries=['configs/dictionaries/ssd_complex_key_cache_string.xml'])
 
-@pytest.fixture(scope="function")
-def cluster(request):
-    SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-    cluster = ClickHouseCluster(__file__)
+@pytest.fixture()
+def started_cluster():
     try:
-        if request.param == "memory":
-            node = cluster.add_instance('node', main_configs=['configs/enable_dictionaries.xml',
-                                                              'configs/dictionaries/complex_key_cache_string.xml'])
-        if request.param == "ssd":
-            node = cluster.add_instance('node', main_configs=['configs/enable_dictionaries.xml',
-                                                              'configs/dictionaries/ssd_complex_key_cache_string.xml'])
         cluster.start()
-        node.query(
+        node_memory.query(
+            "create table radars_table (radar_id String, radar_ip String, client_id String) engine=MergeTree() order by radar_id")
+        node_ssd.query(
             "create table radars_table (radar_id String, radar_ip String, client_id String) engine=MergeTree() order by radar_id")
 
         yield cluster
     finally:
         cluster.shutdown()
 
-
-@pytest.mark.parametrize("cluster", ["memory", "ssd"], indirect=True)
-def test_memory_consumption(cluster):
-    node = cluster.instances['node']
+@pytest.mark.skip(reason="SSD cache test can run on disk only")
+@pytest.mark.parametrize("type", ["memory", "ssd"])
+def test_memory_consumption(started_cluster, type):
+    node = started_cluster.instances[f'node_{type}']
     node.query(
         "insert into radars_table select toString(rand() % 5000), '{0}', '{0}' from numbers(1000)".format('w' * 8))
     node.query(
