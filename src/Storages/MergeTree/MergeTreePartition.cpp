@@ -27,12 +27,133 @@ namespace
     /// It worked this way until 21.5, and we cannot change it,
     /// or partition ID will be different in case UUID is used in partition key.
     /// (It is not recommended to use UUID as partition key).
-    class LegacyFieldVisitorHash : public FieldVisitorHash
+    /// NOTE: The code is intentionally copy-pasted,
+    /// so when FieldVisitorHash is changed, LegacyFieldVisitorHash will not change.
+    class LegacyFieldVisitorHash : public StaticVisitor<>
     {
+    private:
+        SipHash & hash;
     public:
-        using FieldVisitorHash::FieldVisitorHash;
-        using FieldVisitorHash::operator();
-        void operator() (const UUID & x) const { FieldVisitorHash::operator()(x.toUnderType()); }
+        LegacyFieldVisitorHash(SipHash & hash_) : hash(hash_) {}
+
+        void operator() (const Null &) const
+        {
+            UInt8 type = Field::Types::Null;
+            hash.update(type);
+        }
+        void operator() (const UInt64 & x) const
+        {
+            UInt8 type = Field::Types::UInt64;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const UInt128 & x) const
+        {
+            UInt8 type = Field::Types::UInt128;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const UInt256 & x) const
+        {
+            UInt8 type = Field::Types::UInt256;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const Int64 & x) const
+        {
+            UInt8 type = Field::Types::Int64;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const Int128 & x) const
+        {
+            UInt8 type = Field::Types::Int128;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const Int256 & x) const
+        {
+            UInt8 type = Field::Types::Int256;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const UUID & x) const
+        {
+            operator()(x.toUnderType());
+        }
+        void operator() (const Float64 & x) const
+        {
+            UInt8 type = Field::Types::Float64;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const String & x) const
+        {
+            UInt8 type = Field::Types::String;
+            hash.update(type);
+            hash.update(x.size());
+            hash.update(x.data(), x.size());
+        }
+        void operator() (const Array & x) const
+        {
+            UInt8 type = Field::Types::Array;
+            hash.update(type);
+            hash.update(x.size());
+
+            for (const auto & elem : x)
+                applyVisitor(*this, elem);
+        }
+        void operator() (const Tuple & x) const
+        {
+            UInt8 type = Field::Types::Tuple;
+            hash.update(type);
+            hash.update(x.size());
+
+            for (const auto & elem : x)
+                applyVisitor(*this, elem);
+        }
+        void operator() (const Map & x) const
+        {
+            UInt8 type = Field::Types::Map;
+            hash.update(type);
+            hash.update(x.size());
+
+            for (const auto & elem : x)
+                applyVisitor(*this, elem);
+        }
+        void operator() (const DecimalField<Decimal32> & x) const
+        {
+            UInt8 type = Field::Types::Decimal32;
+            hash.update(type);
+            hash.update(x.getValue().value);
+        }
+        void operator() (const DecimalField<Decimal64> & x) const
+        {
+            UInt8 type = Field::Types::Decimal64;
+            hash.update(type);
+            hash.update(x.getValue().value);
+        }
+        void operator() (const DecimalField<Decimal128> & x) const
+        {
+            UInt8 type = Field::Types::Decimal128;
+            hash.update(type);
+            hash.update(x.getValue().value);
+        }
+        void operator() (const DecimalField<Decimal256> & x) const
+        {
+            UInt8 type = Field::Types::Decimal256;
+            hash.update(type);
+            hash.update(x.getValue().value);
+        }
+        void operator() (const AggregateFunctionStateData & x) const
+        {
+            UInt8 type = Field::Types::AggregateFunctionState;
+            hash.update(type);
+            hash.update(x.name.size());
+            hash.update(x.name.data(), x.name.size());
+            hash.update(x.data.size());
+            hash.update(x.data.data(), x.data.size());
+        }
     };
 }
 
