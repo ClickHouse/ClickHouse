@@ -2852,6 +2852,140 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
         # print(errors_expected.strip())
         assert  errors_result.strip() == errors_expected.strip(), 'Proper errors for format: {}'.format(format_name)
 
+def wait_for_new_data(table_name, prev_count = 0, max_retries = 120):
+    retries = 0
+    while True:
+        new_count = int(instance.query("SELECT count() FROM {}".format(table_name)))
+        print(new_count)
+        if new_count > prev_count:
+            return new_count
+        else:
+            retries += 1
+            time.sleep(0.5)
+            if retries > max_retries:
+                raise Exception("No new data :(")
+
+def test_kafka_consumer_failover(kafka_cluster):
+
+    # for backporting:
+    # admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+
+    topic_list = []
+    topic_list.append(NewTopic(name="kafka_consumer_failover", num_partitions=2, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka2;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'kafka_consumer_failover',
+                     kafka_group_name = 'kafka_consumer_failover_group',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 1,
+                     kafka_poll_timeout_ms = 200;
+
+        CREATE TABLE test.kafka2 (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'kafka_consumer_failover',
+                     kafka_group_name = 'kafka_consumer_failover_group',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 1,
+                     kafka_poll_timeout_ms = 200;
+
+        CREATE TABLE test.kafka3 (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'kafka_consumer_failover',
+                     kafka_group_name = 'kafka_consumer_failover_group',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 1,
+                     kafka_poll_timeout_ms = 200;
+
+        CREATE TABLE test.destination (
+            key UInt64,
+            value UInt64,
+            _consumed_by LowCardinality(String)
+        )
+        ENGINE = MergeTree()
+        ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.kafka_mv TO test.destination AS
+        SELECT key, value, 'kafka' as _consumed_by
+        FROM test.kafka;
+
+        CREATE MATERIALIZED VIEW test.kafka2_mv TO test.destination AS
+        SELECT key, value, 'kafka2' as _consumed_by
+        FROM test.kafka2;
+
+        CREATE MATERIALIZED VIEW test.kafka3_mv TO test.destination AS
+        SELECT key, value, 'kafka3' as _consumed_by
+        FROM test.kafka3;
+        ''')
+
+
+    producer = KafkaProducer(bootstrap_servers="localhost:{}".format(cluster.kafka_port), value_serializer=producer_serializer, key_serializer=producer_serializer)
+
+    ## all 3 attached, 2 working
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':1,'value': 1}), partition=0)
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':1,'value': 1}), partition=1)
+    producer.flush()
+    prev_count = wait_for_new_data('test.destination')
+
+    ## 2 attached, 2 working
+    instance.query('DETACH TABLE test.kafka')
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':2,'value': 2}), partition=0)
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':2,'value': 2}), partition=1)
+    producer.flush()
+    prev_count = wait_for_new_data('test.destination', prev_count)
+
+    ## 1 attached, 1 working
+    instance.query('DETACH TABLE test.kafka2')
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':3,'value': 3}), partition=0)
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':3,'value': 3}), partition=1)
+    producer.flush()
+    prev_count = wait_for_new_data('test.destination', prev_count)
+
+    ## 2 attached, 2 working
+    instance.query('ATTACH TABLE test.kafka')
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':4,'value': 4}), partition=0)
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':4,'value': 4}), partition=1)
+    producer.flush()
+    prev_count = wait_for_new_data('test.destination', prev_count)
+
+    ## 1 attached, 1 working
+    instance.query('DETACH TABLE test.kafka3')
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':5,'value': 5}), partition=0)
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':5,'value': 5}), partition=1)
+    producer.flush()
+    prev_count = wait_for_new_data('test.destination', prev_count)
+
+    ## 2 attached, 2 working
+    instance.query('ATTACH TABLE test.kafka2')
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':6,'value': 6}), partition=0)
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':6,'value': 6}), partition=1)
+    producer.flush()
+    prev_count = wait_for_new_data('test.destination', prev_count)
+
+    ## 3 attached, 2 working
+    instance.query('ATTACH TABLE test.kafka3')
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':7,'value': 7}), partition=0)
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':7,'value': 7}), partition=1)
+    producer.flush()
+    prev_count = wait_for_new_data('test.destination', prev_count)
+
+    ## 2 attached, same 2 working
+    instance.query('DETACH TABLE test.kafka3')
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':8,'value': 8}), partition=0)
+    producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':8,'value': 8}), partition=1)
+    producer.flush()
+    prev_count = wait_for_new_data('test.destination', prev_count)
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")
