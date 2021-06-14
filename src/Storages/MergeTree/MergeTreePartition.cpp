@@ -34,7 +34,7 @@ namespace
     private:
         SipHash & hash;
     public:
-        LegacyFieldVisitorHash(SipHash & hash_) : hash(hash_) {}
+        explicit LegacyFieldVisitorHash(SipHash & hash_) : hash(hash_) {}
 
         void operator() (const Null &) const
         {
