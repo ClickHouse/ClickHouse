@@ -528,8 +528,8 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 -   `base` — Used to set the base point.
     - head — Set the base point to the first event.
     - tail — Set the base point to the last event.
-    - first_match — Set the base point to the first matched event1.
-    - last_match — Set the base point to the last matched event1.
+    - first_match — Set the base point to the first matched `event1`.
+    - last_match — Set the base point to the last matched `event1`.
     
 **Arguments**
 
@@ -547,7 +547,7 @@ Type: [Nullable(String)](../../sql-reference/data-types/nullable.md).
 
 **Example**
 
-It can be used when events are A->B->C->E->F and you want to know the event following B->C, which is E.
+It can be used when events are A->B->C->D->E-> and you want to know the event following B->C, which is D.
 
 The query statement searching the event following A->B:
 
@@ -560,7 +560,7 @@ ENGINE = MergeTree()
 PARTITION BY toYYYYMMDD(dt) 
 ORDER BY id;
 
-INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'E') (5, 1, 'F');
+INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'D') (5, 1, 'E');
 
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'A', page = 'A', page = 'B') as next_flow FROM test_flow GROUP BY id;
 ```
@@ -640,7 +640,7 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:04    2   Basket  The result
                                      
 1970-01-01 09:00:01    3   Gift // Base point
-1970-01-01 09:00:02    3   Home // Thre result
+1970-01-01 09:00:02    3   Home // The result
 1970-01-01 09:00:03    3   Gift   
 1970-01-01 09:00:04    3   Basket    
 ```
