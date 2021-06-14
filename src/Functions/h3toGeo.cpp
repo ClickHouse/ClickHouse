@@ -23,7 +23,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -36,50 +36,52 @@ class FunctionH3ToGeo : public IFunction
 public:
     static constexpr auto name = "h3ToGeo";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionH3ToGeo>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToGeo>(); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt64())
+            throw Exception(
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeTuple>(
+            DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
+            Strings{"longitude", "latitude"});
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto * col_index = arguments[0].column.get();
+
+        auto latitude = ColumnFloat64::create(input_rows_count);
+        auto longitude = ColumnFloat64::create(input_rows_count);
+
+        ColumnFloat64::Container & lon_data = longitude->getData();
+        ColumnFloat64::Container & lat_data = latitude->getData();
+
+
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const auto * arg = arguments[0].get();
-            if (!WhichDataType(arg).isUInt64())
-                throw Exception(
-                    "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            return std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
-                Strings{"longitude", "latitude"});
+            H3Index h3index = col_index->getUInt(row);
+            GeoCoord coord{};
+
+            h3ToGeo(h3index,&coord);
+            lon_data[row] = radsToDegs(coord.lon);
+            lat_data[row] = radsToDegs(coord.lat);
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-        {
-            const auto * col_index = arguments[0].column.get();
-
-            ColumnPtr res_column;
-            auto latitude = ColumnFloat64::create(input_rows_count);
-            auto longitude = ColumnFloat64::create(input_rows_count);
-
-            ColumnFloat64::Container & lon_data = longitude->getData();
-            ColumnFloat64::Container & lat_data = latitude->getData();
-
-            for (const auto row : ext::range(0, input_rows_count))
-            {
-                const UInt64 h3index = col_index->getUInt(row);
-                GeoCoord coord;
-                h3ToGeo(h3index,&coord);
-                lon_data[row] = radsToDegs(coord.lon);
-                lat_data[row] = radsToDegs(coord.lat);
-            }
-
-            MutableColumns result;
-            result.emplace_back(std::move(longitude));
-            result.emplace_back(std::move(latitude));
-            return ColumnTuple::create(std::move(result));
-        }
+        MutableColumns columns;
+        columns.emplace_back(std::move(longitude));
+        columns.emplace_back(std::move(latitude));
+        return ColumnTuple::create(std::move(columns));
+    }
 };
 
 }
