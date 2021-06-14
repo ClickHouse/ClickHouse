@@ -14,13 +14,13 @@ namespace ext
       *    with each element transformed by the application of `mapper`.
       */
     template <template <typename...> class Collection, typename... Params, typename Mapper>
-    auto map(const Collection<Params...> & collection, const Mapper mapper)
+    auto map(const Collection<Params...> & collection, Mapper && mapper)
     {
         using value_type = unqualified_t<decltype(mapper(*std::begin(collection)))>;
 
         return Collection<value_type>(
-            boost::make_transform_iterator(std::begin(collection), mapper),
-            boost::make_transform_iterator(std::end(collection), mapper));
+            boost::make_transform_iterator(std::begin(collection), std::forward<Mapper>(mapper)),
+            boost::make_transform_iterator(std::end(collection), std::forward<Mapper>(mapper)));
     }
 
     /** \brief Returns collection of specified container-type,
@@ -28,13 +28,13 @@ namespace ext
       *    Allows conversion between different container-types, e.g. std::vector to std::list
       */
     template <template <typename...> class ResultCollection, typename Collection, typename Mapper>
-    auto map(const Collection & collection, const Mapper mapper)
+    auto map(const Collection & collection, Mapper && mapper)
     {
         using value_type = unqualified_t<decltype(mapper(*std::begin(collection)))>;
 
         return ResultCollection<value_type>(
-            boost::make_transform_iterator(std::begin(collection), mapper),
-            boost::make_transform_iterator(std::end(collection), mapper));
+            boost::make_transform_iterator(std::begin(collection), std::forward<Mapper>(mapper)),
+            boost::make_transform_iterator(std::end(collection), std::forward<Mapper>(mapper)));
     }
 
     /** \brief Returns collection of specified type,
@@ -42,10 +42,10 @@ namespace ext
       *    Allows leveraging implicit conversion between the result of applying `mapper` and R::value_type.
       */
     template <typename ResultCollection, typename Collection, typename Mapper>
-    auto map(const Collection & collection, const Mapper mapper)
+    auto map(const Collection & collection, Mapper && mapper)
     {
         return ResultCollection(
-            boost::make_transform_iterator(std::begin(collection), mapper),
-            boost::make_transform_iterator(std::end(collection), mapper));
+            boost::make_transform_iterator(std::begin(collection), std::forward<Mapper>(mapper)),
+            boost::make_transform_iterator(std::end(collection), std::forward<Mapper>(mapper)));
     }
 }

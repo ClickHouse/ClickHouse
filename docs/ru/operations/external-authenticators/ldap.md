@@ -1,4 +1,4 @@
-# LDAP {#external-authenticators-ldap} 
+# LDAP {#external-authenticators-ldap}
 
 Для аутентификации пользователей ClickHouse можно использовать сервер LDAP. Существуют два подхода:
 
@@ -17,6 +17,7 @@
 <yandex>
     <!- ... -->
     <ldap_servers>
+        <!- Typical LDAP server. -->
         <my_ldap_server>
             <host>localhost</host>
             <port>636</port>
@@ -31,6 +32,18 @@
             <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
             <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
         </my_ldap_server>
+		
+        <!- Typical Active Directory with configured user DN detection for further role mapping. -->
+        <my_ad_server>
+            <host>localhost</host>
+            <port>389</port>
+            <bind_dn>EXAMPLE\{user_name}</bind_dn>
+            <user_dn_detection>
+                <base_dn>CN=Users,DC=example,DC=com</base_dn>
+                <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+            </user_dn_detection>
+            <enable_tls>no</enable_tls>
+        </my_ad_server>
     </ldap_servers>
 </yandex>
 ```
@@ -41,9 +54,18 @@
 
 - `host` — имя хоста сервера LDAP или его IP. Этот параметр обязательный и не может быть пустым.
 - `port` — порт сервера LDAP. Если настройка `enable_tls` равна `true`, то по умолчанию используется порт `636`, иначе — порт `389`.
-- `bind_dn` — шаблон для создания DN для привязки.
+- `bind_dn` — шаблон для создания DN подключения.
     - При формировании DN все подстроки `{user_name}` в шаблоне будут заменяться на фактическое имя пользователя при каждой попытке аутентификации.
-- `verification_cooldown` — промежуток времени (в секундах) после успешной попытки привязки, в течение которого пользователь будет считаться аутентифицированным и сможет выполнять запросы без повторного обращения к серверам LDAP.
+- `user_dn_detection` — секция с параметрами LDAP поиска для определения фактического значения DN подключенного пользователя.
+    - Это в основном используется в фильтрах поиска для дальнейшего сопоставления ролей, когда сервер является Active Directory. Полученный DN пользователя будет использоваться при замене подстрок `{user_dn}` везде, где они разрешены. По умолчанию DN пользователя устанавливается равным DN подключения, но после выполнения поиска он будет обновлен до фактического найденного значения DN пользователя.
+        - `base_dn` — шаблон для создания базового DN для LDAP поиска.
+            - При формировании DN все подстроки `{user_name}` и `{bind_dn}` в шаблоне будут заменяться на фактическое имя пользователя и DN подключения соответственно при каждом LDAP поиске.
+        - `scope` — область LDAP поиска.
+            - Возможные значения: `base`, `one_level`, `children`, `subtree` (по умолчанию).
+        - `search_filter` — шаблон для создания фильтра для каждого LDAP поиска.
+            - При формировании фильтра все подстроки `{user_name}`, `{bind_dn}`, `{user_dn}` и `{base_dn}` в шаблоне будут заменяться на фактическое имя пользователя, DN подключения, DN пользователя и базовый DN соответственно при каждом LDAP поиске.
+            - Обратите внимание, что специальные символы должны быть правильно экранированы в XML.
+- `verification_cooldown` — промежуток времени (в секундах) после успешной попытки подключения, в течение которого пользователь будет считаться аутентифицированным и сможет выполнять запросы без повторного обращения к серверам LDAP.
     - Чтобы отключить кеширование и заставить обращаться к серверу LDAP для каждого запроса аутентификации, укажите `0` (значение по умолчанию). 
 - `enable_tls` — флаг, включающий использование защищенного соединения с сервером LDAP.
     - Укажите `no` для использования текстового протокола `ldap://` (не рекомендовано).
@@ -106,7 +128,7 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 <yandex>
     <!- ... -->
     <user_directories>
-        <!- ... -->
+        <!- Typical LDAP server. -->
         <ldap>
             <server>my_ldap_server</server>
             <roles>
@@ -118,6 +140,18 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
                 <scope>subtree</scope>
                 <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
                 <attribute>cn</attribute>
+                <prefix>clickhouse_</prefix>
+            </role_mapping>
+        </ldap>
+		
+        <!- Typical Active Directory with role mapping that relies on the detected user DN. -->
+        <ldap>
+            <server>my_ad_server</server>
+            <role_mapping>
+                <base_dn>CN=Users,DC=example,DC=com</base_dn>
+                <attribute>CN</attribute>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
                 <prefix>clickhouse_</prefix>
             </role_mapping>
         </ldap>
@@ -135,14 +169,14 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 - `role_mapping` — секция c параметрами LDAP поиска и правилами отображения.
     - При аутентификации пользователя, пока еще связанного с LDAP, производится LDAP поиск с помощью `search_filter` и имени этого пользователя. Для каждой записи, найденной в ходе поиска, выделяется значение указанного атрибута. У каждого атрибута, имеющего указанный префикс, этот префикс удаляется, а остальная часть значения становится именем локальной роли, определенной в ClickHouse, причем предполагается, что эта роль была ранее создана запросом [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement) до этого.
     - Внутри одной секции `ldap` может быть несколько секций `role_mapping`. Все они будут применены.
-        - `base_dn` — шаблон, который используется для создания базового DN для LDAP поиска.
-           - При формировании DN все подстроки `{user_name}` и `{bind_dn}` в шаблоне будут заменяться на фактическое имя пользователя и DN привязки соответственно при каждом LDAP поиске.
-        - `scope` — Область LDAP поиска.
+        - `base_dn` — шаблон для создания базового DN для LDAP поиска.
+            - При формировании DN все подстроки `{user_name}`, `{bind_dn}` и `{user_dn}` в шаблоне будут заменяться на фактическое имя пользователя, DN подключения и DN пользователя соответственно при каждом LDAP поиске.
+        - `scope` — область LDAP поиска.
             - Возможные значения: `base`, `one_level`, `children`, `subtree` (по умолчанию).
-        - `search_filter` — шаблон, который используется для создания фильтра для каждого LDAP поиска.
-            - при формировании фильтра все подстроки `{user_name}`, `{bind_dn}` и `{base_dn}` в шаблоне будут заменяться на фактическое имя пользователя, DN привязки и базовый DN соответственно при каждом LDAP поиске.
+        - `search_filter` — шаблон для создания фильтра для каждого LDAP поиска.
+            - При формировании фильтра все подстроки `{user_name}`, `{bind_dn}`, `{user_dn}` и `{base_dn}` в шаблоне будут заменяться на фактическое имя пользователя, DN подключения, DN пользователя и базовый DN соответственно при каждом LDAP поиске.
             - Обратите внимание, что специальные символы должны быть правильно экранированы в XML.
-        - `attribute` — имя атрибута, значение которого будет возвращаться LDAP поиском.
+        - `attribute` — имя атрибута, значение которого будет возвращаться LDAP поиском. По умолчанию: `cn`.
         - `prefix` — префикс, который, как предполагается, будет находиться перед началом каждой строки в исходном списке строк, возвращаемых LDAP поиском. Префикс будет удален из исходных строк, а сами они будут рассматриваться как имена локальных ролей. По умолчанию: пустая строка. 
 
 [Оригинальная статья](https://clickhouse.tech/docs/en/operations/external-authenticators/ldap) <!--hide-->

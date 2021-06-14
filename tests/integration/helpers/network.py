@@ -137,6 +137,17 @@ class _NetworkManager:
         self._exec_run_with_retry(cmd, retry_count=3, privileged=True)
 
     @staticmethod
+    def clean_all_user_iptables_rules():
+        for i in range(1000):
+            iptables_iter = i
+            # when rules will be empty, it will return error
+            res = subprocess.run("iptables -D DOCKER-USER 1", shell=True)
+
+            if res.returncode != 0:
+                logging.info("All iptables rules cleared, " + str(iptables_iter) + " iterations, last error: " + str(res.stderr))
+                return
+
+    @staticmethod
     def _iptables_cmd_suffix(
             source=None, destination=None,
             source_port=None, destination_port=None,
@@ -237,6 +248,7 @@ class NetThroughput(object):
             if not check:
                 raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
         except:
+            logging.error("All available interfaces %s", subprocess.check_output("cat /proc/net/dev", shell=True))
             raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
 
         self.current_in = self._get_in_bytes()

@@ -259,6 +259,27 @@ RQ_SRS_019_ClickHouse_WindowFunctions_FrameClause = Requirement(
     level=3,
     num='3.5.1')
 
+RQ_SRS_019_ClickHouse_WindowFunctions_FrameClause_DefaultFrame = Requirement(
+    name='RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause.DefaultFrame',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL support the default `frame_clause` to be `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. \n'
+        '\n'
+        'If the `ORDER BY` clause is specified then this SHALL set the frame to be all rows from \n'
+        'the partition start up to and including current row and its peers. \n'
+        '\n'
+        'If the `ORDER BY` clause is not specified then this SHALL set the frame to include all rows\n'
+        'in the partition because all the rows are considered to be the peers of the current row.\n'
+        '\n'
+        ),
+    link=None,
+    level=3,
+    num='3.5.2')
+
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame',
     version='1.0',
@@ -279,7 +300,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.2.1')
+    num='3.5.3.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_MissingFrameExtent_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.MissingFrameExtent.Error',
@@ -300,7 +321,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_MissingFrameExtent_Error = Requi
         ),
     link=None,
     level=4,
-    num='3.5.2.2')
+    num='3.5.3.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_InvalidFrameExtent_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.InvalidFrameExtent.Error',
@@ -321,7 +342,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_InvalidFrameExtent_Error = Requi
         ),
     link=None,
     level=4,
-    num='3.5.2.3')
+    num='3.5.3.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_CurrentRow = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.CurrentRow',
@@ -350,7 +371,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_CurrentRow = Requirement(
         ),
     link=None,
     level=5,
-    num='3.5.2.4.1')
+    num='3.5.3.4.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_UnboundedPreceding = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedPreceding',
@@ -380,7 +401,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_UnboundedPreceding = Requi
         ),
     link=None,
     level=5,
-    num='3.5.2.5.1')
+    num='3.5.3.5.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_ExprPreceding = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprPreceding',
@@ -410,7 +431,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_ExprPreceding = Requiremen
         ),
     link=None,
     level=5,
-    num='3.5.2.6.1')
+    num='3.5.3.6.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_UnboundedFollowing_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedFollowing.Error',
@@ -431,7 +452,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_UnboundedFollowing_Error =
         ),
     link=None,
     level=5,
-    num='3.5.2.7.1')
+    num='3.5.3.7.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_ExprFollowing_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprFollowing.Error',
@@ -452,7 +473,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_ExprFollowing_Error = Requ
         ),
     link=None,
     level=5,
-    num='3.5.2.8.1')
+    num='3.5.3.8.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_CurrentRow = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.CurrentRow',
@@ -481,7 +502,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_CurrentRow = 
         ),
     link=None,
     level=5,
-    num='3.5.2.9.1')
+    num='3.5.3.9.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_UnboundedPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedPreceding.Error',
@@ -496,7 +517,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_UnboundedPrec
         ),
     link=None,
     level=5,
-    num='3.5.2.9.2')
+    num='3.5.3.9.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_ExprPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprPreceding.Error',
@@ -511,7 +532,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_ExprPreceding
         ),
     link=None,
     level=5,
-    num='3.5.2.9.3')
+    num='3.5.3.9.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_UnboundedFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedFollowing',
@@ -541,7 +562,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_UnboundedFoll
         ),
     link=None,
     level=5,
-    num='3.5.2.9.4')
+    num='3.5.3.9.4')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_ExprFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprFollowing',
@@ -571,7 +592,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_ExprFollowing
         ),
     link=None,
     level=5,
-    num='3.5.2.9.5')
+    num='3.5.3.9.5')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_CurrentRow = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.CurrentRow',
@@ -601,7 +622,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_Curre
         ),
     link=None,
     level=5,
-    num='3.5.2.10.1')
+    num='3.5.3.10.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_UnboundedPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedPreceding.Error',
@@ -622,7 +643,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_Unbou
         ),
     link=None,
     level=5,
-    num='3.5.2.10.2')
+    num='3.5.3.10.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_ExprPreceding = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprPreceding',
@@ -652,7 +673,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_ExprP
         ),
     link=None,
     level=5,
-    num='3.5.2.10.3')
+    num='3.5.3.10.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_UnboundedFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedFollowing',
@@ -682,7 +703,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_Unbou
         ),
     link=None,
     level=5,
-    num='3.5.2.10.4')
+    num='3.5.3.10.4')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_ExprFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprFollowing',
@@ -712,7 +733,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_ExprF
         ),
     link=None,
     level=5,
-    num='3.5.2.10.5')
+    num='3.5.3.10.5')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedFollowing_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedFollowing.Error',
@@ -739,7 +760,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedFollowing_Error
         ),
     link=None,
     level=5,
-    num='3.5.2.11.1')
+    num='3.5.3.11.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.Error',
@@ -766,7 +787,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_Error = Re
         ),
     link=None,
     level=5,
-    num='3.5.2.12.1')
+    num='3.5.3.12.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_ExprFollowing_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing.Error',
@@ -787,7 +808,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_ExprFollow
         ),
     link=None,
     level=5,
-    num='3.5.2.12.2')
+    num='3.5.3.12.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_UnboundedFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.UnboundedFollowing',
@@ -818,7 +839,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_UnboundedF
         ),
     link=None,
     level=5,
-    num='3.5.2.12.3')
+    num='3.5.3.12.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_ExprFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing',
@@ -850,7 +871,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_ExprFollow
         ),
     link=None,
     level=5,
-    num='3.5.2.12.4')
+    num='3.5.3.12.4')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_CurrentRow = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.CurrentRow',
@@ -881,7 +902,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_CurrentRow
         ),
     link=None,
     level=5,
-    num='3.5.2.13.1')
+    num='3.5.3.13.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_UnboundedPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedPreceding.Error',
@@ -903,7 +924,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_UnboundedP
         ),
     link=None,
     level=5,
-    num='3.5.2.13.2')
+    num='3.5.3.13.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_UnboundedFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedFollowing',
@@ -934,7 +955,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_UnboundedF
         ),
     link=None,
     level=5,
-    num='3.5.2.13.3')
+    num='3.5.3.13.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_ExprPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding.Error',
@@ -957,7 +978,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_ExprPreced
         ),
     link=None,
     level=5,
-    num='3.5.2.13.4')
+    num='3.5.3.13.4')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_ExprPreceding = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding',
@@ -989,7 +1010,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_ExprPreced
         ),
     link=None,
     level=5,
-    num='3.5.2.13.5')
+    num='3.5.3.13.5')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_ExprFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprFollowing',
@@ -1020,7 +1041,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_ExprFollow
         ),
     link=None,
     level=5,
-    num='3.5.2.13.6')
+    num='3.5.3.13.6')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame',
@@ -1042,7 +1063,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.3.1')
+    num='3.5.4.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_DataTypes_DateAndDateTime = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.DateAndDateTime',
@@ -1058,7 +1079,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_DataTypes_DateAndDateTime = Req
         ),
     link=None,
     level=4,
-    num='3.5.3.2')
+    num='3.5.4.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_DataTypes_IntAndUInt = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.IntAndUInt',
@@ -1074,7 +1095,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_DataTypes_IntAndUInt = Requirem
         ),
     link=None,
     level=4,
-    num='3.5.3.3')
+    num='3.5.4.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_MultipleColumnsInOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MultipleColumnsInOrderBy.Error',
@@ -1090,7 +1111,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_MultipleColumnsInOrderBy_Error 
         ),
     link=None,
     level=4,
-    num='3.5.3.4')
+    num='3.5.4.4')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_MissingFrameExtent_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MissingFrameExtent.Error',
@@ -1105,7 +1126,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_MissingFrameExtent_Error = Requ
         ),
     link=None,
     level=4,
-    num='3.5.3.5')
+    num='3.5.4.5')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_InvalidFrameExtent_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.InvalidFrameExtent.Error',
@@ -1120,7 +1141,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_InvalidFrameExtent_Error = Requ
         ),
     link=None,
     level=4,
-    num='3.5.3.6')
+    num='3.5.4.6')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_CurrentRow_Peers = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.CurrentRow.Peers',
@@ -1136,7 +1157,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_CurrentRow_Peers = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.3.8')
+    num='3.5.4.8')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_CurrentRow_WithoutOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithoutOrderBy',
@@ -1166,7 +1187,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_CurrentRow_WithoutOrderBy
         ),
     link=None,
     level=5,
-    num='3.5.3.9.1')
+    num='3.5.4.9.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_CurrentRow_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithOrderBy',
@@ -1197,7 +1218,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_CurrentRow_WithOrderBy = 
         ),
     link=None,
     level=5,
-    num='3.5.3.9.2')
+    num='3.5.4.9.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_UnboundedFollowing_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedFollowing.Error',
@@ -1219,7 +1240,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_UnboundedFollowing_Error 
         ),
     link=None,
     level=5,
-    num='3.5.3.10.1')
+    num='3.5.4.10.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_UnboundedPreceding_WithoutOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithoutOrderBy',
@@ -1249,7 +1270,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_UnboundedPreceding_Withou
         ),
     link=None,
     level=5,
-    num='3.5.3.11.1')
+    num='3.5.4.11.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_UnboundedPreceding_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithOrderBy',
@@ -1280,7 +1301,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_UnboundedPreceding_WithOr
         ),
     link=None,
     level=5,
-    num='3.5.3.11.2')
+    num='3.5.4.11.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprPreceding_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithoutOrderBy.Error',
@@ -1301,7 +1322,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprPreceding_WithoutOrde
         ),
     link=None,
     level=5,
-    num='3.5.3.12.1')
+    num='3.5.4.12.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprPreceding_OrderByNonNumericalColumn_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.OrderByNonNumericalColumn.Error',
@@ -1317,7 +1338,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprPreceding_OrderByNonN
         ),
     link=None,
     level=5,
-    num='3.5.3.12.2')
+    num='3.5.4.12.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprPreceding_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithOrderBy',
@@ -1348,7 +1369,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprPreceding_WithOrderBy
         ),
     link=None,
     level=5,
-    num='3.5.3.12.3')
+    num='3.5.4.12.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprFollowing_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithoutOrderBy.Error',
@@ -1369,7 +1390,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprFollowing_WithoutOrde
         ),
     link=None,
     level=5,
-    num='3.5.3.13.1')
+    num='3.5.4.13.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprFollowing_WithOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithOrderBy.Error',
@@ -1391,7 +1412,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprFollowing_WithOrderBy
         ),
     link=None,
     level=5,
-    num='3.5.3.13.2')
+    num='3.5.4.13.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_CurrentRow = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.CurrentRow',
@@ -1437,7 +1458,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_CurrentRow =
         ),
     link=None,
     level=5,
-    num='3.5.3.14.1')
+    num='3.5.4.14.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_UnboundedPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedPreceding.Error',
@@ -1467,7 +1488,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_UnboundedPre
         ),
     link=None,
     level=5,
-    num='3.5.3.14.2')
+    num='3.5.4.14.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_UnboundedFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedFollowing',
@@ -1514,7 +1535,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_UnboundedFol
         ),
     link=None,
     level=5,
-    num='3.5.3.14.3')
+    num='3.5.4.14.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_ExprFollowing_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithoutOrderBy.Error',
@@ -1536,7 +1557,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_ExprFollowin
         ),
     link=None,
     level=5,
-    num='3.5.3.14.4')
+    num='3.5.4.14.4')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_ExprFollowing_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithOrderBy',
@@ -1568,7 +1589,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_ExprFollowin
         ),
     link=None,
     level=5,
-    num='3.5.3.14.5')
+    num='3.5.4.14.5')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_ExprPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprPreceding.Error',
@@ -1598,7 +1619,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_ExprPrecedin
         ),
     link=None,
     level=5,
-    num='3.5.3.14.6')
+    num='3.5.4.14.6')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_CurrentRow = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.CurrentRow',
@@ -1647,7 +1668,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_Curr
         ),
     link=None,
     level=5,
-    num='3.5.3.15.1')
+    num='3.5.4.15.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_UnboundedPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedPreceding.Error',
@@ -1677,7 +1698,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_Unbo
         ),
     link=None,
     level=5,
-    num='3.5.3.15.2')
+    num='3.5.4.15.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_UnboundedFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedFollowing',
@@ -1725,7 +1746,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_Unbo
         ),
     link=None,
     level=5,
-    num='3.5.3.15.3')
+    num='3.5.4.15.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_ExprPreceding_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithoutOrderBy.Error',
@@ -1747,7 +1768,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_Expr
         ),
     link=None,
     level=5,
-    num='3.5.3.15.4')
+    num='3.5.4.15.4')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_ExprPreceding_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithOrderBy',
@@ -1779,7 +1800,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_Expr
         ),
     link=None,
     level=5,
-    num='3.5.3.15.5')
+    num='3.5.4.15.5')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_ExprFollowing_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithoutOrderBy.Error',
@@ -1801,7 +1822,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_Expr
         ),
     link=None,
     level=5,
-    num='3.5.3.15.6')
+    num='3.5.4.15.6')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_ExprFollowing_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithOrderBy',
@@ -1833,7 +1854,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_Expr
         ),
     link=None,
     level=5,
-    num='3.5.3.15.7')
+    num='3.5.4.15.7')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_CurrentRow_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.CurrentRow.Error',
@@ -1849,7 +1870,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_Curr
         ),
     link=None,
     level=5,
-    num='3.5.3.16.1')
+    num='3.5.4.16.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_UnboundedFollowing_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedFollowing.Error',
@@ -1865,7 +1886,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_Unbo
         ),
     link=None,
     level=5,
-    num='3.5.3.16.2')
+    num='3.5.4.16.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_UnboundedPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedPreceding.Error',
@@ -1881,7 +1902,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_Unbo
         ),
     link=None,
     level=5,
-    num='3.5.3.16.3')
+    num='3.5.4.16.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_ExprPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprPreceding.Error',
@@ -1897,7 +1918,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_Expr
         ),
     link=None,
     level=5,
-    num='3.5.3.16.4')
+    num='3.5.4.16.4')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_ExprFollowing_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprFollowing.Error',
@@ -1913,7 +1934,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_Expr
         ),
     link=None,
     level=5,
-    num='3.5.3.16.5')
+    num='3.5.4.16.5')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_CurrentRow_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithOrderBy',
@@ -1945,7 +1966,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_CurrentRo
         ),
     link=None,
     level=5,
-    num='3.5.3.17.1')
+    num='3.5.4.17.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_CurrentRow_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithoutOrderBy.Error',
@@ -1967,7 +1988,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_CurrentRo
         ),
     link=None,
     level=5,
-    num='3.5.3.17.2')
+    num='3.5.4.17.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_UnboundedPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedPreceding.Error',
@@ -1997,7 +2018,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_Unbounded
         ),
     link=None,
     level=5,
-    num='3.5.3.17.3')
+    num='3.5.4.17.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_UnboundedFollowing_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithoutOrderBy.Error',
@@ -2019,7 +2040,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_Unbounded
         ),
     link=None,
     level=5,
-    num='3.5.3.17.4')
+    num='3.5.4.17.4')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_UnboundedFollowing_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithOrderBy',
@@ -2051,7 +2072,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_Unbounded
         ),
     link=None,
     level=5,
-    num='3.5.3.17.5')
+    num='3.5.4.17.5')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprFollowing_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithoutOrderBy.Error',
@@ -2073,7 +2094,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprFollo
         ),
     link=None,
     level=5,
-    num='3.5.3.17.6')
+    num='3.5.4.17.6')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprFollowing_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithOrderBy',
@@ -2105,7 +2126,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprFollo
         ),
     link=None,
     level=5,
-    num='3.5.3.17.7')
+    num='3.5.4.17.7')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprPreceding_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithoutOrderBy.Error',
@@ -2127,7 +2148,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprPrece
         ),
     link=None,
     level=5,
-    num='3.5.3.17.8')
+    num='3.5.4.17.8')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprPreceding_WithOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy.Error',
@@ -2150,7 +2171,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprPrece
         ),
     link=None,
     level=5,
-    num='3.5.3.17.9')
+    num='3.5.4.17.9')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprPreceding_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy',
@@ -2200,7 +2221,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprPrece
         ),
     link=None,
     level=5,
-    num='3.5.3.17.10')
+    num='3.5.4.17.10')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_CurrentRow_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithoutOrderBy.Error',
@@ -2222,7 +2243,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_CurrentRo
         ),
     link=None,
     level=5,
-    num='3.5.3.18.1')
+    num='3.5.4.18.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_CurrentRow_WithOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithOrderBy.Error',
@@ -2244,7 +2265,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_CurrentRo
         ),
     link=None,
     level=5,
-    num='3.5.3.18.2')
+    num='3.5.4.18.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_CurrentRow_ZeroSpecialCase = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.ZeroSpecialCase',
@@ -2293,7 +2314,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_CurrentRo
         ),
     link=None,
     level=5,
-    num='3.5.3.18.3')
+    num='3.5.4.18.3')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_UnboundedFollowing_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithoutOrderBy.Error',
@@ -2315,7 +2336,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_Unbounded
         ),
     link=None,
     level=5,
-    num='3.5.3.18.4')
+    num='3.5.4.18.4')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_UnboundedFollowing_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithOrderBy',
@@ -2347,7 +2368,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_Unbounded
         ),
     link=None,
     level=5,
-    num='3.5.3.18.5')
+    num='3.5.4.18.5')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_UnboundedPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedPreceding.Error',
@@ -2377,7 +2398,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_Unbounded
         ),
     link=None,
     level=5,
-    num='3.5.3.18.6')
+    num='3.5.4.18.6')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprPreceding_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithoutOrderBy.Error',
@@ -2393,7 +2414,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprPrece
         ),
     link=None,
     level=5,
-    num='3.5.3.18.7')
+    num='3.5.4.18.7')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprPreceding_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.Error',
@@ -2409,7 +2430,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprPrece
         ),
     link=None,
     level=5,
-    num='3.5.3.18.8')
+    num='3.5.4.18.8')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprPreceding_WithOrderBy_ZeroSpecialCase = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithOrderBy.ZeroSpecialCase',
@@ -2441,7 +2462,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprPrece
         ),
     link=None,
     level=5,
-    num='3.5.3.18.9')
+    num='3.5.4.18.9')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprFollowing_WithoutOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithoutOrderBy.Error',
@@ -2457,7 +2478,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprFollo
         ),
     link=None,
     level=5,
-    num='3.5.3.18.10')
+    num='3.5.4.18.10')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprFollowing_WithOrderBy_Error = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy.Error',
@@ -2479,7 +2500,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprFollo
         ),
     link=None,
     level=5,
-    num='3.5.3.18.11')
+    num='3.5.4.18.11')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprFollowing_WithOrderBy = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy',
@@ -2513,7 +2534,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprFollo
         ),
     link=None,
     level=5,
-    num='3.5.3.18.12')
+    num='3.5.4.18.12')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Frame_Extent = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Extent',
@@ -2533,7 +2554,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_Frame_Extent = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.4.1')
+    num='3.5.5.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Frame_Start = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Start',
@@ -2558,7 +2579,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_Frame_Start = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.5.1')
+    num='3.5.6.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Frame_Between = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Between',
@@ -2578,7 +2599,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_Frame_Between = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.6.1')
+    num='3.5.7.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Frame_End = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.End',
@@ -2603,7 +2624,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_Frame_End = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.7.1')
+    num='3.5.8.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_CurrentRow = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.CurrentRow',
@@ -2621,7 +2642,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_CurrentRow = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.8.1')
+    num='3.5.9.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_UnboundedPreceding = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedPreceding',
@@ -2637,7 +2658,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_UnboundedPreceding = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.9.1')
+    num='3.5.10.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_UnboundedFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedFollowing',
@@ -2653,7 +2674,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_UnboundedFollowing = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.10.1')
+    num='3.5.11.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_ExprPreceding = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding',
@@ -2671,7 +2692,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_ExprPreceding = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.11.1')
+    num='3.5.12.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_ExprPreceding_ExprValue = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding.ExprValue',
@@ -2692,7 +2713,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_ExprPreceding_ExprValue = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.11.2')
+    num='3.5.12.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_ExprFollowing = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing',
@@ -2710,7 +2731,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_ExprFollowing = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.12.1')
+    num='3.5.13.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_ExprFollowing_ExprValue = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing.ExprValue',
@@ -2731,7 +2752,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_ExprFollowing_ExprValue = Requirement(
         ),
     link=None,
     level=4,
-    num='3.5.12.2')
+    num='3.5.13.2')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_WindowClause = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause',
@@ -3041,6 +3062,64 @@ RQ_SRS_019_ClickHouse_WindowFunctions_Lead_Workaround = Requirement(
     level=5,
     num='3.8.1.4.1')
 
+RQ_SRS_019_ClickHouse_WindowFunctions_LeadInFrame = Requirement(
+    name='RQ.SRS-019.ClickHouse.WindowFunctions.LeadInFrame',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL support the `leadInFrame(expr[, offset, [default]])` function.\n'
+        '\n'
+        'For example,\n'
+        '```\n'
+        'leadInFrame(column) OVER (...)\n'
+        '```\n'
+        '\n'
+        'The function SHALL return the value from the row that leads (follows) the current row\n'
+        'by the `offset` rows within the current frame. If there is no such row,\n'
+        'the return value SHALL be the `default` value. If the `default` value is not specified \n'
+        'then the default value for the corresponding column data type SHALL be returned.\n'
+        '\n'
+        'The `offset` SHALL be a literal non-negative integer. If the `offset` is set to `0`, then\n'
+        'the value SHALL be returned for the current row. If the `offset` is not specified, the default\n'
+        'value SHALL be `1`.\n'
+        '\n'
+        ),
+    link=None,
+    level=5,
+    num='3.8.1.5.1')
+
+RQ_SRS_019_ClickHouse_WindowFunctions_LagInFrame = Requirement(
+    name='RQ.SRS-019.ClickHouse.WindowFunctions.LagInFrame',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL support the `lagInFrame(expr[, offset, [default]])` function.\n'
+        '\n'
+        'For example,\n'
+        '```\n'
+        'lagInFrame(column) OVER (...)\n'
+        '```\n'
+        '\n'
+        'The function SHALL return the value from the row that lags (preceds) the current row\n'
+        'by the `offset` rows within the current frame. If there is no such row,\n'
+        'the return value SHALL be the `default` value. If the `default` value is not specified \n'
+        'then the default value for the corresponding column data type SHALL be returned.\n'
+        '\n'
+        'The `offset` SHALL be a literal non-negative integer. If the `offset` is set to `0`, then\n'
+        'the value SHALL be returned for the current row. If the `offset` is not specified, the default\n'
+        'value SHALL be `1`.\n'
+        '\n'
+        ),
+    link=None,
+    level=5,
+    num='3.8.1.6.1')
+
 RQ_SRS_019_ClickHouse_WindowFunctions_Rank = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.Rank',
     version='1.0',
@@ -3066,7 +3145,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_Rank = Requirement(
         ),
     link=None,
     level=5,
-    num='3.8.1.5.1')
+    num='3.8.1.7.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_DenseRank = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.DenseRank',
@@ -3093,7 +3172,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_DenseRank = Requirement(
         ),
     link=None,
     level=5,
-    num='3.8.1.6.1')
+    num='3.8.1.8.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowNumber = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.RowNumber',
@@ -3118,7 +3197,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_RowNumber = Requirement(
         ),
     link=None,
     level=5,
-    num='3.8.1.7.1')
+    num='3.8.1.9.1')
 
 RQ_SRS_019_ClickHouse_WindowFunctions_AggregateFunctions = Requirement(
     name='RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions',
@@ -3291,135 +3370,136 @@ SRS019_ClickHouse_Window_Functions = Specification(
         Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.InvalidExpr.Error', level=3, num='3.4.4'),
         Heading(name='FRAME Clause', level=2, num='3.5'),
         Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause', level=3, num='3.5.1'),
-        Heading(name='ROWS', level=3, num='3.5.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame', level=4, num='3.5.2.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.MissingFrameExtent.Error', level=4, num='3.5.2.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.InvalidFrameExtent.Error', level=4, num='3.5.2.3'),
-        Heading(name='ROWS CURRENT ROW', level=4, num='3.5.2.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.CurrentRow', level=5, num='3.5.2.4.1'),
-        Heading(name='ROWS UNBOUNDED PRECEDING', level=4, num='3.5.2.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedPreceding', level=5, num='3.5.2.5.1'),
-        Heading(name='ROWS `expr` PRECEDING', level=4, num='3.5.2.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprPreceding', level=5, num='3.5.2.6.1'),
-        Heading(name='ROWS UNBOUNDED FOLLOWING', level=4, num='3.5.2.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedFollowing.Error', level=5, num='3.5.2.7.1'),
-        Heading(name='ROWS `expr` FOLLOWING', level=4, num='3.5.2.8'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprFollowing.Error', level=5, num='3.5.2.8.1'),
-        Heading(name='ROWS BETWEEN CURRENT ROW', level=4, num='3.5.2.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.CurrentRow', level=5, num='3.5.2.9.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedPreceding.Error', level=5, num='3.5.2.9.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprPreceding.Error', level=5, num='3.5.2.9.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedFollowing', level=5, num='3.5.2.9.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprFollowing', level=5, num='3.5.2.9.5'),
-        Heading(name='ROWS BETWEEN UNBOUNDED PRECEDING', level=4, num='3.5.2.10'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.CurrentRow', level=5, num='3.5.2.10.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedPreceding.Error', level=5, num='3.5.2.10.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprPreceding', level=5, num='3.5.2.10.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedFollowing', level=5, num='3.5.2.10.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprFollowing', level=5, num='3.5.2.10.5'),
-        Heading(name='ROWS BETWEEN UNBOUNDED FOLLOWING', level=4, num='3.5.2.11'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedFollowing.Error', level=5, num='3.5.2.11.1'),
-        Heading(name='ROWS BETWEEN `expr` FOLLOWING', level=4, num='3.5.2.12'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.Error', level=5, num='3.5.2.12.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing.Error', level=5, num='3.5.2.12.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.UnboundedFollowing', level=5, num='3.5.2.12.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing', level=5, num='3.5.2.12.4'),
-        Heading(name='ROWS BETWEEN `expr` PRECEDING', level=4, num='3.5.2.13'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.CurrentRow', level=5, num='3.5.2.13.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedPreceding.Error', level=5, num='3.5.2.13.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedFollowing', level=5, num='3.5.2.13.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding.Error', level=5, num='3.5.2.13.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding', level=5, num='3.5.2.13.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprFollowing', level=5, num='3.5.2.13.6'),
-        Heading(name='RANGE', level=3, num='3.5.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame', level=4, num='3.5.3.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.DateAndDateTime', level=4, num='3.5.3.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.IntAndUInt', level=4, num='3.5.3.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MultipleColumnsInOrderBy.Error', level=4, num='3.5.3.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MissingFrameExtent.Error', level=4, num='3.5.3.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.InvalidFrameExtent.Error', level=4, num='3.5.3.6'),
-        Heading(name='`CURRENT ROW` Peers', level=4, num='3.5.3.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.CurrentRow.Peers', level=4, num='3.5.3.8'),
-        Heading(name='RANGE CURRENT ROW', level=4, num='3.5.3.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithoutOrderBy', level=5, num='3.5.3.9.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithOrderBy', level=5, num='3.5.3.9.2'),
-        Heading(name='RANGE UNBOUNDED FOLLOWING', level=4, num='3.5.3.10'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedFollowing.Error', level=5, num='3.5.3.10.1'),
-        Heading(name='RANGE UNBOUNDED PRECEDING', level=4, num='3.5.3.11'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithoutOrderBy', level=5, num='3.5.3.11.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithOrderBy', level=5, num='3.5.3.11.2'),
-        Heading(name='RANGE `expr` PRECEDING', level=4, num='3.5.3.12'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.3.12.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.OrderByNonNumericalColumn.Error', level=5, num='3.5.3.12.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithOrderBy', level=5, num='3.5.3.12.3'),
-        Heading(name='RANGE `expr` FOLLOWING', level=4, num='3.5.3.13'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.3.13.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithOrderBy.Error', level=5, num='3.5.3.13.2'),
-        Heading(name='RANGE BETWEEN CURRENT ROW', level=4, num='3.5.3.14'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.CurrentRow', level=5, num='3.5.3.14.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedPreceding.Error', level=5, num='3.5.3.14.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedFollowing', level=5, num='3.5.3.14.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.3.14.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithOrderBy', level=5, num='3.5.3.14.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprPreceding.Error', level=5, num='3.5.3.14.6'),
-        Heading(name='RANGE BETWEEN UNBOUNDED PRECEDING', level=4, num='3.5.3.15'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.CurrentRow', level=5, num='3.5.3.15.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedPreceding.Error', level=5, num='3.5.3.15.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedFollowing', level=5, num='3.5.3.15.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.3.15.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithOrderBy', level=5, num='3.5.3.15.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.3.15.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithOrderBy', level=5, num='3.5.3.15.7'),
-        Heading(name='RANGE BETWEEN UNBOUNDED FOLLOWING', level=4, num='3.5.3.16'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.CurrentRow.Error', level=5, num='3.5.3.16.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedFollowing.Error', level=5, num='3.5.3.16.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedPreceding.Error', level=5, num='3.5.3.16.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprPreceding.Error', level=5, num='3.5.3.16.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprFollowing.Error', level=5, num='3.5.3.16.5'),
-        Heading(name='RANGE BETWEEN expr PRECEDING', level=4, num='3.5.3.17'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithOrderBy', level=5, num='3.5.3.17.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithoutOrderBy.Error', level=5, num='3.5.3.17.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedPreceding.Error', level=5, num='3.5.3.17.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithoutOrderBy.Error', level=5, num='3.5.3.17.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithOrderBy', level=5, num='3.5.3.17.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.3.17.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithOrderBy', level=5, num='3.5.3.17.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.3.17.8'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy.Error', level=5, num='3.5.3.17.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy', level=5, num='3.5.3.17.10'),
-        Heading(name='RANGE BETWEEN expr FOLLOWING', level=4, num='3.5.3.18'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithoutOrderBy.Error', level=5, num='3.5.3.18.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithOrderBy.Error', level=5, num='3.5.3.18.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.ZeroSpecialCase', level=5, num='3.5.3.18.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithoutOrderBy.Error', level=5, num='3.5.3.18.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithOrderBy', level=5, num='3.5.3.18.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedPreceding.Error', level=5, num='3.5.3.18.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.3.18.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.Error', level=5, num='3.5.3.18.8'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithOrderBy.ZeroSpecialCase', level=5, num='3.5.3.18.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.3.18.10'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy.Error', level=5, num='3.5.3.18.11'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy', level=5, num='3.5.3.18.12'),
-        Heading(name='Frame Extent', level=3, num='3.5.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Extent', level=4, num='3.5.4.1'),
-        Heading(name='Frame Start', level=3, num='3.5.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Start', level=4, num='3.5.5.1'),
-        Heading(name='Frame Between', level=3, num='3.5.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Between', level=4, num='3.5.6.1'),
-        Heading(name='Frame End', level=3, num='3.5.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.End', level=4, num='3.5.7.1'),
-        Heading(name='`CURRENT ROW`', level=3, num='3.5.8'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.CurrentRow', level=4, num='3.5.8.1'),
-        Heading(name='`UNBOUNDED PRECEDING`', level=3, num='3.5.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedPreceding', level=4, num='3.5.9.1'),
-        Heading(name='`UNBOUNDED FOLLOWING`', level=3, num='3.5.10'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedFollowing', level=4, num='3.5.10.1'),
-        Heading(name='`expr PRECEDING`', level=3, num='3.5.11'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding', level=4, num='3.5.11.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding.ExprValue', level=4, num='3.5.11.2'),
-        Heading(name='`expr FOLLOWING`', level=3, num='3.5.12'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing', level=4, num='3.5.12.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing.ExprValue', level=4, num='3.5.12.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause.DefaultFrame', level=3, num='3.5.2'),
+        Heading(name='ROWS', level=3, num='3.5.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame', level=4, num='3.5.3.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.MissingFrameExtent.Error', level=4, num='3.5.3.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.InvalidFrameExtent.Error', level=4, num='3.5.3.3'),
+        Heading(name='ROWS CURRENT ROW', level=4, num='3.5.3.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.CurrentRow', level=5, num='3.5.3.4.1'),
+        Heading(name='ROWS UNBOUNDED PRECEDING', level=4, num='3.5.3.5'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedPreceding', level=5, num='3.5.3.5.1'),
+        Heading(name='ROWS `expr` PRECEDING', level=4, num='3.5.3.6'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprPreceding', level=5, num='3.5.3.6.1'),
+        Heading(name='ROWS UNBOUNDED FOLLOWING', level=4, num='3.5.3.7'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedFollowing.Error', level=5, num='3.5.3.7.1'),
+        Heading(name='ROWS `expr` FOLLOWING', level=4, num='3.5.3.8'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprFollowing.Error', level=5, num='3.5.3.8.1'),
+        Heading(name='ROWS BETWEEN CURRENT ROW', level=4, num='3.5.3.9'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.CurrentRow', level=5, num='3.5.3.9.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedPreceding.Error', level=5, num='3.5.3.9.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprPreceding.Error', level=5, num='3.5.3.9.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedFollowing', level=5, num='3.5.3.9.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprFollowing', level=5, num='3.5.3.9.5'),
+        Heading(name='ROWS BETWEEN UNBOUNDED PRECEDING', level=4, num='3.5.3.10'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.CurrentRow', level=5, num='3.5.3.10.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedPreceding.Error', level=5, num='3.5.3.10.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprPreceding', level=5, num='3.5.3.10.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedFollowing', level=5, num='3.5.3.10.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprFollowing', level=5, num='3.5.3.10.5'),
+        Heading(name='ROWS BETWEEN UNBOUNDED FOLLOWING', level=4, num='3.5.3.11'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedFollowing.Error', level=5, num='3.5.3.11.1'),
+        Heading(name='ROWS BETWEEN `expr` FOLLOWING', level=4, num='3.5.3.12'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.Error', level=5, num='3.5.3.12.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing.Error', level=5, num='3.5.3.12.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.UnboundedFollowing', level=5, num='3.5.3.12.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing', level=5, num='3.5.3.12.4'),
+        Heading(name='ROWS BETWEEN `expr` PRECEDING', level=4, num='3.5.3.13'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.CurrentRow', level=5, num='3.5.3.13.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedPreceding.Error', level=5, num='3.5.3.13.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedFollowing', level=5, num='3.5.3.13.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding.Error', level=5, num='3.5.3.13.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding', level=5, num='3.5.3.13.5'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprFollowing', level=5, num='3.5.3.13.6'),
+        Heading(name='RANGE', level=3, num='3.5.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame', level=4, num='3.5.4.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.DateAndDateTime', level=4, num='3.5.4.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.IntAndUInt', level=4, num='3.5.4.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MultipleColumnsInOrderBy.Error', level=4, num='3.5.4.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MissingFrameExtent.Error', level=4, num='3.5.4.5'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.InvalidFrameExtent.Error', level=4, num='3.5.4.6'),
+        Heading(name='`CURRENT ROW` Peers', level=4, num='3.5.4.7'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.CurrentRow.Peers', level=4, num='3.5.4.8'),
+        Heading(name='RANGE CURRENT ROW', level=4, num='3.5.4.9'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithoutOrderBy', level=5, num='3.5.4.9.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithOrderBy', level=5, num='3.5.4.9.2'),
+        Heading(name='RANGE UNBOUNDED FOLLOWING', level=4, num='3.5.4.10'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedFollowing.Error', level=5, num='3.5.4.10.1'),
+        Heading(name='RANGE UNBOUNDED PRECEDING', level=4, num='3.5.4.11'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithoutOrderBy', level=5, num='3.5.4.11.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithOrderBy', level=5, num='3.5.4.11.2'),
+        Heading(name='RANGE `expr` PRECEDING', level=4, num='3.5.4.12'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.4.12.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.OrderByNonNumericalColumn.Error', level=5, num='3.5.4.12.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithOrderBy', level=5, num='3.5.4.12.3'),
+        Heading(name='RANGE `expr` FOLLOWING', level=4, num='3.5.4.13'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.13.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithOrderBy.Error', level=5, num='3.5.4.13.2'),
+        Heading(name='RANGE BETWEEN CURRENT ROW', level=4, num='3.5.4.14'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.CurrentRow', level=5, num='3.5.4.14.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedPreceding.Error', level=5, num='3.5.4.14.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedFollowing', level=5, num='3.5.4.14.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.14.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithOrderBy', level=5, num='3.5.4.14.5'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprPreceding.Error', level=5, num='3.5.4.14.6'),
+        Heading(name='RANGE BETWEEN UNBOUNDED PRECEDING', level=4, num='3.5.4.15'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.CurrentRow', level=5, num='3.5.4.15.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedPreceding.Error', level=5, num='3.5.4.15.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedFollowing', level=5, num='3.5.4.15.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.4.15.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithOrderBy', level=5, num='3.5.4.15.5'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.15.6'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithOrderBy', level=5, num='3.5.4.15.7'),
+        Heading(name='RANGE BETWEEN UNBOUNDED FOLLOWING', level=4, num='3.5.4.16'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.CurrentRow.Error', level=5, num='3.5.4.16.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedFollowing.Error', level=5, num='3.5.4.16.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedPreceding.Error', level=5, num='3.5.4.16.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprPreceding.Error', level=5, num='3.5.4.16.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprFollowing.Error', level=5, num='3.5.4.16.5'),
+        Heading(name='RANGE BETWEEN expr PRECEDING', level=4, num='3.5.4.17'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithOrderBy', level=5, num='3.5.4.17.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithoutOrderBy.Error', level=5, num='3.5.4.17.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedPreceding.Error', level=5, num='3.5.4.17.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.17.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithOrderBy', level=5, num='3.5.4.17.5'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.17.6'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithOrderBy', level=5, num='3.5.4.17.7'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.4.17.8'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy.Error', level=5, num='3.5.4.17.9'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy', level=5, num='3.5.4.17.10'),
+        Heading(name='RANGE BETWEEN expr FOLLOWING', level=4, num='3.5.4.18'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithoutOrderBy.Error', level=5, num='3.5.4.18.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithOrderBy.Error', level=5, num='3.5.4.18.2'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.ZeroSpecialCase', level=5, num='3.5.4.18.3'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.18.4'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithOrderBy', level=5, num='3.5.4.18.5'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedPreceding.Error', level=5, num='3.5.4.18.6'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.4.18.7'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.Error', level=5, num='3.5.4.18.8'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithOrderBy.ZeroSpecialCase', level=5, num='3.5.4.18.9'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.18.10'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy.Error', level=5, num='3.5.4.18.11'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy', level=5, num='3.5.4.18.12'),
+        Heading(name='Frame Extent', level=3, num='3.5.5'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Extent', level=4, num='3.5.5.1'),
+        Heading(name='Frame Start', level=3, num='3.5.6'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Start', level=4, num='3.5.6.1'),
+        Heading(name='Frame Between', level=3, num='3.5.7'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Between', level=4, num='3.5.7.1'),
+        Heading(name='Frame End', level=3, num='3.5.8'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.End', level=4, num='3.5.8.1'),
+        Heading(name='`CURRENT ROW`', level=3, num='3.5.9'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.CurrentRow', level=4, num='3.5.9.1'),
+        Heading(name='`UNBOUNDED PRECEDING`', level=3, num='3.5.10'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedPreceding', level=4, num='3.5.10.1'),
+        Heading(name='`UNBOUNDED FOLLOWING`', level=3, num='3.5.11'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedFollowing', level=4, num='3.5.11.1'),
+        Heading(name='`expr PRECEDING`', level=3, num='3.5.12'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding', level=4, num='3.5.12.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding.ExprValue', level=4, num='3.5.12.2'),
+        Heading(name='`expr FOLLOWING`', level=3, num='3.5.13'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing', level=4, num='3.5.13.1'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing.ExprValue', level=4, num='3.5.13.2'),
         Heading(name='WINDOW Clause', level=2, num='3.6'),
         Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause', level=3, num='3.6.1'),
         Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause.MultipleWindows', level=3, num='3.6.2'),
@@ -3445,12 +3525,16 @@ SRS019_ClickHouse_Window_Functions = Specification(
         Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Lag.Workaround', level=5, num='3.8.1.3.1'),
         Heading(name='The `lead(value, offset)` Function Workaround', level=4, num='3.8.1.4'),
         Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Lead.Workaround', level=5, num='3.8.1.4.1'),
-        Heading(name='The `rank()` Function', level=4, num='3.8.1.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Rank', level=5, num='3.8.1.5.1'),
-        Heading(name='The `dense_rank()` Function', level=4, num='3.8.1.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.DenseRank', level=5, num='3.8.1.6.1'),
-        Heading(name='The `row_number()` Function', level=4, num='3.8.1.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowNumber', level=5, num='3.8.1.7.1'),
+        Heading(name='The `leadInFrame(expr[, offset, [default]])`', level=4, num='3.8.1.5'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.LeadInFrame', level=5, num='3.8.1.5.1'),
+        Heading(name='The `lagInFrame(expr[, offset, [default]])`', level=4, num='3.8.1.6'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.LagInFrame', level=5, num='3.8.1.6.1'),
+        Heading(name='The `rank()` Function', level=4, num='3.8.1.7'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Rank', level=5, num='3.8.1.7.1'),
+        Heading(name='The `dense_rank()` Function', level=4, num='3.8.1.8'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.DenseRank', level=5, num='3.8.1.8.1'),
+        Heading(name='The `row_number()` Function', level=4, num='3.8.1.9'),
+        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowNumber', level=5, num='3.8.1.9.1'),
         Heading(name='Aggregate Functions', level=3, num='3.8.2'),
         Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions', level=4, num='3.8.2.1'),
         Heading(name='Combinators', level=4, num='3.8.2.2'),
@@ -3473,6 +3557,7 @@ SRS019_ClickHouse_Window_Functions = Specification(
         RQ_SRS_019_ClickHouse_WindowFunctions_OrderClause_MissingExpr_Error,
         RQ_SRS_019_ClickHouse_WindowFunctions_OrderClause_InvalidExpr_Error,
         RQ_SRS_019_ClickHouse_WindowFunctions_FrameClause,
+        RQ_SRS_019_ClickHouse_WindowFunctions_FrameClause_DefaultFrame,
         RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame,
         RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_MissingFrameExtent_Error,
         RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_InvalidFrameExtent_Error,
@@ -3584,6 +3669,8 @@ SRS019_ClickHouse_Window_Functions = Specification(
         RQ_SRS_019_ClickHouse_WindowFunctions_LastValue,
         RQ_SRS_019_ClickHouse_WindowFunctions_Lag_Workaround,
         RQ_SRS_019_ClickHouse_WindowFunctions_Lead_Workaround,
+        RQ_SRS_019_ClickHouse_WindowFunctions_LeadInFrame,
+        RQ_SRS_019_ClickHouse_WindowFunctions_LagInFrame,
         RQ_SRS_019_ClickHouse_WindowFunctions_Rank,
         RQ_SRS_019_ClickHouse_WindowFunctions_DenseRank,
         RQ_SRS_019_ClickHouse_WindowFunctions_RowNumber,
@@ -3619,135 +3706,136 @@ SRS019_ClickHouse_Window_Functions = Specification(
     * 3.4.4 [RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.InvalidExpr.Error](#rqsrs-019clickhousewindowfunctionsorderclauseinvalidexprerror)
   * 3.5 [FRAME Clause](#frame-clause)
     * 3.5.1 [RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause](#rqsrs-019clickhousewindowfunctionsframeclause)
-    * 3.5.2 [ROWS](#rows)
-      * 3.5.2.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame](#rqsrs-019clickhousewindowfunctionsrowsframe)
-      * 3.5.2.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.MissingFrameExtent.Error](#rqsrs-019clickhousewindowfunctionsrowsframemissingframeextenterror)
-      * 3.5.2.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.InvalidFrameExtent.Error](#rqsrs-019clickhousewindowfunctionsrowsframeinvalidframeextenterror)
-      * 3.5.2.4 [ROWS CURRENT ROW](#rows-current-row)
-        * 3.5.2.4.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.CurrentRow](#rqsrs-019clickhousewindowfunctionsrowsframestartcurrentrow)
-      * 3.5.2.5 [ROWS UNBOUNDED PRECEDING](#rows-unbounded-preceding)
-        * 3.5.2.5.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedPreceding](#rqsrs-019clickhousewindowfunctionsrowsframestartunboundedpreceding)
-      * 3.5.2.6 [ROWS `expr` PRECEDING](#rows-expr-preceding)
-        * 3.5.2.6.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprPreceding](#rqsrs-019clickhousewindowfunctionsrowsframestartexprpreceding)
-      * 3.5.2.7 [ROWS UNBOUNDED FOLLOWING](#rows-unbounded-following)
-        * 3.5.2.7.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedFollowing.Error](#rqsrs-019clickhousewindowfunctionsrowsframestartunboundedfollowingerror)
-      * 3.5.2.8 [ROWS `expr` FOLLOWING](#rows-expr-following)
-        * 3.5.2.8.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprFollowing.Error](#rqsrs-019clickhousewindowfunctionsrowsframestartexprfollowingerror)
-      * 3.5.2.9 [ROWS BETWEEN CURRENT ROW](#rows-between-current-row)
-        * 3.5.2.9.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.CurrentRow](#rqsrs-019clickhousewindowfunctionsrowsframebetweencurrentrowcurrentrow)
-        * 3.5.2.9.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweencurrentrowunboundedprecedingerror)
-        * 3.5.2.9.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprPreceding.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweencurrentrowexprprecedingerror)
-        * 3.5.2.9.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweencurrentrowunboundedfollowing)
-        * 3.5.2.9.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweencurrentrowexprfollowing)
-      * 3.5.2.10 [ROWS BETWEEN UNBOUNDED PRECEDING](#rows-between-unbounded-preceding)
-        * 3.5.2.10.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.CurrentRow](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedprecedingcurrentrow)
-        * 3.5.2.10.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedprecedingunboundedprecedingerror)
-        * 3.5.2.10.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprPreceding](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedprecedingexprpreceding)
-        * 3.5.2.10.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedprecedingunboundedfollowing)
-        * 3.5.2.10.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedprecedingexprfollowing)
-      * 3.5.2.11 [ROWS BETWEEN UNBOUNDED FOLLOWING](#rows-between-unbounded-following)
-        * 3.5.2.11.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedFollowing.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedfollowingerror)
-      * 3.5.2.12 [ROWS BETWEEN `expr` FOLLOWING](#rows-between-expr-following)
-        * 3.5.2.12.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprfollowingerror)
-        * 3.5.2.12.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprfollowingexprfollowingerror)
-        * 3.5.2.12.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprfollowingunboundedfollowing)
-        * 3.5.2.12.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprfollowingexprfollowing)
-      * 3.5.2.13 [ROWS BETWEEN `expr` PRECEDING](#rows-between-expr-preceding)
-        * 3.5.2.13.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.CurrentRow](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingcurrentrow)
-        * 3.5.2.13.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingunboundedprecedingerror)
-        * 3.5.2.13.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingunboundedfollowing)
-        * 3.5.2.13.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingexprprecedingerror)
-        * 3.5.2.13.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingexprpreceding)
-        * 3.5.2.13.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingexprfollowing)
-    * 3.5.3 [RANGE](#range)
-      * 3.5.3.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame](#rqsrs-019clickhousewindowfunctionsrangeframe)
-      * 3.5.3.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.DateAndDateTime](#rqsrs-019clickhousewindowfunctionsrangeframedatatypesdateanddatetime)
-      * 3.5.3.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.IntAndUInt](#rqsrs-019clickhousewindowfunctionsrangeframedatatypesintanduint)
-      * 3.5.3.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MultipleColumnsInOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframemultiplecolumnsinorderbyerror)
-      * 3.5.3.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MissingFrameExtent.Error](#rqsrs-019clickhousewindowfunctionsrangeframemissingframeextenterror)
-      * 3.5.3.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.InvalidFrameExtent.Error](#rqsrs-019clickhousewindowfunctionsrangeframeinvalidframeextenterror)
-      * 3.5.3.7 [`CURRENT ROW` Peers](#current-row-peers)
-      * 3.5.3.8 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.CurrentRow.Peers](#rqsrs-019clickhousewindowfunctionsrangeframecurrentrowpeers)
-      * 3.5.3.9 [RANGE CURRENT ROW](#range-current-row)
-        * 3.5.3.9.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithoutOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframestartcurrentrowwithoutorderby)
-        * 3.5.3.9.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframestartcurrentrowwithorderby)
-      * 3.5.3.10 [RANGE UNBOUNDED FOLLOWING](#range-unbounded-following)
-        * 3.5.3.10.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedFollowing.Error](#rqsrs-019clickhousewindowfunctionsrangeframestartunboundedfollowingerror)
-      * 3.5.3.11 [RANGE UNBOUNDED PRECEDING](#range-unbounded-preceding)
-        * 3.5.3.11.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithoutOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframestartunboundedprecedingwithoutorderby)
-        * 3.5.3.11.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframestartunboundedprecedingwithorderby)
-      * 3.5.3.12 [RANGE `expr` PRECEDING](#range-expr-preceding)
-        * 3.5.3.12.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframestartexprprecedingwithoutorderbyerror)
-        * 3.5.3.12.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.OrderByNonNumericalColumn.Error](#rqsrs-019clickhousewindowfunctionsrangeframestartexprprecedingorderbynonnumericalcolumnerror)
-        * 3.5.3.12.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframestartexprprecedingwithorderby)
-      * 3.5.3.13 [RANGE `expr` FOLLOWING](#range-expr-following)
-        * 3.5.3.13.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframestartexprfollowingwithoutorderbyerror)
-        * 3.5.3.13.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframestartexprfollowingwithorderbyerror)
-      * 3.5.3.14 [RANGE BETWEEN CURRENT ROW](#range-between-current-row)
-        * 3.5.3.14.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.CurrentRow](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowcurrentrow)
-        * 3.5.3.14.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowunboundedprecedingerror)
-        * 3.5.3.14.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowunboundedfollowing)
-        * 3.5.3.14.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowexprfollowingwithoutorderbyerror)
-        * 3.5.3.14.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowexprfollowingwithorderby)
-        * 3.5.3.14.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowexprprecedingerror)
-      * 3.5.3.15 [RANGE BETWEEN UNBOUNDED PRECEDING](#range-between-unbounded-preceding)
-        * 3.5.3.15.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.CurrentRow](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingcurrentrow)
-        * 3.5.3.15.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingunboundedprecedingerror)
-        * 3.5.3.15.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingunboundedfollowing)
-        * 3.5.3.15.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingexprprecedingwithoutorderbyerror)
-        * 3.5.3.15.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingexprprecedingwithorderby)
-        * 3.5.3.15.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingexprfollowingwithoutorderbyerror)
-        * 3.5.3.15.7 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingexprfollowingwithorderby)
-      * 3.5.3.16 [RANGE BETWEEN UNBOUNDED FOLLOWING](#range-between-unbounded-following)
-        * 3.5.3.16.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.CurrentRow.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedfollowingcurrentrowerror)
-        * 3.5.3.16.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedFollowing.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedfollowingunboundedfollowingerror)
-        * 3.5.3.16.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedfollowingunboundedprecedingerror)
-        * 3.5.3.16.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedfollowingexprprecedingerror)
-        * 3.5.3.16.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprFollowing.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedfollowingexprfollowingerror)
-      * 3.5.3.17 [RANGE BETWEEN expr PRECEDING](#range-between-expr-preceding)
-        * 3.5.3.17.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingcurrentrowwithorderby)
-        * 3.5.3.17.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingcurrentrowwithoutorderbyerror)
-        * 3.5.3.17.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingunboundedprecedingerror)
-        * 3.5.3.17.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingunboundedfollowingwithoutorderbyerror)
-        * 3.5.3.17.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingunboundedfollowingwithorderby)
-        * 3.5.3.17.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingexprfollowingwithoutorderbyerror)
-        * 3.5.3.17.7 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingexprfollowingwithorderby)
-        * 3.5.3.17.8 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingexprprecedingwithoutorderbyerror)
-        * 3.5.3.17.9 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingexprprecedingwithorderbyerror)
-        * 3.5.3.17.10 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingexprprecedingwithorderby)
-      * 3.5.3.18 [RANGE BETWEEN expr FOLLOWING](#range-between-expr-following)
-        * 3.5.3.18.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingcurrentrowwithoutorderbyerror)
-        * 3.5.3.18.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingcurrentrowwithorderbyerror)
-        * 3.5.3.18.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.ZeroSpecialCase](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingcurrentrowzerospecialcase)
-        * 3.5.3.18.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingunboundedfollowingwithoutorderbyerror)
-        * 3.5.3.18.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingunboundedfollowingwithorderby)
-        * 3.5.3.18.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingunboundedprecedingerror)
-        * 3.5.3.18.7 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprprecedingwithoutorderbyerror)
-        * 3.5.3.18.8 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprprecedingerror)
-        * 3.5.3.18.9 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithOrderBy.ZeroSpecialCase](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprprecedingwithorderbyzerospecialcase)
-        * 3.5.3.18.10 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprfollowingwithoutorderbyerror)
-        * 3.5.3.18.11 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprfollowingwithorderbyerror)
-        * 3.5.3.18.12 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprfollowingwithorderby)
-    * 3.5.4 [Frame Extent](#frame-extent)
-      * 3.5.4.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Extent](#rqsrs-019clickhousewindowfunctionsframeextent)
-    * 3.5.5 [Frame Start](#frame-start)
-      * 3.5.5.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Start](#rqsrs-019clickhousewindowfunctionsframestart)
-    * 3.5.6 [Frame Between](#frame-between)
-      * 3.5.6.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Between](#rqsrs-019clickhousewindowfunctionsframebetween)
-    * 3.5.7 [Frame End](#frame-end)
-      * 3.5.7.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Frame.End](#rqsrs-019clickhousewindowfunctionsframeend)
-    * 3.5.8 [`CURRENT ROW`](#current-row)
-      * 3.5.8.1 [RQ.SRS-019.ClickHouse.WindowFunctions.CurrentRow](#rqsrs-019clickhousewindowfunctionscurrentrow)
-    * 3.5.9 [`UNBOUNDED PRECEDING`](#unbounded-preceding)
-      * 3.5.9.1 [RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedPreceding](#rqsrs-019clickhousewindowfunctionsunboundedpreceding)
-    * 3.5.10 [`UNBOUNDED FOLLOWING`](#unbounded-following)
-      * 3.5.10.1 [RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsunboundedfollowing)
-    * 3.5.11 [`expr PRECEDING`](#expr-preceding)
-      * 3.5.11.1 [RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding](#rqsrs-019clickhousewindowfunctionsexprpreceding)
-      * 3.5.11.2 [RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding.ExprValue](#rqsrs-019clickhousewindowfunctionsexprprecedingexprvalue)
-    * 3.5.12 [`expr FOLLOWING`](#expr-following)
-      * 3.5.12.1 [RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing](#rqsrs-019clickhousewindowfunctionsexprfollowing)
-      * 3.5.12.2 [RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing.ExprValue](#rqsrs-019clickhousewindowfunctionsexprfollowingexprvalue)
+    * 3.5.2 [RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause.DefaultFrame](#rqsrs-019clickhousewindowfunctionsframeclausedefaultframe)
+    * 3.5.3 [ROWS](#rows)
+      * 3.5.3.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame](#rqsrs-019clickhousewindowfunctionsrowsframe)
+      * 3.5.3.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.MissingFrameExtent.Error](#rqsrs-019clickhousewindowfunctionsrowsframemissingframeextenterror)
+      * 3.5.3.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.InvalidFrameExtent.Error](#rqsrs-019clickhousewindowfunctionsrowsframeinvalidframeextenterror)
+      * 3.5.3.4 [ROWS CURRENT ROW](#rows-current-row)
+        * 3.5.3.4.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.CurrentRow](#rqsrs-019clickhousewindowfunctionsrowsframestartcurrentrow)
+      * 3.5.3.5 [ROWS UNBOUNDED PRECEDING](#rows-unbounded-preceding)
+        * 3.5.3.5.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedPreceding](#rqsrs-019clickhousewindowfunctionsrowsframestartunboundedpreceding)
+      * 3.5.3.6 [ROWS `expr` PRECEDING](#rows-expr-preceding)
+        * 3.5.3.6.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprPreceding](#rqsrs-019clickhousewindowfunctionsrowsframestartexprpreceding)
+      * 3.5.3.7 [ROWS UNBOUNDED FOLLOWING](#rows-unbounded-following)
+        * 3.5.3.7.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedFollowing.Error](#rqsrs-019clickhousewindowfunctionsrowsframestartunboundedfollowingerror)
+      * 3.5.3.8 [ROWS `expr` FOLLOWING](#rows-expr-following)
+        * 3.5.3.8.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprFollowing.Error](#rqsrs-019clickhousewindowfunctionsrowsframestartexprfollowingerror)
+      * 3.5.3.9 [ROWS BETWEEN CURRENT ROW](#rows-between-current-row)
+        * 3.5.3.9.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.CurrentRow](#rqsrs-019clickhousewindowfunctionsrowsframebetweencurrentrowcurrentrow)
+        * 3.5.3.9.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweencurrentrowunboundedprecedingerror)
+        * 3.5.3.9.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprPreceding.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweencurrentrowexprprecedingerror)
+        * 3.5.3.9.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweencurrentrowunboundedfollowing)
+        * 3.5.3.9.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweencurrentrowexprfollowing)
+      * 3.5.3.10 [ROWS BETWEEN UNBOUNDED PRECEDING](#rows-between-unbounded-preceding)
+        * 3.5.3.10.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.CurrentRow](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedprecedingcurrentrow)
+        * 3.5.3.10.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedprecedingunboundedprecedingerror)
+        * 3.5.3.10.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprPreceding](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedprecedingexprpreceding)
+        * 3.5.3.10.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedprecedingunboundedfollowing)
+        * 3.5.3.10.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedprecedingexprfollowing)
+      * 3.5.3.11 [ROWS BETWEEN UNBOUNDED FOLLOWING](#rows-between-unbounded-following)
+        * 3.5.3.11.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedFollowing.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenunboundedfollowingerror)
+      * 3.5.3.12 [ROWS BETWEEN `expr` FOLLOWING](#rows-between-expr-following)
+        * 3.5.3.12.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprfollowingerror)
+        * 3.5.3.12.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprfollowingexprfollowingerror)
+        * 3.5.3.12.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprfollowingunboundedfollowing)
+        * 3.5.3.12.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprfollowingexprfollowing)
+      * 3.5.3.13 [ROWS BETWEEN `expr` PRECEDING](#rows-between-expr-preceding)
+        * 3.5.3.13.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.CurrentRow](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingcurrentrow)
+        * 3.5.3.13.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingunboundedprecedingerror)
+        * 3.5.3.13.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingunboundedfollowing)
+        * 3.5.3.13.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding.Error](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingexprprecedingerror)
+        * 3.5.3.13.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingexprpreceding)
+        * 3.5.3.13.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprFollowing](#rqsrs-019clickhousewindowfunctionsrowsframebetweenexprprecedingexprfollowing)
+    * 3.5.4 [RANGE](#range)
+      * 3.5.4.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame](#rqsrs-019clickhousewindowfunctionsrangeframe)
+      * 3.5.4.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.DateAndDateTime](#rqsrs-019clickhousewindowfunctionsrangeframedatatypesdateanddatetime)
+      * 3.5.4.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.IntAndUInt](#rqsrs-019clickhousewindowfunctionsrangeframedatatypesintanduint)
+      * 3.5.4.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MultipleColumnsInOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframemultiplecolumnsinorderbyerror)
+      * 3.5.4.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MissingFrameExtent.Error](#rqsrs-019clickhousewindowfunctionsrangeframemissingframeextenterror)
+      * 3.5.4.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.InvalidFrameExtent.Error](#rqsrs-019clickhousewindowfunctionsrangeframeinvalidframeextenterror)
+      * 3.5.4.7 [`CURRENT ROW` Peers](#current-row-peers)
+      * 3.5.4.8 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.CurrentRow.Peers](#rqsrs-019clickhousewindowfunctionsrangeframecurrentrowpeers)
+      * 3.5.4.9 [RANGE CURRENT ROW](#range-current-row)
+        * 3.5.4.9.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithoutOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframestartcurrentrowwithoutorderby)
+        * 3.5.4.9.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframestartcurrentrowwithorderby)
+      * 3.5.4.10 [RANGE UNBOUNDED FOLLOWING](#range-unbounded-following)
+        * 3.5.4.10.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedFollowing.Error](#rqsrs-019clickhousewindowfunctionsrangeframestartunboundedfollowingerror)
+      * 3.5.4.11 [RANGE UNBOUNDED PRECEDING](#range-unbounded-preceding)
+        * 3.5.4.11.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithoutOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframestartunboundedprecedingwithoutorderby)
+        * 3.5.4.11.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframestartunboundedprecedingwithorderby)
+      * 3.5.4.12 [RANGE `expr` PRECEDING](#range-expr-preceding)
+        * 3.5.4.12.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframestartexprprecedingwithoutorderbyerror)
+        * 3.5.4.12.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.OrderByNonNumericalColumn.Error](#rqsrs-019clickhousewindowfunctionsrangeframestartexprprecedingorderbynonnumericalcolumnerror)
+        * 3.5.4.12.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframestartexprprecedingwithorderby)
+      * 3.5.4.13 [RANGE `expr` FOLLOWING](#range-expr-following)
+        * 3.5.4.13.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframestartexprfollowingwithoutorderbyerror)
+        * 3.5.4.13.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframestartexprfollowingwithorderbyerror)
+      * 3.5.4.14 [RANGE BETWEEN CURRENT ROW](#range-between-current-row)
+        * 3.5.4.14.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.CurrentRow](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowcurrentrow)
+        * 3.5.4.14.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowunboundedprecedingerror)
+        * 3.5.4.14.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowunboundedfollowing)
+        * 3.5.4.14.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowexprfollowingwithoutorderbyerror)
+        * 3.5.4.14.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowexprfollowingwithorderby)
+        * 3.5.4.14.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweencurrentrowexprprecedingerror)
+      * 3.5.4.15 [RANGE BETWEEN UNBOUNDED PRECEDING](#range-between-unbounded-preceding)
+        * 3.5.4.15.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.CurrentRow](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingcurrentrow)
+        * 3.5.4.15.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingunboundedprecedingerror)
+        * 3.5.4.15.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingunboundedfollowing)
+        * 3.5.4.15.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingexprprecedingwithoutorderbyerror)
+        * 3.5.4.15.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingexprprecedingwithorderby)
+        * 3.5.4.15.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingexprfollowingwithoutorderbyerror)
+        * 3.5.4.15.7 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedprecedingexprfollowingwithorderby)
+      * 3.5.4.16 [RANGE BETWEEN UNBOUNDED FOLLOWING](#range-between-unbounded-following)
+        * 3.5.4.16.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.CurrentRow.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedfollowingcurrentrowerror)
+        * 3.5.4.16.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedFollowing.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedfollowingunboundedfollowingerror)
+        * 3.5.4.16.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedfollowingunboundedprecedingerror)
+        * 3.5.4.16.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedfollowingexprprecedingerror)
+        * 3.5.4.16.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprFollowing.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenunboundedfollowingexprfollowingerror)
+      * 3.5.4.17 [RANGE BETWEEN expr PRECEDING](#range-between-expr-preceding)
+        * 3.5.4.17.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingcurrentrowwithorderby)
+        * 3.5.4.17.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingcurrentrowwithoutorderbyerror)
+        * 3.5.4.17.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingunboundedprecedingerror)
+        * 3.5.4.17.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingunboundedfollowingwithoutorderbyerror)
+        * 3.5.4.17.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingunboundedfollowingwithorderby)
+        * 3.5.4.17.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingexprfollowingwithoutorderbyerror)
+        * 3.5.4.17.7 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingexprfollowingwithorderby)
+        * 3.5.4.17.8 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingexprprecedingwithoutorderbyerror)
+        * 3.5.4.17.9 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingexprprecedingwithorderbyerror)
+        * 3.5.4.17.10 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprprecedingexprprecedingwithorderby)
+      * 3.5.4.18 [RANGE BETWEEN expr FOLLOWING](#range-between-expr-following)
+        * 3.5.4.18.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingcurrentrowwithoutorderbyerror)
+        * 3.5.4.18.2 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingcurrentrowwithorderbyerror)
+        * 3.5.4.18.3 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.ZeroSpecialCase](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingcurrentrowzerospecialcase)
+        * 3.5.4.18.4 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingunboundedfollowingwithoutorderbyerror)
+        * 3.5.4.18.5 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingunboundedfollowingwithorderby)
+        * 3.5.4.18.6 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingunboundedprecedingerror)
+        * 3.5.4.18.7 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprprecedingwithoutorderbyerror)
+        * 3.5.4.18.8 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprprecedingerror)
+        * 3.5.4.18.9 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithOrderBy.ZeroSpecialCase](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprprecedingwithorderbyzerospecialcase)
+        * 3.5.4.18.10 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithoutOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprfollowingwithoutorderbyerror)
+        * 3.5.4.18.11 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy.Error](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprfollowingwithorderbyerror)
+        * 3.5.4.18.12 [RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy](#rqsrs-019clickhousewindowfunctionsrangeframebetweenexprfollowingexprfollowingwithorderby)
+    * 3.5.5 [Frame Extent](#frame-extent)
+      * 3.5.5.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Extent](#rqsrs-019clickhousewindowfunctionsframeextent)
+    * 3.5.6 [Frame Start](#frame-start)
+      * 3.5.6.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Start](#rqsrs-019clickhousewindowfunctionsframestart)
+    * 3.5.7 [Frame Between](#frame-between)
+      * 3.5.7.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Between](#rqsrs-019clickhousewindowfunctionsframebetween)
+    * 3.5.8 [Frame End](#frame-end)
+      * 3.5.8.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Frame.End](#rqsrs-019clickhousewindowfunctionsframeend)
+    * 3.5.9 [`CURRENT ROW`](#current-row)
+      * 3.5.9.1 [RQ.SRS-019.ClickHouse.WindowFunctions.CurrentRow](#rqsrs-019clickhousewindowfunctionscurrentrow)
+    * 3.5.10 [`UNBOUNDED PRECEDING`](#unbounded-preceding)
+      * 3.5.10.1 [RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedPreceding](#rqsrs-019clickhousewindowfunctionsunboundedpreceding)
+    * 3.5.11 [`UNBOUNDED FOLLOWING`](#unbounded-following)
+      * 3.5.11.1 [RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedFollowing](#rqsrs-019clickhousewindowfunctionsunboundedfollowing)
+    * 3.5.12 [`expr PRECEDING`](#expr-preceding)
+      * 3.5.12.1 [RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding](#rqsrs-019clickhousewindowfunctionsexprpreceding)
+      * 3.5.12.2 [RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding.ExprValue](#rqsrs-019clickhousewindowfunctionsexprprecedingexprvalue)
+    * 3.5.13 [`expr FOLLOWING`](#expr-following)
+      * 3.5.13.1 [RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing](#rqsrs-019clickhousewindowfunctionsexprfollowing)
+      * 3.5.13.2 [RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing.ExprValue](#rqsrs-019clickhousewindowfunctionsexprfollowingexprvalue)
   * 3.6 [WINDOW Clause](#window-clause)
     * 3.6.1 [RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause](#rqsrs-019clickhousewindowfunctionswindowclause)
     * 3.6.2 [RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause.MultipleWindows](#rqsrs-019clickhousewindowfunctionswindowclausemultiplewindows)
@@ -3773,12 +3861,16 @@ SRS019_ClickHouse_Window_Functions = Specification(
         * 3.8.1.3.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Lag.Workaround](#rqsrs-019clickhousewindowfunctionslagworkaround)
       * 3.8.1.4 [The `lead(value, offset)` Function Workaround](#the-leadvalue-offset-function-workaround)
         * 3.8.1.4.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Lead.Workaround](#rqsrs-019clickhousewindowfunctionsleadworkaround)
-      * 3.8.1.5 [The `rank()` Function](#the-rank-function)
-        * 3.8.1.5.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Rank](#rqsrs-019clickhousewindowfunctionsrank)
-      * 3.8.1.6 [The `dense_rank()` Function](#the-dense_rank-function)
-        * 3.8.1.6.1 [RQ.SRS-019.ClickHouse.WindowFunctions.DenseRank](#rqsrs-019clickhousewindowfunctionsdenserank)
-      * 3.8.1.7 [The `row_number()` Function](#the-row_number-function)
-        * 3.8.1.7.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowNumber](#rqsrs-019clickhousewindowfunctionsrownumber)
+      * 3.8.1.5 [The `leadInFrame(expr[, offset, [default]])`](#the-leadinframeexpr-offset-default)
+        * 3.8.1.5.1 [RQ.SRS-019.ClickHouse.WindowFunctions.LeadInFrame](#rqsrs-019clickhousewindowfunctionsleadinframe)
+      * 3.8.1.6 [The `lagInFrame(expr[, offset, [default]])`](#the-laginframeexpr-offset-default)
+        * 3.8.1.6.1 [RQ.SRS-019.ClickHouse.WindowFunctions.LagInFrame](#rqsrs-019clickhousewindowfunctionslaginframe)
+      * 3.8.1.7 [The `rank()` Function](#the-rank-function)
+        * 3.8.1.7.1 [RQ.SRS-019.ClickHouse.WindowFunctions.Rank](#rqsrs-019clickhousewindowfunctionsrank)
+      * 3.8.1.8 [The `dense_rank()` Function](#the-dense_rank-function)
+        * 3.8.1.8.1 [RQ.SRS-019.ClickHouse.WindowFunctions.DenseRank](#rqsrs-019clickhousewindowfunctionsdenserank)
+      * 3.8.1.9 [The `row_number()` Function](#the-row_number-function)
+        * 3.8.1.9.1 [RQ.SRS-019.ClickHouse.WindowFunctions.RowNumber](#rqsrs-019clickhousewindowfunctionsrownumber)
     * 3.8.2 [Aggregate Functions](#aggregate-functions)
       * 3.8.2.1 [RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions](#rqsrs-019clickhousewindowfunctionsaggregatefunctions)
       * 3.8.2.2 [Combinators](#combinators)
@@ -3945,6 +4037,17 @@ The `frame_clause` SHALL be defined as
 frame_clause:
     {ROWS | RANGE } frame_extent
 ```
+
+#### RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause.DefaultFrame
+version: 1.0
+
+[ClickHouse] SHALL support the default `frame_clause` to be `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. 
+
+If the `ORDER BY` clause is specified then this SHALL set the frame to be all rows from 
+the partition start up to and including current row and its peers. 
+
+If the `ORDER BY` clause is not specified then this SHALL set the frame to include all rows
+in the partition because all the rows are considered to be the peers of the current row.
 
 #### ROWS
 
@@ -5703,6 +5806,48 @@ If `N` or default are missing, the defaults are 1 and NULL, respectively.
 
 `N` SHALL be a literal non-negative integer. If `N` is 0, the value SHALL be
 returned for the current row.
+
+##### The `leadInFrame(expr[, offset, [default]])`
+
+###### RQ.SRS-019.ClickHouse.WindowFunctions.LeadInFrame
+version: 1.0
+
+[ClickHouse] SHALL support the `leadInFrame(expr[, offset, [default]])` function.
+
+For example,
+```
+leadInFrame(column) OVER (...)
+```
+
+The function SHALL return the value from the row that leads (follows) the current row
+by the `offset` rows within the current frame. If there is no such row,
+the return value SHALL be the `default` value. If the `default` value is not specified 
+then the default value for the corresponding column data type SHALL be returned.
+
+The `offset` SHALL be a literal non-negative integer. If the `offset` is set to `0`, then
+the value SHALL be returned for the current row. If the `offset` is not specified, the default
+value SHALL be `1`.
+
+##### The `lagInFrame(expr[, offset, [default]])`
+
+###### RQ.SRS-019.ClickHouse.WindowFunctions.LagInFrame
+version: 1.0
+
+[ClickHouse] SHALL support the `lagInFrame(expr[, offset, [default]])` function.
+
+For example,
+```
+lagInFrame(column) OVER (...)
+```
+
+The function SHALL return the value from the row that lags (preceds) the current row
+by the `offset` rows within the current frame. If there is no such row,
+the return value SHALL be the `default` value. If the `default` value is not specified 
+then the default value for the corresponding column data type SHALL be returned.
+
+The `offset` SHALL be a literal non-negative integer. If the `offset` is set to `0`, then
+the value SHALL be returned for the current row. If the `offset` is not specified, the default
+value SHALL be `1`.
 
 ##### The `rank()` Function
 

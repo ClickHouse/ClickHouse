@@ -10,6 +10,6 @@ namespace DB
 
 class ColumnsDescription;
 
-void replaceAliasColumnsInQuery(ASTPtr & ast, const ColumnsDescription & columns, const NameSet & forbidden_columns, ContextConstPtr context);
+void replaceAliasColumnsInQuery(ASTPtr & ast, const ColumnsDescription & columns, const NameSet & forbidden_columns, ContextPtr context);
 
 }

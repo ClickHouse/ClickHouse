@@ -6,8 +6,8 @@ import argparse
 import csv
 
 OK_SIGN = "[ OK "
-FAIL_SING = "[ FAIL "
-TIMEOUT_SING = "[ Timeout! "
+FAIL_SIGN = "[ FAIL "
+TIMEOUT_SIGN = "[ Timeout! "
 UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
 HUNG_SIGN = "Found hung queries in processlist"
@@ -30,7 +30,7 @@ def process_test_log(log_path):
                 task_timeout = False
             if HUNG_SIGN in line:
                 hung = True
-            if any(sign in line for sign in (OK_SIGN, FAIL_SING, UNKNOWN_SIGN, SKIPPED_SIGN)):
+            if any(sign in line for sign in (OK_SIGN, FAIL_SIGN, UNKNOWN_SIGN, SKIPPED_SIGN)):
                 test_name = line.split(' ')[2].split(':')[0]
 
                 test_time = ''
@@ -42,10 +42,10 @@ def process_test_log(log_path):
                     pass
 
                 total += 1
-                if TIMEOUT_SING in line:
+                if TIMEOUT_SIGN in line:
                     failed += 1
                     test_results.append((test_name, "Timeout", test_time))
-                elif FAIL_SING in line:
+                elif FAIL_SIGN in line:
                     failed += 1
                     test_results.append((test_name, "FAIL", test_time))
                 elif UNKNOWN_SIGN in line:
