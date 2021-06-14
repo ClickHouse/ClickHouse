@@ -547,7 +547,7 @@ Type: [Nullable(String)](../../sql-reference/data-types/nullable.md).
 
 **Example**
 
-It can be used when events are A->B->C->D->E-> and you want to know the event following B->C, which is D.
+It can be used when events are A->B->C->D->E and you want to know the event following B->C, which is D.
 
 The query statement searching the event following A->B:
 
