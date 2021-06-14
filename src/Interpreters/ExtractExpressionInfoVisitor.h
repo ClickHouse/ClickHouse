@@ -13,7 +13,7 @@ namespace DB
 
 struct ExpressionInfoMatcher
 {
-    struct Data : public WithConstContext
+    struct Data : public WithContext
     {
         const TablesWithColumns & tables;
 
@@ -36,6 +36,6 @@ struct ExpressionInfoMatcher
 
 using ExpressionInfoVisitor = ConstInDepthNodeVisitor<ExpressionInfoMatcher, true>;
 
-bool hasNonRewritableFunction(const ASTPtr & node, ContextConstPtr context);
+bool hasNonRewritableFunction(const ASTPtr & node, ContextPtr context);
 
 }

@@ -3,6 +3,7 @@ import os.path as p
 import random
 import subprocess
 import threading
+import logging
 import time
 from random import randrange
 
@@ -19,48 +20,9 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 main_configs=['configs/rabbitmq.xml', 'configs/log_conf.xml'],
                                 with_rabbitmq=True)
-#                                clickhouse_path_dir='clickhouse_path')
-rabbitmq_id = ''
 
 
 # Helpers
-
-def check_rabbitmq_is_available():
-    p = subprocess.Popen(('docker', 'exec', '-i', rabbitmq_id, 'rabbitmqctl', 'await_startup'), stdout=subprocess.PIPE)
-    p.communicate()
-    return p.returncode == 0
-
-
-def enable_consistent_hash_plugin():
-    p = subprocess.Popen(('docker', 'exec', '-i', rabbitmq_id, "rabbitmq-plugins", "enable", "rabbitmq_consistent_hash_exchange"), stdout=subprocess.PIPE)
-    p.communicate()
-    return p.returncode == 0
-
-
-def wait_rabbitmq_is_available(max_retries=50):
-    retries = 0
-    while True:
-        if check_rabbitmq_is_available():
-            break
-        else:
-            retries += 1
-            if retries > max_retries:
-                raise "RabbitMQ is not available"
-            print("Waiting for RabbitMQ to start up")
-            time.sleep(1)
-
-
-def wait_rabbitmq_plugin_enabled(max_retries=50):
-    retries = 0
-    while True:
-        if enable_consistent_hash_plugin():
-            break
-        else:
-            retries += 1
-            if retries > max_retries:
-                raise "RabbitMQ plugin is not available"
-            print("Waiting for plugin")
-            time.sleep(1)
 
 
 def rabbitmq_check_result(result, check=False, ref_file='test_rabbitmq_json.reference'):
@@ -72,13 +34,13 @@ def rabbitmq_check_result(result, check=False, ref_file='test_rabbitmq_json.refe
             return TSV(result) == TSV(reference)
 
 
-def kill_rabbitmq():
+def kill_rabbitmq(rabbitmq_id):
     p = subprocess.Popen(('docker', 'stop', rabbitmq_id), stdout=subprocess.PIPE)
     p.communicate()
     return p.returncode == 0
 
 
-def revive_rabbitmq():
+def revive_rabbitmq(rabbitmq_id):
     p = subprocess.Popen(('docker', 'start', rabbitmq_id), stdout=subprocess.PIPE)
     p.communicate()
     return p.returncode == 0
@@ -89,10 +51,8 @@ def revive_rabbitmq():
 @pytest.fixture(scope="module")
 def rabbitmq_cluster():
     try:
-        global rabbitmq_id
         cluster.start()
-        rabbitmq_id = instance.cluster.rabbitmq_docker_id
-        print(("rabbitmq_id is {}".format(rabbitmq_id)))
+        logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
         instance.query('CREATE DATABASE test')
 
         yield cluster
@@ -103,8 +63,6 @@ def rabbitmq_cluster():
 
 @pytest.fixture(autouse=True)
 def rabbitmq_setup_teardown():
-    wait_rabbitmq_is_available()
-    wait_rabbitmq_plugin_enabled()
     print("RabbitMQ is available - running test")
     yield  # run test
     instance.query('DROP TABLE IF EXISTS test.rabbitmq')
@@ -112,19 +70,18 @@ def rabbitmq_setup_teardown():
 
 # Tests
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_select(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+            SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'select',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
-        ''')
+        '''.format(rabbitmq_cluster.rabbitmq_host))
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -148,32 +105,30 @@ def test_rabbitmq_select(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_select_empty(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+            SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'empty',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
-        ''')
+        '''.format(rabbitmq_cluster.rabbitmq_host))
 
     assert int(instance.query('SELECT count() FROM test.rabbitmq')) == 0
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+            SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'json',
                      rabbitmq_format = 'JSONEachRow'
-        ''')
+        '''.format(rabbitmq_cluster.rabbitmq_host))
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -204,7 +159,6 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -216,7 +170,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -239,7 +193,6 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -259,7 +212,7 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -280,7 +233,6 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_materialized_view(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -299,7 +251,7 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -323,7 +275,6 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -342,7 +293,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -366,7 +317,6 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view1;
@@ -392,7 +342,7 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -421,7 +371,6 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
 
 
 @pytest.mark.skip(reason="clichouse_path with rabbitmq.proto fails to be exported")
-@pytest.mark.timeout(240)
 def test_rabbitmq_protobuf(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -440,7 +389,7 @@ def test_rabbitmq_protobuf(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -485,7 +434,6 @@ def test_rabbitmq_protobuf(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_big_message(rabbitmq_cluster):
     # Create batchs of messages of size ~100Kb
     rabbitmq_messages = 1000
@@ -493,7 +441,7 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
     messages = [json.dumps({'key': i, 'value': 'x' * 100}) * batch_messages for i in range(rabbitmq_messages)]
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -529,7 +477,6 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
     assert int(result) == rabbitmq_messages * batch_messages, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     NUM_CONSUMERS = 10
     NUM_QUEUES = 10
@@ -557,7 +504,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     messages_num = 10000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     def produce():
         connection = pika.BlockingConnection(parameters)
@@ -600,7 +547,6 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     assert int(result2) == 10
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
     NUM_MV = 5
     NUM_CONSUMERS = 4
@@ -634,7 +580,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
     messages_num = 10000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     def produce():
         connection = pika.BlockingConnection(parameters)
@@ -678,7 +624,6 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
     assert int(result) == messages_num * threads_num * NUM_MV, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_insert(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -692,7 +637,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     consumer_connection = pika.BlockingConnection(parameters)
 
     consumer = consumer_connection.channel()
@@ -731,7 +676,6 @@ def test_rabbitmq_insert(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -745,7 +689,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     consumer_connection = pika.BlockingConnection(parameters)
 
     consumer = consumer_connection.channel()
@@ -785,7 +729,6 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(240)
 def test_rabbitmq_many_inserts(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.rabbitmq_many;
@@ -861,7 +804,6 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view_overload;
@@ -940,7 +882,6 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_direct_exchange(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.destination;
@@ -974,7 +915,7 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
     messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1014,7 +955,6 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
     assert int(result) == messages_num * num_tables, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.destination;
@@ -1047,7 +987,7 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
     messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1081,7 +1021,6 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
     assert int(result) == messages_num * num_tables, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_topic_exchange(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.destination;
@@ -1133,7 +1072,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
     messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1178,7 +1117,6 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
         result)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.destination;
@@ -1211,7 +1149,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     messages_num = 500
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     def produce():
         # init connection here because otherwise python rabbitmq client might fail
@@ -1262,7 +1200,6 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     assert int(result2) == 4 * num_tables
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.destination;
@@ -1290,7 +1227,7 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
     messages_num = 500
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     def produce():
         # init connection here because otherwise python rabbitmq client might fail
@@ -1337,7 +1274,6 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
     assert int(result) == messages_num * threads_num * 5, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_headers_exchange(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.destination;
@@ -1387,7 +1323,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
     messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1427,7 +1363,6 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
     assert int(result) == messages_num * num_tables_to_receive, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_virtual_columns(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -1441,7 +1376,7 @@ def test_rabbitmq_virtual_columns(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1489,7 +1424,6 @@ def test_rabbitmq_virtual_columns(rabbitmq_cluster):
     assert TSV(result) == TSV(expected)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -1508,7 +1442,7 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1554,7 +1488,6 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
     assert TSV(result) == TSV(expected)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.destination;
@@ -1586,7 +1519,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
     messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     def produce():
         connection = pika.BlockingConnection(parameters)
@@ -1637,7 +1570,6 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
     assert int(result2) == 8
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.consume;
@@ -1666,7 +1598,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1689,9 +1621,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     while int(instance.query('SELECT count() FROM test.view')) == 0:
         time.sleep(0.1)
 
-    kill_rabbitmq()
+    kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
     time.sleep(4)
-    revive_rabbitmq()
+    revive_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
 
     while True:
         result = instance.query('SELECT count(DISTINCT key) FROM test.view')
@@ -1709,7 +1641,6 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     assert int(result) == messages_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
@@ -1726,7 +1657,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     messages_num = 150000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
 
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
@@ -1752,9 +1683,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     while int(instance.query('SELECT count() FROM test.view')) == 0:
         time.sleep(0.1)
 
-    kill_rabbitmq()
+    kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
     time.sleep(8)
-    revive_rabbitmq()
+    revive_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
 
     # while int(instance.query('SELECT count() FROM test.view')) == 0:
     #    time.sleep(0.1)
@@ -1777,7 +1708,6 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     assert int(result) == messages_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(300)
 def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -1798,7 +1728,7 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1846,7 +1776,6 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     assert result == 1, 'Messages from RabbitMQ get duplicated!'
 
 
-@pytest.mark.timeout(420)
 def test_rabbitmq_no_connection_at_startup(rabbitmq_cluster):
     # no connection when table is initialized
     rabbitmq_cluster.pause_container('rabbitmq1')
@@ -1873,7 +1802,7 @@ def test_rabbitmq_no_connection_at_startup(rabbitmq_cluster):
 
     messages_num = 1000
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     for i in range(messages_num):
@@ -1896,7 +1825,6 @@ def test_rabbitmq_no_connection_at_startup(rabbitmq_cluster):
     assert int(result) == messages_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(120)
 def test_rabbitmq_format_factory_settings(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.format_settings (
@@ -1909,7 +1837,7 @@ def test_rabbitmq_format_factory_settings(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1949,7 +1877,6 @@ def test_rabbitmq_format_factory_settings(rabbitmq_cluster):
     assert(result == expected)
 
 
-@pytest.mark.timeout(120)
 def test_rabbitmq_vhost(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq_vhost (key UInt64, value UInt64)
@@ -1961,7 +1888,7 @@ def test_rabbitmq_vhost(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     channel.basic_publish(exchange='vhost', routing_key='', body=json.dumps({'key': 1, 'value': 2}))
@@ -1972,7 +1899,6 @@ def test_rabbitmq_vhost(rabbitmq_cluster):
             break
 
 
-@pytest.mark.timeout(120)
 def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq_drop (key UInt64, value UInt64)
@@ -1984,7 +1910,7 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -2008,7 +1934,6 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
     assert(not exists)
 
 
-@pytest.mark.timeout(120)
 def test_rabbitmq_queue_settings(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq_settings (key UInt64, value UInt64)
@@ -2021,7 +1946,7 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -2051,10 +1976,9 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
     assert(int(result) == 10)
 
 
-@pytest.mark.timeout(120)
 def test_rabbitmq_queue_consume(rabbitmq_cluster):
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     channel.queue_declare(queue='rabbit_queue', durable=True)

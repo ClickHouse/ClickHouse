@@ -1,3 +1,5 @@
+include(${ClickHouse_SOURCE_DIR}/cmake/embed_binary.cmake)
+
 set(CLICKHOUSE_KEEPER_SOURCES
     Keeper.cpp
 )
@@ -21,4 +23,8 @@ clickhouse_program_add(keeper)
 
 install (FILES keeper_config.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-keeper" COMPONENT clickhouse-keeper)
 
-clickhouse_embed_binaries(keeper keeper_config.xml keeper_embedded.xml)
+clickhouse_embed_binaries(
+    TARGET clickhouse_keeper_configs
+    RESOURCES keeper_config.xml keeper_embedded.xml
+)
+add_dependencies(clickhouse-keeper-lib clickhouse_keeper_configs)

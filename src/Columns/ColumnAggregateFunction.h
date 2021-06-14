@@ -119,7 +119,7 @@ public:
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
-    MutableColumnPtr predictValues(const ColumnsWithTypeAndName & arguments, ContextConstPtr context) const;
+    MutableColumnPtr predictValues(const ColumnsWithTypeAndName & arguments, ContextPtr context) const;
 
     size_t size() const override
     {

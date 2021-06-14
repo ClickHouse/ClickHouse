@@ -33,7 +33,7 @@ public:
 
     explicit FunctionPolygonPerimeter() = default;
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionPolygonPerimeter>();
     }
