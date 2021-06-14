@@ -3,6 +3,7 @@
 #include <common/logger_useful.h>
 #include <Core/Types.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <thread>
 
 
