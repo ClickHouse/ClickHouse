@@ -148,7 +148,7 @@ void FunctionFactory::registerUserDefinedFunction(const ASTCreateFunctionQuery &
         function->setName(create_function_query.function_name);
         function->setFunctionCore(create_function_query.function_core);
 
-        FunctionOverloadResolverImplPtr res = std::make_unique<DefaultOverloadResolver>(function);
+        FunctionOverloadResolverPtr res = std::make_unique<FunctionToOverloadResolverAdaptor>(function);
         return res;
     }, CaseSensitiveness::CaseSensitive);
     user_defined_functions.insert(create_function_query.function_name);
