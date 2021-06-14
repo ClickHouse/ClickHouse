@@ -496,6 +496,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
         -Wno-zero-as-null-pointer-constant
+        -Wno-covered-switch-default
         -Wno-undef
         -Wno-sign-compare
         -Wno-used-but-marked-unused
