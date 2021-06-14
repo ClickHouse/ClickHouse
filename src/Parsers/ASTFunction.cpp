@@ -252,7 +252,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         NO_SANITIZE_UNDEFINED
                         {
                             using ValueType = std::decay_t<decltype(value)>;
-                            if constexpr (isDecimalField<ValueType>())
+                            if constexpr (is_decimal_field<ValueType>)
                             {
                                 // The parser doesn't create decimal literals, but
                                 // they can be produced by constant folding or the
