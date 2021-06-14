@@ -16,7 +16,6 @@ SRCS(
     ASTColumnsTransformers.cpp
     ASTConstraintDeclaration.cpp
     ASTCreateDataTypeQuery.cpp
-    ASTCreateFunctionQuery.cpp
     ASTCreateQuery.cpp
     ASTCreateQuotaQuery.cpp
     ASTCreateRoleQuery.cpp
@@ -27,7 +26,6 @@ SRCS(
     ASTDictionaryAttributeDeclaration.cpp
     ASTDropAccessEntityQuery.cpp
     ASTDropDataTypeQuery.cpp
-    ASTDropFunctionQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
     ASTFunction.cpp
@@ -93,7 +91,6 @@ SRCS(
     ParserCase.cpp
     ParserCheckQuery.cpp
     ParserCreateDataTypeQuery.cpp
-    ParserCreateFunctionQuery.cpp
     ParserCreateQuery.cpp
     ParserCreateQuotaQuery.cpp
     ParserCreateRoleQuery.cpp
@@ -106,7 +103,6 @@ SRCS(
     ParserDictionaryAttributeDeclaration.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropDataTypeQuery.cpp
-    ParserDropFunctionQuery.cpp
     ParserDropQuery.cpp
     ParserExplainQuery.cpp
     ParserExternalDDLQuery.cpp

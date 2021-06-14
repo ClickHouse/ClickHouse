@@ -10,8 +10,6 @@ class ASTCreateDataTypeQuery : public IAST
 public:
     String type_name;
     ASTPtr nested;
-    String input_function;
-    String output_function;
 
     String getID(char) const override { return "CreateDataTypeQuery"; }
 

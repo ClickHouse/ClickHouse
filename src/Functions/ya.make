@@ -104,7 +104,6 @@ SRCS(
     URL/registerFunctionsURL.cpp
     URL/tldLookup.generated.cpp
     URL/topLevelDomain.cpp
-    UserDefinedFunction.cpp
     abs.cpp
     acos.cpp
     acosh.cpp

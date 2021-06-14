@@ -61,7 +61,6 @@ SRCS(
     Serializations/SerializationTuple.cpp
     Serializations/SerializationTupleElement.cpp
     Serializations/SerializationUUID.cpp
-    Serializations/SerializationUserDefinedType.cpp
     Serializations/SerializationWrapper.cpp
     UserDefinedDataType.cpp
     convertMySQLDataType.cpp

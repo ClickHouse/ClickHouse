@@ -4,7 +4,6 @@
 #include <Common/IFactoryWithAliases.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
 
 #include <functional>
 #include <memory>
@@ -41,10 +40,6 @@ public:
             registerFunction(name, &Function::create, case_sensitiveness);
     }
 
-    void registerUserDefinedFunction(const ASTCreateFunctionQuery & create_function_query);
-
-    void unregisterUserDefinedFunction(const String & function_name);
-
     /// This function is used by YQL - internal Yandex product that depends on ClickHouse by source code.
     std::vector<std::string> getAllNames() const;
 
@@ -69,7 +64,6 @@ private:
     using Functions = std::unordered_map<std::string, Value>;
 
     Functions functions;
-    std::unordered_set<String> user_defined_functions;
     Functions case_insensitive_functions;
 
     template <typename Function>
