@@ -28,8 +28,8 @@ namespace ErrorCodes
 static bool supportsRenameat2Impl()
 {
 #if defined(__NR_renameat2)
-    DB::VersionNumber renameat2_minimal_version(3, 15, 0);
-    DB::VersionNumber linux_version(Poco::Environment::osVersion());
+    VersionNumber renameat2_minimal_version(3, 15, 0);
+    VersionNumber linux_version(Poco::Environment::osVersion());
     return linux_version >= renameat2_minimal_version;
 #else
     return false;
