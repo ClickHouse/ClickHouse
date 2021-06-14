@@ -86,6 +86,7 @@ SRCS(
     TraceCollector.cpp
     UTF8Helpers.cpp
     UnicodeBar.cpp
+    VersionNumber.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
