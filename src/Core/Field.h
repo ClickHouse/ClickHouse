@@ -162,6 +162,12 @@ private:
 #pragma GCC diagnostic pop
 #endif
 
+template <typename T> constexpr bool is_decimal_field = false;
+template <> constexpr bool is_decimal_field<DecimalField<Decimal32>> = true;
+template <> constexpr bool is_decimal_field<DecimalField<Decimal64>> = true;
+template <> constexpr bool is_decimal_field<DecimalField<Decimal128>> = true;
+template <> constexpr bool is_decimal_field<DecimalField<Decimal256>> = true;
+
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
 /// signedness of char is different in Linux on x86 and Linux on ARM.
