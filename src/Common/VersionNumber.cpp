@@ -1,22 +1,14 @@
 #include <Common/VersionNumber.h>
-#include <Common/Exception.h>
 #include <cstdlib>
 #include <iostream>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-VersionNumber::VersionNumber(std::string version_string, bool strict)
+VersionNumber::VersionNumber(std::string version_string)
 {
     if (version_string.empty())
         return;
-
-    std::vector<long> comp;
 
     char * start = &version_string.front();
     char * end = start;
@@ -25,37 +17,49 @@ VersionNumber::VersionNumber(std::string version_string, bool strict)
     do
     {
         long value = strtol(start, &end, 10);
-        comp.push_back(value);
+        components.push_back(value);
         start = end + 1;
     }
     while (start < eos && (end < eos && *end == '.'));
-
-    if (!strict && comp.size() > SIZE)
-    {
-        comp.resize(SIZE);
-    }
-
-    *this = comp;
-}
-
-VersionNumber::VersionNumber(const std::vector<long> & vec)
-{
-    if (vec.size() > SIZE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too much components ({})", vec.size());
-
-    if (vec.size() > 0)
-        std::get<0>(version) = vec[0];
-    if (vec.size() > 1)
-        std::get<1>(version) = vec[1];
-    if (vec.size() > 2)
-        std::get<2>(version) = vec[2];
 }
 
 std::string VersionNumber::toString() const
 {
-    return fmt::format("{}.{}.{}",
-        std::get<0>(version), std::get<1>(version), std::get<2>(version));
+    std::string str;
+    for (long v : components)
+    {
+        if (!str.empty())
+            str += '.';
+        str += std::to_string(v);
+    }
+    return str;
 }
 
+int VersionNumber::compare(const VersionNumber & rhs) const
+{
+    size_t min = std::min(components.size(), rhs.components.size());
+    for (size_t i = 0; i < min; ++i)
+    {
+        if (int d = components[i] - rhs.components[i])
+            return d;
+    }
+
+    if (components.size() > min)
+    {
+        if (components[min] != 0)
+            return components[min];
+        else
+            return 1;
+    }
+    else if (rhs.components.size() > min)
+    {
+        if (rhs.components[min] != 0)
+            return -rhs.components[min];
+        else
+            return -1;
+    }
+
+    return 0;
+}
 
 }
