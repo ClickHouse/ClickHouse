@@ -30,6 +30,7 @@ public:
         size_t max_parts_per_block_,
         bool quorum_parallel_,
         bool deduplicate_,
+        const Context & context_,
         bool optimize_on_insert);
 
     Block getHeader() const override;
@@ -79,6 +80,7 @@ private:
     using Logger = Poco::Logger;
     Poco::Logger * log;
 
+    const Context & context;
     bool optimize_on_insert;
 };
 

@@ -243,7 +243,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 
 MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
+    const Context & context,
     const String & part_name,
     const String & replica_path,
     const String & host,
@@ -346,7 +346,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     const String & part_name,
     const UUID & part_uuid,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
+    const Context & context,
     ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {

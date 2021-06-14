@@ -754,13 +754,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             {
                 /// Create and correctly initialize global WAL object
                 write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
-                for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext()))
+                for (auto && part : write_ahead_log->restore(metadata_snapshot, global_context))
                     parts_from_wal.push_back(std::move(part));
             }
             else if (settings->in_memory_parts_enable_wal)
             {
                 MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
-                for (auto && part : wal.restore(metadata_snapshot, getContext()))
+                for (auto && part : wal.restore(metadata_snapshot, global_context))
                     parts_from_wal.push_back(std::move(part));
             }
         }

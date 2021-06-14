@@ -41,6 +41,7 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t max_parts_per_block_,
     bool quorum_parallel_,
     bool deduplicate_,
+    const Context & context_,
     bool optimize_on_insert_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -50,6 +51,7 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
+    , context(context_)
     , optimize_on_insert(optimize_on_insert_)
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
