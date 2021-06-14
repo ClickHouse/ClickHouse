@@ -191,7 +191,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 You can set the period without using `INTERVAL` by multiplying seconds, minutes, and hours. For example, a period of one day can be set at `60*60*24`.
 
 !!! note "Note"
-    Syntax `now() + 60*60*24` doesn't consider time settings. For example, daylight saving time. The `INTERVAL` syntax or `addDays`-function is always preferred.
+    The `INTERVAL` syntax or `addDays` function are always preferred. Simple addition or subtraction (syntax like `now() + ...`) doesn't consider time settings. For example, daylight saving time.
 
 
 Examples:
@@ -313,4 +313,3 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 │ 2 │ 3 │
 └───┴───┘
 ```
-
