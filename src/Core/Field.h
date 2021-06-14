@@ -163,10 +163,10 @@ private:
 #endif
 
 template <typename T> constexpr bool is_decimal_field = false;
-template <> constexpr bool is_decimal_field<DecimalField<Decimal32>> = true;
-template <> constexpr bool is_decimal_field<DecimalField<Decimal64>> = true;
-template <> constexpr bool is_decimal_field<DecimalField<Decimal128>> = true;
-template <> constexpr bool is_decimal_field<DecimalField<Decimal256>> = true;
+template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
+template <> constexpr inline bool is_decimal_field<DecimalField<Decimal64>> = true;
+template <> constexpr inline bool is_decimal_field<DecimalField<Decimal128>> = true;
+template <> constexpr inline bool is_decimal_field<DecimalField<Decimal256>> = true;
 
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.

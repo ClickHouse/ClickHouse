@@ -5,7 +5,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorSum.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>

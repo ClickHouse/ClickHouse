@@ -1,12 +1,13 @@
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <common/logger_useful.h>
+
 
 /// Maximum number of messages about incorrect data in the log.
 #define MAX_ERROR_MESSAGES 10

@@ -5,7 +5,7 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include "AggregateFunctionFactory.h"

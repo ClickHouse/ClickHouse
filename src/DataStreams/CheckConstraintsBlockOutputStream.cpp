@@ -1,6 +1,6 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnsCommon.h>

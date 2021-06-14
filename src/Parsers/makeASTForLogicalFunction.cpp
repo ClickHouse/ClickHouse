@@ -2,6 +2,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <boost/range/algorithm_ext/erase.hpp>
 
 
