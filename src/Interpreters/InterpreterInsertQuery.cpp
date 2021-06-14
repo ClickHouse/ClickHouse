@@ -3,6 +3,7 @@
 #include <Access/AccessFlags.h>
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
+#include <DataStreams/ConvertUserDefinedTypeOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
@@ -306,6 +307,8 @@ BlockIO InterpreterInsertQuery::execute()
                     table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                     table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0);
             }
+
+            out = std::make_shared<ConvertUserDefinedTypeOutputStream>(out);
 
             auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
             out_wrapper->setProcessListElement(getContext()->getProcessListElement());
