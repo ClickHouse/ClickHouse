@@ -83,7 +83,6 @@ namespace ErrorCodes
     private:
         static RedisStorageType parseStorageType(const std::string& storage_type);
 
-    private:
         const DictionaryStructure dict_struct;
         const std::string host;
         const UInt16 port;

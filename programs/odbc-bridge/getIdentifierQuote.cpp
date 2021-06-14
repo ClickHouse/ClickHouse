@@ -16,12 +16,13 @@ namespace ErrorCodes
 }
 
 
-std::string getIdentifierQuote(nanodbc::connection & connection)
+std::string getIdentifierQuote(nanodbc::ConnectionHolderPtr connection_holder)
 {
     std::string quote;
     try
     {
-        quote = connection.get_info<std::string>(SQL_IDENTIFIER_QUOTE_CHAR);
+        quote = execute<std::string>(connection_holder,
+                    [&](nanodbc::connection & connection) { return connection.get_info<std::string>(SQL_IDENTIFIER_QUOTE_CHAR); });
     }
     catch (...)
     {
@@ -33,7 +34,7 @@ std::string getIdentifierQuote(nanodbc::connection & connection)
 }
 
 
-IdentifierQuotingStyle getQuotingStyle(nanodbc::connection & connection)
+IdentifierQuotingStyle getQuotingStyle(nanodbc::ConnectionHolderPtr connection)
 {
     auto identifier_quote = getIdentifierQuote(connection);
     if (identifier_quote.length() == 0)

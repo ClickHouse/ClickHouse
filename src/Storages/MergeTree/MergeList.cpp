@@ -8,9 +8,8 @@
 namespace DB
 {
 
-MergeListElement::MergeListElement(const std::string & database_, const std::string & table_, const FutureMergedMutatedPart & future_part)
-    : database{database_}
-    , table{table_}
+MergeListElement::MergeListElement(const StorageID & table_id_, const FutureMergedMutatedPart & future_part)
+    : table_id{table_id_}
     , partition_id{future_part.part_info.partition_id}
     , result_part_name{future_part.name}
     , result_part_path{future_part.path}
@@ -60,8 +59,8 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
 MergeInfo MergeListElement::getInfo() const
 {
     MergeInfo res;
-    res.database = database;
-    res.table = table;
+    res.database = table_id.getDatabaseName();
+    res.table = table_id.getTableName();
     res.result_part_name = result_part_name;
     res.result_part_path = result_part_path;
     res.partition_id = partition_id;
