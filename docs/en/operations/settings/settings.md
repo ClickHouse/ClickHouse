@@ -1201,6 +1201,17 @@ Enable compilation of queries. By default, 0 (disabled).
 The compilation is only used for part of the query-processing pipeline: for the first stage of aggregation (GROUP BY).
 If this portion of the pipeline was compiled, the query may run faster due to the deployment of short cycles and inlining aggregate function calls. The maximum performance improvement (up to four times faster in rare cases) is seen for queries with multiple simple aggregate functions. Typically, the performance gain is insignificant. In very rare cases, it may slow down query execution.
 
+## compile_expressions {#compile_expressions}
+
+Enables or disables compilation of frequently used simple functions and operators to native code with LLVM at runtime.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `1`.
+
 ## min_count_to_compile {#min-count-to-compile}
 
 How many times to potentially use a compiled chunk of code before running compilation. By default, 3.
