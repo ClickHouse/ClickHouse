@@ -21,7 +21,7 @@ toc_priority: 208
 quantileTDigestWeighted(level)(expr, weight)
 ```
 
-Алиас: `medianTDigestWeighted`.
+Синоним: `medianTDigestWeighted`.
 
 **Аргументы**
 
