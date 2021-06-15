@@ -131,7 +131,6 @@ public:
             columns_of_key_columns.insert(left_arg);
 
         /// Replace single LowCardinality column to it's dictionary if possible.
-        /// It is good enough optimization, but it does not use LowCardinality cache.
         ColumnPtr lc_indexes = nullptr;
         if (columns_of_key_columns.columns() == 1)
         {
