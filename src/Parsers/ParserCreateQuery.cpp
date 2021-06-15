@@ -177,8 +177,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     auto projection = std::make_shared<ASTProjectionDeclaration>();
     projection->name = name->as<ASTIdentifier &>().name();
-    projection->query = query;
-    projection->children.emplace_back(projection->query);
+    projection->set(projection->query, query);
     node = projection;
 
     return true;

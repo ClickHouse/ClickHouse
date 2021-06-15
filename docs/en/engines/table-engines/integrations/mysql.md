@@ -5,7 +5,7 @@ toc_title: MySQL
 
 # MySQL {#mysql}
 
-The MySQL engine allows you to perform `SELECT` queries on data that is stored on a remote MySQL server.
+The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 
 ## Creating a Table {#creating-a-table}
 

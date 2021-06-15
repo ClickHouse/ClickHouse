@@ -8,7 +8,8 @@ set -e
 
 function thread1()
 {
-    while true; do 
+    # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
+    while true; do
         $CLICKHOUSE_CLIENT --query "SELECT * FROM system.parts FORMAT Null";
     done
 }

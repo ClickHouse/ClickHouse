@@ -332,7 +332,7 @@ Pipe StorageMerge::createSources(
     const Block & header,
     const StorageWithLockAndName & storage_with_lock,
     Names & real_column_names,
-    ContextPtr modified_context,
+    ContextMutablePtr modified_context,
     size_t streams_num,
     bool has_table_virtual_column,
     bool concat_streams)

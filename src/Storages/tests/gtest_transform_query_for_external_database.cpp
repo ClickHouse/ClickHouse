@@ -22,7 +22,7 @@ struct State
 {
     State(const State&) = delete;
 
-    ContextPtr context;
+    ContextMutablePtr context;
 
     static const State & instance()
     {

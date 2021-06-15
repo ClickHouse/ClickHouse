@@ -15,6 +15,7 @@
 #include <utility>
 #include <memory>
 
+
 namespace DB
 {
 
@@ -105,7 +106,7 @@ public:
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
-                 const Names & key_names_right_)
+              const Names & key_names_right_)
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
@@ -203,6 +204,8 @@ public:
     /// Split key and other columns by keys name list
     void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
+
+    String renamedRightColumnName(const String & name) const;
 };
 
 }

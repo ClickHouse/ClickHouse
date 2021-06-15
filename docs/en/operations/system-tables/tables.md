@@ -54,6 +54,9 @@ Columns:
 
 -   `lifetime_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes INSERTed since server start (only for `Buffer` tables). 
 
+-   `comment` ([String](../../sql-reference/data-types/string.md)) - The comment for the table. 
+
+
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
 **Example**
@@ -65,47 +68,53 @@ SELECT * FROM system.tables LIMIT 2 FORMAT Vertical;
 ```text
 Row 1:
 ──────
-database:                   system
-name:                       aggregate_function_combinators
-uuid:                       00000000-0000-0000-0000-000000000000
-engine:                     SystemAggregateFunctionCombinators
+database:                   base
+name:                       t1
+uuid:                       81b1c20a-b7c6-4116-a2ce-7583fb6b6736
+engine:                     MergeTree
 is_temporary:               0
-data_paths:                 []
-metadata_path:              /var/lib/clickhouse/metadata/system/aggregate_function_combinators.sql
-metadata_modification_time: 1970-01-01 03:00:00
+data_paths:                 ['/var/lib/clickhouse/store/81b/81b1c20a-b7c6-4116-a2ce-7583fb6b6736/']
+metadata_path:              /var/lib/clickhouse/store/461/461cf698-fd0b-406d-8c01-5d8fd5748a91/t1.sql
+metadata_modification_time: 2021-01-25 19:14:32
 dependencies_database:      []
 dependencies_table:         []
-create_table_query:         
-engine_full:                
-partition_key:              
-sorting_key:                
-primary_key:                
-sampling_key:               
-storage_policy:             
-total_rows:                 ᴺᵁᴸᴸ
-total_bytes:                ᴺᵁᴸᴸ
+create_table_query:         CREATE TABLE base.t1 (`n` UInt64) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity = 8192
+engine_full:                MergeTree ORDER BY n SETTINGS index_granularity = 8192
+partition_key:
+sorting_key:                n
+primary_key:                n
+sampling_key:
+storage_policy:             default
+total_rows:                 1
+total_bytes:                99
+lifetime_rows:              ᴺᵁᴸᴸ
+lifetime_bytes:             ᴺᵁᴸᴸ
+comment:
 
 Row 2:
 ──────
-database:                   system
-name:                       asynchronous_metrics
+database:                   default
+name:                       53r93yleapyears
 uuid:                       00000000-0000-0000-0000-000000000000
-engine:                     SystemAsynchronousMetrics
+engine:                     MergeTree
 is_temporary:               0
-data_paths:                 []
-metadata_path:              /var/lib/clickhouse/metadata/system/asynchronous_metrics.sql
-metadata_modification_time: 1970-01-01 03:00:00
+data_paths:                 ['/var/lib/clickhouse/data/default/53r93yleapyears/']
+metadata_path:              /var/lib/clickhouse/metadata/default/53r93yleapyears.sql
+metadata_modification_time: 2020-09-23 09:05:36
 dependencies_database:      []
 dependencies_table:         []
-create_table_query:         
-engine_full:                
-partition_key:              
-sorting_key:                
-primary_key:                
-sampling_key:               
-storage_policy:             
-total_rows:                 ᴺᵁᴸᴸ
-total_bytes:                ᴺᵁᴸᴸ
+create_table_query:         CREATE TABLE default.`53r93yleapyears` (`id` Int8, `febdays` Int8) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192
+engine_full:                MergeTree ORDER BY id SETTINGS index_granularity = 8192
+partition_key:
+sorting_key:                id
+primary_key:                id
+sampling_key:
+storage_policy:             default
+total_rows:                 2
+total_bytes:                155
+lifetime_rows:              ᴺᵁᴸᴸ
+lifetime_bytes:             ᴺᵁᴸᴸ
+comment:
 ```
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/tables) <!--hide-->

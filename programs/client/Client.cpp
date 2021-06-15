@@ -25,7 +25,6 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
-#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
@@ -87,6 +86,8 @@
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/ProgressBar.h>
+#include <filesystem>
+#include <Common/filesystemHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -96,6 +97,7 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -181,7 +183,7 @@ private:
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
     SharedContextHolder shared_context = Context::createShared();
-    ContextPtr context = Context::createGlobal(shared_context.get());
+    ContextMutablePtr context = Context::createGlobal(shared_context.get());
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
@@ -276,7 +278,7 @@ private:
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
-            context->setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
+            context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
 
         /// Initialize query_id_formats if any
         if (config().has("query_id_formats"))
@@ -633,8 +635,8 @@ private:
                     history_file = home_path + "/.clickhouse-client-history";
             }
 
-            if (!history_file.empty() && !Poco::File(history_file).exists())
-                Poco::File(history_file).createFile();
+            if (!history_file.empty() && !fs::exists(history_file))
+                FS::createFile(history_file);
 
             LineReader::Patterns query_extenders = {"\\"};
             LineReader::Patterns query_delimiters = {";", "\\G"};
@@ -965,12 +967,9 @@ private:
             TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
                 processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-
-            // Echo all queries if asked; makes for a more readable reference
-            // file.
-            if (test_hint.echoQueries())
-                echo_queries = true;
         }
+
+        bool echo_query = echo_queries;
 
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
@@ -1104,9 +1103,20 @@ private:
                 continue;
             }
 
+            // Now we know for sure where the query ends.
+            // Look for the hint in the text of query + insert data + trailing
+            // comments,
+            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
+            // Use the updated query boundaries we just calculated.
+            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
+
+            // Echo all queries if asked; makes for a more readable reference
+            // file.
+            echo_query = test_hint.echoQueries().value_or(echo_query);
+
             try
             {
-                processParsedSingleQuery();
+                processParsedSingleQuery(echo_query);
             }
             catch (...)
             {
@@ -1127,13 +1137,6 @@ private:
                 this_query_end = insert_ast->end;
                 adjustQueryEnd(this_query_end, all_queries_end, context->getSettingsRef().max_parser_depth);
             }
-
-            // Now we know for sure where the query ends.
-            // Look for the hint in the text of query + insert data + trailing
-            // comments,
-            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-            // Use the updated query boundaries we just calculated.
-            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
 
             // Check whether the error (or its absence) matches the test hints
             // (or their absence).
@@ -1334,7 +1337,7 @@ private:
 
                     fmt::print(
                         stderr,
-                        "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
+                        "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
                     exit(1);
                 }
@@ -1459,7 +1462,7 @@ private:
                     const auto text_3 = ast_3->formatForErrorMessage();
                     if (text_3 != text_2)
                     {
-                        fmt::print(stderr, "The query formatting is broken.\n");
+                        fmt::print(stderr, "Found error: The query formatting is broken.\n");
 
                         printChangedSettings();
 
@@ -1545,14 +1548,14 @@ private:
     // 'query_to_send' -- the query text that is sent to server,
     // 'full_query' -- for INSERT queries, contains the query and the data that
     // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
-    void processParsedSingleQuery()
+    void processParsedSingleQuery(std::optional<bool> echo_query = {})
     {
         resetOutput();
         client_exception.reset();
         server_exception.reset();
         have_error = false;
 
-        if (echo_queries)
+        if (echo_query.value_or(echo_queries))
         {
             writeString(full_query, std_out);
             writeChar('\n', std_out);
