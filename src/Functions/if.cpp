@@ -940,6 +940,27 @@ private:
         return nullptr;
     }
 
+    static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments)
+    {
+        int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
+        if (last_short_circuit_argument_index == -1)
+            return;
+
+        /// Check if condition is const or null to not create full mask from it.
+        if ((isColumnConst(*arguments[0].column) || arguments[0].column->onlyNull()) && !arguments[0].column->empty())
+        {
+            bool value = arguments[0].column->getBool(0);
+            executeColumnIfNeeded(arguments[1], !value);
+            executeColumnIfNeeded(arguments[2], value);
+            return;
+        }
+
+        IColumn::Filter mask;
+        auto mask_info = getMaskFromColumn(arguments[0].column, mask);
+        maskedExecute(arguments[1], mask, mask_info);
+        maskedExecute(arguments[2], mask, mask_info, /*inverted=*/true);
+    }
+
 public:
     String getName() const override
     {
@@ -974,27 +995,6 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return getLeastSupertype({arguments[1], arguments[2]});
-    }
-
-    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const
-    {
-        int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
-        if (last_short_circuit_argument_index == -1)
-            return;
-
-        /// Check if condition is const or null to not create full mask from it.
-        if ((isColumnConst(*arguments[0].column) || arguments[0].column->onlyNull()) && !arguments[0].column->empty())
-        {
-            bool value = arguments[0].column->getBool(0);
-            executeColumnIfNeeded(arguments[1], !value);
-            executeColumnIfNeeded(arguments[2], value);
-            return;
-        }
-
-        IColumn::Filter mask;
-        auto mask_info = getMaskFromColumn(arguments[0].column, mask);
-        maskedExecute(arguments[1], mask, mask_info);
-        maskedExecute(arguments[2], mask, mask_info, /*inverted=*/true);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
