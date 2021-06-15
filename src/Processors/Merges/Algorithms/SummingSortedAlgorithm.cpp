@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -44,6 +45,11 @@ struct SummingSortedAlgorithm::AggregateDescription
     AlignedBuffer state;
     bool created = false;
 
+    /// For LowCardinality, convert is converted to nested type. nested_type is nullptr if no conversion needed.
+    /// This is used only for simple aggregate functions.
+    DataTypePtr nested_type; /// Nested type for LowCardinality, if it is.
+    DataTypePtr real_type; /// Type in header.
+
     /// In case when column has type AggregateFunction:
     /// use the aggregate function from itself instead of 'function' above.
     bool is_agg_func_type = false;
@@ -58,6 +64,8 @@ struct SummingSortedAlgorithm::AggregateDescription
     void init(AggregateFunctionPtr function_, bool is_simple_agg_func_type_ = false)
     {
         function = std::move(function_);
+        const auto & f = *function;
+        std::cerr << "agg func type " << typeid(f).name() << std::endl;
         add_function = function->getAddressOfAddFunction();
         state.reset(function->sizeOfData(), function->alignOfData());
         is_simple_agg_func_type = is_simple_agg_func_type_;
@@ -266,6 +274,11 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                     desc.init(simple->getFunction(), true);
                     if (desc.function->allocatesMemoryInArena())
                         def.allocates_memory_in_arena = true;
+
+                    desc.real_type = column.type;
+                    desc.nested_type = recursiveRemoveLowCardinality(desc.real_type);
+                    if (desc.real_type->equals(*desc.nested_type))
+                        desc.nested_type = nullptr;
                 }
                 else if (!is_agg_func)
                 {
@@ -384,6 +397,12 @@ static MutableColumns getMergedDataColumns(
 
             columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
         }
+        else if (desc.is_simple_agg_func_type)
+        {
+            const auto & type = desc.nested_type ? desc.nested_type
+                                                 : desc.real_type;
+            columns.emplace_back(type->createColumn());
+        }
         else
             columns.emplace_back(header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty());
     }
@@ -394,13 +413,22 @@ static MutableColumns getMergedDataColumns(
     return columns;
 }
 
-static void preprocessChunk(Chunk & chunk)
+static void preprocessChunk(Chunk & chunk, const SummingSortedAlgorithm::ColumnsDefinition & def)
 {
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
     for (auto & column : columns)
         column = column->convertToFullColumnIfConst();
+
+    for (const auto & desc : def.columns_to_aggregate)
+    {
+        if (desc.is_simple_agg_func_type && desc.nested_type)
+        {
+            auto & col = columns[desc.column_numbers[0]];
+            col = recursiveRemoveLowCardinality(col);
+        }
+    }
 
     chunk.setColumns(std::move(columns), num_rows);
 }
@@ -426,6 +454,12 @@ static void postprocessChunk(
             size_t tuple_size = desc.column_numbers.size();
             for (size_t i = 0; i < tuple_size; ++i)
                 res_columns[desc.column_numbers[i]] = assert_cast<const ColumnTuple &>(*column).getColumnPtr(i);
+        }
+        else if (desc.is_simple_agg_func_type && desc.nested_type)
+        {
+            const auto & from_type = desc.nested_type;
+            const auto & to_type = desc.real_type;
+            res_columns[desc.column_numbers[0]] = recursiveTypeConversion(std::move(column), from_type, to_type);
         }
         else
             res_columns[desc.column_numbers[0]] = std::move(column);
@@ -620,6 +654,13 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
             if (desc.column_numbers.size() == 1)
             {
                 auto & col = raw_columns[desc.column_numbers[0]];
+                std::cerr << " ========= add_function " << reinterpret_cast<const void *>(desc.add_function)
+                          << " func " << reinterpret_cast<const void *>(desc.function.get()) << " data "
+                          << reinterpret_cast<const void *>(desc.state.data())
+                          << " col " << reinterpret_cast<const void *>(&col)
+                          << " ar " << reinterpret_cast<const void *>(arena.get()) << std::endl;
+
+                std::cerr << "--- col " << col->dumpStructure() << " row " << row << std::endl;
                 desc.add_function(desc.function.get(), desc.state.data(), &col, row, arena.get());
             }
             else
@@ -670,14 +711,14 @@ void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
     for (auto & input : inputs)
         if (input.chunk)
-            preprocessChunk(input.chunk);
+            preprocessChunk(input.chunk, columns_definition);
 
     initializeQueue(std::move(inputs));
 }
 
 void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    preprocessChunk(input.chunk);
+    preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
 }
 
