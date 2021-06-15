@@ -62,6 +62,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 -   [Локальный файл](#dicts-external_dicts_dict_sources-local_file)
 -   [Исполняемый файл](#dicts-external_dicts_dict_sources-executable)
 -   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
+-   [Исполняемый пул](#dicts-external_dicts_dict_sources-executable_pool)
 -   СУБД:
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
     -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
