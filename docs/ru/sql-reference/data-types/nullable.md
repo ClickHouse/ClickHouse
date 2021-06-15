@@ -27,6 +27,31 @@ toc_title: Nullable
 !!! info "Info"
     Почти всегда использование `Nullable` снижает производительность, учитывайте это при проектировании своих баз.
 
+## Поиск NULL {#finding-null}
+
+Найти значения `NULL` в столбце можно с помощью подстобца `null`, при этом чтение всего столбца не происходит. Подстолбец возвращает `1`, если соответственное значение является `NULL`, и `0` в противоположном случае.
+
+Запрос: 
+
+``` sql
+CREATE TABLE nullable ( `n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+SELECT n.null FROM nullable;
+```
+
+Результат:
+
+``` text
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+```
+
 ## Пример использования {#primer-ispolzovaniia}
 
 ``` sql
