@@ -89,7 +89,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 ### Из единого бинарника {#from-single-binary}
 
-Для установки ClickHouse на Linux можно использовать единый переносимый бинарник из последнего коммита ветки `master`: [https://builds.clickhouse.tech/master/amd64/clickhouse].
+Для установки ClickHouse на Linux можно использовать единый переносимый бинарник из последнего коммита ветки `master`: https://builds.clickhouse.tech/master/amd64/clickhouse.
 
 ``` bash
 curl -O 'https://builds.clickhouse.tech/master/amd64/clickhouse' && chmod a+x clickhouse
