@@ -212,39 +212,6 @@ struct DecomposedFloat
     {
         return compare(rhs) >= 0;
     }
-
-
-    template <typename Int>
-    Int toInt() const
-    {
-        /// sign * (2 ^ normalized_exponent + mantissa * 2 ^ (normalized_exponent - mantissa_bits))
-
-        /// Too large exponent, implementation specific behaviour. Includes infs and NaNs.
-        if (normalized_exponent() >= sizeof(Int) * 8)
-            return is_negative() ? std::numeric_limits<Int>::lowest() : std::numeric_limits<Int>::max();
-
-        if (normalized_exponent() < 0)
-            return 0;
-
-        Int res{1};
-        res <<= normalized_exponent();
-
-        if (normalized_exponent() >= static_cast<int16_t>(Traits::mantissa_bits))
-        {
-            res += static_cast<Int>(mantissa()) << (normalized_exponent() - Traits::mantissa_bits);
-        }
-        else
-        {
-            /// NOTE rounding towards zero, it can be different to current CPU rounding mode.
-            res += static_cast<Int>(mantissa()) >> (Traits::mantissa_bits - normalized_exponent());
-        }
-
-        /// Avoid UB on negation of the most negative numbers. Also implementation specific behaviour for unsigned integers.
-        if (is_negative() && res != std::numeric_limits<Int>::lowest())
-            res = -res;
-
-        return res;
-    }
 };
 
 
