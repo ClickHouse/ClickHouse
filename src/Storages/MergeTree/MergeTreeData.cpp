@@ -2736,17 +2736,16 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             /// We do not check allow_s3_zero_copy_replication here because data may be shared
             /// when allow_s3_zero_copy_replication turned on and off again
 
-            original_active_part->keep_s3_on_delete = false;
+            original_active_part->force_keep_shared_data = false;
 
             if (original_active_part->volume->getDisk()->getType() == DiskType::Type::S3)
             {
                 if (part_copy->volume->getDisk()->getType() == DiskType::Type::S3
                         && original_active_part->getUniqueId() == part_copy->getUniqueId())
-                {   /// May be when several volumes use the same S3 storage
-                    original_active_part->keep_s3_on_delete = true;
+                {
+                    /// May be when several volumes use the same S3 storage
+                    original_active_part->force_keep_shared_data = true;
                 }
-                else
-                    original_active_part->keep_s3_on_delete = !unlockSharedData(*original_active_part);
             }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);

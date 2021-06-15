@@ -439,8 +439,6 @@ private:
     /// Just removes part from ZooKeeper using previous method
     void removePartFromZooKeeper(const String & part_name);
 
-    void removePartsFromFilesystem(const DataPartsVector & parts);
-
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
                                   NameSet * parts_should_be_retried = nullptr);
