@@ -345,11 +345,23 @@ KeeperSnapshotManager::KeeperSnapshotManager(const std::string & snapshots_path_
 
     for (const auto & p : fs::directory_iterator(snapshots_path))
     {
-        if (startsWith(p.path(), "tmp_")) /// Unfinished tmp files
+        const auto & path = p.path();
+
+        if (!path.has_filename())
+            continue;
+
+        if (startsWith(path.filename(), "tmp_")) /// Unfinished tmp files
         {
             std::filesystem::remove(p);
             continue;
         }
+
+        /// Not snapshot file
+        if (!startsWith(path.filename(), "snapshot_"))
+        {
+            continue;
+        }
+
         size_t snapshot_up_to = getSnapshotPathUpToLogIdx(p.path());
         existing_snapshots[snapshot_up_to] = p.path();
     }
