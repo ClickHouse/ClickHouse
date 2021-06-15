@@ -64,8 +64,6 @@ struct SummingSortedAlgorithm::AggregateDescription
     void init(AggregateFunctionPtr function_, bool is_simple_agg_func_type_ = false)
     {
         function = std::move(function_);
-        const auto & f = *function;
-        std::cerr << "agg func type " << typeid(f).name() << std::endl;
         add_function = function->getAddressOfAddFunction();
         state.reset(function->sizeOfData(), function->alignOfData());
         is_simple_agg_func_type = is_simple_agg_func_type_;
@@ -654,13 +652,6 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
             if (desc.column_numbers.size() == 1)
             {
                 auto & col = raw_columns[desc.column_numbers[0]];
-                std::cerr << " ========= add_function " << reinterpret_cast<const void *>(desc.add_function)
-                          << " func " << reinterpret_cast<const void *>(desc.function.get()) << " data "
-                          << reinterpret_cast<const void *>(desc.state.data())
-                          << " col " << reinterpret_cast<const void *>(&col)
-                          << " ar " << reinterpret_cast<const void *>(arena.get()) << std::endl;
-
-                std::cerr << "--- col " << col->dumpStructure() << " row " << row << std::endl;
                 desc.add_function(desc.function.get(), desc.state.data(), &col, row, arena.get());
             }
             else
