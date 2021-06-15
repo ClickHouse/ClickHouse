@@ -75,7 +75,9 @@ public:
         MergeTreeData::MergingParams merging_params_,
         MergeTreeDataPartPtr parent_part_,
         String prefix_,
-        MergeTreeData & data_)
+        MergeTreeData & data_,
+        ActionBlocker & merges_blocker_,
+        ActionBlocker & ttl_merges_blocker_)
         : future_part(future_part_)
         , metadata_snapshot(metadata_snapshot_)
         , merge_entry(merge_entry_)
@@ -89,6 +91,8 @@ public:
         , parent_part(parent_part_)
         , prefix(prefix_)
         , data(data_)
+        , merges_blocker(merges_blocker_)
+        , ttl_merges_blocker(ttl_merges_blocker_)
         {}
 
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()
@@ -136,7 +140,7 @@ private:
     std::promise<MergeTreeData::MutableDataPartPtr> promise;
 
     MergeTaskState state{MergeTaskState::NEED_PREPARE};
-    VecticalMergeOneColumnState vertical_merge_one_column_state;
+    VecticalMergeOneColumnState vertical_merge_one_column_state{VecticalMergeOneColumnState::NEED_PREPARE};
 
     std::unique_ptr<MergeImpl> implementation;
 
@@ -158,6 +162,9 @@ private:
 
     MergeTreeData & data;
     Poco::Logger * log{&Poco::Logger::get("MergeTask")};
+
+    ActionBlocker & merges_blocker;
+    ActionBlocker & ttl_merges_blocker;
 
 
     /// Previously stack located variables

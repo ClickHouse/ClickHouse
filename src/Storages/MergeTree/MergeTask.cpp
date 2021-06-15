@@ -36,9 +36,6 @@
 namespace DB
 {
 
-static ActionBlocker merges_blocker;
-static ActionBlocker ttl_merges_blocker;
-
 namespace ErrorCodes
 {
     extern const int ABORTED;
@@ -160,21 +157,6 @@ void MergeTask::prepare()
     storage_columns = metadata_snapshot->getColumns().getAllPhysical();
 
 
-    //std::cerr << "StorageColumns" << std::endl;
-    // for (auto & col : storage_columns) {
-        //std::cerr << col.name << std::endl;
-    // }
-
-    //std::cerr << "SortingKeyExpression" << std::endl;
-    //std::cerr << metadata_snapshot->getSortingKey().expression->dumpActions() << std::endl;
-
-    //std::cerr << "IndicesDescription" << std::endl;
-    //std::cerr << metadata_snapshot->getSecondaryIndices().toString() << std::endl;
-
-    //std::cerr << "MergingParams" << std::endl;
-    //std::cerr << merging_params.getModeName() << std::endl;
-
-
     extractMergingAndGatheringColumns(
         storage_columns,
         metadata_snapshot->getSortingKey().expression,
@@ -185,19 +167,6 @@ void MergeTask::prepare()
         gathering_column_names,
         merging_columns,
         merging_column_names);
-
-
-    //std::cerr << "GatheringColumnsNames" << std::endl;
-    // for (auto & col : gathering_column_names) {
-        //std::cerr << col << std::endl;
-    // }
-
-
-    //std::cerr << "MergingColumsnNames" << std::endl;
-    // for (auto & col : merging_column_names) {
-        //std::cerr << col << std::endl;
-    // }
-
 
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part->name, disk, 0);
@@ -273,7 +242,7 @@ void MergeTask::prepare()
     rows_written = 0;
     initial_reservation = space_reservation ? space_reservation->getSize() : 0;
 
-    is_cancelled = [&]() -> bool
+    is_cancelled = [this]() -> bool
     {
         return merges_blocker.isCancelled() || (need_remove_expired_values && ttl_merges_blocker.isCancelled());
     };
@@ -543,7 +512,9 @@ void MergeTask::prepareProjections()
             projection_merging_params,
             new_data_part,
             "", // empty string for projection
-            data));
+            data,
+            merges_blocker,
+            ttl_merges_blocker));
     }
 
 
@@ -619,10 +590,11 @@ bool MergeTask::executeVerticalMergeForAllColumns()
         case VecticalMergeOneColumnState::NEED_FINISH:
         {
             finalizeVerticalMergeForOneColumn();
-            vertical_merge_one_column_state = VecticalMergeOneColumnState::NEED_PREPARE;
-            return true;
+            vertical_merge_one_column_state = VecticalMergeOneColumnState::NEED_PREPARE; // ?
+            return false;
         }
     }
+    return false;
 }
 
 

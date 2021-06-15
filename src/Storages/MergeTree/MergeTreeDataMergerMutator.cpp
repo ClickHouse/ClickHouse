@@ -452,17 +452,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merging_params,
         nullptr,
         "",
-        data
-        );
+        data,
+        merges_blocker,
+        ttl_merges_blocker);
 
     while (task->execute()) {}
 
-    std::cout << "EXECUTED THE WHOLE TASK" << std::endl;
-
     auto result = task->getFuture().get();
-
-    std::cout << "CALCULATED RESULT" << std::endl;
-
     return result;
 }
 
