@@ -1,5 +1,7 @@
 #pragma once
 
+
+#include "Storages/MergeTree/MergeProgress.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -177,6 +179,9 @@ private:
 
     DiskPtr tmp_disk{nullptr};
     DiskPtr disk{nullptr};
+
+    std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
+    std::unique_ptr<MergeStageProgress> column_progress{nullptr};
 
     String rows_sources_file_path;
     std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};

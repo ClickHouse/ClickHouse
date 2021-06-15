@@ -68,10 +68,6 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
     auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
     size_t minmax_idx_size = minmax_column_types.size();
 
-    std::cerr << "minmax_index_size " << minmax_idx_size << std::endl;
-    std::cout << "address " << &hyperrectangle << std::endl;
-
-
     hyperrectangle.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {

@@ -10,7 +10,6 @@
 #include "Storages/MergeTree/MergeTreeData.h"
 #include "Storages/MergeTree/IMergeTreeDataPart.h"
 
-#include "Storages/MergeTree/MergeProgress.h"
 #include "Storages/MergeTree/MergeTreeSequentialSource.h"
 #include "Storages/MergeTree/FutureMergedMutatedPart.h"
 
@@ -317,7 +316,6 @@ bool MergeTask::executeHorizontalForBlock()
 
 void MergeTask::finalizeHorizontalPartOfTheMerge()
 {
-    std::cout << "merged_stream " << &merged_stream << std::endl;
     merged_stream->readSuffix();
     merged_stream.reset();
 
@@ -377,14 +375,16 @@ void MergeTask::prepareVerticalMergeForOneColumn()
 
     progress_before = merge_entry->progress.load(std::memory_order_relaxed);
 
-    MergeStageProgress column_progress(progress_before, column_sizes->columnWeight(column_name));
+    column_progress = std::make_unique<MergeStageProgress>(progress_before, column_sizes->columnWeight(column_name));
+
     for (size_t part_num = 0; part_num < future_part->parts.size(); ++part_num)
     {
         auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
             data, metadata_snapshot, future_part->parts[part_num], column_names, read_with_direct_io, true);
 
+        /// Dereference unique_ptr
         column_part_source->setProgressCallback(
-            MergeProgressCallback(merge_entry, watch_prev_elapsed, column_progress));
+            MergeProgressCallback(merge_entry, watch_prev_elapsed, *column_progress));
 
         QueryPipeline column_part_pipeline;
         column_part_pipeline.init(Pipe(std::move(column_part_source)));
@@ -754,22 +754,19 @@ void MergeTask::createMergedStream()
         }
     }
 
-    MergeStageProgress horizontal_stage_progress(
+    /// Using unique_ptr, because MergeStageProgress has no default constructor
+    horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         column_sizes ? column_sizes->keyColumnsWeight() : 1.0);
 
-
-    //std::cerr << "Merging Columns Names " << std::endl;
-    // for (auto & name : merging_column_names) {
-        //std::cerr << name << std::endl;
-    // }
 
     for (const auto & part : future_part->parts)
     {
         auto input = std::make_unique<MergeTreeSequentialSource>(
             data, metadata_snapshot, part, merging_column_names, read_with_direct_io, true);
 
+        /// Dereference unique_ptr and pass horizontal_stage_progress by reference
         input->setProgressCallback(
-            MergeProgressCallback(merge_entry, watch_prev_elapsed, horizontal_stage_progress));
+            MergeProgressCallback(merge_entry, watch_prev_elapsed, *horizontal_stage_progress));
 
         Pipe pipe(std::move(input));
 
