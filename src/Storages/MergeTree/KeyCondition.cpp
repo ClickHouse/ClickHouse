@@ -712,8 +712,22 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
     String expr_name = ast->getColumnNameWithoutAlias();
+
     if (key_subexpr_names.count(expr_name) == 0)
-        return false;
+    {
+        /// Let's check another one case.
+        /// If our storage was created with moduloLegacy in partition key,
+        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
+        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
+        ///
+        /// Note: for negative values, we can filter more partitions then needed.
+        auto adjusted_ast = ast->clone();
+        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
+        expr_name = adjusted_ast->getColumnName();
+
+        if (key_subexpr_names.count(expr_name) == 0)
+            return false;
+    }
 
     const auto & sample_block = key_expr->getSampleBlock();
 
