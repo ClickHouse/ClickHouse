@@ -525,7 +525,7 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 -   `timestamp` — название столбца, содержащего `timestamp`. Поддерживаемые типы данных: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) и другие беззнаковые целые типы.
 -   `event_column` — название столбца, содержащего значение следующего возвращаемого события. Поддерживаемые типы данных: [String](../../sql-reference/data-types/string.md) и [Nullable(String)](../../sql-reference/data-types/nullable.md).
 -   `base_condition` — условие, которому должна соответствовать исходная точка.
--   `cond` — условия, описывающие цепочку событий. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `event1`, `event2`, ... — условия, описывающие цепочку событий. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -538,7 +538,7 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 
 Функцию можно использовать, если есть цепочка событий A->B->C->D->E, и вы хотите определить событие, следующее за B->C, то есть D.
 
-Оператор запроса ищет событие после A->B:
+Запрос ищет событие после A->B:
 
 ``` sql
 CREATE TABLE test_flow (
