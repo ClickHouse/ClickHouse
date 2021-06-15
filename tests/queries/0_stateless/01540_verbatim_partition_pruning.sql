@@ -14,7 +14,7 @@ insert into xy values (0, 2), (2, 3), (8, 4), (9, 5);
 
 SET max_rows_to_read = 2;
 
-select * from xy where intHash64(x) % 2 = intHash64(2) % 2;
+select * from xy where moduloLegacy(intHash64(x), 2) = moduloLegacy(intHash64(2), 2);
 
 -- Equality is another special operator that can be treated as an always monotonic indicator for deterministic functions.
 -- minmax index is not enough.
