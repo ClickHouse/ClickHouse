@@ -69,6 +69,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
+    -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
     -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
 
 ## Локальный файл {#dicts-external_dicts_dict_sources-local_file}
@@ -112,6 +113,7 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
     <executable>
         <command>cat /opt/dictionaries/os.tsv</command>
         <format>TabSeparated</format>
+        <implicit_key>false</implicit_key>
     </executable>
 </source>
 ```
@@ -120,6 +122,36 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 
 -   `command` — абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
 -   `format` — формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
+-   `implicit_key` — исходный исполняемый файл может возвращать только значения, а соответствие запрошенным ключам определено неявно — порядком строк в результате. Значение по умолчанию: false.
+
+Такой источник словаря можно настроить только через XML конфигурацию. Создание словарей с исполняемым источником через DDL отключено, иначе пользователи базы данных могли бы исполнять любой двоичный файл в узле ClickHouse.
+
+## Исполняемый пул {#dicts-external_dicts_dict_sources-executable_pool}
+
+Исполняемый пул позволяет загружать данные из пула процессов. Этот источник не работает с макетами словарей, которые требуют загрузки всех данных источника. Исполняемый пул работает, если тип размещения словаря `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct`. Исполняемый пул генерирует пул процессов с указанной командой и оставляет их активными, пока те не выйдут. Программа считывает данные из потока STDIN, пока он доступен, и выводит результат в поток STDOUT, кроме того возможно ожидание следующего блока данных из STDIN. ClickHouse не закрывает STDIN после обработки блока данных, но посылает следующую часть данных, когда это требуется. Исполняемый скрипт должен быть готов к такому способу передачи данных – он должен опросить STDIN и сбросить данные в STDOUT заранее.
+
+Пример настройки:
+
+``` xml
+<source>
+    <executable_pool>
+        <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
+        <format>TabSeparated</format>
+        <pool_size>10</pool_size>
+        <max_command_execution_time>10<max_command_execution_time>
+        <implicit_key>false</implicit_key>
+    </executable_pool>
+</source>
+```
+
+Поля настройки:
+
+-   `command` — абсолютный путь к файлу или имя файла (если каталог программы записан в `PATH`).
+-   `format` — формат файла. Поддерживаются все форматы, описанные в “[Форматы](../../../interfaces/formats.md#formats)”.
+-   `pool_size` — размер пула. Если в поле `pool_size` указан 0, то размер пула не ограничен.
+-   `command_termination_timeout` — скрипт исполняемого пула, должен включать основной цикл чтения-записи. После уничтожения словаря канал закрывается. При этом исполняемый файл имеет `command_termination_timeout` секунд для завершения работы, прежде чем ClickHouse пошлет сигнал SIGTERM дочернему процессу. Указывается в секундах. Значение по умолчанию: 10. Необязательный параметр.
+-   `max_command_execution_time` — максимальное количество времени для исполняемого скрипта на обработку блока данных. Указывается в секундах. Значение по умолчанию: 10. Необязательный параметр.
+-   `implicit_key` — исходный исполняемый файл может возвращать только значения, а соответствие запрошенным ключам определено неявно — порядком строк в результате. Значение по умолчанию: false.
 
 Этот источник словаря может быть настроен только с помощью XML-конфигурации. Создание словарей с исполняемым источником с помощью DDL отключено. Иначе пользователь базы данных сможет выполнить произвольный бинарный файл на узле ClickHouse.
 
