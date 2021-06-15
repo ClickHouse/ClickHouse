@@ -40,14 +40,11 @@ private:
     /// Limits for basic sanity checks when reading a header
     enum Limits
     {
-        MAX_NAME_LENGTH = 256,
-        MAX_VALUE_LENGTH = 8192,
         MAX_METHOD_LENGTH = 32,
         MAX_VERSION_LENGTH = 8,
-        MAX_FIELDS_NUMBER = 100,
     };
 
-    const size_t max_uri_size;
+    const size_t max_uri_size, max_fields_number, max_field_name_size, max_field_value_size;
 
     std::unique_ptr<ReadBuffer> stream;
     Poco::Net::SocketImpl * socket;
