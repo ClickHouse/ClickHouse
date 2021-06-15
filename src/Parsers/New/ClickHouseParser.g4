@@ -6,7 +6,7 @@ options {
 
 // Top-level statements
 
-queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)? (SEMICOLON)? | insertStmt;
+queryStmt: query (INTO OUTFILE STRING_LITERAL)? formatClause? (SEMICOLON)? | insertStmt;
 query
     : alterStmt     // DDL
     | attachStmt    // DDL
@@ -204,15 +204,17 @@ insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) co
 
 columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
 dataClause
-    : FORMAT identifier              # DataClauseFormat
+    : formatClause                   # DataClauseFormat
     | VALUES                         # DataClauseValues
     | selectUnionStmt SEMICOLON? EOF # DataClauseSelect
     ;
+formatClause: FORMAT identifierOrNull settingsClause?;
 
 // KILL statement
 
 killStmt
     : KILL MUTATION clusterClause? whereClause (SYNC | ASYNC | TEST)?  # KillMutationStmt
+    | KILL QUERY clusterClause? whereClause (SYNC | ASYNC | TEST)?     # KillQueryStmt
     ;
 
 // OPTIMIZE statement
@@ -254,7 +256,10 @@ selectStmt:
     ;
 
 withClause: WITH columnExprList;
-topClause: TOP DECIMAL_LITERAL (WITH TIES)?;
+topClause
+    : TOP DECIMAL_LITERAL (WITH TIES)?
+    | TOP LPAREN DECIMAL_LITERAL RPAREN (WITH TIES)?
+    ;
 fromClause: FROM joinExpr;
 arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 prewhereClause: PREWHERE columnExpr;
@@ -322,6 +327,7 @@ systemStmt
     | SYSTEM RELOAD DICTIONARY tableIdentifier
     | SYSTEM (START | STOP) (DISTRIBUTED SENDS | FETCHES | TTL? MERGES) tableIdentifier
     | SYSTEM (START | STOP) REPLICATED SENDS
+    | SYSTEM (START | STOP) REPLICATION QUEUES tableIdentifier
     | SYSTEM SYNC REPLICA tableIdentifier
     ;
 
@@ -395,7 +401,7 @@ columnExpr
     | columnExpr OR columnExpr                                                            # ColumnExprOr
     // TODO(ilezhankin): `BETWEEN a AND b AND c` is parsed in a wrong way: `BETWEEN (a AND b) AND c`
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                                   # ColumnExprBetween
-    | <assoc=right> columnExpr QUERY columnExpr COLON columnExpr                          # ColumnExprTernaryOp
+    | <assoc=right> columnExpr QUERY_SIGN columnExpr COLON columnExpr                     # ColumnExprTernaryOp
     | columnExpr (alias | AS identifier)                                                  # ColumnExprAlias
 
     | (tableIdentifier DOT)? ASTERISK                                                     # ColumnExprAsterisk  // single-column only
@@ -461,10 +467,10 @@ keyword
     | INJECTIVE | INNER | INSERT | INTERVAL | INTO | IS | IS_OBJECT_ID | JOIN | JSON_FALSE | JSON_TRUE | KEY | KILL | LAST | LAYOUT
     | LEADING | LEFT | LIFETIME | LIKE | LIMIT | LIVE | LOCAL | LOGS | MATERIALIZE | MATERIALIZED | MAX | MERGES | MIN | MODIFY | MOVE
     | MUTATION | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY
-    | RANGE | RELOAD | REMOVE | RENAME | REPLACE | REPLICA | REPLICATED | RIGHT | ROLLUP | SAMPLE | SELECT | SEMI | SENDS | SET | SETTINGS
-    | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | TEST | THEN | TIES | TIMEOUT
-    | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TOP | TTL | TYPE | UNION | UPDATE | USE | USING | UUID | VALUES | VIEW
-    | VOLUME | WATCH | WHEN | WHERE | WITH
+    | QUERY | QUEUES | RANGE | RELOAD | REMOVE | RENAME | REPLACE | REPLICA | REPLICATED | REPLICATION | RIGHT | ROLLUP | SAMPLE | SELECT
+    | SEMI | SENDS | SET | SETTINGS | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | TEST
+    | THEN | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TOP | TTL | TYPE | UNION | UPDATE | USE | USING | UUID
+    | VALUES | VIEW | VOLUME | WATCH | WHEN | WHERE | WITH
     ;
 keywordForAlias
     : DATE | FIRST | ID | KEY

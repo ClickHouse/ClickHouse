@@ -12,12 +12,24 @@
 namespace DB::AST
 {
 
-// static
-PtrTo<DataClause> DataClause::createFormat(PtrTo<Identifier> identifier, size_t data_offset)
+FormatClause::FormatClause(PtrTo<Identifier> name, PtrTo<SettingsClause> settings) : INode{name, settings}
 {
-    PtrTo<DataClause> clause(new DataClause(ClauseType::FORMAT, {identifier}));
-    clause->offset = data_offset;
-    return clause;
+}
+
+ASTPtr FormatClause::convertToOld() const
+{
+    auto format = std::make_shared<ASTFormatWithSettings>();
+    format->name = get(NAME)->convertToOld();
+    if (has(SETTINGS)) format->settings = get(SETTINGS)->convertToOld();
+    return format;
+}
+
+// static
+PtrTo<DataClause> DataClause::createFormat(PtrTo<FormatClause> format, size_t data_offset)
+{
+    PtrTo<DataClause> data(new DataClause(ClauseType::FORMAT, {format}));
+    data->offset = data_offset;
+    return data;
 }
 
 // static
@@ -100,7 +112,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnsClause(ClickHouseParser::ColumnsClau
 
 antlrcpp::Any ParseTreeVisitor::visitDataClauseFormat(ClickHouseParser::DataClauseFormatContext *ctx)
 {
-    return DataClause::createFormat(visit(ctx->identifier()), ctx->getStop()->getStopIndex() + 1);
+    return DataClause::createFormat(visit(ctx->formatClause()), ctx->getStop()->getStopIndex() + 1);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitDataClauseSelect(ClickHouseParser::DataClauseSelectContext *ctx)
@@ -111,6 +123,12 @@ antlrcpp::Any ParseTreeVisitor::visitDataClauseSelect(ClickHouseParser::DataClau
 antlrcpp::Any ParseTreeVisitor::visitDataClauseValues(ClickHouseParser::DataClauseValuesContext *ctx)
 {
     return DataClause::createValues(ctx->getStop()->getStopIndex() + 1);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitFormatClause(ClickHouseParser::FormatClauseContext *ctx)
+{
+    auto settings = ctx->settingsClause() ? visit(ctx->settingsClause()).as<PtrTo<SettingsClause>>() : nullptr;
+    return std::make_shared<FormatClause>(visit(ctx->identifierOrNull()), settings);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx)

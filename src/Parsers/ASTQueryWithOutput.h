@@ -7,6 +7,23 @@
 namespace DB
 {
 
+class ASTFormatWithSettings : public IAST
+{
+public:
+    ASTPtr name;
+    ASTPtr settings;
+
+    String getID(char) const override { return "FormatWithSettings"; }
+
+    ASTPtr clone() const override
+    {
+        auto other = std::make_shared<ASTFormatWithSettings>();
+        other->name = name;
+        other->settings = settings;
+        return other;
+    }
+};
+
 /** Query with output options
   * (supporting [INTO OUTFILE 'file_name'] [FORMAT format_name] [SETTINGS key1 = value1, key2 = value2, ...] suffix).
   */
@@ -14,8 +31,7 @@ class ASTQueryWithOutput : public IAST
 {
 public:
     ASTPtr out_file;
-    ASTPtr format;
-    ASTPtr settings_ast;
+    ASTPtr format;  // ASTFormatWithSettings
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 

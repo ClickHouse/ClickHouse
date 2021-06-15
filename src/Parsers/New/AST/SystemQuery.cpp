@@ -67,6 +67,14 @@ PtrTo<SystemQuery> SystemQuery::createReplicatedSends(bool stop)
 }
 
 // static
+PtrTo<SystemQuery> SystemQuery::createReplicationQueues(bool stop, PtrTo<TableIdentifier> identifier)
+{
+    PtrTo<SystemQuery> query(new SystemQuery(QueryType::REPLICATION_QUEUES, {identifier}));
+    query->stop = stop;
+    return query;
+}
+
+// static
 PtrTo<SystemQuery> SystemQuery::createSyncReplica(PtrTo<TableIdentifier> identifier)
 {
     return PtrTo<SystemQuery>(new SystemQuery(QueryType::SYNC_REPLICA, {identifier}));
@@ -139,6 +147,14 @@ ASTPtr SystemQuery::convertToOld() const
         case QueryType::REPLICATED_SENDS:
             query->type = stop ? ASTSystemQuery::Type::STOP_REPLICATED_SENDS : ASTSystemQuery::Type::START_REPLICATED_SENDS;
             break;
+        case QueryType::REPLICATION_QUEUES:
+            query->type = stop ? ASTSystemQuery::Type::STOP_REPLICATION_QUEUES : ASTSystemQuery::Type::START_REPLICATION_QUEUES;
+            {
+                auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
+                query->database = table_id.database_name;
+                query->table = table_id.table_name;
+            }
+            break;
         case QueryType::SYNC_REPLICA:
             query->type = ASTSystemQuery::Type::SYNC_REPLICA;
             {
@@ -184,6 +200,7 @@ antlrcpp::Any ParseTreeVisitor::visitSystemStmt(ClickHouseParser::SystemStmtCont
         if (ctx->DICTIONARY()) return SystemQuery::createReloadDictionary(visit(ctx->tableIdentifier()));
     }
     if (ctx->REPLICATED() && ctx->SENDS()) return SystemQuery::createReplicatedSends(!!ctx->STOP());
+    if (ctx->REPLICATION() && ctx->QUEUES()) return SystemQuery::createReplicationQueues(!!ctx->STOP(), visit(ctx->tableIdentifier()));
     if (ctx->SYNC() && ctx->REPLICA()) return SystemQuery::createSyncReplica(visit(ctx->tableIdentifier()));
     __builtin_unreachable();
 }

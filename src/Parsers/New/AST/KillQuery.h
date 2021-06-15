@@ -10,6 +10,7 @@ class KillQuery : public DDLQuery
 {
     public:
         static PtrTo<KillQuery> createMutation(PtrTo<ClusterClause> cluster, bool sync, bool test, PtrTo<WhereClause> where);
+        static PtrTo<KillQuery> createQuery(PtrTo<ClusterClause> cluster, bool sync, bool test, PtrTo<WhereClause> where);
 
         ASTPtr convertToOld() const override;
 
@@ -22,6 +23,7 @@ class KillQuery : public DDLQuery
         enum class QueryType
         {
             MUTATION,
+            QUERY,
         };
 
         const QueryType query_type;

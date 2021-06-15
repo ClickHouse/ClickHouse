@@ -620,7 +620,7 @@ void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
 {
     if (const auto * identifier = ast->as<ASTIdentifier>())
         visit(*identifier, ast, data);
-    else if (const auto * node = ast->as<ASTFunction>())
+    else if (auto * node = ast->as<ASTFunction>())
         visit(*node, ast, data);
     else if (const auto * literal = ast->as<ASTLiteral>())
         visit(*literal, ast, data);
@@ -761,9 +761,9 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
     }
 }
 
-void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
+void ActionsMatcher::visit(ASTFunction & node, const ASTPtr &, Data & data)
 {
-    auto column_name = ast->getColumnName();
+    auto column_name = node.getColumnName();
     if (data.hasColumn(column_name))
         return;
 
@@ -835,11 +835,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         // special arguments is not needed. This is analogous to the
         // appendWindowFunctionsArguments() in SelectQueryExpressionAnalyzer and
         // partially duplicates its code. Probably we can remove most of the
-        // logic from that function, but I don't yet have it all figured out...
-        for (const auto & arg : node.arguments->children)
-        {
-            visit(arg, data);
-        }
+        // logic from that function, but I don't yet have it all figured out…
+        if (node.arguments)
+            for (const auto & arg : node.arguments->children)
+            {
+                visit(arg, data);
+            }
 
         // Don't need to do anything more for window functions here -- the
         // resulting column is added in ExpressionAnalyzer, similar to the
@@ -851,6 +852,41 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     // checked for it above, so no need to do anything more.
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
+
+    // Very special case for "position" function, which can be parsed as position(needle IN haystack),
+    // but requires internally ≥2 arguments.
+    if (node.name == "position")
+    {
+        if (node.arguments && node.arguments->children.size() == 1)
+        {
+            if (const auto * in_func = node.arguments->children[0]->as<ASTFunction>())
+            {
+                if (in_func->name == "in")
+                {
+                    const auto & arg_list = in_func->arguments->as<ASTExpressionList &>();
+                    if (arg_list.children.size() == 2)
+                        node.arguments->children = {arg_list.children[1], arg_list.children[0]};
+                }
+            }
+        }
+    }
+
+    // SQL-compatibility with left/right functions
+    if (Poco::toLower(node.name) == "left")
+    {
+        node.name = "substring";
+        node.arguments->children = {node.arguments->children[0], std::make_shared<ASTLiteral>(1), node.arguments->children[1]};
+    }
+    if (Poco::toLower(node.name) == "right")
+    {
+        auto negate = std::make_shared<ASTFunction>();
+        negate->name = "negate";
+        negate->arguments = std::make_shared<ASTExpressionList>();
+        negate->arguments->children = {node.arguments->children[1]};
+
+        node.name = "substring";
+        node.arguments->children = {node.arguments->children[0], negate};
+    }
 
     FunctionOverloadResolverPtr function_builder;
     try
@@ -1054,7 +1090,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (arguments_present)
     {
         /// Calculate column name here again, because AST may be changed here (in case of untuple).
-        data.addFunction(function_builder, argument_names, ast->getColumnName());
+        data.addFunction(function_builder, argument_names, node.getColumnName());
     }
 }
 

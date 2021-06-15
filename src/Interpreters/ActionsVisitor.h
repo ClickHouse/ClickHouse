@@ -200,7 +200,7 @@ public:
 private:
 
     static void visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data);
-    static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data);
+    static void visit(ASTFunction & node, const ASTPtr & ast, Data & data);
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
     static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 

@@ -94,30 +94,31 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (s_format.ignore(pos, expected))
     {
         ParserIdentifier format_p;
+        auto format_ast = std::make_shared<ASTFormatWithSettings>();
 
-        if (!format_p.parse(pos, query_with_output.format, expected))
+        if (!format_p.parse(pos, format_ast->name, expected))
             return false;
-        setIdentifierSpecial(query_with_output.format);
+        setIdentifierSpecial(format_ast->name);
 
-        query_with_output.children.push_back(query_with_output.format);
-    }
-
-    // SETTINGS key1 = value1, key2 = value2, ...
-    ParserKeyword s_settings("SETTINGS");
-    if (s_settings.ignore(pos, expected))
-    {
-        ParserSetQuery parser_settings(true);
-        if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
-            return false;
-        query_with_output.children.push_back(query_with_output.settings_ast);
-
-        // SETTINGS after FORMAT is not parsed by the SELECT parser (ParserSelectQuery)
-        // Pass them manually, to apply in InterpreterSelectQuery::initSettings()
-        if (query->as<ASTSelectWithUnionQuery>())
+        // SETTINGS key1 = value1, key2 = value2, ...
+        ParserKeyword s_settings("SETTINGS");
+        if (s_settings.ignore(pos, expected))
         {
-            QueryWithOutputSettingsPushDownVisitor::Data data{query_with_output.settings_ast};
-            QueryWithOutputSettingsPushDownVisitor(data).visit(query);
+            ParserSetQuery parser_settings(true);
+            if (!parser_settings.parse(pos, format_ast->settings, expected))
+                return false;
+
+            // SETTINGS after FORMAT is not parsed by the SELECT parser (ParserSelectQuery)
+            // Pass them manually, to apply in InterpreterSelectQuery::initSettings()
+            if (query->as<ASTSelectWithUnionQuery>())
+            {
+                QueryWithOutputSettingsPushDownVisitor::Data data{format_ast->settings};
+                QueryWithOutputSettingsPushDownVisitor(data).visit(query);
+            }
         }
+
+        query_with_output.format = format_ast;
+        query_with_output.children.push_back(query_with_output.format);
     }
 
     node = std::move(query);

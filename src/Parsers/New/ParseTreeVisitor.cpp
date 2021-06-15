@@ -46,7 +46,7 @@ antlrcpp::Any ParseTreeVisitor::visitQueryStmt(ClickHouseParser::QueryStmtContex
     auto query = visit(ctx->query()).as<PtrTo<Query>>();
 
     if (ctx->OUTFILE()) query->setOutFile(Literal::createString(ctx->STRING_LITERAL()));
-    if (ctx->FORMAT()) query->setFormat(visit(ctx->identifierOrNull()));
+    if (ctx->formatClause()) query->setFormat(visit(ctx->formatClause()));
 
     return query;
 }
@@ -105,25 +105,32 @@ antlrcpp::Any ParseTreeVisitor::visitShowDatabasesStmt(ClickHouseParser::ShowDat
 
 antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *ctx)
 {
-    // TODO: don't forget to convert TEMPORARY into 'is_temporary=1' condition.
-
     auto table_name = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("name"));
     auto expr_list = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(table_name)});
     auto select_stmt = std::make_shared<SelectStmt>(false, SelectStmt::ModifierType::NONE, false, expr_list);
 
     auto and_args = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createLiteral(Literal::createNumber("1"))});
 
-    auto current_database = ColumnExpr::createLiteral(Literal::createString(current_database_name));
-    if (ctx->databaseIdentifier())
+    /// FIXME: for some reason temporary tables belong to empty database.
+    if (!ctx->TEMPORARY())
     {
-        current_database = ColumnExpr::createLiteral(Literal::createString(visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>()->getName()));
+        auto current_database = ColumnExpr::createLiteral(Literal::createString(current_database_name));
+        if (ctx->databaseIdentifier())
+        {
+            current_database = ColumnExpr::createLiteral(
+                Literal::createString(visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>()->getName()));
+        }
+        auto database = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("database"));
+        auto equals_args = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(database), current_database});
+        and_args->push(ColumnExpr::createFunction(std::make_shared<Identifier>("equals"), nullptr, equals_args));
     }
-    auto database = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("database"));
-    auto equals_args = PtrTo<ColumnExprList>(new ColumnExprList{
-        ColumnExpr::createIdentifier(database),
-        current_database
-    });
-    and_args->push(ColumnExpr::createFunction(std::make_shared<Identifier>("equals"), nullptr, equals_args));
+    else
+    {
+        auto is_temporary = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("is_temporary"));
+        auto equals_args = PtrTo<ColumnExprList>(
+            new ColumnExprList{ColumnExpr::createIdentifier(is_temporary), ColumnExpr::createLiteral(Literal::createNumber("1"))});
+        and_args->push(ColumnExpr::createFunction(std::make_shared<Identifier>("equals"), nullptr, equals_args));
+    }
 
     if (ctx->LIKE())
     {

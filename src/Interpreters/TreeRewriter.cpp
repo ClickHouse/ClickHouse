@@ -48,8 +48,8 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -436,7 +436,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
         if (result.array_join_result_to_source.empty())
         {
             if (select_query->arrayJoinExpressionList()->children.empty())
-                throw DB::Exception("ARRAY JOIN requires an argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw DB::Exception("ARRAY JOIN requires an argument", ErrorCodes::SYNTAX_ERROR);
 
             ASTPtr expr = select_query->arrayJoinExpressionList()->children.at(0);
             String source_name = expr->getColumnName();

@@ -16,6 +16,15 @@ PtrTo<KillQuery> KillQuery::createMutation(PtrTo<ClusterClause> cluster, bool sy
     return query;
 }
 
+// static
+PtrTo<KillQuery> KillQuery::createQuery(PtrTo<ClusterClause> cluster, bool sync, bool test, PtrTo<WhereClause> where)
+{
+    PtrTo<KillQuery> query(new KillQuery(cluster, QueryType::QUERY, {where}));
+    query->sync = sync;
+    query->test = test;
+    return query;
+}
+
 KillQuery::KillQuery(PtrTo<ClusterClause> cluster, QueryType type, PtrList exprs) : DDLQuery(cluster, exprs), query_type(type)
 {
 }
@@ -30,6 +39,13 @@ ASTPtr KillQuery::convertToOld() const
     {
         case QueryType::MUTATION:
             query->type = ASTKillQueryQuery::Type::Mutation;
+            query->sync = sync;
+            query->test = test;
+            query->where_expression = get(WHERE)->convertToOld();
+            query->children.push_back(query->where_expression);
+            break;
+        case QueryType::QUERY:
+            query->type = ASTKillQueryQuery::Type::Query;
             query->sync = sync;
             query->test = test;
             query->where_expression = get(WHERE)->convertToOld();
@@ -51,6 +67,12 @@ antlrcpp::Any ParseTreeVisitor::visitKillMutationStmt(ClickHouseParser::KillMuta
 {
     auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
     return KillQuery::createMutation(cluster, !!ctx->SYNC(), !!ctx->TEST(), visit(ctx->whereClause()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitKillQueryStmt(ClickHouseParser::KillQueryStmtContext * ctx)
+{
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
+    return KillQuery::createQuery(cluster, !!ctx->SYNC(), !!ctx->TEST(), visit(ctx->whereClause()));
 }
 
 }

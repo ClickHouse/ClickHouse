@@ -17,6 +17,7 @@ class SystemQuery : public Query
         static PtrTo<SystemQuery> createReloadDictionaries();
         static PtrTo<SystemQuery> createReloadDictionary(PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createReplicatedSends(bool stop);
+        static PtrTo<SystemQuery> createReplicationQueues(bool stop, PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createSyncReplica(PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createTTLMerges(bool stop, PtrTo<TableIdentifier> identifier);
 
@@ -37,6 +38,7 @@ class SystemQuery : public Query
             RELOAD_DICTIONARIES,
             RELOAD_DICTIONARY,
             REPLICATED_SENDS,
+            REPLICATION_QUEUES,
             SYNC_REPLICA,
             TTL_MERGES,
         };

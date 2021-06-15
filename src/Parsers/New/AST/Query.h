@@ -11,7 +11,7 @@ namespace DB::AST
 class Query : public INode {
     public:
         void setOutFile(PtrTo<StringLiteral> literal);
-        void setFormat(PtrTo<Identifier> id);
+        void setFormat(PtrTo<FormatClause> clause);
 
     protected:
         Query() = default;
@@ -23,7 +23,7 @@ class Query : public INode {
     private:
         // TODO: put them to |children|
         PtrTo<StringLiteral> out_file;
-        PtrTo<Identifier> format;
+        PtrTo<FormatClause> format;
 };
 
 }

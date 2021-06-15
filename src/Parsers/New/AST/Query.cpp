@@ -1,6 +1,7 @@
 #include <Parsers/New/AST/Query.h>
 
 #include <Parsers/New/AST/Identifier.h>
+#include <Parsers/New/AST/InsertQuery.h>
 #include <Parsers/New/AST/Literal.h>
 
 
@@ -12,9 +13,9 @@ void Query::setOutFile(PtrTo<StringLiteral> literal)
     out_file = literal;
 }
 
-void Query::setFormat(PtrTo<Identifier> id)
+void Query::setFormat(PtrTo<FormatClause> clause)
 {
-    format = id;
+    format = clause;
 }
 
 void Query::convertToOldPartially(const std::shared_ptr<ASTQueryWithOutput> & query) const

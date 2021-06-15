@@ -415,8 +415,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
         {
-            if (query_with_output->settings_ast)
-                InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
+            if (query_with_output->format && query_with_output->format->as<ASTFormatWithSettings>()->settings)
+                InterpreterSetQuery(query_with_output->format->as<ASTFormatWithSettings>()->settings, context).executeForCurrentContext();
         }
 
         if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
@@ -923,7 +923,7 @@ BlockIO executeQuery(
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = ast_query_with_output->format
-                ? getIdentifierName(ast_query_with_output->format)
+                ? getIdentifierName(ast_query_with_output->format->as<ASTFormatWithSettings>()->name)
                 : context->getDefaultFormat();
 
         if (format_name == "Null")
@@ -1022,8 +1022,8 @@ void executeQuery(
                 out_buf = &*out_file_buf;
             }
 
-            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                ? getIdentifierName(ast_query_with_output->format)
+            String format_name = ast_query_with_output && (ast_query_with_output->format)
+                ? getIdentifierName(ast_query_with_output->format->as<ASTFormatWithSettings>()->name)
                 : context->getDefaultFormat();
 
             auto out = context->getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader());
@@ -1061,8 +1061,8 @@ void executeQuery(
                 out_buf = &*out_file_buf;
             }
 
-            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                                 ? getIdentifierName(ast_query_with_output->format)
+            String format_name = ast_query_with_output && (ast_query_with_output->format)
+                                 ? getIdentifierName(ast_query_with_output->format->as<ASTFormatWithSettings>()->name)
                                  : context->getDefaultFormat();
 
             if (!pipeline.isCompleted())

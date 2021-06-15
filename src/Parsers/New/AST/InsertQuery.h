@@ -6,6 +6,21 @@
 namespace DB::AST
 {
 
+class FormatClause : public INode
+{
+    public:
+        FormatClause(PtrTo<Identifier> name, PtrTo<SettingsClause> settings);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            NAME = 0,      // Identifier
+            SETTINGS = 1,  // SettingsClause (optional)
+        };
+};
+
 class DataClause : public INode
 {
     public:
@@ -16,7 +31,7 @@ class DataClause : public INode
             VALUES,
         };
 
-        static PtrTo<DataClause> createFormat(PtrTo<Identifier> identifier, size_t data_offset);
+        static PtrTo<DataClause> createFormat(PtrTo<FormatClause> format, size_t data_offset);
         static PtrTo<DataClause> createSelect(PtrTo<SelectUnionQuery> query);
         static PtrTo<DataClause> createValues(size_t data_offset);
 
@@ -28,7 +43,7 @@ class DataClause : public INode
     private:
         enum ChildIndex : UInt8
         {
-            FORMAT = 0,    // Identifier
+            FORMAT = 0,    // FormatClause
             SUBQUERY = 0,  // SelectUnionQuery
         };
 

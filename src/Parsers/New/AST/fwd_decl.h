@@ -35,6 +35,7 @@ class DictionaryAttributeExpr;
 class EngineClause;
 class EngineExpr;
 class EnumValue;
+class FormatClause;
 class Identifier;
 class JoinExpr;
 class JsonExpr;

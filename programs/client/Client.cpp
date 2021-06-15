@@ -1599,8 +1599,9 @@ private:
                 apply_query_settings(*insert->settings_ast);
             /// FIXME: try to prettify this cast using `as<>()`
             const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
-            if (with_output && with_output->settings_ast)
-                apply_query_settings(*with_output->settings_ast);
+            if (with_output && with_output->format)
+                if (const auto * format_with_settings = with_output->format->as<ASTFormatWithSettings>())
+                    apply_query_settings(*format_with_settings->settings);
 
             connection->forceConnected(connection_parameters.timeouts);
 
@@ -2166,11 +2167,11 @@ private:
                     if (is_interactive && is_default_format)
                         current_format = "TabSeparated";
                 }
-                if (query_with_output->format != nullptr)
+                if (query_with_output->format)
                 {
                     if (has_vertical_output_suffix)
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
-                    const auto & id = query_with_output->format->as<ASTIdentifier &>();
+                    const auto & id = query_with_output->format->as<ASTFormatWithSettings>()->name->as<ASTIdentifier &>();
                     current_format = id.name();
                 }
             }

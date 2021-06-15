@@ -157,10 +157,12 @@ public:
     antlrcpp::Any visitDataClauseFormat(ClickHouseParser::DataClauseFormatContext * ctx) override;
     antlrcpp::Any visitDataClauseSelect(ClickHouseParser::DataClauseSelectContext * ctx) override;
     antlrcpp::Any visitDataClauseValues(ClickHouseParser::DataClauseValuesContext * ctx) override;
+    antlrcpp::Any visitFormatClause(ClickHouseParser::FormatClauseContext * ctx) override;
     antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext * ctx) override;
 
     // KillQuery
     antlrcpp::Any visitKillMutationStmt(ClickHouseParser::KillMutationStmtContext * ctx) override;
+    antlrcpp::Any visitKillQueryStmt(ClickHouseParser::KillQueryStmtContext * ctx) override;
 
     // OptimizeQuery
     antlrcpp::Any visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext * ctx) override;
