@@ -47,3 +47,30 @@ SELECT tuple(1,NULL) AS x, toTypeName(x)
 └──────────┴─────────────────────────────────┘
 ```
 
+## Адрессация элементов кортежа {#addressing-tuple-elements}
+
+Можно считывать элементы кортежей с помощью индексов и имен:
+
+``` sql
+CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
+
+INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
+
+SELECT a.s FROM named_tuples;
+
+SELECT a.2 FROM named_tuples;
+```
+
+Результат:
+
+``` text
+┌─a.s─┐
+│ y   │
+│ x   │
+└─────┘
+
+┌─tupleElement(a, 2)─┐
+│                 10 │
+│                -10 │
+└────────────────────┘
+```
