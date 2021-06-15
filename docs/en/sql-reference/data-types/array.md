@@ -95,5 +95,3 @@ Result:
 │         1 │ [2]       │ [[4,1]]   │
 └───────────┴───────────┴───────────┘
 ```
-
-[Original article](https://clickhouse.tech/docs/en/data_types/array/) <!--hide-->

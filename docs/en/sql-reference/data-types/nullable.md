@@ -20,7 +20,11 @@ To store `Nullable` type values in a table column, ClickHouse uses a separate fi
 !!! info "Note"
     Using `Nullable` almost always negatively affects performance, keep this in mind when designing your databases.
 
-It is possible to find `NULL` values in a column by using `null` subcolumn without reading the whole column.
+## Finding NULL {#finding-null}
+
+It is possible to find `NULL` values in a column by using `null` subcolumn without reading the whole column. It returns `1` if the corresponding value is `NULL` and `0` otherwise.
+
+Query:
 
 ``` sql
 CREATE TABLE nullable ( `n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
