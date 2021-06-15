@@ -141,7 +141,7 @@ static ColumnsDescription getColumnsDescriptionFromList(const NamesAndTypesList 
 
         column_description.name = column_name_and_type->name;
         column_description.type = column_name_and_type->type;
-        if(!comment.empty())
+        if (!comment.empty())
             column_description.comment = std::move(comment);
         columns_description.add(column_description);
     }
