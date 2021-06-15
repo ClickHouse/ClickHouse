@@ -391,16 +391,16 @@ public:
         if constexpr (is_less)
         {
             if (value_src->getType()->isIntegerTy())
-                should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_dst, value_src) : b.CreateICmpULT(value_dst, value_src);
+                should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_src, value_dst) : b.CreateICmpULT(value_src, value_dst);
             else
-                should_change_after_comparison = b.CreateFCmpOLT(value_dst, value_src);
+                should_change_after_comparison = b.CreateFCmpOLT(value_src, value_dst);
         }
         else
         {
             if (value_src->getType()->isIntegerTy())
-                should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_dst, value_src) : b.CreateICmpUGT(value_dst, value_src);
+                should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_src, value_dst) : b.CreateICmpUGT(value_src, value_dst);
             else
-                should_change_after_comparison = b.CreateFCmpOGT(value_dst, value_src);
+                should_change_after_comparison = b.CreateFCmpOGT(value_src, value_dst);
         }
 
         b.CreateCondBr(b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), should_change_after_comparison)), if_should_change, if_should_not_change);
