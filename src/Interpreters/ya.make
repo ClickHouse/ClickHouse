@@ -127,6 +127,7 @@ SRCS(
     ProfileEventsExt.cpp
     QueryAliasesVisitor.cpp
     QueryLog.cpp
+    QueryMaterializationLog.cpp
     QueryNormalizer.cpp
     QueryParameterVisitor.cpp
     QueryThreadLog.cpp
