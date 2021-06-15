@@ -2069,7 +2069,7 @@ Possible values:
 
 -   Any positive integer.
 
-Default value: 16.
+Default value: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
@@ -2548,17 +2548,6 @@ Result
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
-
-## allow_experimental_bigint_types {#allow_experimental_bigint_types}
-
-Enables or disables integer values exceeding the range that is supported by the int data type.
-
-Possible values:
-
--   1 — The bigint data type is enabled.
--   0 — The bigint data type is disabled.
-
-Default value: `0`.
 
 ## persistent {#persistent}
 
