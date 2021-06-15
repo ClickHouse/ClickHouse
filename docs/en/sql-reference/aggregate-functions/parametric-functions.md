@@ -536,7 +536,7 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 -   `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types.
 -   `event_column` — Name of the column containing the value of the next event to be returned. Data types supported: [String](../../sql-reference/data-types/string.md) and [Nullable(String)](../../sql-reference/data-types/nullable.md).
 -   `base_condition` — Condition that the base point must fulfill.
--   `cond` — Conditions describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `event1`, `event2`, ... — Conditions describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
