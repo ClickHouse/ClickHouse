@@ -197,13 +197,16 @@ You can work with dates without using `INTERVAL`, just by adding or subtracting 
 Examples:
 
 ``` sql
-SELECT now() AS current_date_time, current_date_time + 60*60*96;
+SELECT
+    toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time,
+    time + 60 * 60 * 24 AS time_plus_24_hours,
+    time + toIntervalDay(1) AS time_plus_1_day
 ```
 
 ``` text
-┌───current_date_time─┬─plus(now(), multiply(multiply(60, 60), 96))─┐
-│ 2021-06-12 17:34:49 │                         2021-06-16 17:34:49 │
-└─────────────────────┴─────────────────────────────────────────────┘
+┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
+│ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
+└─────────────────────┴─────────────────────┴─────────────────────┘
 ```
 
 **See Also**
