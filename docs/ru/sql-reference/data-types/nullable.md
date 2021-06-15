@@ -29,12 +29,12 @@ toc_title: Nullable
 
 ## Поиск NULL {#finding-null}
 
-Найти значения `NULL` в столбце можно с помощью подстобца `null`, при этом чтение всего столбца не происходит. Подстолбец возвращает `1`, если соответственное значение является `NULL`, и `0` в противоположном случае.
+Найти в столбце значения `NULL` можно с помощью подстобца `null`, при этом чтение всего столбца не происходит. Подстолбец возвращает `1`, если соответственное значение равно `NULL`, и `0` в противоположном случае.
 
 Запрос: 
 
 ``` sql
-CREATE TABLE nullable ( `n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
 

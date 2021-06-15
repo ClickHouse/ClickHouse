@@ -27,7 +27,7 @@ It is possible to find `NULL` values in a column by using `null` subcolumn witho
 Query:
 
 ``` sql
-CREATE TABLE nullable ( `n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
 
