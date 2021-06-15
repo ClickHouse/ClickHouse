@@ -192,8 +192,6 @@ def to_decimal256(self, node=None):
             output = node.query(f"SELECT toDecimal256(\'{-10**(76-scale)+1}\',{scale})").output
             assert float(output) == float(-10**(76-scale)+1), error()
 
-#, toDecimal256(\'{-10**(76-scale)+1}\',{scale})
-
 @TestScenario
 @Requirements(
     RQ_SRS_020_ClickHouse_Extended_Precision_Conversion_ToMySQL("1.0"),
