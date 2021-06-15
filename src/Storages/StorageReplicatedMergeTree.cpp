@@ -68,6 +68,7 @@
 
 #include <ctime>
 #include <filesystem>
+#include <iterator>
 #include <numeric>
 #include <thread>
 #include <future>
@@ -5081,27 +5082,10 @@ void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    const DataPartsVector parts = getDataPartsVector();
+    DataParts parts = getDataParts();
 
-    removePartsFromWorkingSetImmediatelyAndSetTemporaryState(parts);
-
-    for (const auto & part : parts)
-    {
-        const DiskPtr disk = part->volume->getDisk();
-
-        if (const String path = relative_data_path + "detached/" + part->getRelativePathForPrefix("");
-            disk->exists(path))
-        {
-            LOG_WARNING(log, "Part {} already exists in {}, removing it and placing currently active part there",
-                part->name, path);
-
-            disk->removeRecursive(path);
-        }
-
-        // It may happen part with specified name was in detached, but we don't care about it
-        LOG_TRACE(log, "Detaching part {}", part->getNameWithState());
-        part->makeCloneInDetached("", metadata_snapshot);
-    }
+    for (const auto & part : getDataPartsVector())
+        forgetPartAndMoveToDetached(part);
 
     LOG_INFO(log, "Moved all parts to detached/");
 
