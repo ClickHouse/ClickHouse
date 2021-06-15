@@ -62,6 +62,7 @@ Types of sources (`source_type`):
 -   [Local file](#dicts-external_dicts_dict_sources-local_file)
 -   [Executable file](#dicts-external_dicts_dict_sources-executable)
 -   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
+-   [Executable Pool](#dicts-external_dicts_dict_sources-executable_pool)
 -   DBMS
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
     -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
