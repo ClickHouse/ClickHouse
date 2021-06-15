@@ -91,10 +91,12 @@ struct DecomposedFloat
 
 
     /// Compare float with integer of arbitrary width (both signed and unsigned are supported). Assuming two's complement arithmetic.
+    /// This function is generic, big integers (128, 256 bit) are supported as well.
     /// Infinities are compared correctly. NaNs are treat similarly to infinities, so they can be less than all numbers.
     /// (note that we need total order)
+    /// Returns -1, 0 or 1.
     template <typename Int>
-    int compare(Int rhs)
+    int compare(Int rhs) const
     {
         if (rhs == 0)
             return sign();
@@ -137,10 +139,11 @@ struct DecomposedFloat
         if (normalized_exponent() >= static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
             return is_negative() ? -1 : 1;
 
-        using UInt = make_unsigned_t<Int>;
+        using UInt = std::conditional_t<(sizeof(Int) > sizeof(typename Traits::UInt)), make_unsigned_t<Int>, typename Traits::UInt>;
         UInt uint_rhs = rhs < 0 ? -rhs : rhs;
 
         /// Smaller octave: abs(rhs) < abs(float)
+        /// FYI, TIL: octave is also called "binade", https://en.wikipedia.org/wiki/Binade
         if (uint_rhs < (static_cast<UInt>(1) << normalized_exponent()))
             return is_negative() ? -1 : 1;
 
@@ -154,11 +157,11 @@ struct DecomposedFloat
 
         bool large_and_always_integer = normalized_exponent() >= static_cast<int16_t>(Traits::mantissa_bits);
 
-        typename Traits::UInt a = large_and_always_integer
-            ? mantissa() << (normalized_exponent() - Traits::mantissa_bits)
-            : mantissa() >> (Traits::mantissa_bits - normalized_exponent());
+        UInt a = large_and_always_integer
+            ? static_cast<UInt>(mantissa()) << (normalized_exponent() - Traits::mantissa_bits)
+            : static_cast<UInt>(mantissa()) >> (Traits::mantissa_bits - normalized_exponent());
 
-        typename Traits::UInt b = uint_rhs - (static_cast<UInt>(1) << normalized_exponent());
+        UInt b = uint_rhs - (static_cast<UInt>(1) << normalized_exponent());
 
         if (a < b)
             return is_negative() ? 1 : -1;
@@ -175,39 +178,72 @@ struct DecomposedFloat
 
 
     template <typename Int>
-    bool equals(Int rhs)
+    bool equals(Int rhs) const
     {
         return compare(rhs) == 0;
     }
 
     template <typename Int>
-    bool notEquals(Int rhs)
+    bool notEquals(Int rhs) const
     {
         return compare(rhs) != 0;
     }
 
     template <typename Int>
-    bool less(Int rhs)
+    bool less(Int rhs) const
     {
         return compare(rhs) < 0;
     }
 
     template <typename Int>
-    bool greater(Int rhs)
+    bool greater(Int rhs) const
     {
         return compare(rhs) > 0;
     }
 
     template <typename Int>
-    bool lessOrEquals(Int rhs)
+    bool lessOrEquals(Int rhs) const
     {
         return compare(rhs) <= 0;
     }
 
     template <typename Int>
-    bool greaterOrEquals(Int rhs)
+    bool greaterOrEquals(Int rhs) const
     {
         return compare(rhs) >= 0;
+    }
+
+
+    template <typename Int>
+    Int toInt() const
+    {
+        /// sign * (2 ^ normalized_exponent + mantissa * 2 ^ (normalized_exponent - mantissa_bits))
+
+        /// Too large exponent, implementation specific behaviour. Includes infs and NaNs.
+        if (normalized_exponent() >= sizeof(Int) * 8)
+            return is_negative() ? std::numeric_limits<Int>::lowest() : std::numeric_limits<Int>::max();
+
+        if (normalized_exponent() < 0)
+            return 0;
+
+        Int res{1};
+        res <<= normalized_exponent();
+
+        if (normalized_exponent() >= static_cast<int16_t>(Traits::mantissa_bits))
+        {
+            res += static_cast<Int>(mantissa()) << (normalized_exponent() - Traits::mantissa_bits);
+        }
+        else
+        {
+            /// NOTE rounding towards zero, it can be different to current CPU rounding mode.
+            res += static_cast<Int>(mantissa()) >> (Traits::mantissa_bits - normalized_exponent());
+        }
+
+        /// Avoid UB on negation of the most negative numbers. Also implementation specific behaviour for unsigned integers.
+        if (is_negative() && res != std::numeric_limits<Int>::lowest())
+            res = -res;
+
+        return res;
     }
 };
 
