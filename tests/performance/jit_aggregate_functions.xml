@@ -1,4 +1,8 @@
 <test>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
     <create_query>
         CREATE TABLE jit_test_memory (
             key UInt64,
@@ -71,6 +75,13 @@
                 <value>jit_test_merge_tree_nullable</value>
             </values>
         </substitution>
+
+        <substitution>
+            <name>group_scale</name>
+            <values>
+                <value>1000000</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <fill_query>
@@ -122,13 +133,59 @@
 
     <query>
         SELECT
-            {function}If(value_1),
-            {function}If(value_2),
-            {function}If(value_3),
-            {function}If(value_4),
-            {function}If(value_5)
+            {function}If(value_1, predicate),
+            {function}If(value_2, predicate),
+            {function}If(value_3, predicate),
+            {function}If(value_4, predicate),
+            {function}If(value_5, predicate)
         FROM {table}
         GROUP BY key
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(WatchID),
+            {function}(CounterID),
+            {function}(ClientIP)
+        FROM hits_100m_single
+        GROUP BY intHash32(UserID) % {group_scale}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(WatchID),
+            {function}(CounterID),
+            {function}(ClientIP),
+            {function}(GoodEvent),
+            {function}(CounterClass)
+        FROM hits_100m_single
+        GROUP BY intHash32(UserID) % {group_scale}
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH (WatchID % 2 == 0) AS predicate
+        SELECT
+            {function}If(WatchID, predicate),
+            {function}If(CounterID, predicate),
+            {function}If(ClientIP, predicate)
+        FROM hits_100m_single
+        GROUP BY intHash32(UserID) % {group_scale}
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH (WatchID % 2 == 0) AS predicate
+        SELECT
+            {function}If(WatchID, predicate),
+            {function}If(CounterID, predicate),
+            {function}If(ClientIP, predicate),
+            {function}If(GoodEvent, predicate),
+            {function}If(CounterClass, predicate)
+        FROM hits_100m_single
+        GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
     </query>
 
