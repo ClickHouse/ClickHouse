@@ -74,13 +74,13 @@ private:
 };
 
 template <bool or_null>
-class JoinGetOverloadResolver final : public IFunctionOverloadResolver, WithConstContext
+class JoinGetOverloadResolver final : public IFunctionOverloadResolver, WithContext
 {
 public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
-    static FunctionOverloadResolverPtr create(ContextConstPtr context_) { return std::make_unique<JoinGetOverloadResolver>(context_); }
+    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<JoinGetOverloadResolver>(context_); }
 
-    explicit JoinGetOverloadResolver(ContextConstPtr context_) : WithConstContext(context_) {}
+    explicit JoinGetOverloadResolver(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 

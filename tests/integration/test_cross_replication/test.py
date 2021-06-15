@@ -45,7 +45,7 @@ CREATE TABLE distributed(date Date, id UInt32, shard_id UInt32)
 2017-06-16	333	2
 '''
         node1.query("INSERT INTO distributed FORMAT TSV", stdin=to_insert)
-        time.sleep(0.5)
+        time.sleep(5)
 
         yield cluster
 

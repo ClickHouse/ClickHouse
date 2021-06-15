@@ -78,6 +78,8 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeString>(),                                  "initial_query_id"},
         {DataTypeFactory::instance().get("IPv6"),                             "initial_address"},
         {std::make_shared<DataTypeUInt16>(),                                  "initial_port"},
+        {std::make_shared<DataTypeDateTime>(),                                "initial_query_start_time"},
+        {std::make_shared<DataTypeDateTime64>(6),                             "initial_query_start_time_microseconds"},
         {std::make_shared<DataTypeUInt8>(),                                   "interface"},
         {std::make_shared<DataTypeString>(),                                  "os_user"},
         {std::make_shared<DataTypeString>(),                                  "client_hostname"},
@@ -256,6 +258,8 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.initial_query_id);
     columns[i++]->insertData(IPv6ToBinary(client_info.initial_address.host()).data(), 16);
     columns[i++]->insert(client_info.initial_address.port());
+    columns[i++]->insert(client_info.initial_query_start_time);
+    columns[i++]->insert(client_info.initial_query_start_time_microseconds);
 
     columns[i++]->insert(UInt64(client_info.interface));
 

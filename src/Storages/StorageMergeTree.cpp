@@ -625,7 +625,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     if (!to_kill)
         return CancellationCode::NotFound;
 
-    getContext()->getMergeList().cancelPartMutations({}, to_kill->block_number);
+    getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
@@ -817,9 +817,8 @@ bool StorageMergeTree::mergeSelectedParts(
     auto & future_part = merge_mutate_entry.future_part;
     Stopwatch stopwatch;
     MutableDataPartPtr new_part;
-    auto table_id = getStorageID();
 
-    auto merge_list_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+    auto merge_list_entry = getContext()->getMergeList().insert(getStorageID(), future_part);
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
@@ -964,9 +963,8 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & merge_mutate_entry, TableLockHolder & table_lock_holder)
 {
     auto & future_part = merge_mutate_entry.future_part;
-    auto table_id = getStorageID();
 
-    auto merge_list_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+    auto merge_list_entry = getContext()->getMergeList().insert(getStorageID(), future_part);
     Stopwatch stopwatch;
     MutableDataPartPtr new_part;
 

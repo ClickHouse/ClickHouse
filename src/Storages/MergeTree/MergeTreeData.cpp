@@ -2736,17 +2736,16 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             /// We do not check allow_s3_zero_copy_replication here because data may be shared
             /// when allow_s3_zero_copy_replication turned on and off again
 
-            original_active_part->keep_s3_on_delete = false;
+            original_active_part->force_keep_shared_data = false;
 
             if (original_active_part->volume->getDisk()->getType() == DiskType::Type::S3)
             {
                 if (part_copy->volume->getDisk()->getType() == DiskType::Type::S3
                         && original_active_part->getUniqueId() == part_copy->getUniqueId())
-                {   /// May be when several volumes use the same S3 storage
-                    original_active_part->keep_s3_on_delete = true;
+                {
+                    /// May be when several volumes use the same S3 storage
+                    original_active_part->force_keep_shared_data = true;
                 }
-                else
-                    original_active_part->keep_s3_on_delete = !unlockSharedData(*original_active_part);
             }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
@@ -3916,6 +3915,10 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
     const auto & query_ptr = query_info.query;
 
+    // Currently projections don't support final yet.
+    if (auto * select = query_ptr->as<ASTSelectQuery>(); select && select->final())
+        return false;
+
     InterpreterSelectQuery select(
         query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
     const auto & analysis_result = select.getAnalysisResult();
@@ -4908,7 +4911,11 @@ void MergeTreeData::removeQueryId(const String & query_id) const
 {
     std::lock_guard lock(query_id_set_mutex);
     if (query_id_set.find(query_id) == query_id_set.end())
+    {
+        /// Do not throw exception, because this method is used in destructor.
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
+        assert(false);
+    }
     else
         query_id_set.erase(query_id);
 }
@@ -5088,7 +5095,10 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
     for (const auto & part : submerging_parts)
     {
         if (!storage.currently_submerging_big_parts.count(part))
-            LOG_WARNING(log, "currently_submerging_big_parts doesn't contain part {} to erase. This is a bug", part->name);
+        {
+            LOG_ERROR(log, "currently_submerging_big_parts doesn't contain part {} to erase. This is a bug", part->name);
+            assert(false);
+        }
         else
             storage.currently_submerging_big_parts.erase(part);
     }
