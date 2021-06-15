@@ -8,6 +8,8 @@ toc_title: SYSTEM
 -   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries) 
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
+-   [RELOAD MODELS](#query_language-system-reload-models)
+-   [RELOAD MODEL](#query_language-system-reload-model)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache) 
@@ -37,7 +39,7 @@ toc_title: SYSTEM
 -   [RESTART REPLICAS](#query_language-system-restart-replicas) 
 
 ## RELOAD EMBEDDED DICTIONARIES] {#query_language-system-reload-emdedded-dictionaries} 
-Перегружет все [Встроенные словари](../dictionaries/internal-dicts.md).
+Перегружает все [Встроенные словари](../dictionaries/internal-dicts.md).
 По умолчанию встроенные словари выключены. 
 Всегда возвращает `Ok.`, вне зависимости от результата обновления встроенных словарей.
    
@@ -55,6 +57,26 @@ toc_title: SYSTEM
 
 ``` sql
 SELECT name, status FROM system.dictionaries;
+```
+
+## RELOAD MODELS {#query_language-system-reload-models}
+
+Перегружает все модели [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse), если их конфигурация была обновлена, без перезагрузки сервера.
+
+**Синтаксис**
+
+```sql
+SYSTEM RELOAD MODELS
+```
+
+## RELOAD MODEL {#query_language-system-reload-model}
+
+Полностью перегружает модель [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) `model_name`, если ее конфигурация была обновлена, без перезагрузки сервера.
+
+**Синтаксис**
+
+```sql
+SYSTEM RELOAD MODEL <model_name>
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
@@ -196,7 +218,7 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 Возвращает `Ok.` даже если указана несуществующая таблица или таблица имеет тип отличный от MergeTree. Возвращает ошибку если указана не существующая база данных:
 
 ``` sql
-SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
+SYSTEM START MOVES [[db.]merge_tree_family_table_name]
 ```
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}

@@ -61,7 +61,7 @@ Result:
 
 ## -State {#agg-functions-combinator-state}
 
-If you apply this combinator, the aggregate function doesn’t return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
+If you apply this combinator, the aggregate function does not return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
 
 To work with these states, use:
 
@@ -77,7 +77,7 @@ If you apply this combinator, the aggregate function takes the intermediate aggr
 
 ## -MergeState {#aggregate_functions_combinators-mergestate}
 
-Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it doesn’t return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
+Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it does not return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
 
 ## -ForEach {#agg-functions-combinator-foreach}
 
@@ -92,7 +92,7 @@ Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTI
 
 Changes behavior of an aggregate function.
 
-If an aggregate function doesn’t have input values, with this combinator it returns the default value for its return data type. Applies to the aggregate functions that can take empty input data.
+If an aggregate function does not have input values, with this combinator it returns the default value for its return data type. Applies to the aggregate functions that can take empty input data.
 
 `-OrDefault` can be used with other combinators.
 
@@ -222,7 +222,7 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 **Arguments**
 
 -   `start` — Starting value of the whole required interval for `resampling_key` values.
--   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.
+-   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
 -   `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
 -   `resampling_key` — Column whose values are used for separating data into intervals.
 -   `aggFunction_params` — `aggFunction` parameters.

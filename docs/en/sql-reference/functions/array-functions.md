@@ -125,7 +125,7 @@ hasAll(set, subset)
 
 -   An empty array is a subset of any array.
 -   `Null` processed as a value.
--   Order of values in both of arrays doesn’t matter.
+-   Order of values in both of arrays does not matter.
 
 **Examples**
 
@@ -162,7 +162,7 @@ hasAny(array1, array2)
 **Peculiar properties**
 
 -   `Null` processed as a value.
--   Order of values in both of arrays doesn’t matter.
+-   Order of values in both of arrays does not matter.
 
 **Examples**
 
@@ -602,7 +602,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\[‘hello’, ‘world’\]), that is, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function doesn’t use `x`, actual values of the source array don’t affect the order in the result. So, ‘hello’ will be the second element in the result, and ‘world’ will be the first.
+Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\[‘hello’, ‘world’\]), that is, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function does not use `x`, actual values of the source array do not affect the order in the result. So, ‘hello’ will be the second element in the result, and ‘world’ will be the first.
 
 Other examples are shown below.
 

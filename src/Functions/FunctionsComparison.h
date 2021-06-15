@@ -1086,7 +1086,7 @@ public:
         if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
-            || (left.isDateOrDateTime() && right.isDateOrDateTime() && left.idx == right.idx) /// only date vs date, or datetime vs datetime
+            || ((left.isDate() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
@@ -1176,8 +1176,8 @@ public:
         const bool left_is_string = isStringOrFixedString(which_left);
         const bool right_is_string = isStringOrFixedString(which_right);
 
-        bool date_and_datetime = (which_left.idx != which_right.idx) &&
-            which_left.isDateOrDateTime() && which_right.isDateOrDateTime();
+        bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDateTime() || which_left.isDateTime64())
+            && (which_right.isDate() || which_right.isDateTime() || which_right.isDateTime64());
 
         ColumnPtr res;
         if (left_is_num && right_is_num && !date_and_datetime)

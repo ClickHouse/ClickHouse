@@ -33,11 +33,10 @@
 #include <ext/range.h>
 #include <ext/scope_guard.h>
 
-#include <Poco/DirectoryIterator.h>
-
 #include <future>
 #include <condition_variable>
 #include <mutex>
+#include <filesystem>
 
 
 namespace CurrentMetrics
@@ -50,9 +49,10 @@ namespace ProfileEvents
     extern const Event DistributedSyncInsertionTimeoutExceeded;
 }
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
-
 
 namespace ErrorCodes
 {
@@ -102,6 +102,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     , query_string(queryToString(query_ast_))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
+    , allow_materialized(context->getSettingsRef().insert_allow_materialized_columns)
     , insert_timeout(insert_timeout_)
     , main_table(main_table_)
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
@@ -115,7 +116,10 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
 
 Block DistributedBlockOutputStream::getHeader() const
 {
-    return metadata_snapshot->getSampleBlock();
+    if (!allow_materialized)
+        return metadata_snapshot->getSampleBlockNonMaterialized();
+    else
+        return metadata_snapshot->getSampleBlock();
 }
 
 
@@ -129,18 +133,20 @@ void DistributedBlockOutputStream::write(const Block & block)
 {
     Block ordinary_block{ block };
 
-    /* They are added by the AddingDefaultBlockOutputStream, and we will get
-     * different number of columns eventually */
-    for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
+    if (!allow_materialized)
     {
-        if (ordinary_block.has(col.name))
+        /* They are added by the AddingDefaultBlockOutputStream, and we will get
+         * different number of columns eventually */
+        for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
         {
-            ordinary_block.erase(col.name);
-            LOG_DEBUG(log, "{}: column {} will be removed, because it is MATERIALIZED",
-                storage.getStorageID().getNameForLogs(), col.name);
+            if (ordinary_block.has(col.name))
+            {
+                ordinary_block.erase(col.name);
+                LOG_DEBUG(log, "{}: column {} will be removed, because it is MATERIALIZED",
+                    storage.getStorageID().getNameForLogs(), col.name);
+            }
         }
     }
-
 
     if (insert_sync)
         writeSync(ordinary_block);
@@ -375,7 +381,7 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                 /// to resolve tables (in InterpreterInsertQuery::getTable())
                 auto copy_query_ast = query_ast->clone();
 
-                InterpreterInsertQuery interp(copy_query_ast, job.local_context);
+                InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized);
                 auto block_io = interp.execute();
 
                 job.stream = block_io.out;
@@ -417,7 +423,11 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         /// Deferred initialization. Only for sync insertion.
         initWritingJobs(block, start, end);
 
-        pool.emplace(remote_jobs_count + local_jobs_count);
+        size_t jobs_count = remote_jobs_count + local_jobs_count;
+        size_t max_threads = std::min<size_t>(settings.max_distributed_connections, jobs_count);
+        pool.emplace(/* max_threads_= */ max_threads,
+                     /* max_free_threads_= */ max_threads,
+                     /* queue_size_= */ jobs_count);
 
         if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))
         {
@@ -607,8 +617,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t sh
 
 void DistributedBlockOutputStream::writeToLocal(const Block & block, size_t repeats)
 {
-    /// Async insert does not support settings forwarding yet whereas sync one supports
-    InterpreterInsertQuery interp(query_ast, context);
+    InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
     auto block_io = interp.execute();
 
@@ -632,7 +641,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     if (compression_method == "ZSTD")
         compression_level = settings.network_zstd_compression_level;
 
-    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs);
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
@@ -660,10 +669,10 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// hardlinking to ensure the inode is not freed until we're done
     {
         const std::string path(disk_path + data_path + *it);
-        Poco::File(path).createDirectory();
-
         const std::string tmp_path(path + "/tmp/");
-        Poco::File(tmp_path).createDirectory();
+
+        fs::create_directory(path);
+        fs::create_directory(tmp_path);
 
         const std::string file_name(toString(storage.file_names_increment.get()) + ".bin");
 
@@ -717,7 +726,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         }
 
         // Create hardlink here to reuse increment number
-        const std::string block_file_path(path + '/' + file_name);
+        const std::string block_file_path(fs::path(path) / file_name);
         createHardLink(first_file_tmp_path, block_file_path);
         auto dir_sync_guard = make_directory_sync_guard(*it);
     }
@@ -726,18 +735,18 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// Make hardlinks
     for (; it != dir_names.end(); ++it)
     {
-        const std::string path(disk_path + data_path + *it);
-        Poco::File(path).createDirectory();
+        const std::string path(fs::path(disk_path) / (data_path + *it));
+        fs::create_directory(path);
 
-        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
+        const std::string block_file_path(fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin"));
         createHardLink(first_file_tmp_path, block_file_path);
         auto dir_sync_guard = make_directory_sync_guard(*it);
     }
 
-    auto file_size = Poco::File(first_file_tmp_path).getSize();
+    auto file_size = fs::file_size(first_file_tmp_path);
     /// remove the temporary file, enabling the OS to reclaim inode after all threads
     /// have removed their corresponding files
-    Poco::File(first_file_tmp_path).remove();
+    fs::remove(first_file_tmp_path);
 
     /// Notify
     auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;

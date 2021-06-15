@@ -25,6 +25,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 /** Counts the number of unique values up to no more than specified in the parameter.
