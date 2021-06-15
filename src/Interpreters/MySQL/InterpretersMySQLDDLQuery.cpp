@@ -117,7 +117,7 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
     return columns_name_and_type;
 }
 
-static ColumnsDescription getColumnsDescriptionFromList(const NamesAndTypesList & columns_name_and_type, const ASTExpressionList * columns_definition)
+static ColumnsDescription createColumnsDescription(const NamesAndTypesList & columns_name_and_type, const ASTExpressionList * columns_definition)
 {
     if (columns_name_and_type.size() != columns_definition->children.size())
             throw Exception("Columns of different size provided.", ErrorCodes::LOGICAL_ERROR);
@@ -425,7 +425,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
 
     NamesAndTypesList columns_name_and_type = getColumnsList(create_defines->columns);
     const auto & [primary_keys, unique_keys, keys, increment_columns] = getKeys(create_defines->columns, create_defines->indices, context, columns_name_and_type);
-    ColumnsDescription columns_description = getColumnsDescriptionFromList(columns_name_and_type, create_defines->columns);
+    ColumnsDescription columns_description = createColumnsDescription(columns_name_and_type, create_defines->columns);
 
     if (primary_keys.empty())
         throw Exception("The " + backQuoteIfNeed(mysql_database) + "." + backQuoteIfNeed(create_query.table)
