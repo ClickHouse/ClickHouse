@@ -3,11 +3,11 @@
 #include <unordered_map>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -47,10 +47,14 @@ struct AggregateFunctionMapCombinatorData<String>
         using hash_type = std::hash<std::string_view>;
         using is_transparent = void;
 
-        size_t operator()(std::string_view str) const   { return hash_type{}(str); }
+        size_t operator()(std::string_view str) const { return hash_type{}(str); }
     };
 
+#ifdef __cpp_lib_generic_unordered_lookup
     using SearchType = std::string_view;
+#else
+    using SearchType = std::string;
+#endif
     std::unordered_map<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
 
     static void writeKey(String key, WriteBuffer & buf)
@@ -126,7 +130,11 @@ public:
                 else
                     key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
 
+#ifdef __cpp_lib_generic_unordered_lookup
                 key = static_cast<std::string_view>(key_ref);
+#else
+                key = key_ref.toString();
+#endif
             }
             else
             {

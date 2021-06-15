@@ -105,9 +105,9 @@ public:
                 case TypeIndex::String:
                     return std::make_shared<AggregateFunctionMap<String>>(nested_function, arguments);
                 default:
-                    throw Exception{
-                        "Map key type " + key_type->getName() + " is not is not supported by combinator " + getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Map key type " + key_type->getName() + " is not is not supported by combinator " + getName());
             }
         }
         else
@@ -121,8 +121,8 @@ public:
                 return aggr_func_factory.get(nested_func_name + "MappedArrays", arguments, params, out_properties);
             }
             else
-                throw Exception{
-                    "Aggregation '" + nested_func_name + "Map' is not implemented for mapped arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '" + nested_func_name + "Map' is not implemented for mapped arrays");
         }
     }
 };
