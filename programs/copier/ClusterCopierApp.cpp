@@ -22,8 +22,9 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
     config_xml_path = config().getString("config-file");
     task_path = config().getString("task-path");
-    log_level = config().getString("log-level", "trace");
+    log_level = config().getString("log-level", "info");
     is_safe_mode = config().has("safe-mode");
+    is_status_mode = config().has("status");
     if (config().has("copy-fault-probability"))
         copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
     if (config().has("move-fault-probability"))
@@ -97,6 +98,7 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("base-dir").binding("base-dir"));
     options.addOption(Poco::Util::Option("experimental-use-sample-offset", "", "Use SAMPLE OFFSET query instead of cityHash64(PRIMARY KEY) % n == k")
                           .argument("experimental-use-sample-offset").binding("experimental-use-sample-offset"));
+    options.addOption(Poco::Util::Option("status", "", "Get for status for current execution").binding("status"));
 
     using Me = std::decay_t<decltype(*this)>;
     options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
@@ -106,6 +108,25 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 
 void ClusterCopierApp::mainImpl()
 {
+    /// Status command
+    {
+        if (is_status_mode)
+        {
+            SharedContextHolder shared_context = Context::createShared();
+            auto context = Context::createGlobal(shared_context.get());
+            context->makeGlobalContext();
+            SCOPE_EXIT_SAFE(context->shutdown());
+
+            auto zookeeper = context->getZooKeeper();
+            auto status_json = zookeeper->get(task_path + "/status");
+
+            LOG_INFO(&logger(), "{}", status_json);
+            std::cout << status_json << std::endl;
+
+            context->resetZooKeeper();
+            return;
+        }
+    }
     StatusFile status_file(process_path + "/status", StatusFile::write_full_info);
     ThreadStatus thread_status;
 
@@ -136,7 +157,7 @@ void ClusterCopierApp::mainImpl()
     /// Initialize query scope just in case.
     CurrentThread::QueryScope query_scope(context);
 
-    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, context);
+    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, context, log);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);

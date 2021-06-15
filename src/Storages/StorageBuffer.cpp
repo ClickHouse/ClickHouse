@@ -841,7 +841,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     size_t block_rows = block_to_write.rows();
     size_t block_bytes = block_to_write.bytes();
-    size_t block_allocated_bytes = block_to_write.allocatedBytes();
+    size_t block_allocated_bytes_delta = block_to_write.allocatedBytes() - buffer.data.allocatedBytes();
 
     CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_rows);
     CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_bytes);
@@ -851,7 +851,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     if (!destination_id)
     {
         total_writes.rows -= block_rows;
-        total_writes.bytes -= block_allocated_bytes;
+        total_writes.bytes -= block_allocated_bytes_delta;
 
         LOG_DEBUG(log, "Flushing buffer with {} rows (discarded), {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
         return;
@@ -890,7 +890,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     }
 
     total_writes.rows -= block_rows;
-    total_writes.bytes -= block_allocated_bytes;
+    total_writes.bytes -= block_allocated_bytes_delta;
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Flushing buffer with {} rows, {} bytes, age {} seconds, took {} ms {}.", rows, bytes, time_passed, milliseconds, (check_thresholds ? "(bg)" : "(direct)"));

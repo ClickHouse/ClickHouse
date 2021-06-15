@@ -7,6 +7,7 @@
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Common/Throttler.h>
 
 
 namespace zkutil
@@ -18,15 +19,17 @@ namespace zkutil
 namespace DB
 {
 
+class StorageReplicatedMergeTree;
+
 namespace DataPartsExchange
 {
 
-/** Service for sending parts from the table *MergeTree.
+/** Service for sending parts from the table *ReplicatedMergeTree.
   */
 class Service final : public InterserverIOEndpoint
 {
 public:
-    explicit Service(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
+    explicit Service(StorageReplicatedMergeTree & data_);
 
     Service(const Service &) = delete;
     Service & operator=(const Service &) = delete;
@@ -51,7 +54,7 @@ private:
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
-    MergeTreeData & data;
+    StorageReplicatedMergeTree & data;
     Poco::Logger * log;
 };
 
@@ -74,6 +77,7 @@ public:
         const String & user,
         const String & password,
         const String & interserver_scheme,
+        ThrottlerPtr throttler,
         bool to_detached = false,
         const String & tmp_prefix_ = "",
         std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
@@ -90,7 +94,9 @@ private:
             bool sync,
             DiskPtr disk,
             PooledReadWriteBufferFromHTTP & in,
-            MergeTreeData::DataPart::Checksums & checksums) const;
+            MergeTreeData::DataPart::Checksums & checksums,
+            ThrottlerPtr throttler) const;
+
 
     MergeTreeData::MutableDataPartPtr downloadPartToDisk(
             const String & part_name,
@@ -101,7 +107,8 @@ private:
             DiskPtr disk,
             PooledReadWriteBufferFromHTTP & in,
             size_t projections,
-            MergeTreeData::DataPart::Checksums & checksums);
+            MergeTreeData::DataPart::Checksums & checksums,
+            ThrottlerPtr throttler);
 
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(
             const String & part_name,
@@ -110,7 +117,8 @@ private:
             ContextPtr context,
             ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in,
-            size_t projections);
+            size_t projections,
+            ThrottlerPtr throttler);
 
     MergeTreeData::MutableDataPartPtr downloadPartToS3(
             const String & part_name,
@@ -118,7 +126,8 @@ private:
             bool to_detached,
             const String & tmp_prefix_,
             const Disks & disks_s3,
-            PooledReadWriteBufferFromHTTP & in);
+            PooledReadWriteBufferFromHTTP & in,
+            ThrottlerPtr throttler);
 
     MergeTreeData & data;
     Poco::Logger * log;

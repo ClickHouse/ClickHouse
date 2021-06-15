@@ -105,19 +105,19 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         const bool external_table_functions_use_nulls = Poco::NumberParser::parseBool(params.get("external_table_functions_use_nulls", "false"));
 
-        auto connection = ODBCConnectionFactory::instance().get(
+        auto connection_holder = ODBCConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
-
-        nanodbc::catalog catalog(connection->get());
-        std::string catalog_name;
 
         /// In XDBC tables it is allowed to pass either database_name or schema_name in table definion, but not both of them.
         /// They both are passed as 'schema' parameter in request URL, so it is not clear whether it is database_name or schema_name passed.
         /// If it is schema_name then we know that database is added in odbc.ini. But if we have database_name as 'schema',
         /// it is not guaranteed. For nanodbc database_name must be either in odbc.ini or passed as catalog_name.
-        auto get_columns = [&]()
+        auto get_columns = [&](nanodbc::connection & connection)
         {
+            nanodbc::catalog catalog(connection);
+            std::string catalog_name;
+
             nanodbc::catalog::tables tables = catalog.find_tables(table_name, /* type = */ "", /* schema = */ "", /* catalog = */ schema_name);
             if (tables.next())
             {
@@ -137,7 +137,9 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} not found", schema_name.empty() ? table_name : schema_name + '.' + table_name);
         };
 
-        nanodbc::catalog::columns columns_definition = get_columns();
+        nanodbc::catalog::columns columns_definition = execute<nanodbc::catalog::columns>(
+                    std::move(connection_holder),
+                    [&](nanodbc::connection & connection) { return get_columns(connection); });
 
         NamesAndTypesList columns;
         while (columns_definition.next())

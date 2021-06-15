@@ -111,6 +111,7 @@ list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp 
 list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/replicate.h Functions/FunctionsLogical.h)
 
 list (APPEND dbms_sources
+    AggregateFunctions/IAggregateFunction.cpp
     AggregateFunctions/AggregateFunctionFactory.cpp
     AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     AggregateFunctions/AggregateFunctionState.cpp
@@ -495,6 +496,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
         -Wno-zero-as-null-pointer-constant
+        -Wno-covered-switch-default
         -Wno-undef
         -Wno-sign-compare
         -Wno-used-but-marked-unused

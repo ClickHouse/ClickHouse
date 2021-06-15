@@ -22,12 +22,12 @@ namespace ErrorCodes
 }
 
 /// A function to read file as a string.
-class FunctionFile : public IFunction, WithConstContext
+class FunctionFile : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "file";
-    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionFile>(context_); }
-    explicit FunctionFile(ContextConstPtr context_) : WithConstContext(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionFile>(context_); }
+    explicit FunctionFile(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
