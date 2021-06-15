@@ -197,10 +197,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 Пример:
 
 ``` sql
-SELECT
-    toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time,
-    time + 60 * 60 * 24 AS time_plus_24_hours,
-    time + toIntervalDay(1) AS time_plus_1_day
+SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
 ```
 
 ``` text
