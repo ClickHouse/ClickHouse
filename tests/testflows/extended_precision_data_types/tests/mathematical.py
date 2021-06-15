@@ -65,7 +65,7 @@ def math_int_inline(self, func, expected_result, exitcode, int_type, min, max, n
 
         with And(f"I check {func} with {int_type} using max and min"):
             execute_query(f"""
-                SELECT round({func} to{int_type}(\'{max}\')), 7), round({func} to{int_type}(\'{min}\')), 7)
+                SELECT round({func} to{int_type}(\'{max}\')), {rounding_precision}), round({func} to{int_type}(\'{min}\')), {rounding_precision})
                 """)
 
 @TestOutline(Scenario)
@@ -94,7 +94,7 @@ def math_int_table(self, func, expected_result, exitcode, int_type, min, max, no
         for value in [1, max, min]:
 
             with And(f"I insert the output of {func} with {int_type} using {value} into a table"):
-                node.query(f"INSERT INTO {table_name} SELECT round(to{int_type}OrZero( toString({func} to{int_type}(\'{value}\')))), 7)")
+                node.query(f"INSERT INTO {table_name} SELECT round(to{int_type}OrZero( toString({func} to{int_type}(\'{value}\')))), {rounding_precision})")
 
         with Then(f"I check the outputs of {func} with {int_type}"):
             execute_query(f"""
@@ -129,7 +129,7 @@ def math_dec_inline(self, func, expected_result, exitcode, node=None):
 
         with And(f"I check {func} with Decimal256 using max and min"):
             execute_query(f"""
-                SELECT round({func} toDecimal256(\'{max}\',0)),7), round({func} toDecimal256(\'{min}\',0)),7)
+                SELECT round({func} toDecimal256(\'{max}\',0)),{rounding_precision}), round({func} toDecimal256(\'{min}\',0)),{rounding_precision})
                 """)
 
 @TestOutline(Scenario)
