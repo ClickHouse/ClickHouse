@@ -720,6 +720,9 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
         /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
         ///
+        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
+        /// The case `f(modulo(...))` for totally monotonic `f ` is consedered to be rare.
+        ///
         /// Note: for negative values, we can filter more partitions then needed.
         auto adjusted_ast = ast->clone();
         KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
