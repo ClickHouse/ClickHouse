@@ -255,7 +255,7 @@ struct integer<Bits, Signed>::_impl
             set_multiplier<double>(self, alpha);
 
         self *= max_int;
-        self += static_cast<uint64_t>(t - static_cast<uint64_t>(alpha) * static_cast<T>(max_int)); // += b_i
+        self += static_cast<uint64_t>(t - floor(alpha) * static_cast<T>(max_int)); // += b_i
     }
 
     constexpr static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
