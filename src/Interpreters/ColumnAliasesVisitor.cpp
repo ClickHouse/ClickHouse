@@ -76,6 +76,7 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
                 return;
             data.expanded_aliases.insert(*column_name);
             ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
+            // We need to set back the original column name, or else the process of naming resolution will complain.
             if (!alias.empty())
                 ast->setAlias(alias);
             else
