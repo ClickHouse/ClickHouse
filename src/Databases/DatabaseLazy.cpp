@@ -10,7 +10,7 @@
 #include <Storages/IStorage.h>
 
 #include <common/logger_useful.h>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 #include <iomanip>
 #include <filesystem>
 

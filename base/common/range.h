@@ -4,9 +4,9 @@
 #include <boost/range/adaptor/transformed.hpp>
 #include <type_traits>
 
-
-namespace ext
+namespace collections
 {
+
 namespace internal
 {
     template <typename ResultType, typename CountingType, typename BeginType, typename EndType>
@@ -24,11 +24,11 @@ namespace internal
 /// For loop adaptor which is used to iterate through a half-closed interval [begin, end).
 /// The parameters `begin` and `end` can have any integral or enum types.
 template <typename BeginType,
-          typename EndType,
-          typename = std::enable_if_t<
-              (std::is_integral_v<BeginType> || std::is_enum_v<BeginType>) &&
-              (std::is_integral_v<EndType> || std::is_enum_v<EndType>) &&
-              (!std::is_enum_v<BeginType> || !std::is_enum_v<EndType> || std::is_same_v<BeginType, EndType>), void>>
+        typename EndType,
+        typename = std::enable_if_t<
+            (std::is_integral_v<BeginType> || std::is_enum_v<BeginType>) &&
+            (std::is_integral_v<EndType> || std::is_enum_v<EndType>) &&
+            (!std::is_enum_v<BeginType> || !std::is_enum_v<EndType> || std::is_same_v<BeginType, EndType>), void>>
 inline auto range(BeginType begin, EndType end)
 {
     if constexpr (std::is_integral_v<BeginType> && std::is_integral_v<EndType>)
@@ -51,7 +51,7 @@ inline auto range(BeginType begin, EndType end)
 /// The parameter `end` can have any integral or enum type.
 /// The same as range(0, end).
 template <typename Type,
-          typename = std::enable_if_t<std::is_integral_v<Type> || std::is_enum_v<Type>, void>>
+        typename = std::enable_if_t<std::is_integral_v<Type> || std::is_enum_v<Type>, void>>
 inline auto range(Type end)
 {
     if constexpr (std::is_integral_v<Type>)
@@ -59,4 +59,5 @@ inline auto range(Type end)
     else
         return internal::rangeImpl<Type, std::underlying_type_t<Type>>(0, end);
 }
+
 }
