@@ -232,37 +232,40 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
 
     if (const auto * function = node->as<ASTFunction>())
     {
-        const ASTs & arguments = function->arguments->children;
-        for (const auto & arg : arguments)
+        if (function->arguments)
         {
-            if (traverseFunction(arg, block_with_constants, out, node))
-                maybe_useful = true;
-        }
-
-        if (arguments.size() != 2)
-            return false;
-
-        if (functionIsInOrGlobalInOperator(function->name))
-        {
-            if (const auto & prepared_set = getPreparedSet(arguments[1]))
+            const ASTs & arguments = function->arguments->children;
+            for (const auto & arg : arguments)
             {
-                if (traverseASTIn(function->name, arguments[0], prepared_set, out))
+                if (traverseFunction(arg, block_with_constants, out, node))
                     maybe_useful = true;
             }
-        }
-        else if (function->name == "equals" || function->name  == "notEquals" || function->name == "has" || function->name == "indexOf")
-        {
-            Field const_value;
-            DataTypePtr const_type;
-            if (KeyCondition::getConstant(arguments[1], block_with_constants, const_value, const_type))
+
+            if (arguments.size() != 2)
+                return false;
+
+            if (functionIsInOrGlobalInOperator(function->name))
             {
-                if (traverseASTEquals(function->name, arguments[0], const_type, const_value, out, parent))
-                    maybe_useful = true;
+                if (const auto & prepared_set = getPreparedSet(arguments[1]))
+                {
+                    if (traverseASTIn(function->name, arguments[0], prepared_set, out))
+                        maybe_useful = true;
+                }
             }
-            else if (KeyCondition::getConstant(arguments[0], block_with_constants, const_value, const_type))
+            else if (function->name == "equals" || function->name == "notEquals" || function->name == "has" || function->name == "indexOf")
             {
-                if (traverseASTEquals(function->name, arguments[1], const_type, const_value, out, parent))
-                    maybe_useful = true;
+                Field const_value;
+                DataTypePtr const_type;
+                if (KeyCondition::getConstant(arguments[1], block_with_constants, const_value, const_type))
+                {
+                    if (traverseASTEquals(function->name, arguments[0], const_type, const_value, out, parent))
+                        maybe_useful = true;
+                }
+                else if (KeyCondition::getConstant(arguments[0], block_with_constants, const_value, const_type))
+                {
+                    if (traverseASTEquals(function->name, arguments[1], const_type, const_value, out, parent))
+                        maybe_useful = true;
+                }
             }
         }
     }

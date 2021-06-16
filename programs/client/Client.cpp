@@ -1601,7 +1601,8 @@ private:
             const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
             if (with_output && with_output->format)
                 if (const auto * format_with_settings = with_output->format->as<ASTFormatWithSettings>())
-                    apply_query_settings(*format_with_settings->settings);
+                    if (format_with_settings->settings)
+                        apply_query_settings(*format_with_settings->settings);
 
             connection->forceConnected(connection_parameters.timeouts);
 
