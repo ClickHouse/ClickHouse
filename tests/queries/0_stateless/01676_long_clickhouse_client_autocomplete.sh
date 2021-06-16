@@ -17,7 +17,7 @@ function test_completion_word()
     # NOTE: here and below you should escape variables of the expect.
     timeout 60s expect << EOF
 log_user 0
-set timeout 3
+set timeout 60
 match_max 100000
 # A default timeout action is to do nothing, change it to fail
 expect_after {
