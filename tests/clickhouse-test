@@ -954,7 +954,7 @@ def main(args):
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
-    if 0 < len(restarted_tests):
+    if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
         for (test_case, stderr) in restarted_tests:
             print(test_case)
