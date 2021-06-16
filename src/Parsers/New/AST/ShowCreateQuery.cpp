@@ -47,22 +47,22 @@ ASTPtr ShowCreateQuery::convertToOld() const
         case QueryType::DICTIONARY:
         {
             auto query = std::make_shared<ASTShowCreateDictionaryQuery>();
-            auto table_id = getTableIdentifier(get(IDENTIFIER)->convertToOld());
 
-            query->database = table_id.database_name;
-            query->table = table_id.table_name;
-            query->uuid = table_id.uuid;
+            auto table = std::static_pointer_cast<ASTTableIdentifier>(get(IDENTIFIER)->convertToOld());
+            query->database = table->getDatabaseName();
+            query->table = table->shortName();
+            query->uuid = table->uuid;
 
             return query;
         }
         case QueryType::TABLE:
         {
             auto query = std::make_shared<ASTShowCreateTableQuery>();
-            auto table_id = getTableIdentifier(get(IDENTIFIER)->convertToOld());
 
-            query->database = table_id.database_name;
-            query->table = table_id.table_name;
-            query->uuid = table_id.uuid;
+            auto table = std::static_pointer_cast<ASTTableIdentifier>(get(IDENTIFIER)->convertToOld());
+            query->database = table->getDatabaseName();
+            query->table = table->shortName();
+            query->uuid = table->uuid;
             query->temporary = temporary;
 
             return query;
