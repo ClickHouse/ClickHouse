@@ -72,6 +72,9 @@ namespace ErrorCodes
 }
 
 
+static constexpr auto CLICKHOUSE_BRIDGE_USER = "clickhouse-bridge";
+static constexpr auto CLICKHOUSE_BRIDGE_GROUP = "clickhouse-bridge";
+
 using namespace DB;
 namespace po = boost::program_options;
 namespace fs = std::filesystem;
@@ -147,7 +150,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             << argv[0]
             << " install [options]\n";
         std::cout << desc << '\n';
-        return 1;
     }
 
     try
@@ -321,26 +323,34 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         std::string user = options["user"].as<std::string>();
         std::string group = options["group"].as<std::string>();
 
+        auto create_group = [](const String & group_name)
+        {
+            std::string command = fmt::format("groupadd -r {}", group_name);
+            fmt::print(" {}\n", command);
+            executeScript(command);
+        };
+
         if (!group.empty())
         {
-            {
-                fmt::print("Creating clickhouse group if it does not exist.\n");
-                std::string command = fmt::format("groupadd -r {}", group);
-                fmt::print(" {}\n", command);
-                executeScript(command);
-            }
+            fmt::print("Creating clickhouse group if it does not exist.\n");
+            create_group(group);
         }
         else
             fmt::print("Will not create clickhouse group");
 
+        auto create_user = [](const String & user_name, const String & group_name)
+        {
+            std::string command = group_name.empty()
+                ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user_name)
+                : fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent -g {} {}", group_name, user_name);
+            fmt::print(" {}\n", command);
+            executeScript(command);
+        };
+
         if (!user.empty())
         {
             fmt::print("Creating clickhouse user if it does not exist.\n");
-            std::string command = group.empty()
-                ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user)
-                : fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent -g {} {}", group, user);
-            fmt::print(" {}\n", command);
-            executeScript(command);
+            create_user(user, group);
 
             if (group.empty())
                 group = user;
@@ -472,12 +482,15 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
         }
 
-        /// Chmod and chown configs
+        auto change_ownership = [](const String & file_name, const String & user_name, const String & group_name)
         {
-            std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, config_dir.string());
+            std::string command = fmt::format("chown --recursive {}:{} '{}'", user_name, group_name, file_name);
             fmt::print(" {}\n", command);
             executeScript(command);
-        }
+        };
+
+        /// Chmod and chown configs
+        change_ownership(config_dir.string(), user, group);
 
         /// Symlink "preprocessed_configs" is created by the server, so "write" is needed.
         fs::permissions(config_dir, fs::perms::owner_all, fs::perm_options::replace);
@@ -555,12 +568,25 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// Data directory is not accessible to anyone except clickhouse.
         fs::permissions(data_path, fs::perms::owner_all, fs::perm_options::replace);
 
-        /// Set up password for default user.
+        fs::path odbc_bridge_path = bin_dir / "clickhouse-odbc-bridge";
+        fs::path library_bridge_path = bin_dir / "clickhouse-library-bridge";
+
+        if (fs::exists(odbc_bridge_path) || fs::exists(library_bridge_path))
+        {
+            create_group(CLICKHOUSE_BRIDGE_GROUP);
+            create_user(CLICKHOUSE_BRIDGE_USER, CLICKHOUSE_BRIDGE_GROUP);
+
+            if (fs::exists(odbc_bridge_path))
+                change_ownership(odbc_bridge_path, CLICKHOUSE_BRIDGE_USER, CLICKHOUSE_BRIDGE_GROUP);
+            if (fs::exists(library_bridge_path))
+                change_ownership(library_bridge_path, CLICKHOUSE_BRIDGE_USER, CLICKHOUSE_BRIDGE_GROUP);
+        }
 
         bool stdin_is_a_tty = isatty(STDIN_FILENO);
         bool stdout_is_a_tty = isatty(STDOUT_FILENO);
         bool is_interactive = stdin_is_a_tty && stdout_is_a_tty;
 
+        /// Set up password for default user.
         if (has_password_for_default_user)
         {
             fmt::print("Password for default user is already specified. To remind or reset, see {} and {}.\n",

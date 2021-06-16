@@ -22,7 +22,12 @@
 #include <ext/scope_guard.h>
 #include <ext/range.h>
 #include <Common/SensitiveDataMasker.h>
+#include <common/errnoToString.h>
 #include <Server/HTTP/HTTPServer.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 
 namespace DB
@@ -169,6 +174,31 @@ void ODBCBridge::initialize(Application & self)
     http_timeout = config().getUInt64("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     max_server_connections = config().getUInt("max-server-connections", 1024);
     keep_alive_timeout = config().getUInt64("keep-alive-timeout", 10);
+
+    struct rlimit limit;
+    const UInt64 gb = 1024 * 1024 * 1024;
+
+    /// Set maximum RSS to 1 GiB.
+    limit.rlim_max = limit.rlim_cur = gb;
+    if (setrlimit(RLIMIT_RSS, &limit))
+        LOG_WARNING(log, "Unable to set maximum RSS to 1GB: {} (current rlim_cur={}, rlim_max={})",
+                    errnoToString(errno), limit.rlim_cur, limit.rlim_max);
+
+    if (!getrlimit(RLIMIT_RSS, &limit))
+        LOG_INFO(log, "RSS limit: cur={}, max={}", limit.rlim_cur, limit.rlim_max);
+
+    try
+    {
+        const auto oom_score = toString(config().getUInt64("bridge_oom_score", 500));
+        WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(oom_score.data(), oom_score.size());
+        buf.close();
+        LOG_INFO(log, "OOM score is set to {}", oom_score);
+    }
+    catch (const Exception & e)
+    {
+        LOG_WARNING(log, "Failed to set OOM score, error: {}", e.what());
+    }
 
     initializeTerminationAndSignalProcessing();
 
