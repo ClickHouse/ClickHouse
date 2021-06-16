@@ -862,6 +862,7 @@ bool StorageMergeTree::mergeSelectedParts(
     try
     {
 
+        using PartPtrFuture = Future<MergeTreeData::MutableDataPartPtr>;
 
         auto new_part_future = merger_mutator.mergePartsToTemporaryPart(
             future_part,
@@ -875,10 +876,13 @@ bool StorageMergeTree::mergeSelectedParts(
             deduplicate_by_columns,
             merging_params);
 
-        new_part = new_part_future.get();
+        auto second_future = new_part_future.then([&](PartPtrFuture part) {
+            auto anime = part.get();
+            merger_mutator.renameMergedTemporaryPart(anime, future_part->parts, nullptr);
+            write_part_log({});
+        });
 
-        merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, nullptr);
-        write_part_log({});
+        second_future.get();
     }
     catch (...)
     {

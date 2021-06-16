@@ -458,7 +458,7 @@ Future<MergeTreeData::MutableDataPartPtr> MergeTreeDataMergerMutator::mergeParts
         merges_blocker,
         ttl_merges_blocker);
 
-    while (task->execute()) {}
+    while (task->execute()) {} // ?
 
     return task->getFuture();
 }
