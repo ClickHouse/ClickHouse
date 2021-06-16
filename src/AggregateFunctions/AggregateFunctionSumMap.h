@@ -13,7 +13,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorSum.h>
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <map>
