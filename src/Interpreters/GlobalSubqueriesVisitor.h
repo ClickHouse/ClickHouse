@@ -62,7 +62,7 @@ public:
                 return;
 
             bool is_table = false;
-            ASTPtr subquery_or_table_name = ast; /// ASTIdentifier | ASTSubquery | ASTTableExpression
+            ASTPtr subquery_or_table_name = ast; /// ASTTableIdentifier | ASTSubquery | ASTTableExpression
 
             if (const auto * ast_table_expr = ast->as<ASTTableExpression>())
             {
@@ -74,7 +74,7 @@ public:
                     is_table = true;
                 }
             }
-            else if (ast->as<ASTIdentifier>())
+            else if (ast->as<ASTTableIdentifier>())
                 is_table = true;
 
             if (!subquery_or_table_name)
@@ -122,11 +122,11 @@ public:
                 *  instead of doing a subquery, you just need to read it.
                 */
 
-            auto database_and_table_name = createTableIdentifier("", external_table_name);
+            auto database_and_table_name = std::make_shared<ASTTableIdentifier>(external_table_name);
             if (set_alias)
             {
                 String alias = subquery_or_table_name->tryGetAlias();
-                if (auto * table_name = subquery_or_table_name->as<ASTIdentifier>())
+                if (auto * table_name = subquery_or_table_name->as<ASTTableIdentifier>())
                     if (alias.empty())
                         alias = table_name->shortName();
                 database_and_table_name->setAlias(alias);
