@@ -95,7 +95,7 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 Setting fields:
 
 -   `path` – The absolute path to the file.
--   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
+-   `format` – The file format. All the formats described in [Formats](../../../interfaces/formats.md#formats) are supported.
 
 When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
 
