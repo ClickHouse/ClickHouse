@@ -45,8 +45,8 @@ struct SummingSortedAlgorithm::AggregateDescription
     AlignedBuffer state;
     bool created = false;
 
-    /// For LowCardinality, convert is converted to nested type. nested_type is nullptr if no conversion needed.
-    /// This is used only for simple aggregate functions.
+    /// Those types are used only for simple aggregate functions.
+    /// For LowCardinality, convert to nested type. nested_type is nullptr if no conversion needed.
     DataTypePtr nested_type; /// Nested type for LowCardinality, if it is.
     DataTypePtr real_type; /// Type in header.
 
@@ -275,7 +275,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
 
                     desc.real_type = column.type;
                     desc.nested_type = recursiveRemoveLowCardinality(desc.real_type);
-                    if (desc.real_type->equals(*desc.nested_type))
+                    if (desc.real_type.get() == desc.nested_type.get())
                         desc.nested_type = nullptr;
                 }
                 else if (!is_agg_func)
