@@ -298,6 +298,7 @@
         "00825_protobuf_format_nested_optional",
         "00825_protobuf_format_no_length_delimiter",
         "00825_protobuf_format_persons",
+        "00825_protobuf_format_splitted_nested",
         "00825_protobuf_format_squares",
         "00825_protobuf_format_table_default",
         "00826_cross_to_inner_join",
