@@ -50,10 +50,10 @@ ASTPtr ExistsQuery::convertToOld() const
     }
 
     // FIXME: this won't work if table doesn't exist
-    auto table_id = getTableIdentifier(get<TableIdentifier>(IDENTIFIER)->convertToOld());
-    query->database = table_id.database_name;
-    query->table = table_id.table_name;
-    query->uuid = table_id.uuid;
+    auto table_id = std::static_pointer_cast<ASTTableIdentifier>(get<TableIdentifier>(IDENTIFIER)->convertToOld());
+    query->database = table_id->getDatabaseName();
+    query->table = table_id->shortName();
+    query->uuid = table_id->uuid;
     query->temporary = temporary;
 
     return query;

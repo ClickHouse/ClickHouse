@@ -63,7 +63,7 @@ def inline_check(self, arithmetic_func, expected_result, int_type, min, max, nod
 
             with When(f"I check {arithmetic_func} with {int_type} max and min value"):
                 execute_query(f"""
-                    SELECT {arithmetic_func}(to{int_type}(\'{max}\'), to{int_type}(1)), {arithmetic_func}(to{int_type}(\'{min}\'), to{int_type}(1))
+                    SELECT round({arithmetic_func}(to{int_type}(\'{max}\'), to{int_type}(1)), {rounding_precision}), round({arithmetic_func}(to{int_type}(\'{min}\'), to{int_type}(1)), {rounding_precision})
                     """)
 
 @TestOutline
@@ -95,7 +95,7 @@ def table_check(self, arithmetic_func, expected_result, int_type, min, max, node
     else:
 
         with When(f"I insert {arithmetic_func} with {int_type} into the table"):
-            node.query(f"INSERT INTO {table_name} SELECT {arithmetic_func}(to{int_type}(1), to{int_type}(1))")
+            node.query(f"INSERT INTO {table_name} SELECT round({arithmetic_func}(to{int_type}(1), to{int_type}(1)), {rounding_precision})")
 
         with Then("I check that the output matches the expected value"):
             output = node.query(f"SELECT * FROM {table_name}").output
@@ -125,7 +125,7 @@ def table_check(self, arithmetic_func, expected_result, int_type, min, max, node
             for value in [min, max]:
 
                 with When(f"I insert {arithmetic_func} with {int_type} {value} into the table"):
-                    node.query(f"INSERT INTO {table_name} SELECT {arithmetic_func}(to{int_type}(\'{value}\'), to{int_type}(1))")
+                    node.query(f"INSERT INTO {table_name} SELECT round({arithmetic_func}(to{int_type}(\'{value}\'), to{int_type}(1)), {rounding_precision})")
 
         with Then(f"I check the table output of {arithmetic_func} with {int_type}"):
             execute_query(f"""
@@ -191,7 +191,7 @@ def table_check_dec(self, arithmetic_func, expected_result, node=None):
 
     else:
         with When(f"I insert {arithmetic_func} with toDecimal256 into the table"):
-            node.query(f"INSERT INTO {table_name} SELECT {arithmetic_func}(toDecimal256(1,0), toDecimal256(1,0))")
+            node.query(f"INSERT INTO {table_name} SELECT round({arithmetic_func}(toDecimal256(1,0), toDecimal256(1,0)), {rounding_precision})")
 
         with Then("I check that the output matches the expected value"):
             output = node.query(f"SELECT * FROM {table_name}").output
