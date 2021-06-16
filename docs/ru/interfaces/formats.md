@@ -1200,7 +1200,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 `Arrow` — это Apache Arrow's "file mode" формат. Он предназначен для произвольного доступа в памяти.
 
-### Соответствие типов данных {#sootvetstvie-tipov-dannykh-4}
+### Соответствие типов данных {#data_types-matching-arrow}
 
 Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
 
@@ -1449,4 +1449,3 @@ $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 ``` text
 f9725a22f9191e064120d718e26862a9  -
 ```
-
