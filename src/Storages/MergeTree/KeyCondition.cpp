@@ -12,6 +12,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -883,7 +884,7 @@ bool KeyCondition::tryPrepareSetIndex(
     const ASTPtr & right_arg = args[1];
 
     SetPtr prepared_set;
-    if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
+    if (right_arg->as<ASTSubquery>() || right_arg->as<ASTTableIdentifier>())
     {
         auto set_it = prepared_sets.find(PreparedSetKey::forSubquery(*right_arg));
         if (set_it == prepared_sets.end())
