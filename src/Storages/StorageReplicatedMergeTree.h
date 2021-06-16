@@ -241,8 +241,10 @@ public:
 
     inline String getReplicaName() const { return replica_name; }
 
-    /// Restores table metadata if ZK lost it.
-    void restoreMetadataOnReadonlyTable();
+    /// Restores table metadata if ZooKeeper lost it.
+    /// Used only on restarted readonly replicas (not checked). All active (Committed) parts are moved to detached/
+    /// folder and attached. Parts in all other states are just moved to detached/ folder.
+    void restoreZKMetadata();
 
     /// Get throttler for replicated fetches
     ThrottlerPtr getFetchesThrottler() const

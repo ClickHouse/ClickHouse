@@ -66,6 +66,7 @@
 #include "Interpreters/executeQuery.h"
 #include "Parsers/ASTPartition.h"
 
+#include <algorithm>
 #include <ctime>
 #include <filesystem>
 #include <iterator>
@@ -5073,7 +5074,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
     return true;
 }
 
-void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
+void StorageReplicatedMergeTree::restoreZKMetadata()
 {
     LOG_INFO(log, "Restoring replica metadata");
 
@@ -5082,10 +5083,19 @@ void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    DataParts parts = getDataParts();
+    const DataPartsVector all_parts = getDataPartsVector(IMergeTreeDataPart::all_part_states);
+    Strings active_parts_names;
 
-    for (const auto & part : getDataPartsVector())
+    /// Why all parts (not only Committed) are moved to detached/:
+    /// After ZK metadata restoration ZK resets sequential counters (including block number counters), so one may
+    /// potentially encounter a situation that a part we want to attach already exists.
+    for (const auto & part : all_parts)
+    {
+        if (part->getState() == DataPartState::Committed)
+            active_parts_names.push_back(part->name);
+
         forgetPartAndMoveToDetached(part);
+    }
 
     LOG_INFO(log, "Moved all parts to detached/");
 
@@ -5104,8 +5114,8 @@ void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
     has_metadata_in_zookeeper = true;
 
     if (is_first_replica)
-        for (const auto& part : parts)
-            attachPartition(std::make_shared<ASTLiteral>(part->name), metadata_snapshot, true, getContext());
+        for (const String& part_name : active_parts_names)
+            attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
 
     LOG_INFO(log, "Attached all partitions, starting table");
 

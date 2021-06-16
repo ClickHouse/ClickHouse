@@ -463,7 +463,7 @@ void InterpreterSystemQuery::restoreReplica()
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Replica path is present at {} -- nothing to restore", replica_path);
 
-    table_replicated.restoreMetadataOnReadonlyTable();
+    table_replicated.restoreZKMetadata();
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
