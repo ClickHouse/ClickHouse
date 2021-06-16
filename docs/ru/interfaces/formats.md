@@ -1172,11 +1172,11 @@ SELECT * FROM topic1_stream;
 
 Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
 
-ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
 
 Неподдерживаемые типы данных Parquet: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных, ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
 ### Вставка и выборка данных {#vstavka-i-vyborka-dannykh}
 
@@ -1279,7 +1279,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 
 Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
 
-ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных ORC `DECIMAL` как `Decimal128`.
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных ORC `DECIMAL` как `Decimal128`.
 
 Неподдерживаемые типы данных ORC: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
