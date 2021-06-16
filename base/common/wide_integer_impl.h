@@ -255,13 +255,13 @@ struct integer<Bits, Signed>::_impl
             set_multiplier<double>(self, alpha);
 
         self *= max_int;
-        self += static_cast<uint64_t>(t - alpha * static_cast<T>(max_int)); // += b_i
+        self += static_cast<uint64_t>(t - floor(alpha) * static_cast<T>(max_int)); // += b_i
     }
 
-    constexpr static void wide_integer_from_builtin(integer<Bits, Signed>& self, double rhs) noexcept
+    constexpr static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
     {
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
-        constexpr int64_t min_int = std::numeric_limits<int64_t>::min();
+        constexpr int64_t min_int = std::numeric_limits<int64_t>::lowest();
 
         /// There are values in int64 that have more than 53 significant bits (in terms of double
         /// representation). Such values, being promoted to double, are rounded up or down. If they are rounded up,
@@ -271,14 +271,14 @@ struct integer<Bits, Signed>::_impl
         /// The necessary check here is that long double has enough significant (mantissa) bits to store the
         /// int64_t max value precisely.
 
-        //TODO Be compatible with Apple aarch64
+        // TODO Be compatible with Apple aarch64
 #if not (defined(__APPLE__) && defined(__aarch64__))
         static_assert(LDBL_MANT_DIG >= 64,
-            "On your system long double has less than 64 precision bits,"
+            "On your system long double has less than 64 precision bits, "
             "which may result in UB when initializing double from int64_t");
 #endif
 
-        if ((rhs > 0 && rhs < static_cast<long double>(max_int)) || (rhs < 0 && rhs > static_cast<long double>(min_int)))
+        if (rhs > static_cast<long double>(min_int) && rhs < static_cast<long double>(max_int))
         {
             self = static_cast<int64_t>(rhs);
             return;
