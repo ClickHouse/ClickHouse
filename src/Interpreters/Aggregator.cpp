@@ -679,8 +679,27 @@ void NO_INLINE Aggregator::executeImplBatch(
     size_t compiled_functions_count = 0;
 
 #if USE_EMBEDDED_COMPILER
+
+#if defined(MEMORY_SANITIZER)
+    size_t compiled_functions_places_size = 0;
+#endif
+
     if constexpr (use_compiled_functions)
+    {
         compiled_functions_count = compiled_aggregate_functions_holder->compiled_aggregate_functions.functions_count;
+
+#if defined(MEMORY_SANITIZER)
+
+        if (compiled_functions_count < offsets_of_aggregate_states.size())
+        {
+            compiled_functions_places_size = offsets_of_aggregate_states[compiled_functions_count];
+        }
+        else
+        {
+            compiled_functions_places_size = total_size_of_aggregate_states;
+        }
+#endif
+    }
 #endif
 
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
@@ -704,8 +723,15 @@ void NO_INLINE Aggregator::executeImplBatch(
 
 #if USE_EMBEDDED_COMPILER
                 if constexpr (use_compiled_functions)
+                {
                     compiled_aggregate_functions_holder->compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
+
+#if defined(MEMORY_SANITIZER)
+                    __msan_unpoison(aggregate_data, compiled_functions_places_size);
 #endif
+                }
+#endif
+
                 createAggregateStates(compiled_functions_count, aggregate_data);
 
                 emplace_result.setMapped(aggregate_data);
