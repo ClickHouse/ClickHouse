@@ -29,7 +29,7 @@
 #include <common/logger_useful.h>
 #include <random>
 #include <pcg_random.hpp>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 namespace fs = std::filesystem;
 

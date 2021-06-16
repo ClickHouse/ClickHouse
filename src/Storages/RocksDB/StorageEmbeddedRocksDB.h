@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -16,9 +16,9 @@ namespace DB
 
 class Context;
 
-class StorageEmbeddedRocksDB final : public ext::shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage
+class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageEmbeddedRocksDB>;
+    friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
     friend class EmbeddedRocksDBSource;
     friend class EmbeddedRocksDBBlockOutputStream;
     friend class EmbeddedRocksDBBlockInputStream;

@@ -1,8 +1,5 @@
 #pragma once
 
-#include <ext/enumerate.h>
-#include <ext/collection_cast.h>
-#include <ext/range.h>
 #include <type_traits>
 
 #include <IO/WriteBufferFromVector.h>
@@ -2569,8 +2566,12 @@ private:
         element_wrappers.reserve(from_element_types.size());
 
         /// Create conversion wrapper for each element in tuple
-        for (const auto idx_type : ext::enumerate(from_element_types))
-            element_wrappers.push_back(prepareUnpackDictionaries(idx_type.second, to_element_types[idx_type.first]));
+        for (size_t i = 0; i < from_element_types.size(); ++i)
+        {
+            const DataTypePtr & from_element_type = from_element_types[i];
+            const DataTypePtr & to_element_type = to_element_types[i];
+            element_wrappers.push_back(prepareUnpackDictionaries(from_element_type, to_element_type));
+        }
 
         return element_wrappers;
     }
@@ -2816,7 +2817,7 @@ private:
 
                 if (nullable_col)
                 {
-                    for (const auto i : ext::range(0, size))
+                    for (size_t i = 0; i < size; ++i)
                     {
                         if (!nullable_col->isNullAt(i))
                             out_data[i] = result_type.getValue(col->getDataAt(i));
@@ -2826,7 +2827,7 @@ private:
                 }
                 else
                 {
-                    for (const auto i : ext::range(0, size))
+                    for (size_t i = 0; i < size; ++i)
                         out_data[i] = result_type.getValue(col->getDataAt(i));
                 }
 
