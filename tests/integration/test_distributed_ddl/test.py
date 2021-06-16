@@ -53,6 +53,7 @@ def test_default_database(test_cluster):
 
 def test_create_view(test_cluster):
     instance = test_cluster.instances['ch3']
+    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS test.super_simple_view ON CLUSTER 'cluster'")
     test_cluster.ddl_check_query(instance,
                                  "CREATE VIEW test.super_simple_view ON CLUSTER 'cluster' AS SELECT * FROM system.numbers FORMAT TSV")
     test_cluster.ddl_check_query(instance,
@@ -76,7 +77,7 @@ def test_on_server_fail(test_cluster):
 
     kill_instance.get_docker_handle().stop()
     request = instance.get_query_request("CREATE TABLE test.test_server_fail ON CLUSTER 'cluster' (i Int8) ENGINE=Null",
-                                         timeout=30)
+                                         timeout=180)
     kill_instance.get_docker_handle().start()
 
     test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS test.__nope__ ON CLUSTER 'cluster'")
@@ -106,11 +107,11 @@ def _test_on_connection_losses(test_cluster, zk_timeout):
 
 
 def test_on_connection_loss(test_cluster):
-    _test_on_connection_losses(test_cluster, 5)  # connection loss will occur only (3 sec ZK timeout in config)
+    _test_on_connection_losses(test_cluster, 10)  # connection loss will occur only (10 sec ZK timeout in config)
 
 
 def test_on_session_expired(test_cluster):
-    _test_on_connection_losses(test_cluster, 15)  # session should be expired (3 sec ZK timeout in config)
+    _test_on_connection_losses(test_cluster, 30)  # session should be expired (10 sec ZK timeout in config)
 
 
 def test_simple_alters(test_cluster):

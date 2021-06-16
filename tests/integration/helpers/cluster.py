@@ -1421,9 +1421,9 @@ class ClickHouseCluster:
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
 
-                logging.debug("Waiting for ClickHouse start...")
+                logging.debug("Waiting for ClickHouse start in {instance}, ip: {instance.ip_address}...")
                 instance.wait_for_start(start_timeout)
-                logging.debug("ClickHouse started")
+                logging.debug("ClickHouse {instance} started")
 
                 instance.client = Client(instance.ip_address, command=self.client_bin_path)
 
@@ -1911,6 +1911,7 @@ class ClickHouseInstance:
         self.get_docker_handle().start()
 
     def wait_for_start(self, start_timeout=None, connection_timeout=None):
+        handle = self.get_docker_handle()
 
         if start_timeout is None or start_timeout <= 0:
             raise Exception("Invalid timeout: {}".format(start_timeout))
@@ -1933,11 +1934,10 @@ class ClickHouseInstance:
                 return False
 
         while True:
-            handle = self.get_docker_handle()
+            handle.reload()
             status = handle.status
             if status == 'exited':
-                raise Exception("Instance `{}' failed to start. Container status: {}, logs: {}"
-                                .format(self.name, status, handle.logs().decode('utf-8')))
+                raise Exception(f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}")
 
             deadline = start_time + start_timeout
             # It is possible that server starts slowly.
@@ -1947,9 +1947,8 @@ class ClickHouseInstance:
 
             current_time = time.time()
             if current_time >= deadline:
-                raise Exception("Timed out while waiting for instance `{}' with ip address {} to start. "
-                                "Container status: {}, logs: {}".format(self.name, self.ip_address, status,
-                                                                        handle.logs().decode('utf-8')))
+                raise Exception(f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. " \
+                                f"Container status: {status}, logs: {handle.logs().decode('utf-8')}")
 
             socket_timeout = min(start_timeout, deadline - current_time)
 
