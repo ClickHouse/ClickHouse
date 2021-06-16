@@ -1,14 +1,17 @@
 #include "IBridge.h"
 
-#include <IO/ReadHelpers.h>
 #include <boost/program_options.hpp>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Formats/registerFormats.h>
+
 #include <common/logger_useful.h>
+#include <common/range.h>
+
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/SensitiveDataMasker.h>
 #include <common/errnoToString.h>
+#include <IO/ReadHelpers.h>
+#include <Formats/registerFormats.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -244,7 +247,7 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
 
         server.stop();
 
-        for (size_t count : ext::range(1, 6))
+        for (size_t count : collections::range(1, 6))
         {
             if (server.currentConnections() == 0)
                 break;

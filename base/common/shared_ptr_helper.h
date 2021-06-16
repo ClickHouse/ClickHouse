@@ -2,8 +2,6 @@
 
 #include <memory>
 
-namespace ext
-{
 
 /** Allows to make std::shared_ptr from T with protected constructor.
   *
@@ -36,4 +34,3 @@ struct is_shared_ptr<std::shared_ptr<T>>
 
 template <typename T>
 inline constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
-}
