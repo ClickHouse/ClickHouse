@@ -1312,7 +1312,7 @@ Unsupported Arrow data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `EN
 
 The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
-### Inserting Data {#inserting-data-3}
+### Inserting Data {#inserting-data-arrow}
 
 You can insert Arrow data from a file into ClickHouse table by the following command:
 
