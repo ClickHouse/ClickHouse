@@ -284,6 +284,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/utf8.cc"
         "${LIBRARY_DIR}/util/value_parsing.cc"
 
+        "${LIBRARY_DIR}/vendored/base64.cpp"
         ${ORC_SRCS}
         )
 
