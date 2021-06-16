@@ -12,9 +12,13 @@ CREATE TABLE nr (x Nullable(UInt32), lc Nullable(String)) ENGINE = Memory;
 CREATE TABLE l_lc (x UInt32, lc LowCardinality(String)) ENGINE = Memory;
 CREATE TABLE r_lc (x UInt32, lc LowCardinality(String)) ENGINE = Memory;
 
-INSERT INTO r VALUES (0, 'str');
-INSERT INTO nr VALUES (0, 'str');
-INSERT INTO r_lc VALUES (0, 'str');
+INSERT INTO r VALUES (0, 'str'),  (1, 'str_r');
+INSERT INTO nr VALUES (0, 'str'),  (1, 'str_r');
+INSERT INTO r_lc VALUES (0, 'str'),  (1, 'str_r');
+
+INSERT INTO l VALUES (0, 'str'), (2, 'str_l');
+INSERT INTO nl VALUES (0, 'str'), (2, 'str_l');
+INSERT INTO l_lc VALUES (0, 'str'), (2, 'str_l');
 
 --
 
@@ -135,6 +139,10 @@ SELECT l.lc, r.lc, toTypeName(l.lc) FROM nl AS l RIGHT JOIN r_lc AS r USING (x);
 SELECT l.lc, r.lc, toTypeName(l.lc) FROM nl AS l RIGHT JOIN r_lc AS r USING (lc);
 SELECT l.lc, r.lc, toTypeName(l.lc) FROM nl AS l FULL JOIN r_lc AS r USING (x);
 SELECT l.lc, r.lc, toTypeName(l.lc) FROM nl AS l FULL JOIN r_lc AS r USING (lc);
+
+SET join_use_nulls = 0;
+
+SELECT lc, toTypeName(lc)  FROM l_lc AS l RIGHT JOIN r_lc AS r USING (x) ORDER BY l.lc;
 
 DROP TABLE l;
 DROP TABLE r;
