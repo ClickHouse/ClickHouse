@@ -5,9 +5,6 @@
 #include <vector>
 #include <optional>
 
-#include <ext/range.h>
-#include <ext/size.h>
-
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
 #include <DataTypes/IDataType.h>

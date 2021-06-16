@@ -59,9 +59,9 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <ext/range.h>
-#include <ext/scope_guard.h>
-#include <ext/scope_guard_safe.h>
+#include <common/range.h>
+#include <common/scope_guard.h>
+#include <common/scope_guard_safe.h>
 
 #include <ctime>
 #include <thread>

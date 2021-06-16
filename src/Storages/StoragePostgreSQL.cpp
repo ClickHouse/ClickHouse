@@ -126,9 +126,9 @@ public:
         /// std::optional lets libpqxx to know if value is NULL
         std::vector<std::optional<std::string>> row(num_cols);
 
-        for (const auto i : ext::range(0, num_rows))
+        for (const auto i : collections::range(0, num_rows))
         {
-            for (const auto j : ext::range(0, num_cols))
+            for (const auto j : collections::range(0, num_cols))
             {
                 if (columns[j]->isNullAt(i))
                 {

@@ -344,9 +344,9 @@ struct ContextSharedPart
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     ConfigurationPtr external_models_config;
-    ext::scope_guard models_repository_guard;
+    scope_guard models_repository_guard;
 
-    ext::scope_guard dictionaries_xmls;
+    scope_guard dictionaries_xmls;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes

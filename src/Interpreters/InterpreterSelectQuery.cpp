@@ -82,8 +82,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <ext/map.h>
-#include <ext/scope_guard_safe.h>
+#include <common/map.h>
+#include <common/scope_guard_safe.h>
 #include <memory>
 
 
@@ -1682,7 +1682,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             }
 
             required_columns_after_prewhere_set
-                = ext::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
+                = collections::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
         }
 
         auto syntax_result

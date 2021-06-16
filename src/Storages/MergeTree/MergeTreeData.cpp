@@ -55,7 +55,7 @@
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
 
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 #include <algorithm>
 #include <iomanip>
