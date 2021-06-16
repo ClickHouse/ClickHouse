@@ -19,6 +19,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/QueryMaterializationLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
@@ -417,6 +418,7 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto metric_log = getContext()->getMetricLog()) metric_log->flush(true); },
                 [&] { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
                 [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
+                [&] () { if (auto query_materialization_log = getContext()->getQueryMaterializationLog()) query_materialization_log->flush(true); }
             );
             break;
         }
