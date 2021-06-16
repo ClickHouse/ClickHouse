@@ -1,21 +1,22 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnCompressed.h>
 
-#include <DataStreams/ColumnGathererStream.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
-#include <Common/assert_cast.h>
-#include <Common/memcmpSmall.h>
 #include <Common/memcpySmall.h>
-#include <common/sort.h>
+#include <Common/memcmpSmall.h>
+#include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
+
 #include <ext/scope_guard.h>
 
-#if defined(__SSE2__)
-#    include <emmintrin.h>
+#include <DataStreams/ColumnGathererStream.h>
+
+#include <IO/WriteHelpers.h>
+
+#ifdef __SSE2__
+    #include <emmintrin.h>
 #endif
 
 
@@ -100,11 +101,6 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
     return pos + n;
 }
 
-const char * ColumnFixedString::skipSerializedInArena(const char * pos) const
-{
-    return pos + n;
-}
-
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
@@ -161,9 +157,9 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     if (limit)
     {
         if (reverse)
-            partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
         else
-            partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
     }
     else
     {
@@ -221,9 +217,9 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
         /// Since then we are working inside the interval.
 
         if (reverse)
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
         else
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
 
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
@@ -295,8 +291,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 
     while (filt_pos < filt_end_sse)
     {
-        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-        mask = ~mask;
+        int mask = _mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
 
         if (0 == mask)
         {
@@ -450,33 +445,6 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
 
     get(min_idx, min);
     get(max_idx, max);
-}
-
-ColumnPtr ColumnFixedString::compress() const
-{
-    size_t source_size = chars.size();
-
-    /// Don't compress small blocks.
-    if (source_size < 4096) /// A wild guess.
-        return ColumnCompressed::wrap(this->getPtr());
-
-    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, false);
-
-    if (!compressed)
-        return ColumnCompressed::wrap(this->getPtr());
-
-    size_t column_size = size();
-
-    return ColumnCompressed::create(column_size, compressed->size(),
-        [compressed = std::move(compressed), column_size, n = n]
-        {
-            size_t chars_size = n * column_size;
-            auto res = ColumnFixedString::create(n);
-            res->getChars().resize(chars_size);
-            ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getChars().data(), compressed->size(), chars_size);
-            return res;
-        });
 }
 
 }

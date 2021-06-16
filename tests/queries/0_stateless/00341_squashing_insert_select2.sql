@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS numbers_squashed;
-CREATE TABLE numbers_squashed (number UInt8) ENGINE = StripeLog;
+CREATE TABLE numbers_squashed (number UInt8) ENGINE = Memory;
 
 SET min_insert_block_size_rows = 100;
 SET min_insert_block_size_bytes = 0;

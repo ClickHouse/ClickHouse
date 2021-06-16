@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class ExecutableFunctionExpression : public IExecutableFunction
+class ExecutableFunctionExpression : public IExecutableFunctionImpl
 {
 public:
     struct Signature
@@ -35,19 +35,19 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        DB::Block expr_columns;
+        Block expr_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const auto & argument = arguments[i];
+            const auto & argument = block.getByPosition(arguments[i]);
             /// Replace column name with value from argument_names.
-            expr_columns.insert({argument.column, argument.type, signature->argument_names[i]});
+            expr_block.insert({argument.column, argument.type, signature->argument_names[i]});
         }
 
-        expression_actions->execute(expr_columns);
+        expression_actions->execute(expr_block);
 
-         return expr_columns.getByName(signature->return_name).column;
+        block.getByPosition(result).column = expr_block.getByName(signature->return_name).column;
     }
 
 bool useDefaultImplementationForNulls() const override { return false; }
@@ -58,7 +58,7 @@ private:
 };
 
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
-class FunctionExpression : public IFunctionBase
+class FunctionExpression : public IFunctionBaseImpl
 {
 public:
     using Signature = ExecutableFunctionExpression::Signature;
@@ -79,9 +79,9 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
-    const DataTypePtr & getResultType() const override { return return_type; }
+    const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
+    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionExpression>(expression_actions, signature);
     }
@@ -97,7 +97,7 @@ private:
 /// Returns ColumnFunction with captured columns.
 /// For lambda(x, x + y) x is in lambda_arguments, y is in captured arguments, expression_actions is 'x + y'.
 ///  execute(y) returns ColumnFunction(FunctionExpression(x + y), y) with type Function(x) -> function_return_type.
-class ExecutableFunctionCapture : public IExecutableFunction
+class ExecutableFunctionCapture : public IExecutableFunctionImpl
 {
 public:
     struct Capture
@@ -119,8 +119,11 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+
         Names names;
         DataTypes types;
 
@@ -136,10 +139,13 @@ public:
             types.push_back(lambda_argument.type);
         }
 
+        for (const auto & argument : arguments)
+            columns.push_back(block.getByPosition(argument));
+
         auto function = std::make_unique<FunctionExpression>(expression_actions, types, names,
                                                              capture->return_type, capture->return_name);
-
-        return ColumnFunction::create(input_rows_count, std::move(function), arguments);
+        auto function_adaptor = std::make_shared<FunctionBaseAdaptor>(std::move(function));
+        block.getByPosition(result).column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns);
     }
 
 private:
@@ -147,7 +153,7 @@ private:
     CapturePtr capture;
 };
 
-class FunctionCapture : public IFunctionBase
+class FunctionCapture : public IFunctionBaseImpl
 {
 public:
     using Capture = ExecutableFunctionCapture::Capture;
@@ -171,9 +177,9 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
-    const DataTypePtr & getResultType() const override { return return_type; }
+    const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
+    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionCapture>(expression_actions, capture);
     }
@@ -185,7 +191,7 @@ private:
     String name;
 };
 
-class FunctionCaptureOverloadResolver : public IFunctionOverloadResolver
+class FunctionCaptureOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     using Capture = ExecutableFunctionCapture::Capture;
@@ -199,9 +205,9 @@ public:
             const String & expression_return_name_)
         : expression_actions(std::move(expression_actions_))
     {
-        /// Check that expression does not contain unusual actions that will break columnss structure.
+        /// Check that expression does not contain unusual actions that will break blocks structure.
         for (const auto & action : expression_actions->getActions())
-            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
                 throw Exception("Expression with arrayJoin or other unusual action cannot be captured", ErrorCodes::BAD_ARGUMENTS);
 
         std::unordered_map<std::string, DataTypePtr> arguments_map;
@@ -246,10 +252,10 @@ public:
     String getName() const override { return name; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return return_type; }
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName &) const override { return return_type; }
     size_t getNumberOfArguments() const override { return capture->captured_types.size(); }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
         return std::make_unique<FunctionCapture>(expression_actions, capture, return_type, name);
     }

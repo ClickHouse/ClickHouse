@@ -1,6 +1,7 @@
+set enable_debug_queries = 1;
 set optimize_duplicate_order_by_and_distinct = 1;
 
-EXPLAIN SYNTAX SELECT DISTINCT *
+analyze SELECT DISTINCT *
 FROM
 (
     SELECT DISTINCT *
@@ -30,7 +31,7 @@ ORDER BY number;
 
 set optimize_duplicate_order_by_and_distinct = 0;
 
-EXPLAIN SYNTAX SELECT DISTINCT *
+analyze SELECT DISTINCT *
 FROM
 (
     SELECT DISTINCT *
@@ -60,7 +61,7 @@ ORDER BY number;
 
 set optimize_duplicate_order_by_and_distinct = 1;
 
-EXPLAIN SYNTAX SELECT DISTINCT *
+analyze SELECT DISTINCT *
 FROM
 (
     SELECT DISTINCT *
@@ -92,7 +93,7 @@ ORDER BY number;
 
 set optimize_duplicate_order_by_and_distinct = 0;
 
-EXPLAIN SYNTAX SELECT DISTINCT *
+analyze SELECT DISTINCT *
 FROM
 (
     SELECT DISTINCT *

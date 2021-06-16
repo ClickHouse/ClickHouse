@@ -72,7 +72,7 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , log(&Poco::Logger::get("MySQLHandler"))
-    , connection_context(Context::createCopy(server.context()))
+    , connection_context(server.context())
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
 {
@@ -89,14 +89,12 @@ void MySQLHandler::run()
 {
     setThreadName("MySQLHandler");
     ThreadStatus thread_status;
-    connection_context->makeSessionContext();
-    connection_context->getClientInfo().interface = ClientInfo::Interface::MYSQL;
-    connection_context->setDefaultFormat("MySQLWire");
-    connection_context->getClientInfo().connection_id = connection_id;
+    connection_context.makeSessionContext();
+    connection_context.setDefaultFormat("MySQLWire");
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
-    packet_endpoint = std::make_shared<PacketEndpoint>(*in, *out, connection_context->mysql.sequence_id);
+    packet_endpoint = std::make_shared<PacketEndpoint>(*in, *out, connection_context.mysql.sequence_id);
 
     try
     {
@@ -108,11 +106,11 @@ void MySQLHandler::run()
 
         HandshakeResponse handshake_response;
         finishHandshake(handshake_response);
-        connection_context->mysql.client_capabilities = handshake_response.capability_flags;
+        connection_context.mysql.client_capabilities = handshake_response.capability_flags;
         if (handshake_response.max_packet_size)
-            connection_context->mysql.max_packet_size = handshake_response.max_packet_size;
-        if (!connection_context->mysql.max_packet_size)
-            connection_context->mysql.max_packet_size = MAX_PACKET_LENGTH;
+            connection_context.mysql.max_packet_size = handshake_response.max_packet_size;
+        if (!connection_context.mysql.max_packet_size)
+            connection_context.mysql.max_packet_size = MAX_PACKET_LENGTH;
 
         LOG_TRACE(log,
             "Capabilities: {}, max_packet_size: {}, character_set: {}, user: {}, auth_response length: {}, database: {}, auth_plugin_name: {}",
@@ -133,8 +131,8 @@ void MySQLHandler::run()
         try
         {
             if (!handshake_response.database.empty())
-                connection_context->setCurrentDatabase(handshake_response.database);
-            connection_context->setCurrentQueryId(Poco::format("mysql:%lu", connection_id));
+                connection_context.setCurrentDatabase(handshake_response.database);
+            connection_context.setCurrentQueryId(Poco::format("mysql:%lu", connection_id));
 
         }
         catch (const Exception & exc)
@@ -189,7 +187,6 @@ void MySQLHandler::run()
             }
             catch (...)
             {
-                tryLogCurrentException(log, "MySQLHandler: Cannot read packet: ");
                 packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
             }
         }
@@ -219,7 +216,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
             int ret = socket().receiveBytes(buf + pos, packet_size - pos);
             if (ret == 0)
             {
-                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3", ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3.", ErrorCodes::CANNOT_READ_ALL_DATA);
             }
             pos += ret;
         }
@@ -252,7 +249,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     try
     {
         // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
-        auto user = connection_context->getAccessControlManager().read<User>(user_name);
+        auto user = connection_context.getAccessControlManager().read<User>(user_name);
         const DB::Authentication::Type user_auth_type = user->authentication.getType();
         if (user_auth_type == DB::Authentication::SHA256_PASSWORD)
         {
@@ -268,7 +265,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
         packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
         throw;
     }
-    LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
+    LOG_INFO(log, "Authentication for user {} succeeded.", user_name);
 }
 
 void MySQLHandler::comInitDB(ReadBuffer & payload)
@@ -276,7 +273,7 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
-    connection_context->setCurrentDatabase(database);
+    connection_context.setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capability_flags, 0, 0, 1), true);
 }
 
@@ -284,13 +281,13 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
 {
     ComFieldList packet;
     packet.readPayloadWithUnpacked(payload);
-    String database = connection_context->getCurrentDatabase();
+    String database = connection_context.getCurrentDatabase();
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, connection_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0, true
+            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
         );
         packet_endpoint->sendPacket(column_definition);
     }
@@ -332,11 +329,11 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         ReadBufferFromString replacement(replacement_query);
 
-        auto query_context = Context::createCopy(connection_context);
+        Context query_context = connection_context;
 
         std::atomic<size_t> affected_rows {0};
-        auto prev = query_context->getProgressCallback();
-        query_context->setProgressCallback([&, prev = prev](const Progress & progress)
+        auto prev = query_context.getProgressCallback();
+        query_context.setProgressCallback([&, prev = prev](const Progress & progress)
         {
             if (prev)
                 prev(progress);
@@ -391,14 +388,14 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     ReadBufferFromMemory payload(buf, pos);
     payload.ignore(PACKET_HEADER_SIZE);
     ssl_request.readPayloadWithUnpacked(payload);
-    connection_context->mysql.client_capabilities = ssl_request.capability_flags;
-    connection_context->mysql.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
+    connection_context.mysql.client_capabilities = ssl_request.capability_flags;
+    connection_context.mysql.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
     secure_connection = true;
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
-    connection_context->mysql.sequence_id = 2;
-    packet_endpoint = std::make_shared<PacketEndpoint>(*in, *out, connection_context->mysql.sequence_id);
+    connection_context.mysql.sequence_id = 2;
+    packet_endpoint = std::make_shared<PacketEndpoint>(*in, *out, connection_context.mysql.sequence_id);
     packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
 }
 
@@ -412,7 +409,6 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
-        "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
         , std::regex::icase};
     return 1 == std::regex_match(query, expr);

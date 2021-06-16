@@ -4,7 +4,7 @@
 #include <optional>
 
 #include <Core/Names.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB

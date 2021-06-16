@@ -1,3 +1,0 @@
-<test>
-    <query>SELECT quantileMerge(arrayJoin(arrayMap(x -> state, range(5000000)))) FROM (SELECT quantileState(rand()) AS state FROM numbers(10000))</query>
-</test>

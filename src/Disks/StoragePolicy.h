@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Disks/IStoragePolicy.h>
 #include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
@@ -15,7 +14,6 @@
 
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <unistd.h>
 #include <boost/noncopyable.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -24,90 +22,82 @@
 namespace DB
 {
 
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+
 /**
  * Contains all information about volumes configuration for Storage.
  * Can determine appropriate Volume and Disk for each reservation.
  */
-class StoragePolicy : public IStoragePolicy
+class StoragePolicy
 {
 public:
     StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
 
     StoragePolicy(String name_, Volumes volumes_, double move_factor_);
 
-    StoragePolicy(
-        StoragePolicyPtr storage_policy,
-        const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        DiskSelectorPtr disks
-    );
-
-    bool isDefaultPolicy() const override;
+    bool isDefaultPolicy() const;
 
     /// Returns disks ordered by volumes priority
-    Disks getDisks() const override;
-
-    /// Returns disks by type ordered by volumes priority
-    Disks getDisksByType(DiskType::Type type) const override;
+    Disks getDisks() const;
 
     /// Returns any disk
     /// Used when it's not important, for example for
     /// mutations files
-    DiskPtr getAnyDisk() const override;
+    DiskPtr getAnyDisk() const;
 
-    DiskPtr getDiskByName(const String & disk_name) const override;
+    DiskPtr getDiskByName(const String & disk_name) const;
 
     /// Get free space from most free disk
-    UInt64 getMaxUnreservedFreeSpace() const override;
+    UInt64 getMaxUnreservedFreeSpace() const;
 
-    const String & getName() const override{ return name; }
+    const String & getName() const { return name; }
 
     /// Returns valid reservation or nullptr
-    ReservationPtr reserve(UInt64 bytes) const override;
+    ReservationPtr reserve(UInt64 bytes) const;
 
     /// Reserves space on any volume or throws
-    ReservationPtr reserveAndCheck(UInt64 bytes) const override;
+    ReservationPtr reserveAndCheck(UInt64 bytes) const;
 
     /// Reserves space on any volume with index > min_volume_index or returns nullptr
-    ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const override;
+    ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const;
 
     /// Find volume index, which contains disk
-    size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const override;
+    size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const;
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size.
-    ReservationPtr makeEmptyReservationOnLargestDisk() const override;
+    ReservationPtr makeEmptyReservationOnLargestDisk() const;
 
-    const Volumes & getVolumes() const  override{ return volumes; }
+    const Volumes & getVolumes() const { return volumes; }
 
     /// Returns number [0., 1.] -- fraction of free space on disk
     /// which should be kept with help of background moves
-    double getMoveFactor() const  override{ return move_factor; }
+    double getMoveFactor() const { return move_factor; }
 
-    /// Get volume by index.
-    VolumePtr getVolume(size_t index) const override;
+    /// Get volume by index from storage_policy
+    VolumePtr getVolume(size_t i) const { return (i < volumes_names.size() ? volumes[i] : VolumePtr()); }
 
-    VolumePtr getVolumeByName(const String & volume_name) const override;
+    VolumePtr getVolumeByName(const String & volume_name) const
+    {
+        auto it = volumes_names.find(volume_name);
+        if (it == volumes_names.end())
+            return {};
+        return getVolume(it->second);
+    }
 
     /// Checks if storage policy can be replaced by another one.
-    void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const override;
+    void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const;
 
-    /// Check if we have any volume with stopped merges
-    bool hasAnyVolumeWithDisabledMerges() const override;
-
-    bool containsVolume(const String & volume_name) const override;
 private:
     Volumes volumes;
     const String name;
-    std::unordered_map<String, size_t> volume_index_by_volume_name;
-    std::unordered_map<String, size_t> volume_index_by_disk_name;
+    std::map<String, size_t> volumes_names;
 
     /// move_factor from interval [0., 1.]
     /// We move something if disk from this policy
     /// filled more than total_size * move_factor
     double move_factor = 0.1; /// by default move factor is 10%
-
-    void buildVolumeIndices();
 };
 
 

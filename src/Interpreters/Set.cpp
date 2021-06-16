@@ -1,6 +1,8 @@
 #include <optional>
 
 #include <Core/Field.h>
+#include <Common/FieldVisitors.h>
+#include <Core/Row.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
@@ -21,13 +23,13 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/NullableUtils.h>
 #include <Interpreters/sortBlock.h>
-#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <ext/range.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
 
 namespace DB
 {
@@ -105,7 +107,7 @@ void Set::setHeader(const Block & header)
 {
     std::unique_lock lock(rwlock);
 
-    if (!data.empty())
+    if (!empty())
         return;
 
     keys_size = header.columns();
@@ -138,16 +140,7 @@ void Set::setHeader(const Block & header)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
     if (!transform_null_in)
-    {
-        /// We convert nullable columns to non nullable we also need to update nullable types
-        for (size_t i = 0; i < set_elements_types.size(); ++i)
-        {
-            data_types[i] = removeNullable(data_types[i]);
-            set_elements_types[i] = removeNullable(set_elements_types[i]);
-        }
-
         extractNestedColumnsAndNullMap(key_columns, null_map);
-    }
 
     if (fill_set_elements)
     {
@@ -167,7 +160,7 @@ bool Set::insertFromBlock(const Block & block)
 {
     std::unique_lock lock(rwlock);
 
-    if (data.empty())
+    if (empty())
         throw Exception("Method Set::setHeader must be called before Set::insertFromBlock", ErrorCodes::LOGICAL_ERROR);
 
     ColumnRawPtrs key_columns;
@@ -189,7 +182,7 @@ bool Set::insertFromBlock(const Block & block)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
     if (!transform_null_in)
-        null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+         null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
@@ -220,7 +213,7 @@ bool Set::insertFromBlock(const Block & block)
         }
     }
 
-    return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    return limits.check(getTotalRowCount(), getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 
@@ -258,26 +251,11 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     /// The constant columns to the left of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
-    materialized_columns.reserve(num_key_columns);
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        ColumnPtr result;
-
-        const auto & column_before_cast = block.safeGetByPosition(i);
-        ColumnWithTypeAndName column_to_cast
-            = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
-
-        if (!transform_null_in && data_types[i]->canBeInsideNullable())
-        {
-            result = castColumnAccurateOrNull(column_to_cast, data_types[i]);
-        }
-        else
-        {
-            result = castColumnAccurate(column_to_cast, data_types[i]);
-        }
-
-        materialized_columns.emplace_back() = result;
+        checkTypesEqual(i, block.safeGetByPosition(i).type);
+        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back() = materialized_columns.back().get();
     }
 
@@ -290,25 +268,6 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     executeOrdinary(key_columns, vec_res, negative, null_map);
 
     return res;
-}
-
-
-bool Set::empty() const
-{
-    std::shared_lock lock(rwlock);
-    return data.empty();
-}
-
-size_t Set::getTotalRowCount() const
-{
-    std::shared_lock lock(rwlock);
-    return data.getTotalRowCount();
-}
-
-size_t Set::getTotalByteCount() const
-{
-    std::shared_lock lock(rwlock);
-    return data.getTotalByteCount();
 }
 
 
@@ -383,9 +342,10 @@ void Set::checkColumnsNumber(size_t num_key_columns) const
 {
     if (data_types.size() != num_key_columns)
     {
-        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
-                        "Number of columns in section IN doesn't match. {} at left, {} at right.",
-                        num_key_columns, data_types.size());
+        std::stringstream message;
+        message << "Number of columns in section IN doesn't match. "
+                << num_key_columns << " at left, " << data_types.size() << " at right.";
+        throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
     }
 }
 
@@ -542,40 +502,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     auto indices = ext::range(0, size());
     auto left_lower = std::lower_bound(indices.begin(), indices.end(), left_point, less);
     auto right_lower = std::lower_bound(indices.begin(), indices.end(), right_point, less);
-
-    /// A special case of 1-element KeyRange. It's useful for partition pruning
-    bool one_element_range = true;
-    for (size_t i = 0; i < tuple_size; ++i)
-    {
-        auto & left = left_point[i];
-        auto & right = right_point[i];
-        if (left.getType() == right.getType())
-        {
-            if (left.getType() == ValueWithInfinity::NORMAL)
-            {
-                if (0 != left.getColumnIfFinite().compareAt(0, 0, right.getColumnIfFinite(), 1))
-                {
-                    one_element_range = false;
-                    break;
-                }
-            }
-        }
-        else
-        {
-            one_element_range = false;
-            break;
-        }
-    }
-    if (one_element_range)
-    {
-        /// Here we know that there is one element in range.
-        /// The main difference with the normal case is that we can definitely say that
-        /// condition in this range always TRUE (can_be_false = 0) xor always FALSE (can_be_true = 0).
-        if (left_lower != indices.end() && equals(*left_lower, left_point))
-            return {true, false};
-        else
-            return {false, true};
-    }
 
     return
     {

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
@@ -13,7 +12,7 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO database_for_dict.table_for_dict VALUES 
 
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ordinary_db"
 $CLICKHOUSE_CLIENT --query "CREATE DATABASE ordinary_db"
-$CLICKHOUSE_CLIENT --query "CREATE DICTIONARY ordinary_db.dict1 ( key_column UInt64 DEFAULT 0, second_column UInt64 DEFAULT 1, third_column String DEFAULT 'qqq' ) PRIMARY KEY key_column SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT()) SETTINGS(max_result_bytes=1)"
+$CLICKHOUSE_CLIENT --query "CREATE DICTIONARY ordinary_db.dict1 ( key_column UInt64 DEFAULT 0, second_column UInt64 DEFAULT 1, third_column String DEFAULT 'qqq' ) PRIMARY KEY key_column SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT()) SETTINGS(max_result_bytes=1)"
 
 function dict_get_thread()
 {

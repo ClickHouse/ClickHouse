@@ -2,7 +2,6 @@
 #include <Columns/Collator.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -20,7 +19,7 @@ ASTPtr ASTTTLElement::clone() const
 
     for (auto & expr : clone->group_by_key)
         expr = expr->clone();
-    for (auto & expr : clone->group_by_assignments)
+    for (auto & [name, expr] : clone->group_by_aggregations)
         expr = expr->clone();
 
     return clone;
@@ -46,22 +45,17 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
                 settings.ostr << ", ";
             (*it)->formatImpl(settings, state, frame);
         }
-
-        if (!group_by_assignments.empty())
+        if (!group_by_aggregations.empty())
         {
             settings.ostr << " SET ";
-            for (auto it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
+            for (auto it = group_by_aggregations.begin(); it != group_by_aggregations.end(); ++it)
             {
-                if (it != group_by_assignments.begin())
+                if (it != group_by_aggregations.begin())
                     settings.ostr << ", ";
-                (*it)->formatImpl(settings, state, frame);
+                settings.ostr << it->first << " = ";
+                it->second->formatImpl(settings, state, frame);
             }
         }
-    }
-    else if (mode == TTLMode::RECOMPRESS)
-    {
-        settings.ostr << " RECOMPRESS ";
-        recompression_codec->formatImpl(settings, state, frame);
     }
     else if (mode == TTLMode::DELETE)
     {

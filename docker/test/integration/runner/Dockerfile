@@ -1,5 +1,5 @@
 # docker build -t yandex/clickhouse-integration-tests-runner .
-FROM ubuntu:20.04
+FROM ubuntu:18.04
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -14,23 +14,20 @@ RUN apt-get update \
     wget \
     git \
     iproute2 \
+    module-init-tools \
     cgroupfs-mount \
-    python3-pip \
+    python-pip \
     tzdata \
     libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
-    python3-pika \
+    python-pika \
     liblua5.1-dev \
     luajit \
     libssl-dev \
     libcurl4-openssl-dev \
     gdb \
-    software-properties-common \
-    libkrb5-dev \
-    krb5-user \
-    g++ \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -40,52 +37,33 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+RUN pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL==0.10.1  psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike==4.0.0 pytest-timeout minio==6.0.2 rpm-confluent-schemaregistry grpcio grpcio-tools cassandra-driver
+
 ENV DOCKER_CHANNEL stable
-RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
+ENV DOCKER_VERSION 17.09.1-ce
 
-RUN apt-get update \
-    && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-        docker-ce \
-    && rm -rf \
-        /var/lib/apt/lists/* \
-        /var/cache/debconf \
-        /tmp/* \
-    && apt-get clean
-
-RUN dockerd --version; docker --version
-
-RUN python3 -m pip install \
-    PyMySQL \
-    aerospike==4.0.0 \
-    avro \
-    cassandra-driver \
-    confluent-kafka==1.5.0 \
-    dict2xml \
-    dicttoxml \
-    docker \
-    docker-compose==1.28.2 \
-    grpcio \
-    grpcio-tools \
-    kafka-python \
-    kazoo \
-    minio \
-    protobuf \
-    psycopg2-binary==2.8.6 \
-    pymongo \
-    pytest \
-    pytest-timeout \
-    pytest-xdist \
-    redis \
-    tzlocal \
-    urllib3 \
-    requests-kerberos \
-    pyhdfs
+RUN set -eux; \
+  \
+# this "case" statement is generated via "update.sh"
+  \
+  if ! wget -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
+    echo >&2 "error: failed to download 'docker-${DOCKER_VERSION}' from '${DOCKER_CHANNEL}' for '${x86_64}'"; \
+    exit 1; \
+  fi; \
+  \
+  tar --extract \
+    --file docker.tgz \
+    --strip-components 1 \
+    --directory /usr/local/bin/ \
+  ; \
+  rm docker.tgz; \
+  \
+  dockerd --version; \
+  docker --version
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY compose/ /compose/
-COPY misc/ /misc/
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -94,6 +72,7 @@ RUN set -x \
   && echo 'dockremap:165536:65536' >> /etc/subuid \
     && echo 'dockremap:165536:65536' >> /etc/subgid
 
+VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
 CMD ["sh", "-c", "pytest $PYTEST_OPTS"]

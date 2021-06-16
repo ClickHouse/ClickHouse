@@ -6,13 +6,10 @@ toc_priority: 143
 
 Syntax: `maxMap(key, value)` or `maxMap(Tuple(key, value))`
 
-Calculates the maximum from `value` array according to the keys specified in the `key` array.
-
-Passing a tuple of keys and value arrays is identical to passing two arrays of keys and values.
-
-The number of elements in `key` and `value` must be the same for each row that is totaled.
-
-Returns a tuple of two arrays: keys and values calculated for the corresponding keys.
+Calculates the maximum from `value` array according to the keys specified in the ‘key’ array.
+Passing tuple of keys and values arrays is synonymical to passing two arrays of keys and values.
+The number of elements in ‘key’ and ‘value’ must be the same for each row that is totaled.
+Returns a tuple of two arrays: keys in sorted order, and values calculated for the corresponding keys.
 
 Example:
 

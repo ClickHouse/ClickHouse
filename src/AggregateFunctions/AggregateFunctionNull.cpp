@@ -4,6 +4,7 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -13,9 +14,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinator
 {
@@ -120,8 +118,6 @@ public:
         }
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory)
 {

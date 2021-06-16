@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
@@ -25,79 +25,62 @@ public:
     ReadBufferFromRabbitMQConsumer(
             ChannelPtr consumer_channel_,
             HandlerPtr event_handler_,
-            std::vector<String> & queues_,
-            size_t channel_id_base_,
-            const String & channel_base_,
+            const String & exchange_name_,
+            const Names & routing_keys_,
+            size_t channel_id_,
             Poco::Logger * log_,
             char row_delimiter_,
-            uint32_t queue_size_,
+            bool bind_by_id_,
+            size_t num_queues_,
+            const String & exchange_type_,
+            const String & local_exchange_,
             const std::atomic<bool> & stopped_);
 
     ~ReadBufferFromRabbitMQConsumer() override;
 
-    struct AckTracker
-    {
-        UInt64 delivery_tag;
-        String channel_id;
-
-        AckTracker() : delivery_tag(0), channel_id("") {}
-        AckTracker(UInt64 tag, String id) : delivery_tag(tag), channel_id(id) {}
-    };
-
-    struct MessageData
-    {
-        String message;
-        String message_id;
-        uint64_t timestamp = 0;
-        bool redelivered = false;
-        AckTracker track{};
-    };
-
-    ChannelPtr & getChannel() { return consumer_channel; }
-    void setupChannel();
-    bool needChannelUpdate();
-    void closeChannel() { consumer_channel->close(); }
-
-    void updateQueues(std::vector<String> & queues_) { queues = queues_; }
-    size_t queuesCount() { return queues.size(); }
-
-    bool isConsumerStopped() { return stopped; }
-    bool ackMessages();
-    void updateAckTracker(AckTracker record = AckTracker());
-
-    bool queueEmpty() { return received.empty(); }
     void allowNext() { allowed = true; } // Allow to read next message.
+    void checkSubscription();
 
-    auto getChannelID() const { return current.track.channel_id; }
-    auto getDeliveryTag() const { return current.track.delivery_tag; }
-    auto getRedelivered() const { return current.redelivered; }
-    auto getMessageID() const { return current.message_id; }
-    auto getTimestamp() const { return current.timestamp; }
+    auto getExchange() const { return exchange_name; }
 
 private:
-    bool nextImpl() override;
-
-    void subscribe();
-    void iterateEventLoop();
-
     ChannelPtr consumer_channel;
     HandlerPtr event_handler;
-    std::vector<String> queues;
-    const String channel_base;
-    const size_t channel_id_base;
+
+    const String exchange_name;
+    const Names routing_keys;
+    const size_t channel_id;
+    const bool bind_by_id;
+    const size_t num_queues;
+
+    const String exchange_type;
+    const String local_exchange;
+    const String local_default_exchange;
+    const String local_hash_exchange;
+
     Poco::Logger * log;
     char row_delimiter;
     bool allowed = true;
     const std::atomic<bool> & stopped;
 
-    String channel_id;
-    std::atomic<bool> channel_error = true, wait_subscription = false;
-    ConcurrentBoundedQueue<MessageData> received;
-    MessageData current;
-    size_t subscribed = 0;
+    String default_local_exchange;
+    bool local_exchange_declared = false, local_hash_exchange_declared = false;
+    bool exchange_type_set = false, hash_exchange = false;
 
-    AckTracker last_inserted_record_info;
-    UInt64 prev_tag = 0, channel_id_counter = 0;
+    std::atomic<bool> consumer_error = false;
+    std::atomic<size_t> count_subscribed = 0, wait_subscribed;
+
+    ConcurrentBoundedQueue<String> messages;
+    String current;
+    std::vector<String> queues;
+    std::unordered_map<String, bool> subscribed_queue;
+
+    bool nextImpl() override;
+
+    void initExchange();
+    void initQueueBindings(const size_t queue_id);
+    void subscribe(const String & queue_name);
+    void iterateEventLoop();
+
 };
-
 }

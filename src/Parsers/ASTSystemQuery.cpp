@@ -1,7 +1,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -22,16 +21,12 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "SHUTDOWN";
         case Type::KILL:
             return "KILL";
-        case Type::SUSPEND:
-            return "SUSPEND";
         case Type::DROP_DNS_CACHE:
             return "DROP DNS CACHE";
         case Type::DROP_MARK_CACHE:
             return "DROP MARK CACHE";
         case Type::DROP_UNCOMPRESSED_CACHE:
             return "DROP UNCOMPRESSED CACHE";
-        case Type::DROP_MMAP_CACHE:
-            return "DROP MMAP CACHE";
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             return "DROP COMPILED EXPRESSION CACHE";
@@ -54,16 +49,10 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RELOAD DICTIONARY";
         case Type::RELOAD_DICTIONARIES:
             return "RELOAD DICTIONARIES";
-        case Type::RELOAD_MODEL:
-            return "RELOAD MODEL";
-        case Type::RELOAD_MODELS:
-            return "RELOAD MODELS";
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             return "RELOAD EMBEDDED DICTIONARIES";
         case Type::RELOAD_CONFIG:
             return "RELOAD CONFIG";
-        case Type::RELOAD_SYMBOLS:
-            return "RELOAD SYMBOLS";
         case Type::STOP_MERGES:
             return "STOP MERGES";
         case Type::START_MERGES:
@@ -94,8 +83,6 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "START DISTRIBUTED SENDS";
         case Type::FLUSH_LOGS:
             return "FLUSH LOGS";
-        case Type::RESTART_DISK:
-            return "RESTART DISK";
         default:
             throw Exception("Unknown SYSTEM query command", ErrorCodes::LOGICAL_ERROR);
     }
@@ -131,8 +118,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "");
     };
 
-    auto print_drop_replica = [&]
-    {
+    auto print_drop_replica = [&] {
         settings.ostr << " " << quoteString(replica);
         if (!table.empty())
         {
@@ -152,16 +138,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
                           << (settings.hilite ? hilite_none : "");
         }
-    };
-
-    auto print_on_volume = [&]
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON VOLUME "
-                      << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(storage_policy)
-                      << (settings.hilite ? hilite_none : "")
-                      << "."
-                      << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(volume)
-                      << (settings.hilite ? hilite_none : "");
     };
 
     if (!cluster.empty())
@@ -184,28 +160,15 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         if (!table.empty())
             print_database_table();
-        else if (!volume.empty())
-            print_on_volume();
     }
     else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA || type == Type::FLUSH_DISTRIBUTED)
     {
         print_database_table();
     }
     else if (type == Type::RELOAD_DICTIONARY)
-    {
         print_database_dictionary();
-    }
     else if (type == Type::DROP_REPLICA)
-    {
         print_drop_replica();
-    }
-    else if (type == Type::SUSPEND)
-    {
-         settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR "
-            << (settings.hilite ? hilite_none : "") << seconds
-            << (settings.hilite ? hilite_keyword : "") << " SECOND"
-            << (settings.hilite ? hilite_none : "");
-    }
 }
 
 

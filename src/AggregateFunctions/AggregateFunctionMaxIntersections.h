@@ -19,7 +19,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -88,9 +87,7 @@ public:
             return std::make_shared<DataTypeNumber<PointType>>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         PointType left = assert_cast<const ColumnVector<PointType> &>(*columns[0]).getData()[row_num];
         PointType right = assert_cast<const ColumnVector<PointType> &>(*columns[1]).getData()[row_num];
@@ -102,7 +99,7 @@ public:
             this->data(place).value.push_back(std::make_pair(right, Int64(-1)), arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
@@ -110,7 +107,7 @@ public:
         cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -118,7 +115,7 @@ public:
         buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
         size_t size = 0;
         readVarUInt(size, buf);
@@ -132,7 +129,7 @@ public:
         buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         Int64 current_intersections = 0;
         Int64 max_intersections = 0;

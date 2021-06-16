@@ -9,7 +9,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -64,13 +63,11 @@ namespace
             boost::replace_all(name, " ", "_");
 
             for (auto kt : ext::range(Quota::KeyType::MAX))
-            {
                 if (KeyTypeInfo::get(kt).name == name)
                 {
                     key_type = kt;
                     return true;
                 }
-            }
 
             String all_types_str;
             for (auto kt : ext::range(Quota::KeyType::MAX))
@@ -227,7 +224,7 @@ namespace
         {
             ASTPtr node;
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowAll().allowRoles().allowUsers().allowCurrentUser().useIDMode(id_mode);
+            roles_p.allowAll().allowRoleNames().allowUserNames().allowCurrentUser().useIDMode(id_mode);
             if (!ParserKeyword{"TO"}.ignore(pos, expected) || !roles_p.parse(pos, node, expected))
                 return false;
 

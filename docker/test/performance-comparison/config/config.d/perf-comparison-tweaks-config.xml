@@ -1,0 +1,25 @@
+<yandex> 
+    <http_port remove="remove"/>
+    <mysql_port remove="remove"/>
+    <interserver_http_port remove="remove"/>
+    <listen_host>::</listen_host>
+
+    <logger>
+        <console>true</console>
+    </logger>
+
+    <text_log remove="remove">
+        <table remove="remove"/>
+    </text_log>
+
+    <metric_log replace="replace">
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+
+    <uncompressed_cache_size>1000000000</uncompressed_cache_size>
+
+    <asynchronous_metrics_update_period_s>10</asynchronous_metrics_update_period_s>
+</yandex>

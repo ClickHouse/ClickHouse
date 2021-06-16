@@ -3,6 +3,7 @@
 #include <ext/scope_guard.h>
 #include <pthread.h>
 #include <cstdint>
+#include <sstream>
 
 #if defined(__FreeBSD__)
 #   include <pthread_np.h>
@@ -49,7 +50,7 @@ __attribute__((__weak__)) void checkStackSize()
         stack_address = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) - max_stack_size);
 #else
         pthread_attr_t attr;
-#   if defined(__FreeBSD__) || defined(OS_SUNOS)
+#   if defined(__FreeBSD__)
         pthread_attr_init(&attr);
         if (0 != pthread_attr_get_np(pthread_self(), &attr))
             throwFromErrno("Cannot pthread_attr_get_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
@@ -79,8 +80,12 @@ __attribute__((__weak__)) void checkStackSize()
     /// It's safe to assume that overflow in multiplying by two cannot occur.
     if (stack_size * 2 > max_stack_size)
     {
-        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-                        "Stack size too large. Stack address: {}, frame address: {}, stack size: {}, maximum stack size: {}",
-                        stack_address, frame_address, stack_size, max_stack_size);
+        std::stringstream message;
+        message << "Stack size too large"
+            << ". Stack address: " << stack_address
+            << ", frame address: " << frame_address
+            << ", stack size: " << stack_size
+            << ", maximum stack size: " << max_stack_size;
+        throw Exception(message.str(), ErrorCodes::TOO_DEEP_RECURSION);
     }
 }

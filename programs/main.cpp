@@ -2,15 +2,10 @@
 #include <setjmp.h>
 #include <unistd.h>
 
-#ifdef __linux__
-#include <sys/mman.h>
-#endif
-
 #include <new>
 #include <iostream>
 #include <vector>
 #include <string>
-#include <tuple>
 #include <utility> /// pair
 
 #if !defined(ARCADIA_BUILD)
@@ -18,8 +13,6 @@
 #endif
 
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/getHashOfLoadedBinary.h>
-#include <Common/IO.h>
 
 #include <common/phdr_cache.h>
 #include <ext/scope_guard.h>
@@ -53,12 +46,6 @@ int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_GIT_IMPORT
-int mainEntryClickHouseGitImport(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER
-int mainEntryClickHouseKeeper(int argc, char ** argv);
-#endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
@@ -67,15 +54,6 @@ int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 #endif
 
-int mainEntryClickHouseHashBinary(int, char **)
-{
-    /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .note.ClickHouse.hash=<(./clickhouse hash-binary) clickhouse
-    std::cout << getHashOfLoadedBinaryHex();
-    return 0;
-}
-
-#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 
 namespace
 {
@@ -113,12 +91,6 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
     {"obfuscator", mainEntryClickHouseObfuscator},
 #endif
-#if ENABLE_CLICKHOUSE_GIT_IMPORT
-    {"git-import", mainEntryClickHouseGitImport},
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER
-    {"keeper", mainEntryClickHouseKeeper},
-#endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
@@ -126,7 +98,6 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
 #endif
-    {"hash-binary", mainEntryClickHouseHashBinary},
 };
 
 
@@ -173,29 +144,28 @@ enum class InstructionFail
     AVX512 = 8
 };
 
-auto instructionFailToString(InstructionFail fail)
+const char * instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
-#define ret(x) return std::make_tuple(STDERR_FILENO, x, ARRAY_SIZE(x) - 1)
         case InstructionFail::NONE:
-            ret("NONE");
+            return "NONE";
         case InstructionFail::SSE3:
-            ret("SSE3");
+            return "SSE3";
         case InstructionFail::SSSE3:
-            ret("SSSE3");
+            return "SSSE3";
         case InstructionFail::SSE4_1:
-            ret("SSE4.1");
+            return "SSE4.1";
         case InstructionFail::SSE4_2:
-            ret("SSE4.2");
+            return "SSE4.2";
         case InstructionFail::POPCNT:
-            ret("POPCNT");
+            return "POPCNT";
         case InstructionFail::AVX:
-            ret("AVX");
+            return "AVX";
         case InstructionFail::AVX2:
-            ret("AVX2");
+            return "AVX2";
         case InstructionFail::AVX512:
-            ret("AVX512");
+            return "AVX512";
     }
     __builtin_unreachable();
 }
@@ -261,13 +231,23 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
     fail = InstructionFail::NONE;
 }
 
-/// Macros to avoid using strlen(), since it may fail if SSE is not supported.
-#define writeError(data) do \
-    { \
-        static_assert(__builtin_constant_p(data)); \
-        if (!writeRetry(STDERR_FILENO, data, ARRAY_SIZE(data) - 1)) \
-            _Exit(1); \
-    } while (false)
+/// This function is safe to use in static initializers.
+void writeError(const char * data, size_t size)
+{
+    while (size != 0)
+    {
+        ssize_t res = ::write(STDERR_FILENO, data, size);
+
+        if ((-1 == res || 0 == res) && errno != EINTR)
+            _Exit(1);
+
+        if (res > 0)
+        {
+            data += res;
+            size -= res;
+        }
+    }
+}
 
 /// Check SSE and others instructions availability. Calls exit on fail.
 /// This function must be called as early as possible, even before main, because static initializers may use unavailable instructions.
@@ -286,7 +266,8 @@ void checkRequiredInstructions()
         /// Typical implementation of strlen is using SSE4.2 or AVX2.
         /// But this is not the case because it's compiler builtin and is executed at compile time.
 
-        writeError("Can not set signal handler\n");
+        const char * msg = "Can not set signal handler\n";
+        writeError(msg, strlen(msg));
         _Exit(1);
     }
 
@@ -294,10 +275,12 @@ void checkRequiredInstructions()
 
     if (sigsetjmp(jmpbuf, 1))
     {
-        writeError("Instruction check fail. The CPU does not support ");
-        if (!std::apply(writeRetry, instructionFailToString(fail)))
-            _Exit(1);
-        writeError(" instruction set.\n");
+        const char * msg1 = "Instruction check fail. The CPU does not support ";
+        writeError(msg1, strlen(msg1));
+        const char * msg2 = instructionFailToString(fail);
+        writeError(msg2, strlen(msg2));
+        const char * msg3 = " instruction set.\n";
+        writeError(msg3, strlen(msg3));
         _Exit(1);
     }
 
@@ -305,18 +288,13 @@ void checkRequiredInstructions()
 
     if (sigaction(signal, &sa_old, nullptr))
     {
-        writeError("Can not set signal handler\n");
+        const char * msg = "Can not set signal handler\n";
+        writeError(msg, strlen(msg));
         _Exit(1);
     }
 }
 
-struct Checker
-{
-    Checker()
-    {
-        checkRequiredInstructions();
-    }
-} checker;
+struct Checker { Checker() { checkRequiredInstructions(); } } checker;
 
 }
 

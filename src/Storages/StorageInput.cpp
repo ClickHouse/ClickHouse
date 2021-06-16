@@ -27,14 +27,17 @@ StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription 
 }
 
 
-class StorageInputSource : public SourceWithProgress, WithContext
+class StorageInputSource : public SourceWithProgress
 {
 public:
-    StorageInputSource(ContextPtr context_, Block sample_block) : SourceWithProgress(std::move(sample_block)), WithContext(context_) {}
+    StorageInputSource(Context & context_, Block sample_block)
+        : SourceWithProgress(std::move(sample_block)), context(context_)
+    {
+    }
 
     Chunk generate() override
     {
-        auto block = getContext()->getInputBlocksReaderCallback()(getContext());
+        auto block = context.getInputBlocksReaderCallback()(context);
         if (!block)
             return {};
 
@@ -43,6 +46,9 @@ public:
     }
 
     String getName() const override { return "Input"; }
+
+private:
+    Context & context;
 };
 
 
@@ -55,19 +61,19 @@ void StorageInput::setInputStream(BlockInputStreamPtr input_stream_)
 Pipe StorageInput::read(
     const Names & /*column_names*/,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
     Pipes pipes;
-    auto query_context = context->getQueryContext();
+    Context & query_context = const_cast<Context &>(context).getQueryContext();
     /// It is TCP request if we have callbacks for input().
-    if (query_context->getInputBlocksReaderCallback())
+    if (query_context.getInputBlocksReaderCallback())
     {
         /// Send structure to the client.
-        query_context->initializeInput(shared_from_this());
+        query_context.initializeInput(shared_from_this());
         return Pipe(std::make_shared<StorageInputSource>(query_context, metadata_snapshot->getSampleBlock()));
     }
 

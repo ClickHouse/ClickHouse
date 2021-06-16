@@ -47,7 +47,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     const auto storage_settings = storage.getSettings();
     check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
-    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -57,7 +57,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
     try
     {
-        if (first_time || readonly_mode_was_set || storage.getZooKeeper()->expired())
+        if (first_time || storage.getZooKeeper()->expired())
         {
             startup_completed = false;
 
@@ -67,15 +67,15 @@ void ReplicatedMergeTreeRestartingThread::run()
             }
             else
             {
-                if (storage.getZooKeeper()->expired())
+                LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
+
+                bool old_val = false;
+                if (storage.is_readonly.compare_exchange_strong(old_val, true))
                 {
-                    LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
-                    setReadonly();
+                    incr_readonly = true;
+                    CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
                 }
-                else if (readonly_mode_was_set)
-                {
-                    LOG_WARNING(log, "Table was in readonly mode. Will try to activate it.");
-                }
+
                 partialShutdown();
             }
 
@@ -83,7 +83,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             {
                 try
                 {
-                    storage.setZooKeeper();
+                    storage.setZooKeeper(storage.global_context.getZooKeeper());
                 }
                 catch (const Coordination::Exception &)
                 {
@@ -98,14 +98,8 @@ void ReplicatedMergeTreeRestartingThread::run()
 
                 if (!need_stop && !tryStartup())
                 {
-                    /// We couldn't startup replication. Table must be readonly.
-                    /// Otherwise it can have partially initialized queue and other
-                    /// strange parts of state.
-                    setReadonly();
-
                     if (first_time)
                         storage.startup_event.set();
-
                     task->scheduleAfter(retry_period_ms);
                     return;
                 }
@@ -122,7 +116,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             bool old_val = true;
             if (storage.is_readonly.compare_exchange_strong(old_val, false))
             {
-                readonly_mode_was_set = false;
+                incr_readonly = false;
                 CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
             }
 
@@ -131,8 +125,6 @@ void ReplicatedMergeTreeRestartingThread::run()
     }
     catch (...)
     {
-        /// We couldn't activate table let's set it into readonly mode
-        setReadonly();
         storage.startup_event.set();
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
@@ -174,9 +166,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.partial_shutdown_called = false;
         storage.partial_shutdown_event.reset();
 
-        /// Start queue processing
-        storage.background_executor.start();
-
         storage.queue_updating_task->activateAndSchedule();
         storage.mutations_updating_task->activateAndSchedule();
         storage.mutations_finalizing_task->activateAndSchedule();
@@ -195,7 +184,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         catch (const Coordination::Exception & e)
         {
-            LOG_ERROR(log, "Couldn't start replication (table will be in readonly mode): {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
+            LOG_ERROR(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
         }
         catch (const Exception & e)
@@ -203,7 +192,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
 
-            LOG_ERROR(log, "Couldn't start replication (table will be in readonly mode): {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
+            LOG_ERROR(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
         }
     }
@@ -230,7 +219,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
         {
             LOG_DEBUG(log, "Found part {} with failed quorum. Moving to detached. This shouldn't happen often.", part_name);
             storage.forgetPartAndMoveToDetached(part, "noquorum");
-            storage.queue.removeFailedQuorumPart(part->info);
+            storage.queue.removeFromVirtualParts(part->info);
         }
     }
 }
@@ -241,34 +230,16 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     auto zookeeper = storage.getZooKeeper();
 
     String quorum_str;
-    if (zookeeper->tryGet(fs::path(storage.zookeeper_path) / "quorum" / "status", quorum_str))
+    if (zookeeper->tryGet(storage.zookeeper_path + "/quorum/status", quorum_str))
     {
-        ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
+        ReplicatedMergeTreeQuorumEntry quorum_entry;
+        quorum_entry.fromString(quorum_str);
 
         if (!quorum_entry.replicas.count(storage.replica_name)
-            && storage.getActiveContainingPart(quorum_entry.part_name))
+            && zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
         {
             LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
-            storage.updateQuorum(quorum_entry.part_name, false);
-        }
-    }
-
-    Strings part_names;
-    String parallel_quorum_parts_path = fs::path(storage.zookeeper_path) / "quorum" / "parallel";
-    if (zookeeper->tryGetChildren(parallel_quorum_parts_path, part_names) == Coordination::Error::ZOK)
-    {
-        for (auto & part_name : part_names)
-        {
-            if (zookeeper->tryGet(fs::path(parallel_quorum_parts_path) / part_name, quorum_str))
-            {
-                ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
-                if (!quorum_entry.replicas.count(storage.replica_name)
-                    && storage.getActiveContainingPart(part_name))
-                {
-                    LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", part_name);
-                    storage.updateQuorum(part_name, true);
-                }
-            }
+            storage.updateQuorum(quorum_entry.part_name);
         }
     }
 }
@@ -281,7 +252,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     /// How other replicas can access this one.
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
-    String is_active_path = fs::path(storage.replica_path) / "is_active";
+    String is_active_path = storage.replica_path + "/is_active";
 
     /** If the node is marked as active, but the mark is made in the same instance, delete it.
       * This is possible only when session in ZooKeeper expires.
@@ -305,7 +276,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(zkutil::makeSetRequest(fs::path(storage.replica_path) / "host", address.toString(), -1));
+    ops.emplace_back(zkutil::makeSetRequest(storage.replica_path + "/host", address.toString(), -1));
 
     try
     {
@@ -314,7 +285,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     catch (const Coordination::Exception & e)
     {
         String existing_replica_host;
-        zookeeper->tryGet(fs::path(storage.replica_path) / "host", existing_replica_host);
+        zookeeper->tryGet(storage.replica_path + "/host", existing_replica_host);
 
         if (existing_replica_host.empty())
             existing_replica_host = "without host node";
@@ -355,9 +326,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.cleanup_thread.stop();
     storage.part_check_thread.stop();
 
-    /// Stop queue processing
-    storage.background_executor.finish();
-
     LOG_TRACE(log, "Threads finished");
 }
 
@@ -370,24 +338,14 @@ void ReplicatedMergeTreeRestartingThread::shutdown()
     LOG_TRACE(log, "Restarting thread finished");
 
     /// For detach table query, we should reset the ReadonlyReplica metric.
-    if (readonly_mode_was_set)
+    if (incr_readonly)
     {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        readonly_mode_was_set = false;
+        incr_readonly = false;
     }
 
     /// Stop other tasks.
     partialShutdown();
-}
-
-void ReplicatedMergeTreeRestartingThread::setReadonly()
-{
-    bool old_val = false;
-    if (storage.is_readonly.compare_exchange_strong(old_val, true))
-    {
-        readonly_mode_was_set = true;
-        CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-    }
 }
 
 }

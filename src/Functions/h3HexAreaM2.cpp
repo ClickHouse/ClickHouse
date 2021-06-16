@@ -1,9 +1,3 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
-#if USE_H3
-
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -18,21 +12,19 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-namespace
-{
-
 class FunctionH3HexAreaM2 : public IFunction
 {
 public:
     static constexpr auto name = "h3HexAreaM2";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3HexAreaM2>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3HexAreaM2>(); }
 
     std::string getName() const override { return name; }
 
@@ -50,9 +42,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
         auto dst = ColumnVector<Float64>::create();
         auto & dst_data = dst->getData();
@@ -70,11 +62,10 @@ public:
             dst_data[row] = res;
         }
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
-}
 
 void registerFunctionH3HexAreaM2(FunctionFactory & factory)
 {
@@ -82,5 +73,3 @@ void registerFunctionH3HexAreaM2(FunctionFactory & factory)
 }
 
 }
-
-#endif

@@ -9,7 +9,6 @@
 #include <AggregateFunctions/QuantileExactWeighted.h>
 #include <AggregateFunctions/QuantileTiming.h>
 #include <AggregateFunctions/QuantileTDigest.h>
-#include <AggregateFunctions/QuantileBFloat16Histogram.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
@@ -29,7 +28,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -105,9 +103,7 @@ public:
             return res;
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto value = static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
 
@@ -126,23 +122,23 @@ public:
             this->data(place).add(value);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like compactization) before serializing.
         this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like sorting) for obtain a result.
         auto & data = this->data(place);
@@ -229,8 +225,5 @@ struct NameQuantileTDigest { static constexpr auto name = "quantileTDigest"; };
 struct NameQuantileTDigestWeighted { static constexpr auto name = "quantileTDigestWeighted"; };
 struct NameQuantilesTDigest { static constexpr auto name = "quantilesTDigest"; };
 struct NameQuantilesTDigestWeighted { static constexpr auto name = "quantilesTDigestWeighted"; };
-
-struct NameQuantileBFloat16 { static constexpr auto name = "quantileBFloat16"; };
-struct NameQuantilesBFloat16 { static constexpr auto name = "quantilesBFloat16"; };
 
 }

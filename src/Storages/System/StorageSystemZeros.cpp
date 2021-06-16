@@ -93,8 +93,8 @@ StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multith
 Pipe StorageSystemZeros::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo &,
-    ContextPtr /*context*/,
+    const SelectQueryInfo &,
+    const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)

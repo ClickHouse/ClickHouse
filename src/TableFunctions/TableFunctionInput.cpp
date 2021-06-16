@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+StoragePtr TableFunctionInput::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     const auto * function = ast_function->as<ASTFunction>();
 
@@ -35,18 +35,12 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception("Table function '" + getName() + "' requires exactly 1 argument: structure",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context)->as<ASTLiteral &>().value.safeGet<String>();
-}
+    String structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context)->as<ASTLiteral &>().value.safeGet<String>();
+    auto columns = parseColumnsListFromString(structure, context);
+    StoragePtr storage = StorageInput::create(StorageID(getDatabaseName(), table_name), columns);
 
-ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr context) const
-{
-    return parseColumnsListFromString(structure, context);
-}
-
-StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
-{
-    auto storage = StorageInput::create(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
     storage->startup();
+
     return storage;
 }
 

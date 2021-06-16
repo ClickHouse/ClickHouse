@@ -4,22 +4,17 @@
 namespace DB
 {
 
-ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_, std::shared_ptr<const Context> context_)
-    : ISourceStep(DataStream{.header = pipe_.getHeader()})
+ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_, std::shared_ptr<Context> context_)
+    : ISourceStep(DataStream{.header = pipe_.getHeader(), .has_single_port = true})
     , pipe(std::move(pipe_))
     , context(std::move(context_))
 {
 }
 
-void ReadFromPreparedSource::initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromPreparedSource::initializePipeline(QueryPipeline & pipeline)
 {
-    for (const auto & processor : pipe.getProcessors())
-        processors.emplace_back(processor);
-
     pipeline.init(std::move(pipe));
-
-    if (context)
-        pipeline.addInterpreterContext(std::move(context));
+    pipeline.addInterpreterContext(std::move(context));
 }
 
 }

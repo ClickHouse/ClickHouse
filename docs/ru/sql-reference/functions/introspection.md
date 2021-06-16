@@ -1,8 +1,3 @@
----
-toc_priority: 65
-toc_title: "Функции интроспекции"
----
-
 # Функции интроспекции {#introspection-functions}
 
 Функции из этого раздела могут использоваться для интроспекции [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) и [DWARF](https://en.wikipedia.org/wiki/DWARF) в целях профилирования запросов.
@@ -14,7 +9,7 @@ toc_title: "Функции интроспекции"
 
 -   Установите пакет `clickhouse-common-static-dbg`.
 
--   Установите настройку [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) в 1.
+-   Установите настройку [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) в 1.
 
 Из соображений безопасности данные функции отключены по умолчанию.
 
@@ -32,7 +27,7 @@ ClickHouse сохраняет отчеты профилировщика в [жу
 addressToLine(address_of_binary_instruction)
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `address_of_binary_instruction` ([Тип UInt64](../../sql-reference/functions/introspection.md))- Адрес инструкции в запущенном процессе.
 
@@ -53,13 +48,13 @@ addressToLine(address_of_binary_instruction)
 Включение функций самоанализа:
 
 ``` sql
-SET allow_introspection_functions=1;
+SET allow_introspection_functions=1
 ```
 
 Выбор первой строки из списка `trace_log` системная таблица:
 
 ``` sql
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 \G
 ```
 
 ``` text
@@ -79,7 +74,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
 Получение имени файла исходного кода и номера строки для одного адреса:
 
 ``` sql
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(94784076370703) \G
 ```
 
 ``` text
@@ -98,7 +93,7 @@ LIMIT 1
 \G
 ```
 
-Функция [arrayMap](../../sql-reference/functions/array-functions.md#array-map) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `addressToLine`. Результат этой обработки вы видите в виде `trace_source_code_lines` колонки выходных данных.
+Функция [arrayMap](higher-order-functions.md#higher_order_functions-array-map) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `addressToLine`. Результат этой обработки вы видите в виде `trace_source_code_lines` колонки выходных данных.
 
 ``` text
 Row 1:
@@ -123,9 +118,9 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 addressToSymbol(address_of_binary_instruction)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `address_of_binary_instruction` ([Тип uint64](../../sql-reference/functions/introspection.md)) — адрес инструкции в запущенном процессе.
+-   `address_of_binary_instruction` ([Тип uint64](../../sql-reference/functions/introspection.md)) — Адрес инструкции в запущенном процессе.
 
 **Возвращаемое значение**
 
@@ -139,13 +134,13 @@ addressToSymbol(address_of_binary_instruction)
 Включение функций самоанализа:
 
 ``` sql
-SET allow_introspection_functions=1;
+SET allow_introspection_functions=1
 ```
 
 Выбор первой строки из списка `trace_log` системная таблица:
 
 ``` sql
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 \G
 ```
 
 ``` text
@@ -165,7 +160,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 Получение символа для одного адреса:
 
 ``` sql
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) \G
 ```
 
 ``` text
@@ -184,7 +179,7 @@ LIMIT 1
 \G
 ```
 
-То [arrayMap](../../sql-reference/functions/array-functions.md#array-map) функция позволяет обрабатывать каждый отдельный элемент системы. `trace` массив по типу `addressToSymbols` функция. Результат этой обработки вы видите в виде `trace_symbols` колонка выходных данных.
+То [arrayMap](higher-order-functions.md#higher_order_functions-array-map) функция позволяет обрабатывать каждый отдельный элемент системы. `trace` массив по типу `addressToSymbols` функция. Результат этой обработки вы видите в виде `trace_symbols` колонка выходных данных.
 
 ``` text
 Row 1:
@@ -220,9 +215,9 @@ clone
 demangle(symbol)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `symbol` ([Строка](../../sql-reference/functions/introspection.md)) - символ из объектного файла.
+-   `symbol` ([Строка](../../sql-reference/functions/introspection.md)) - Символ из объектного файла.
 
 **Возвращаемое значение**
 
@@ -236,13 +231,13 @@ demangle(symbol)
 Включение функций самоанализа:
 
 ``` sql
-SET allow_introspection_functions=1;
+SET allow_introspection_functions=1
 ```
 
 Выбор первой строки из списка `trace_log` системная таблица:
 
 ``` sql
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 \G
 ```
 
 ``` text
@@ -262,7 +257,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 Получение имени функции для одного адреса:
 
 ``` sql
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) \G
 ```
 
 ``` text
@@ -281,7 +276,7 @@ LIMIT 1
 \G
 ```
 
-Функция [arrayMap](../../sql-reference/functions/array-functions.md#array-map) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `demangle`.
+Функция [arrayMap](higher-order-functions.md#higher_order_functions-array-map) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `demangle`.
 
 ``` text
 Row 1:
@@ -306,69 +301,3 @@ execute_native_thread_routine
 start_thread
 clone
 ```
-
-## tid {#tid}
-
-Возвращает id потока, в котором обрабатывается текущий [Block](https://clickhouse.tech/docs/ru/development/architecture/#block).
-
-**Синтаксис**
-
-``` sql
-tid()
-```
-
-**Возвращаемое значение**
-
--   Id текущего потока. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT tid();
-```
-
-Результат:
-
-``` text
-┌─tid()─┐
-│  3878 │
-└───────┘
-```
-
-## logTrace {#logtrace}
-
- Выводит сообщение в лог сервера для каждого [Block](https://clickhouse.tech/docs/ru/development/architecture/#block).
-
-**Синтаксис**
-
-``` sql
-logTrace('message')
-```
-
-**Аргументы**
-
--   `message` — сообщение, которое отправляется в серверный лог. [String](../../sql-reference/data-types/string.md#string).
-
-**Возвращаемое значение**
-
--   Всегда возвращает 0.
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT logTrace('logTrace message');
-```
-
-Результат:
-
-``` text
-┌─logTrace('logTrace message')─┐
-│                            0 │
-└──────────────────────────────┘
-```
-
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/introspection/) <!--hide-->
