@@ -1239,7 +1239,7 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-### Вывод данных {#vyvod-dannykh-3}
+### Вывод данных {#selecting-data-arrow}
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Arrow, используйте команду следующего вида:
 
