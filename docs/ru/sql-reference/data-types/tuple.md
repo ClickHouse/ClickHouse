@@ -49,7 +49,7 @@ SELECT tuple(1,NULL) AS x, toTypeName(x)
 
 ## Адресация элементов кортежа {#addressing-tuple-elements}
 
-Можно считывать элементы кортежей с помощью индексов и имен:
+К элементам кортежа можно обращаться по индексу и по имени:
 
 ``` sql
 CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
