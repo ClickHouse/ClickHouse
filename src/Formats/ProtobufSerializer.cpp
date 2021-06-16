@@ -2096,7 +2096,7 @@ namespace
             if (reader)
             {
                 missing_column_indices.resize(num_columns_);
-                for (size_t column_index : ext::range(num_columns_))
+                for (size_t column_index : collections::range(num_columns_))
                     missing_column_indices[column_index] = column_index;
                 for (const FieldInfo & info : field_infos)
                 {
@@ -2593,7 +2593,7 @@ namespace
             data_types.reserve(initial_size * 2);
             elements1.reserve(initial_size * 2);
             elements2.reserve(initial_size * 2);
-            for (size_t i : ext::range(initial_size))
+            for (size_t i : collections::range(initial_size))
             {
                 if (data_types[i]->getTypeId() == TypeIndex::Array)
                 {
@@ -2659,7 +2659,7 @@ namespace
             std::vector<std::pair<const FieldDescriptor *, std::string_view>> field_descriptors_with_suffixes;
 
             /// We're going through all the passed columns.
-            for (size_t column_idx : ext::range(num_columns))
+            for (size_t column_idx : collections::range(num_columns))
             {
                 if (boost::range::binary_search(used_column_indices, column_idx))
                     continue;
