@@ -31,7 +31,7 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <common/getFQDNOrHostName.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>

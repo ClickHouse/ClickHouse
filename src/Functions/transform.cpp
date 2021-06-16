@@ -1,5 +1,5 @@
 #include <mutex>
-#include <ext/bit_cast.h>
+#include <common/bit_cast.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -493,7 +493,7 @@ private:
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
@@ -509,7 +509,7 @@ private:
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
@@ -525,7 +525,7 @@ private:
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
             else
@@ -543,7 +543,7 @@ private:
         ColumnString::Offset current_dst_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             StringRef ref = it ? it->getMapped() : dst_default;
             dst_data.resize(current_dst_offset + ref.size);
             memcpy(&dst_data[current_dst_offset], ref.data, ref.size);

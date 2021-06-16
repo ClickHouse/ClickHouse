@@ -5,7 +5,7 @@
 
 #include <atomic>
 #include <shared_mutex>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 
 namespace DB
@@ -14,9 +14,9 @@ namespace DB
 class StorageFileBlockInputStream;
 class StorageFileBlockOutputStream;
 
-class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile final : public shared_ptr_helper<StorageFile>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageFile>;
+    friend struct shared_ptr_helper<StorageFile>;
 public:
     std::string getName() const override { return "File"; }
 
