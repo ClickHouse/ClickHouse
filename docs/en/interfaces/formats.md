@@ -1281,7 +1281,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 `Arrow` is Apache Arrow’s "file mode" format. It is designed for in-memory random access.
 
-### Data Types Matching {#data_types-matching-4}
+### Data Types Matching {#data_types-matching-arrow}
 
 The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
