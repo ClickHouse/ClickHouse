@@ -21,7 +21,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>

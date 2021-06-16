@@ -11,7 +11,7 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
 #include "ODBCConnectionFactory.h"
