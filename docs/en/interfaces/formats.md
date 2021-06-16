@@ -1320,7 +1320,7 @@ You can insert Arrow data from a file into ClickHouse table by the following com
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-### Selecting Data {#selecting-data-3}
+### Selecting Data {#selecting-data-arrow}
 
 You can select data from a ClickHouse table and save them into some file in the Arrow format by the following command:
 
