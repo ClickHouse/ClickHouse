@@ -99,7 +99,7 @@ def _test_on_connection_losses(test_cluster, zk_timeout):
 
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(kill_instance)
-        request = instance.get_query_request("DROP TABLE IF EXISTS test.__nope__ ON CLUSTER 'cluster'", timeout=20)
+        request = instance.get_query_request("DROP TABLE IF EXISTS test.__nope__ ON CLUSTER 'cluster'", timeout=40)
         time.sleep(zk_timeout)
         pm.restore_instance_zk_connections(kill_instance)
 
@@ -107,11 +107,11 @@ def _test_on_connection_losses(test_cluster, zk_timeout):
 
 
 def test_on_connection_loss(test_cluster):
-    _test_on_connection_losses(test_cluster, 10)  # connection loss will occur only (10 sec ZK timeout in config)
+    _test_on_connection_losses(test_cluster, 15)  # connection loss will occur only (10 sec ZK timeout in config)
 
 
 def test_on_session_expired(test_cluster):
-    _test_on_connection_losses(test_cluster, 30)  # session should be expired (10 sec ZK timeout in config)
+    _test_on_connection_losses(test_cluster, 60)  # session should be expired (10 sec ZK timeout in config)
 
 
 def test_simple_alters(test_cluster):
