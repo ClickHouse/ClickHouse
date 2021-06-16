@@ -1,6 +1,6 @@
 #include <Server/HTTP/HTMLForm.h>
 
-#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <Server/HTTP/ReadHeaders.h>
@@ -36,39 +36,39 @@ const std::string HTMLForm::ENCODING_MULTIPART = "multipart/form-data";
 const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 
 
-HTMLForm::HTMLForm(ContextPtr context)
-    : max_fields_number(context->getSettingsRef().http_max_fields_number)
-    , max_field_name_size(context->getSettingsRef().http_max_field_name_size)
-    , max_field_value_size(context->getSettingsRef().http_max_field_value_size)
+HTMLForm::HTMLForm(const Settings & settings)
+    : max_fields_number(settings.http_max_fields)
+    , max_field_name_size(settings.http_max_field_name_size)
+    , max_field_value_size(settings.http_max_field_value_size)
     , encoding(ENCODING_URL)
 {
 }
 
 
-HTMLForm::HTMLForm(ContextPtr context, const std::string & encoding_) : HTMLForm(context)
+HTMLForm::HTMLForm(const Settings & settings, const std::string & encoding_) : HTMLForm(settings)
 {
     encoding = encoding_;
 }
 
 
-HTMLForm::HTMLForm(ContextPtr context, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler)
-    : HTMLForm(context)
+HTMLForm::HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler)
+    : HTMLForm(settings)
 {
     load(request, requestBody, handler);
 }
 
 
-HTMLForm::HTMLForm(ContextPtr context, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody) : HTMLForm(context)
+HTMLForm::HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody) : HTMLForm(settings)
 {
     load(request, requestBody);
 }
 
 
-HTMLForm::HTMLForm(ContextPtr context, const Poco::Net::HTTPRequest & request) : HTMLForm(context, Poco::URI(request.getURI()))
+HTMLForm::HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request) : HTMLForm(settings, Poco::URI(request.getURI()))
 {
 }
 
-HTMLForm::HTMLForm(ContextPtr context, const Poco::URI & uri) : HTMLForm(context)
+HTMLForm::HTMLForm(const Settings & settings, const Poco::URI & uri) : HTMLForm(settings)
 {
     ReadBufferFromString istr(uri.getRawQuery());  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     readQuery(istr);

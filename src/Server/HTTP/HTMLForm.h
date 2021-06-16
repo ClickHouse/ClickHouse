@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
@@ -12,6 +11,8 @@
 
 namespace DB
 {
+
+struct Settings;
 
 class HTMLForm : public Poco::Net::NameValueCollection, private boost::noncopyable
 {
@@ -25,26 +26,26 @@ public:
 
     /// Creates an empty HTMLForm and sets the
     /// encoding to "application/x-www-form-urlencoded".
-    explicit HTMLForm(ContextPtr context);
+    explicit HTMLForm(const Settings & settings);
 
     /// Creates an empty HTMLForm that uses the given encoding.
     /// Encoding must be either "application/x-www-form-urlencoded" (which is the default) or "multipart/form-data".
-    explicit HTMLForm(ContextPtr context, const std::string & encoding);
+    explicit HTMLForm(const Settings & settings, const std::string & encoding);
 
     /// Creates a HTMLForm from the given HTTP request.
     /// Uploaded files are passed to the given PartHandler.
-    HTMLForm(ContextPtr context, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler);
+    HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler);
 
     /// Creates a HTMLForm from the given HTTP request.
     /// Uploaded files are silently discarded.
-    HTMLForm(ContextPtr context, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody);
+    HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody);
 
     /// Creates a HTMLForm from the given HTTP request.
     /// The request must be a GET request and the form data must be in the query string (URL encoded).
     /// For POST requests, you must use one of the constructors taking an additional input stream for the request body.
-    explicit HTMLForm(ContextPtr context, const Poco::Net::HTTPRequest & request);
+    explicit HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request);
 
-    explicit HTMLForm(ContextPtr context, const Poco::URI & uri);
+    explicit HTMLForm(const Settings & settings, const Poco::URI & uri);
 
     template <typename T>
     T getParsed(const std::string & key, T default_value)
