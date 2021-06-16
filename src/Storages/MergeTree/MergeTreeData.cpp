@@ -904,7 +904,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     std::mutex mutex;
 
-    DataPartsVector broken_parts_to_remove;
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
 
@@ -913,12 +912,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     ThreadPool pool(num_threads);
 
-    for (size_t i = 0; i < part_names_with_disks.size(); ++i)
+    for (auto & part_names_with_disk : part_names_with_disks)
     {
-        pool.scheduleOrThrowOnError([&, i]
+        pool.scheduleOrThrowOnError([&]
         {
-            const auto & part_name = part_names_with_disks[i].first;
-            const auto part_disk_ptr = part_names_with_disks[i].second;
+            const auto & part_name = part_names_with_disk.first;
+            const auto part_disk_ptr = part_names_with_disk.second;
 
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
@@ -960,55 +959,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
-            /// Ignore and possibly delete broken parts that can appear as a result of hard server restart.
+            /// Ignore broken parts that can appear as a result of hard server restart.
             if (broken)
             {
-                if (part->info.level == 0)
-                {
-                    /// It is impossible to restore level 0 parts.
-                    LOG_ERROR(log, "Considering to remove broken part {}{} because it's impossible to repair.", getFullPathOnDisk(part_disk_ptr), part_name);
-                    std::lock_guard loading_lock(mutex);
-                    broken_parts_to_remove.push_back(part);
-                }
-                else
-                {
-                    /// Count the number of parts covered by the broken part. If it is at least two, assume that
-                    /// the broken part was created as a result of merging them and we won't lose data if we
-                    /// delete it.
-                    size_t contained_parts = 0;
-
-                    LOG_ERROR(log, "Part {}{} is broken. Looking for parts to replace it.", getFullPathOnDisk(part_disk_ptr), part_name);
-
-                    for (const auto & [contained_name, contained_disk_ptr] : part_names_with_disks)
-                    {
-                        if (contained_name == part_name)
-                            continue;
-
-                        MergeTreePartInfo contained_part_info;
-                        if (!MergeTreePartInfo::tryParsePartName(contained_name, &contained_part_info, format_version))
-                            continue;
-
-                        if (part->info.contains(contained_part_info))
-                        {
-                            LOG_ERROR(log, "Found part {}{}", getFullPathOnDisk(contained_disk_ptr), contained_name);
-                            ++contained_parts;
-                        }
-                    }
-
-                    if (contained_parts >= 2)
-                    {
-                        LOG_ERROR(log, "Considering to remove broken part {}{} because it covers at least 2 other parts", getFullPathOnDisk(part_disk_ptr), part_name);
-                        std::lock_guard loading_lock(mutex);
-                        broken_parts_to_remove.push_back(part);
-                    }
-                    else
-                    {
-                        LOG_ERROR(log, "Detaching broken part {}{} because it covers less than 2 parts. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
-                        std::lock_guard loading_lock(mutex);
-                        broken_parts_to_detach.push_back(part);
-                        ++suspicious_broken_parts;
-                    }
-                }
+                LOG_ERROR(log, "Detaching broken part {}{}. If it happened after update, it is likely because of backward incompability. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
+                std::lock_guard loading_lock(mutex);
+                broken_parts_to_detach.push_back(part);
+                ++suspicious_broken_parts;
 
                 return;
             }
@@ -1055,10 +1012,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
             ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
-    for (auto & part : broken_parts_to_remove)
-        part->remove();
     for (auto & part : broken_parts_to_detach)
-        part->renameToDetached("");
+        part->renameToDetached("broken_on_start");
 
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
