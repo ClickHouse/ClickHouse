@@ -181,6 +181,7 @@
         "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
     ],
     "antlr": [
+        "00011_array_join_alias",
         "00186_very_long_arrays",
         "00534_functions_bad_arguments12",
         "00534_functions_bad_arguments2",
@@ -198,6 +199,7 @@
         "00825_protobuf_format_nested_optional",
         "00825_protobuf_format_no_length_delimiter",
         "00825_protobuf_format_persons",
+        "00825_protobuf_format_splitted_nested",
         "00825_protobuf_format_squares",
         "00825_protobuf_format_table_default",
         "00826_cross_to_inner_join",

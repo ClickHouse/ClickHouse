@@ -18,7 +18,7 @@
 namespace DB
 {
 
-FunctionPtr FunctionModelEvaluate::create(ContextConstPtr context)
+FunctionPtr FunctionModelEvaluate::create(ContextPtr context)
 {
     return std::make_shared<FunctionModelEvaluate>(context->getExternalModelsLoader());
 }

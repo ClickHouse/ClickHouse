@@ -74,6 +74,8 @@ SKIP_LIST = [
     "01300_client_save_history_when_terminated",  # expect-test
     "01304_direct_io",
     "01306_benchmark_json",
+    "01035_lc_empty_part_bug",  # FLAKY
+    "01175_distributed_ddl_output_mode_long",  # tcp port in reference
     "01320_create_sync_race_condition_zookeeper",
     "01355_CSV_input_format_allow_errors",
     "01370_client_autocomplete_word_break_characters",  # expect-test
@@ -98,6 +100,7 @@ SKIP_LIST = [
     "01561_mann_whitney_scipy",
     "01582_distinct_optimization",
     "01591_window_functions",
+    "01594_too_low_memory_limits",
     "01599_multiline_input_and_singleline_comments",  # expect-test
     "01601_custom_tld",
     "01606_git_import",
@@ -113,7 +116,7 @@ SKIP_LIST = [
     "01685_ssd_cache_dictionary_complex_key",
     "01737_clickhouse_server_wait_server_pool_long",
     "01746_executable_pool_dictionary",
-    "01747_executable_pool_dictionary_implicit_key",
+    "01747_executable_pool_dictionary_implicit_key.sql",
     "01747_join_view_filter_dictionary",
     "01748_dictionary_table_dot",
     "01754_cluster_all_replicas_shard_num",
@@ -126,6 +129,9 @@ SKIP_LIST = [
     "01848_http_insert_segfault",
     "01875_ssd_cache_dictionary_decimal256_type",
     "01880_remote_ipv6",
+    "01889_check_row_policy_defined_using_user_function",
+    "01889_clickhouse_client_config_format",
+    "01903_ssd_cache_dictionary_array_type",
 ]
 
 
@@ -172,7 +178,8 @@ def run_shell(use_antlr, bin_prefix, server, database, path, reference, replace_
         'CLICKHOUSE_PORT_INTERSERVER': str(server.inter_port),
         'CLICKHOUSE_PORT_POSTGRESQL': str(server.postgresql_port),
         'CLICKHOUSE_TMP': server.tmp_dir,
-        'CLICKHOUSE_CONFIG_CLIENT': server.client_config
+        'CLICKHOUSE_CONFIG_CLIENT': server.client_config,
+        'PROTOC_BINARY': os.path.abspath(os.path.join(os.path.dirname(bin_prefix), '..', 'contrib', 'protobuf', 'protoc')),  # FIXME: adhoc solution
     }
     if use_antlr:
         env['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'

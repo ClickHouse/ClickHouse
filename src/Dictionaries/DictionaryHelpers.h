@@ -7,6 +7,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -284,6 +286,8 @@ public:
   *
   * If default_values_column is null then attribute_default_value will be used.
   * If default_values_column is not null in constructor than this column values will be used as default values.
+  *
+  * For nullable dictionary attribute isNullAt method is provided.
  */
 template <typename DictionaryAttributeType>
 class DictionaryDefaultValueExtractor
@@ -293,22 +297,40 @@ class DictionaryDefaultValueExtractor
 public:
     using DefaultValueType = DictionaryValueType<DictionaryAttributeType>;
 
-    explicit DictionaryDefaultValueExtractor(DictionaryAttributeType attribute_default_value, ColumnPtr default_values_column_ = nullptr)
-        : default_value(std::move(attribute_default_value))
+    explicit DictionaryDefaultValueExtractor(
+        Field attribute_default_value,
+        ColumnPtr default_values_column_)
     {
+        if (default_values_column_ != nullptr &&
+            isColumnConst(*default_values_column_))
+        {
+            attribute_default_value = (*default_values_column_)[0];
+            default_values_column_ = nullptr;
+        }
+
         if (default_values_column_ == nullptr)
+        {
             use_attribute_default_value = true;
+
+            if (attribute_default_value.isNull())
+                default_value_is_null = true;
+            else
+                default_value = attribute_default_value.get<NearestFieldType<DictionaryAttributeType>>();
+        }
         else
         {
-            if (const auto * const default_col = checkAndGetColumn<DefaultColumnType>(*default_values_column_))
+            const IColumn * default_values_column_ptr = default_values_column_.get();
+
+            if (const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(default_values_column_.get()))
+            {
+                default_values_column_ptr = nullable_column->getNestedColumnPtr().get();
+                is_null_map = &nullable_column->getNullMapColumn();
+            }
+
+            if (const auto * const default_col = checkAndGetColumn<DefaultColumnType>(default_values_column_ptr))
             {
                 default_values_column = default_col;
                 use_attribute_default_value = false;
-            }
-            else if (const auto * const default_col_const = checkAndGetColumnConst<DefaultColumnType>(default_values_column_.get()))
-            {
-                default_value = default_col_const->template getValue<DictionaryAttributeType>();
-                use_attribute_default_value = true;
             }
             else
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Type of default column is not the same as dictionary attribute type.");
@@ -332,10 +354,24 @@ public:
         else
             return default_values_column->getData()[row];
     }
+
+    bool isNullAt(size_t row)
+    {
+        if (default_value_is_null)
+            return true;
+
+        if (is_null_map)
+            return is_null_map->getData()[row];
+
+        return false;
+    }
+
 private:
-    DictionaryAttributeType default_value;
+    DictionaryAttributeType default_value {};
     const DefaultColumnType * default_values_column = nullptr;
+    const ColumnUInt8 * is_null_map = nullptr;
     bool use_attribute_default_value = false;
+    bool default_value_is_null = false;
 };
 
 template <DictionaryKeyType key_type>

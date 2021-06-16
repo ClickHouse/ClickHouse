@@ -434,7 +434,7 @@ tableFunctionExpr: identifier LPAREN tableArgList? RPAREN;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr
-    : tableIdentifier
+    : nestedIdentifier
     | tableFunctionExpr
     | literal
     ;

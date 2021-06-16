@@ -5,15 +5,13 @@
 #include <vector>
 #include <optional>
 
-#include <Common/HashTable/HashSet.h>
-#include <Common/Arena.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
-#include <DataTypes/IDataType.h>
-#include <Core/Block.h>
 #include <ext/range.h>
 #include <ext/size.h>
+
+#include <Common/HashTable/HashSet.h>
+#include <Common/Arena.h>
+#include <DataTypes/IDataType.h>
+#include <Core/Block.h>
 
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -113,31 +111,7 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::optional<NullableSet> nullable_set;
-
-        std::variant<
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            UInt128,
-            UInt256,
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            Int128,
-            Int256,
-            Decimal32,
-            Decimal64,
-            Decimal128,
-            Decimal256,
-            Float32,
-            Float64,
-            UUID,
-            StringRef,
-            Array>
-            null_values;
+        std::optional<NullableSet> is_nullable_set;
 
         std::variant<
             ContainerType<UInt8>,
@@ -173,9 +147,9 @@ private:
 
     void calculateBytesAllocated();
 
-    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
+    Attribute createAttribute(const DictionaryAttribute & attribute);
 
-    template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & keys,

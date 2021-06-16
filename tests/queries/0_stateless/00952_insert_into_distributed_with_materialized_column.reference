@@ -1,3 +1,4 @@
+insert_allow_materialized_columns=0
 insert_distributed_sync=0
 2018-08-01
 2018-08-01
@@ -12,3 +13,18 @@ insert_distributed_sync=1
 2018-08-01	2017-08-01
 2018-08-01
 2018-08-01	2017-08-01
+insert_allow_materialized_columns=1
+insert_distributed_sync=0
+2018-08-01
+2018-08-01
+2018-08-01	2019-08-01
+2018-08-01	2019-08-01
+2018-08-01
+2018-08-01	2019-08-01
+insert_distributed_sync=1
+2018-08-01
+2018-08-01
+2018-08-01	2019-08-01
+2018-08-01	2019-08-01
+2018-08-01
+2018-08-01	2019-08-01

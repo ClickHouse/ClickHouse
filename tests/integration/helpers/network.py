@@ -144,7 +144,7 @@ class _NetworkManager:
             res = subprocess.run("iptables -D DOCKER-USER 1", shell=True)
 
             if res.returncode != 0:
-                logging.info("All iptables rules cleared, " + str(iptables_iter) + "iterations, last error: " + str(res.stderr))
+                logging.info("All iptables rules cleared, " + str(iptables_iter) + " iterations, last error: " + str(res.stderr))
                 return
 
     @staticmethod

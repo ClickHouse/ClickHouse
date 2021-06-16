@@ -603,6 +603,7 @@ bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 {
     /// Visit children themself
     if (node->as<ASTIdentifier>() ||
+        node->as<ASTTableIdentifier>() ||
         node->as<ASTFunction>() ||
         node->as<ASTLiteral>() ||
         node->as<ASTExpressionList>())
@@ -620,6 +621,8 @@ void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
 {
     if (const auto * identifier = ast->as<ASTIdentifier>())
         visit(*identifier, ast, data);
+    else if (const auto * table = ast->as<ASTTableIdentifier>())
+        visit(*table, ast, data);
     else if (auto * node = ast->as<ASTFunction>())
         visit(*node, ast, data);
     else if (const auto * literal = ast->as<ASTLiteral>())
@@ -735,9 +738,9 @@ void ActionsMatcher::visit(ASTExpressionList & expression_list, const ASTPtr &, 
     }
 }
 
-void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data)
+void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Data & data)
 {
-    auto column_name = ast->getColumnName();
+    auto column_name = identifier.getColumnName();
     if (data.hasColumn(column_name))
         return;
 
@@ -916,7 +919,7 @@ void ActionsMatcher::visit(ASTFunction & node, const ASTPtr &, Data & data)
             auto & child = node.arguments->children[arg];
 
             const auto * function = child->as<ASTFunction>();
-            const auto * identifier = child->as<ASTIdentifier>();
+            const auto * identifier = child->as<ASTTableIdentifier>();
             if (function && function->name == "lambda")
             {
                 /// If the argument is a lambda expression, just remember its approximate type.
@@ -985,7 +988,7 @@ void ActionsMatcher::visit(ASTFunction & node, const ASTPtr &, Data & data)
             }
             else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
             {
-                auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
+                auto table_id = identifier->getTableId();
                 table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary);
                 auto column_string = ColumnString::create();
                 column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
@@ -1156,7 +1159,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
     const ASTPtr & right_in_operand = args.children.at(1);
 
     /// If the subquery or table name for SELECT.
-    const auto * identifier = right_in_operand->as<ASTIdentifier>();
+    const auto * identifier = right_in_operand->as<ASTTableIdentifier>();
     if (right_in_operand->as<ASTSubquery>() || identifier)
     {
         if (no_subqueries)
