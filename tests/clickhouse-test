@@ -522,13 +522,13 @@ def run_tests_array(all_tests_with_params):
                                 status += " - result differs with reference:\n{}\n".format(diff)
                                 status += 'Database: ' + testcase_args.testcase_database
                             else:
-                                if testcase_args.test_runs > 1 and total_time > 30 and 'long' not in name:
+                                if testcase_args.test_runs > 1 and total_time > 60 and 'long' not in name:
                                     # We're in Flaky Check mode, check the run time as well while we're at it.
                                     failures += 1
                                     failures_chain += 1
                                     status += MSG_FAIL
                                     status += print_test_time(total_time)
-                                    status += " - Test runs too long (> 30s). Make it faster.\n"
+                                    status += " - Test runs too long (> 60s). Make it faster.\n"
                                     status += 'Database: ' + testcase_args.testcase_database
                                 else:
                                     passed_total += 1
