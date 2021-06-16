@@ -1,6 +1,8 @@
 #pragma once
 
 
+#include <Common/Future.h>
+
 #include "Storages/MergeTree/MergeProgress.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
@@ -95,7 +97,7 @@ public:
         , ttl_merges_blocker(ttl_merges_blocker_)
         {}
 
-    std::future<MergeTreeData::MutableDataPartPtr> getFuture()
+    Future<MergeTreeData::MutableDataPartPtr> getFuture()
     {
         return promise.get_future();
     }
@@ -137,7 +139,7 @@ private:
     void finalize();
 
 
-    std::promise<MergeTreeData::MutableDataPartPtr> promise;
+    Promise<MergeTreeData::MutableDataPartPtr> promise;
 
     MergeTaskState state{MergeTaskState::NEED_PREPARE};
     VecticalMergeOneColumnState vertical_merge_one_column_state{VecticalMergeOneColumnState::NEED_PREPARE};

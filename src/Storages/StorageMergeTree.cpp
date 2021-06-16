@@ -1,5 +1,7 @@
 #include "StorageMergeTree.h"
 
+#include <optional>
+
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -26,7 +28,6 @@
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <optional>
 
 namespace CurrentMetrics
 {
@@ -35,6 +36,7 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
 
 namespace ErrorCodes
 {
@@ -859,7 +861,9 @@ bool StorageMergeTree::mergeSelectedParts(
 
     try
     {
-        new_part = merger_mutator.mergePartsToTemporaryPart(
+
+
+        auto new_part_future = merger_mutator.mergePartsToTemporaryPart(
             future_part,
             metadata_snapshot,
             *(merge_list_entry),
@@ -870,6 +874,8 @@ bool StorageMergeTree::mergeSelectedParts(
             deduplicate,
             deduplicate_by_columns,
             merging_params);
+
+        new_part = new_part_future.get();
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, nullptr);
         write_part_log({});

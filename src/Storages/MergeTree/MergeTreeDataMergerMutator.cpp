@@ -1,5 +1,8 @@
 #include "MergeTreeDataMergerMutator.h"
 
+
+#include <Common/Future.h>
+
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
@@ -422,7 +425,7 @@ static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeS
 
 
 /// parts should be sorted.
-MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
+Future<MergeTreeData::MutableDataPartPtr> MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,
     const StorageMetadataPtr & metadata_snapshot,
     MergeList::Entry & merge_entry,
@@ -437,7 +440,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const String & /*prefix*/)
 {
     auto deduplicate_by_columns_ptr = std::make_shared<Names>(deduplicate_by_columns);
-
 
     auto task = std::make_shared<MergeTask>(
         future_part,
@@ -458,8 +460,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     while (task->execute()) {}
 
-    auto result = task->getFuture().get();
-    return result;
+    return task->getFuture();
 }
 
 
@@ -1414,7 +1415,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
                     projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
                 LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
-                next_level_parts.push_back(mergePartsToTemporaryPart(
+                auto tmp_part_future = mergePartsToTemporaryPart(
                     projection_future_part,
                     projection.metadata,
                     merge_entry,
@@ -1426,7 +1427,8 @@ void MergeTreeDataMergerMutator::writeWithProjections(
                     {},
                     projection_merging_params,
                     new_data_part.get(),
-                    "tmp_merge_"));
+                    "tmp_merge_");
+                next_level_parts.push_back(tmp_part_future.get());
 
                 next_level_parts.back()->is_temp = true;
             }

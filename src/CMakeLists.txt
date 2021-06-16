@@ -472,6 +472,7 @@ if (USE_DATASKETCHES)
 endif ()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
+dbms_target_link_libraries(PRIVATE _boost_thread)
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 

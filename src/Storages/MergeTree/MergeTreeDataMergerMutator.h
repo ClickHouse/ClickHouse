@@ -1,10 +1,12 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MutationCommands.h>
 #include <atomic>
 #include <functional>
+
+#include <Common/Future.h>
 #include <Common/ActionBlocker.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeType.h>
@@ -13,6 +15,9 @@
 
 namespace DB
 {
+
+
+
 
 class MergeProgressCallback;
 
@@ -89,7 +94,7 @@ public:
       * time_of_merge - the time when the merge was assigned.
       * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
       */
-    MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
+    Future<MergeTreeData::MutableDataPartPtr> mergePartsToTemporaryPart(
         FutureMergedMutatedPartPtr future_part,
         const StorageMetadataPtr & metadata_snapshot,
         MergeListEntry & merge_entry,
