@@ -284,18 +284,6 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/utf8.cc"
         "${LIBRARY_DIR}/util/value_parsing.cc"
 
-        "${LIBRARY_DIR}/vendored/base64.cpp"
-        "${LIBRARY_DIR}/vendored/datetime/tz.cpp"
-        "${LIBRARY_DIR}/vendored/double-conversion/bignum.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/double-conversion.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/bignum-dtoa.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/fast-dtoa.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/cached-powers.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/fixed-dtoa.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/diy-fp.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/strtod.cc"
-
-        "${LIBRARY_DIR}/c/bridge.cc"
         ${ORC_SRCS}
         )
 
