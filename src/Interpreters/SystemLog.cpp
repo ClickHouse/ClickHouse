@@ -1,13 +1,14 @@
-#include <Interpreters/SystemLog.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/TextLog.h>
-#include <Interpreters/TraceLog.h>
+#include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/PartLog.h>
+#include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryMaterializationLog.h>
+#include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/SystemLog.h>
+#include <Interpreters/TextLog.h>
+#include <Interpreters/TraceLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
@@ -103,6 +104,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     opentelemetry_span_log = createSystemLog<OpenTelemetrySpanLog>(
         global_context, "system", "opentelemetry_span_log", config,
         "opentelemetry_span_log");
+    query_materialization_log = createSystemLog<QueryMaterializationLog>(
+        global_context, "system", "query_materialization_log", config, "query_materialization_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -122,6 +125,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(asynchronous_metric_log.get());
     if (opentelemetry_span_log)
         logs.emplace_back(opentelemetry_span_log.get());
+    if (query_materialization_log)
+        logs.emplace_back(query_materialization_log.get());
 
     try
     {
