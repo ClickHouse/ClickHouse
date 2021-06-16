@@ -41,10 +41,50 @@ Accepts an empty array and returns a one-element array that is equal to the defa
 
 ## range(end), range(start, end \[, step\]) {#rangeend-rangestart-end-step}
 
-Returns an array of numbers from start to end-1 by step.
-If the argument `start` is not specified, defaults to 0.
-If the argument `step` is not specified, defaults to 1.
-It behaviors almost like pythonic `range`. But the difference is that all the arguments type must be `UInt` numbers.
+Returns an array of numbers from `start` to `end`-1 by `step`.
+
+**Syntax**
+``` sql
+range(end)
+```
+``` sql
+range(start, end, step)
+```
+It behaves almost like pythonic `range`. But the difference is that all the arguments must be `UInt` type numbers.
+
+**Arguments**
+
+-   `start` - required if step is used. `UInt` number. If not specified, defaults to 0.
+-   `end` - required. `UInt` number. Must be greater than `start`.
+-   `step` - optional. `UInt` number. If not specified, defaults to 1.
+
+**Returned value**
+
+-   an array of `UInt` numbers
+
+**Examples**
+
+Query:
+``` sql
+SELECT range(10);
+```
+Result:
+```[0,1,2,3,4,5,6,7,8,9]```
+
+Query:
+``` sql
+SELECT range(0);
+```
+Result:
+`[]`
+
+Query:
+``` sql
+SELECT range(1, 10, 2);
+```
+Result:
+`[1,3,5,7,9]`
+
 Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 ## array(x1, …), operator \[x1, …\] {#arrayx1-operator-x1}
