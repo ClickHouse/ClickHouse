@@ -1161,6 +1161,16 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
                         disk->removeRecursive(it->path());
                     }
                 }
+                /// see getModificationTime()
+                catch (const ErrnoException & e)
+                {
+                    if (e.getErrno() == ENOENT)
+                    {
+                        /// If the file is already deleted, do nothing.
+                    }
+                    else
+                        throw;
+                }
                 catch (const fs::filesystem_error & e)
                 {
                     if (e.code() == std::errc::no_such_file_or_directory)
