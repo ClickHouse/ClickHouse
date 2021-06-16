@@ -23,7 +23,9 @@ To store `Nullable` type values in a table column, ClickHouse uses a separate fi
 ## Finding NULL {#finding-null}
 
 It is possible to find `NULL` values in a column by using `null` subcolumn without reading the whole column. It returns `1` if the corresponding value is `NULL` and `0` otherwise.
+
 **Example**
+
 Query:
 
 ``` sql
