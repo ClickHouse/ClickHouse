@@ -2442,8 +2442,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
             limit_length += limit_offset;
             limit_offset = 0;
         }
-
-        auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), limit_length, limit_offset);
+        const Settings & settings = context->getSettingsRef();
+        auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), limit_length, limit_offset, settings.exact_rows_before_limit);
         limit->setStepDescription("preliminary LIMIT");
         query_plan.addStep(std::move(limit));
     }
@@ -2504,7 +2504,8 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
           *  if there is WITH TOTALS and there is no ORDER BY, then read the data to the end,
           *  otherwise TOTALS is counted according to incomplete data.
           */
-        bool always_read_till_end = false;
+        const Settings & settings = context->getSettingsRef();
+        bool always_read_till_end = settings.exact_rows_before_limit;
 
         if (query.group_by_with_totals && !query.orderBy())
             always_read_till_end = true;
