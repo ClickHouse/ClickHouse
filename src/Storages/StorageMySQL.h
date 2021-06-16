@@ -6,7 +6,7 @@
 
 #if USE_MYSQL
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/MySQL/MySQLSettings.h>
@@ -20,9 +20,9 @@ namespace DB
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   * Read only.
   */
-class StorageMySQL final : public ext::shared_ptr_helper<StorageMySQL>, public IStorage, WithContext
+class StorageMySQL final : public shared_ptr_helper<StorageMySQL>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageMySQL>;
+    friend struct shared_ptr_helper<StorageMySQL>;
 public:
     StorageMySQL(
         const StorageID & table_id_,

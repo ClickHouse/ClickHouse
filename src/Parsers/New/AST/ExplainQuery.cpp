@@ -7,15 +7,37 @@
 namespace DB::AST
 {
 
-ExplainQuery::ExplainQuery(PtrTo<Query> query) : Query{query}
+// static
+PtrTo<ExplainQuery> ExplainQuery::createExplainAST(PtrTo<Query> query)
+{
+    return PtrTo<ExplainQuery>(new ExplainQuery(QueryType::AST, {query}));
+}
+
+// static
+PtrTo<ExplainQuery> ExplainQuery::createExplainSyntax(PtrTo<Query> query)
+{
+    return PtrTo<ExplainQuery>(new ExplainQuery(QueryType::SYNTAX, {query}));
+}
+
+ExplainQuery::ExplainQuery(QueryType type, PtrList exprs) : Query{exprs}, query_type(type)
 {
 }
 
 ASTPtr ExplainQuery::convertToOld() const
 {
-    auto query = std::make_shared<ASTExplainQuery>(ASTExplainQuery::AnalyzedSyntax);
+    ASTPtr query;
 
-    query->setExplainedQuery(get(QUERY)->convertToOld());
+    switch (query_type)
+    {
+        case QueryType::AST:
+            query = std::make_shared<ASTExplainQuery>(ASTExplainQuery::ParsedAST);
+            break;
+        case QueryType::SYNTAX:
+            query = std::make_shared<ASTExplainQuery>(ASTExplainQuery::AnalyzedSyntax);
+            break;
+    }
+
+    query->as<ASTExplainQuery>()->setExplainedQuery(get(QUERY)->convertToOld());
 
     return query;
 }
@@ -27,9 +49,14 @@ namespace DB
 
 using namespace DB::AST;
 
-antlrcpp::Any ParseTreeVisitor::visitExplainStmt(ClickHouseParser::ExplainStmtContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitExplainASTStmt(ClickHouseParser::ExplainASTStmtContext *ctx)
 {
-    return std::make_shared<ExplainQuery>(visit(ctx->query()).as<PtrTo<Query>>());
+    return ExplainQuery::createExplainAST(visit(ctx->query()).as<PtrTo<Query>>());
+}
+
+antlrcpp::Any ParseTreeVisitor::visitExplainSyntaxStmt(ClickHouseParser::ExplainSyntaxStmtContext *ctx)
+{
+    return ExplainQuery::createExplainSyntax(visit(ctx->query()).as<PtrTo<Query>>());
 }
 
 }

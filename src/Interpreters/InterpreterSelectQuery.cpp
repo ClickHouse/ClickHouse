@@ -79,10 +79,11 @@
 #include <common/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <ext/map.h>
-#include <ext/scope_guard_safe.h>
+#include <common/map.h>
+#include <common/scope_guard_safe.h>
 #include <memory>
 
 
@@ -134,7 +135,7 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     tables->children.push_back(tables_elem);
     tables_elem->table_expression = table_expr;
     tables_elem->children.push_back(table_expr);
-    table_expr->database_and_table_name = createTableIdentifier(db_name, table_name);
+    table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(db_name, table_name);
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
@@ -1681,7 +1682,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             }
 
             required_columns_after_prewhere_set
-                = ext::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
+                = collections::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
         }
 
         auto syntax_result
