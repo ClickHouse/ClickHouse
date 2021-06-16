@@ -465,7 +465,7 @@ class IColumn;
     M(Bool, optimize_aggregators_of_group_by_keys, true, "Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section", 0) \
     M(Bool, optimize_group_by_function_keys, true, "Eliminates functions of other keys in GROUP BY section", 0) \
     \
-    M(Bool, query_plan_enable_optimizations, true, "Apply optimizations to query plan", 0) \
+    M(Bool, query_plan_enable_optimizations, false, "Apply optimizations to query plan", 0) \
     M(UInt64, query_plan_max_optimizations_to_apply, 10000, "Limit the total number of optimizations applied to query plan. If zero, ignored. If limit reached, throw exception", 0) \
     M(Bool, query_plan_filter_push_down, true, "Allow to push down filter by predicate query plan step", 0) \
     \
