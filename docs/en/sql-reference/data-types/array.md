@@ -78,6 +78,8 @@ Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 
 It is possible to find the size of an array by using the `size0` subcolumn without reading the whole column. For multi-dimensional arrays you can use `sizeN-1`, where `N` is the wanted dimension.
 
+**Example**
+
 Query:
 
 ```sql
