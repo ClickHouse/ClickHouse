@@ -590,8 +590,8 @@ bool MergeTask::executeVerticalMergeForAllColumns()
         case VecticalMergeOneColumnState::NEED_FINISH:
         {
             finalizeVerticalMergeForOneColumn();
-            vertical_merge_one_column_state = VecticalMergeOneColumnState::NEED_PREPARE; // ?
-            return false;
+            vertical_merge_one_column_state = VecticalMergeOneColumnState::NEED_PREPARE;
+            return true;
         }
     }
     return false;
@@ -608,7 +608,6 @@ bool MergeTask::execute()
             prepare();
             state = MergeTaskState::NEED_EXECUTE_HORIZONTAL;
 
-            //std::cerr << "NEED_PREPARE" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_EXECUTE_HORIZONTAL:
@@ -617,7 +616,6 @@ bool MergeTask::execute()
                 return true;
 
             state = MergeTaskState::NEED_FINALIZE_HORIZONTAL;
-            //std::cerr << "NEED_EXECUTE_HORIZONTAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINALIZE_HORIZONTAL:
@@ -625,7 +623,6 @@ bool MergeTask::execute()
             finalizeHorizontalPartOfTheMerge();
 
             state = MergeTaskState::NEED_PREPARE_VERTICAL;
-            //std::cerr << "NEED_FINALIZE_HORIZONTAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_PREPARE_VERTICAL:
@@ -633,7 +630,6 @@ bool MergeTask::execute()
             prepareVertical();
 
             state = MergeTaskState::NEED_EXECUTE_VERTICAL;
-            //std::cerr << "NEED_PREPARE_VERTICAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_EXECUTE_VERTICAL:
@@ -642,7 +638,6 @@ bool MergeTask::execute()
                 return true;
 
             state = MergeTaskState::NEED_FINISH_VERTICAL;
-            //std::cerr << "NEED_EXECUTE_VERTICAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINISH_VERTICAL:
@@ -650,7 +645,6 @@ bool MergeTask::execute()
             finalizeVerticalMergeForAllColumns();
 
             state = MergeTaskState::NEED_MERGE_MIN_MAX_INDEX;
-            //std::cerr << "NEED_FINISH_VERTICAL" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_MERGE_MIN_MAX_INDEX:
@@ -658,7 +652,6 @@ bool MergeTask::execute()
             mergeMinMaxIndex();
 
             state = MergeTaskState::NEED_PREPARE_PROJECTIONS;
-            //std::cerr << "NEED_MERGE_MIN_MAX_INDEX" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_PREPARE_PROJECTIONS:
@@ -666,7 +659,6 @@ bool MergeTask::execute()
             prepareProjections();
 
             state = MergeTaskState::NEED_EXECUTE_PROJECTIONS;
-            //std::cerr << "NEED_PREPARE_PROJECTIONS" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_EXECUTE_PROJECTIONS:
@@ -675,7 +667,6 @@ bool MergeTask::execute()
                 return true;
 
             state = MergeTaskState::NEED_FINISH_PROJECTIONS;
-            //std::cerr << "NEED_EXECUTE_PROJECTIONS" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINISH_PROJECTIONS:
@@ -683,14 +674,12 @@ bool MergeTask::execute()
             finalizeProjections();
 
             state = MergeTaskState::NEED_FINISH;
-            //std::cerr << "NEED_FINISH_PROJECTIONS" << std::endl;
             return true;
         }
         case MergeTaskState::NEED_FINISH:
         {
             finalize();
 
-            //std::cerr << "NEED_FINISH" << std::endl;
             return false;
         }
     }

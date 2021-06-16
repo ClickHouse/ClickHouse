@@ -94,7 +94,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->calculateColumnsSizesOnDisk();
-    if (default_codec != nullptr)
+    if (default_codec != nullptr)   
         new_part->default_codec = default_codec;
     new_part->storage.lockSharedData(*new_part);
 }
