@@ -1,7 +1,7 @@
 #include <mutex>
 #include <ext/bit_cast.h>
 
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>

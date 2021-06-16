@@ -347,7 +347,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
 SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
 {
-    const auto * table = subquery_or_table_name->as<ASTIdentifier>();
+    const auto * table = subquery_or_table_name->as<ASTTableIdentifier>();
     if (!table)
         return nullptr;
     auto table_id = getContext()->resolveStorageID(subquery_or_table_name);
@@ -388,7 +388,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
         if (storage()->mayBenefitFromIndexForIn(left_in_operand, getContext(), metadata_snapshot))
         {
             const ASTPtr & arg = args.children.at(1);
-            if (arg->as<ASTSubquery>() || arg->as<ASTIdentifier>())
+            if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
             {
                 if (settings.use_index_for_in_with_subqueries)
                     tryMakeSetForIndexFromSubquery(arg, query_options);

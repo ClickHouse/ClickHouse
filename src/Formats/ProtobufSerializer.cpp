@@ -40,7 +40,7 @@
 #   include <boost/container/flat_set.hpp>
 #   include <boost/numeric/conversion/cast.hpp>
 #   include <boost/range/algorithm.hpp>
-
+#   include <boost/range/algorithm_ext/erase.hpp>
 #   include <common/logger_useful.h>
 
 namespace DB
@@ -2051,8 +2051,7 @@ namespace
     public:
         struct FieldDesc
         {
-            size_t column_index;
-            size_t num_columns;
+            std::vector<size_t> column_indices;
             const FieldDescriptor * field_descriptor;
             std::unique_ptr<ProtobufSerializer> field_serializer;
         };
@@ -2070,7 +2069,7 @@ namespace
         {
             field_infos.reserve(field_descs_.size());
             for (auto & desc : field_descs_)
-                field_infos.emplace_back(desc.column_index, desc.num_columns, *desc.field_descriptor, std::move(desc.field_serializer));
+                field_infos.emplace_back(std::move(desc.column_indices), *desc.field_descriptor, std::move(desc.field_serializer));
 
             std::sort(field_infos.begin(), field_infos.end(),
                       [](const FieldInfo & lhs, const FieldInfo & rhs) { return lhs.field_tag < rhs.field_tag; });
@@ -2083,22 +2082,28 @@ namespace
         {
             columns.assign(columns_, columns_ + num_columns_);
 
+            std::vector<ColumnPtr> field_columns;
             for (const FieldInfo & info : field_infos)
-                info.field_serializer->setColumns(columns.data() + info.column_index, info.num_columns);
+            {
+                field_columns.clear();
+                for (size_t column_index : info.column_indices)
+                {
+                    field_columns.emplace_back(columns_[column_index]);
+                }
+                info.field_serializer->setColumns(field_columns.data(), field_columns.size());
+            }
 
             if (reader)
             {
-                missing_column_indices.clear();
-                missing_column_indices.reserve(num_columns_);
-                size_t current_idx = 0;
+                missing_column_indices.resize(num_columns_);
+                for (size_t column_index : ext::range(num_columns_))
+                    missing_column_indices[column_index] = column_index;
                 for (const FieldInfo & info : field_infos)
                 {
-                    while (current_idx < info.column_index)
-                        missing_column_indices.push_back(current_idx++);
-                    current_idx = info.column_index + info.num_columns;
+                    for (size_t column_index : info.column_indices)
+                        missing_column_indices[column_index] = static_cast<size_t>(-1);
                 }
-                while (current_idx < num_columns_)
-                    missing_column_indices.push_back(current_idx++);
+                boost::range::remove_erase(missing_column_indices, static_cast<size_t>(-1));
             }
         }
 
@@ -2231,20 +2236,17 @@ namespace
         struct FieldInfo
         {
             FieldInfo(
-                size_t column_index_,
-                size_t num_columns_,
+                std::vector<size_t> column_indices_,
                 const FieldDescriptor & field_descriptor_,
                 std::unique_ptr<ProtobufSerializer> field_serializer_)
-                : column_index(column_index_)
-                , num_columns(num_columns_)
+                : column_indices(std::move(column_indices_))
                 , field_descriptor(&field_descriptor_)
                 , field_tag(field_descriptor_.number())
                 , should_pack_repeated(shouldPackRepeated(field_descriptor_))
                 , field_serializer(std::move(field_serializer_))
             {
             }
-            size_t column_index;
-            size_t num_columns;
+            std::vector<size_t> column_indices;
             const FieldDescriptor * field_descriptor;
             int field_tag;
             bool should_pack_repeated;
@@ -2581,6 +2583,38 @@ namespace
             return !out_field_descriptors_with_suffixes.empty();
         }
 
+        /// Removes TypeIndex::Array from the specified vector of data types,
+        /// and also removes corresponding elements from two other vectors.
+        template <typename T1, typename T2>
+        static void removeNonArrayElements(DataTypes & data_types, std::vector<T1> & elements1, std::vector<T2> & elements2)
+        {
+            size_t initial_size = data_types.size();
+            assert(initial_size == elements1.size() && initial_size == elements2.size());
+            data_types.reserve(initial_size * 2);
+            elements1.reserve(initial_size * 2);
+            elements2.reserve(initial_size * 2);
+            for (size_t i : ext::range(initial_size))
+            {
+                if (data_types[i]->getTypeId() == TypeIndex::Array)
+                {
+                    data_types.push_back(std::move(data_types[i]));
+                    elements1.push_back(std::move(elements1[i]));
+                    elements2.push_back(std::move(elements2[i]));
+                }
+            }
+            data_types.erase(data_types.begin(), data_types.begin() + initial_size);
+            elements1.erase(elements1.begin(), elements1.begin() + initial_size);
+            elements2.erase(elements2.begin(), elements2.begin() + initial_size);
+        }
+
+        /// Treats specified column indices as indices in another vector of column indices.
+        /// Useful for handling of nested messages.
+        static void transformColumnIndices(std::vector<size_t> & column_indices, const std::vector<size_t> & outer_indices)
+        {
+            for (size_t & idx : column_indices)
+                idx = outer_indices[idx];
+        }
+
         /// Builds a serializer for a protobuf message (root or nested).
         template <typename StringOrStringViewT>
         std::unique_ptr<ProtobufSerializerMessage> buildMessageSerializerImpl(
@@ -2598,9 +2632,8 @@ namespace
             used_column_indices.clear();
             used_column_indices.reserve(num_columns);
 
-            auto add_field_serializer = [&](size_t column_index_,
-                                            const std::string_view & column_name_,
-                                            size_t num_columns_,
+            auto add_field_serializer = [&](const std::string_view & column_name_,
+                                            std::vector<size_t> column_indices_,
                                             const FieldDescriptor & field_descriptor_,
                                             std::unique_ptr<ProtobufSerializer> field_serializer_)
             {
@@ -2608,24 +2641,30 @@ namespace
                 if (it != field_descriptors_in_use.end())
                 {
                     throw Exception(
-                        "Multiple columns (" + backQuote(StringRef{field_descriptors_in_use[&field_descriptor_]}) + ", "
+                        "Multiple columns (" + backQuote(StringRef{it->second}) + ", "
                             + backQuote(StringRef{column_name_}) + ") cannot be serialized to a single protobuf field "
                             + quoteString(field_descriptor_.full_name()),
                         ErrorCodes::MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD);
                 }
 
-                field_descs.push_back({column_index_, num_columns_, &field_descriptor_, std::move(field_serializer_)});
+                for (size_t column_index : column_indices_)
+                {
+                    /// Keep `used_column_indices` sorted.
+                    used_column_indices.insert(boost::range::upper_bound(used_column_indices, column_index), column_index);
+                }
+                field_descs.push_back({std::move(column_indices_), &field_descriptor_, std::move(field_serializer_)});
                 field_descriptors_in_use.emplace(&field_descriptor_, column_name_);
             };
 
             std::vector<std::pair<const FieldDescriptor *, std::string_view>> field_descriptors_with_suffixes;
 
             /// We're going through all the passed columns.
-            size_t column_idx = 0;
-            size_t next_column_idx = 1;
-            for (; column_idx != num_columns; column_idx = next_column_idx++)
+            for (size_t column_idx : ext::range(num_columns))
             {
-                auto column_name = column_names[column_idx];
+                if (boost::range::binary_search(used_column_indices, column_idx))
+                    continue;
+
+                const auto & column_name = column_names[column_idx];
                 const auto & data_type = data_types[column_idx];
 
                 if (!findFieldsByColumnName(column_name, message_descriptor, field_descriptors_with_suffixes))
@@ -2639,8 +2678,7 @@ namespace
 
                     if (field_serializer)
                     {
-                        add_field_serializer(column_idx, column_name, 1, field_descriptor, std::move(field_serializer));
-                        used_column_indices.push_back(column_idx);
+                        add_field_serializer(column_name, {column_idx}, field_descriptor, std::move(field_serializer));
                         continue;
                     }
                 }
@@ -2650,42 +2688,53 @@ namespace
                     if (!suffix.empty())
                     {
                         /// Complex case: one or more columns are serialized as a nested message.
-                        std::vector<std::string_view> names_relative_to_nested_message;
-                        names_relative_to_nested_message.reserve(num_columns - column_idx);
-                        names_relative_to_nested_message.emplace_back(suffix);
+                        std::vector<size_t> nested_column_indices;
+                        std::vector<std::string_view> nested_column_names;
+                        nested_column_indices.reserve(num_columns - used_column_indices.size());
+                        nested_column_names.reserve(num_columns - used_column_indices.size());
+                        nested_column_indices.push_back(column_idx);
+                        nested_column_names.push_back(suffix);
 
                         for (size_t j : ext::range(column_idx + 1, num_columns))
                         {
-                            std::string_view next_suffix;
-                            if (!columnNameStartsWithFieldName(column_names[j], *field_descriptor, next_suffix))
-                                break;
-                            names_relative_to_nested_message.emplace_back(next_suffix);
+                            if (boost::range::binary_search(used_column_indices, j))
+                                continue;
+                            std::string_view other_suffix;
+                            if (!columnNameStartsWithFieldName(column_names[j], *field_descriptor, other_suffix))
+                                continue;
+                            nested_column_indices.push_back(j);
+                            nested_column_names.push_back(other_suffix);
                         }
 
-                        /// Now we have up to `names_relative_to_nested_message.size()` sequential columns
+                        DataTypes nested_data_types;
+                        nested_data_types.reserve(nested_column_indices.size());
+                        for (size_t j : nested_column_indices)
+                            nested_data_types.push_back(data_types[j]);
+
+                        /// Now we have up to `nested_message_column_names.size()` columns
                         /// which can be serialized as a nested message.
 
-                        /// Calculate how many of those sequential columns are arrays.
-                        size_t num_arrays = 0;
-                        for (size_t j : ext::range(column_idx, column_idx + names_relative_to_nested_message.size()))
+                        /// We will try to serialize those columns as one nested message,
+                        /// then, if failed, as an array of nested messages (on condition if those columns are array).
+                        bool has_fallback_to_array_of_nested_messages = false;
+                        if (field_descriptor->is_repeated())
                         {
-                            if (data_types[j]->getTypeId() != TypeIndex::Array)
-                                break;
-                            ++num_arrays;
+                            bool has_arrays
+                                = boost::range::find_if(
+                                      nested_data_types, [](const DataTypePtr & dt) { return (dt->getTypeId() == TypeIndex::Array); })
+                                != nested_data_types.end();
+                            if (has_arrays)
+                                has_fallback_to_array_of_nested_messages = true;
                         }
 
-                        /// We will try to serialize the sequential columns as one nested message,
-                        /// then, if failed, as an array of nested messages (on condition those columns are array).
-                        bool has_fallback_to_array_of_nested_messages = num_arrays && field_descriptor->is_repeated();
-
-                        /// Try to serialize the sequential columns as one nested message.
+                        /// Try to serialize those columns as one nested message.
                         try
                         {
                             std::vector<size_t> used_column_indices_in_nested;
                             auto nested_message_serializer = buildMessageSerializerImpl(
-                                names_relative_to_nested_message.size(),
-                                names_relative_to_nested_message.data(),
-                                &data_types[column_idx],
+                                nested_column_names.size(),
+                                nested_column_names.data(),
+                                nested_data_types.data(),
                                 used_column_indices_in_nested,
                                 *field_descriptor->message_type(),
                                 false,
@@ -2693,11 +2742,12 @@ namespace
 
                             if (nested_message_serializer)
                             {
-                                for (size_t & idx_in_nested : used_column_indices_in_nested)
-                                    used_column_indices.push_back(idx_in_nested + column_idx);
-
-                                next_column_idx = used_column_indices.back() + 1;
-                                add_field_serializer(column_idx, column_name, next_column_idx - column_idx, *field_descriptor, std::move(nested_message_serializer));
+                                transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
+                                add_field_serializer(
+                                    column_name,
+                                    std::move(used_column_indices_in_nested),
+                                    *field_descriptor,
+                                    std::move(nested_message_serializer));
                                 break;
                             }
                         }
@@ -2709,17 +2759,16 @@ namespace
 
                         if (has_fallback_to_array_of_nested_messages)
                         {
-                            /// Try to serialize the sequential columns as an array of nested messages.
-                            DataTypes array_nested_data_types;
-                            array_nested_data_types.reserve(num_arrays);
-                            for (size_t j : ext::range(column_idx, column_idx + num_arrays))
-                                array_nested_data_types.emplace_back(assert_cast<const DataTypeArray &>(*data_types[j]).getNestedType());
+                            /// Try to serialize those columns as an array of nested messages.
+                            removeNonArrayElements(nested_data_types, nested_column_names, nested_column_indices);
+                            for (DataTypePtr & dt : nested_data_types)
+                                dt = assert_cast<const DataTypeArray &>(*dt).getNestedType();
 
                             std::vector<size_t> used_column_indices_in_nested;
                             auto nested_message_serializer = buildMessageSerializerImpl(
-                                array_nested_data_types.size(),
-                                names_relative_to_nested_message.data(),
-                                array_nested_data_types.data(),
+                                nested_column_names.size(),
+                                nested_column_names.data(),
+                                nested_data_types.data(),
                                 used_column_indices_in_nested,
                                 *field_descriptor->message_type(),
                                 false,
@@ -2728,12 +2777,8 @@ namespace
                             if (nested_message_serializer)
                             {
                                 auto field_serializer = std::make_unique<ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages>(std::move(nested_message_serializer));
-
-                                for (size_t & idx_in_nested : used_column_indices_in_nested)
-                                    used_column_indices.push_back(idx_in_nested + column_idx);
-
-                                next_column_idx = used_column_indices.back() + 1;
-                                add_field_serializer(column_idx, column_name, next_column_idx - column_idx, *field_descriptor, std::move(field_serializer));
+                                transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
+                                add_field_serializer(column_name, std::move(used_column_indices_in_nested), *field_descriptor, std::move(field_serializer));
                                 break;
                             }
                         }
