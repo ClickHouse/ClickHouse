@@ -26,7 +26,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 {
     try
     {
-        HTMLForm params(getContext(), request);
+        HTMLForm params(getContext()->getSettingsRef(), request);
 
         /// Even if lag is small, output detailed information about the lag.
         bool verbose = params.get("verbose", "") == "1";
