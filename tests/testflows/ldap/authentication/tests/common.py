@@ -92,7 +92,7 @@ def add_config(config, timeout=300, restart=False, modify=False):
         """Check that preprocessed config is updated.
         """
         started = time.time()
-        command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
+        command = f"cat /var/lib/clickhouse/preprocessed_configs/_{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
 
         while time.time() - started < timeout:
             exitcode = node.command(command, steps=False).exitcode
@@ -105,7 +105,7 @@ def add_config(config, timeout=300, restart=False, modify=False):
             time.sleep(1)
 
         if settings.debug:
-            node.command(f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name}")
+            node.command(f"cat /var/lib/clickhouse/preprocessed_configs/_{config.preprocessed_name}")
 
         if after_removal:
             assert exitcode == 1, error()

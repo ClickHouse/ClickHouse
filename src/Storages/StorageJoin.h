@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Storages/StorageSet.h>
 #include <Storages/JoinSettings.h>
@@ -21,9 +21,9 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
   *
   * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin final : public ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
+class StorageJoin final : public shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
-    friend struct ext::shared_ptr_helper<StorageJoin>;
+    friend struct shared_ptr_helper<StorageJoin>;
 public:
     String getName() const override { return "Join"; }
 
