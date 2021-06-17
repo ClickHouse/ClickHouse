@@ -805,15 +805,25 @@ namespace
 
         if (fs::exists(pid_file))
         {
-            ReadBufferFromFile in(pid_file.string());
-            if (tryReadIntText(pid, in))
+            try
             {
-                fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
+                ReadBufferFromFile in(pid_file.string());
+                if (tryReadIntText(pid, in))
+                {
+                    fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
+                }
+                else
+                {
+                    fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
+                    fs::remove(pid_file);
+                }
             }
-            else
+            catch (const Exception & e)
             {
-                fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
-                fs::remove(pid_file);
+                if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                    throw;
+
+                /// If file does not exist (TOCTOU) - it's ok.
             }
         }
 
