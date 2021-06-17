@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/CommonParsers.h>
 
 namespace DB
 {
@@ -31,26 +32,16 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     auto range = std::make_shared<ASTJSONPathRange>();
     node = range;
 
+    ParserNumber number_p;
+    ASTPtr number_ptr;
     while (pos->type != TokenType::ClosingSquareBracket)
     {
-        if (pos->type != TokenType::Number && pos->type != TokenType::Asterisk)
+        if (pos->type != TokenType::Number)
         {
             return false;
         }
-        if (pos->type == TokenType::Asterisk)
-        {
-            if (range->is_star)
-            {
-                throw Exception("Multiple asterisks in square array range are not allowed", ErrorCodes::BAD_ARGUMENTS);
-            }
-            range->is_star = true;
-            ++pos;
-            continue;
-        }
 
         std::pair<UInt32, UInt32> range_indices;
-        ParserNumber number_p;
-        ASTPtr number_ptr;
         if (!number_p.parse(pos, number_ptr, expected))
         {
             return false;
@@ -64,16 +55,7 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         }
         else if (pos->type == TokenType::BareWord)
         {
-            /// Range case
-            ParserIdentifier name_p;
-            ASTPtr word;
-            if (!name_p.parse(pos, word, expected))
-            {
-                return false;
-            }
-            String to_identifier;
-            if (!tryGetIdentifierNameInto(word, to_identifier) || to_identifier != "to")
-            {
+            if (!ParserKeyword("TO").ignore(pos, expected)) {
                 return false;
             }
             if (!number_p.parse(pos, number_ptr, expected))

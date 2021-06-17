@@ -1,22 +1,21 @@
 #pragma once
 
-#include <Functions/JSONPath/ASTs/ASTJSONPathRange.h>
+#include <Functions/JSONPath/ASTs/ASTJSONPathStar.h>
 #include <Functions/JSONPath/Generators/IVisitor.h>
 #include <Functions/JSONPath/Generators/VisitorStatus.h>
 
 namespace DB
 {
 template <typename JSONParser>
-class VisitorJSONPathRange : public IVisitor<JSONParser>
+class VisitorJSONPathStar : public IVisitor<JSONParser>
 {
 public:
-    VisitorJSONPathRange(ASTPtr range_ptr_) : range_ptr(range_ptr_->as<ASTJSONPathRange>())
+    VisitorJSONPathStar(ASTPtr)
     {
-        current_range = 0;
-        current_index = range_ptr->ranges[current_range].first;
+        current_index = 0;
     }
 
-    const char * getName() const override { return "VisitorJSONPathRange"; }
+    const char * getName() const override { return "VisitorJSONPathStar"; }
 
     VisitorStatus apply(typename JSONParser::Element & element) const override
     {
@@ -43,11 +42,6 @@ public:
         else
         {
             status = VisitorStatus::Ignore;
-        }
-
-        if (current_index + 1 == range_ptr->ranges[current_range].second
-            && current_range + 1 == range_ptr->ranges.size())
-        {
             this->setExhausted(true);
         }
 
@@ -56,24 +50,16 @@ public:
 
     void reinitialize() override
     {
-        current_range = 0;
-        current_index = range_ptr->ranges[current_range].first;
+        current_index = 0;
         this->setExhausted(false);
     }
 
     void updateState() override
     {
         current_index++;
-        if (current_index == range_ptr->ranges[current_range].second)
-        {
-            current_range++;
-            current_index = range_ptr->ranges[current_range].first;
-        }
     }
 
 private:
-    ASTJSONPathRange * range_ptr;
-    size_t current_range;
     UInt32 current_index;
 };
 

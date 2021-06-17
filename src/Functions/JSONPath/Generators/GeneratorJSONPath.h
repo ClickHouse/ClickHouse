@@ -4,6 +4,7 @@
 #include <Functions/JSONPath/Generators/VisitorJSONPathMemberAccess.h>
 #include <Functions/JSONPath/Generators/VisitorJSONPathRange.h>
 #include <Functions/JSONPath/Generators/VisitorJSONPathRoot.h>
+#include <Functions/JSONPath/Generators/VisitorJSONPathStar.h>
 #include <Functions/JSONPath/Generators/VisitorStatus.h>
 
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
@@ -36,7 +37,8 @@ public:
 
         for (auto child_ast : query->children)
         {
-            if (typeid_cast<ASTJSONPathRoot *>(child_ast.get())) {
+            if (typeid_cast<ASTJSONPathRoot *>(child_ast.get()))
+            {
                 visitors.push_back(std::make_shared<VisitorJSONPathRoot<JSONParser>>(child_ast));
             }
             else if (typeid_cast<ASTJSONPathMemberAccess *>(child_ast.get()))
@@ -46,6 +48,10 @@ public:
             else if (typeid_cast<ASTJSONPathRange *>(child_ast.get()))
             {
                 visitors.push_back(std::make_shared<VisitorJSONPathRange<JSONParser>>(child_ast));
+            }
+            else if (typeid_cast<ASTJSONPathStar *>(child_ast.get()))
+            {
+                visitors.push_back(std::make_shared<VisitorJSONPathStar<JSONParser>>(child_ast));
             }
         }
     }
