@@ -6,7 +6,7 @@ toc_title: Encoding
 # Encoding Functions {#encoding-functions}
 
 ## char {#char}
-    
+
 Returns the string with the length as the number of passed arguments and each byte has the value of corresponding argument. Accepts multiple arguments of numeric types. If the value of argument is out of range of UInt8 data type, it is converted to UInt8 with possible rounding and overflow.
 
 **Syntax**
@@ -156,7 +156,7 @@ Performs the opposite operation of [hex](#hex). It interprets each pair of hexad
 If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
 
 !!! note "Note"
-    If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8. 
+    If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
 
 Alias: `UNHEX`.
 
@@ -222,50 +222,50 @@ Accepts an integer. Returns a string containing the list of powers of two that t
 
 Accepts an integer. Returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed. Numbers in the array are in ascending order.
 
-## bitpositionToArray(num) {#bitpositiontoarraynum}
+## bitPositionsToArray(num) {#bitpositionstoarraynum}
 
-Accepts an integer, argument will be convert to unsigned integer. Returns an array of UInt64 numbers containing the list of positions of bit that equals 1. Numbers in the array are in ascending order.
+Accepts an integer, argument will be converted to unsigned integer type. Returns an array of UInt64 numbers containing the list of positions of bits that equals 1. Numbers in the array are in ascending order.
 
 **Syntax**
 
 ```sql
-bitpositionToArray(arg)
+bitPositionsToArray(arg)
 ```
 
 **Arguments**
 
--   `arg` — A value can be convert to unsigned integer .Types:  [Int/UInt](../../sql-reference/data-types/int-uint.md)
+-   `arg` — Integer value.Types:  [Int/UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned value**
 
-An array of UInt64 numbers containing the list of positions of bit that equals 1. Numbers in the array are in ascending order.
+An array of UInt64 numbers containing the list of positions of bits that equals 1. Numbers in the array are in ascending order.
 
 **Example**
 
 Query:
 
 ``` sql
-select bitpositionToArray(toInt8(1)) as bitposition;
+SELECT bitPositionsToArray(toInt8(1)) AS bit_positions;
 ```
 
 Result:
 
 ``` text
-┌─bitposition─┐
-│ [0]         │
-└─────────────┘
+┌─bit_positions─┐
+│ [0]           │
+└───────────────┘
 ```
 
 Query:
 
 ``` sql
-select bitpositionToArray(toInt8(-1)) as bitposition;
+select bitPositionsToArray(toInt8(-1)) as bit_positions;
 ```
 
 Result:
 
 ``` text
-┌─bitposition───────┐
+┌─bit_positions─────┐
 │ [0,1,2,3,4,5,6,7] │
 └───────────────────┘
 ```
