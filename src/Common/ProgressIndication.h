@@ -42,7 +42,8 @@ public:
     UInt64 elapsedSeconds() const { return watch.elapsedSeconds(); }
 
 private:
-    /// Show progress bar only if on first writeProgress call the query is not yet half done.
+    /// This flag controls whether to show the progress bar. We start showing it after
+    /// the query has been executing for 0.5 seconds, and is still less than half complete.
     bool show_progress_bar = false;
 
     /// Width of how much has been printed currently into stderr. Used to define size of progress bar and
