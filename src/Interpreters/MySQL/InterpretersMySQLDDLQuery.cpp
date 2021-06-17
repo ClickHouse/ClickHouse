@@ -281,7 +281,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
         if (which.isNullable())
             throw Exception("LOGICAL ERROR: MySQL primary key must be not null, it is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (which.isDateOrDateTime())
+        if (which.isDate() || which.isDateTime() || which.isDateTime64())
         {
             /// In any case, date or datetime is always the best partitioning key
             return makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(primary_key.name));

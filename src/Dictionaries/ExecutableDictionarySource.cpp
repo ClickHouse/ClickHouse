@@ -60,24 +60,18 @@ namespace
 
 ExecutableDictionarySource::ExecutableDictionarySource(
     const DictionaryStructure & dict_struct_,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
+    const Configuration & configuration_,
     Block & sample_block_,
-    ContextConstPtr context_)
+    ContextPtr context_)
     : log(&Poco::Logger::get("ExecutableDictionarySource"))
-    , dict_struct{dict_struct_}
-    , implicit_key{config.getBool(config_prefix + ".implicit_key", false)}
-    , command{config.getString(config_prefix + ".command")}
-    , update_field{config.getString(config_prefix + ".update_field", "")}
-    , format{config.getString(config_prefix + ".format")}
+    , dict_struct(dict_struct_)
+    , configuration(configuration_)
     , sample_block{sample_block_}
     , context(context_)
 {
     /// Remove keys from sample_block for implicit_key dictionary because
     /// these columns will not be returned from source
-    /// Implicit key means that the source script will return only values,
-    /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
-    if (implicit_key)
+    if (configuration.implicit_key)
     {
         auto keys_names = dict_struct.getKeysNames();
 
@@ -91,43 +85,40 @@ ExecutableDictionarySource::ExecutableDictionarySource(
 
 ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionarySource & other)
     : log(&Poco::Logger::get("ExecutableDictionarySource"))
-    , update_time{other.update_time}
-    , dict_struct{other.dict_struct}
-    , implicit_key{other.implicit_key}
-    , command{other.command}
-    , update_field{other.update_field}
-    , format{other.format}
-    , sample_block{other.sample_block}
+    , update_time(other.update_time)
+    , dict_struct(other.dict_struct)
+    , configuration(other.configuration)
+    , sample_block(other.sample_block)
     , context(Context::createCopy(other.context))
 {
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
-    if (implicit_key)
+    if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
 
     LOG_TRACE(log, "loadAll {}", toString());
-    auto process = ShellCommand::execute(command);
-    auto input_stream = context->getInputFormat(format, process->out, sample_block, max_block_size);
+    auto process = ShellCommand::execute(configuration.command);
+    auto input_stream = context->getInputFormat(configuration.format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(log, input_stream, std::move(process));
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
 {
-    if (implicit_key)
+    if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
 
     time_t new_update_time = time(nullptr);
     SCOPE_EXIT(update_time = new_update_time);
 
-    std::string command_with_update_field = command;
+    std::string command_with_update_field = configuration.command;
     if (update_time)
-        command_with_update_field += " " + update_field + " " + DB::toString(LocalDateTime(update_time - 1));
+        command_with_update_field += " " + configuration.update_field + " " + DB::toString(LocalDateTime(update_time - configuration.update_lag));
 
     LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
     auto process = ShellCommand::execute(command_with_update_field);
-    auto input_stream = context->getInputFormat(format, process->out, sample_block, max_block_size);
+    auto input_stream = context->getInputFormat(configuration.format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(log, input_stream, std::move(process));
 }
 
@@ -140,7 +131,7 @@ namespace
     {
     public:
         BlockInputStreamWithBackgroundThread(
-            ContextConstPtr context,
+            ContextPtr context,
             const std::string & format,
             const Block & sample_block,
             const std::string & command_str,
@@ -220,15 +211,15 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_col
 BlockInputStreamPtr ExecutableDictionarySource::getStreamForBlock(const Block & block)
 {
     auto stream = std::make_unique<BlockInputStreamWithBackgroundThread>(
-        context, format, sample_block, command, log,
+        context, configuration.format, sample_block, configuration.command, log,
         [block, this](WriteBufferFromFile & out) mutable
         {
-            auto output_stream = context->getOutputStream(format, out, block.cloneEmpty());
+            auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
             formatBlock(output_stream, block);
             out.close();
         });
 
-    if (implicit_key)
+    if (configuration.implicit_key)
         return std::make_shared<BlockInputStreamWithAdditionalColumns>(block, std::move(stream));
     else
         return std::shared_ptr<BlockInputStreamWithBackgroundThread>(stream.release());
@@ -246,7 +237,7 @@ bool ExecutableDictionarySource::supportsSelectiveLoad() const
 
 bool ExecutableDictionarySource::hasUpdateField() const
 {
-    return !update_field.empty();
+    return !configuration.update_field.empty();
 }
 
 DictionarySourcePtr ExecutableDictionarySource::clone() const
@@ -256,7 +247,7 @@ DictionarySourcePtr ExecutableDictionarySource::clone() const
 
 std::string ExecutableDictionarySource::toString() const
 {
-    return "Executable: " + command;
+    return "Executable: " + configuration.command;
 }
 
 void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
@@ -265,7 +256,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextConstPtr context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
@@ -280,10 +271,20 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 
         auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
-        return std::make_unique<ExecutableDictionarySource>(
-            dict_struct, config, config_prefix + ".executable",
-            sample_block, context_local_copy);
+        std::string settings_config_prefix = config_prefix + ".executable";
+
+        ExecutableDictionarySource::Configuration configuration
+        {
+            .command = config.getString(settings_config_prefix + ".command"),
+            .format = config.getString(settings_config_prefix + ".format"),
+            .update_field = config.getString(settings_config_prefix + ".update_field", ""),
+            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
+            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false)
+        };
+
+        return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);
     };
+
     factory.registerSource("executable", create_table_source);
 }
 

@@ -78,7 +78,7 @@ private:
     ClusterPtr getClusterImpl() const;
     void setCluster(ClusterPtr && new_cluster);
 
-    void createEmptyLogEntry(Coordination::Requests & ops, const ZooKeeperPtr & current_zookeeper);
+    void createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper);
 
     String zookeeper_path;
     String shard_name;

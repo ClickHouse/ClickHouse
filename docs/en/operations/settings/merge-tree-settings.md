@@ -123,6 +123,19 @@ The `Insert` command creates one or more blocks (parts). When inserting into Rep
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the inserted part (stream of bytes).
 
+## non_replicated_deduplication_window {#non-replicated-deduplication-window}
+
+The number of the most recently inserted blocks in the non-replicated [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table for which hash sums are stored to check for duplicates.
+
+Possible values:
+
+-   Any positive integer.
+-   0 (disable deduplication).
+
+Default value: 0.
+
+A deduplication mechanism is used, similar to replicated tables (see [replicated_deduplication_window](#replicated-deduplication-window) setting). The hash sums of the created parts are written to a local file on a disk.
+
 ## replicated_deduplication_window_seconds {#replicated-deduplication-window-seconds}
 
 The number of seconds after which the hash sums of the inserted blocks are removed from Zookeeper.

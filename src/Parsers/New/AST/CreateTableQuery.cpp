@@ -48,6 +48,7 @@ ASTPtr TableSchemaClause::convertToOld() const
             auto column_list = std::make_shared<ASTExpressionList>();
             auto constraint_list = std::make_shared<ASTExpressionList>();
             auto index_list = std::make_shared<ASTExpressionList>();
+            auto projection_list = std::make_shared<ASTExpressionList>();
 
             for (const auto & element : get(ELEMENTS)->as<TableElementList &>())
             {
@@ -62,12 +63,16 @@ ASTPtr TableSchemaClause::convertToOld() const
                     case TableElementExpr::ExprType::INDEX:
                         index_list->children.push_back(element->convertToOld());
                         break;
+                    case TableElementExpr::ExprType::PROJECTION:
+                        projection_list->children.push_back(element->convertToOld());
+                        break;
                 }
             }
 
             if (!column_list->children.empty()) columns->set(columns->columns, column_list);
             if (!constraint_list->children.empty()) columns->set(columns->constraints, constraint_list);
             if (!index_list->children.empty()) columns->set(columns->indices, index_list);
+            if (!projection_list->children.empty()) columns->set(columns->projections, projection_list);
 
             return columns;
         }

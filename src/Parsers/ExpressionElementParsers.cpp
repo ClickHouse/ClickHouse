@@ -530,23 +530,23 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     ParserKeyword keyword_groups("GROUPS");
     ParserKeyword keyword_range("RANGE");
 
-    node->frame.is_default = false;
+    node->frame_is_default = false;
     if (keyword_rows.ignore(pos, expected))
     {
-        node->frame.type = WindowFrame::FrameType::Rows;
+        node->frame_type = WindowFrame::FrameType::Rows;
     }
     else if (keyword_groups.ignore(pos, expected))
     {
-        node->frame.type = WindowFrame::FrameType::Groups;
+        node->frame_type = WindowFrame::FrameType::Groups;
     }
     else if (keyword_range.ignore(pos, expected))
     {
-        node->frame.type = WindowFrame::FrameType::Range;
+        node->frame_type = WindowFrame::FrameType::Range;
     }
     else
     {
         /* No frame clause. */
-        node->frame.is_default = true;
+        node->frame_is_default = true;
         return true;
     }
 
@@ -565,21 +565,19 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
     if (keyword_current_row.ignore(pos, expected))
     {
-        node->frame.begin_type = WindowFrame::BoundaryType::Current;
+        node->frame_begin_type = WindowFrame::BoundaryType::Current;
     }
     else
     {
-        ParserLiteral parser_literal;
-        ASTPtr ast_literal;
+        ParserExpression parser_expression;
         if (keyword_unbounded.ignore(pos, expected))
         {
-            node->frame.begin_type = WindowFrame::BoundaryType::Unbounded;
+            node->frame_begin_type = WindowFrame::BoundaryType::Unbounded;
         }
-        else if (parser_literal.parse(pos, ast_literal, expected))
+        else if (parser_expression.parse(pos, node->frame_begin_offset, expected))
         {
-            const Field & value = ast_literal->as<ASTLiteral &>().value;
-            node->frame.begin_offset = value;
-            node->frame.begin_type = WindowFrame::BoundaryType::Offset;
+            // We will evaluate the expression for offset expression later.
+            node->frame_begin_type = WindowFrame::BoundaryType::Offset;
         }
         else
         {
@@ -588,12 +586,12 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
         if (keyword_preceding.ignore(pos, expected))
         {
-            node->frame.begin_preceding = true;
+            node->frame_begin_preceding = true;
         }
         else if (keyword_following.ignore(pos, expected))
         {
-            node->frame.begin_preceding = false;
-            if (node->frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+            node->frame_begin_preceding = false;
+            if (node->frame_begin_type == WindowFrame::BoundaryType::Unbounded)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Frame start cannot be UNBOUNDED FOLLOWING");
@@ -614,21 +612,19 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
         if (keyword_current_row.ignore(pos, expected))
         {
-            node->frame.end_type = WindowFrame::BoundaryType::Current;
+            node->frame_end_type = WindowFrame::BoundaryType::Current;
         }
         else
         {
-            ParserLiteral parser_literal;
-            ASTPtr ast_literal;
+            ParserExpression parser_expression;
             if (keyword_unbounded.ignore(pos, expected))
             {
-                node->frame.end_type = WindowFrame::BoundaryType::Unbounded;
+                node->frame_end_type = WindowFrame::BoundaryType::Unbounded;
             }
-            else if (parser_literal.parse(pos, ast_literal, expected))
+            else if (parser_expression.parse(pos, node->frame_end_offset, expected))
             {
-                const Field & value = ast_literal->as<ASTLiteral &>().value;
-                node->frame.end_offset = value;
-                node->frame.end_type = WindowFrame::BoundaryType::Offset;
+                // We will evaluate the expression for offset expression later.
+                node->frame_end_type = WindowFrame::BoundaryType::Offset;
             }
             else
             {
@@ -637,8 +633,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
             if (keyword_preceding.ignore(pos, expected))
             {
-                node->frame.end_preceding = true;
-                if (node->frame.end_type == WindowFrame::BoundaryType::Unbounded)
+                node->frame_end_preceding = true;
+                if (node->frame_end_type == WindowFrame::BoundaryType::Unbounded)
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Frame end cannot be UNBOUNDED PRECEDING");
@@ -647,7 +643,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             else if (keyword_following.ignore(pos, expected))
             {
                 // Positive offset or UNBOUNDED FOLLOWING.
-                node->frame.end_preceding = false;
+                node->frame_end_preceding = false;
             }
             else
             {
