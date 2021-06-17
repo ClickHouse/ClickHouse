@@ -4,7 +4,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
 #include <common/sleep.h>
 #include <IO/WriteHelpers.h>
