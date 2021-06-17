@@ -192,7 +192,9 @@ private:
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if (func.name == "globalIn" || func.name == "globalNotIn")
+        if ((data.getContext()->getSettingsRef().prefer_global_in_and_join
+             && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
+            || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
             ASTPtr & ast = func.arguments->children[1];
 
@@ -201,8 +203,12 @@ private:
             {
                 if (func.name == "globalIn")
                     func.name = "in";
-                else
+                else if (func.name == "globalNotIn")
                     func.name = "notIn";
+                else if (func.name == "globalNullIn")
+                    func.name = "nullIn";
+                else if (func.name == "globalNotNullIn")
+                    func.name = "notNullIn";
                 return;
             }
 
@@ -214,7 +220,9 @@ private:
     /// GLOBAL JOIN
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
-        if (table_elem.table_join && table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global)
+        if (table_elem.table_join
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global
+                || data.getContext()->getSettingsRef().prefer_global_in_and_join))
         {
             data.addExternalStorage(table_elem.table_expression, true);
             data.has_global_subqueries = true;
