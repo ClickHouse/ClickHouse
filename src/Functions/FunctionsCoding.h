@@ -1523,7 +1523,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isNativeInteger(arguments[0]))
+        if (!isInteger(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
                 getName(),
@@ -1553,14 +1553,31 @@ public:
         result_array_values_data.reserve(size * 2);
 
         using UnsignedType = make_unsigned_t<T>;
+
         for (size_t row = 0; row < size; ++row)
         {
             UnsignedType x = static_cast<UnsignedType>(vec_from[row]);
 
-            while (x)
+            if constexpr (is_big_int_v<UnsignedType>)
             {
-                result_array_values_data.push_back(getTrailingZeroBitsUnsafe(x));
-                x &= (x - 1);
+                size_t position = 0;
+
+                while (x)
+                {
+                    if (x & 1)
+                        result_array_values_data.push_back(position);
+
+                    x >>= 1;
+                    ++position;
+                }
+            }
+            else
+            {
+                while (x)
+                {
+                    result_array_values_data.push_back(getTrailingZeroBitsUnsafe(x));
+                    x &= (x - 1);
+                }
             }
 
             result_array_offsets_data[row] = result_array_values_data.size();
@@ -1581,10 +1598,14 @@ public:
             || (result_column = executeType<UInt32>(in_column))
             || (result_column = executeType<UInt32>(in_column))
             || (result_column = executeType<UInt64>(in_column))
+            || (result_column = executeType<UInt128>(in_column))
+            || (result_column = executeType<UInt256>(in_column))
             || (result_column = executeType<Int8>(in_column))
             || (result_column = executeType<Int16>(in_column))
             || (result_column = executeType<Int32>(in_column))
-            || (result_column = executeType<Int64>(in_column))))
+            || (result_column = executeType<Int64>(in_column))
+            || (result_column = executeType<Int128>(in_column))
+            || (result_column = executeType<Int256>(in_column))))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                "Illegal column {} of first argument of function {}",
