@@ -279,7 +279,7 @@ void StorageRabbitMQ::initRabbitMQ()
     initExchange(rabbit_channel);
     bindExchange(rabbit_channel);
 
-    for (const auto i : ext::range(0, num_queues))
+    for (const auto i : collections::range(0, num_queues))
         bindQueue(i + 1, rabbit_channel);
 
     LOG_TRACE(log, "RabbitMQ setup completed");

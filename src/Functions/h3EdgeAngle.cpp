@@ -10,7 +10,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -32,7 +32,7 @@ class FunctionH3EdgeAngle : public IFunction
 public:
     static constexpr auto name = "h3EdgeAngle";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionH3EdgeAngle>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3EdgeAngle>(); }
 
     std::string getName() const override { return name; }
 
@@ -58,7 +58,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const int resolution = col_hindex->getUInt(row);
             if (resolution > MAX_H3_RES)

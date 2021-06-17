@@ -20,7 +20,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <algorithm>
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -571,7 +571,7 @@ void StorageMerge::convertingSourceStream(
     if (!where_expression)
         return;
 
-    for (size_t column_index : ext::range(0, header.columns()))
+    for (size_t column_index : collections::range(0, header.columns()))
     {
         ColumnWithTypeAndName header_column = header.getByPosition(column_index);
         ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);

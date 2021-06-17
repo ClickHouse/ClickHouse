@@ -43,8 +43,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <ext/range.h>
-#include <ext/bit_cast.h>
+#include <common/range.h>
+#include <common/bit_cast.h>
 
 
 namespace DB
@@ -535,7 +535,7 @@ class FunctionStringHashFixedString : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionStringHashFixedString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringHashFixedString>(); }
 
     String getName() const override
     {
@@ -700,7 +700,7 @@ template <typename Impl, typename Name>
 class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Name>
 {
 public:
-    explicit FunctionIntHash(ContextConstPtr context) : selector(context)
+    explicit FunctionIntHash(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
@@ -718,7 +718,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionIntHash>(context);
     }
@@ -754,9 +754,9 @@ private:
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
                     if constexpr (std::is_same_v<ToType, UInt64>)
-                        h = IntHash64Impl::apply(ext::bit_cast<UInt64>(vec_from[i]));
+                        h = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
                     else
-                        h = IntHash32Impl::apply(ext::bit_cast<UInt32>(vec_from[i]));
+                        h = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
                 }
                 else
                 {
@@ -774,9 +774,9 @@ private:
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
             if constexpr (std::is_same_v<ToType, UInt64>)
-                hash = IntHash64Impl::apply(ext::bit_cast<UInt64>(value));
+                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
             else
-                hash = IntHash32Impl::apply(ext::bit_cast<UInt32>(value));
+                hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
 
             size_t size = vec_to.size();
             if constexpr (first)
@@ -1077,7 +1077,7 @@ template <typename Impl>
 class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl>
 {
 public:
-    explicit FunctionAnyHash(ContextConstPtr context) : selector(context)
+    explicit FunctionAnyHash(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionAnyHash<Impl>>();
@@ -1095,7 +1095,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionAnyHash>(context);
     }
@@ -1182,7 +1182,7 @@ class FunctionURLHash : public IFunction
 {
 public:
     static constexpr auto name = "URLHash";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionURLHash>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionURLHash>(); }
 
     String getName() const override { return name; }
 

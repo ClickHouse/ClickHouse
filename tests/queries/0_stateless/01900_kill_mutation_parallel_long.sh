@@ -38,3 +38,6 @@ $CLICKHOUSE_CLIENT --format Null -nm -q "kill mutation where table = 'data_01900
 wait
 
 $CLICKHOUSE_CLIENT -nm -q "select * from data_01900_2"
+
+$CLICKHOUSE_CLIENT -q "drop table data_01900_1"
+$CLICKHOUSE_CLIENT -q "drop table data_01900_2"
