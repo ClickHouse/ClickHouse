@@ -402,14 +402,11 @@ Coordination::ZooKeeperRequestPtr deserializeMultiTxn(ReadBuffer & in)
     Coordination::read(length, in);
 
     std::shared_ptr<Coordination::ZooKeeperMultiRequest> result = std::make_shared<Coordination::ZooKeeperMultiRequest>();
-    bool error_found = false;
     while (length > 0)
     {
         auto subrequest = deserializeTxnImpl(in, true);
         if (subrequest)
             result->requests.push_back(subrequest);
-        else
-            error_found = true;
         length--;
     }
     return result;
