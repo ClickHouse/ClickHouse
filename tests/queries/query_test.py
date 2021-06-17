@@ -98,6 +98,7 @@ SKIP_LIST = [
     "01561_mann_whitney_scipy",
     "01582_distinct_optimization",
     "01591_window_functions",
+    "01594_too_low_memory_limits",
     "01599_multiline_input_and_singleline_comments",  # expect-test
     "01601_custom_tld",
     "01606_git_import",
@@ -126,6 +127,9 @@ SKIP_LIST = [
     "01848_http_insert_segfault",
     "01875_ssd_cache_dictionary_decimal256_type",
     "01880_remote_ipv6",
+    "01889_check_row_policy_defined_using_user_function",
+    "01889_clickhouse_client_config_format",
+    "01903_ssd_cache_dictionary_array_type",
 ]
 
 

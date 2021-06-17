@@ -3916,6 +3916,10 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
     const auto & query_ptr = query_info.query;
 
+    // Currently projections don't support final yet.
+    if (auto * select = query_ptr->as<ASTSelectQuery>(); select && select->final())
+        return false;
+
     InterpreterSelectQuery select(
         query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
     const auto & analysis_result = select.getAnalysisResult();

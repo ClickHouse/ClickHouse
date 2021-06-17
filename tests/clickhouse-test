@@ -1154,6 +1154,7 @@ if __name__ == '__main__':
             os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
         else:
             os.environ['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
+        args.client += ' --use_antlr_parser=1'
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):
