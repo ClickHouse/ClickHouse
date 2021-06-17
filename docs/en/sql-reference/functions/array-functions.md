@@ -39,9 +39,9 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-## range(end), range(start, end \[, step\]) {#rangeend-rangestart-end-step}
+## range(end), range(start, end \[, step\]) {#range}
 
-Returns an array of numbers from `start` to `end`-1 by `step`.
+Returns an array of numbers from `start` to `end - 1` by `step`.
 
 **Syntax**
 ``` sql
@@ -71,12 +71,6 @@ SELECT range(10);
 Result:
 ```[0,1,2,3,4,5,6,7,8,9]```
 
-Query:
-``` sql
-SELECT range(0);
-```
-Result:
-`[]`
 
 Query:
 ``` sql
