@@ -10,15 +10,15 @@ template <typename JSONParser>
 class VisitorJSONPathMemberAccess : public IVisitor<JSONParser>
 {
 public:
-    VisitorJSONPathMemberAccess(ASTPtr member_access_ptr_) : member_access_ptr(member_access_ptr_) { }
+    VisitorJSONPathMemberAccess(ASTPtr member_access_ptr_)
+        : member_access_ptr(member_access_ptr_->as<ASTJSONPathMemberAccess>()) { }
 
     const char * getName() const override { return "VisitorJSONPathMemberAccess"; }
 
     VisitorStatus apply(typename JSONParser::Element & element) const override
     {
-        const auto * member_access = member_access_ptr->as<ASTJSONPathMemberAccess>();
         typename JSONParser::Element result;
-        element.getObject().find(std::string_view(member_access->member_name), result);
+        element.getObject().find(std::string_view(member_access_ptr->member_name), result);
         element = result;
         return VisitorStatus::Ok;
     }
@@ -30,9 +30,8 @@ public:
             this->setExhausted(true);
             return VisitorStatus::Error;
         }
-        const auto * member_access = member_access_ptr->as<ASTJSONPathMemberAccess>();
         typename JSONParser::Element result;
-        if (!element.getObject().find(std::string_view(member_access->member_name), result))
+        if (!element.getObject().find(std::string_view(member_access_ptr->member_name), result))
         {
             this->setExhausted(true);
             return VisitorStatus::Error;
@@ -47,7 +46,7 @@ public:
     void updateState() override { }
 
 private:
-    ASTPtr member_access_ptr;
+    ASTJSONPathMemberAccess * member_access_ptr;
 };
 
 }
