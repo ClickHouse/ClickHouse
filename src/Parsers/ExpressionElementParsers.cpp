@@ -244,17 +244,26 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ParserKeyword s_uuid("UUID");
     UUID uuid = UUIDHelpers::Nil;
 
-    if (table_name_with_optional_uuid && parts.size() <= 2 && s_uuid.ignore(pos, expected))
+    if (table_name_with_optional_uuid)
     {
-        ParserStringLiteral uuid_p;
-        ASTPtr ast_uuid;
-        if (!uuid_p.parse(pos, ast_uuid, expected))
+        if (parts.size() > 2)
             return false;
-        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
-    }
 
-    node = std::make_shared<ASTIdentifier>(std::move(parts), false, std::move(params));
-    node->as<ASTIdentifier>()->uuid = uuid;
+        if (s_uuid.ignore(pos, expected))
+        {
+            ParserStringLiteral uuid_p;
+            ASTPtr ast_uuid;
+            if (!uuid_p.parse(pos, ast_uuid, expected))
+                return false;
+            uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
+        }
+
+        if (parts.size() == 1) node = std::make_shared<ASTTableIdentifier>(parts[0], std::move(params));
+        else node = std::make_shared<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
+        node->as<ASTTableIdentifier>()->uuid = uuid;
+    }
+    else
+        node = std::make_shared<ASTIdentifier>(std::move(parts), false, std::move(params));
 
     return true;
 }
@@ -1729,7 +1738,7 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword columns("COLUMNS");
-    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(true), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(false, true), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserStringLiteral regex;
 
     if (!columns.ignore(pos, expected))
@@ -1955,7 +1964,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserCompoundIdentifier(false, true).parse(pos, node, expected))
+    if (!ParserCompoundIdentifier(true, true).parse(pos, node, expected))
         return false;
 
     if (pos->type != TokenType::Dot)
