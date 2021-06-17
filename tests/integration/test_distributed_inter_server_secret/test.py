@@ -65,19 +65,19 @@ def start_cluster():
         cluster.shutdown()
 
 def query_with_id(node, id_, query, **kwargs):
-    return node.query("WITH '{}' AS __id {}".format(id_, query), **kwargs)
+    return node.query("SET log_comment = '{}'; {}".format(id_, query), **kwargs)
 
 # @return -- [user, initial_user]
-def get_query_user_info(node, query_pattern):
+def get_query_user_info(node, id_):
     node.query("SYSTEM FLUSH LOGS")
     return node.query("""
     SELECT user, initial_user
     FROM system.query_log
     WHERE
-        query LIKE '%{}%' AND
+        log_comment = '{}' AND
         query NOT LIKE '%system.query_log%' AND
         type = 'QueryFinish'
-    """.format(query_pattern)).strip().split('\t')
+    """.format(id_))
 
 # @return -- settings
 def get_query_setting_on_shard(node, query_pattern, setting):
