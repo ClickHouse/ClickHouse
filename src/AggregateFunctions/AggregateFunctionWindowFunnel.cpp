@@ -46,8 +46,8 @@ AggregateFunctionPtr createAggregateFunctionWindowFunnel(const std::string & nam
         return res;
     else if (which.isDate())
         return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(arguments, params);
-    else if (which.isDate32())
-        return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDate32::FieldType, Data<DataTypeDate32::FieldType>>>(arguments, params);
+//    else if (which.isDate32())
+//        return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDate32::FieldType, Data<DataTypeDate32::FieldType>>>(arguments, params);
     else if (which.isDateTime())
         return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(arguments, params);
 

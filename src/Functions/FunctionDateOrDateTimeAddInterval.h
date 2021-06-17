@@ -51,7 +51,10 @@ struct AddSecondsImpl
     {
         return t + delta;
     }
-
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.fromDayNum(ExtendedDayNum(d)) + delta;
+    }
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d)) + delta;
@@ -72,7 +75,10 @@ struct AddMinutesImpl
     {
         return t + delta * 60;
     }
-
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60;
+    }
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60;
@@ -92,7 +98,10 @@ struct AddHoursImpl
     {
         return t + delta * 3600;
     }
-
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600;
+    }
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600;
@@ -424,6 +433,8 @@ public:
         {
             case TypeIndex::Date:
                 return resolveReturnType<DataTypeDate>(arguments);
+            case TypeIndex::Date32:
+                return resolveReturnType<DataTypeDate32>(arguments);
             case TypeIndex::DateTime:
                 return resolveReturnType<DataTypeDateTime>(arguments);
             case TypeIndex::DateTime64:

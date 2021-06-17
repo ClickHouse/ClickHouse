@@ -61,7 +61,7 @@ struct ToDateImpl
     {
         return UInt16(time_zone.toDayNum(t));
     }
-    static inline UInt16 execute(Int32 t, const DateLUTImpl & time_zone)
+    static inline UInt16 execute(Int32, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
     }
