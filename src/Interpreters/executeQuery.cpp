@@ -441,7 +441,28 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto * insert_query = ast->as<ASTInsertQuery>();
 
         if (insert_query && insert_query->settings_ast)
+        {
+            /// FIXME: it's not the best solution, should be implemented in better way.
+            if (insert_query->expectsNativeData())
+            {
+                auto * set_query = insert_query->settings_ast->as<ASTSetQuery>();
+
+                assert(set_query);
+
+                set_query->changes.erase(
+                    std::remove_if(
+                        set_query->changes.begin(),
+                        set_query->changes.end(),
+                        [](const SettingChange & change)
+                        {
+                            return change.name == "format_template_row" || change.name == "format_template_rows_between_delimiter"
+                                || change.name == "format_template_resultset";
+                        }),
+                    set_query->changes.end());
+            }
+
             InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
+        }
 
         if (insert_query)
         {
@@ -579,7 +600,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         auto * queue = context->getAsynchronousInsertQueue();
         const bool async_insert
-            = queue && insert_query && !insert_query->select && (insert_query->data || insert_query->tail) && settings.async_insert_mode;
+            = queue && insert_query && !insert_query->select && !insert_query->expectsNativeData() && settings.async_insert_mode;
 
         if (async_insert && queue->push(insert_query, settings))
         {
