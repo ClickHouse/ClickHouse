@@ -24,6 +24,7 @@
 #include <Common/formatIPv6.h>
 #include <Common/hex.h>
 #include <Common/typeid_cast.h>
+#include <Common/BitHelpers.h>
 
 #include <arpa/inet.h>
 #include <ext/range.h>
@@ -1506,11 +1507,11 @@ public:
     }
 };
 
-class FunctionBitpositionToArray : public IFunction
+class FunctionBitPositionsToArray : public IFunction
 {
 public:
-    static constexpr auto name = "bitpositionToArray";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitpositionToArray>(); }
+    static constexpr auto name = "bitPositionsToArray";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitPositionsToArray>(); }
 
     String getName() const override
     {
@@ -1522,76 +1523,76 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isInteger(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isNativeInteger(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                getName(),
+                arguments[0]->getName());
 
-        return std::make_shared<DataTypeArray>(arguments[0]);
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
     template <typename T>
-    bool tryExecute(const IColumn * column, ColumnPtr & out_column) const
+    ColumnPtr executeType(const IColumn * column) const
     {
-        using UnsignedT = make_unsigned_t<T>;
+        const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column);
+        if (!col_from)
+            return nullptr;
 
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column))
+        auto result_array_values = ColumnVector<UInt64>::create();
+        auto result_array_offsets = ColumnArray::ColumnOffsets::create();
+
+        auto & result_array_values_data = result_array_values->getData();
+        auto & result_array_offsets_data = result_array_offsets->getData();
+
+        auto & vec_from = col_from->getData();
+        size_t size = vec_from.size();
+        result_array_offsets_data.resize(size);
+        result_array_values_data.reserve(size * 2);
+
+        using UnsignedType = make_unsigned_t<T>;
+        for (size_t row = 0; row < size; ++row)
         {
-            auto col_values = ColumnVector<T>::create();
-            auto col_offsets = ColumnArray::ColumnOffsets::create();
+            UnsignedType x = static_cast<UnsignedType>(vec_from[row]);
 
-            typename ColumnVector<T>::Container & res_values = col_values->getData();
-            ColumnArray::Offsets & res_offsets = col_offsets->getData();
-
-            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
-            size_t size = vec_from.size();
-            res_offsets.resize(size);
-            res_values.reserve(size * 2);
-
-            for (size_t row = 0; row < size; ++row)
+            while (x)
             {
-                UnsignedT x = vec_from[row];
-                int position = 0;
-                while (x)
-                {
-                    if (x & 1)
-                    {
-                        res_values.push_back(position);
-                    }
-                    x >>= 1 ;
-                    position++;
-                }
-                res_offsets[row] = res_values.size();
+                result_array_values_data.push_back(getTrailingZeroBitsUnsafe(x));
+                x &= (x -1);
             }
 
-            out_column = ColumnArray::create(std::move(col_values), std::move(col_offsets));
-            return true;
+            result_array_offsets_data[row] = result_array_values_data.size();
         }
-        else
-        {
-            return false;
-        }
+
+        auto result_column = ColumnArray::create(std::move(result_array_values), std::move(result_array_offsets));
+
+        return result_column;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IColumn * in_column = arguments[0].column.get();
-        ColumnPtr out_column;
+        ColumnPtr result_column;
 
-        if (tryExecute<UInt8>(in_column, out_column) ||
-            tryExecute<UInt16>(in_column, out_column) ||
-            tryExecute<UInt32>(in_column, out_column) ||
-            tryExecute<UInt64>(in_column, out_column) ||
-            tryExecute<Int8>(in_column, out_column) ||
-            tryExecute<Int16>(in_column, out_column) ||
-            tryExecute<Int32>(in_column, out_column) ||
-            tryExecute<Int64>(in_column, out_column))
-            return out_column;
+        if (!( (result_column = executeType<UInt8>(in_column))
+            || (result_column = executeType<UInt16>(in_column))
+            || (result_column = executeType<UInt32>(in_column))
+            || (result_column = executeType<UInt32>(in_column))
+            || (result_column = executeType<UInt64>(in_column))
+            || (result_column = executeType<Int8>(in_column))
+            || (result_column = executeType<Int16>(in_column))
+            || (result_column = executeType<Int32>(in_column))
+            || (result_column = executeType<Int64>(in_column))))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+               "Illegal column {} of first argument of function {}",
+               arguments[0].column->getName(),
+               getName());
+        }
 
-        throw Exception("Illegal column " + arguments[0].column->getName()
-                        + " of first argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+        return result_column;
     }
 };
 
