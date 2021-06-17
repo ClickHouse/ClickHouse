@@ -2,8 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
-
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 
 namespace DB
