@@ -306,7 +306,7 @@ namespace
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         DictionarySourcePtr source_ptr,
-        ContextConstPtr /* context */,
+        ContextPtr /* context */,
         bool /* created_from_ddl */)
     {
         const auto * layout_name = dictionary_key_type == DictionaryKeyType::simple ? "direct" : "complex_key_direct";

@@ -234,6 +234,9 @@ class IColumn;
     M(Seconds, http_send_timeout, DEFAULT_HTTP_READ_BUFFER_TIMEOUT, "HTTP send timeout", 0) \
     M(Seconds, http_receive_timeout, DEFAULT_HTTP_READ_BUFFER_TIMEOUT, "HTTP receive timeout", 0) \
     M(UInt64, http_max_uri_size, 1048576, "Maximum URI length of HTTP request", 0) \
+    M(UInt64, http_max_fields, 1000000, "Maximum number of fields in HTTP header", 0) \
+    M(UInt64, http_max_field_name_size, 1048576, "Maximum length of field name in HTTP header", 0) \
+    M(UInt64, http_max_field_value_size, 1048576, "Maximum length of field value in HTTP header", 0) \
     M(Bool, optimize_throw_if_noop, false, "If setting is enabled and OPTIMIZE query didn't actually assign a merge then an explanatory exception is thrown", 0) \
     M(Bool, use_index_for_in_with_subqueries, true, "Try using an index if there is a subquery or a table expression on the right side of the IN operator.", 0) \
     M(Bool, joined_subquery_requires_alias, true, "Force joined subqueries and table functions to have aliases for correct name qualification.", 0) \

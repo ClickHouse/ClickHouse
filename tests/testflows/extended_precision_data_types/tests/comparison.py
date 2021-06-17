@@ -11,6 +11,7 @@ funcs = [
 ]
 
 Examples_list =  [tuple(list(func)+list(data_type)+[Name(f'{func[0]} - {data_type[0]}')]) for func in funcs for data_type in data_types]
+Examples_list_dec =  [tuple(list(func)+[Name(f'{func[0]} - Decimal256')]) for func in funcs]
 
 @TestOutline(Scenario)
 @Examples('func int_type min max', Examples_list)
@@ -51,7 +52,7 @@ def comp_int_table(self, func, int_type, min, max, node=None):
             """)
 
 @TestOutline(Scenario)
-@Examples('func', funcs)
+@Examples('func', Examples_list_dec)
 def comp_dec_inline(self, func, node=None):
     """Check comparison functions with Decimal256 using inline tests.
     """
@@ -67,7 +68,7 @@ def comp_dec_inline(self, func, node=None):
             """)
 
 @TestOutline(Scenario)
-@Examples('func', funcs)
+@Examples('func', Examples_list_dec)
 def comp_dec_table(self, func, node=None):
     """Check comparison functions with Decimal256 using table tests.
     """

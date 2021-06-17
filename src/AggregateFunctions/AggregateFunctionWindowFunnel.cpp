@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -35,7 +35,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
     if (arguments.size() > max_events + 1)
         throw Exception("Too many event arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (const auto i : ext::range(1, arguments.size()))
+    for (const auto i : collections::range(1, arguments.size()))
     {
         const auto * cond_arg = arguments[i].get();
         if (!isUInt8(cond_arg))

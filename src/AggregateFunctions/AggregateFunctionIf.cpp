@@ -1,12 +1,10 @@
 #include <AggregateFunctions/AggregateFunctionIf.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-#include "registerAggregateFunctions.h"
 #include "AggregateFunctionNull.h"
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
