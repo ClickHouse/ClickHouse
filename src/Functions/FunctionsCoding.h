@@ -1560,7 +1560,7 @@ public:
             while (x)
             {
                 result_array_values_data.push_back(getTrailingZeroBitsUnsafe(x));
-                x &= (x -1);
+                x &= (x - 1);
             }
 
             result_array_offsets_data[row] = result_array_values_data.size();
@@ -1576,7 +1576,7 @@ public:
         const IColumn * in_column = arguments[0].column.get();
         ColumnPtr result_column;
 
-        if (!( (result_column = executeType<UInt8>(in_column))
+        if (!((result_column = executeType<UInt8>(in_column))
             || (result_column = executeType<UInt16>(in_column))
             || (result_column = executeType<UInt32>(in_column))
             || (result_column = executeType<UInt32>(in_column))
