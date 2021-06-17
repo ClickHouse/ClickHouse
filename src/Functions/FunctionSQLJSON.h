@@ -8,6 +8,8 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Functions/DummyJSONParser.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
@@ -279,11 +281,11 @@ public:
             return false;
         }
 
-        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        String result;
+        WriteBufferFromString out(result);
         out << current_element.getElement();
-        auto output_str = out.str();
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        col_str.insertData(output_str.data(), output_str.size());
+        col_str.insertData(result.data(), result.size());
         return true;
     }
 };
@@ -307,7 +309,9 @@ public:
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
-        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        String result;
+        WriteBufferFromString out(result);
+
         /// Create json array of results: [res1, res2, ...]
         out << "[";
         bool success = false;
@@ -334,8 +338,7 @@ public:
             return false;
         }
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        auto output_str = out.str();
-        col_str.insertData(output_str.data(), output_str.size());
+        col_str.insertData(reinterpret_cast<const char *>(result.data()), result.size());
         return true;
     }
 };
