@@ -95,7 +95,8 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, Cont
 {
     startBridgeIfNot(context);
     auto columns = getActualTableStructure(context);
-    auto result = std::make_shared<StorageXDBC>(StorageID(getDatabaseName(), table_name), schema_name, remote_table_name, columns, context, helper);
+    auto result = std::make_shared<StorageXDBC>(
+        StorageID(getDatabaseName(), table_name), schema_name, remote_table_name, columns, String{}, context, helper);
     result->startup();
     return result;
 }

@@ -25,8 +25,11 @@
 #include <Storages/System/StorageSystemMutations.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Storages/System/StorageSystemOne.h>
+#include <Storages/System/StorageSystemPartMovesBetweenShards.h>
 #include <Storages/System/StorageSystemParts.h>
+#include <Storages/System/StorageSystemProjectionParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
+#include <Storages/System/StorageSystemProjectionPartsColumns.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
@@ -126,8 +129,10 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attachSystemTablesLocal(system_database);
 
     attach<StorageSystemParts>(system_database, "parts");
+    attach<StorageSystemProjectionParts>(system_database, "projection_parts");
     attach<StorageSystemDetachedParts>(system_database, "detached_parts");
     attach<StorageSystemPartsColumns>(system_database, "parts_columns");
+    attach<StorageSystemProjectionPartsColumns>(system_database, "projection_parts_columns");
     attach<StorageSystemDisks>(system_database, "disks");
     attach<StorageSystemStoragePolicies>(system_database, "storage_policies");
     attach<StorageSystemProcesses>(system_database, "processes");
@@ -144,6 +149,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attach<StorageSystemGraphite>(system_database, "graphite_retentions");
     attach<StorageSystemMacros>(system_database, "macros");
     attach<StorageSystemReplicatedFetches>(system_database, "replicated_fetches");
+    attach<StorageSystemPartMovesBetweenShards>(system_database, "part_moves_between_shards");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(system_database, "zookeeper");

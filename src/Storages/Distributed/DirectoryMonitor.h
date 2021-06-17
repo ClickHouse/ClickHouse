@@ -50,15 +50,23 @@ public:
     /// For scheduling via DistributedBlockOutputStream
     bool addAndSchedule(size_t file_size, size_t ms);
 
+    struct InternalStatus
+    {
+        std::exception_ptr last_exception;
+
+        size_t error_count = 0;
+
+        size_t files_count = 0;
+        size_t bytes_count = 0;
+
+        size_t broken_files_count = 0;
+        size_t broken_bytes_count = 0;
+    };
     /// system.distribution_queue interface
-    struct Status
+    struct Status : InternalStatus
     {
         std::string path;
-        std::exception_ptr last_exception;
-        size_t error_count;
-        size_t files_count;
-        size_t bytes_count;
-        bool is_blocked;
+        bool is_blocked = false;
     };
     Status getStatus();
 
@@ -92,11 +100,8 @@ private:
     struct BatchHeader;
     struct Batch;
 
-    std::mutex metrics_mutex;
-    size_t error_count = 0;
-    size_t files_count = 0;
-    size_t bytes_count = 0;
-    std::exception_ptr last_exception;
+    std::mutex status_mutex;
+    InternalStatus status;
 
     const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
@@ -110,6 +115,7 @@ private:
     BackgroundSchedulePoolTaskHolder task_handle;
 
     CurrentMetrics::Increment metric_pending_files;
+    CurrentMetrics::Increment metric_broken_files;
 
     friend class DirectoryMonitorBlockInputStream;
 };

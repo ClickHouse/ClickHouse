@@ -51,8 +51,6 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 
-#include <Dictionaries/getDictionaryConfigurationFromAST.h>
-
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
@@ -91,8 +89,8 @@ namespace ErrorCodes
 
 namespace fs = std::filesystem;
 
-InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextPtr context_)
-    : WithContext(context_), query_ptr(query_ptr_)
+InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
+    : WithMutableContext(context_), query_ptr(query_ptr_)
 {
 }
 
@@ -145,7 +143,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
     }
-    else if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
+    else if ((create.columns_list
+              && ((create.columns_list->indices && !create.columns_list->indices->children.empty())
+                  || (create.columns_list->projections && !create.columns_list->projections->children.empty()))))
     {
         /// Currently, there are no database engines, that support any arguments.
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
@@ -263,7 +263,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
 
         /// We use global context here, because storages lifetime is bigger than query context lifetime
-        database->loadStoredObjects(getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach);
+        database->loadStoredObjects(getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach); //-V560
     }
     catch (...)
     {
@@ -362,6 +362,16 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
     return res;
 }
 
+ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & projections)
+{
+    auto res = std::make_shared<ASTExpressionList>();
+
+    for (const auto & projection : projections)
+        res->children.push_back(projection.definition_ast->clone());
+
+    return res;
+}
+
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     const ASTExpressionList & columns_ast, ContextPtr context_, bool attach)
 {
@@ -437,6 +447,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
 
     bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
+    bool allow_experimental_codecs = attach || context_->getSettingsRef().allow_experimental_codecs;
+
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
     for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
@@ -471,7 +483,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
         }
 
         if (col_decl.ttl)
@@ -520,6 +532,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
                 properties.indices.push_back(
                     IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()));
 
+        if (create.columns_list->projections)
+            for (const auto & projection_ast : create.columns_list->projections->children)
+            {
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
+                properties.projections.add(std::move(projection));
+            }
+
         properties.constraints = getConstraintsDescription(create.columns_list->constraints);
     }
     else if (!create.as_table.empty())
@@ -566,10 +585,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
     ASTPtr new_constraints = formatConstraints(properties.constraints);
+    ASTPtr new_projections = formatProjections(properties.projections);
 
     create.columns_list->setOrReplace(create.columns_list->columns, new_columns);
     create.columns_list->setOrReplace(create.columns_list->indices, new_indices);
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
+    create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
 
     validateTableStructure(create, properties);
     /// Set the table engine if it was not specified explicitly.
@@ -621,22 +642,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                 String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
                                  + type + "' because experimental geo types are not allowed. "
                                  + "Set setting allow_experimental_geo_types = 1 in order to allow it.";
-                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
-            }
-        }
-    }
-
-    if (!create.attach && !settings.allow_experimental_bigint_types)
-    {
-        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
-        {
-            WhichDataType which(*name_and_type_pair.type);
-            if (which.IsBigIntOrDeimal())
-            {
-                const auto & type_name = name_and_type_pair.type->getName();
-                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
-                                 + type_name + "' because experimental bigint types are not allowed. "
-                                 + "Set 'allow_experimental_bigint_types' setting to enable.";
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
         }

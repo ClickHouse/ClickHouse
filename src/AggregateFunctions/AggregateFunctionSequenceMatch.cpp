@@ -6,10 +6,10 @@
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <ext/range.h>
-#include "registerAggregateFunctions.h"
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -22,8 +22,9 @@ namespace ErrorCodes
 namespace
 {
 
-template <template <typename, typename> class AggregateFunction, template <typename> class Data>
-AggregateFunctionPtr createAggregateFunctionSequenceBase(const std::string & name, const DataTypes & argument_types, const Array & params)
+template <template <typename, typename> typename AggregateFunction, template <typename> typename Data>
+AggregateFunctionPtr createAggregateFunctionSequenceBase(
+    const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     if (params.size() != 1)
         throw Exception{"Aggregate function " + name + " requires exactly one parameter.",

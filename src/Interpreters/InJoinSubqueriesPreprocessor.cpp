@@ -111,7 +111,7 @@ private:
                 throw Exception("Distributed table should have an alias when distributed_product_mode set to local",
                                 ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
 
-            auto & identifier = database_and_table->as<ASTIdentifier &>();
+            auto & identifier = database_and_table->as<ASTTableIdentifier &>();
             renamed_tables.emplace_back(identifier.clone());
             identifier.resetTable(database, table);
         }
@@ -178,7 +178,7 @@ private:
             std::vector<ASTPtr> renamed;
             NonGlobalTableVisitor::Data table_data(data.getContext(), data.checker, renamed, &node, nullptr);
             NonGlobalTableVisitor(table_data).visit(subquery);
-            if (!renamed.empty())
+            if (!renamed.empty()) //-V547
                 data.renamed_tables.emplace_back(subquery, std::move(renamed));
         }
     }
@@ -196,7 +196,7 @@ private:
                 std::vector<ASTPtr> renamed;
                 NonGlobalTableVisitor::Data table_data(data.getContext(), data.checker, renamed, nullptr, table_join);
                 NonGlobalTableVisitor(table_data).visit(subquery);
-                if (!renamed.empty())
+                if (!renamed.empty()) //-V547
                     data.renamed_tables.emplace_back(subquery, std::move(renamed));
             }
         }

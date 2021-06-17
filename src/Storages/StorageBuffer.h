@@ -58,7 +58,8 @@ public:
 
     std::string getName() const override { return "Buffer"; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
@@ -87,7 +88,7 @@ public:
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
-    void shutdown() override;
+    void flush() override;
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -112,8 +113,8 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    std::optional<UInt64> lifetimeRows() const override { return writes.rows; }
-    std::optional<UInt64> lifetimeBytes() const override { return writes.bytes; }
+    std::optional<UInt64> lifetimeRows() const override { return lifetime_writes.rows; }
+    std::optional<UInt64> lifetimeBytes() const override { return lifetime_writes.bytes; }
 
 
 private:
@@ -143,12 +144,13 @@ private:
     StorageID destination_id;
     bool allow_materialized;
 
-    /// Lifetime
-    struct LifeTimeWrites
+    struct Writes
     {
         std::atomic<size_t> rows = 0;
         std::atomic<size_t> bytes = 0;
-    } writes;
+    };
+    Writes lifetime_writes;
+    Writes total_writes;
 
     Poco::Logger * log;
 
@@ -177,6 +179,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         ContextPtr context_,
         size_t num_shards_,
         const Thresholds & min_thresholds_,

@@ -45,7 +45,7 @@ struct Quota : public IAccessEntity
 
     struct ResourceTypeInfo
     {
-        const char * const raw_name;
+        const char * const raw_name = "";
         const String name;    /// Lowercased with underscores, e.g. "result_rows".
         const String keyword; /// Uppercased with spaces, e.g. "RESULT ROWS".
         const bool output_as_float = false;

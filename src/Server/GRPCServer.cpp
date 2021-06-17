@@ -521,7 +521,7 @@ namespace
         Poco::Logger * log = nullptr;
 
         std::shared_ptr<NamedSession> session;
-        ContextPtr query_context;
+        ContextMutablePtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
         String query_text;
         ASTPtr ast;
@@ -932,8 +932,8 @@ namespace
                     String format = external_table.format();
                     if (format.empty())
                         format = "TabSeparated";
-                    ContextPtr external_table_context = query_context;
-                    ContextPtr temp_context;
+                    ContextMutablePtr external_table_context = query_context;
+                    ContextMutablePtr temp_context;
                     if (!external_table.settings().empty())
                     {
                         temp_context = Context::createCopy(query_context);

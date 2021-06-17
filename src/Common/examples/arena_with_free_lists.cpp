@@ -135,24 +135,24 @@ struct Dictionary
     template <typename Value> using ContainerType = Value[];
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
-    enum class AttributeUnderlyingType
+    enum class AttributeUnderlyingTypeTest
     {
-        utUInt8,
-        utUInt16,
-        utUInt32,
-        utUInt64,
-        utInt8,
-        utInt16,
-        utInt32,
-        utInt64,
-        utFloat32,
-        utFloat64,
-        utString
+        UInt8,
+        UInt16,
+        UInt32,
+        UInt64,
+        Int8,
+        Int16,
+        Int32,
+        Int64,
+        Float32,
+        Float64,
+        String
     };
 
     struct Attribute final
     {
-        AttributeUnderlyingType type;
+        AttributeUnderlyingTypeTest type;
         std::variant<
             UInt8, UInt16, UInt32, UInt64,
             Int8, Int16, Int32, Int64,
@@ -172,17 +172,17 @@ struct Dictionary
     {
         switch (attribute.type)
         {
-            case AttributeUnderlyingType::utUInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-            case AttributeUnderlyingType::utUInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-            case AttributeUnderlyingType::utUInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-            case AttributeUnderlyingType::utUInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-            case AttributeUnderlyingType::utInt8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingType::utInt16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingType::utInt32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingType::utInt64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingType::utFloat32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>(); break;
-            case AttributeUnderlyingType::utFloat64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
-            case AttributeUnderlyingType::utString:
+            case AttributeUnderlyingTypeTest::UInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+            case AttributeUnderlyingTypeTest::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+            case AttributeUnderlyingTypeTest::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+            case AttributeUnderlyingTypeTest::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+            case AttributeUnderlyingTypeTest::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+            case AttributeUnderlyingTypeTest::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+            case AttributeUnderlyingTypeTest::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+            case AttributeUnderlyingTypeTest::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+            case AttributeUnderlyingTypeTest::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+            case AttributeUnderlyingTypeTest::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+            case AttributeUnderlyingTypeTest::String:
             {
                 const auto & string = value.get<String>();
                 auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
@@ -308,7 +308,7 @@ int main(int argc, char ** argv)
     constexpr size_t cache_size = 1024;
 
     Dictionary::Attribute attr;
-    attr.type = Dictionary::AttributeUnderlyingType::utString;
+    attr.type = Dictionary::AttributeUnderlyingTypeTest::String;
     std::get<Dictionary::ContainerPtrType<StringRef>>(attr.arrays).reset(new StringRef[cache_size]{});  // NOLINT
 
     while (true)

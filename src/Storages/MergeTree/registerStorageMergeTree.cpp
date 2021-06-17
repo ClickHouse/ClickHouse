@@ -290,7 +290,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     bool is_extended_storage_def = args.storage_def->partition_by || args.storage_def->primary_key || args.storage_def->order_by
         || args.storage_def->sample_by || (args.query.columns_list->indices && !args.query.columns_list->indices->children.empty())
-        || args.storage_def->settings;
+        || (args.query.columns_list->projections && !args.query.columns_list->projections->children.empty()) || args.storage_def->settings;
 
     String name_part = args.engine_name.substr(0, args.engine_name.size() - strlen("MergeTree"));
 
@@ -625,7 +625,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     String date_column_name;
 
     StorageInMemoryMetadata metadata;
-    metadata.columns = args.columns;
+    metadata.setColumns(args.columns);
+    metadata.setComment(args.comment);
 
     std::unique_ptr<MergeTreeSettings> storage_settings;
     if (replicated)
@@ -687,6 +688,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.getContext()));
+
+        if (args.query.columns_list && args.query.columns_list->projections)
+            for (auto & projection_ast : args.query.columns_list->projections->children)
+            {
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, args.columns, args.getContext());
+                metadata.projections.add(std::move(projection));
+            }
 
         if (args.query.columns_list && args.query.columns_list->constraints)
             for (auto & constraint : args.query.columns_list->constraints->children)
@@ -802,6 +810,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .supports_skipping_indices = true,
+        .supports_projections = true,
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,

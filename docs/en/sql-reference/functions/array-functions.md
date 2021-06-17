@@ -125,7 +125,7 @@ hasAll(set, subset)
 
 -   An empty array is a subset of any array.
 -   `Null` processed as a value.
--   Order of values in both of arrays doesn’t matter.
+-   Order of values in both of arrays does not matter.
 
 **Examples**
 
@@ -162,7 +162,7 @@ hasAny(array1, array2)
 **Peculiar properties**
 
 -   `Null` processed as a value.
--   Order of values in both of arrays doesn’t matter.
+-   Order of values in both of arrays does not matter.
 
 **Examples**
 
@@ -602,7 +602,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\[‘hello’, ‘world’\]), that is, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function doesn’t use `x`, actual values of the source array don’t affect the order in the result. So, ‘hello’ will be the second element in the result, and ‘world’ will be the first.
+Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\[‘hello’, ‘world’\]), that is, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function does not use `x`, actual values of the source array do not affect the order in the result. So, ‘hello’ will be the second element in the result, and ‘world’ will be the first.
 
 Other examples are shown below.
 
@@ -1544,3 +1544,52 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 Note that the `arraySumNonNegative` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
+## arrayProduct {#arrayproduct}
+
+Multiplies elements of an [array](../../sql-reference/data-types/array.md).
+
+**Syntax**
+
+``` sql
+arrayProduct(arr)
+```
+
+**Arguments**
+
+-   `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
+
+**Returned value**
+
+-   A product of array's elements.
+
+Type: [Float64](../../sql-reference/data-types/float.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayProduct([1,2,3,4,5,6]) as res;
+```
+
+Result:
+
+``` text
+┌─res───┐
+│ 720   │
+└───────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as res, toTypeName(res);
+```
+
+Return value type is always [Float64](../../sql-reference/data-types/float.md). Result:
+
+``` text
+┌─res─┬─toTypeName(arrayProduct(array(toDecimal64(1, 8), toDecimal64(2, 8), toDecimal64(3, 8))))─┐
+│ 6   │ Float64                                                                                  │
+└─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
+```

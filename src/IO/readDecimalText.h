@@ -3,6 +3,7 @@
 #include <limits>
 #include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
+#include <common/wide_integer_to_string.h>
 
 
 namespace DB
@@ -160,7 +161,7 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
             " Expected to read decimal with scale {} and precision {}";
 
         if constexpr (is_big_int_v<typename T::NativeType>)
-            throw Exception(fmt::format(pattern, digits, bigintToString(x.value), exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(fmt::format(pattern, digits, x.value, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         else
             throw Exception(fmt::format(pattern, digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }

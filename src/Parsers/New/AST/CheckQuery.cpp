@@ -19,9 +19,9 @@ ASTPtr CheckQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTCheckQuery>();
 
-    auto table_id = getTableIdentifier(get(NAME)->convertToOld());
-    query->database = table_id.database_name;
-    query->table = table_id.table_name;
+    auto table = std::static_pointer_cast<ASTTableIdentifier>(get(NAME)->convertToOld());
+    query->database = table->getDatabaseName();
+    query->table = table->shortName();
 
     if (has(PARTITION)) query->partition = get(PARTITION)->convertToOld();
 

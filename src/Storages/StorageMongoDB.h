@@ -27,7 +27,8 @@ public:
         const std::string & username_,
         const std::string & password_,
         const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_);
+        const ConstraintsDescription & constraints_,
+        const String & comment);
 
     std::string getName() const override { return "MongoDB"; }
 

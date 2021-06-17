@@ -665,7 +665,7 @@ UInt128 ColumnUnique<ColumnType>::IncrementalHash::getHash(const ColumnType & co
             column.updateHashWithValue(i, sip_hash);
 
         std::lock_guard lock(mutex);
-        sip_hash.get128(hash.low, hash.high);
+        sip_hash.get128(hash);
         cur_hash = hash;
         num_added_rows.store(column_size);
     }

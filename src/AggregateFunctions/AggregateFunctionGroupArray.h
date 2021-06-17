@@ -26,6 +26,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
@@ -296,12 +298,7 @@ public:
         if (size)
         {
             typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-            if constexpr (is_big_int_v<T>)
-                // is data_to empty? we should probably use std::vector::insert then
-                for (auto it = this->data(place).value.begin(); it != this->data(place).value.end(); it++)
-                    data_to.push_back(*it);
-            else
-                data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
         }
     }
 

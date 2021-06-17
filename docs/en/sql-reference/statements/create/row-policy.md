@@ -7,6 +7,9 @@ toc_title: ROW POLICY
 
 Creates a [row policy](../../../operations/access-rights.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
 
+!!! note "Warning"
+    Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
+
 Syntax:
 
 ``` sql

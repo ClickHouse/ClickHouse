@@ -15,6 +15,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageMySQL.h>
+#include <Storages/MySQL/MySQLSettings.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionMySQL.h>
@@ -106,7 +107,9 @@ StoragePtr TableFunctionMySQL::executeImpl(
         on_duplicate_clause,
         columns,
         ConstraintsDescription{},
-        context);
+        String{},
+        context,
+        MySQLSettings{});
 
     pool.reset();
 

@@ -646,7 +646,7 @@ UInt128 sipHash128(Polygon && polygon)
         hash_ring(inner);
 
     UInt128 res;
-    hash.get128(res.low, res.high);
+    hash.get128(res);
     return res;
 }
 

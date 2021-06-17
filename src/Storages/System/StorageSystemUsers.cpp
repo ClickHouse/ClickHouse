@@ -63,7 +63,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
+    auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_auth_type = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
     auto & column_auth_params = assert_cast<ColumnString &>(*res_columns[column_index++]);
@@ -95,7 +95,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
                        const RolesOrUsersSet & grantees)
     {
         column_name.insertData(name.data(), name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
         column_auth_type.push_back(static_cast<Int8>(authentication.getType()));
 

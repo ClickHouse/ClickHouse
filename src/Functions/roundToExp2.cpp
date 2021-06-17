@@ -28,18 +28,6 @@ roundDownToPowerOfTwo(T x)
 }
 
 template <typename T>
-inline std::enable_if_t<std::is_same_v<T, Int128>, T>
-roundDownToPowerOfTwo(T x)
-{
-    if (x <= 0)
-        return 0;
-
-    if (Int64 x64 = Int64(x >> 64))
-        return Int128(roundDownToPowerOfTwo(x64)) << 64;
-    return roundDownToPowerOfTwo(Int64(x));
-}
-
-template <typename T>
 inline std::enable_if_t<std::is_same_v<T, Float32>, T>
 roundDownToPowerOfTwo(T x)
 {
