@@ -547,7 +547,7 @@ Differs from JSON only in that data rows are output in arrays, not in objects.
 
 Example:
 
-``` json
+```
 // JSONCompact
 {
         "meta":
@@ -579,7 +579,7 @@ Example:
 }
 ```
 
-```json
+```
 // JSONCompactString
 {
         "meta":

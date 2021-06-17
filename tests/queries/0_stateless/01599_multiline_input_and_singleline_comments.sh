@@ -6,7 +6,7 @@ match_max 100000
 
 if ![info exists env(CLICKHOUSE_PORT_TCP)] {set env(CLICKHOUSE_PORT_TCP) 9000}
 
-spawn clickhouse-client --multiline --port "$env(CLICKHOUSE_PORT_TCP)"
+spawn clickhouse-client --multiline --disable_suggestion --port "$env(CLICKHOUSE_PORT_TCP)"
 expect ":) "
 
 # Make a query

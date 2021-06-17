@@ -18,7 +18,7 @@ public:
 
     static constexpr auto name = "toTypeName";
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionToTypeName>();
     }
