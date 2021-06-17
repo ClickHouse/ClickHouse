@@ -20,6 +20,14 @@ SELECT 'Int64';
 SELECT toInt64(0), bitPositionsToArray(toInt64(0));
 SELECT toInt64(1), bitPositionsToArray(toInt64(1));
 
+SELECT 'Int128';
+SELECT toInt128(0), bitPositionsToArray(toInt128(0));
+SELECT toInt128(1), bitPositionsToArray(toInt128(1));
+
+SELECT 'Int256';
+SELECT toInt256(0), bitPositionsToArray(toInt256(0));
+SELECT toInt256(1), bitPositionsToArray(toInt256(1));
+
 SELECT 'UInt8';
 SELECT toUInt8(0), bitPositionsToArray(toUInt8(0));
 SELECT toUInt8(1), bitPositionsToArray(toUInt8(1));
@@ -36,3 +44,12 @@ SELECT toUInt32(1), bitPositionsToArray(toUInt32(1));
 SELECT 'UInt64';
 SELECT toUInt64(0), bitPositionsToArray(toUInt64(0));
 SELECT toUInt64(1), bitPositionsToArray(toUInt64(1));
+
+SELECT 'UInt128';
+SELECT toUInt128(0), bitPositionsToArray(toUInt128(0));
+SELECT toUInt128(1), bitPositionsToArray(toUInt128(1));
+SELECT toUInt128(-1), bitPositionsToArray(toUInt128(1));
+
+SELECT 'UInt256';
+SELECT toUInt256(0), bitPositionsToArray(toUInt256(0));
+SELECT toUInt256(1), bitPositionsToArray(toUInt256(1));
