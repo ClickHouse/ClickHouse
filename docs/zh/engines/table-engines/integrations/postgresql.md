@@ -5,7 +5,7 @@ toc_title: PostgreSQL
 
 # PostgreSQL {#postgresql}
 
-PostgreSQL 引擎允许对存储在远程 PostgreSQL 服务器上的数据进行 `SELECT` 和 `INSERT` 查询.
+PostgreSQL 引擎允许 ClickHouse 对存储在远程 PostgreSQL 服务器上的数据执行 `SELECT` 和 `INSERT` 查询.
 
 ## 创建一张表 {#creating-a-table}
 
@@ -18,7 +18,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, `schema`]);
 ```
 
-详情请见 [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) 查询.
+<!-- 详情请见 [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) 查询. -->
 
 表结构可以与 PostgreSQL 源表结构不同:
 
@@ -139,7 +139,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 **另请参阅**
 
--   [`postgresql` 表函数](../../../sql-reference/table-functions/postgresql.md)
+<!-- -   [`postgresql` 表函数](../../../sql-reference/table-functions/postgresql.md) -->
 -   [使用 PostgreSQL 作为外部字典的来源](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
 [原始文章](https://clickhouse.tech/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->
