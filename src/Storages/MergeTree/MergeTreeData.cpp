@@ -55,7 +55,7 @@
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
 
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -1115,6 +1115,16 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
                         LOG_WARNING(log, "Removing temporary directory {}", fullPath(disk, it->path()));
                         disk->removeRecursive(it->path());
                     }
+                }
+                /// see getModificationTime()
+                catch (const ErrnoException & e)
+                {
+                    if (e.getErrno() == ENOENT)
+                    {
+                        /// If the file is already deleted, do nothing.
+                    }
+                    else
+                        throw;
                 }
                 catch (const fs::filesystem_error & e)
                 {
