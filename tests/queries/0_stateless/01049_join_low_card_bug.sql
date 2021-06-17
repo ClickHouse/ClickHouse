@@ -5,12 +5,12 @@ DROP TABLE IF EXISTS nr;
 DROP TABLE IF EXISTS l_lc;
 DROP TABLE IF EXISTS r_lc;
 
-CREATE TABLE l (x UInt32, lc String) ENGINE = Memory;
-CREATE TABLE r (x UInt32, lc String) ENGINE = Memory;
-CREATE TABLE nl (x Nullable(UInt32), lc Nullable(String)) ENGINE = Memory;
-CREATE TABLE nr (x Nullable(UInt32), lc Nullable(String)) ENGINE = Memory;
-CREATE TABLE l_lc (x UInt32, lc LowCardinality(String)) ENGINE = Memory;
-CREATE TABLE r_lc (x UInt32, lc LowCardinality(String)) ENGINE = Memory;
+CREATE TABLE l (x UInt32, lc String) ENGINE = TinyLog;
+CREATE TABLE r (x UInt32, lc String) ENGINE = TinyLog;
+CREATE TABLE nl (x Nullable(UInt32), lc Nullable(String)) ENGINE = TinyLog;
+CREATE TABLE nr (x Nullable(UInt32), lc Nullable(String)) ENGINE = TinyLog;
+CREATE TABLE l_lc (x UInt32, lc LowCardinality(String)) ENGINE = TinyLog;
+CREATE TABLE r_lc (x UInt32, lc LowCardinality(String)) ENGINE = TinyLog;
 
 INSERT INTO r VALUES (0, 'str'),  (1, 'str_r');
 INSERT INTO nr VALUES (0, 'str'),  (1, 'str_r');
