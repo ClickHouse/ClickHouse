@@ -47,11 +47,8 @@ public:
     /// if ThreadPool is a local object, it will wait for all scheduled jobs in own destructor.
     void scheduleOrThrowOnError(Job job);
 
-    /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
-    bool trySchedule(Job job, uint64_t wait_microseconds = 0) noexcept;
-
-    /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    void scheduleOrThrow(Job job, uint64_t wait_microseconds = 0);
+    /// Similar to scheduleOrThrowOnError(...).
+    bool trySchedule(Job job) noexcept;
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -95,7 +92,7 @@ private:
 
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, std::optional<uint64_t> wait_microseconds);
+    ReturnType scheduleImpl(Job job);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
@@ -149,7 +146,7 @@ public:
         : state(std::make_shared<Poco::Event>())
     {
         /// NOTE: If this will throw an exception, the destructor won't be called.
-        GlobalThreadPool::instance().scheduleOrThrow([
+        GlobalThreadPool::instance().scheduleOrThrowOnError([
             state = state,
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture

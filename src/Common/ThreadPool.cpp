@@ -79,7 +79,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, std::optional<uint64_t> wait_microseconds)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -104,13 +104,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, std::optional<uint64_t>
 
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
 
-        if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
-        {
-            if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
-                return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
-        }
-        else
-            job_finished.wait(lock, pred);
+        job_finished.wait(lock, pred);
 
         if (shutdown)
             return on_error("shutdown");
@@ -153,20 +147,15 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, std::optional<uint64_t>
 template <typename Thread>
 void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job)
 {
-    scheduleImpl<void>(std::move(job), std::nullopt);
+    scheduleImpl<void>(std::move(job));
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job, uint64_t wait_microseconds) noexcept
+bool ThreadPoolImpl<Thread>::trySchedule(Job job) noexcept
 {
-    return scheduleImpl<bool>(std::move(job), wait_microseconds);
+    return scheduleImpl<bool>(std::move(job));
 }
 
-template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, uint64_t wait_microseconds)
-{
-    scheduleImpl<void>(std::move(job), wait_microseconds);
-}
 
 template <typename Thread>
 void ThreadPoolImpl<Thread>::wait()
