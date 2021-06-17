@@ -39,7 +39,7 @@ toc_title: "Массивы"
 
 Принимает пустой массив и возвращает массив из одного элемента, равного значению по умолчанию.
 
-## range(end) или range(start, end [, step]) {#range}
+## range(end), range(start, end [, step]) {#range}
 
 Возвращает массив чисел от `start` до `end - 1` с шагом `step`.
 
