@@ -74,7 +74,6 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
             // If expanded alias is used in array join, avoid expansion, otherwise the column will be mis-array joined
             if (data.array_join_result_columns.count(original_column) || data.array_join_source_columns.count(original_column))
                 return;
-            data.expanded_aliases.insert(*column_name);
             ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
             // We need to set back the original column name, or else the process of naming resolution will complain.
             if (!alias.empty())
