@@ -36,6 +36,10 @@ public:
     virtual ~IVisitor() = default;
 
 private:
+    /**
+     * This variable is for detecting whether a visitor's next visit will be able
+     *  to yield a new item.
+     */
     bool is_exhausted = false;
 };
 
