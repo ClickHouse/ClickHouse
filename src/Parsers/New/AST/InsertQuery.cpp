@@ -70,7 +70,7 @@ ASTPtr InsertQuery::convertToOld() const
             query->table_function = get(FUNCTION)->convertToOld();
             break;
         case QueryType::TABLE:
-            query->table_id = getTableIdentifier(get(IDENTIFIER)->convertToOld());
+            query->table_id = get(IDENTIFIER)->convertToOld()->as<ASTTableIdentifier>()->getTableId();
             break;
     }
 
