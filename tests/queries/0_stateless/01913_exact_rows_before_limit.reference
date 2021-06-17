@@ -1,0 +1,36 @@
+{
+	"meta":
+	[
+		{
+			"name": "0",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		[0]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 10000
+}
+{
+	"meta":
+	[
+		{
+			"name": "0",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		[0]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 20000
+}
