@@ -1554,6 +1554,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
     struct Frame
     {
         const ActionsDAG::Node * node = nullptr;
+        /// Node is a part of predicate (predicate itself, or some part of AND)
         bool is_predicate = false;
         size_t next_child_to_visit = 0;
         size_t num_allowed_children = 0;
@@ -1596,6 +1597,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
                     allowed_nodes.emplace(cur.node);
             }
 
+            /// Add parts of AND to result. Do not add function AND.
             if (cur.is_predicate && ! is_conjunction)
             {
                 if (allowed_nodes.count(cur.node))
