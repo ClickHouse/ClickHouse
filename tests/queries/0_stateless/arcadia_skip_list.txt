@@ -243,3 +243,4 @@
 01892_setting_limit_offset_distributed
 01901_test_attach_partition_from
 01910_view_dictionary
+01824_prefer_global_in_and_join
