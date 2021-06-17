@@ -25,22 +25,106 @@ namespace CurrentMetrics
     extern const Metric LocalThreadActive;
 }
 
+template <typename... Args>
+void QueueJobContainer::emplace(Args && ... args)
+{
+    jobs.emplace(std::forward<Args>(args)...);
+}
 
-template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl()
+QueueJobContainer::Job QueueJobContainer::pop()
+{
+    auto result = std::move(jobs.front());
+    jobs.pop();
+    return result;
+}
+
+bool QueueJobContainer::empty() const
+{
+    return jobs.empty();
+}
+
+void QueueJobContainer::executeJobOrThrowOnError(QueueJobContainer::Job && job)
+{
+    try
+    {
+        job();
+        /// job should be reset before decrementing scheduled_jobs to
+        /// ensure that the Job destroyed before wait() returns.
+        job = {};
+    }
+    catch (...)
+    {
+        /// job should be reset before decrementing scheduled_jobs to
+        /// ensure that the Job destroyed before wait() returns.
+        job = {};
+        throw;
+    }
+}
+
+
+template <typename... Args>
+void PriorityJobContainer::emplace(Args && ... args)
+{
+    std::lock_guard lock(mutex);
+    jobs.emplace(std::forward<Args>(args)...);
+}
+
+PriorityJobContainer::Job PriorityJobContainer::pop()
+{
+    std::lock_guard lock(mutex);
+    /// std::priority_queue does not provide interface for getting non-const reference to an element
+    /// to prevent us from modifying its priority. We have to use const_cast to force move semantics.
+    auto result = std::move(const_cast<Job &>(jobs.top()));
+    jobs.pop();
+    return result;
+}
+
+bool PriorityJobContainer::empty() const
+{
+    return jobs.empty();
+}
+
+void PriorityJobContainer::executeJobOrThrowOnError(PriorityJobContainer::Job && job)
+{
+    try
+    {
+        if (job->execute())
+        {
+            /// Job wants to be executed one more time
+            std::lock_guard lock(mutex);
+            emplace(std::move(job));
+            return;
+        }
+        /// job should be reset before decrementing scheduled_jobs to
+        /// ensure that the Job destroyed before wait() returns.
+        job.reset();
+    }
+    catch (...)
+    {
+        /// job should be reset before decrementing scheduled_jobs to
+        /// ensure that the Job destroyed before wait() returns.
+        job.reset();
+        throw;
+    }
+}
+
+
+template <typename Thread, typename JobContainer>
+ThreadPoolImpl<Thread, JobContainer>::ThreadPoolImpl()
     : ThreadPoolImpl(getNumberOfPhysicalCPUCores())
 {
 }
 
 
-template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_)
+template <typename Thread, typename JobContainer>
+ThreadPoolImpl<Thread, JobContainer>::ThreadPoolImpl(size_t max_threads_)
     : ThreadPoolImpl(max_threads_, max_threads_, max_threads_)
 {
 }
 
-template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_)
+template <typename Thread, typename JobContainer>
+ThreadPoolImpl<Thread, JobContainer>::ThreadPoolImpl(
+    size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_)
     : max_threads(max_threads_)
     , max_free_threads(max_free_threads_)
     , queue_size(queue_size_)
@@ -48,38 +132,38 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, size_t max_free_thre
 {
 }
 
-template <typename Thread>
-void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
+template <typename Thread, typename JobContainer>
+void ThreadPoolImpl<Thread, JobContainer>::setMaxThreads(size_t value)
 {
     std::lock_guard lock(mutex);
     max_threads = value;
 }
 
-template <typename Thread>
-size_t ThreadPoolImpl<Thread>::getMaxThreads() const
+template <typename Thread, typename JobContainer>
+size_t ThreadPoolImpl<Thread, JobContainer>::getMaxThreads() const
 {
     std::lock_guard lock(mutex);
     return max_threads;
 }
 
-template <typename Thread>
-void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
+template <typename Thread, typename JobContainer>
+void ThreadPoolImpl<Thread, JobContainer>::setMaxFreeThreads(size_t value)
 {
     std::lock_guard lock(mutex);
     max_free_threads = value;
 }
 
-template <typename Thread>
-void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
+template <typename Thread, typename JobContainer>
+void ThreadPoolImpl<Thread, JobContainer>::setQueueSize(size_t value)
 {
     std::lock_guard lock(mutex);
     queue_size = value;
 }
 
 
-template <typename Thread>
+template <typename Thread, typename JobContainer>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job)
+ReturnType ThreadPoolImpl<Thread, JobContainer>::scheduleImpl(Job job)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -144,21 +228,21 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job)
     return ReturnType(true);
 }
 
-template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job)
+template <typename Thread, typename JobContainer>
+void ThreadPoolImpl<Thread, JobContainer>::scheduleOrThrowOnError(Job job)
 {
     scheduleImpl<void>(std::move(job));
 }
 
-template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job) noexcept
+template <typename Thread, typename JobContainer>
+bool ThreadPoolImpl<Thread, JobContainer>::trySchedule(Job job) noexcept
 {
     return scheduleImpl<bool>(std::move(job));
 }
 
 
-template <typename Thread>
-void ThreadPoolImpl<Thread>::wait()
+template <typename Thread, typename JobContainer>
+void ThreadPoolImpl<Thread, JobContainer>::wait()
 {
     {
         std::unique_lock lock(mutex);
@@ -177,14 +261,14 @@ void ThreadPoolImpl<Thread>::wait()
     }
 }
 
-template <typename Thread>
-ThreadPoolImpl<Thread>::~ThreadPoolImpl()
+template <typename Thread, typename JobContainer>
+ThreadPoolImpl<Thread, JobContainer>::~ThreadPoolImpl()
 {
     finalize();
 }
 
-template <typename Thread>
-void ThreadPoolImpl<Thread>::finalize()
+template <typename Thread, typename JobContainer>
+void ThreadPoolImpl<Thread, JobContainer>::finalize()
 {
     {
         std::unique_lock lock(mutex);
@@ -199,22 +283,22 @@ void ThreadPoolImpl<Thread>::finalize()
     threads.clear();
 }
 
-template <typename Thread>
-size_t ThreadPoolImpl<Thread>::active() const
+template <typename Thread, typename JobContainer>
+size_t ThreadPoolImpl<Thread, JobContainer>::active() const
 {
     std::unique_lock lock(mutex);
     return scheduled_jobs;
 }
 
-template <typename Thread>
-bool ThreadPoolImpl<Thread>::finished() const
+template <typename Thread, typename JobContainer>
+bool ThreadPoolImpl<Thread, JobContainer>::finished() const
 {
     std::unique_lock lock(mutex);
     return shutdown;
 }
 
-template <typename Thread>
-void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
+template <typename Thread, typename JobContainer>
+void ThreadPoolImpl<Thread, JobContainer>::worker(typename std::list<Thread>::iterator thread_it)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_all_threads(
@@ -231,17 +315,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             need_shutdown = shutdown;
 
             if (!jobs.empty())
-            {
-                /// std::priority_queue does not provide interface for getting non-const reference to an element
-                /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
-                job = std::move(jobs.front());
-                jobs.pop();
-            }
+                job = jobs.pop();
             else
-            {
-                /// shutdown is true, simply finish the thread.
-                return;
-            }
+                return; /// shutdown is true, simply finish the thread.
         }
 
         if (!need_shutdown)
@@ -252,17 +328,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 CurrentMetrics::Increment metric_active_threads(
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
-                job();
-                /// job should be reset before decrementing scheduled_jobs to
-                /// ensure that the Job destroyed before wait() returns.
-                job = {};
+                jobs.executeJobOrThrowOnError(std::move(job));
             }
             catch (...)
             {
-                /// job should be reset before decrementing scheduled_jobs to
-                /// ensure that the Job destroyed before wait() returns.
-                job = {};
-
                 {
                     std::unique_lock lock(mutex);
                     if (!first_exception)
@@ -296,8 +365,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 }
 
 
-template class ThreadPoolImpl<std::thread>;
-template class ThreadPoolImpl<ThreadFromGlobalPool>;
+template class ThreadPoolImpl<std::thread, QueueJobContainer>;
+template class ThreadPoolImpl<ThreadFromGlobalPool, QueueJobContainer>;
+template class ThreadPoolImpl<ThreadFromGlobalPool, PriorityJobContainer>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 

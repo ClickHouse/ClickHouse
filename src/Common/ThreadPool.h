@@ -13,6 +13,61 @@
 #include <Common/ThreadStatus.h>
 #include <common/scope_guard.h>
 
+
+class QueueJobContainer
+{
+public:
+    using Job = std::function<void()>;
+
+    template <typename... Args>
+    void emplace(Args && ... args);
+
+    bool empty() const;
+    Job pop();
+
+    static void executeJobOrThrowOnError(Job && job);
+
+private:
+    std::queue<Job> jobs;
+};
+
+
+class PriorityJobContainer
+{
+public:
+    struct JobWithPriority
+    {
+        int priority;
+
+        explicit JobWithPriority(int priority_) : priority(priority_) {}
+
+        bool operator< (const JobWithPriority & rhs) const
+        {
+            return priority < rhs.priority;
+        }
+
+        virtual bool execute() = 0;
+        virtual ~JobWithPriority();
+    };
+
+    using Job = std::shared_ptr<JobWithPriority>;
+
+    template <typename... Args>
+    void emplace(Args && ... args);
+
+    bool empty() const;
+    Job pop();
+
+    void executeJobOrThrowOnError(Job && job);
+
+private:
+    /// Use mutex, because executeJobOrThrowOnError will be called without external lock
+    /// But we will touch `jobs` in this method
+    std::mutex mutex;
+    std::priority_queue<Job> jobs;
+};
+
+
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
   * - catches exceptions and rethrows on wait.
@@ -23,11 +78,12 @@
   *
   * Thread: std::thread or something with identical interface.
   */
-template <typename Thread>
+template <typename Thread, typename JobContainer>
 class ThreadPoolImpl
 {
 public:
-    using Job = std::function<void()>;
+
+    using Job = typename JobContainer::Job;
 
     /// Maximum number of threads is based on the number of physical cores.
     ThreadPoolImpl();
@@ -85,11 +141,9 @@ private:
     bool shutdown = false;
     const bool shutdown_on_exception = true;
 
-
-    std::queue<Job> jobs;
+    JobContainer jobs;
     std::list<Thread> threads;
     std::exception_ptr first_exception;
-
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job);
@@ -101,7 +155,7 @@ private:
 
 
 /// ThreadPool with std::thread for threads.
-using FreeThreadPool = ThreadPoolImpl<std::thread>;
+using FreeThreadPool = ThreadPoolImpl<std::thread, QueueJobContainer>;
 
 
 /** Global ThreadPool that can be used as a singleton.
@@ -213,4 +267,7 @@ private:
 
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
-using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
+using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool, QueueJobContainer>;
+
+/// Specific thread pool for background merges planning
+using PrioritizedThreadPool = ThreadPoolImpl<ThreadFromGlobalPool, PriorityJobContainer>;
