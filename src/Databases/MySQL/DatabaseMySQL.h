@@ -32,12 +32,12 @@ enum class MySQLDataTypesSupport;
  *  It doesn't make any manipulations with filesystem.
  *  All tables are created by calling code after real-time pull-out structure from remote MySQL
  */
-class DatabaseConnectionMySQL final : public IDatabase, WithContext
+class DatabaseMySQL final : public IDatabase, WithContext
 {
 public:
-    ~DatabaseConnectionMySQL() override;
+    ~DatabaseMySQL() override;
 
-    DatabaseConnectionMySQL(
+    DatabaseMySQL(
         ContextPtr context,
         const String & database_name,
         const String & metadata_path,
