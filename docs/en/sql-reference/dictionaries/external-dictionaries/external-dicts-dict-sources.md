@@ -482,6 +482,7 @@ Example of settings:
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
+      <fail_on_connection_loss>true</fail_on_connection_loss>
   </mysql>
 </source>
 ```
@@ -499,6 +500,7 @@ SOURCE(MYSQL(
     table 'table_name'
     where 'id=10'
     invalidate_query 'SQL_QUERY'
+    fail_on_connection_loss 'true'
 ))
 ```
 
@@ -523,6 +525,8 @@ Setting fields:
 
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
+-   `fail_on_connection_loss` – The configuration parameter that controls unexpected connection loss during query execution. By default, false. ClickHouse connects to MySQL servers using secure protocols ([SSL](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl)/[TLS](https://en.wikipedia.org/wiki/Transport_Layer_Security)). Occasionally errors might occur in the transport communication between client and server, in which case the server would abort the client connection. Note that retrying leads to increased response times. Retries can be avoided by setting the parameter to true.
+
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
 Example of settings:
@@ -538,6 +542,7 @@ Example of settings:
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
+      <fail_on_connection_loss>true</fail_on_connection_loss>
   </mysql>
 </source>
 ```
@@ -554,6 +559,7 @@ SOURCE(MYSQL(
     table 'table_name'
     where 'id=10'
     invalidate_query 'SQL_QUERY'
+    fail_on_connection_loss 'true'
 ))
 ```
 
