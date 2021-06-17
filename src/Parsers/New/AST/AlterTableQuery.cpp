@@ -316,10 +316,9 @@ ASTPtr AlterTableClause::convertToOld() const
 
             if (has(FROM))
             {
-                auto table_id = getTableIdentifier(get(FROM)->convertToOld());
-
-                command->from_database = table_id.database_name;
-                command->from_table = table_id.table_name;
+                auto table = get(FROM)->convertToOld();
+                command->from_database = table->as<ASTTableIdentifier>()->getDatabaseName();
+                command->from_table = table->as<ASTTableIdentifier>()->shortName();
                 command->replace = false;
                 command->type = ASTAlterCommand::REPLACE_PARTITION;
             }
@@ -451,9 +450,9 @@ ASTPtr AlterTableClause::convertToOld() const
             command->partition = get(PARTITION)->convertToOld();
             command->move_destination_type = DataDestinationType::TABLE;
             {
-                auto table_id = getTableIdentifier(get(TO)->convertToOld());
-                command->to_database = table_id.database_name;
-                command->to_table = table_id.table_name;
+                auto table = get(TO)->convertToOld();
+                command->to_database = table->as<ASTTableIdentifier>()->getDatabaseName();
+                command->to_table = table->as<ASTTableIdentifier>()->shortName();
             }
             break;
 
@@ -515,9 +514,9 @@ ASTPtr AlterTableClause::convertToOld() const
             command->replace = true;
             command->partition = get(PARTITION)->convertToOld();
             {
-                auto table_id = getTableIdentifier(get(FROM)->convertToOld());
-                command->from_database = table_id.database_name;
-                command->from_table = table_id.table_name;
+                auto table = get(FROM)->convertToOld();
+                command->from_database = table->as<ASTTableIdentifier>()->getDatabaseName();
+                command->from_table = table->as<ASTTableIdentifier>()->shortName();
             }
             break;
 
@@ -573,9 +572,9 @@ ASTPtr AlterTableQuery::convertToOld() const
     auto query = std::make_shared<ASTAlterQuery>();
 
     {
-        auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
-        query->database = table_id.database_name;
-        query->table = table_id.table_name;
+        auto table = get(TABLE)->convertToOld();
+        query->database = table->as<ASTTableIdentifier>()->getDatabaseName();
+        query->table = table->as<ASTTableIdentifier>()->shortName();
     }
 
     query->cluster = cluster_name;
