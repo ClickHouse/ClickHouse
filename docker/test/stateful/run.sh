@@ -112,12 +112,15 @@ timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
 ./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
+grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
 if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
     tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
 fi
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
+    grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
     pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
     pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:

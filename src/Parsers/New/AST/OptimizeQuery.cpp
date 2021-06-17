@@ -23,10 +23,10 @@ ASTPtr OptimizeQuery::convertToOld() const
     auto query = std::make_shared<ASTOptimizeQuery>();
 
     {
-        auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
-        query->database = table_id.database_name;
-        query->table = table_id.table_name;
-        query->uuid = table_id.uuid;
+        auto table = std::static_pointer_cast<ASTTableIdentifier>(get(TABLE)->convertToOld());
+        query->database = table->getDatabaseName();
+        query->table = table->shortName();
+        query->uuid = table->uuid;
     }
 
     if (has(PARTITION))

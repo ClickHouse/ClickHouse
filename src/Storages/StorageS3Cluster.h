@@ -6,14 +6,15 @@
 
 #if USE_AWS_S3
 
+#include <memory>
+#include <optional>
+
+#include <common/shared_ptr_helper.h>
+
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
-
-#include <memory>
-#include <optional>
-#include "ext/shared_ptr_helper.h"
 
 namespace DB
 {
@@ -27,9 +28,9 @@ struct ClientAuthentificationBuilder
     UInt64 max_connections;
 };
 
-class StorageS3Cluster : public ext::shared_ptr_helper<StorageS3Cluster>, public IStorage
+class StorageS3Cluster : public shared_ptr_helper<StorageS3Cluster>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageS3Cluster>;
+    friend struct shared_ptr_helper<StorageS3Cluster>;
 public:
     std::string getName() const override { return "S3Cluster"; }
 
