@@ -69,7 +69,7 @@ public:
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
     void startup() override;
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context) override;
 
 protected:
     Executor & getExecutor() override;

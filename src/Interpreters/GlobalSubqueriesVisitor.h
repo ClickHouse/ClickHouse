@@ -62,7 +62,7 @@ public:
                 return;
 
             bool is_table = false;
-            ASTPtr subquery_or_table_name = ast; /// ASTIdentifier | ASTSubquery | ASTTableExpression
+            ASTPtr subquery_or_table_name = ast; /// ASTTableIdentifier | ASTSubquery | ASTTableExpression
 
             if (const auto * ast_table_expr = ast->as<ASTTableExpression>())
             {
@@ -74,7 +74,7 @@ public:
                     is_table = true;
                 }
             }
-            else if (ast->as<ASTIdentifier>())
+            else if (ast->as<ASTTableIdentifier>())
                 is_table = true;
 
             if (!subquery_or_table_name)
@@ -85,7 +85,8 @@ public:
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
                 auto temporary_table_name = getIdentifierName(subquery_or_table_name);
                 bool exists_in_local_map = external_tables.end() != external_tables.find(temporary_table_name);
-                bool exists_in_context = getContext()->tryResolveStorageID(StorageID("", temporary_table_name), Context::ResolveExternal);
+                bool exists_in_context = static_cast<bool>(getContext()->tryResolveStorageID(
+                    StorageID("", temporary_table_name), Context::ResolveExternal));
                 if (exists_in_local_map || exists_in_context)
                     return;
             }
@@ -121,11 +122,11 @@ public:
                 *  instead of doing a subquery, you just need to read it.
                 */
 
-            auto database_and_table_name = createTableIdentifier("", external_table_name);
+            auto database_and_table_name = std::make_shared<ASTTableIdentifier>(external_table_name);
             if (set_alias)
             {
                 String alias = subquery_or_table_name->tryGetAlias();
-                if (auto * table_name = subquery_or_table_name->as<ASTIdentifier>())
+                if (auto * table_name = subquery_or_table_name->as<ASTTableIdentifier>())
                     if (alias.empty())
                         alias = table_name->shortName();
                 database_and_table_name->setAlias(alias);

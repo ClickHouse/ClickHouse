@@ -2,12 +2,10 @@
 
 #include <Access/AccessFlags.h>
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
-#include <DataStreams/NullBlockOutputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
@@ -15,7 +13,6 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -212,8 +209,13 @@ BlockIO InterpreterInsertQuery::execute()
 
                 new_settings.max_threads = std::max<UInt64>(1, settings.max_insert_threads);
 
-                if (settings.min_insert_block_size_rows && table->prefersLargeBlocks())
-                    new_settings.max_block_size = settings.min_insert_block_size_rows;
+                if (table->prefersLargeBlocks())
+                {
+                    if (settings.min_insert_block_size_rows)
+                        new_settings.max_block_size = settings.min_insert_block_size_rows;
+                    if (settings.min_insert_block_size_bytes)
+                        new_settings.preferred_block_size_bytes = settings.min_insert_block_size_bytes;
+                }
 
                 auto new_context = Context::createCopy(context);
                 new_context->setSettings(new_settings);
@@ -229,6 +231,8 @@ BlockIO InterpreterInsertQuery::execute()
                     query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
                 res = interpreter_select.execute();
             }
+
+            res.pipeline.dropTotalsAndExtremes();
 
             if (table->supportsParallelInsert() && settings.max_insert_threads > 1)
                 out_streams_size = std::min(size_t(settings.max_insert_threads), res.pipeline.getNumStreams());
@@ -305,8 +309,7 @@ BlockIO InterpreterInsertQuery::execute()
 
             auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
             out_wrapper->setProcessListElement(getContext()->getProcessListElement());
-            out = std::move(out_wrapper);
-            out_streams.emplace_back(std::move(out));
+            out_streams.emplace_back(std::move(out_wrapper));
         }
     }
 
@@ -322,7 +325,7 @@ BlockIO InterpreterInsertQuery::execute()
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
                 header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Position);
-        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext()));
+        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
 
         res.pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {

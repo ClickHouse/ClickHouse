@@ -35,3 +35,6 @@ target_link_libraries (string_hash_set PRIVATE dbms)
 add_executable (two_level_hash_map two_level_hash_map.cpp)
 target_include_directories (two_level_hash_map SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 target_link_libraries (two_level_hash_map PRIVATE dbms)
+
+add_executable (jit_example jit_example.cpp)
+target_link_libraries (jit_example PRIVATE dbms)

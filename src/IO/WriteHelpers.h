@@ -6,12 +6,14 @@
 #include <algorithm>
 #include <iterator>
 
+#include <pcg-random/pcg_random.hpp>
+
 #include <common/DateLUT.h>
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
-#include <common/wide_integer_to_string.h>
+#include <common/DecomposedFloat.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -19,7 +21,6 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/UInt128.h>
 #include <Common/NaNUtils.h>
 
 #include <IO/CompressionMethod.h>
@@ -48,14 +49,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-template <typename T>
-inline std::string bigintToString(const T & x)
-{
-    return to_string(x);
-}
 
 /// Helper functions for formatted and binary output.
 
@@ -137,81 +132,6 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 }
 
 
-struct DecomposedFloat64
-{
-    DecomposedFloat64(double x)
-    {
-        memcpy(&x_uint, &x, sizeof(x));
-    }
-
-    uint64_t x_uint;
-
-    bool sign() const
-    {
-        return x_uint >> 63;
-    }
-
-    uint16_t exponent() const
-    {
-        return (x_uint >> 52) & 0x7FF;
-    }
-
-    int16_t normalized_exponent() const
-    {
-        return int16_t(exponent()) - 1023;
-    }
-
-    uint64_t mantissa() const
-    {
-        return x_uint & 0x5affffffffffffful;
-    }
-
-    /// NOTE Probably floating point instructions can be better.
-    bool is_inside_int64() const
-    {
-        return x_uint == 0
-            || (normalized_exponent() >= 0 && normalized_exponent() <= 52
-                && ((mantissa() & ((1ULL << (52 - normalized_exponent())) - 1)) == 0));
-    }
-};
-
-struct DecomposedFloat32
-{
-    DecomposedFloat32(float x)
-    {
-        memcpy(&x_uint, &x, sizeof(x));
-    }
-
-    uint32_t x_uint;
-
-    bool sign() const
-    {
-        return x_uint >> 31;
-    }
-
-    uint16_t exponent() const
-    {
-        return (x_uint >> 23) & 0xFF;
-    }
-
-    int16_t normalized_exponent() const
-    {
-        return int16_t(exponent()) - 127;
-    }
-
-    uint32_t mantissa() const
-    {
-        return x_uint & 0x7fffff;
-    }
-
-    bool is_inside_int32() const
-    {
-        return x_uint == 0
-            || (normalized_exponent() >= 0 && normalized_exponent() <= 23
-                && ((mantissa() & ((1ULL << (23 - normalized_exponent())) - 1)) == 0));
-    }
-};
-
 template <typename T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
@@ -222,14 +142,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         /// The library Ryu has low performance on integers.
         /// This workaround improves performance 6..10 times.
 
-        if (DecomposedFloat64(x).is_inside_int64())
+        if (DecomposedFloat64(x).is_integer_in_representable_range())
             result = itoa(Int64(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
-        if (DecomposedFloat32(x).is_inside_int32())
+        if (DecomposedFloat32(x).is_integer_in_representable_range())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
@@ -742,13 +662,12 @@ void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
     char s[36];
-
     formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), reinterpret_cast<UInt8 *>(s));
     buf.write(s, sizeof(s));
 }
 
-template<typename DecimalType>
-inline void writeDecimalTypeFractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
+template <typename DecimalType>
+inline void writeDateTime64FractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
 {
     static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DecimalType>;
 
@@ -878,7 +797,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     if (scale > 0)
     {
         buf.write(fractional_time_delimiter);
-        writeDecimalTypeFractionalText<DateTime64>(components.fractional, scale, buf);
+        writeDateTime64FractionalText<DateTime64>(components.fractional, scale, buf);
     }
 }
 
@@ -931,7 +850,7 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
     if (scale > 0) //-V547
     {
         buf.write('.');
-        writeDecimalTypeFractionalText<DateTime64>(components.fractional, scale, buf);
+        writeDateTime64FractionalText<DateTime64>(components.fractional, scale, buf);
     }
 }
 
@@ -943,23 +862,17 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const DummyUInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-
-inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Int256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline std::enable_if_t<is_integer_v<T> && !is_big_int_v<T>, void>
+inline std::enable_if_t<is_integer_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>
@@ -980,23 +893,18 @@ inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(Local
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
-inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
-inline void writeText(const UInt256 & x, WriteBuffer & buf) { writeText(bigintToString(x), buf); }
-inline void writeText(const Int256 & x, WriteBuffer & buf) { writeText(bigintToString(x), buf); }
 
 template <typename T>
 String decimalFractional(const T & x, UInt32 scale)
 {
     if constexpr (std::is_same_v<T, Int256>)
     {
-        static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
-
         if (x <= std::numeric_limits<UInt32>::max())
             return decimalFractional(static_cast<UInt32>(x), scale);
         else if (x <= std::numeric_limits<UInt64>::max())
             return decimalFractional(static_cast<UInt64>(x), scale);
-        else if (x <= max_int128)
-            return decimalFractional(static_cast<Int128>(x), scale);
+        else if (x <= std::numeric_limits<UInt128>::max())
+            return decimalFractional(static_cast<UInt128>(x), scale);
     }
     else if constexpr (std::is_same_v<T, Int128>)
     {
@@ -1023,10 +931,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr)
         writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
     }
 
-    if constexpr (std::is_same_v<T, Int256>)
-        writeText(part, ostr);
-    else
-        writeIntText(part, ostr);
+    writeIntText(part, ostr);
 
     if (scale)
     {
@@ -1069,19 +974,6 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
-inline void writeQuoted(const UInt256 & x, WriteBuffer & buf)
-{
-    writeChar('\'', buf);
-    writeText(x, buf);
-    writeChar('\'', buf);
-}
-
-inline void writeQuoted(const Int256 & x, WriteBuffer & buf)
-{
-    writeChar('\'', buf);
-    writeText(x, buf);
-    writeChar('\'', buf);
-}
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
@@ -1125,13 +1017,6 @@ inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, 
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
-[[noreturn]] inline void writeCSV(const UInt128, WriteBuffer &)
-{
-    /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
-     *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
-     */
-    throw Exception("UInt128 cannot be write as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-}
 
 template <typename T>
 void writeBinary(const std::vector<T> & x, WriteBuffer & buf)

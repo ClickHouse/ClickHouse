@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 
 from testflows.core import *
@@ -137,6 +138,12 @@ xfails = {
         [(Fail, issue_21083)],
     "privileges/: row policy/nested mat:":
         [(Fail, issue_21084)],
+    "privileges/show dictionaries/:/check privilege/check privilege=SHOW DICTIONARIES/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/show dictionaries/:/check privilege/check privilege=CREATE DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/show dictionaries/:/check privilege/check privilege=DROP DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
 }
 
 xflags = {
@@ -155,16 +162,20 @@ xflags = {
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """RBAC regression.
     """
+    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
     }
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
-        self.context.cluster = cluster
-        self.context.stress = stress
 
-        if parallel is not None:
-            self.context.parallel = parallel
+    if stress is not None:
+        self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
+
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), "rbac_env")) as cluster:
+        self.context.cluster = cluster
 
         Feature(run=load("rbac.tests.syntax.feature", "feature"))
         Feature(run=load("rbac.tests.privileges.feature", "feature"))

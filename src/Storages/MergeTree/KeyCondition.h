@@ -455,7 +455,10 @@ private:
     RPN rpn;
 
     ColumnIndices key_columns;
-    ExpressionActionsPtr key_expr;
+    /// Expression which is used for key condition.
+    const ExpressionActionsPtr key_expr;
+    /// All intermediate columns are used to calculate key_expr.
+    const NameSet key_subexpr_names;
     PreparedSets prepared_sets;
 
     // If true, always allow key_expr to be wrapped by function

@@ -3,17 +3,16 @@
 #include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Dictionaries/IDictionary.h>
-#include <Databases/DictionaryAttachInfo.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/Exception.h>
-
-#include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/copy.hpp>
+#include <Core/UUID.h>
 
 #include <ctime>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <vector>
+#include <map>
 
 
 namespace DB
@@ -22,6 +21,8 @@ namespace DB
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
+struct StorageInMemoryMetadata;
+struct StorageID;
 class ASTCreateQuery;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 
@@ -121,7 +122,7 @@ public:
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
-    virtual void loadStoredObjects(ContextPtr /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
+    virtual void loadStoredObjects(ContextMutablePtr /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
 
     /// Check the existence of the table.
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;

@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -120,8 +120,8 @@ public:
                     state_created = false;
                 }
 
-                agg_func.create(place.data());
-                state_created = true;
+                agg_func.create(place.data()); /// This function can throw.
+                state_created = true; //-V519
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());

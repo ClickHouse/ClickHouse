@@ -1,7 +1,7 @@
 #include <mutex>
 #include <ext/bit_cast.h>
 
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -11,7 +11,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -194,8 +194,7 @@ private:
         ColumnsWithTypeAndName args = arguments;
         args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
-        auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
-                    .build(args);
+        auto impl = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionTransform>()).build(args);
 
         return impl->execute(args, result_type, input_rows_count);
     }

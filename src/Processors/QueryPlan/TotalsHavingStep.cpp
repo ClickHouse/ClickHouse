@@ -37,7 +37,7 @@ TotalsHavingStep::TotalsHavingStep(
             input_stream_,
             TotalsHavingTransform::transformHeader(
                     input_stream_.header,
-                    (actions_dag_ ? std::make_shared<ExpressionActions>(actions_dag_, ExpressionActionsSettings{}) : nullptr),
+                    actions_dag_.get(),
                     final_),
             getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
@@ -51,10 +51,16 @@ TotalsHavingStep::TotalsHavingStep(
 
 void TotalsHavingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
+    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings()) : nullptr;
+
     auto totals_having = std::make_shared<TotalsHavingTransform>(
-            pipeline.getHeader(), overflow_row,
-            (actions_dag ? std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings()) : nullptr),
-            filter_column_name, totals_mode, auto_include_threshold, final);
+        pipeline.getHeader(),
+        overflow_row,
+        expression_actions,
+        filter_column_name,
+        totals_mode,
+        auto_include_threshold,
+        final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
 }
@@ -85,7 +91,7 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
     if (actions_dag)
     {
         bool first = true;
-        auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+        auto expression = std::make_shared<ExpressionActions>(actions_dag);
         for (const auto & action : expression->getActions())
         {
             settings.out << prefix << (first ? "Actions: "
@@ -102,7 +108,7 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
     if (actions_dag)
     {
         map.add("Filter column", filter_column_name);
-        auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+        auto expression = std::make_shared<ExpressionActions>(actions_dag);
         map.add("Expression", expression->toTree());
     }
 }

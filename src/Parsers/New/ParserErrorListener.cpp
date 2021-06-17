@@ -23,9 +23,10 @@ extern int SYNTAX_ERROR;
 void ParserErrorListener::syntaxError(
     Recognizer * recognizer, Token * token, size_t, size_t, const std::string & message, std::exception_ptr)
 {
-    auto * parser = dynamic_cast<ClickHouseParser*>(recognizer);
+    auto * parser = dynamic_cast<ClickHouseParser *>(recognizer);
+    assert(parser);
 
-    LOG_ERROR(&Poco::Logger::get("ClickHouseParser"),
+    LOG_ERROR(&Poco::Logger::get("ClickHouseParser"), //-V522
               "Last element parsed so far:\n"
               "{}\n"
               "Parser error: (pos {}) {}", parser->getRuleContext()->toStringTree(parser, true), token->getStartIndex(), message);

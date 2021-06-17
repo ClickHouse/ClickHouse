@@ -17,7 +17,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
@@ -970,7 +970,9 @@ public:
         WhichDataType which(arguments[0]);
 
         if (!which.isStringOrFixedString() &&
-            !which.isDateOrDateTime() &&
+            !which.isDate() &&
+            !which.isDateTime() &&
+            !which.isDateTime64() &&
             !which.isUInt() &&
             !which.isFloat() &&
             !which.isDecimal())

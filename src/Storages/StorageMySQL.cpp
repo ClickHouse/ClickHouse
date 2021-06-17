@@ -15,6 +15,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
@@ -49,18 +50,22 @@ StorageMySQL::StorageMySQL(
     const std::string & on_duplicate_clause_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_)
+    const String & comment,
+    ContextPtr context_,
+    const MySQLSettings & mysql_settings_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
+    , mysql_settings(mysql_settings_)
     , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -96,7 +101,8 @@ Pipe StorageMySQL::read(
     }
 
 
-    StreamSettings mysql_input_stream_settings(context_->getSettingsRef(), true, false);
+    StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
+        mysql_settings.connection_auto_close);
     return Pipe(std::make_shared<SourceFromInputStream>(
             std::make_shared<MySQLWithFailoverBlockInputStream>(pool, query, sample_block, mysql_input_stream_settings)));
 }
@@ -248,8 +254,22 @@ void registerStorageMySQL(StorageFactory & factory)
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
         size_t max_addresses = args.getContext()->getSettingsRef().glob_expansion_max_elements;
 
+        /// TODO: move some arguments from the arguments to the SETTINGS.
+        MySQLSettings mysql_settings;
+        if (args.storage_def->settings)
+        {
+            mysql_settings.loadFromQuery(*args.storage_def);
+        }
+
+        if (!mysql_settings.connection_pool_size)
+            throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
+
         auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-        mysqlxx::PoolWithFailover pool(remote_database, addresses, username, password);
+        mysqlxx::PoolWithFailover pool(remote_database, addresses,
+            username, password,
+            MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
+            mysql_settings.connection_pool_size,
+            mysql_settings.connection_max_tries);
 
         bool replace_query = false;
         std::string on_duplicate_clause;
@@ -272,9 +292,12 @@ void registerStorageMySQL(StorageFactory & factory)
             on_duplicate_clause,
             args.columns,
             args.constraints,
-            args.getContext());
+            args.comment,
+            args.getContext(),
+            mysql_settings);
     },
     {
+        .supports_settings = true,
         .source_access_type = AccessType::MYSQL,
     });
 }

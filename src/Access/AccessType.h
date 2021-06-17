@@ -53,6 +53,12 @@ enum class AccessType
     M(ALTER_CLEAR_INDEX, "CLEAR INDEX", TABLE, ALTER_INDEX) \
     M(ALTER_INDEX, "INDEX", GROUP, ALTER_TABLE) /* allows to execute ALTER ORDER BY or ALTER {ADD|DROP...} INDEX */\
     \
+    M(ALTER_ADD_PROJECTION, "ADD PROJECTION", TABLE, ALTER_PROJECTION) \
+    M(ALTER_DROP_PROJECTION, "DROP PROJECTION", TABLE, ALTER_PROJECTION) \
+    M(ALTER_MATERIALIZE_PROJECTION, "MATERIALIZE PROJECTION", TABLE, ALTER_PROJECTION) \
+    M(ALTER_CLEAR_PROJECTION, "CLEAR PROJECTION", TABLE, ALTER_PROJECTION) \
+    M(ALTER_PROJECTION, "PROJECTION", GROUP, ALTER_TABLE) /* allows to execute ALTER ORDER BY or ALTER {ADD|DROP...} PROJECTION */\
+    \
     M(ALTER_ADD_CONSTRAINT, "ADD CONSTRAINT", TABLE, ALTER_CONSTRAINT) \
     M(ALTER_DROP_CONSTRAINT, "DROP CONSTRAINT", TABLE, ALTER_CONSTRAINT) \
     M(ALTER_CONSTRAINT, "CONSTRAINT", GROUP, ALTER_TABLE) /* allows to execute ALTER {ADD|DROP} CONSTRAINT */\
@@ -95,6 +101,9 @@ enum class AccessType
     \
     M(KILL_QUERY, "", GLOBAL, ALL) /* allows to kill a query started by another user
                                       (anyone can kill his own queries) */\
+    \
+    M(MOVE_PARTITION_BETWEEN_SHARDS, "", GLOBAL, ALL) /* required to be able to move a part/partition to a table
+                                                         identified by it's ZooKeeper path */\
     \
     M(CREATE_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
     M(ALTER_USER, "", GLOBAL, ACCESS_MANAGEMENT) \

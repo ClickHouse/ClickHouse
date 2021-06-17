@@ -76,6 +76,8 @@
 #include <cassert>
 
 
+namespace fs = std::filesystem;
+
 namespace
 {
 const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
@@ -158,7 +160,7 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 /// The columns list in the original INSERT query is incorrect because inserted blocks are transformed
 /// to the form of the sample block of the Distributed table. So we rewrite it and add all columns from
 /// the sample block instead.
-ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
+ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block)
 {
     auto query = std::make_shared<ASTInsertQuery>();
     query->table_id = StorageID(database, table);
@@ -166,7 +168,7 @@ ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::s
     auto columns = std::make_shared<ASTExpressionList>();
     query->columns = columns;
     query->children.push_back(columns);
-    for (const auto & col : sample_block_non_materialized)
+    for (const auto & col : sample_block)
         columns->children.push_back(std::make_shared<ASTIdentifier>(col.name));
 
     return query;
@@ -281,13 +283,15 @@ void replaceConstantExpressions(
     visitor.visit(node);
 }
 
-/// Returns one of the following:
+/// This is the implementation of optimize_distributed_group_by_sharding_key.
+/// It returns up to which stage the query can be processed on a shard, which
+/// is one of the following:
 /// - QueryProcessingStage::Complete
 /// - QueryProcessingStage::WithMergeableStateAfterAggregation
 /// - none (in this case regular WithMergeableState should be used)
-std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const ASTPtr & query_ptr, bool extremes, const Block & sharding_key_block)
+std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, bool extremes, const Block & sharding_key_block)
 {
-    const auto & select = query_ptr->as<ASTSelectQuery &>();
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
 
     auto sharding_block_has = [&](const auto & exprs, size_t limit = SIZE_MAX) -> bool
     {
@@ -312,6 +316,10 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
     // - TODO: WITH TOTALS can be implemented
     // - TODO: WITH ROLLUP can be implemented (I guess)
     if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
+        return {};
+
+    // Window functions are not supported.
+    if (query_info.has_window)
         return {};
 
     // TODO: extremes support can be implemented
@@ -386,6 +394,7 @@ StorageDistributed::StorageDistributed(
     const StorageID & id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
@@ -411,6 +420,7 @@ StorageDistributed::StorageDistributed(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (sharding_key_)
@@ -452,17 +462,32 @@ StorageDistributed::StorageDistributed(
     const DistributedSettings & distributed_settings_,
     bool attach,
     ClusterPtr owned_cluster_)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_,
-    storage_policy_name_, relative_data_path_, distributed_settings_, attach, std::move(owned_cluster_))
+    : StorageDistributed(
+        id_,
+        columns_,
+        constraints_,
+        String{},
+        String{},
+        String{},
+        cluster_name_,
+        context_,
+        sharding_key_,
+        storage_policy_name_,
+        relative_data_path_,
+        distributed_settings_,
+        attach,
+        std::move(owned_cluster_))
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
-    ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+    ContextPtr local_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
-    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     ClusterPtr cluster = getCluster();
     query_info.cluster = cluster;
@@ -510,7 +535,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic))
     {
         Block sharding_key_block = sharding_key_expr->getSampleBlock();
-        auto stage = getOptimizedQueryProcessingStage(query_info.query, settings.extremes, sharding_key_block);
+        auto stage = getOptimizedQueryProcessingStage(query_info, settings.extremes, sharding_key_block);
         if (stage)
         {
             LOG_DEBUG(log, "Force processing stage to {}", QueryProcessingStage::toString(*stage));
@@ -584,7 +609,7 @@ void StorageDistributed::read(
     ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
         modified_query_ast, local_context, query_info,
         sharding_key_expr, sharding_key_column_name,
-        getCluster());
+        query_info.cluster);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -623,11 +648,16 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     bool insert_sync = settings.insert_distributed_sync || settings.insert_shard_id || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
+    Block sample_block;
+    if (!settings.insert_allow_materialized_columns)
+        sample_block = metadata_snapshot->getSampleBlockNonMaterialized();
+    else
+        sample_block = metadata_snapshot->getSampleBlock();
+
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
         local_context, *this, metadata_snapshot,
-        createInsertToRemoteTableQuery(
-            remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
+        createInsertToRemoteTableQuery(remote_database, remote_table, sample_block),
         cluster, insert_sync, timeout, StorageID{remote_database, remote_table});
 }
 
@@ -841,7 +871,7 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
 {
     const std::string path(disk->getPath() + relative_data_path);
-    Poco::File{path}.createDirectories();
+    fs::create_directories(path);
 
     std::filesystem::directory_iterator begin(path);
     std::filesystem::directory_iterator end;
@@ -1017,7 +1047,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
 
     if (!limit)
     {
-        LOG_TRACE(log,
+        LOG_DEBUG(log,
             "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
             "try to increase it, but note that this may increase query processing time.",
             local_context->getSettingsRef().optimize_skip_unused_shards_limit);
@@ -1251,8 +1281,13 @@ void registerStorageDistributed(StorageFactory & factory)
         }
 
         return StorageDistributed::create(
-            args.table_id, args.columns, args.constraints,
-            remote_database, remote_table, cluster_name,
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            remote_database,
+            remote_table,
+            cluster_name,
             args.getContext(),
             sharding_key,
             storage_policy,

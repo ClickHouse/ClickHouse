@@ -5,13 +5,13 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 
 # 系统。data_type_families {#system_tables-data_type_families}
 
-包含有关受支持的信息 [数据类型](../../sql-reference/data-types/).
+包含有关受支持的[数据类型](../../sql-reference/data-types/)的信息.
 
-列:
+列字段包括:
 
--   `name` ([字符串](../../sql-reference/data-types/string.md)) — Data type name.
--   `case_insensitive` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Property that shows whether you can use a data type name in a query in case insensitive manner or not. For example, `Date` 和 `date` 都是有效的。
--   `alias_to` ([字符串](../../sql-reference/data-types/string.md)) — Data type name for which `name` 是个化名
+-   `name` ([String](../../sql-reference/data-types/string.md)) — 数据类型的名称.
+-   `case_insensitive` ([UInt8](../../sql-reference/data-types/int-uint.md)) — 该属性显示是否可以在查询中以不区分大小写的方式使用数据类型名称。例如 `Date` 和 `date` 都是有效的。
+-   `alias_to` ([String](../../sql-reference/data-types/string.md)) — 名称为别名的数据类型名称。
 
 **示例**
 
@@ -36,4 +36,4 @@ SELECT * FROM system.data_type_families WHERE alias_to = 'String'
 
 **另请参阅**
 
--   [语法](../../sql-reference/syntax.md) — Information about supported syntax.
+-   [Syntax](../../sql-reference/syntax.md) — 关于所支持的语法信息.

@@ -3,7 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/TargetSpecific.h>
@@ -187,8 +187,8 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
 
         /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
 
-        float k_lat;
-        float k_lon;
+        float k_lat{};
+        float k_lon{};
 
         if constexpr (method == Method::SPHERE_DEGREES)
         {

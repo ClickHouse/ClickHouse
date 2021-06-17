@@ -6,6 +6,7 @@
 #include <Parsers/CommonParsers.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Common/IntervalKind.h>
 
 namespace DB
@@ -202,6 +203,20 @@ public:
 
 protected:
     const char * getName() const override { return "expression with prefix unary operator"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/// CAST operator "::". This parser is used if left argument
+/// of operator cannot be read as simple literal from text of query.
+/// Example: "[1, 1 + 1, 1 + 2]::Array(UInt8)"
+class ParserCastExpression : public IParserBase
+{
+private:
+    ParserExpressionElement elem_parser;
+
+protected:
+    const char * getName() const override { return "CAST expression"; }
+
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

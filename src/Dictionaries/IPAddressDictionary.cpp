@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_IS_EMPTY;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -204,7 +205,6 @@ IPAddressDictionary::IPAddressDictionary(
     , logger(&Poco::Logger::get("IPAddressDictionary"))
 {
     createAttributes();
-
     loadData();
     calculateBytesAllocated();
 }
@@ -237,11 +237,21 @@ ColumnPtr IPAddressDictionary::getColumn(
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
-        if constexpr (std::is_same_v<AttributeType, String>)
+        if constexpr (std::is_same_v<ValueType, Array>)
         {
             auto * out = column.get();
 
-            getItemsImpl<ValueType, ValueType>(
+            getItemsImpl<ValueType>(
+                attribute,
+                key_columns,
+                [&](const size_t, const Array & value) { out->insert(value); },
+                default_value_extractor);
+        }
+        else if constexpr (std::is_same_v<ValueType, StringRef>)
+        {
+            auto * out = column.get();
+
+            getItemsImpl<ValueType>(
                 attribute,
                 key_columns,
                 [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -251,7 +261,7 @@ ColumnPtr IPAddressDictionary::getColumn(
         {
             auto & out = column->getData();
 
-            getItemsImpl<ValueType, ValueType>(
+            getItemsImpl<ValueType>(
                 attribute,
                 key_columns,
                 [&](const size_t row, const auto value) { return out[row] = value; },
@@ -275,7 +285,9 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
     const auto rows = first_column->size();
 
     auto result = ColumnUInt8::create(rows);
-    auto& out = result->getData();
+    auto & out = result->getData();
+
+    size_t keys_found = 0;
 
     if (first_column->isNumeric())
     {
@@ -285,6 +297,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
             auto addrv4 = UInt32(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             out[i] = (found != ipNotFound());
+            keys_found += out[i];
         }
     }
     else
@@ -297,10 +310,12 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             out[i] = (found != ipNotFound());
+            keys_found += out[i];
         }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -310,8 +325,15 @@ void IPAddressDictionary::createAttributes()
     auto create_attributes_from_dictionary_attributes = [this](const std::vector<DictionaryAttribute> & dict_attrs)
     {
         attributes.reserve(attributes.size() + dict_attrs.size());
+
         for (const auto & attribute : dict_attrs)
         {
+            if (attribute.is_nullable)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "{}: array or nullable attributes not supported for dictionary of type {}",
+                    full_name,
+                    getTypeName());
+
             attribute_index_by_name.emplace(attribute.name, attributes.size());
             attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
@@ -412,7 +434,7 @@ void IPAddressDictionary::loadData()
                 return cmpres;
             });
         if (deleted_count > 0)
-            LOG_WARNING(logger, "removing {} non-unique subnets from input", deleted_count);
+            LOG_TRACE(logger, "removing {} non-unique subnets from input", deleted_count);
 
         auto & ipv6_col = ip_column.emplace<IPv6Container>();
         ipv6_col.resize_fill(IPV6_BINARY_LENGTH * ip_records.size());
@@ -439,7 +461,7 @@ void IPAddressDictionary::loadData()
                 return compareTo(a, b);
             });
         if (deleted_count > 0)
-            LOG_WARNING(logger, "removing {} non-unique subnets from input", deleted_count);
+            LOG_TRACE(logger, "removing {} non-unique subnets from input", deleted_count);
 
         auto & ipv4_col = ip_column.emplace<IPv4Container>();
         ipv4_col.reserve(ip_records.size());
@@ -578,7 +600,7 @@ const uint8_t * IPAddressDictionary::getIPv6FromOffset(const IPAddressDictionary
     return reinterpret_cast<const uint8_t *>(&ipv6_col[i * IPV6_BINARY_LENGTH]);
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
 void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
@@ -617,7 +639,7 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
                 (*ipv4_col)[*found_it] == addr &&
                 mask_column[*found_it] == mask))
             {
-                set_value(i, static_cast<OutputType>(vec[row_idx[*found_it]]));
+                set_value(i, vec[row_idx[*found_it]]);
             }
             else
                 set_value(i, default_value_extractor[i]);
@@ -653,13 +675,13 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
         if (likely(found_it != range.end() &&
             memequal16(getIPv6FromOffset(*ipv6_col, *found_it), target.addr) &&
             mask_column[*found_it] == mask))
-            set_value(i, static_cast<OutputType>(vec[row_idx[*found_it]]));
+            set_value(i, vec[row_idx[*found_it]]);
         else
             set_value(i, default_value_extractor[i]);
     }
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
 void IPAddressDictionary::getItemsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
@@ -672,13 +694,15 @@ void IPAddressDictionary::getItemsImpl(
     // special case for getBlockInputStream
     if (unlikely(key_columns.size() == 2))
     {
-        getItemsByTwoKeyColumnsImpl<AttributeType, OutputType>(
+        getItemsByTwoKeyColumnsImpl<AttributeType>(
             attribute, key_columns, std::forward<ValueSetter>(set_value), default_value_extractor);
         query_count.fetch_add(rows, std::memory_order_relaxed);
         return;
     }
 
     auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
+
+    size_t keys_found = 0;
 
     if (first_column->isNumeric())
     {
@@ -689,7 +713,10 @@ void IPAddressDictionary::getItemsImpl(
             auto addrv4 = UInt32(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
-                set_value(i, static_cast<OutputType>(vec[*found]));
+            {
+                set_value(i, vec[*found]);
+                ++keys_found;
+            }
             else
                 set_value(i, default_value_extractor[i]);
         }
@@ -704,13 +731,17 @@ void IPAddressDictionary::getItemsImpl(
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             if (found != ipNotFound())
-                set_value(i, static_cast<OutputType>(vec[*found]));
+            {
+                set_value(i, vec[*found]);
+                ++keys_found;
+            }
             else
                 set_value(i, default_value_extractor[i]);
         }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -920,7 +951,9 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+                             DictionarySourcePtr source_ptr,
+                             ContextPtr /* context */,
+                             bool /*created_from_ddl*/) -> DictionaryPtr
     {
         if (!dict_struct.key || dict_struct.key->size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary of layout 'ip_trie' has to have one 'key'");

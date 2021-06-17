@@ -32,6 +32,9 @@ ASTPtr ASTStorage::clone() const
     if (settings)
         res->set(res->settings, settings->clone());
 
+    if (comment)
+        res->set(res->comment, comment->clone());
+
     return res;
 }
 
@@ -71,6 +74,11 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings->formatImpl(s, state, frame);
+    }
+    if (comment)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "COMMENT " << (s.hilite ? hilite_none : "");
+        comment->formatImpl(s, state, frame);
     }
 
 }
@@ -125,6 +133,8 @@ ASTPtr ASTColumns::clone() const
         res->set(res->indices, indices->clone());
     if (constraints)
         res->set(res->constraints, constraints->clone());
+    if (projections)
+        res->set(res->projections, projections->clone());
     if (primary_key)
         res->set(res->primary_key, primary_key->clone());
 
@@ -162,6 +172,16 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
             auto elem = std::make_shared<ASTColumnsElement>();
             elem->prefix = "CONSTRAINT";
             elem->set(elem->elem, constraint->clone());
+            list.children.push_back(elem);
+        }
+    }
+    if (projections)
+    {
+        for (const auto & projection : projections->children)
+        {
+            auto elem = std::make_shared<ASTColumnsElement>();
+            elem->prefix = "PROJECTION";
+            elem->set(elem->elem, projection->clone());
             list.children.push_back(elem);
         }
     }
@@ -327,7 +347,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             FormatStateStacked frame_nested = frame;
             columns_list->formatImpl(settings, state, frame_nested);
             settings.ostr << (settings.one_line ? ")" : "\n)");
-            frame.expression_list_always_start_on_new_line = false;
+            frame.expression_list_always_start_on_new_line = false; //-V519
         }
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
@@ -355,7 +375,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.one_line ? ")" : "\n)");
     }
 
-    frame.expression_list_always_start_on_new_line = false;
+    frame.expression_list_always_start_on_new_line = false; //-V519
 
     if (storage)
         storage->formatImpl(settings, state, frame);

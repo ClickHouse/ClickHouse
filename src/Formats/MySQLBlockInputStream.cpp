@@ -177,8 +177,8 @@ namespace
                 break;
             }
             case ValueType::vtUUID:
-                assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
-                read_bytes_size += assert_cast<ColumnUInt128 &>(column).byteSize();
+                assert_cast<ColumnUUID &>(column).insert(parse<UUID>(value.data(), value.size()));
+                read_bytes_size += assert_cast<ColumnUUID &>(column).byteSize();
                 break;
             case ValueType::vtDateTime64:[[fallthrough]];
             case ValueType::vtDecimal32: [[fallthrough]];

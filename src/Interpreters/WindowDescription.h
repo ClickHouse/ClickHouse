@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/FieldVisitors.h>
 #include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
 #include <AggregateFunctions/IAggregateFunction.h>
