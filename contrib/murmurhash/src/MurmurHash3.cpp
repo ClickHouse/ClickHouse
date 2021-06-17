@@ -1,3 +1,4 @@
+//-----------------------------------------------------------------------------
 // MurmurHash3 was written by Austin Appleby, and is placed in the public
 // domain. The author hereby disclaims copyright to this source code.
 
@@ -6,8 +7,7 @@
 // compile and run any of them on any platform, but your performance with the
 // non-native version will be less than optimal.
 
-#include "murmurhash3.h"
-#include <cstring>
+#include "MurmurHash3.h"
 
 //-----------------------------------------------------------------------------
 // Platform-specific functions and macros
@@ -54,9 +54,7 @@ inline uint64_t rotl64 ( uint64_t x, int8_t r )
 
 FORCE_INLINE uint32_t getblock32 ( const uint32_t * p, int i )
 {
-  uint32_t res;
-  memcpy(&res, p + i, sizeof(res));
-  return res;
+  return p[i];
 }
 
 FORCE_INLINE uint64_t getblock64 ( const uint64_t * p, int i )
@@ -332,3 +330,6 @@ void MurmurHash3_x64_128 ( const void * key, const int len,
   ((uint64_t*)out)[0] = h1;
   ((uint64_t*)out)[1] = h2;
 }
+
+//-----------------------------------------------------------------------------
+
