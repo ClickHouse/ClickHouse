@@ -26,7 +26,7 @@ quantilesExactExclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
--   `level` — Leveles of quantiles. Constant floating-point numbers from 0 to 1. We recommend using a `level` values in the range of `(0, 1)`.
+-   `level` — Leveles of quantiles. Constant floating-point numbers in the range `(0, 1)`.
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
@@ -75,7 +75,7 @@ quantilesExactInclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
--   `level` — Leveles of quantiles. Constant floating-point numbers from 0 to 1. We recommend using a `level` values in the range of `[0, 1]`.
+-   `level` — Leveles of quantiles. Constant floating-point numbers in the range `[0, 1]`.
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
