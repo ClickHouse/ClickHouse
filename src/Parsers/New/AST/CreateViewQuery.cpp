@@ -26,10 +26,10 @@ ASTPtr CreateViewQuery::convertToOld() const
     auto query = std::make_shared<ASTCreateQuery>();
 
     {
-        auto table_id = getTableIdentifier(get(NAME)->convertToOld());
-        query->database = table_id.database_name;
-        query->table = table_id.table_name;
-        query->uuid = table_id.uuid;
+        auto table = std::static_pointer_cast<ASTTableIdentifier>(get(NAME)->convertToOld());
+        query->database = table->getDatabaseName();
+        query->table = table->shortName();
+        query->uuid = table->uuid;
     }
 
     query->attach = attach;
