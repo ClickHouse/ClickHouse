@@ -709,7 +709,7 @@ QueryPipelinePtr StorageDistributed::distributedWrite(const ASTInsertQuery & que
     std::vector<std::unique_ptr<QueryPipeline>> pipelines;
 
     String new_query_str = queryToString(new_query);
-    for (size_t shard_index : ext::range(0, shards_info.size()))
+    for (size_t shard_index : collections::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
         if (shard_info.isLocal())

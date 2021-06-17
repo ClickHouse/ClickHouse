@@ -184,7 +184,9 @@ public:
 
     virtual antlrcpp::Any visitExistsTableStmt(ClickHouseParser::ExistsTableStmtContext *context) = 0;
 
-    virtual antlrcpp::Any visitExplainStmt(ClickHouseParser::ExplainStmtContext *context) = 0;
+    virtual antlrcpp::Any visitExplainASTStmt(ClickHouseParser::ExplainASTStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitExplainSyntaxStmt(ClickHouseParser::ExplainSyntaxStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *context) = 0;
 

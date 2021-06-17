@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -155,7 +155,7 @@ public:
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
 
         typename Data::Events events;
-        for (const auto i : ext::range(1, arg_count))
+        for (const auto i : collections::range(1, arg_count))
         {
             const auto event = assert_cast<const ColumnUInt8 *>(columns[i])->getData()[row_num];
             events.set(i - 1, event);

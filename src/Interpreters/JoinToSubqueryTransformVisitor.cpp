@@ -48,7 +48,7 @@ ASTPtr makeSubqueryTemplate()
 ASTPtr makeSubqueryQualifiedAsterisk()
 {
     auto asterisk = std::make_shared<ASTQualifiedAsterisk>();
-    asterisk->children.emplace_back(std::make_shared<ASTIdentifier>("--.s"));
+    asterisk->children.emplace_back(std::make_shared<ASTTableIdentifier>("--.s"));
     return asterisk;
 }
 
@@ -142,7 +142,7 @@ private:
 
                 if (child->children.size() != 1)
                     throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
-                ASTIdentifier & identifier = child->children[0]->as<ASTIdentifier &>();
+                auto & identifier = child->children[0]->as<ASTTableIdentifier &>();
 
                 data.addTableColumns(identifier.name());
             }
@@ -501,7 +501,6 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 
     for (ASTIdentifier * ident : identifiers)
     {
-
         bool got_alias = aliases.count(ident->name());
         bool allow_ambiguous = got_alias; /// allow ambiguous column overridden by an alias
 
@@ -512,14 +511,9 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 if (got_alias)
                 {
                     auto alias = aliases.find(ident->name())->second;
-                    auto alias_table = IdentifierSemantic::getTableName(alias->ptr());
-                    bool alias_equals_column_name = false;
-                    if ((!ident->isShort() && alias->ptr()->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias())
-                        || (alias_table == IdentifierSemantic::getTableName(ident->ptr())
-                            && ident->shortName() == alias->as<ASTIdentifier>()->shortName()))
-                    {
-                        alias_equals_column_name = true;
-                    }
+                    auto alias_ident = alias->clone();
+                    alias_ident->as<ASTIdentifier>()->restoreTable();
+                    bool alias_equals_column_name = alias_ident->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias();
                     if (!alias_equals_column_name)
                         throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 }
