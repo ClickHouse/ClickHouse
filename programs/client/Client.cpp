@@ -21,7 +21,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
@@ -549,65 +549,6 @@ private:
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
         const auto local_tz = DateLUT::instance().getTimeZone();
-        if (!context->getSettingsRef().use_client_time_zone)
-        {
-            const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
-            if (!time_zone.empty())
-            {
-                try
-                {
-                    DateLUT::setDefaultTimezone(time_zone);
-                }
-                catch (...)
-                {
-                    std::cerr << "Warning: could not switch to server time zone: " << time_zone
-                              << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
-                              << "Proceeding with local time zone." << std::endl
-                              << std::endl;
-                }
-            }
-            else
-            {
-                std::cerr << "Warning: could not determine server time zone. "
-                          << "Proceeding with local time zone." << std::endl
-                          << std::endl;
-            }
-        }
-
-        Strings keys;
-
-        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
-
-        config().keys("prompt_by_server_display_name", keys);
-
-        for (const String & key : keys)
-        {
-            if (key != "default" && server_display_name.find(key) != std::string::npos)
-            {
-                prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
-                break;
-            }
-        }
-
-        /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
-        {
-            String unescaped_prompt_by_server_display_name;
-            ReadBufferFromString in(prompt_by_server_display_name);
-            readEscapedString(unescaped_prompt_by_server_display_name, in);
-            prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
-        }
-
-        /// Prompt may contain the following substitutions in a form of {name}.
-        std::map<String, String> prompt_substitutions{
-            {"host", connection_parameters.host},
-            {"port", toString(connection_parameters.port)},
-            {"user", connection_parameters.user},
-            {"display_name", server_display_name},
-        };
-
-        /// Quite suboptimal.
-        for (const auto & [key, value] : prompt_substitutions)
-            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
         if (is_interactive)
         {
@@ -805,6 +746,66 @@ private:
                           << std::endl;
             }
         }
+
+        if (!context->getSettingsRef().use_client_time_zone)
+        {
+            const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
+            if (!time_zone.empty())
+            {
+                try
+                {
+                    DateLUT::setDefaultTimezone(time_zone);
+                }
+                catch (...)
+                {
+                    std::cerr << "Warning: could not switch to server time zone: " << time_zone
+                              << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
+                              << "Proceeding with local time zone." << std::endl
+                              << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << "Warning: could not determine server time zone. "
+                          << "Proceeding with local time zone." << std::endl
+                          << std::endl;
+            }
+        }
+
+        Strings keys;
+
+        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+
+        config().keys("prompt_by_server_display_name", keys);
+
+        for (const String & key : keys)
+        {
+            if (key != "default" && server_display_name.find(key) != std::string::npos)
+            {
+                prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
+                break;
+            }
+        }
+
+        /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
+        {
+            String unescaped_prompt_by_server_display_name;
+            ReadBufferFromString in(prompt_by_server_display_name);
+            readEscapedString(unescaped_prompt_by_server_display_name, in);
+            prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
+        }
+
+        /// Prompt may contain the following substitutions in a form of {name}.
+        std::map<String, String> prompt_substitutions{
+            {"host", connection_parameters.host},
+            {"port", toString(connection_parameters.port)},
+            {"user", connection_parameters.user},
+            {"display_name", server_display_name},
+        };
+
+        /// Quite suboptimal.
+        for (const auto & [key, value] : prompt_substitutions)
+            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
     }
 
 
@@ -967,12 +968,9 @@ private:
             TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
                 processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-
-            // Echo all queries if asked; makes for a more readable reference
-            // file.
-            if (test_hint.echoQueries())
-                echo_queries = true;
         }
+
+        bool echo_query = echo_queries;
 
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
@@ -1106,9 +1104,20 @@ private:
                 continue;
             }
 
+            // Now we know for sure where the query ends.
+            // Look for the hint in the text of query + insert data + trailing
+            // comments,
+            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
+            // Use the updated query boundaries we just calculated.
+            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
+
+            // Echo all queries if asked; makes for a more readable reference
+            // file.
+            echo_query = test_hint.echoQueries().value_or(echo_query);
+
             try
             {
-                processParsedSingleQuery();
+                processParsedSingleQuery(echo_query);
             }
             catch (...)
             {
@@ -1129,13 +1138,6 @@ private:
                 this_query_end = insert_ast->end;
                 adjustQueryEnd(this_query_end, all_queries_end, context->getSettingsRef().max_parser_depth);
             }
-
-            // Now we know for sure where the query ends.
-            // Look for the hint in the text of query + insert data + trailing
-            // comments,
-            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-            // Use the updated query boundaries we just calculated.
-            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
 
             // Check whether the error (or its absence) matches the test hints
             // (or their absence).
@@ -1201,7 +1203,9 @@ private:
                 client_exception.reset();
                 server_exception.reset();
                 have_error = false;
-                connection->forceConnected(connection_parameters.timeouts);
+
+                if (!connection->checkConnected())
+                    connect();
             }
 
             // Report error.
@@ -1547,14 +1551,14 @@ private:
     // 'query_to_send' -- the query text that is sent to server,
     // 'full_query' -- for INSERT queries, contains the query and the data that
     // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
-    void processParsedSingleQuery()
+    void processParsedSingleQuery(std::optional<bool> echo_query = {})
     {
         resetOutput();
         client_exception.reset();
         server_exception.reset();
         have_error = false;
 
-        if (echo_queries)
+        if (echo_query.value_or(echo_queries))
         {
             writeString(full_query, std_out);
             writeChar('\n', std_out);
@@ -1602,7 +1606,8 @@ private:
             if (with_output && with_output->settings_ast)
                 apply_query_settings(*with_output->settings_ast);
 
-            connection->forceConnected(connection_parameters.timeouts);
+            if (!connection->checkConnected())
+                connect();
 
             ASTPtr input_function;
             if (insert && insert->select)

@@ -12,6 +12,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -388,6 +389,14 @@ Block KeyCondition::getBlockWithConstants(
     return result;
 }
 
+static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
+{
+    NameSet names;
+    for (const auto & action : key_expr.getActions())
+        names.insert(action.node->result_name);
+
+    return names;
+}
 
 KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
@@ -396,7 +405,11 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool strict_)
-    : key_expr(key_expr_), prepared_sets(query_info.sets), single_point(single_point_), strict(strict_)
+    : key_expr(key_expr_)
+    , key_subexpr_names(getAllSubexpressionNames(*key_expr))
+    , prepared_sets(query_info.sets)
+    , single_point(single_point_)
+    , strict(strict_)
 {
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
@@ -493,17 +506,14 @@ static Field applyFunctionForField(
 
 /// The case when arguments may have types different than in the primary key.
 static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
-    const FunctionOverloadResolverPtr & func,
+    const FunctionBasePtr & func,
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
     ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
+    DataTypePtr return_type = func->getResultType();
 
-    FunctionBasePtr func_base = func->build(arguments);
-
-    DataTypePtr return_type = func_base->getResultType();
-
-    auto col = func_base->execute(arguments, return_type, 1);
+    auto col = func->execute(arguments, return_type, 1);
 
     Field result = (*col)[0];
 
@@ -592,31 +602,6 @@ void KeyCondition::traverseAST(const ASTPtr & node, ContextPtr context, Block & 
     rpn.emplace_back(std::move(element));
 }
 
-bool KeyCondition::canConstantBeWrapped(const ASTPtr & node, const String & expr_name, String & result_expr_name)
-{
-    const auto & sample_block = key_expr->getSampleBlock();
-
-    /// sample_block from key_expr cannot contain modulo and moduloLegacy at the same time.
-    /// For partition key it is always moduloLegacy.
-    if (sample_block.has(expr_name))
-    {
-        result_expr_name = expr_name;
-    }
-    else
-    {
-        auto adjusted_ast = node->clone();
-        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
-        String adjusted_expr_name = adjusted_ast->getColumnName();
-
-        if (!sample_block.has(adjusted_expr_name))
-            return false;
-
-        result_expr_name = adjusted_expr_name;
-    }
-
-    return true;
-}
-
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     const ASTPtr & node,
     size_t & out_key_column_num,
@@ -624,81 +609,129 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     Field & out_value,
     DataTypePtr & out_type)
 {
-    // Constant expr should use alias names if any
-    String passed_expr_name = node->getColumnName();
-    String expr_name;
-    if (!canConstantBeWrapped(node, passed_expr_name, expr_name))
+    String expr_name = node->getColumnNameWithoutAlias();
+    if (key_subexpr_names.count(expr_name) == 0)
         return false;
-
-    const auto & sample_block = key_expr->getSampleBlock();
 
     /// TODO Nullable index is not yet landed.
     if (out_value.isNull())
         return false;
 
-    bool found_transformation = false;
-    auto input_column = sample_block.getByName(expr_name);
-    auto const_column = out_type->createColumnConst(1, out_value);
-    auto const_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
-    auto const_type = input_column.type;
-    for (const auto & action : key_expr->getActions())
+    const auto & sample_block = key_expr->getSampleBlock();
+
+    /** The key functional expression constraint may be inferred from a plain column in the expression.
+    * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
+    * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
+    * condition also holds, so the index may be used to select only parts satisfying this condition.
+    *
+    * To check the assumption, we'd need to assert that the inverse function to this transformation is also monotonic, however the
+    * inversion isn't exported (or even viable for not strictly monotonic functions such as `toStartOfHour()`).
+    * Instead, we can qualify only functions that do not transform the range (for example rounding),
+    * which while not strictly monotonic, are monotonic everywhere on the input range.
+    */
+    for (const auto & dag_node : key_expr->getNodes())
     {
-        /** The key functional expression constraint may be inferred from a plain column in the expression.
-          * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
-          * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
-          * condition also holds, so the index may be used to select only parts satisfying this condition.
-          *
-          * To check the assumption, we'd need to assert that the inverse function to this transformation is also monotonic, however the
-          * inversion isn't exported (or even viable for not strictly monotonic functions such as `toStartOfHour()`).
-          * Instead, we can qualify only functions that do not transform the range (for example rounding),
-          * which while not strictly monotonic, are monotonic everywhere on the input range.
-          */
-        const auto & children = action.node->children;
-        if (action.node->type == ActionsDAG::ActionType::FUNCTION
-            && children.size() == 1
-            && children[0]->result_name == expr_name)
+        auto it = key_columns.find(dag_node.result_name);
+        if (it != key_columns.end())
         {
-            if (!action.node->function_base->hasInformationAboutMonotonicity())
-                return false;
+            std::stack<const ActionsDAG::Node *> chain;
 
-            /// Range is irrelevant in this case.
-            IFunction::Monotonicity monotonicity = action.node->function_base->getMonotonicityForRange(*const_type, Field(), Field());
-            if (!monotonicity.is_always_monotonic)
-                return false;
+            const auto * cur_node = &dag_node;
+            bool is_valid_chain = true;
 
-            /// Apply the next transformation step.
-            std::tie(const_value, const_type) = applyFunctionForFieldOfUnknownType(
-                action.node->function_builder,
-                const_type, const_value);
-
-            expr_name = action.node->result_name;
-
-            /// Transformation results in a key expression, accept.
-            auto it = key_columns.find(expr_name);
-            if (key_columns.end() != it)
+            while (is_valid_chain)
             {
+                if (cur_node->result_name == expr_name)
+                    break;
+
+                chain.push(cur_node);
+
+                if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() == 1)
+                {
+                    const auto * next_node = cur_node->children.front();
+
+                    if (!cur_node->function_base->hasInformationAboutMonotonicity())
+                        is_valid_chain = false;
+                    else
+                    {
+                        /// Range is irrelevant in this case.
+                        auto monotonicity = cur_node->function_base->getMonotonicityForRange(
+                            *next_node->result_type, Field(), Field());
+                        if (!monotonicity.is_always_monotonic)
+                            is_valid_chain = false;
+                    }
+
+                    cur_node = next_node;
+                }
+                else if (cur_node->type == ActionsDAG::ActionType::ALIAS)
+                    cur_node = cur_node->children.front();
+                else
+                    is_valid_chain = false;
+            }
+
+            if (is_valid_chain && !chain.empty())
+            {
+                /// Here we cast constant to the input type.
+                /// It is not clear, why this works in general.
+                /// I can imagine the case when expression like `column < const` is legal,
+                /// but `type(column)` and `type(const)` are of different types,
+                /// and const cannot be casted to column type.
+                /// (There could be `superType(type(column), type(const))` which is used for comparison).
+                ///
+                /// However, looks like this case newer happenes (I could not find such).
+                /// Let's assume that any two comparable types are castable to each other.
+                auto const_type = cur_node->result_type;
+                auto const_column = out_type->createColumnConst(1, out_value);
+                auto const_value = (*castColumn({const_column, out_type, ""}, const_type))[0];
+
+                while (!chain.empty())
+                {
+                    const auto * func = chain.top();
+                    chain.pop();
+
+                    if (func->type != ActionsDAG::ActionType::FUNCTION)
+                        continue;
+
+                    std::tie(const_value, const_type) =
+                        applyFunctionForFieldOfUnknownType(func->function_base, const_type, const_value);
+                }
+
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
                 out_value = const_value;
                 out_type = const_type;
-                found_transformation = true;
-                break;
+                return true;
             }
         }
     }
 
-    return found_transformation;
+    return false;
 }
 
 /// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
 bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
-    // Constant expr should use alias names if any
-    String passed_expr_name = ast->getColumnName();
-    String expr_name;
-    if (!canConstantBeWrapped(ast, passed_expr_name, expr_name))
-        return false;
+    String expr_name = ast->getColumnNameWithoutAlias();
+
+    if (key_subexpr_names.count(expr_name) == 0)
+    {
+        /// Let's check another one case.
+        /// If our storage was created with moduloLegacy in partition key,
+        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
+        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
+        ///
+        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
+        /// The case `f(modulo(...))` for totally monotonic `f ` is consedered to be rare.
+        ///
+        /// Note: for negative values, we can filter more partitions then needed.
+        auto adjusted_ast = ast->clone();
+        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
+        expr_name = adjusted_ast->getColumnName();
+
+        if (key_subexpr_names.count(expr_name) == 0)
+            return false;
+    }
 
     const auto & sample_block = key_expr->getSampleBlock();
 
@@ -753,10 +786,10 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 
             if (is_valid_chain)
             {
-                auto input_column = sample_block.getByName(expr_name);
+                /// This CAST is the same as in canConstantBeWrappedByMonotonicFunctions (see comment).
+                auto const_type = cur_node->result_type;
                 auto const_column = out_type->createColumnConst(1, out_value);
-                auto const_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
-                auto const_type = input_column.type;
+                auto const_value = (*castColumn({const_column, out_type, ""}, const_type))[0];
 
                 while (!chain.empty())
                 {
@@ -768,7 +801,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 
                     if (func->children.size() == 1)
                     {
-                        std::tie(const_value, const_type) = applyFunctionForFieldOfUnknownType(func->function_builder, const_type, const_value);
+                        std::tie(const_value, const_type) = applyFunctionForFieldOfUnknownType(func->function_base, const_type, const_value);
                     }
                     else if (func->children.size() == 2)
                     {
@@ -848,7 +881,7 @@ bool KeyCondition::tryPrepareSetIndex(
     const ASTPtr & right_arg = args[1];
 
     SetPtr prepared_set;
-    if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
+    if (right_arg->as<ASTSubquery>() || right_arg->as<ASTTableIdentifier>())
     {
         auto set_it = prepared_sets.find(PreparedSetKey::forSubquery(*right_arg));
         if (set_it == prepared_sets.end())
