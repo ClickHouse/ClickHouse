@@ -274,6 +274,8 @@ SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc),
 SET join_use_nulls = 0;
 SELECT lc, toTypeName(lc)  FROM l_lc AS l RIGHT JOIN r_lc AS r USING (x) ORDER BY l.lc;
 
+SELECT lowCardinalityKeys(lc.lc) FROM r FULL JOIN l_lc as lc USING (lc) ORDER BY lowCardinalityKeys(lc.lc);
+
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE nl;
