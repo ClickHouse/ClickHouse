@@ -11,7 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB
@@ -599,7 +599,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     UInt32 shard_num = 0;
     std::set<std::pair<String, int>> unique_hosts;
-    for (size_t shard_index : ext::range(0, from.shards_info.size()))
+    for (size_t shard_index : collections::range(0, from.shards_info.size()))
     {
         const auto & replicas = from.addresses_with_failover[shard_index];
         for (const auto & address : replicas)

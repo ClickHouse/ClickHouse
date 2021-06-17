@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <type_traits>
 #include <boost/tti/has_member_function.hpp>
 
@@ -108,7 +108,7 @@ public:
                 document_ok = parser.parse(json, document);
             }
 
-            for (const auto i : ext::range(0, input_rows_count))
+            for (const auto i : collections::range(0, input_rows_count))
             {
                 if (!col_json_const)
                 {
@@ -270,11 +270,11 @@ private:
 
 
 template <typename Name, template<typename> typename Impl>
-class FunctionJSON : public IFunction, WithConstContext
+class FunctionJSON : public IFunction, WithContext
 {
 public:
-    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionJSON>(context_); }
-    FunctionJSON(ContextConstPtr context_) : WithConstContext(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionJSON>(context_); }
+    FunctionJSON(ContextPtr context_) : WithContext(context_) {}
 
     static constexpr auto name = Name::name;
     String getName() const override { return Name::name; }

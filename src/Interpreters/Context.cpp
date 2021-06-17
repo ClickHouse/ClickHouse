@@ -13,6 +13,7 @@
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
+#include <Common/FieldVisitorToString.h>
 #include <Coordination/KeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -345,9 +346,9 @@ struct ContextSharedPart
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     ConfigurationPtr external_models_config;
-    ext::scope_guard models_repository_guard;
+    scope_guard models_repository_guard;
 
-    ext::scope_guard dictionaries_xmls;
+    scope_guard dictionaries_xmls;
 
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
     mutable std::optional<Lemmatizers> lemmatizers;
@@ -548,7 +549,7 @@ ContextMutablePtr Context::createCopy(const ContextPtr & other)
     return std::shared_ptr<Context>(new Context(*other));
 }
 
-ContextMutablePtr Context::createCopy(const ContextWeakConstPtr & other)
+ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 {
     auto ptr = other.lock();
     if (!ptr) throw Exception("Can't copy an expired context", ErrorCodes::LOGICAL_ERROR);
@@ -2633,7 +2634,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
 
         auto resolved_id = StorageID::createEmpty();
-        auto try_resolve = [&](ContextConstPtr context) -> bool
+        auto try_resolve = [&](ContextPtr context) -> bool
         {
             const auto & tables = context->external_tables_mapping;
             auto it = tables.find(storage_id.getTableName());
