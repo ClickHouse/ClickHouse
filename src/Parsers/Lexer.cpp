@@ -338,8 +338,9 @@ Token Lexer::nextTokenImpl()
         }
 
         default:
-            if (*pos == '$' && pos + 1 < end && !isWordCharASCII(pos[1]))
+            if (*pos == '$' && ((pos + 1 < end && !isWordCharASCII(pos[1])) || pos + 1 == end))
             {
+                /// Capture standalone dollar sign
                 return Token(TokenType::DollarSign, token_begin, ++pos);
             }
             if (isWordCharASCII(*pos) || *pos == '$')

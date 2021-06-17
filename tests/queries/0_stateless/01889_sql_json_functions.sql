@@ -1,4 +1,5 @@
 SELECT '--JSON_VALUE--';
+SELECT JSON_VALUE('$', '{"hello":1}'); -- root is a complex object => default value (empty string)
 SELECT JSON_VALUE('$.hello', '{"hello":1}');
 SELECT JSON_VALUE('$.hello', '{"hello":1.2}');
 SELECT JSON_VALUE('$.hello', '{"hello":true}');
@@ -10,6 +11,7 @@ SELECT JSON_VALUE('$.hello', '{hello:world}'); -- invalid json => default value 
 SELECT JSON_VALUE('$.hello', '');
 
 SELECT '--JSON_QUERY--';
+SELECT JSON_QUERY('$', '{"hello":1}');
 SELECT JSON_QUERY('$.hello', '{"hello":1}');
 SELECT JSON_QUERY('$.hello', '{"hello":1.2}');
 SELECT JSON_QUERY('$.hello', '{"hello":true}');
@@ -21,6 +23,9 @@ SELECT JSON_QUERY('$.hello', '{hello:{"world":"!"}}}'); -- invalid json => defau
 SELECT JSON_QUERY('$.hello', '');
 
 SELECT '--JSON_EXISTS--';
+SELECT JSON_EXISTS('$', '{"hello":1}');
+SELECT JSON_EXISTS('$', '');
+SELECT JSON_EXISTS('$', '{}');
 SELECT JSON_EXISTS('$.hello', '{"hello":1}');
 SELECT JSON_EXISTS('$.world', '{"hello":1,"world":2}');
 SELECT JSON_EXISTS('$.world', '{"hello":{"world":1}}');

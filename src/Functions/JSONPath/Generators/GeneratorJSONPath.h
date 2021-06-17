@@ -3,6 +3,7 @@
 #include <Functions/JSONPath/Generators/IGenerator.h>
 #include <Functions/JSONPath/Generators/VisitorJSONPathMemberAccess.h>
 #include <Functions/JSONPath/Generators/VisitorJSONPathRange.h>
+#include <Functions/JSONPath/Generators/VisitorJSONPathRoot.h>
 #include <Functions/JSONPath/Generators/VisitorStatus.h>
 
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
@@ -19,6 +20,10 @@ template <typename JSONParser>
 class GeneratorJSONPath : public IGenerator<JSONParser>
 {
 public:
+    /**
+     * Traverses children ASTs of ASTJSONPathQuery and creates a vector of corresponding visitors
+     * @param query_ptr_ pointer to ASTJSONPathQuery
+     */
     GeneratorJSONPath(ASTPtr query_ptr_)
     {
         query_ptr = query_ptr_;
@@ -31,13 +36,15 @@ public:
 
         for (auto child_ast : query->children)
         {
-            if (typeid_cast<ASTJSONPathMemberAccess *>(child_ast.get()))
+            if (typeid_cast<ASTJSONPathRoot *>(child_ast.get())) {
+                visitors.push_back(std::make_shared<VisitorJSONPathRoot<JSONParser>>(child_ast));
+            }
+            else if (typeid_cast<ASTJSONPathMemberAccess *>(child_ast.get()))
             {
                 visitors.push_back(std::make_shared<VisitorJSONPathMemberAccess<JSONParser>>(child_ast));
             }
-            else if (child_ast->getID() == "ASTJSONPathRange")
+            else if (typeid_cast<ASTJSONPathRange *>(child_ast.get()))
             {
-
                 visitors.push_back(std::make_shared<VisitorJSONPathRange<JSONParser>>(child_ast));
             }
         }
@@ -46,7 +53,13 @@ public:
     const char * getName() const override { return "GeneratorJSONPath"; }
 
     /**
-     * The only generator which is called from JSONPath functions.
+     * This method exposes API of traversing all paths, described by JSONPath,
+     *  to SQLJSON Functions.
+     * Expected usage is to iteratively call this method from inside the function
+     *  and to execute custom logic with received element or handle an error.
+     * On each such call getNextItem will yield next item into element argument
+     *  and modify its internal state to prepare for next call.
+     *
      * @param element root of JSON document
      * @return is the generator exhausted
      */
