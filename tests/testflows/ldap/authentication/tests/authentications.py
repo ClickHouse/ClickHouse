@@ -661,7 +661,7 @@ def valid_verification_cooldown_value_ldap_unavailable(self, server, rbac=False)
                 delete_user_from_ldap(user, exitcode=None)
 
 @TestOutline
-def repeat_requests(self, server, iterations, vcd_value, rbac=False):
+def repeat_requests(self, server, iterations, vcd_value, rbac=False, timeout=600):
     """Run repeated requests from some user to the LDAP server.
     """
 
@@ -688,7 +688,7 @@ def repeat_requests(self, server, iterations, vcd_value, rbac=False):
             with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml"):
                 with When(f"I login and execute some query {iterations} times"):
                     start_time = time.time()
-                    r = self.context.node.command(f"time for i in {{1..{iterations}}}; do clickhouse client -q \"SELECT 1\" --user {user['cn']} --password {user['userpassword']} > /dev/null; done")
+                    r = self.context.node.command(f"time for i in {{1..{iterations}}}; do clickhouse client -q \"SELECT 1\" --user {user['cn']} --password {user['userpassword']} > /dev/null; done", timeout=timeout)
                     end_time = time.time()
 
                     return end_time - start_time

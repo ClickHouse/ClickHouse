@@ -13,7 +13,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include <common/unaligned.h>
 #include "Columns/ColumnConst.h"
