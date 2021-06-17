@@ -25,10 +25,12 @@ nodes = [node_1, node_2, node_3]
 
 def fill_table():
     node_1.query("TRUNCATE TABLE test")
+
     for node in nodes:
         node.query("SYSTEM SYNC REPLICA test")
 
     check_data(0, 0)
+
     # it will create multiple parts in each partition and probably cause merges
     node_1.query("INSERT INTO test SELECT number + 0 FROM numbers(200)")
     node_1.query("INSERT INTO test SELECT number + 200 FROM numbers(200)")
@@ -61,7 +63,6 @@ def check_after_restoration():
 
     for node in nodes:
         node.query_and_get_error("SYSTEM RESTORE REPLICA test")
-
 
 def test_restore_replica_invalid_tables(start_cluster):
     print("Checking the invocation on non-existent and non-replicated tables")
@@ -130,7 +131,6 @@ def test_restore_replica_alive_replicas(start_cluster):
     zk = cluster.get_kazoo_client('zoo1')
     fill_table()
 
-    # 1. Delete individual replicas paths in ZK and check the invocation
     print("Deleting replica2 path, trying to restore replica1")
     zk.delete("/clickhouse/tables/test/replicas/replica2", recursive=True)
     assert zk.exists("/clickhouse/tables/test/replicas/replica2") is None
@@ -148,8 +148,9 @@ def test_restore_replica_alive_replicas(start_cluster):
 
     check_data(499500, 1000)
 
-    node_1.query("INSERT INTO test SELECT number + 1000 FROM numbers(1000)") # assert all the tables are working
+    node_1.query("INSERT INTO test SELECT number + 1000 FROM numbers(1000)")
 
     node_2.query("SYSTEM SYNC REPLICA test")
     node_3.query("SYSTEM SYNC REPLICA test")
-    check_data(1999000, 2000)
+
+    check_after_restoration()

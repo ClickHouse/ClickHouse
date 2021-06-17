@@ -291,7 +291,7 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
-Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
+Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed.
 Initialization replication queue based on ZooKeeper date happens in the same way as `ATTACH TABLE` statement. For a short time the table will be unavailable for any operations.
 
 ``` sql
@@ -301,18 +301,31 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ### RESTORE REPLICA {#query_language-system-restore-replica}
 
 Restores a replica if data is [possibly] present but Zookeeper metadata is lost.
-Works when ZooKeeper root `/` is lost. 
+
+Works only on readonly `ReplicatedMergeTree` tables.
+
+One may execute query after:
+
+  - ZooKeeper root `/` loss.
+  - Replicas path `/replicas` loss.
+  - Individual replica path `/replicas/replica_name/` loss.
 
 Replica attaches locally found parts and sends info about them to Zookeeper.
-Parts present in replica before metadata loss are not re-fetched from other replicas if not being outdated
-(so the replica restoration does not mean re-downloading all data over the network).
+Parts present on replica before metadata loss are not re-fetched from other replicas if not being outdated
+(so replica restoration does not mean re-downloading all data over the network).
 
-Do not use this query if any replica path `/replicas/name` is present as in that case data will get duplicated.
+Caveat: parts in all states are moved to `detached/` folder. Parts active before data loss (Committed) are attached.
 
 #### Syntax
 
-``` sql
+```sql
 SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
+```
+
+Alternative syntax:
+
+```sql
+SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
 ```
 
 #### Example
@@ -329,7 +342,7 @@ INSERT INTO test SELECT * FROM numbers(1000);
 -- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- root loss.
 
 SYSTEM RESTART REPLICA test; -- Table will attach as readonly as metadata is missing.
-SYSTEM RESTORE REPLICA test;
+SYSTEM RESTORE REPLICA test; -- Need to execute on every replica, another way: RESTORE REPLICA test ON CLUSTER cluster
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
