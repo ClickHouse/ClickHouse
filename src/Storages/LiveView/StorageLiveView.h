@@ -11,7 +11,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -49,9 +49,9 @@ class Pipe;
 using Pipes = std::vector<Pipe>;
 
 
-class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
+class StorageLiveView final : public shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
 {
-friend struct ext::shared_ptr_helper<StorageLiveView>;
+friend struct shared_ptr_helper<StorageLiveView>;
 friend class LiveViewBlockInputStream;
 friend class LiveViewEventsBlockInputStream;
 friend class LiveViewBlockOutputStream;
