@@ -4,7 +4,7 @@ toc_priority: 144
 
 # sumCount {#agg_function-sumCount}
 
-Calculates the sum of the numbers and counts the number of rows at the same time.
+Calculates the sum of the numbers and counts the number of rows at the same time. The function is used by ClickHouse query optimizer: if there are multiple `sum`, `count` or `avg` functions in a query, they can be replaced to single `sumCount` function to reuse the calculations. The function is rarely needed to use explicitly.
 
 **Syntax**
 

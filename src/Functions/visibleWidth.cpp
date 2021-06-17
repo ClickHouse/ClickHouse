@@ -19,7 +19,7 @@ class FunctionVisibleWidth : public IFunction
 {
 public:
     static constexpr auto name = "visibleWidth";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionVisibleWidth>();
     }

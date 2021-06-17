@@ -23,7 +23,7 @@ class FunctionPartitionId : public IFunction
 public:
     static constexpr auto name = "partitionId";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionPartitionId>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPartitionId>(); }
 
     String getName() const override { return name; }
 

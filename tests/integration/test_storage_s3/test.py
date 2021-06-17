@@ -440,11 +440,12 @@ def run_s3_mocks(started_cluster):
 
     # Wait for S3 mocks to start
     for mock_filename, container, port in mocks:
-        for attempt in range(10):
+        num_attempts = 100
+        for attempt in range(num_attempts):
             ping_response = started_cluster.exec_in_container(started_cluster.get_container_id(container),
                                                               ["curl", "-s", f"http://localhost:{port}/"], nothrow=True)
             if ping_response != 'OK':
-                if attempt == 9:
+                if attempt == num_attempts - 1:
                     assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
                 else:
                     time.sleep(1)
@@ -567,9 +568,9 @@ def test_storage_s3_get_unstable(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
     table_format = "column1 Int64, column2 Int64, column3 Int64, column4 Int64"
-    get_query = f"SELECT count(), sum(column3) FROM s3('http://resolver:8081/{started_cluster.minio_bucket}/test.csv', 'CSV', '{table_format}') FORMAT CSV"
+    get_query = f"SELECT count(), sum(column3), sum(column4) FROM s3('http://resolver:8081/{started_cluster.minio_bucket}/test.csv', 'CSV', '{table_format}') FORMAT CSV"
     result = run_query(instance, get_query)
-    assert result.splitlines() == ["500000,500000"]
+    assert result.splitlines() == ["500001,500000,0"]
 
 
 def test_storage_s3_put_uncompressed(started_cluster):

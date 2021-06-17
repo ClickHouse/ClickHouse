@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -10,9 +10,9 @@ namespace DB
 class Context;
 
 
-class StorageSystemPartMovesBetweenShards final : public ext::shared_ptr_helper<StorageSystemPartMovesBetweenShards>, public IStorageSystemOneBlock<StorageSystemPartMovesBetweenShards>
+class StorageSystemPartMovesBetweenShards final : public shared_ptr_helper<StorageSystemPartMovesBetweenShards>, public IStorageSystemOneBlock<StorageSystemPartMovesBetweenShards>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemPartMovesBetweenShards>;
+    friend struct shared_ptr_helper<StorageSystemPartMovesBetweenShards>;
 public:
     std::string getName() const override { return "SystemShardMoves"; }
 

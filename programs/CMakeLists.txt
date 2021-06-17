@@ -204,55 +204,6 @@ macro(clickhouse_program_add name)
     clickhouse_program_add_executable(${name})
 endmacro()
 
-# Embed default config files as a resource into the binary.
-# This is needed for two purposes:
-# 1. Allow to run the binary without download of any other files.
-# 2. Allow to implement "sudo clickhouse install" tool.
-#
-# Arguments: target (server, client, keeper, etc.) and list of files
-#
-# Also dependency on TARGET_FILE is required, look at examples in programs/server and programs/keeper
-macro(clickhouse_embed_binaries)
-    # TODO We actually need this on Mac, FreeBSD.
-    if (OS_LINUX)
-
-        set(arguments_list "${ARGN}")
-        list(GET arguments_list 0 target)
-
-        # for some reason cmake iterates loop including <stop>
-        math(EXPR arguments_count "${ARGC}-1")
-
-        foreach(RESOURCE_POS RANGE 1 "${arguments_count}")
-            list(GET arguments_list "${RESOURCE_POS}" RESOURCE_FILE)
-            set(RESOURCE_OBJ ${RESOURCE_FILE}.o)
-            set(RESOURCE_OBJS ${RESOURCE_OBJS} ${RESOURCE_OBJ})
-
-            # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
-            # PPC64LE fails to do this with objcopy, use ld or lld instead
-            if (ARCH_PPC64LE)
-                add_custom_command(OUTPUT ${RESOURCE_OBJ}
-                    COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${CMAKE_LINKER} -m elf64lppc -r -b binary -o "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}" ${RESOURCE_FILE})
-            else()
-                add_custom_command(OUTPUT ${RESOURCE_OBJ}
-                    COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS} ${RESOURCE_FILE} "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}"
-                    COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
-                        "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}" "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}")
-            endif()
-            set_source_files_properties(${RESOURCE_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
-        endforeach()
-
-        add_library(clickhouse_${target}_configs STATIC ${RESOURCE_OBJS})
-        set_target_properties(clickhouse_${target}_configs PROPERTIES LINKER_LANGUAGE C)
-
-        # whole-archive prevents symbols from being discarded for unknown reason
-        # CMake can shuffle each of target_link_libraries arguments with other
-        # libraries in linker command. To avoid this we hardcode whole-archive
-        # library into single string.
-        add_dependencies(clickhouse-${target}-lib clickhouse_${target}_configs)
-    endif ()
-endmacro()
-
-
 add_subdirectory (server)
 add_subdirectory (client)
 add_subdirectory (local)

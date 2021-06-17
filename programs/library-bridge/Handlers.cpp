@@ -51,7 +51,7 @@ namespace
 void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
-    HTMLForm params(request);
+    HTMLForm params(getContext()->getSettingsRef(), request);
 
     if (!params.has("method"))
     {

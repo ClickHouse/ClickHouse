@@ -111,7 +111,7 @@ struct ConnectionTimeouts
     static ConnectionTimeouts getTCPTimeoutsWithoutFailover(const Settings & settings);
     /// Timeouts for the case when we will try many addresses in a loop.
     static ConnectionTimeouts getTCPTimeoutsWithFailover(const Settings & settings);
-    static ConnectionTimeouts getHTTPTimeouts(ContextConstPtr context);
+    static ConnectionTimeouts getHTTPTimeouts(ContextPtr context);
 };
 
 }

@@ -9,7 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include <h3api.h>
 
@@ -29,7 +29,7 @@ class FunctionH3IsValid : public IFunction
 public:
     static constexpr auto name = "h3IsValid";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionH3IsValid>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3IsValid>(); }
 
     std::string getName() const override { return name; }
 
@@ -55,7 +55,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 hindex = col_hindex->getUInt(row);
 

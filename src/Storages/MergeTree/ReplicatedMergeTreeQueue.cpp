@@ -1024,16 +1024,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 {
     /// If our entry produce part which is already covered by
     /// some other entry which is currently executing, then we can postpone this entry.
-    if (entry.type == LogEntry::MERGE_PARTS
-        || entry.type == LogEntry::GET_PART
-        || entry.type == LogEntry::ATTACH_PART
-        || entry.type == LogEntry::MUTATE_PART)
+    for (const String & new_part_name : entry.getVirtualPartNames(format_version))
     {
-        for (const String & new_part_name : entry.getBlockingPartNames(format_version))
-        {
-            if (!isNotCoveredByFuturePartsImpl(entry.znode_name, new_part_name, out_postpone_reason, state_lock))
-                return false;
-        }
+        if (!isNotCoveredByFuturePartsImpl(entry.znode_name, new_part_name, out_postpone_reason, state_lock))
+            return false;
     }
 
     /// Check that fetches pool is not overloaded
@@ -1247,7 +1241,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(const Replicate
     ++entry->num_tries;
     entry->last_attempt_time = time(nullptr);
 
-    for (const String & new_part_name : entry->getBlockingPartNames(queue.format_version))
+    for (const String & new_part_name : entry->getVirtualPartNames(queue.format_version))
     {
         if (!queue.future_parts.emplace(new_part_name, entry).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged future part {}. This is a bug. "
@@ -1288,7 +1282,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
     entry->currently_executing = false;
     entry->execution_complete.notify_all();
 
-    for (const String & new_part_name : entry->getBlockingPartNames(queue.format_version))
+    for (const String & new_part_name : entry->getVirtualPartNames(queue.format_version))
     {
         if (!queue.future_parts.erase(new_part_name))
         {

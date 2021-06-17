@@ -16,7 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <common/logger_useful.h>
 #include "MySQLBlockInputStream.h"
 
@@ -216,7 +216,7 @@ Block MySQLBlockInputStream::readImpl()
     }
 
     MutableColumns columns(description.sample_block.columns());
-    for (const auto i : ext::range(0, columns.size()))
+    for (const auto i : collections::range(0, columns.size()))
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
@@ -276,7 +276,7 @@ void MySQLBlockInputStream::initPositionMappingFromQueryResultStructure()
             throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
                 + toString(description.sample_block.columns()) + " expected", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
-        for (const auto idx : ext::range(0, connection->result.getNumFields()))
+        for (const auto idx : collections::range(0, connection->result.getNumFields()))
             position_mapping[idx] = idx;
     }
     else
@@ -286,7 +286,7 @@ void MySQLBlockInputStream::initPositionMappingFromQueryResultStructure()
 
         size_t fields_size = connection->result.getNumFields();
 
-        for (const size_t & idx : ext::range(0, fields_size))
+        for (const size_t & idx : collections::range(0, fields_size))
         {
             const auto & field_name = connection->result.getFieldName(idx);
             if (description.sample_block.has(field_name))
