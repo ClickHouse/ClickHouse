@@ -2,6 +2,7 @@
 #include <common/DateLUTImpl.h>
 
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
@@ -117,6 +118,11 @@ struct AddDaysImpl
     {
         return d + delta;
     }
+
+    static inline NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &)
+    {
+        return d + delta;
+    }
 };
 
 struct AddWeeksImpl
@@ -135,6 +141,11 @@ struct AddWeeksImpl
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &)
+    {
+        return d + delta * 7;
+    }
+
+    static inline NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &)
     {
         return d + delta * 7;
     }
@@ -159,6 +170,11 @@ struct AddMonthsImpl
     {
         return time_zone.addMonths(ExtendedDayNum(d), delta);
     }
+
+    static inline Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.addMonths(ExtendedDayNum(d), delta);
+    }
 };
 
 struct AddQuartersImpl
@@ -180,6 +196,11 @@ struct AddQuartersImpl
     {
         return time_zone.addQuarters(ExtendedDayNum(d), delta);
     }
+
+    static inline Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.addQuarters(ExtendedDayNum(d), delta);
+    }
 };
 
 struct AddYearsImpl
@@ -198,6 +219,11 @@ struct AddYearsImpl
     }
 
     static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.addYears(ExtendedDayNum(d), delta);
+    }
+
+    static inline Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.addYears(ExtendedDayNum(d), delta);
     }
@@ -342,7 +368,7 @@ template <typename FieldType> struct ResultDataTypeMap {};
 template <> struct ResultDataTypeMap<UInt16>     { using ResultDataType = DataTypeDate; };
 template <> struct ResultDataTypeMap<Int16>      { using ResultDataType = DataTypeDate; };
 template <> struct ResultDataTypeMap<UInt32>     { using ResultDataType = DataTypeDateTime; };
-template <> struct ResultDataTypeMap<Int32>      { using ResultDataType = DataTypeDateTime; };
+template <> struct ResultDataTypeMap<Int32>      { using ResultDataType = DataTypeDate32; };
 template <> struct ResultDataTypeMap<DateTime64> { using ResultDataType = DataTypeDateTime64; };
 template <> struct ResultDataTypeMap<Int64>      { using ResultDataType = DataTypeDateTime64; };
 }
@@ -468,6 +494,11 @@ public:
         if (which.isDate())
         {
             return DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(
+                Transform{}, arguments, result_type);
+        }
+        else if (which.isDate32())
+        {
+            return DateTimeAddIntervalImpl<DataTypeDate32, TransformResultDataType<DataTypeDate32>, Transform>::execute(
                 Transform{}, arguments, result_type);
         }
         else if (which.isDateTime())
