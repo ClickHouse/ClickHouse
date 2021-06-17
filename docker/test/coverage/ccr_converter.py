@@ -1,18 +1,14 @@
-from time import time
 from datetime import date
 from copy import deepcopy
 from collections import defaultdict
 from enum import IntEnum
-from itertools import groupby
-from fnmatch import fnmatch
-  
+
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import CppLexer
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, ModuleLoader, ChoiceLoader
 from tqdm import tqdm
 
-import sys
 import argparse
 import os.path
 
@@ -139,30 +135,42 @@ class CodeFormatter(HtmlFormatter):
 
         yield 0, '</pre></div>'
 
-def get_entries():
-    dir_entries = []
-    accumulated = defaultdict(lambda: (set(), set(), set()))
+def get_lines_with_hits_for_file(file_name):
+    with open(os.path.concat(args.gcno_dir, file_name + ".gcno"), "rb") as gcno:
+        pass
+
+    return []
+
+def accumulate_coverage_data():
+    accumulated = defaultdict(lambda: (set(), set()))
 
     for test in tests:
-        for sf_index, source_data in test.items():
+        for sf_index, (funcs, edges) in test.items():
             if sf_index not in accumulated:
-                accumulated[sf_index] = tuple(map(set, source_data))
+                accumulated[sf_index] = set(funcs), set(edges)
             else:
-                for entity_index, entity in enumerate(accumulated[sf_index]):
-                    entity.update(source_data[entity_index])
+                funcs_a, edges_a = accumulated[sf_index]
+                funcs_a.update(funcs)
+                edges_a.update(edges)
 
-    for sf_index, (path, funcs_instrumented, edges_instrumented, lines_instrumented) in enumerate(files):
+    return accumulated
+
+def get_entries():
+    dir_entries = []
+    accumulated = accumulate_coverage_data()
+
+    for sf_index, (path, funcs_instrumented, edges_instrumented) in enumerate(files):
         dirs, file_name = os.path.split(path)
 
-        funcs_hit, edges_hit, lines_hit = accumulated[sf_index]
+        funcs_hit, edges_hit = accumulated[sf_index]
 
         funcs_with_hits = sorted([
             (start_line, index in funcs_hit) for index, (_, start_line) in funcs_instrumented.items()])
 
         edges_with_hits = [(edge_line, edge_line in edges_hit) for edge_line in edges_instrumented]
-        lines_with_hits = [(line, line in lines_hit) for line in lines_instrumented]
+        lines_with_hits = get_lines_with_hits_for_file(file_name)
 
-        test_file = FileEntry(path, (funcs_with_hits, edges_with_hits, lines_with_hits), 
+        test_file = FileEntry(path, (funcs_with_hits, edges_with_hits, lines_with_hits),
             [(i, sf_index in test.keys()) for i, test in enumerate(tests)])
 
         found = False
@@ -259,9 +267,9 @@ def generate_file_page(entry: FileEntry):
 
         depth = entry.full_path.count('/')
 
-        not_covered = [(entity, list(intervals_extract(not_covered))) for (entity, (covered, not_covered)) in data.items()]
+        not_covered_ent = [(entity, not_covered) for (entity, (_, not_covered)) in data.items()]
 
-        output = render("file.html", depth, highlighted_sources=lines, entry=entry, not_covered=not_covered)
+        output = render("file.html", depth, highlighted_sources=lines, entry=entry, not_covered=not_covered_ent)
 
         with open(os.path.join(args.out_dir, entry.full_path) + ".html", "w") as f:
             f.write(output)
@@ -292,7 +300,7 @@ def read_header(report_file):
         if "contrib/" in file_path:
             source_files_map.append(-1)
         else:
-            files.append((file_path, funcs, edges, [])) # lines will be parsed from llvm-cov intermediate format
+            files.append((file_path, funcs, edges)) # lines will be parsed from llvm-cov intermediate format
 
             source_files_map.append(sf_index)
             sf_index += 1
@@ -323,12 +331,8 @@ def read_tests(report_file, source_files_map):
 
         real_index = source_files_map[source_id]
 
-        if real_index == -1:
-            continue
-
-        covered_lines = get_covered_lines(real_index, covered_funcs, covered_edges)
-
-        tests_sources[real_index] = covered_funcs, covered_edges, covered_lines
+        if real_index != -1:
+            tests_sources[real_index] = covered_funcs, covered_edges # covered lines will be calculated later
 
 def read_report(report_file):
     global tests_names
@@ -343,57 +347,38 @@ def read_report(report_file):
 
     print(f"Read the report, {len(tests)} tests, {len(files)} source files")
 
-def find_gcno_files():
-    # Rationale: clang produces gcno files which contain needed information: bb graph + arcs + lines for file
-    # We can't get covered lines without getting arcs information
-    # gcov can't parse gcno files produced by clang
-    # llvm-cov gcov can't output json with parsed information
+if __name__ == '__main__':
+    dir_path = os.path.abspath(os.path.dirname(__file__))
+    tpl_path = os.path.join(dir_path, "templates")
+    compiled_tpl_path = os.path.join(dir_path, "compiled_templates")
 
-    files = []
-
-    for root, dirs, files in os.walk(".", topdown=False):
-       for name in files:
-           if fnmatch.fnmatch(name, '*.gcno'):
-               files.append(os.path.join(root, name))
-
-    return files
-
-def read_gcno_files(files):
-    for file_path in files:
-        with open(file_path, "rb") as gcno:
-            read_gcno_file(gcno)
-
-def read_gcno_file(handle):
-    pass
-
-def main():
-    file_loader = FileSystemLoader(os.path.abspath(os.path.dirname(__file__)) + '/templates', encoding='utf8')
+    tpl_loader = ChoiceLoader([
+        ModuleLoader(compiled_tpl_path),
+        FileSystemLoader(tpl_path)
+    ])
 
     global env
 
-    env = Environment(loader=file_loader)
-    env.trim_blocks = True
-    env.lstrip_blocks = True
-    env.rstrip_blocks = True
+    env = Environment(loader=tpl_loader, trim_blocks=True, lstrip_blocks=True, rstrip_blocks=True, enable_async=True)
 
-    parser = argparse.ArgumentParser(prog='CCR converter')
+    env.compile_templates(compiled_tpl_path, zip=None, ignore_errors=False)
 
-    parser.add_argument('report_file')
-    parser.add_argument('out_dir', help="Absolute path")
-    parser.add_argument('sources_dir', help="Absolute path")
+    parser = argparse.ArgumentParser(
+        prog='HTML report generator', description="""
+    Reads .ccr report, generates an HTML coverage report out of it.
+    Also reads CH source files and corresponding .gcno files.""")
+
+    parser.add_argument('report_file', help=".ccr report file")
+    parser.add_argument('out_dir', help="Directory to which the HTML report will be written. Absolute path")
+    parser.add_argument('sources_dir', help="Path to ClickHouse sources root directory. Absolute path")
+    parser.add_argument('gcno_dir', help="Path to directory with .gcno files generated by the compiler. Absolute path")
 
     global args
 
     args = parser.parse_args()
 
-    print("Will use {} as output directory".format(args.out_dir))
-    print("Will use {} as root CH directory".format(args.sources_dir))
+    print(args)
 
     with open(args.report_file, "r") as f:
         read_report(f)
-        read_gcno_files(find_gcno_files())
-
         generate_html()
-
-if __name__ == '__main__':
-    main()
