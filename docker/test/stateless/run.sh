@@ -80,6 +80,8 @@ function run_tests()
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
+        ADDITIONAL_OPTIONS+=('--jobs')
+        ADDITIONAL_OPTIONS+=('2')
     else
         # Too many tests fail for DatabaseReplicated in parallel. All other
         # configurations are OK.

@@ -204,7 +204,7 @@ SnapshotMetadataPtr KeeperStorageSnapshot::deserialize(KeeperStorage & storage, 
     uint8_t version;
     readBinary(version, in);
     SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
-    if (current_version > SnapshotVersion::V1)
+    if (current_version > CURRENT_SNAPSHOT_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
 
     SnapshotMetadataPtr result = deserializeSnapshotMetadata(in);

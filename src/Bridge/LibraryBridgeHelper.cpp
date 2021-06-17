@@ -20,7 +20,7 @@ namespace DB
 {
 
 LibraryBridgeHelper::LibraryBridgeHelper(
-        ContextConstPtr context_,
+        ContextPtr context_,
         const Block & sample_block_,
         const Field & dictionary_id_)
     : IBridgeHelper(context_->getGlobalContext())

@@ -269,7 +269,6 @@ public:
     void operator() (const AggregateFunctionStateData & x) const;
 };
 
-
 template <typename T> constexpr bool isDecimalField() { return false; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal32>>() { return true; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal64>>() { return true; }

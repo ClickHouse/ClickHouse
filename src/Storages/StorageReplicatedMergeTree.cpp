@@ -1726,7 +1726,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     auto table_id = getStorageID();
 
     /// Add merge to list
-    MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_merged_part);
+    MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(getStorageID(), future_merged_part);
 
     Transaction transaction(*this);
     MutableDataPartPtr part;
@@ -1871,9 +1871,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     future_mutated_part.updatePath(*this, reserved_space);
     future_mutated_part.type = source_part->getType();
 
-    auto table_id = getStorageID();
-    MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(
-        table_id.database_name, table_id.table_name, future_mutated_part);
+    MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(getStorageID(), future_mutated_part);
 
     Stopwatch stopwatch;
 
@@ -5303,14 +5301,10 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
     String entry_str = entry.toString();
     String log_node_name;
 
-    /** Two types of entries can be passed to this function
-      * 1. (more often) From `log` directory - a common log, from where replicas copy entries to their queue.
-      * 2. From the `queue` directory of one of the replicas.
+    /** Wait for entries from `log` directory (a common log, from where replicas copy entries to their queue) to be processed.
       *
       * The problem is that the numbers (`sequential` node) of the queue elements in `log` and in `queue` do not match.
       * (And the numbers of the same log element for different replicas do not match in the `queue`.)
-      *
-      * Therefore, you should consider these cases separately.
       */
 
     /** First, you need to wait until replica takes `queue` element from the `log` to its queue,
@@ -5333,9 +5327,7 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
 
     if (startsWith(entry.znode_name, "log-"))
     {
-        /** In this case, just take the number from the node name `log-xxxxxxxxxx`.
-          */
-
+        /// Take the number from the node name `log-xxxxxxxxxx`.
         UInt64 log_index = parse<UInt64>(entry.znode_name.substr(entry.znode_name.size() - 10));
         log_node_name = entry.znode_name;
 
@@ -5360,14 +5352,10 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
     else
         throw Exception("Logical error: unexpected name of log node: " + entry.znode_name, ErrorCodes::LOGICAL_ERROR);
 
-    if (!log_node_name.empty())
-        LOG_DEBUG(log, "Looking for node corresponding to {} in {} queue", log_node_name, replica);
-    else
-        LOG_DEBUG(log, "Looking for corresponding node in {} queue", replica);
+    LOG_DEBUG(log, "Looking for node corresponding to {} in {} queue", log_node_name, replica);
 
     /** Second - find the corresponding entry in the queue of the specified replica.
-      * Its number may match neither the `log` node nor the `queue` node of the current replica (for us).
-      * Therefore, we search by comparing the content.
+      * Its number may not match the `log` node. Therefore, we search by comparing the content.
       */
 
     Strings queue_entries = getZooKeeper()->getChildren(fs::path(table_zookeeper_path) / "replicas" / replica / "queue");
@@ -5934,7 +5922,7 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
     {
         const String & partition_id = pair.first;
         Int64 block_number = pair.second;
-        getContext()->getMergeList().cancelPartMutations(partition_id, block_number);
+        getContext()->getMergeList().cancelPartMutations(getStorageID(), partition_id, block_number);
     }
     return CancellationCode::CancelSent;
 }

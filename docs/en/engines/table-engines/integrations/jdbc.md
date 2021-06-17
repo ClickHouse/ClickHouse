@@ -7,7 +7,7 @@ toc_title: JDBC
 
 Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
-To implement the JDBC connection, ClickHouse uses the separate program [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge) that should run as a daemon.
+To implement the JDBC connection, ClickHouse uses the separate program [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) that should run as a daemon.
 
 This engine supports the [Nullable](../../../sql-reference/data-types/nullable.md) data type.
 
@@ -18,19 +18,20 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     columns list...
 )
-ENGINE = JDBC(dbms_uri, external_database, external_table)
+ENGINE = JDBC(datasource_uri, external_database, external_table)
 ```
 
 **Engine Parameters**
 
--   `dbms_uri` — URI of an external DBMS.
 
-    Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
+-   `datasource_uri` — URI or name of an external DBMS.
+
+    URI Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
     Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
 -   `external_database` — Database in an external DBMS.
 
--   `external_table` — Name of the table in `external_database`.
+-   `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
 
 ## Usage Example {#usage-example}
 
@@ -79,6 +80,12 @@ FROM jdbc_table
 ┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
 │      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
 └────────┴──────────────┴───────┴────────────────┘
+```
+
+``` sql
+INSERT INTO jdbc_table(`int_id`, `float`)
+SELECT toInt32(number), toFloat32(number * 1.0)
+FROM system.numbers
 ```
 
 ## See Also {#see-also}

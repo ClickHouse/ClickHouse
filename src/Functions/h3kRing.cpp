@@ -35,7 +35,7 @@ class FunctionH3KRing : public IFunction
 public:
     static constexpr auto name = "h3kRing";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionH3KRing>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3KRing>(); }
 
     std::string getName() const override { return name; }
 
