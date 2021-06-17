@@ -233,7 +233,7 @@ std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const C
     std::vector<Point> result;
     result.reserve(rows);
 
-    for (const auto row : ext::range(0, rows))
+    for (size_t row = 0; row < rows; ++row)
     {
         auto x = column_x->getElement(row);
         auto y = column_y->getElement(row);

@@ -1,6 +1,7 @@
 #include <Parsers/ASTFunction.h>
 
 #include <Common/quoteString.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NumberTraits.h>
@@ -12,6 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
+
 
 namespace DB
 {
@@ -252,7 +254,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         NO_SANITIZE_UNDEFINED
                         {
                             using ValueType = std::decay_t<decltype(value)>;
-                            if constexpr (isDecimalField<ValueType>())
+                            if constexpr (is_decimal_field<ValueType>)
                             {
                                 // The parser doesn't create decimal literals, but
                                 // they can be produced by constant folding or the
