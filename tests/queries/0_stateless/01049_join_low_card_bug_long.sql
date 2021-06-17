@@ -5,12 +5,12 @@ DROP TABLE IF EXISTS nr;
 DROP TABLE IF EXISTS l_lc;
 DROP TABLE IF EXISTS r_lc;
 
-CREATE TABLE l (x UInt32, lc String) ENGINE = TinyLog;
-CREATE TABLE r (x UInt32, lc String) ENGINE = TinyLog;
-CREATE TABLE nl (x Nullable(UInt32), lc Nullable(String)) ENGINE = TinyLog;
-CREATE TABLE nr (x Nullable(UInt32), lc Nullable(String)) ENGINE = TinyLog;
-CREATE TABLE l_lc (x UInt32, lc LowCardinality(String)) ENGINE = TinyLog;
-CREATE TABLE r_lc (x UInt32, lc LowCardinality(String)) ENGINE = TinyLog;
+CREATE TABLE l (x UInt32, lc String) ENGINE = Memory;
+CREATE TABLE r (x UInt32, lc String) ENGINE = Memory;
+CREATE TABLE nl (x Nullable(UInt32), lc Nullable(String)) ENGINE = Memory;
+CREATE TABLE nr (x Nullable(UInt32), lc Nullable(String)) ENGINE = Memory;
+CREATE TABLE l_lc (x UInt32, lc LowCardinality(String)) ENGINE = Memory;
+CREATE TABLE r_lc (x UInt32, lc LowCardinality(String)) ENGINE = Memory;
 
 INSERT INTO r VALUES (0, 'str'),  (1, 'str_r');
 INSERT INTO nr VALUES (0, 'str'),  (1, 'str_r');
@@ -270,6 +270,9 @@ SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc),
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM nl AS l RIGHT JOIN r_lc AS r USING (lc) ORDER BY x;
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM nl AS l FULL JOIN r_lc AS r USING (x) ORDER BY x;
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM nl AS l FULL JOIN r_lc AS r USING (lc) ORDER BY x;
+
+SET join_use_nulls = 0;
+SELECT lc, toTypeName(lc)  FROM l_lc AS l RIGHT JOIN r_lc AS r USING (x) ORDER BY l.lc;
 
 DROP TABLE l;
 DROP TABLE r;
