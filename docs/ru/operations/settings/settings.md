@@ -2078,7 +2078,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   Положительное целое число.
 
-Значение по умолчанию: 16.
+Значение по умолчанию: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
@@ -2375,18 +2375,6 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
-
-## allow_experimental_bigint_types {#allow_experimental_bigint_types}
-
-Включает или отключает поддержку целочисленных значений, превышающих максимальное значение, допустимое для типа `int`.
-
-Возможные значения:
-
--   1 — большие целочисленные значения поддерживаются.
--   0 — большие целочисленные значения не поддерживаются.
-
-Значение по умолчанию: `0`.
-
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 

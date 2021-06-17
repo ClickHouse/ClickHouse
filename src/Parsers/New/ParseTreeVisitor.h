@@ -146,7 +146,8 @@ public:
     antlrcpp::Any visitExistsDatabaseStmt(ClickHouseParser::ExistsDatabaseStmtContext * ctx) override;
 
     // ExplainQuery
-    antlrcpp::Any visitExplainStmt(ClickHouseParser::ExplainStmtContext * ctx) override;
+    antlrcpp::Any visitExplainASTStmt(ClickHouseParser::ExplainASTStmtContext * ctx) override;
+    antlrcpp::Any visitExplainSyntaxStmt(ClickHouseParser::ExplainSyntaxStmtContext * ctx) override;
 
     // Identifier
     antlrcpp::Any visitTableIdentifier(ClickHouseParser::TableIdentifierContext * ctx) override;
