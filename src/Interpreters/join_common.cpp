@@ -89,10 +89,11 @@ void convertColumnToNullable(ColumnWithTypeAndName & column, bool remove_low_car
         if (column.column->lowCardinality())
         {
             /// Convert nested to nullable, not LowCardinality itself
-            auto new_col = column.column->cloneEmpty();
-            new_col->insertRangeFrom(*column.column, 0, column.column->size());
-            assert_cast<ColumnLowCardinality *>(new_col.get())->nestedToNullable();
-            column.column = std::move(new_col);
+            auto mut_col = IColumn::mutate(std::move(column.column));
+            ColumnLowCardinality * col_as_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
+            if (!col_as_lc->nestedIsNullable())
+                col_as_lc->nestedToNullable();
+            column.column = std::move(mut_col);
         }
         else
             column.column = makeNullable(column.column);
