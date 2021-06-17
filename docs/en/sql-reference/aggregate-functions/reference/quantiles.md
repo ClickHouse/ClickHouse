@@ -14,6 +14,8 @@ Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a nu
 
 To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` memory, where `n` is a number of values that were passed. However, for a small number of values, the function is very effective.
 
+This function is equivalent to [PERCENTILE.EXC](https://support.microsoft.com/en-us/office/percentile-exc-function-bbaa7204-e9e1-4010-85bf-c31dc5dce4ba) Excel function, ([type R6](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample)). 
+
 Works more efficiently with sets of levels than [quantilesExactExclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactexclusive).
 
 **Syntax**
@@ -24,7 +26,7 @@ quantilesExactExclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
--   `level` — Leveles of quantiles. Constant floating-point numbers from 0 to 1. We recommend using a `level` values in the range of `[0.01, 0.99]`.
+-   `level` — Leveles of quantiles. Constant floating-point numbers from 0 to 1. We recommend using a `level` values in the range of `(0, 1)`.
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
@@ -61,6 +63,8 @@ Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a nu
 
 To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` memory, where `n` is a number of values that were passed. However, for a small number of values, the function is very effective.
 
+This function is equivalent to [PERCENTILE.INC](https://support.microsoft.com/en-us/office/percentile-inc-function-680f9539-45eb-410b-9a5e-c1355e5fe2ed) Excel function, ([type R7](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample)).
+
 Works more efficiently with sets of levels than [quantilesExactInclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantilesexactinclusive).
 
 **Syntax**
@@ -71,7 +75,7 @@ quantilesExactInclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
--   `level` — Leveles of quantiles. Constant floating-point numbers from 0 to 1. We recommend using a `level` values in the range of `[0.01, 0.99]`.
+-   `level` — Leveles of quantiles. Constant floating-point numbers from 0 to 1. We recommend using a `level` values in the range of `[0, 1]`.
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
