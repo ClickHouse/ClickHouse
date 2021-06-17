@@ -18,7 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_functions.h"
@@ -133,7 +133,7 @@ public:
             /// Parse JSON for every row
             Impl<JSONParser> impl;
 
-            for (const auto i : ext::range(0, input_rows_count))
+            for (const auto i : collections::range(0, input_rows_count))
             {
                 std::string_view json{
                     reinterpret_cast<const char *>(&chars_json[offsets_json[i - 1]]), offsets_json[i] - offsets_json[i - 1] - 1};
