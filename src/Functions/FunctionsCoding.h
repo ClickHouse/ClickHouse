@@ -24,6 +24,7 @@
 #include <Common/formatIPv6.h>
 #include <Common/hex.h>
 #include <Common/typeid_cast.h>
+#include <Common/BitHelpers.h>
 
 #include <arpa/inet.h>
 #include <common/range.h>
@@ -1503,6 +1504,116 @@ public:
         throw Exception("Illegal column " + arguments[0].column->getName()
                         + " of first argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+class FunctionBitPositionsToArray : public IFunction
+{
+public:
+    static constexpr auto name = "bitPositionsToArray";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitPositionsToArray>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isInteger(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                getName(),
+                arguments[0]->getName());
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    template <typename T>
+    ColumnPtr executeType(const IColumn * column) const
+    {
+        const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column);
+        if (!col_from)
+            return nullptr;
+
+        auto result_array_values = ColumnVector<UInt64>::create();
+        auto result_array_offsets = ColumnArray::ColumnOffsets::create();
+
+        auto & result_array_values_data = result_array_values->getData();
+        auto & result_array_offsets_data = result_array_offsets->getData();
+
+        auto & vec_from = col_from->getData();
+        size_t size = vec_from.size();
+        result_array_offsets_data.resize(size);
+        result_array_values_data.reserve(size * 2);
+
+        using UnsignedType = make_unsigned_t<T>;
+
+        for (size_t row = 0; row < size; ++row)
+        {
+            UnsignedType x = static_cast<UnsignedType>(vec_from[row]);
+
+            if constexpr (is_big_int_v<UnsignedType>)
+            {
+                size_t position = 0;
+
+                while (x)
+                {
+                    if (x & 1)
+                        result_array_values_data.push_back(position);
+
+                    x >>= 1;
+                    ++position;
+                }
+            }
+            else
+            {
+                while (x)
+                {
+                    result_array_values_data.push_back(getTrailingZeroBitsUnsafe(x));
+                    x &= (x - 1);
+                }
+            }
+
+            result_array_offsets_data[row] = result_array_values_data.size();
+        }
+
+        auto result_column = ColumnArray::create(std::move(result_array_values), std::move(result_array_offsets));
+
+        return result_column;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        const IColumn * in_column = arguments[0].column.get();
+        ColumnPtr result_column;
+
+        if (!((result_column = executeType<UInt8>(in_column))
+            || (result_column = executeType<UInt16>(in_column))
+            || (result_column = executeType<UInt32>(in_column))
+            || (result_column = executeType<UInt32>(in_column))
+            || (result_column = executeType<UInt64>(in_column))
+            || (result_column = executeType<UInt128>(in_column))
+            || (result_column = executeType<UInt256>(in_column))
+            || (result_column = executeType<Int8>(in_column))
+            || (result_column = executeType<Int16>(in_column))
+            || (result_column = executeType<Int32>(in_column))
+            || (result_column = executeType<Int64>(in_column))
+            || (result_column = executeType<Int128>(in_column))
+            || (result_column = executeType<Int256>(in_column))))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+               "Illegal column {} of first argument of function {}",
+               arguments[0].column->getName(),
+               getName());
+        }
+
+        return result_column;
     }
 };
 
