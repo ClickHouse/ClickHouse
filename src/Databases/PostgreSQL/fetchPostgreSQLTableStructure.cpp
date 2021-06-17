@@ -117,6 +117,7 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
     {
         pqxx::read_transaction tx(connection_holder->get());
         auto stream{pqxx::stream_from::query(tx, query)};
+
         std::tuple<std::string, std::string, std::string, uint16_t> row;
         while (stream >> row)
         {
