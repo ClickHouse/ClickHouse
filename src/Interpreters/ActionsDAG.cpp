@@ -1595,33 +1595,24 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN && cur.node->type != ActionsDAG::ActionType::INPUT)
                     allowed_nodes.emplace(cur.node);
             }
-            else if (is_conjunction)
-            {
-                for (const auto * child : cur.node->children)
-                {
-                    if (allowed_nodes.count(child))
-                    {
-                        if (allowed.insert(child).second)
-                            conjunction.allowed.push_back(child);
 
-                    }
-                }
-            }
-            else if (cur.is_predicate)
+            if (cur.is_predicate && ! is_conjunction)
             {
-                if (rejected.insert(cur.node).second)
-                    conjunction.rejected.push_back(cur.node);
+                if (allowed_nodes.count(cur.node))
+                {
+                    if (allowed.insert(cur.node).second)
+                        conjunction.allowed.push_back(cur.node);
+
+                }
+                else
+                {
+                    if (rejected.insert(cur.node).second)
+                        conjunction.rejected.push_back(cur.node);
+                }
             }
 
             stack.pop();
         }
-    }
-
-    if (conjunction.allowed.empty())
-    {
-        /// If nothing was added to conjunction, check if it is trivial.
-        if (allowed_nodes.count(predicate))
-            conjunction.allowed.push_back(predicate);
     }
 
     return conjunction;

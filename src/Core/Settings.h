@@ -467,7 +467,7 @@ class IColumn;
     \
     M(Bool, query_plan_enable_optimizations, true, "Apply optimizations to query plan", 0) \
     M(UInt64, query_plan_max_optimizations_to_apply, 10000, "Limit the total number of optimizations applied to query plan. If zero, ignored. If limit reached, throw exception", 0) \
-    M(Bool, query_plan_filter_push_down, false, "Allow to push down filter by predicate query plan step", 0) \
+    M(Bool, query_plan_filter_push_down, true, "Allow to push down filter by predicate query plan step", 0) \
     \
     M(UInt64, limit, 0, "Limit on read rows from the most 'end' result for select query, default 0 means no limit length", 0) \
     M(UInt64, offset, 0, "Offset on read rows from the most 'end' result for select query", 0) \
