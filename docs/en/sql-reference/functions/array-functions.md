@@ -64,7 +64,7 @@ It behaves almost like pythonic `range`. But the difference is that all the argu
 
 **Examples**
 
-Query:
+Query with only `end` argument:
 ``` sql
 SELECT range(10);
 ```
@@ -72,7 +72,7 @@ Result:
 ```[0,1,2,3,4,5,6,7,8,9]```
 
 
-Query:
+Query with all argumets:
 ``` sql
 SELECT range(1, 10, 2);
 ```
