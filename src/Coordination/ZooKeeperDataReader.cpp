@@ -45,6 +45,8 @@ void deserializeSnapshotMagic(ReadBuffer & in)
     int64_t dbid;
     Coordination::read(magic_header, in);
     Coordination::read(version, in);
+    if (version != 2)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize ZooKeeper data other than version 2, got version {}", version);
     Coordination::read(dbid, in);
     static constexpr int32_t SNP_HEADER = 1514885966; /// "ZKSN"
     if (magic_header != SNP_HEADER)
@@ -98,7 +100,7 @@ void deserializeACLMap(KeeperStorage & storage, ReadBuffer & in)
     }
 }
 
-int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in)
+int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * log)
 {
     int64_t max_zxid = 0;
     std::string path;
@@ -138,7 +140,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in)
         Coordination::read(path, in);
         count++;
         if (count % 1000 == 0)
-            std::cerr << "Deserialized nodes from snapshot:"  << count << std::endl;
+            LOG_INFO(log, "Deserialized nodes from snapshot: {}", count);
     }
 
     for (const auto & itr : storage.container)
@@ -153,23 +155,31 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in)
     return max_zxid;
 }
 
-void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path)
+void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, Poco::Logger * log)
 {
+    LOG_INFO(log, "Deserializing storage snapshot {}", snapshot_path);
     int64_t zxid = getZxidFromName(snapshot_path);
 
     ReadBufferFromFile reader(snapshot_path);
 
     deserializeSnapshotMagic(reader);
+
+    LOG_INFO(log, "Magic deserialized, looks OK");
     auto max_session_id = deserializeSessionAndTimeout(storage, reader);
+    LOG_INFO(log, "Sessions and timeouts deserialized");
 
     storage.session_id_counter = max_session_id;
     deserializeACLMap(storage, reader);
+    LOG_INFO(log, "ACLs deserialized");
 
-    int64_t zxid_from_nodes = deserializeStorageData(storage, reader);
+    LOG_INFO(log, "Deserializing data from snapshot");
+    int64_t zxid_from_nodes = deserializeStorageData(storage, reader, log);
     storage.zxid = std::max(zxid, zxid_from_nodes);
+
+    LOG_INFO(log, "Finished, snapshot ZXID {}", storage.zxid);
 }
 
-void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std::string & path)
+void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std::string & path, Poco::Logger * log)
 {
     namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_snapshots;
@@ -181,9 +191,13 @@ void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std
         int64_t zxid = getZxidFromName(log_path);
         existing_snapshots[zxid] = p.path();
     }
+
+    LOG_INFO(log, "Totally have {} snapshots, will use latest", existing_snapshots.size());
     /// deserialize only from latest snapshot
     if (!existing_snapshots.empty())
-        deserializeKeeperStorageFromSnapshot(storage, existing_snapshots.rbegin()->second);
+        deserializeKeeperStorageFromSnapshot(storage, existing_snapshots.rbegin()->second, log);
+    else
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "No snapshots found on path {}. At least one snapshot must exist.", path);
 }
 
 void deserializeLogMagic(ReadBuffer & in)
@@ -197,6 +211,9 @@ void deserializeLogMagic(ReadBuffer & in)
     static constexpr int32_t LOG_HEADER = 1514884167; /// "ZKLG"
     if (magic_header != LOG_HEADER)
         throw Exception(ErrorCodes::CORRUPTED_DATA ,"Incorrect magic header in file, expected {}, got {}", LOG_HEADER, magic_header);
+
+    if (version != 2)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,"Cannot deserialize ZooKeeper data other than version 2, got version {}", version);
 }
 
 
@@ -435,15 +452,7 @@ bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in)
 
     Coordination::ZooKeeperRequestPtr request = deserializeTxnImpl(in, false);
 
-    /// For Error requests ZooKeeper doesn't store version + tree_digest
-    if (!isErrorRequest(request))
-    {
-        int32_t version;
-        int64_t tree_digest;
-        Coordination::read(version, in);
-        Coordination::read(tree_digest, in);
-    }
-
+    /// Skip all other bytes
     int64_t bytes_read = in.count() - count_before;
     if (bytes_read < txn_len)
         in.ignore(txn_len - bytes_read);
@@ -475,25 +484,31 @@ bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in)
     return true;
 }
 
-void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string & log_path)
+void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string & log_path, Poco::Logger * log)
 {
     ReadBufferFromFile reader(log_path);
+
+    LOG_INFO(log, "Deserializing log {}", log_path);
     deserializeLogMagic(reader);
+    LOG_INFO(log, "Header looks OK");
+
     size_t counter = 0;
     while (!reader.eof() && deserializeTxn(storage, reader))
     {
         counter++;
         if (counter % 1000 == 0)
-            std::cerr << "Deserialized from log: " << counter << std::endl;
+            LOG_INFO(log, "Deserialized txns log: {}", counter);
 
         int8_t forty_two;
         Coordination::read(forty_two, reader);
         if (forty_two != 0x42)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Forty two check byte ({}) is not equal 0x42", forty_two);
     }
+
+    LOG_INFO(log, "Finished {} deserialization, totally read {} records", log_path, counter);
 }
 
-void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path)
+void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, Poco::Logger * log)
 {
     namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_logs;
@@ -506,10 +521,14 @@ void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string
         existing_logs[zxid] = p.path();
     }
 
+    LOG_INFO(log, "Totally have {} logs", existing_logs.size());
+
     for (auto [zxid, log_path] : existing_logs)
     {
         if (zxid > storage.zxid)
-            deserializeLogAndApplyToStorage(storage, log_path);
+            deserializeLogAndApplyToStorage(storage, log_path, log);
+        else
+            LOG_INFO(log, "Skipping log {}, it's ZXID {} is smaller than storages ZXID {}", log_path, zxid, storage.zxid);
     }
 }
 
