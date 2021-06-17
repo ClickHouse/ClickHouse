@@ -79,7 +79,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, std::optional<uint64_t> wait_microseconds)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -142,7 +142,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             }
         }
 
-        jobs.emplace(std::move(job), priority);
+        jobs.emplace(std::move(job));
         ++scheduled_jobs;
         new_job_or_shutdown.notify_one();
     }
@@ -151,21 +151,21 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, int priority)
+void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job)
 {
-    scheduleImpl<void>(std::move(job), priority, std::nullopt);
+    scheduleImpl<void>(std::move(job), std::nullopt);
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_microseconds) noexcept
+bool ThreadPoolImpl<Thread>::trySchedule(Job job, uint64_t wait_microseconds) noexcept
 {
-    return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
+    return scheduleImpl<bool>(std::move(job), wait_microseconds);
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, int priority, uint64_t wait_microseconds)
+void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, uint64_t wait_microseconds)
 {
-    scheduleImpl<void>(std::move(job), priority, wait_microseconds);
+    scheduleImpl<void>(std::move(job), wait_microseconds);
 }
 
 template <typename Thread>
@@ -245,7 +245,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             {
                 /// std::priority_queue does not provide interface for getting non-const reference to an element
                 /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
-                job = std::move(const_cast<Job &>(jobs.top().job));
+                job = std::move(jobs.front());
                 jobs.pop();
             }
             else

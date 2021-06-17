@@ -201,7 +201,7 @@ private:
     MergeTreeData::MutableDataPartPtr new_data_part;
     CompressionCodecPtr compression_codec;
 
-    MergeAlgorithm chosen_merge_algorithm;
+    MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
 
     std::shared_ptr<MergedBlockOutputStream> to;
     BlockInputStreamPtr merged_stream;
