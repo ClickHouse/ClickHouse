@@ -226,7 +226,6 @@ static void checkAccessRightsForSelect(
     ContextPtr context,
     const StorageID & table_id,
     const StorageMetadataPtr & table_metadata,
-    const Strings & required_columns,
     const TreeRewriterResult & syntax_analyzer_result)
 {
     if (!syntax_analyzer_result.has_explicit_columns && table_metadata && !table_metadata->getColumns().empty())
@@ -250,10 +249,7 @@ static void checkAccessRightsForSelect(
     }
 
     /// General check.
-    context->checkAccess(AccessType::SELECT, table_id, required_columns);
-
-    /// Also check if expanded aliases can be accessed
-    context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.getExpandedAliases());
+    context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
@@ -551,7 +547,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// The current user should have the SELECT privilege. If this table_id is for a table
         /// function we don't check access rights here because in this case they have been already
         /// checked in ITableFunction::execute().
-        checkAccessRightsForSelect(context, table_id, metadata_snapshot, required_columns, *syntax_analyzer_result);
+        checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_analyzer_result);
 
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))

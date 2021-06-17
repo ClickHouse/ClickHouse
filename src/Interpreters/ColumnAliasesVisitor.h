@@ -60,9 +60,6 @@ public:
         /// private_aliases are from lambda, so these are local names.
         NameSet private_aliases;
 
-        /// expanded_aliases are expanded to their alias expressions;
-        NameSet expanded_aliases;
-
         Data(const ColumnsDescription & columns_, const NameToNameMap & array_join_result_columns_, ContextPtr context_)
             : columns(columns_), context(context_)
         {
