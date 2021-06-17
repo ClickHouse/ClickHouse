@@ -57,7 +57,7 @@ public:
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (isDate(arguments[0].type) && std::is_same_v<ToDataType, DataTypeDate>)
+            if (isDateOrDate32(arguments[0].type) && (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>))
                 throw Exception(
                     "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -103,6 +103,8 @@ public:
 
         if (which.isDate())
             return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+        else if (which.isDate32())
+            return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime())
             return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime64())
@@ -145,6 +147,12 @@ public:
             return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), date_lut)
                 == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
                 ? is_monotonic : is_not_monotonic;
+        }
+        else if (checkAndGetDataType<DataTypeDate32>(&type))
+        {
+            return Transform::FactorTransform::execute(Int32(left.get<UInt64>()), date_lut)
+                   == Transform::FactorTransform::execute(Int32(right.get<UInt64>()), date_lut)
+                   ? is_monotonic : is_not_monotonic;
         }
         else
         {

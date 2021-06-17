@@ -35,6 +35,7 @@ static inline UInt32 dateIsNotSupported(const char * name)
 struct ZeroTransform
 {
     static inline UInt16 execute(UInt16, UInt8, const DateLUTImpl &) { return 0; }
+    static inline UInt16 execute(Int32, UInt8, const DateLUTImpl &) { return 0; }
     static inline UInt16 execute(UInt32, UInt8, const DateLUTImpl &) { return 0; }
     static inline UInt16 execute(Int64, UInt8, const DateLUTImpl &) { return 0; }
 };
@@ -52,6 +53,11 @@ struct ToWeekImpl
     static inline UInt8 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
+        return yw.second;
+    }
+    static inline UInt8 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum(d), week_mode);
         return yw.second;
     }
     static inline UInt8 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
@@ -79,6 +85,11 @@ struct ToYearWeekImpl
         YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
         return yw.first * 100 + yw.second;
     }
+    static inline UInt32 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum (d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
+    }
     static inline UInt32 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
@@ -101,6 +112,10 @@ struct ToStartOfWeekImpl
     {
         return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
 //        return time_zone.toFirstDayNumOfWeek(t, week_mode);
+    }
+    static inline UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
     static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {

@@ -1,5 +1,6 @@
 #pragma once
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/CustomWeekTransforms.h>
@@ -103,6 +104,9 @@ public:
 
         if (which.isDate())
             return CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
+                arguments, result_type, input_rows_count, Transform{});
+        else if (which.isDate32())
+            return CustomWeekTransformImpl<DataTypeDate32, ToDataType>::execute(
                 arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime())
             return CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(

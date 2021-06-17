@@ -24,6 +24,7 @@ struct ExternalResultDescription
         vtFloat64,
         vtString,
         vtDate,
+        vtDate32,
         vtDateTime,
         vtUUID,
         vtDateTime64,
