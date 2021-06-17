@@ -695,7 +695,8 @@ PARTITION BY toYYYYMM(EventDate)
 SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
-The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`. Once a table is created, its storage policy cannot be changed.
+The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`.
+You could change storage policy after table creation with [ALTER TABLE ... MODIFY SETTING] query, new policy should include all old disks and volumes with same names.
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size) setting.
 
