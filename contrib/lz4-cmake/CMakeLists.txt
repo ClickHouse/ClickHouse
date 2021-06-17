@@ -27,7 +27,14 @@ if (NOT EXTERNAL_LZ4_LIBRARY_FOUND)
         "${LIBRARY_DIR}/lib/xxhash.c"
     )
 
-    add_library (lz4 ${SRCS})
+    set (HEADERS
+        "${LIBRARY_DIR}/lib/lz4.h"
+        "${LIBRARY_DIR}/lib/lz4hc.h"
+        "${LIBRARY_DIR}/lib/lz4frame.h"
+        "${LIBRARY_DIR}/lib/xxhash.h"
+    )
+
+    add_library (lz4 ${SRCS} ${HEADERS})
 
     target_compile_definitions (lz4 PUBLIC LZ4_DISABLE_DEPRECATE_WARNINGS=1 USE_XXHASH=1)
     if (SANITIZE STREQUAL "undefined")

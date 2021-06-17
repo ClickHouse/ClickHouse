@@ -4,6 +4,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 
+#include <lz4.h>
 
 namespace DB
 {
