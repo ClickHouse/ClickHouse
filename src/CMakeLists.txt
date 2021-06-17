@@ -458,6 +458,11 @@ if (USE_DATASKETCHES)
     target_include_directories (clickhouse_aggregate_functions SYSTEM BEFORE PRIVATE ${DATASKETCHES_INCLUDE_DIR})
 endif ()
 
+if (USE_LZ4)
+    target_link_libraries (clickhouse_common_io PRIVATE ${LZ4_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
+endif()
+
 dbms_target_link_libraries(PRIVATE _boost_context)
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
