@@ -1,5 +1,6 @@
 #pragma once
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
