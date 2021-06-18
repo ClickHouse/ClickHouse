@@ -451,6 +451,7 @@ LIFETIME(MIN 300 MAX 360)
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
+      <fail_on_connection_loss>true</fail_on_connection_loss>
   </mysql>
 </source>
 ```
@@ -468,6 +469,7 @@ SOURCE(MYSQL(
     table 'table_name'
     where 'id=10'
     invalidate_query 'SQL_QUERY'
+    fail_on_connection_loss 'true'
 ))
 ```
 
@@ -492,6 +494,8 @@ SOURCE(MYSQL(
 
 -   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external-dicts-dict-lifetime.md).
 
+-   `fail_on_connection_loss` – Параметр конфигурации, контролирующий неожиданную потерю соединения во время выполнения запроса. Если `true`, то сразу же возникнет исключение о том, что при выполнении запроса соединения не было. Если `false`, то будут попытки повторить запросы три раза. По умолчанию `false`.
+
 MySQL можно подключить на локальном хосте через сокеты, для этого необходимо задать `host` и `socket`.
 
 Пример настройки:
@@ -507,6 +511,7 @@ MySQL можно подключить на локальном хосте чер�
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
+      <fail_on_connection_loss>true</fail_on_connection_loss>
   </mysql>
 </source>
 ```
@@ -523,6 +528,7 @@ SOURCE(MYSQL(
     table 'table_name'
     where 'id=10'
     invalidate_query 'SQL_QUERY'
+    fail_on_connection_loss 'true'
 ))
 ```
 
