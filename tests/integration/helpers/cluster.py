@@ -208,7 +208,7 @@ class ClickHouseCluster:
             instances_dir_name += '_' + self.name
 
         if 'INTEGRATION_TESTS_RUN_ID' in os.environ:
-            instances_dir_name += '_' + os.environ['INTEGRATION_TESTS_RUN_ID']
+            instances_dir_name += '_' + shlex.quote(os.environ['INTEGRATION_TESTS_RUN_ID'])
 
         self.instances_dir = p.join(self.base_dir, instances_dir_name)
         self.docker_logs_path = p.join(self.instances_dir, 'docker.log')
@@ -428,7 +428,15 @@ class ClickHouseCluster:
             pass
 
     def get_docker_handle(self, docker_id):
-        return self.docker_client.containers.get(docker_id)
+        exception = None
+        for i in range(5):
+            try:
+                return self.docker_client.containers.get(docker_id)
+            except Exception as ex:
+                print("Got exception getting docker handle", str(ex))
+                time.sleep(i * 2)
+                exception = ex
+        raise exception
 
     def get_client_cmd(self):
         cmd = self.client_bin_path
