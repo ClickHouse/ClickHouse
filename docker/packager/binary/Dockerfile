@@ -91,6 +91,9 @@ RUN wget -nv "https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.0
 # Download toolchain for FreeBSD 11.3
 RUN wget -nv https://clickhouse-datasets.s3.yandex.net/toolchains/toolchains/freebsd-11.3-toolchain.tar.xz
 
+# Download toolchain for POWER9 (PPC64le)
+RUN wget -nv https://clickhouse-datasets.s3.yandex.net/toolchains/toolchains/advanced-toolchain-14.0-3-ppc64le.tar.xz
+
 # NOTE: For some reason we have outdated version of gcc-10 in ubuntu 20.04 stable.
 # Current workaround is to use latest version proposed repo. Remove as soon as
 # gcc-10.2 appear in stable repo.
