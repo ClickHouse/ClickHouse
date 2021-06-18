@@ -6,7 +6,6 @@
 #include <optional>
 
 #include <sparsehash/sparse_hash_map>
-#include <ext/range.h>
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>

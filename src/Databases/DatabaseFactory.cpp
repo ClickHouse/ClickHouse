@@ -22,7 +22,7 @@
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
 #    include <Databases/MySQL/ConnectionMySQLSettings.h>
-#    include <Databases/MySQL/DatabaseConnectionMySQL.h>
+#    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #    include <mysqlxx/Pool.h>
@@ -151,7 +151,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
 
-                return std::make_shared<DatabaseConnectionMySQL>(
+                return std::make_shared<DatabaseMySQL>(
                     context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_database_settings), std::move(mysql_pool));
             }
 
