@@ -393,7 +393,8 @@ private:
         Block & block,
         const Names & key_names_left,
         const Block & block_with_columns_to_add,
-        const Maps & maps) const;
+        const Maps & maps,
+        bool is_join_get = false) const;
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 

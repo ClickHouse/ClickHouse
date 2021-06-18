@@ -682,18 +682,21 @@ class AddedColumns
 public:
     using TypeAndNames = std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>>;
 
-    AddedColumns(const Block & block_with_columns_to_add,
-                 const Block & block,
-                 const Block & saved_block_sample,
-                 const HashJoin & join,
-                 const ColumnRawPtrs & key_columns_,
-                 const Sizes & key_sizes_,
-                 bool is_asof_join)
+    AddedColumns(
+        const Block & block_with_columns_to_add,
+        const Block & block,
+        const Block & saved_block_sample,
+        const HashJoin & join,
+        const ColumnRawPtrs & key_columns_,
+        const Sizes & key_sizes_,
+        bool is_asof_join,
+        bool is_join_get_)
         : key_columns(key_columns_)
         , key_sizes(key_sizes_)
         , rows_to_add(block.rows())
         , asof_type(join.getAsofType())
         , asof_inequality(join.getAsofInequality())
+        , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
         if (is_asof_join)
@@ -734,8 +737,25 @@ public:
         if constexpr (has_defaults)
             applyLazyDefaults();
 
-        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
-            columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
+        if (is_join_get)
+        {
+            /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
+            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            {
+                const auto & column = *block.getByPosition(right_indexes[j]).column;
+                if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[j].get()); nullable_col && !column.isNullable())
+                    nullable_col->insertFromNotNullable(column, row_num);
+                else
+                    columns[j]->insertFrom(column, row_num);
+            }
+        }
+        else
+        {
+            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            {
+                columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
+            }
+        }
     }
 
     void appendDefaultRow()
@@ -772,6 +792,7 @@ private:
     std::optional<TypeIndex> asof_type;
     ASOF::Inequality asof_inequality;
     const IColumn * left_asof_key = nullptr;
+    bool is_join_get;
 
     void addColumn(const ColumnWithTypeAndName & src_column)
     {
@@ -1006,7 +1027,8 @@ void HashJoin::joinBlockImpl(
     Block & block,
     const Names & key_names_left,
     const Block & block_with_columns_to_add,
-    const Maps & maps_) const
+    const Maps & maps_,
+    bool is_join_get) const
 {
     constexpr bool is_any_join = STRICTNESS == ASTTableJoin::Strictness::Any;
     constexpr bool is_all_join = STRICTNESS == ASTTableJoin::Strictness::All;
@@ -1050,7 +1072,7 @@ void HashJoin::joinBlockImpl(
       * For ASOF, the last column is used as the ASOF column
       */
 
-    AddedColumns added_columns(block_with_columns_to_add, block, savedBlockSample(), *this, left_key_columns, key_sizes, is_asof_join);
+    AddedColumns added_columns(block_with_columns_to_add, block, savedBlockSample(), *this, left_key_columns, key_sizes, is_asof_join, is_join_get);
     bool has_required_right_keys = (required_right_keys.columns() != 0);
     added_columns.need_filter = need_filter || has_required_right_keys;
 
@@ -1257,7 +1279,7 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
     static_assert(!MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>::flagged,
                   "joinGet are not protected from hash table changes between block processing");
     joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
-        keys, key_names_right, block_with_columns_to_add, std::get<MapsOne>(data->maps));
+        keys, key_names_right, block_with_columns_to_add, std::get<MapsOne>(data->maps), /* is_join_get  */ true);
     return keys.getByPosition(keys.columns() - 1);
 }
 
