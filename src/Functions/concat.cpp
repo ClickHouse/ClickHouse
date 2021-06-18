@@ -9,8 +9,8 @@
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <ext/map.h>
-#include <ext/range.h>
+#include <common/map.h>
+#include <common/range.h>
 
 #include "formatString.h"
 
@@ -33,8 +33,8 @@ class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    explicit ConcatImpl(ContextConstPtr context_) : context(context_) {}
-    static FunctionPtr create(ContextConstPtr context) { return std::make_shared<ConcatImpl>(context); }
+    explicit ConcatImpl(ContextPtr context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatImpl>(context); }
 
     String getName() const override { return name; }
 
@@ -60,7 +60,7 @@ public:
                     + ", should be at most " + std::to_string(FormatImpl::argument_threshold),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (const auto arg_idx : ext::range(0, arguments.size()))
+        for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
@@ -85,7 +85,7 @@ public:
     }
 
 private:
-    ContextWeakConstPtr context;
+    ContextWeakPtr context;
 
     ColumnPtr executeBinary(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
@@ -191,9 +191,9 @@ class ConcatOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionOverloadResolverPtr create(ContextConstPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
 
-    explicit ConcatOverloadResolver(ContextConstPtr context_) : context(context_) {}
+    explicit ConcatOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -207,7 +207,7 @@ public:
         }
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                FunctionConcat::create(context), ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
+                FunctionConcat::create(context), collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -223,7 +223,7 @@ public:
     }
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
 };
 
 }

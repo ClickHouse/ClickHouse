@@ -24,7 +24,7 @@ class FunctionDateOrDateTimeToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
 
     String getName() const override
     {

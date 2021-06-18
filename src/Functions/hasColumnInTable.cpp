@@ -25,16 +25,16 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction, WithConstContext
+class FunctionHasColumnInTable : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "hasColumnInTable";
-    static FunctionPtr create(ContextConstPtr context_)
+    static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext());
     }
 
-    explicit FunctionHasColumnInTable(ContextConstPtr global_context_) : WithConstContext(global_context_)
+    explicit FunctionHasColumnInTable(ContextPtr global_context_) : WithContext(global_context_)
     {
     }
 

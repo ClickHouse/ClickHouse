@@ -18,7 +18,7 @@ using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 class DiskSelector
 {
 public:
-    DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context);
+    DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
     DiskSelector(const DiskSelector & from) : disks(from.disks) { }
 
     DiskSelectorPtr updateFromConfig(

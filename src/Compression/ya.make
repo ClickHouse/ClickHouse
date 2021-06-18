@@ -5,7 +5,7 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/lz4
-    contrib/libs/zstd
+    contrib/libs/zstd/include
 )
 
 PEERDIR(

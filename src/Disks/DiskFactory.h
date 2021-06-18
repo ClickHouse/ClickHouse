@@ -26,7 +26,7 @@ public:
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextConstPtr context,
+        ContextPtr context,
         const DisksMap & map)>;
 
     static DiskFactory & instance();
@@ -37,7 +37,7 @@ public:
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextConstPtr context,
+        ContextPtr context,
         const DisksMap & map) const;
 
 private:
