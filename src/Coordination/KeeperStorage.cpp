@@ -263,6 +263,7 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
             }
             else
             {
+
                 auto & session_auth_ids = storage.session_and_auth[session_id];
 
                 KeeperStorage::Node created_node;
@@ -280,6 +281,7 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                 created_node.acl_id = acl_id;
                 created_node.stat.czxid = zxid;
                 created_node.stat.mzxid = zxid;
+                created_node.stat.pzxid = zxid;
                 created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
                 created_node.stat.mtime = created_node.stat.ctime;
                 created_node.stat.numChildren = 0;
@@ -302,12 +304,15 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                 }
 
                 auto child_path = getBaseName(path_created);
-                container.updateValue(parent_path, [child_path] (KeeperStorage::Node & parent)
+                int64_t prev_parent_zxid;
+                container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid] (KeeperStorage::Node & parent)
                 {
                     /// Increment sequential number even if node is not sequential
                     ++parent.seq_num;
                     parent.children.insert(child_path);
                     ++parent.stat.cversion;
+                    prev_parent_zxid = parent.stat.pzxid;
+                    parent.stat.pzxid = zxid;
                     ++parent.stat.numChildren;
                 });
 
@@ -317,7 +322,7 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                 if (request.is_ephemeral)
                     ephemerals[session_id].emplace(path_created);
 
-                undo = [&storage, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path, acl_id]
+                undo = [&storage, prev_parent_zxid, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path, acl_id]
                 {
                     storage.container.erase(path_created);
                     storage.acl_map.removeUsage(acl_id);
@@ -325,11 +330,12 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                     if (is_ephemeral)
                         storage.ephemerals[session_id].erase(path_created);
 
-                    storage.container.updateValue(parent_path, [child_path] (KeeperStorage::Node & undo_parent)
+                    storage.container.updateValue(parent_path, [child_path, prev_parent_zxid] (KeeperStorage::Node & undo_parent)
                     {
                         --undo_parent.stat.cversion;
                         --undo_parent.stat.numChildren;
                         --undo_parent.seq_num;
+                        undo_parent.stat.pzxid = prev_parent_zxid;
                         undo_parent.children.erase(child_path);
                     });
                 };
@@ -536,6 +542,7 @@ struct KeeperStorageSetRequest final : public KeeperStorageRequest
         }
         else if (request.version == -1 || request.version == it->value.stat.version)
         {
+
             auto prev_node = it->value;
 
             auto itr = container.updateValue(request.path, [zxid, request] (KeeperStorage::Node & value)
@@ -901,9 +908,14 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
     KeeperStorage::ResponsesForSessions results;
     if (new_last_zxid)
     {
+        LOG_INFO(&Poco::Logger::get("DEBUG"), "GOT ZXID {}", *new_last_zxid);
         if (zxid >= *new_last_zxid)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller or equal than current {}. It's a bug", *new_last_zxid, zxid);
         zxid = *new_last_zxid;
+    }
+    else
+    {
+        LOG_INFO(&Poco::Logger::get("DEBUG"), "NO ZXID PROVIDED");
     }
 
     session_expiry_queue.update(session_id, session_and_timeout[session_id]);
