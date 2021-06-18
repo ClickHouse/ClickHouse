@@ -59,6 +59,9 @@ int mainEntryClickHouseGitImport(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeper(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_WEB_SERVER_EXPORTER
+int mainEntryClickHouseWebServerExporter(int argc, char ** argv);
+#endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
@@ -125,6 +128,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
+#endif
+#if ENABLE_CLICKHOUSE_WEB_SERVER_EXPORTER
+    {"web-server-exporter", mainEntryClickHouseWebServerExporter},
 #endif
     {"hash-binary", mainEntryClickHouseHashBinary},
 };
