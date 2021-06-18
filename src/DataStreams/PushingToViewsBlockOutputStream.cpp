@@ -117,12 +117,6 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             InterpreterInsertQuery interpreter(insert_query_ptr, insert_context);
             BlockIO io = interpreter.execute();
             out = io.out;
-            LOG_WARNING(
-                log,
-                "Pushing from {} to {} {}.",
-                storage->getStorageID().getNameForLogs(),
-                inner_table_id.getNameForLogs(),
-                inner_table->getStorageID().getFullTableName());
         }
         else if (auto * live_view = dynamic_cast<const StorageLiveView *>(dependent_table.get()))
         {
@@ -136,7 +130,13 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
 
         QueryViewsLogElement::ViewRuntimeStats runtime_stats{
-            0, type, std::make_shared<ThreadStatus>(), select_context->getInitialQueryId(), std::chrono::system_clock::now(), target_name};
+            target_name,
+            type,
+            select_context->getInitialQueryId(),
+            std::make_shared<ThreadStatus>(),
+            0,
+            std::chrono::system_clock::now(),
+            QueryViewsLogElement::Status::QUERY_START};
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, std::move(runtime_stats)});
     }
 
@@ -200,17 +200,6 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     {
         auto thread_group = CurrentThread::getGroup();
         pool.scheduleOrThrowOnError([=, &view, this] {
-            LOG_WARNING(
-                log,
-                "Pushing from {} to {}. {}. Current thread {} {} {} {}. WRITE START",
-                storage->getStorageID().getNameForLogs(),
-                view.table_id.getNameForLogs(),
-                uint64_t(view.out.get()),
-                view.runtime_stats.thread_status->progress_in.read_rows,
-                view.runtime_stats.thread_status->progress_in.written_rows,
-                view.runtime_stats.thread_status->progress_out.read_rows,
-                view.runtime_stats.thread_status->progress_out.written_rows);
-            //                current_thread = view.thread_status.get();
 
             setThreadName("PushingToViews");
             if (thread_group)
@@ -224,20 +213,12 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             catch (...)
             {
                 view.exception = std::current_exception();
-                // TODO: Stop processing on exception
             }
+            /* process might have set view.exception without throwing */
+            if (view.exception)
+                view.runtime_stats.setStatus(QueryViewsLogElement::Status::EXCEPTION_WHILE_PROCESSING);
             view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
             // TODO: Update other counters
-            LOG_WARNING(
-                log,
-                "Pushing from {} to {}. {}. Current thread {} {} {} {}. WRITE END",
-                storage->getStorageID().getNameForLogs(),
-                view.table_id.getNameForLogs(),
-                uint64_t(view.out.get()),
-                view.runtime_stats.thread_status->progress_in.read_rows,
-                view.runtime_stats.thread_status->progress_in.written_rows,
-                view.runtime_stats.thread_status->progress_out.read_rows,
-                view.runtime_stats.thread_status->progress_out.written_rows);
         });
     }
     // Wait for concurrent view processing
@@ -259,8 +240,9 @@ void PushingToViewsBlockOutputStream::writePrefix()
         }
         catch (Exception & ex)
         {
-            view.exception = std::current_exception();
             ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
+            view.exception = std::current_exception();
+            view.runtime_stats.setStatus(QueryViewsLogElement::Status::EXCEPTION_WHILE_PROCESSING);
             log_query_views();
             throw;
         }
@@ -270,8 +252,6 @@ void PushingToViewsBlockOutputStream::writePrefix()
 
 void PushingToViewsBlockOutputStream::writeSuffix()
 {
-    LOG_WARNING(log, "STARTING {} WITH {}", uint64_t(this), views.size());
-
     if (output)
         output->writeSuffix();
 
@@ -293,17 +273,6 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             continue;
 
         pool.scheduleOrThrowOnError([&] {
-            LOG_WARNING(
-                log,
-                "Pushing from {} to {}. {}. Current thread {} {} {} {}. WRITESUFFIX START",
-                storage->getStorageID().getNameForLogs(),
-                view.table_id.getNameForLogs(),
-                uint64_t(view.out.get()),
-                view.runtime_stats.thread_status->progress_in.read_rows,
-                view.runtime_stats.thread_status->progress_in.written_rows,
-                view.runtime_stats.thread_status->progress_out.read_rows,
-                view.runtime_stats.thread_status->progress_out.written_rows);
-            //            current_thread = view.thread_status.get();
             setThreadName("PushingToViews");
             if (thread_group)
                 CurrentThread::attachToIfDetached(thread_group);
@@ -311,10 +280,8 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             Stopwatch watch;
             try
             {
-                LOG_WARNING(log, "BEFORE CALL {} -> {}", uint64_t(this), uint64_t(view.out.get()));
                 view.out->writeSuffix();
-                LOG_WARNING(log, "AFTER CALL {} -> {}", uint64_t(this), uint64_t(view.out.get()));
-                //Set status here
+                view.runtime_stats.setStatus(QueryViewsLogElement::Status::QUERY_FINISH);
             }
             catch (...)
             {
@@ -328,16 +295,6 @@ void PushingToViewsBlockOutputStream::writeSuffix()
                 storage->getStorageID().getNameForLogs(),
                 view.table_id.getNameForLogs(),
                 view.runtime_stats.elapsed_ms);
-            LOG_WARNING(
-                log,
-                "Pushing from {} to {}. {}. Current thread {} {} {} {}. WRITESUFFIX END",
-                storage->getStorageID().getNameForLogs(),
-                view.table_id.getNameForLogs(),
-                uint64_t(view.out.get()),
-                view.runtime_stats.thread_status->progress_in.read_rows,
-                view.runtime_stats.thread_status->progress_in.written_rows,
-                view.runtime_stats.thread_status->progress_out.read_rows,
-                view.runtime_stats.thread_status->progress_out.written_rows);
         });
     }
     // Wait for concurrent view processing
@@ -351,7 +308,6 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             storage->getStorageID().getNameForLogs(), views.size(),
             milliseconds);
     }
-    LOG_WARNING(log, "FINISHING {}", uint64_t(this));
     log_query_views();
 }
 
@@ -432,7 +388,6 @@ void PushingToViewsBlockOutputStream::check_exceptions_in_views()
     {
         if (view.exception)
         {
-            LOG_WARNING(log, "View exception {}", view.table_id.getNameForLogs());
             log_query_views();
             std::rethrow_exception(view.exception);
         }
@@ -444,28 +399,19 @@ void PushingToViewsBlockOutputStream::log_query_views()
     // TODO: Check settings
     auto views_log = getContext()->getQueryViewsLog();
     if (!views_log)
-    {
-        LOG_WARNING(log, "NO VIEWS LOG"); // NOCHECKIN
         return;
-    }
-    for (auto const & view : views)
+
+    for (auto & view : views)
     {
-        LOG_WARNING(
-            log,
-            "LOG LOG LOG from {} to {}. {}. Progress {} {} {} {}",
-            storage->getStorageID().getNameForLogs(),
-            view.table_id.getNameForLogs(),
-            uint64_t(view.out.get()),
-            view.runtime_stats.thread_status->progress_in.read_rows,
-            view.runtime_stats.thread_status->progress_in.written_rows,
-            view.runtime_stats.thread_status->progress_out.read_rows,
-            view.runtime_stats.thread_status->progress_out.written_rows);
+        if (view.runtime_stats.event_status == QueryViewsLogElement::Status::QUERY_START)
+            view.runtime_stats.setStatus(QueryViewsLogElement::Status::EXCEPTION_WHILE_PROCESSING);
         try
         {
             view.runtime_stats.thread_status->logToQueryViewsLog(*views_log, view);
         }
         catch (...)
         {
+            LOG_WARNING(log, getCurrentExceptionMessage(true));
         }
     }
 }
