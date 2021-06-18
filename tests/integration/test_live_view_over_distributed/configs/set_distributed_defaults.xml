@@ -1,0 +1,35 @@
+<yandex>
+    <profiles>
+        <default>
+            <connections_with_failover_max_tries>3</connections_with_failover_max_tries>
+            <connect_timeout_with_failover_ms>1000</connect_timeout_with_failover_ms>
+            <min_insert_block_size_rows>1</min_insert_block_size_rows>
+        </default>
+        <delays>
+            <connections_with_failover_max_tries>5</connections_with_failover_max_tries>
+            <connect_timeout_with_failover_ms>3000</connect_timeout_with_failover_ms>
+            <min_insert_block_size_rows>1</min_insert_block_size_rows>
+        </delays>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+        <ready_to_wait>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>delays</profile>
+            <quota>default</quota>
+        </ready_to_wait>
+    </users>
+
+    <quotas><default></default></quotas>
+</yandex>

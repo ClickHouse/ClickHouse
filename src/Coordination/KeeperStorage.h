@@ -5,7 +5,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/SessionExpiryQueue.h>
-#include <Coordination/ACLMap.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,7 +30,7 @@ public:
     struct Node
     {
         String data;
-        uint64_t acl_id = 0; /// 0 -- no ACL by default
+        Coordination::ACLs acls{};
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
@@ -52,28 +51,12 @@ public:
         Coordination::ZooKeeperRequestPtr request;
     };
 
-    struct AuthID
-    {
-        std::string scheme;
-        std::string id;
-
-        bool operator==(const AuthID & other) const
-        {
-            return scheme == other.scheme && id == other.id;
-        }
-    };
-
     using RequestsForSessions = std::vector<RequestForSession>;
 
     using Container = SnapshotableHashTable<Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionIDs = std::vector<int64_t>;
-
-    /// Just vector of SHA1 from user:password
-    using AuthIDs = std::vector<AuthID>;
-    using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
-    SessionAndAuth session_and_auth;
 
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
 
@@ -82,7 +65,6 @@ public:
     SessionAndWatcher sessions_and_watchers;
     SessionExpiryQueue session_expiry_queue;
     SessionAndTimeout session_and_timeout;
-    ACLMap acl_map;
 
     int64_t zxid{0};
     bool finalized{false};
@@ -97,10 +79,8 @@ public:
         return zxid;
     }
 
-    const String superdigest;
-
 public:
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_);
+    KeeperStorage(int64_t tick_time_ms);
 
     int64_t getSessionID(int64_t session_timeout_ms)
     {

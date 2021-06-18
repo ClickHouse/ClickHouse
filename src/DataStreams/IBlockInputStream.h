@@ -158,7 +158,7 @@ public:
 
     /** Set the approximate total number of rows to read.
       */
-    void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
+    virtual void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
 
 
     /** Ask to abort the receipt of data as soon as possible.

@@ -1,11 +1,11 @@
 #pragma once
 
 #include <common/types.h>
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitors.h>
 #include "Sources.h"
 #include "Sinks.h"
 #include <Core/AccurateComparison.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include "GatherUtils.h"
 
 
@@ -13,6 +13,7 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GatherUtils
@@ -44,7 +45,11 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 
         if constexpr (OverBigInt<T> || OverBigInt<U>)
         {
-            if constexpr (IsDecimalNumber<T>)
+            if constexpr (std::is_same_v<U, UInt128>)
+            {
+                throw Exception("No conversion between UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
+            }
+            else if constexpr (IsDecimalNumber<T>)
                 dst = static_cast<NativeU>(src.value);
             else
                 dst = static_cast<NativeU>(src);
@@ -213,7 +218,7 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
     };
 
     size_t size_to_reserve = 0;
-    for (auto i : collections::range(0, sources_num))
+    for (auto i : ext::range(0, sources_num))
     {
         auto & source = array_sources[i];
         is_const[i] = source->isConst();
@@ -233,7 +238,7 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
 
     while (!sink.isEnd())
     {
-        for (auto i : collections::range(0, sources_num))
+        for (auto i : ext::range(0, sources_num))
         {
             auto & source = array_sources[i];
             if (is_const[i])
@@ -663,7 +668,7 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnU
 {
     auto size = result.size();
     auto & data = result.getData();
-    for (auto row : collections::range(0, size))
+    for (auto row : ext::range(0, size))
     {
         data[row] = static_cast<UInt8>(sliceHas<search_type>(first.getWhole(), second.getWhole()));
         first.next();

@@ -1,13 +1,13 @@
 #pragma once
 
+#include <Core/Settings.h>
+#include <Poco/Util/Application.h>
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <loggers/Loggers.h>
-#include <Poco/Util/Application.h>
-#include <Common/ProgressBar.h>
+#include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -36,22 +36,18 @@ private:
     std::string getInitialCreateTableQuery();
 
     void tryInitPath();
-    void applyCmdOptions(ContextMutablePtr context);
-    void applyCmdSettings(ContextMutablePtr context);
+    void applyCmdOptions(ContextPtr context);
+    void applyCmdSettings(ContextPtr context);
     void processQueries();
     void setupUsers();
     void cleanup();
 
-
 protected:
     SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
+    ContextPtr global_context;
 
     /// Settings specified via command line args
     Settings cmd_settings;
-    ProgressBar progress_bar;
-    Progress progress;
-    Stopwatch watch;
 
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 };
