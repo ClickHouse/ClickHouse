@@ -30,7 +30,6 @@ def cleanup_environment():
 
     yield
 
-
 def pytest_addoption(parser):
     parser.addoption("--run-id", default="", help="run-id is used as postfix in _instances_{} directory")
 
