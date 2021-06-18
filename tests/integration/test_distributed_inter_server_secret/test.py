@@ -77,7 +77,7 @@ def get_query_user_info(node, id_):
         log_comment = '{}' AND
         query NOT LIKE '%system.query_log%' AND
         type = 'QueryFinish'
-    """.format(id_))
+    """.format(id_)).strip().split('\t')
 
 # @return -- settings
 def get_query_setting_on_shard(node, query_pattern, setting):
@@ -86,7 +86,7 @@ def get_query_setting_on_shard(node, query_pattern, setting):
     SELECT Settings['{}']
     FROM system.query_log
     WHERE
-        query LIKE '%{}%' AND
+        log_comment = '{}' AND
         NOT is_initial_query AND
         query NOT LIKE '%system.query_log%' AND
         type = 'QueryFinish'
