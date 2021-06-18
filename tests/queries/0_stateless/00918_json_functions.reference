@@ -58,7 +58,7 @@ Friday
 (3,5)
 (3,0)
 --JSONExtractKeysAndValues--
-[('a','hello')]
+[('a','hello'),('b','[-100,200,300]')]
 [('b',[-100,200,300])]
 [('a','hello'),('b','world')]
 [('a',5),('b',7),('c',11)]
@@ -160,7 +160,7 @@ Friday
 (3,5)
 (3,0)
 --JSONExtractKeysAndValues--
-[('a','hello')]
+[('a','hello'),('b','[-100,200,300]')]
 [('b',[-100,200,300])]
 [('a','hello'),('b','world')]
 [('a',5),('b',7),('c',11)]
