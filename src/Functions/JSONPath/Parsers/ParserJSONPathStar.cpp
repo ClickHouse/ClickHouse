@@ -6,7 +6,6 @@ namespace DB
 {
 bool ParserJSONPathStar::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-
     if (pos->type != TokenType::OpeningSquareBracket)
     {
         return false;
@@ -22,8 +21,7 @@ bool ParserJSONPathStar::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     ++pos;
 
-    auto star = std::make_shared<ASTJSONPathStar>();
-    node = star;
+    node = std::make_shared<ASTJSONPathStar>();
 
     return true;
 }
