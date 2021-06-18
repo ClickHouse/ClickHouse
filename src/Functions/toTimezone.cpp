@@ -25,7 +25,7 @@ class FunctionToTimezone : public IFunction
 {
 public:
     static constexpr auto name = "toTimezone";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionToTimezone>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToTimezone>(); }
 
     String getName() const override
     {
