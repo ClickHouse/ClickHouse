@@ -1,0 +1,116 @@
+#include <Disks/IDisk.h>
+
+#include <Common/Exception.h>
+#include <Common/TerminalSize.h>
+
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromHTTP.h>
+#include <IO/copyData.h>
+#include <IO/createReadBufferFromFileBase.h>
+
+#include <boost/program_options.hpp>
+#include <re2/re2.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
+
+namespace DB
+{
+
+void processTableFiles(const String & url, const fs::path & path, const String & files_prefix)
+{
+    WriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(url) / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
+    fs::directory_iterator dir_end;
+
+    auto process_file = [&](const String & file_name, const String & file_path)
+    {
+        auto remote_file_name = files_prefix + "-" + file_name;
+        writeText(remote_file_name, metadata_buf);
+        writeChar('\t', metadata_buf);
+        writeIntText(fs::file_size(file_path), metadata_buf);
+        writeChar('\n', metadata_buf);
+
+        auto src_buf = createReadBufferFromFileBase(file_path, fs::file_size(file_path), 0, 0, nullptr);
+        WriteBufferFromHTTP dst_buf(Poco::URI(fs::path(url) / remote_file_name), Poco::Net::HTTPRequest::HTTP_PUT);
+
+        copyData(*src_buf, dst_buf);
+        dst_buf.next();
+        dst_buf.finalize();
+    };
+
+    for (fs::directory_iterator dir_it(path); dir_it != dir_end; ++dir_it)
+    {
+        if (dir_it->is_directory())
+        {
+            fs::directory_iterator files_end;
+            for (fs::directory_iterator file_it(dir_it->path()); file_it != files_end; ++file_it)
+            {
+                process_file(dir_it->path().filename().string() + "-" + file_it->path().filename().string(), file_it->path());
+            }
+        }
+        else
+        {
+            process_file(dir_it->path().filename(), dir_it->path());
+        }
+    }
+
+    metadata_buf.next();
+    metadata_buf.finalize();
+}
+
+}
+
+
+int mainEntryClickHouseWebServerExporter(int argc, char ** argv)
+{
+    using namespace DB;
+    namespace po = boost::program_options;
+
+    po::options_description description("Allowed options", getTerminalWidth());
+    description.add_options()
+        ("help,h", "produce help message")
+        ("metadata-path", po::value<std::string>(), "Metadata path (select data_paths from system.tables where name='table_name'")
+        ("url", po::value<std::string>(), "Web server url")
+        ("files-prefix", po::value<std::string>(), "Prefix for stored files");
+
+    po::parsed_options parsed = po::command_line_parser(argc, argv).options(description).run();
+    po::variables_map options;
+    po::store(parsed, options);
+    po::notify(options);
+
+    if (options.empty() || options.count("help"))
+    {
+        std::cout << description << std::endl;
+        exit(0);
+    }
+
+    String url, metadata_path, files_prefix;
+
+    if (options.count("metadata-path"))
+        metadata_path = options["metadata-path"].as<std::string>();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No metadata-path option passed");
+
+    if (options.count("files-prefix"))
+        files_prefix = options["files-prefix"].as<std::string>();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No files-prefix option passed");
+
+    fs::path fs_path = fs::canonical(metadata_path);
+    re2::RE2 matcher("(.*/[\\w]{3}/[\\w]{8}-[\\w]{4}-[\\w]{4}-[\\w]{4}-[\\w]{12})/(.*)");
+
+    if (!re2::RE2::FullMatch(metadata_path, matcher))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected path: {}", metadata_path);
+
+    if (options.count("url"))
+        url = options["url"].as<std::string>();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No url option passed");
+
+    processTableFiles(url, fs_path, files_prefix);
+
+    return 0;
+}
