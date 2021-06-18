@@ -1,77 +1,19 @@
 import os.path
 import enum
 from io import BytesIO
-
-
-gcno_dir = "/home/clickhouse/cov/src/CMakeFiles/dbms.dir/Core/"
-file_name = "NamesAndTypes.cpp.gcno"
-
-"""
-Records are not nested, but there is a record hierarchy.  Tag numbers reflect this hierarchy.  Tags are unique
-across note and data files.  Some record types have a varying amount of data.  The LENGTH is the number of 4bytes
-that follow and is usually used to determine how much data.  The tag value is split into 4 8-bit fields, one for
-each of four possible levels.  The most significant is allocated first.  Unused levels are zero.  Active levels are
-odd-valued, so that the LSB of the level is one.  A sub-level incorporates the values of its superlevels.  This
-formatting allows you to determine the tag hierarchy, without understanding the tags themselves, and is similar
-to the standard section numbering used in technical documents.  Level values [1..3f] are used for common tags, 
-values [41..9f] for the notes file and [a1..ff] for the data
-file.
-
-   The basic block graph file contains the following records
-       note: unit function-graph*
-          unit: header uint32:checksum string:source
-          function-graph: announce_function basic_blocks {arcs | lines}*
-              announce_function: header uint32:ident uint32:checksum string:name string:source uint32:lineno
-              basic_block: header uint32:flags*
-          arcs: header uint32:block_no arc*
-              arc:  uint32:dest_block uint32:flags
-          lines: header uint32:block_no line*
-               uint32:0 string:NULL
-              line:  uint32:line_no | uint32:0 string:filename
-
-The BASIC_BLOCK record holds per-bb flags.  The number of blocks can be inferred from its data length.  There is
-one ARCS record per basic block.  The number of arcs from a bb is implicit from the data length.  It enumerates the 
-destination bb and per-arc flags. There is one LINES record per basic block, it enumerates the source lines which 
-belong to that basic block.  Source file names are introduced by a line number of 0, following lines are from the new
-source file.  The initial source file for the function is NULL, but the current source file should be remembered from one
-LINES record to the next.  The end of a block is indicated by an empty filename - this does not reset the current source
-file.  Note there is no ordering of the ARCS and LINES records: they may be in any order, interleaved in any manner.
-The current filename follows the order the LINES records are stored in the file, *not* the ordering of the blocks they
-are for.
-
-   The data file contains the following records.
-        data: {unit function-data* summary:object summary:program*}*
-    unit: header uint32:checksum
-
-        function-data:    announce_function arc_counts
-    announce_function: header uint32:ident uint32:checksum
-    arc_counts: header uint64:count*
-
-    summary: uint32:checksum {count-summary} GCOV_COUNTERS
-    count-summary:    uint32:num uint32:runs uint64:sum
-            uint64:max uint64:sum_max
-
-The ANNOUNCE_FUNCTION record is the same as that in the note file, but without the source location.  The ARC_COUNTS 
-gives the counter values for those arcs that are instrumented.  The SUMMARY records give information about the whole
-object file and about the whole program.  The checksum is used for whole program summaries, and disambiguates different
-programs which include the same instrumented object file.  There may be several program summaries, each with a unique
-checksum.  The object summary's checksum is zero.  Note that the data file might contain information from several runs
-concatenated, or the data might be merged.
-
-This file is included by both the compiler, gcov tools and the runtime support library libgcov. IN_LIBGCOV and IN_GCOV
-are used to distinguish which case is which.  If IN_LIBGCOV is nonzero, libgcov is being built. If IN_GCOV is nonzero,
-the gcov tools are being built. Otherwise the compiler is being built. IN_GCOV may be positive or negative. If positive,
-we are compiling a tool that requires additional functions (see the code for knowledge of what those functions are).
-
-__copyright__ = "Copyright 2012-2020, Myron W Walker"
-__email__ = "myron.walker@automationmojo.com"
-"""
-
 import base64
 import operator
 import os
 import sys
 import struct
+
+gcno_dir = "/home/clickhouse/cov/src/CMakeFiles/dbms.dir/Core/"
+file_name = "NamesAndTypes.cpp.gcno"
+
+"""
+__copyright__ = "Copyright 2012-2020, Myron W Walker"
+__email__ = "myron.walker@automationmojo.com"
+"""
 
 class GCovInfoBranch:
     def __init__(self, lineno, blockno, branchno, taken=None):
@@ -109,103 +51,6 @@ class GCovInfoLine:
 
     def set_check_sum(self, checkSum):
         self.check_sum = checkSum
-
-class GCovInfoSourcefileWriter:
-    def __init__(self, sourcefile, testname=None):
-        self.test_name = ""
-        self.sourcefile = sourcefile
-        self.branch_traces = []
-        self.function_traces = []
-        self.line_traces = []
-
-        if testname is not None:
-            self.test_name = testname
-
-        return
-
-    def add_branch_trace(self, lineno, blockno, branchno, taken=None):
-        branchTrace = GCovInfoBranch(lineno, blockno, branchno, taken)
-        self.branch_traces.append(branchTrace)
-        return branchTrace
-
-    def add_function_trace(self, funcname, lineno, executionCount=0):
-        funcTrace = GCovInfoFunction(funcname, lineno, executionCount)
-        self.function_traces.append(funcTrace)
-
-        return funcTrace
-
-    def add_line_trace(self, lineno, executionCount=0, checkSum=None):
-        lineTrace = GCovInfoLine(lineno, executionCount, checkSum)
-        self.line_traces.append(lineTrace)
-        return lineTrace
-
-    def write_to(self, fileHandle):
-        """
-        """
-        # --------------------------------------------------
-        # Write out the Sourcefile name
-        # --------------------------------------------------
-        sourcefile = self.sourcefile
-        fileHandle.write("SF:%s\n" % sourcefile)
-
-        # --------------------------------------------------
-        # Write out the Function traces
-        # --------------------------------------------------
-        functionsCount = len(self.function_traces)
-        functionsHit = 0
-
-        for ftrace in self.function_traces:
-            fileHandle.write("FN:%d,%s\n" % (ftrace.line_number, ftrace.function_name))
-
-        for ftrace in self.function_traces:
-            if (ftrace.execution_count > 0):
-                functionsHit = functionsHit + 1
-            fileHandle.write("FNDA:%d,%s\n" % (ftrace.execution_count, ftrace.function_name))
-
-        fileHandle.write("FNF:%d\n" % functionsCount)
-        fileHandle.write("FNH:%d\n" % functionsHit)
-
-        # --------------------------------------------------
-        # Write out the Branch traces
-        # --------------------------------------------------
-        branchesCount = len(self.branch_traces)
-        branchesHit = 0
-
-        if branchesCount > 0:
-            for btrace in self.branch_traces:
-                if (btrace.taken_counter is not None):
-                    branchesHit = branchesHit + 1
-                    fileHandle.write("BRDA:%d,%d,%d,%d\n" % (btrace.line_number, btrace.block_number, btrace.branch_number, btrace.taken_counter))
-                else:
-                    fileHandle.write("BRDA:%d,%d,%d,-\n" % (btrace.line_number, btrace.block_number, btrace.branch_number))
-
-            fileHandle.write("BRF:%d\n" % branchesCount)
-            fileHandle.write("BRH:%d\n" % branchesHit)
-
-        # --------------------------------------------------
-        # Write out the Line traces
-        # --------------------------------------------------
-        linesCount = len(self.line_traces)
-        linesHit = 0
-
-        if linesCount > 0:
-            for ltrace in self.line_traces:
-                if ltrace.execution_count > 0:
-                    linesHit = linesHit + 1
-                if ltrace.check_sum is not None:
-                    fileHandle.write("DA:%d,%d,%d\n" % (ltrace.line_number, ltrace.execution_count, ltrace.check_sum))
-                else:
-                    fileHandle.write("DA:%d,%d\n" % (ltrace.line_number, ltrace.execution_count))
-
-            fileHandle.write("LF:%d\n" % linesCount)
-            fileHandle.write("LH:%d\n" % linesHit)
-
-        # --------------------------------------------------
-        # Write out the end of record marker
-        # --------------------------------------------------
-        fileHandle.write("end_of_record\n")
-
-        return
 
 class GCovInfoFileWriter:
     def __init__(self, traceFile, testname=None):
@@ -595,15 +440,11 @@ class GraphBlock():
         return
 
 class GraphFunction():
-    def __init__(self, record):
-        self.ident = record.ident
-        self.lineno_checksum = record.lineno_checksum
-        self.cfg_checksum = record.cfg_checksum
-
-        self.name = record.name
-        self.filename = record.filename
-
-        self.start_line = record.start_line
+    def __init__(self, ident, name, filename, start_line):
+        self.ident = ident
+        self.name = name
+        self.filename = filename
+        self.start_line = start_line
 
         self.blocks = None
         self.block_count = 0
@@ -616,12 +457,10 @@ class GraphFunction():
     def Print(self):
         print("===================================================================")
         print("GCovGraphFunction:")
-        print("    Ident=%d" % self.indent)
-        print("    LineNoCheckSum=0x%x" % self.lineno_checksum)
-        print("    CfgCheckSum=0x%x" % self.cfg_checksum)
+        print("    Ident=%d" % self.ident)
         print("    Name=%s" % self.name)
-        print("    Source=%s" % self.source)
-        print("    LineNo=%d" % self.line_no)
+        print("    Source=%s" % self.filename)
+        print("    LineNo=%d" % self.start_line)
         print("")
 
         for blk in self.blocks:
@@ -650,51 +489,15 @@ class GraphFunction():
     def set_basic_blocks(self, bb_count):
         self.blocks = [GraphBlock(i + 1) for i in range(bb_count)]
 
-    def apply_counters(self, counters):
-        counterIndex = 0
-        for block in self.blocks:
-            for arc in block.arcs_successors:
-                if (arc.flags & GCovIOConst.GCOV_FLAG_ARC_FAKE) == 0 and \
-                  (arc.flags & GCovIOConst.GCOV_FLAG_ARC_ON_TREE) == 0:
-                    if arc.counter is None:
-                        arc.counter = 0
-                    counterVal = counters[counterIndex]
-                    arc.counter += counterVal
-                    counterIndex += 1
-
-        if counterIndex != len(counters):
-            print("WARNING: Not all of the counters were used.")
-
-        return
-
-
-
-    def reset_counters(self):
-        counterIndex = 0
-        for block in self.blocks:
-            for arc in block.arcs_successors:
-                arc.counter = None
-        return
-
-    def reset_unknowns(self):
-        counterIndex = 0
-        for block in self.blocks:
-            for arc in block.arcs_successors:
-                if (arc.flags & GCovIOConst.GCOV_FLAG_ARC_FAKE) != 0 or \
-                  (arc.flags & GCovIOConst.GCOV_FLAG_ARC_ON_TREE) != 0:
-                    arc.counter = None
-        return
-
     WALKSTATE_NONE = 0
     WALKSTATE_BRANCHCHAIN = 1
 
     WALKSTATE_STRINGS = ["WALKSTATE_NONE", "WALKSTATE_BRANCHCHAIN"]
 
     def set_post_processed_fields(self):
+        print("Post Processing Graph for '%s'" % self.name)
 
-        vprint ("Post Processing Graph for '%s'" % self.name)
-
-        if (self.name == "_sputc"):
+        if self.name == "_sputc":
             pass
 
         blocksList = self.blocks
@@ -768,7 +571,7 @@ class GraphFunction():
         blockIndex = 0
 
         walkStack = []
-        walkState = GCovGraphFunction.WALKSTATE_NONE
+        walkState = GraphFunction.WALKSTATE_NONE
 
         nxtBlock = None
         prevBlock = None
@@ -777,7 +580,7 @@ class GraphFunction():
             prevBlock = nxtBlock
             nxtBlock = blocksList[blockIndex]
 
-            vprint ("Block(%d) - %s" % (blockIndex, GCovGraphFunction.WALKSTATE_STRINGS[walkState]))
+            print ("Block(%d) - %s" % (blockIndex, GraphFunction.WALKSTATE_STRINGS[walkState]))
 
             hasLines = False
             if (nxtBlock.lines is not None) and (len(nxtBlock.lines) > 0):
@@ -788,7 +591,7 @@ class GraphFunction():
             #-------------------------------------------------------------------------------
             # This path is for processing sequences that began with a call-site
             #-------------------------------------------------------------------------------
-            if walkState == GCovGraphFunction.WALKSTATE_BRANCHCHAIN:
+            if walkState == GraphFunction.WALKSTATE_BRANCHCHAIN:
                 if hasLines or successorCount < 2:
                     if len(walkStack) > 0:
                         if not prevBlock.is_call_site:
@@ -813,24 +616,24 @@ class GraphFunction():
                                 sidx, sblk = walkStack.pop()
                                 #end while(True):
                     walkStack = []
-                    walkState = GCovGraphFunction.WALKSTATE_NONE
+                    walkState = GraphFunction.WALKSTATE_NONE
                 else:
                     walkStack.append((blockIndex, nxtBlock))
 
             #-------------------------------------------------------------------------------
             # This path initiates the start of the processing of a decision chain
             #-------------------------------------------------------------------------------
-            if walkState == GCovGraphFunction.WALKSTATE_NONE:
+            if walkState == GraphFunction.WALKSTATE_NONE:
                 #---------------------------------------------------------------------------------
                 # If a block has lines and has more than one successor arc, it must be the start
                 # of a relevant branch chain.
                 #---------------------------------------------------------------------------------
                 if hasLines:
                     if (successorCount > 1):
-                            walkState = GCovGraphFunction.WALKSTATE_BRANCHCHAIN
+                            walkState = GraphFunction.WALKSTATE_BRANCHCHAIN
                             walkStack.append((blockIndex, nxtBlock))
                     else:
-                        walkState = GCovGraphFunction.WALKSTATE_NONE
+                        walkState = GraphFunction.WALKSTATE_NONE
                 else:
                     if (successorCount > 1):
                         isloop = False
@@ -841,14 +644,10 @@ class GraphFunction():
                         if isloop:
                             nxtBlock.is_loop = True
                     else:
-                        walkState = GCovGraphFunction.WALKSTATE_NONE
+                        walkState = GraphFunction.WALKSTATE_NONE
 
             blockIndex += 1
 
-        vprint ("")
-        vprint ("")
-
-        return
 
     def solve_graph(self):
         """
@@ -1036,29 +835,6 @@ class GraphFunction():
 
         return isRelevant
 
-class ArcsetRecord():
-    def __init__(self, block_no, arcs):
-        self.block_number = block_no
-        self.arcs = arcs
-
-class LinesetRecord():
-    def __init__(self, block_no, lines):
-        self.block_number = block_no
-        self.lines = lines
-
-class BBRecord():
-    def __init__(self, block_count):
-        self.block_count = block_count
-
-class FuncRecord():
-    def __init__(self, ident, lineno_checksum, cfg_checksum, name, filename, start_line):
-        self.ident = ident
-        self.lineno_checksum = lineno_checksum
-        self.cfg_checksum = cfg_checksum
-        self.name = name
-        self.filename = filename
-        self.start_line = start_line
-
 class GCovNotesFile:
     def __init__(self, filename):
         self.filename = filename
@@ -1115,27 +891,22 @@ class GCovNotesFile:
             record_buf = BytesIO(f.read(word_len * 4))
 
             if tag == Tag.FUNCTION:
-                record = self.read_func_record(record_buf)
-
                 next_arc_id = 0
 
-                current_graph = GraphFunction(record)
-                self.graphs.append(current_graph)
+                ident, name, filename, start_line = self.read_func_record(record_buf)
+                self.graphs.append(GraphFunction(ident, name, filename, start_line))
 
-                print("Processing function '%s' ident '%d'" % (current_graph.name, current_graph.ident))
+                current_graph = self.graphs[-1]
             elif tag == Tag.BLOCKS:
-                bb_count = self.read_bb_record(record_buf)
-                current_graph.set_basic_blocks(bb_count)
+                for _ in range(word_len):
+                    self.read_uint32(record_buf) # ignored block flags
 
-                print(bb_count, "blocks for function")
+                current_graph.set_basic_blocks(word_len)
             elif tag == Tag.ARCS:
-                print("Read arc")
                 block_no, arcs = self.read_arcs_record(record_buf, word_len)
 
-                print(block_no, arcs[0].dest_block)
                 next_arc_id = current_graph.set_arcs_for_bb(next_arc_id, block_no, arcs)
             elif tag == Tag.LINES:
-                print("Read lines")
                 block_no, lines = self.read_lines_record(record_buf)
                 current_graph.set_lineset_for_bb(block_no, lines)
             else:
@@ -1166,14 +937,12 @@ class GCovNotesFile:
         return f.read(word_len * 4).rstrip(b"\0")
 
     def read_func_record(self, f):
-        ident, lineno_checksum, cfg_checksum = self.read_uint32(f), self.read_uint32(f), self.read_uint32(f)
+        ident = self.read_uint32(f)
+        _, _ = self.read_uint32(f), self.read_uint32(f) # ignore line and cgs checksum
         name, filename = self.read_string(f), self.read_string(f)
         start_line = self.read_uint32(f)
 
-        return FuncRecord(ident, lineno_checksum, cfg_checksum, name, filename, start_line)
-
-    def read_bb_record(self, f):
-        return self.read_uint32(f)
+        return ident, name, filename, start_line
 
     def read_lines_record(self, f):
         block_no = self.read_uint32(f)
@@ -1195,17 +964,11 @@ class GCovNotesFile:
         block_no = self.read_uint32(f)
         arc_set = []
 
-        for _ in range(int(record_len / 2)):
+        for _ in range(int((record_len - 1) / 2)):
             dest_block, flags = self.read_uint32(f), self.read_uint32(f)
             arc_set.append(GraphArc(dest_block, flags))
 
         return block_no, arc_set
-
-class GCovScanContext:
-    def __init__(self, includeFilters, excludeFilters):
-        self.include_filters = includeFilters
-        self.exclude_filters = excludeFilters
-        self.files_found = []
 
 class GCovProcessor:
     def __init__(self, basePathDataList = None, basePathGraphList=None, basePathCodeList=None, 
@@ -1311,14 +1074,6 @@ class GCovProcessor:
 
         return
 
-    def reset(self):
-
-        for key in self.coverage_map.keys():
-            item = self.coverage_map.pop(key)
-            del(item)
-
-        return
-
     def _export_trace_file(self, dataFileLeaf):
         """
             TODO: Continue implementing this method
@@ -1338,99 +1093,6 @@ class GCovProcessor:
                 info_writer.write_sourcefile_section(coverageMap)
 
         return
-
-    def _locate_graph_file(self, df_fullbase, df_leafbase):
-        foundfile = None
-
-        if self.base_path_graph_list is not None:
-            for basePath in self.base_path_graph_list:
-                absBasePath = os.path.abspath(basePath)
-                nxt_filename = os.path.join(absBasePath, df_leafbase + ".gcno")
-
-                if os.path.exists(nxt_filename) and os.path.isfile(nxt_filename):
-                    foundfile = nxt_filename
-                    break
-        else:
-            nxt_filename = df_fullbase + ".gcno"
-
-            if os.path.exists(nxt_filename) and os.path.isfile(nxt_filename):
-                foundfile = nxt_filename
-
-        return foundfile
-
-    def _locate_source_file(self, df_fullbase, df_leafbase, c_file):
-        foundfile = None
-
-        if os.path.isabs(c_file) and os.path.exists(c_file) and os.path.isfile(c_file):
-            foundfile = c_file
-        else:
-            c_dir = os.path.dirname(c_file)
-
-            if c_dir != "":
-                # If c_file has a relative path then do a search as follows:
-                #    1. Look in the code path list by appending c_file to each path
-                #    2. Look in the data path list by appending c_file to each path 
-                if self.base_path_code_list is not None:
-                    for basePath in self.base_path_code_list:
-                        nxt_filename = os.path.join(basePath, c_file)
-                        nxt_filename = os.path.abspath(nxt_filename)
-
-                        if os.path.exists(nxt_filename) and os.path.isfile(nxt_filename):
-                            foundfile = nxt_filename
-                            break
-
-                if foundfile is None:
-                    for basePath in self.base_path_data_list:
-                        nxt_filename = os.path.join(basePath, c_file)
-                        nxt_filename = os.path.abspath(nxt_filename)
-
-                        if os.path.exists(nxt_filename) and os.path.isfile(nxt_filename):
-                            foundfile = nxt_filename
-                            break
-            else:
-                # If c_file is just a filename with no directory do a search as follows:
-                #    1. Look in the code path list in the same leaf directory as the data file
-                #    2. Look in the data path list in the same leaf directory as the data file
-                #    3. Look in the include path list without appending the leaf of the data file
-                df_dir = os.path.dirname(df_leafbase)
-
-                chk_file = os.path.join(df_dir, c_file)
-
-                if self.base_path_code_list is not None:
-                    for basePath in self.base_path_code_list:
-                        absBasePath = os.path.abspath(basePath)
-                        nxt_filename = os.path.join(absBasePath, chk_file)
-                        nxt_filename = os.path.abspath(nxt_filename)
-
-                        if os.path.exists(nxt_filename) and os.path.isfile(nxt_filename):
-                            foundfile = nxt_filename
-                            break
-
-                if foundfile is None:
-                    for basePath in self.base_path_data_list:
-                        absBasePath = os.path.abspath(basePath)
-                        nxt_filename = os.path.join(absBasePath, chk_file)
-                        nxt_filename = os.path.abspath(nxt_filename)
-
-                        if os.path.exists(nxt_filename) and os.path.isfile(nxt_filename):
-                            foundfile = nxt_filename
-                            break
-
-                if (foundfile is None) and (self.base_path_include_list is not None):
-                    for basePath in self.base_path_include_list:
-                        absBasePath = os.path.abspath(basePath)
-                        nxt_filename = os.path.join(absBasePath, c_file)
-                        nxt_filename = os.path.abspath(nxt_filename)
-
-                        if os.path.exists(nxt_filename) and os.path.isfile(nxt_filename):
-                            foundfile = nxt_filename
-                            break
-
-        # Remove any base relative '/base/../../file' references from the path. 'os.path.isabs' still considers these absolute.
-        if foundfile is not None:
-            foundfile = os.path.abspath(foundfile)
-
-        return foundfile
 
     def _process_data_file(self, basePathData, dataFileDir, dataFileName):
 
@@ -1493,29 +1155,6 @@ class GCovProcessor:
 
         return
 
-    def _scan_for_data_files(self, scanContext, currentDir, fileList):
-
-        filesFound = scanContext.files_found
-
-        for filename in fileList:
-            f_base, f_ext = os.path.splitext(filename)
-            if f_ext == ".gcda":
-                filesFound.append((currentDir, filename))
-
-        return True
-
-    def _scan_for_graph_files(self, scanContext, currentDir, fileList):
-
-        filesFound = scanContext.files_found
-
-        for filename in fileList:
-            f_base, f_ext = os.path.splitext(filename)
-            if f_ext == ".gcno":
-                filesFound.append((currentDir, filename))
-
-        return
-
-
 def parse_file(parseFile):
     fileRoot, fileExt = os.path.splitext(parseFile)
     filePath = os.path.abspath(parseFile)
@@ -1523,6 +1162,9 @@ def parse_file(parseFile):
     print("Processing .gcno file...")
 
     gcno = GCovNotesFile(filePath)
+
+    for g in gcno.graphs:
+        g.Print()
 
 if __name__ == "__main__":
     parse_file(gcno_dir + '/' + file_name)
