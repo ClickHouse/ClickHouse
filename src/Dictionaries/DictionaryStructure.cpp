@@ -12,7 +12,6 @@
 #include <numeric>
 #include <unordered_map>
 #include <unordered_set>
-#include <ext/range.h>
 
 
 namespace DB
@@ -206,7 +205,7 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
     if (key_types.size() != key->size())
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Key structure does not match, expected {}", getKeyDescription());
 
-    for (const auto i : ext::range(0, key_types.size()))
+    for (size_t i = 0; i < key_types.size(); ++i)
     {
         const auto & expected_type = (*key)[i].type;
         const auto & actual_type = key_types[i];
@@ -373,6 +372,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);
+        const auto initial_type_serialization = initial_type->getDefaultSerialization();
         bool is_nullable = initial_type->isNullable();
 
         auto non_nullable_type = removeNullable(initial_type);
@@ -385,20 +385,19 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         Field null_value;
         if (allow_null_values)
         {
-            /// TODO: Fix serialization for nullable type.
             const auto null_value_string = config.getString(prefix + "null_value");
 
             try
             {
                 if (null_value_string.empty())
                 {
-                    null_value = non_nullable_type->getDefault();
+                    null_value = initial_type->getDefault();
                 }
                 else
                 {
                     ReadBufferFromString null_value_buffer{null_value_string};
-                    auto column_with_null_value = non_nullable_type->createColumn();
-                    non_nullable_type->getDefaultSerialization()->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
+                    auto column_with_null_value = initial_type->createColumn();
+                    initial_type_serialization->deserializeWholeText(*column_with_null_value, null_value_buffer, format_settings);
                     null_value = (*column_with_null_value)[0];
                 }
             }
@@ -428,6 +427,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             name,
             underlying_type,
             initial_type,
+            initial_type_serialization,
             expression,
             null_value,
             hierarchical,

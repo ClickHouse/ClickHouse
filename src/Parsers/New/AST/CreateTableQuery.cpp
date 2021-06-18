@@ -113,11 +113,11 @@ ASTPtr CreateTableQuery::convertToOld() const
     auto query = std::make_shared<ASTCreateQuery>();
 
     {
-        auto table_id = getTableIdentifier(get(NAME)->convertToOld());
-        query->database = table_id.database_name;
-        query->table = table_id.table_name;
-        query->uuid
-            = has(UUID) ? parseFromString<DB::UUID>(get(UUID)->convertToOld()->as<ASTLiteral>()->value.get<String>()) : table_id.uuid;
+        auto table = get(NAME)->convertToOld();
+        query->database = table->as<ASTTableIdentifier>()->getDatabaseName();
+        query->table = table->as<ASTTableIdentifier>()->shortName();
+        query->uuid = has(UUID) ? parseFromString<DB::UUID>(get(UUID)->convertToOld()->as<ASTLiteral>()->value.get<String>())
+                                : table->as<ASTTableIdentifier>()->uuid;
     }
 
     query->cluster = cluster_name;
@@ -137,9 +137,9 @@ ASTPtr CreateTableQuery::convertToOld() const
             }
             case TableSchemaClause::ClauseType::TABLE:
             {
-                auto table_id = getTableIdentifier(get(SCHEMA)->convertToOld());
-                query->as_database = table_id.database_name;
-                query->as_table = table_id.table_name;
+                auto table = std::static_pointer_cast<ASTTableIdentifier>(get(SCHEMA)->convertToOld());
+                query->as_database = table->getDatabaseName();
+                query->as_table = table->shortName();
                 break;
             }
             case TableSchemaClause::ClauseType::FUNCTION:
