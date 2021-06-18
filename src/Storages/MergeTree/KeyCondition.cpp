@@ -12,6 +12,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -388,6 +389,14 @@ Block KeyCondition::getBlockWithConstants(
     return result;
 }
 
+static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
+{
+    NameSet names;
+    for (const auto & action : key_expr.getActions())
+        names.insert(action.node->result_name);
+
+    return names;
+}
 
 KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
@@ -396,7 +405,11 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool strict_)
-    : key_expr(key_expr_), prepared_sets(query_info.sets), single_point(single_point_), strict(strict_)
+    : key_expr(key_expr_)
+    , key_subexpr_names(getAllSubexpressionNames(*key_expr))
+    , prepared_sets(query_info.sets)
+    , single_point(single_point_)
+    , strict(strict_)
 {
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
@@ -589,45 +602,15 @@ void KeyCondition::traverseAST(const ASTPtr & node, ContextPtr context, Block & 
     rpn.emplace_back(std::move(element));
 }
 
-bool KeyCondition::canConstantBeWrapped(const ASTPtr & node, const String & expr_name, String & result_expr_name)
-{
-    NameSet names;
-    for (const auto & action : key_expr->getActions())
-        names.insert(action.node->result_name);
-
-    /// sample_block from key_expr cannot contain modulo and moduloLegacy at the same time.
-    /// For partition key it is always moduloLegacy.
-    if (names.count(expr_name))
-    {
-        result_expr_name = expr_name;
-    }
-    else
-    {
-        auto adjusted_ast = node->clone();
-        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
-        String adjusted_expr_name = adjusted_ast->getColumnName();
-
-        if (!names.count(adjusted_expr_name))
-            return false;
-
-        result_expr_name = adjusted_expr_name;
-    }
-
-    return true;
-}
-
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
-    const ASTPtr & node [[maybe_unused]],
-    size_t & out_key_column_num [[maybe_unused]],
-    DataTypePtr & out_key_column_type [[maybe_unused]],
-    Field & out_value [[maybe_unused]],
-    DataTypePtr & out_type [[maybe_unused]])
+    const ASTPtr & node,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    Field & out_value,
+    DataTypePtr & out_type)
 {
-
-    // Constant expr should use alias names if any
-    String passed_expr_name = node->getColumnNameWithoutAlias();
-    String expr_name;
-    if (!canConstantBeWrapped(node, passed_expr_name, expr_name))
+    String expr_name = node->getColumnNameWithoutAlias();
+    if (key_subexpr_names.count(expr_name) == 0)
         return false;
 
     /// TODO Nullable index is not yet landed.
@@ -729,11 +712,26 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
-    // Constant expr should use alias names if any
-    String passed_expr_name = ast->getColumnNameWithoutAlias();
-    String expr_name;
-    if (!canConstantBeWrapped(ast, passed_expr_name, expr_name))
-        return false;
+    String expr_name = ast->getColumnNameWithoutAlias();
+
+    if (key_subexpr_names.count(expr_name) == 0)
+    {
+        /// Let's check another one case.
+        /// If our storage was created with moduloLegacy in partition key,
+        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
+        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
+        ///
+        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
+        /// The case `f(modulo(...))` for totally monotonic `f ` is consedered to be rare.
+        ///
+        /// Note: for negative values, we can filter more partitions then needed.
+        auto adjusted_ast = ast->clone();
+        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
+        expr_name = adjusted_ast->getColumnName();
+
+        if (key_subexpr_names.count(expr_name) == 0)
+            return false;
+    }
 
     const auto & sample_block = key_expr->getSampleBlock();
 

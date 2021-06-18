@@ -1,11 +1,7 @@
 #include "CacheDictionary.h"
 
 #include <memory>
-
-#include <ext/range.h>
-#include <ext/size.h>
-#include <ext/map.h>
-#include <ext/chrono_io.h>
+#include <common/chrono_io.h>
 
 #include <Core/Defines.h>
 #include <Common/CurrentMetrics.h>
@@ -654,7 +650,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
             tryLogException(last_exception, log,
                             "Could not update cache dictionary '" + getDictionaryID().getNameForLogs() +
-                            "', next update is scheduled at " + ext::to_string(backoff_end_time.load()));
+                            "', next update is scheduled at " + to_string(backoff_end_time.load()));
             try
             {
                 std::rethrow_exception(last_exception);
@@ -683,7 +679,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
         throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
             "Query contains keys that are not present in cache or expired. Could not update cache dictionary {} now, because nearest update is scheduled at {}. Try again later.",
             getDictionaryID().getNameForLogs(),
-            ext::to_string(backoff_end_time.load()));
+            to_string(backoff_end_time.load()));
     }
 }
 

@@ -188,6 +188,7 @@ public:
      */
     bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
+    void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
