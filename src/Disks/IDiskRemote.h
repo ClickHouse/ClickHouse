@@ -155,7 +155,7 @@ struct RemoteMetadata
     const String & remote_fs_root_path;
 
     /// Relative path to metadata file on local FS.
-    const String & metadata_file_path;
+    const String metadata_file_path;
 
     RemoteMetadata(const String & remote_fs_root_path_, const String & metadata_file_path_)
         : remote_fs_root_path(remote_fs_root_path_), metadata_file_path(metadata_file_path_) {}

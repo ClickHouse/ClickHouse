@@ -22,8 +22,6 @@ struct DiskWebServerSettings
 };
 
 
-/// Storage to store data on a web server and metadata on the local disk.
-
 class DiskWebServer : public IDisk, WithContext
 {
 using SettingsPtr = std::unique_ptr<DiskWebServerSettings>;
@@ -64,7 +62,6 @@ public:
 
     const String & getName() const final override { return name; }
 
-    /// ???
     const String & getPath() const final override { return metadata_path; }
 
     UInt64 getTotalSpace() const final override { return std::numeric_limits<UInt64>::max(); }
