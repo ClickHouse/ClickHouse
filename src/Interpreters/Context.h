@@ -69,8 +69,8 @@ class Macros;
 struct Progress;
 class Clusters;
 class QueryLog;
-class QueryMaterializationLog;
 class QueryThreadLog;
+class QueryViewsLog;
 class PartLog;
 class TextLog;
 class TraceLog;
@@ -709,8 +709,8 @@ public:
 
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog() const;
-    std::shared_ptr<QueryMaterializationLog> getQueryMaterializationLog() const;
     std::shared_ptr<QueryThreadLog> getQueryThreadLog() const;
+    std::shared_ptr<QueryViewsLog> getQueryViewsLog() const;
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;

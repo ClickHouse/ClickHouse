@@ -955,6 +955,14 @@
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
     </crash_log>
 
+    <!-- Logs materialized and live views associated with a query -->
+    <query_views_log>
+        <database>system</database>
+        <table>query_views_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_views_log>
+
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
     -->

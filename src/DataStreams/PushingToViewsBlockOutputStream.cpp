@@ -1,24 +1,24 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/NestedUtils.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Common/CurrentThread.h>
-#include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
-#include <Common/checkStackSize.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
+#include <Storages/LiveView/StorageLiveView.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <common/logger_useful.h>
 #include <DataStreams/PushingToSinkBlockOutputStream.h>
+
+#include <atomic>
+#include <chrono>
 
 namespace DB
 {
@@ -79,9 +79,12 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
         ASTPtr query;
         BlockOutputStreamPtr out;
+        QueryViewsLogElement::ViewType type = QueryViewsLogElement::ViewType::DEFAULT;
+        String target_name = database_table.getNameForLogs();
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
+            type = QueryViewsLogElement::ViewType::MATERIALIZED;
             addTableLock(
                 materialized_view->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
 
@@ -89,6 +92,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
+            target_name = inner_table_id.getNameForLogs();
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->table_id = inner_table_id;
@@ -113,15 +117,27 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             InterpreterInsertQuery interpreter(insert_query_ptr, insert_context);
             BlockIO io = interpreter.execute();
             out = io.out;
+            LOG_WARNING(
+                log,
+                "Pushing from {} to {} {}.",
+                storage->getStorageID().getNameForLogs(),
+                inner_table_id.getNameForLogs(),
+                inner_table->getStorageID().getFullTableName());
         }
-        else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+        else if (auto * live_view = dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+        {
+            type = QueryViewsLogElement::ViewType::LIVE;
+            query = live_view->getInnerQuery(); // TODO: Optimize this
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true);
+        }
         else
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
 
-        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, 0 /* elapsed_ms */});
+        QueryViewsLogElement::ViewRuntimeStats runtime_stats{
+            0, type, std::make_shared<ThreadStatus>(), select_context->getInitialQueryId(), std::chrono::system_clock::now(), target_name};
+        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, std::move(runtime_stats)});
     }
 
     /// Do not push to destination table if the flag is set
@@ -169,41 +185,64 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             output->write(block);
     }
 
+    if (!views.size())
+        return;
+
     /// Don't process materialized views if this block is duplicate
     if (!getContext()->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views && replicated_output && replicated_output->lastBlockIsDuplicate())
         return;
 
-    // Insert data into materialized views only after successful insert into main table
+    // Push to each view. Only parallel if available
     const Settings & settings = getContext()->getSettingsRef();
-    if (settings.parallel_view_processing && views.size() > 1)
+    const size_t max_threads = settings.parallel_view_processing ? settings.max_threads : 1;
+    ThreadPool pool(std::min(max_threads, views.size()));
+    for (auto & view : views)
     {
-        // Push to views concurrently if enabled and more than one view is attached
-        ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
-        for (auto & view : views)
-        {
-            auto thread_group = CurrentThread::getGroup();
-            pool.scheduleOrThrowOnError([=, &view, this]
-            {
-                setThreadName("PushingToViews");
-                if (thread_group)
-                    CurrentThread::attachToIfDetached(thread_group);
-                process(block, view);
-            });
-        }
-        // Wait for concurrent view processing
-        pool.wait();
-    }
-    else
-    {
-        // Process sequentially
-        for (auto & view : views)
-        {
-            process(block, view);
+        auto thread_group = CurrentThread::getGroup();
+        pool.scheduleOrThrowOnError([=, &view, this] {
+            LOG_WARNING(
+                log,
+                "Pushing from {} to {}. {}. Current thread {} {} {} {}. WRITE START",
+                storage->getStorageID().getNameForLogs(),
+                view.table_id.getNameForLogs(),
+                uint64_t(view.out.get()),
+                view.runtime_stats.thread_status->progress_in.read_rows,
+                view.runtime_stats.thread_status->progress_in.written_rows,
+                view.runtime_stats.thread_status->progress_out.read_rows,
+                view.runtime_stats.thread_status->progress_out.written_rows);
+            //                current_thread = view.thread_status.get();
 
-            if (view.exception)
-                std::rethrow_exception(view.exception);
-        }
+            setThreadName("PushingToViews");
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
+
+            Stopwatch watch;
+            try
+            {
+                process(block, view);
+            }
+            catch (...)
+            {
+                view.exception = std::current_exception();
+                // TODO: Stop processing on exception
+            }
+            view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
+            // TODO: Update other counters
+            LOG_WARNING(
+                log,
+                "Pushing from {} to {}. {}. Current thread {} {} {} {}. WRITE END",
+                storage->getStorageID().getNameForLogs(),
+                view.table_id.getNameForLogs(),
+                uint64_t(view.out.get()),
+                view.runtime_stats.thread_status->progress_in.read_rows,
+                view.runtime_stats.thread_status->progress_in.written_rows,
+                view.runtime_stats.thread_status->progress_out.read_rows,
+                view.runtime_stats.thread_status->progress_out.written_rows);
+        });
     }
+    // Wait for concurrent view processing
+    pool.wait();
+    check_exceptions_in_views();
 }
 
 void PushingToViewsBlockOutputStream::writePrefix()
@@ -213,104 +252,97 @@ void PushingToViewsBlockOutputStream::writePrefix()
 
     for (auto & view : views)
     {
+        Stopwatch watch;
         try
         {
             view.out->writePrefix();
         }
         catch (Exception & ex)
         {
+            view.exception = std::current_exception();
             ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
+            log_query_views();
             throw;
         }
+        view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
     }
 }
 
 void PushingToViewsBlockOutputStream::writeSuffix()
 {
+    LOG_WARNING(log, "STARTING {} WITH {}", uint64_t(this), views.size());
+
     if (output)
         output->writeSuffix();
 
+    if (!views.size())
+        return;
     std::exception_ptr first_exception;
-
     const Settings & settings = getContext()->getSettingsRef();
-    bool parallel_processing = false;
 
     /// Run writeSuffix() for views in separate thread pool.
     /// In could have been done in PushingToViewsBlockOutputStream::process, however
     /// it is not good if insert into main table fail but into view succeed.
-    if (settings.parallel_view_processing && views.size() > 1)
-    {
-        parallel_processing = true;
-
-        // Push to views concurrently if enabled and more than one view is attached
-        ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
-        auto thread_group = CurrentThread::getGroup();
-
-        for (auto & view : views)
-        {
-            if (view.exception)
-                continue;
-
-            pool.scheduleOrThrowOnError([thread_group, &view, this]
-            {
-                setThreadName("PushingToViews");
-                if (thread_group)
-                    CurrentThread::attachToIfDetached(thread_group);
-
-                Stopwatch watch;
-                try
-                {
-                    view.out->writeSuffix();
-                }
-                catch (...)
-                {
-                    view.exception = std::current_exception();
-                }
-                view.elapsed_ms += watch.elapsedMilliseconds();
-
-                LOG_TRACE(log, "Pushing from {} to {} took {} ms.",
-                    storage->getStorageID().getNameForLogs(),
-                    view.table_id.getNameForLogs(),
-                    view.elapsed_ms);
-            });
-        }
-        // Wait for concurrent view processing
-        pool.wait();
-    }
+    const size_t max_threads = settings.parallel_view_processing ? settings.max_threads : 1;
+    ThreadPool pool(std::min(max_threads, views.size()));
+    auto thread_group = CurrentThread::getGroup();
 
     for (auto & view : views)
     {
         if (view.exception)
-        {
-            if (!first_exception)
-                first_exception = view.exception;
-
-            continue;
-        }
-
-        if (parallel_processing)
             continue;
 
-        Stopwatch watch;
-        try
-        {
-            view.out->writeSuffix();
-        }
-        catch (Exception & ex)
-        {
-            ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
-            throw;
-        }
-        view.elapsed_ms += watch.elapsedMilliseconds();
+        pool.scheduleOrThrowOnError([&] {
+            LOG_WARNING(
+                log,
+                "Pushing from {} to {}. {}. Current thread {} {} {} {}. WRITESUFFIX START",
+                storage->getStorageID().getNameForLogs(),
+                view.table_id.getNameForLogs(),
+                uint64_t(view.out.get()),
+                view.runtime_stats.thread_status->progress_in.read_rows,
+                view.runtime_stats.thread_status->progress_in.written_rows,
+                view.runtime_stats.thread_status->progress_out.read_rows,
+                view.runtime_stats.thread_status->progress_out.written_rows);
+            //            current_thread = view.thread_status.get();
+            setThreadName("PushingToViews");
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
 
-        LOG_TRACE(log, "Pushing from {} to {} took {} ms.",
-            storage->getStorageID().getNameForLogs(),
-            view.table_id.getNameForLogs(),
-            view.elapsed_ms);
+            Stopwatch watch;
+            try
+            {
+                LOG_WARNING(log, "BEFORE CALL {} -> {}", uint64_t(this), uint64_t(view.out.get()));
+                view.out->writeSuffix();
+                LOG_WARNING(log, "AFTER CALL {} -> {}", uint64_t(this), uint64_t(view.out.get()));
+                //Set status here
+            }
+            catch (...)
+            {
+                view.exception = std::current_exception();
+            }
+            view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
+            // TODO: Update other counters
+            LOG_TRACE(
+                log,
+                "Pushing from {} to {} took {} ms.",
+                storage->getStorageID().getNameForLogs(),
+                view.table_id.getNameForLogs(),
+                view.runtime_stats.elapsed_ms);
+            LOG_WARNING(
+                log,
+                "Pushing from {} to {}. {}. Current thread {} {} {} {}. WRITESUFFIX END",
+                storage->getStorageID().getNameForLogs(),
+                view.table_id.getNameForLogs(),
+                uint64_t(view.out.get()),
+                view.runtime_stats.thread_status->progress_in.read_rows,
+                view.runtime_stats.thread_status->progress_in.written_rows,
+                view.runtime_stats.thread_status->progress_out.read_rows,
+                view.runtime_stats.thread_status->progress_out.written_rows);
+        });
     }
-
-    if (first_exception)
-        std::rethrow_exception(first_exception);
+    // Wait for concurrent view processing
+    pool.wait();
+    check_exceptions_in_views();
 
     UInt64 milliseconds = main_watch.elapsedMilliseconds();
     if (views.size() > 1)
@@ -319,6 +351,8 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             storage->getStorageID().getNameForLogs(), views.size(),
             milliseconds);
     }
+    LOG_WARNING(log, "FINISHING {}", uint64_t(this));
+    log_query_views();
 }
 
 void PushingToViewsBlockOutputStream::flush()
@@ -332,8 +366,6 @@ void PushingToViewsBlockOutputStream::flush()
 
 void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & view)
 {
-    Stopwatch watch;
-
     try
     {
         BlockInputStreamPtr in;
@@ -392,8 +424,49 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
     {
         view.exception = std::current_exception();
     }
-
-    view.elapsed_ms += watch.elapsedMilliseconds();
 }
 
+void PushingToViewsBlockOutputStream::check_exceptions_in_views()
+{
+    for (auto & view : views)
+    {
+        if (view.exception)
+        {
+            LOG_WARNING(log, "View exception {}", view.table_id.getNameForLogs());
+            log_query_views();
+            std::rethrow_exception(view.exception);
+        }
+    }
+}
+
+void PushingToViewsBlockOutputStream::log_query_views()
+{
+    // TODO: Check settings
+    auto views_log = getContext()->getQueryViewsLog();
+    if (!views_log)
+    {
+        LOG_WARNING(log, "NO VIEWS LOG"); // NOCHECKIN
+        return;
+    }
+    for (auto const & view : views)
+    {
+        LOG_WARNING(
+            log,
+            "LOG LOG LOG from {} to {}. {}. Progress {} {} {} {}",
+            storage->getStorageID().getNameForLogs(),
+            view.table_id.getNameForLogs(),
+            uint64_t(view.out.get()),
+            view.runtime_stats.thread_status->progress_in.read_rows,
+            view.runtime_stats.thread_status->progress_in.written_rows,
+            view.runtime_stats.thread_status->progress_out.read_rows,
+            view.runtime_stats.thread_status->progress_out.written_rows);
+        try
+        {
+            view.runtime_stats.thread_status->logToQueryViewsLog(*views_log, view);
+        }
+        catch (...)
+        {
+        }
+    }
+}
 }

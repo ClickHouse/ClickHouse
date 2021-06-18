@@ -2052,16 +2052,6 @@ std::shared_ptr<QueryLog> Context::getQueryLog() const
     return shared->system_logs->query_log;
 }
 
-std::shared_ptr<QueryMaterializationLog> Context::getQueryMaterializationLog() const
-{
-    auto lock = getLock();
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->query_materialization_log;
-}
-
 std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 {
     auto lock = getLock();
@@ -2072,6 +2062,15 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
     return shared->system_logs->query_thread_log;
 }
 
+std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->query_views_log;
+}
 
 std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
 {

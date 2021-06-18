@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <sys/types.h>
 
@@ -18,20 +19,38 @@ class Counters;
 
 namespace DB
 {
-struct QueryMaterializationLogElement
+class ThreadStatus;
+
+struct QueryViewsLogElement
 {
     using Status = QueryLogElementType;
+    enum class ViewType : int8_t
+    {
+        DEFAULT,
+        MATERIALIZED,
+        LIVE
+    };
+
+    struct ViewRuntimeStats
+    {
+        UInt64 elapsed_ms = 0;
+        ViewType type = ViewType::DEFAULT;
+        std::shared_ptr<ThreadStatus> thread_status = std::make_shared<ThreadStatus>();
+        String initial_query_id;
+        std::chrono::time_point<std::chrono::system_clock> start;
+        String target_name;
+    };
 
     time_t event_time{};
     Decimal64 event_time_microseconds{};
-    time_t materialization_start_time{};
-    Decimal64 materialization_start_time_microseconds{};
-    UInt64 materialization_duration_ms{};
+    UInt64 view_duration_ms{};
 
     String initial_query_id;
-    String materialization_name;
-    UUID materialization_uuid{UUIDHelpers::Nil};
-    String materialization_query;
+    String view_name;
+    UUID view_uuid{UUIDHelpers::Nil};
+    ViewType view_type{ViewType::DEFAULT};
+    String view_query;
+    String view_target;
 
     UInt64 read_rows{};
     UInt64 read_bytes{};
@@ -46,16 +65,16 @@ struct QueryMaterializationLogElement
     String exception;
     String stack_trace;
 
-    static std::string name() { return "QueryMutationLog"; }
+    static std::string name() { return "QueryViewsLog"; }
 
     static Block createBlock();
     void appendToBlock(MutableColumns & columns) const;
 };
 
 
-class QueryMaterializationLog : public SystemLog<QueryMaterializationLogElement>
+class QueryViewsLog : public SystemLog<QueryViewsLogElement>
 {
-    using SystemLog<QueryMaterializationLogElement>::SystemLog;
+    using SystemLog<QueryViewsLogElement>::SystemLog;
 };
 
 }
