@@ -2,7 +2,9 @@
 toc_priority: 202
 ---
 
-# quantileExact {#quantileexact}
+# quantileExact Functions {#quantileexact-functions}
+
+## quantileExact {#quantileexact}
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -49,7 +51,7 @@ Result:
 └───────────────────────┘
 ```
 
-# quantileExactLow {#quantileexactlow}
+## quantileExactLow {#quantileexactlow}
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -107,7 +109,7 @@ Result:
 │                        4 │
 └──────────────────────────┘
 ```
-# quantileExactHigh {#quantileexacthigh}
+## quantileExactHigh {#quantileexacthigh}
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -176,7 +178,7 @@ quantileExactExclusive(level)(expr)
 
 **Arguments**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number in the range `(0, 1)`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional. Possible values: (0, 1). Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median). [Float](../../../float.md).
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
@@ -225,7 +227,7 @@ quantileExactInclusive(level)(expr)
 
 **Arguments**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number in the range `[0, 1]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional. Possible values: [0, 1]. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median). [Float](../../../float.md).
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
