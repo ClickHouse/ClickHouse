@@ -21,12 +21,8 @@
                             <div class="card-body">
                                 <h5 class="card-title">Not covered {{entity}}</h5>
                                 <p class="card-text">
-                                    {% for start, end in lines %}
-                                        {% if start == end %}
-                                            <a href="#line-{{ start }}">{{ start }}</a>
-                                        {% else %}
-                                            <a href="#line-{{ start }}">{{ start }}</a>-<a href="#line-{{ end }}">{{ end }}</a>
-                                        {% endif %}
+                                    {% for line in lines %}
+                                        <a href="#line-{{ line }}">{{ line }}</a>
                                     {% endfor %}
                                 </p>
                             </div>
