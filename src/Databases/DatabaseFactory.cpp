@@ -11,9 +11,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
+#include <Poco/File.h>
+#include <Poco/Path.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
-#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -29,17 +30,14 @@
 #endif
 
 #if USE_MYSQL || USE_LIBPQXX
-#include <Common/parseRemoteDescription.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/parseAddress.h>
 #endif
 
 #if USE_LIBPQXX
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
-#include <Storages/PostgreSQL/PoolWithFailover.h>
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #endif
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -52,32 +50,34 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DATABASE;
 }
 
-DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
+DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, Context & context)
 {
     bool created = false;
 
     try
     {
         /// Creates store/xxx/ for Atomic
-        fs::create_directories(fs::path(metadata_path).parent_path());
-
+        Poco::File(Poco::Path(metadata_path).makeParent()).createDirectories();
         /// Before 20.7 it's possible that .sql metadata file does not exist for some old database.
         /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
         /// So we should remove metadata directory if database creation failed.
-        created = fs::create_directory(metadata_path);
+        created = Poco::File(metadata_path).createDirectory();
 
         DatabasePtr impl = getImpl(create, metadata_path, context);
 
-        if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
-            context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
+        if (impl && context.hasQueryContext() && context.getSettingsRef().log_queries)
+            context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
 
         return impl;
 
     }
     catch (...)
     {
-        if (created && fs::exists(metadata_path))
-            fs::remove_all(metadata_path);
+        Poco::File metadata_dir(metadata_path);
+
+        if (created && metadata_dir.exists())
+            metadata_dir.remove(true);
+
         throw;
     }
 }
@@ -91,7 +91,7 @@ static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &eng
     return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
 
-DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
+DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, Context & context)
 {
     auto * engine_define = create.storage;
     const String & database_name = create.database;
@@ -133,20 +133,19 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         ASTs & arguments = engine->arguments->children;
         arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
 
-        const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
+        const auto & host_name_and_port = safeGetLiteralValue<String>(arguments[0], engine_name);
         const auto & mysql_database_name = safeGetLiteralValue<String>(arguments[1], engine_name);
         const auto & mysql_user_name = safeGetLiteralValue<String>(arguments[2], engine_name);
         const auto & mysql_user_password = safeGetLiteralValue<String>(arguments[3], engine_name);
 
         try
         {
+            const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
+            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
+
             if (engine_name == "MySQL")
             {
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
-                /// Split into replicas if needed.
-                size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-                auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, addresses, mysql_user_name, mysql_user_password);
 
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
@@ -155,10 +154,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                     context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_database_settings), std::move(mysql_pool));
             }
 
-            const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
             MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
-            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
-
 
             auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
 
@@ -208,9 +204,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
         String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
 
-        zookeeper_path = context->getMacros()->expand(zookeeper_path);
-        shard_name = context->getMacros()->expand(shard_name);
-        replica_name = context->getMacros()->expand(replica_name);
+        zookeeper_path = context.getMacros()->expand(zookeeper_path);
+        shard_name = context.getMacros()->expand(shard_name);
+        replica_name = context.getMacros()->expand(replica_name);
 
         DatabaseReplicatedSettings database_replicated_settings{};
         if (engine_define->settings)
@@ -247,20 +243,14 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (engine->arguments->children.size() == 5)
             use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
 
-        /// Split into replicas if needed.
-        size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+        auto parsed_host_port = parseAddress(host_port, 5432);
 
         /// no connection is made here
-        auto connection_pool = std::make_shared<postgres::PoolWithFailover>(
-            postgres_database_name,
-            addresses,
-            username, password,
-            context->getSettingsRef().postgresql_connection_pool_size,
-            context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+        auto connection = std::make_shared<PostgreSQLConnection>(
+            postgres_database_name, parsed_host_port.first, parsed_host_port.second, username, password);
 
         return std::make_shared<DatabasePostgreSQL>(
-            context, metadata_path, engine_define, database_name, postgres_database_name, connection_pool, use_table_cache);
+            context, metadata_path, engine_define, database_name, postgres_database_name, connection, use_table_cache);
     }
 
 #endif

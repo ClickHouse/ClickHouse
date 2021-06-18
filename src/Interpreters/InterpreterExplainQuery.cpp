@@ -7,7 +7,6 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
-#include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -15,11 +14,7 @@
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/printPipeline.h>
-
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -36,9 +31,9 @@ namespace
 {
     struct ExplainAnalyzedSyntaxMatcher
     {
-        struct Data : public WithContext
+        struct Data
         {
-            explicit Data(ContextPtr context_) : WithContext(context_) {}
+            const Context & context;
         };
 
         static bool needChildVisit(ASTPtr & node, ASTPtr &)
@@ -55,7 +50,7 @@ namespace
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
             InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+                node, data.context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
@@ -124,7 +119,6 @@ struct QueryPlanSettings
 
     /// Apply query plan optimizations.
     bool optimize = true;
-    bool json = false;
 
     constexpr static char name[] = "PLAN";
 
@@ -133,9 +127,7 @@ struct QueryPlanSettings
             {"header", query_plan_options.header},
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
-            {"indexes", query_plan_options.indexes},
             {"optimize", optimize},
-            {"json", json}
     };
 };
 
@@ -229,7 +221,6 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     WriteBufferFromOwnString buf;
-    bool single_line = false;
 
     if (ast.getKind() == ASTExplainQuery::ParsedAST)
     {
@@ -243,7 +234,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         if (ast.getSettings())
             throw Exception("Settings are not supported for EXPLAIN SYNTAX query.", ErrorCodes::UNKNOWN_SETTING);
 
-        ExplainAnalyzedSyntaxVisitor::Data data(getContext());
+        ExplainAnalyzedSyntaxVisitor::Data data{.context = context};
         ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
         ast.getExplainedQuery()->format(IAST::FormatSettings(buf, false));
@@ -256,32 +247,13 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
         QueryPlan plan;
 
-        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
 
         if (settings.optimize)
-            plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
+            plan.optimize(QueryPlanOptimizationSettings(context.getSettingsRef()));
 
-        if (settings.json)
-        {
-            /// Add extra layers to make plan look more like from postgres.
-            auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
-            plan_map->add("Plan", plan.explainPlan(settings.query_plan_options));
-            auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
-            plan_array->add(std::move(plan_map));
-
-            auto format_settings = getFormatSettings(getContext());
-            format_settings.json.quote_64bit_integers = false;
-
-            JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
-            JSONBuilder::FormatContext format_context{.out = buf};
-
-            plan_array->format(json_format_settings, format_context);
-
-            single_line = true;
-        }
-        else
-            plan.explainPlan(buf, settings.query_plan_options);
+        plan.explainPlan(buf, settings.query_plan_options);
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
     {
@@ -291,11 +263,9 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
         QueryPlan plan;
 
-        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
-        auto pipeline = plan.buildQueryPipeline(
-            QueryPlanOptimizationSettings::fromContext(getContext()),
-            BuildQueryPipelineSettings::fromContext(getContext()));
+        auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context.getSettingsRef()));
 
         if (settings.graph)
         {
@@ -314,10 +284,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         }
     }
 
-    if (single_line)
-        res_columns[0]->insertData(buf.str().data(), buf.str().size());
-    else
-        fillColumn(*res_columns[0], buf.str());
+    fillColumn(*res_columns[0], buf.str());
 
     return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }

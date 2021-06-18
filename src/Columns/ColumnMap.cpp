@@ -4,8 +4,8 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <common/map.h>
-#include <common/range.h>
+#include <ext/map.h>
+#include <ext/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -114,11 +114,6 @@ StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
 {
     return nested->deserializeAndInsertFromArena(pos);
-}
-
-const char * ColumnMap::skipSerializedInArena(const char * pos) const
-{
-    return nested->skipSerializedInArena(pos);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
