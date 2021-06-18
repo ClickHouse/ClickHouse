@@ -152,6 +152,7 @@ static const auto QUEUE_UPDATE_ERROR_SLEEP_MS        = 1 * 1000;
 static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
+static const auto FAST_PART_LOOKUP_TIME_WINDOW_SEC   = 3;
 
 
 std::atomic_uint StorageReplicatedMergeTree::total_fetches {0};
@@ -1934,8 +1935,22 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
 bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 {
+    String replica;
+    
+    /// for very 'fresh' parts we want to avoid heavy lookup of 'covering' parts, which require
+    /// listing of all parts on other replicas.
+    if (time(nullptr) - entry.create_time < FAST_PART_LOOKUP_TIME_WINDOW_SEC)
+    {
+        replica = findReplicaHavingPart(entry, true);
+    }
+
     /// Looking for covering part. After that entry.actual_new_part_name may be filled.
-    String replica = findReplicaHavingCoveringPart(entry, true);
+    if (replica.empty())
+    {
+        replica = findReplicaHavingCoveringPart(entry, true);
+    }
+    
+    
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
