@@ -525,7 +525,7 @@ Setting fields:
 
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
--   `fail_on_connection_loss` – The configuration parameter that controls unexpected connection loss during query execution. By default, false. ClickHouse connects to MySQL servers using secure protocols ([SSL](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl)/[TLS](https://en.wikipedia.org/wiki/Transport_Layer_Security)). Occasionally errors might occur in the transport communication between client and server, in which case the server would abort the client connection. Note that retrying leads to increased response times. Retries can be avoided by setting the parameter to true.
+-   `fail_on_connection_loss` – The configuration parameter that controls unexpected connection loss during query execution. If `true`, then there will be an exception about connection loss straight away if there was no connection when the query was executed. If `false`, then there will be attempts to retry queries three times. By default, `false`.
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
