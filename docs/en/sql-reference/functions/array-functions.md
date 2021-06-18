@@ -39,47 +39,42 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-## range(end), range(start, end \[, step\]) {#range}
+## range(end), range(\[start, \] end \[, step\]) {#range}
 
-Returns an array of numbers from `start` to `end - 1` by `step`.
+Returns an array of `UInt` numbers from `start` to `end - 1` by `step`.
 
 **Syntax**
 ``` sql
-range(end)
+range([start, ] end [, step])
 ```
-``` sql
-range(start, end, step)
-```
-It behaves almost like pythonic `range`. But the difference is that all the arguments must be `UInt` type numbers.
+
+Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
+
 
 **Arguments**
 
--   `start` - required if step is used. `UInt` number. If not specified, defaults to 0.
--   `end` - required. `UInt` number. Must be greater than `start`.
--   `step` - optional. `UInt` number. If not specified, defaults to 1.
+-   `start` - The first element of the array. Optional, required if `step` is used. Default value: 0. [UInt](../../data-types/int-uint.md)
+-   `end` - The number before which the array of integers is constructed. Required. Must be greater than `start`. [UInt](../../data-types/int-uint.md)
+-   `step` - Determines the increment between each integer in the array. Optional. Default value: 1. [UInt](../../data-types/int-uint.md)
+
 
 **Returned value**
 
--   an array of `UInt` numbers
+-   Array of `UInt` numbers from `start` to `end - 1` by `step`.
+
 
 **Examples**
 
-Query with only `end` argument:
+Query:
 ``` sql
-SELECT range(10);
+SELECT range(5), range(1, 5), range(1, 5, 2);
 ```
 Result:
-```[0,1,2,3,4,5,6,7,8,9]```
-
-
-Query with all argumets:
-``` sql
-SELECT range(1, 10, 2);
+```txt
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
+└─────────────┴─────────────┴────────────────┘
 ```
-Result:
-`[1,3,5,7,9]`
-
-Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 ## array(x1, …), operator \[x1, …\] {#arrayx1-operator-x1}
 
