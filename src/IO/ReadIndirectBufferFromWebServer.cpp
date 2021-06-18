@@ -35,6 +35,10 @@ ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(const String & 
 std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
 {
     Poco::URI uri(url);
+
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
+    headers.emplace_back(std::make_pair("Range:", fmt::format("bytes:{}-", offset)));
+
     return std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
         Poco::Net::HTTPRequest::HTTP_GET,
@@ -51,8 +55,6 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
     if (!impl)
         impl = initialize();
 
-    pos = impl->position();
-
     bool ret = false, successful_read = false;
     auto sleep_milliseconds = std::chrono::milliseconds(100);
 
@@ -67,6 +69,9 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
         catch (const Exception & e)
         {
             LOG_WARNING(log, "Read attempt {}/{} failed from {}. ({})", try_num, max_read_tries, url, e.message());
+
+            impl.reset();
+            impl = initialize();
         }
 
         std::this_thread::sleep_for(sleep_milliseconds);
@@ -79,7 +84,8 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
     if (ret)
     {
         working_buffer = internal_buffer = impl->buffer();
-        /// Do not update pos here, because it is anyway overwritten after nextImpl() in ReadBuffer::next().
+        pos = working_buffer.begin();
+        offset += working_buffer.size();
     }
 
     return ret;
@@ -105,7 +111,7 @@ off_t ReadIndirectBufferFromWebServer::seek(off_t offset_, int whence)
 
 off_t ReadIndirectBufferFromWebServer::getPosition()
 {
-    return offset + count();
+    return offset - available();
 }
 
 }
