@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 template<typename T>
 ReadIndirectBufferFromRemoteFS<T>::ReadIndirectBufferFromRemoteFS(
-    IDiskRemote::Metadata metadata_)
+    RemoteMetadata metadata_)
     : metadata(std::move(metadata_))
 {
 }
