@@ -34,8 +34,7 @@ StorageMongoDB::StorageMongoDB(
     const std::string & username_,
     const std::string & password_,
     const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
-    const String & comment)
+    const ConstraintsDescription & constraints_)
     : IStorage(table_id_)
     , host(host_)
     , port(port_)
@@ -47,7 +46,6 @@ StorageMongoDB::StorageMongoDB(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -127,8 +125,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             username,
             password,
             args.columns,
-            args.constraints,
-            args.comment);
+            args.constraints);
     },
     {
         .source_access_type = AccessType::MONGO,

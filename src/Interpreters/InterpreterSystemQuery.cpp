@@ -10,7 +10,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -29,7 +28,6 @@
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
-#include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
@@ -192,8 +190,8 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
 }
 
 
-InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-        : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
+InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextPtr context_)
+        : WithContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
 {
 }
 
@@ -288,7 +286,6 @@ BlockIO InterpreterSystemQuery::execute()
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
             external_dictionaries_loader.reloadDictionary(query.target_dictionary, getContext());
 
-
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -300,22 +297,6 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { system_context->getEmbeddedDictionaries().reload(); }
             );
             ExternalDictionariesLoader::resetAll();
-            break;
-        }
-        case Type::RELOAD_MODEL:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-
-            auto & external_models_loader = system_context->getExternalModelsLoader();
-            external_models_loader.reloadModel(query.target_model);
-            break;
-        }
-        case Type::RELOAD_MODELS:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-
-            auto & external_models_loader = system_context->getExternalModelsLoader();
-            external_models_loader.reloadAllTriedToLoad();
             break;
         }
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
@@ -395,9 +376,6 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception("There is no " + query.database + "." + query.table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
-        case Type::RESTART_DISK:
-            restartDisk(query.disk);
-            break;
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -424,7 +402,7 @@ BlockIO InterpreterSystemQuery::execute()
 }
 
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextPtr system_context, bool need_ddl_guard)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
 
@@ -436,7 +414,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
         return nullptr;
 
-    table->flushAndShutdown();
+    table->shutdown();
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
@@ -469,7 +447,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     return table;
 }
 
-void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
+void InterpreterSystemQuery::restartReplicas(ContextPtr system_context)
 {
     std::vector<StorageID> replica_names;
     auto & catalog = DatabaseCatalog::instance();
@@ -542,7 +520,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (!query.replica_zk_path.empty())
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
-        String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
+        auto remote_replica_path = query.replica_zk_path  + "/replicas/" + query.replica;
 
         /// This check is actually redundant, but it may prevent from some user mistakes
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
@@ -641,18 +619,6 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
-void InterpreterSystemQuery::restartDisk(String & name)
-{
-    getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
-
-    auto disk = getContext()->getDisk(name);
-
-    if (DiskRestartProxy * restart_proxy = dynamic_cast<DiskRestartProxy*>(disk.get()))
-        restart_proxy->restart();
-    else
-        throw Exception("Disk " + name + " doesn't have possibility to restart", ErrorCodes::BAD_ARGUMENTS);
-}
-
 
 AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() const
 {
@@ -684,12 +650,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            break;
-        }
-        case Type::RELOAD_MODEL: [[fallthrough]];
-        case Type::RELOAD_MODELS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
             break;
         }
         case Type::RELOAD_CONFIG:
@@ -793,11 +753,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_LOGS:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
-            break;
-        }
-        case Type::RESTART_DISK:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
             break;
         }
         case Type::STOP_LISTEN_QUERIES: break;

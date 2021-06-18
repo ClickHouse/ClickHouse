@@ -17,7 +17,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -38,7 +37,7 @@ using AggregateDataPtr = char *;
 using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 struct AggregateFunctionProperties;
 
 /** Aggregate functions interface.
@@ -49,7 +48,7 @@ struct AggregateFunctionProperties;
   *  (which can be created in some memory pool),
   *  and IAggregateFunction is the external interface for manipulating them.
   */
-class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunction>
+class IAggregateFunction
 {
 public:
     IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_)
@@ -60,9 +59,6 @@ public:
 
     /// Get the result type.
     virtual DataTypePtr getReturnType() const = 0;
-
-    /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
-    virtual DataTypePtr getStateType() const;
 
     /// Get type which will be used for prediction result in case if function is an ML method.
     virtual DataTypePtr getReturnTypeToPredict() const
@@ -157,13 +153,6 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
 
-    virtual void mergeBatch(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const AggregateDataPtr * rhs,
-        Arena * arena) const = 0;
-
     /** The same for single place.
       */
     virtual void addBatchSinglePlace(
@@ -239,7 +228,9 @@ public:
     // aggregate functions implement IWindowFunction interface and so on. This
     // would be more logically correct, but more complex. We only have a handful
     // of true window functions, so this hack-ish interface suffices.
-    virtual bool isOnlyWindowFunction() const { return false; }
+    virtual IWindowFunction * asWindowFunction() { return nullptr; }
+    virtual const IWindowFunction * asWindowFunction() const
+    { return const_cast<IAggregateFunction *>(this)->asWindowFunction(); }
 
 protected:
     DataTypes argument_types;
@@ -286,18 +277,6 @@ public:
                 if (places[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
         }
-    }
-
-    void mergeBatch(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const AggregateDataPtr * rhs,
-        Arena * arena) const override
-    {
-        for (size_t i = 0; i < batch_size; ++i)
-            if (places[i])
-                static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
     }
 
     void addBatchSinglePlace(

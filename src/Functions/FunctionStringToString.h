@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Interpreters/Context_fwd.h>
 
 

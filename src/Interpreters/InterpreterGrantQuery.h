@@ -12,10 +12,10 @@ class ASTGrantQuery;
 struct User;
 struct Role;
 
-class InterpreterGrantQuery : public IInterpreter, WithMutableContext
+class InterpreterGrantQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterGrantQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
+    InterpreterGrantQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 

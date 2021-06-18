@@ -67,11 +67,11 @@ static DataTypePtr convertPostgreSQLDataType(String & type, bool is_nullable, ui
 
             if (precision <= DecimalUtils::max_precision<Decimal32>)
                 res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
+            else if (precision <= DecimalUtils::max_precision<Decimal64>)
                 res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
+            else if (precision <= DecimalUtils::max_precision<Decimal128>)
                 res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal256>) //-V547
+            else if (precision <= DecimalUtils::max_precision<Decimal256>)
                 res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
@@ -116,7 +116,7 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
     try
     {
         pqxx::read_transaction tx(connection_holder->get());
-        auto stream{pqxx::stream_from::query(tx, query)};
+        pqxx::stream_from stream(tx, pqxx::from_query, std::string_view(query));
 
         std::tuple<std::string, std::string, std::string, uint16_t> row;
         while (stream >> row)

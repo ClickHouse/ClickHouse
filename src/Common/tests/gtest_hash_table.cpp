@@ -5,16 +5,10 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/HashTable/Hash.h>
 
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteHelpers.h>
 
 #include <gtest/gtest.h>
-
-
-using namespace DB;
-
 
 /// To test dump functionality without using other hashes that can change
 template <typename T>
@@ -24,12 +18,12 @@ struct DummyHash
 };
 
 template<typename HashTable>
-std::set<std::string> convertToSet(const HashTable & table)
+std::set<typename HashTable::value_type> convertToSet(const HashTable& table)
 {
-    std::set<std::string> result;
+    std::set<typename HashTable::value_type> result;
 
     for (auto v: table)
-        result.emplace(toString(v.getValue()));
+        result.emplace(v.getValue());
 
     return result;
 }
@@ -97,8 +91,8 @@ TEST(HashTable, Iteration)
     cont.insert(2);
     cont.insert(3);
 
-    std::set<std::string> expected = {"1", "2", "3"};
-    std::set<std::string> actual = convertToSet(cont);
+    std::set<int> expected = {1, 2, 3};
+    std::set<int> actual = convertToSet(cont);
 
     ASSERT_EQ(actual, expected);
 }
@@ -257,14 +251,14 @@ TEST(HashTable, SerializationDeserialization)
         cont.insert(2);
         cont.insert(3);
 
-        WriteBufferFromOwnString wb;
+        DB::WriteBufferFromOwnString wb;
         cont.writeText(wb);
 
         std::string expected = "3,1,2,3";
 
         ASSERT_EQ(wb.str(), expected);
 
-        ReadBufferFromString rb(expected);
+        DB::ReadBufferFromString rb(expected);
 
         Cont deserialized;
         deserialized.readText(rb);
@@ -279,10 +273,10 @@ TEST(HashTable, SerializationDeserialization)
         cont.insert(2);
         cont.insert(3);
 
-        WriteBufferFromOwnString wb;
+        DB::WriteBufferFromOwnString wb;
         cont.write(wb);
 
-        ReadBufferFromString rb(wb.str());
+        DB::ReadBufferFromString rb(wb.str());
 
         Cont deserialized;
         deserialized.read(rb);
@@ -292,23 +286,23 @@ TEST(HashTable, SerializationDeserialization)
         using Cont = HashSet<int, DummyHash<int>, HashTableGrower<1>>;
         Cont cont;
 
-        WriteBufferFromOwnString wb;
+        DB::WriteBufferFromOwnString wb;
         cont.writeText(wb);
 
         std::string expected = "0";
         ASSERT_EQ(wb.str(), expected);
 
-        ReadBufferFromString rb(expected);
+        DB::ReadBufferFromString rb(expected);
 
         Cont deserialized;
         deserialized.readText(rb);
         ASSERT_EQ(convertToSet(cont), convertToSet(deserialized));
     }
     {
-        using Cont = HashSet<UInt128, UInt128TrivialHash>;
+        using Cont = HashSet<DB::UInt128, DB::UInt128TrivialHash>;
         Cont cont;
 
-        WriteBufferFromOwnString wb;
+        DB::WriteBufferFromOwnString wb;
         cont.write(wb);
 
         std::string expected;
@@ -316,7 +310,7 @@ TEST(HashTable, SerializationDeserialization)
 
         ASSERT_EQ(wb.str(), expected);
 
-        ReadBufferFromString rb(expected);
+        DB::ReadBufferFromString rb(expected);
 
         Cont deserialized;
         deserialized.read(rb);
@@ -365,8 +359,8 @@ TEST(HashTable, Resize)
         cont.insert(3);
         cont.insert(1);
 
-        std::set<std::string> expected = {"1", "3"};
-        std::set<std::string> actual = convertToSet(cont);
+        std::set<int> expected = {1, 3};
+        std::set<int> actual = convertToSet(cont);
 
         ASSERT_EQ(actual, expected);
     }

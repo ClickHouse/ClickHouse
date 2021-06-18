@@ -12,7 +12,6 @@
 #include <Parsers/ASTLiteral.h>
 #include "registerTableFunctions.h"
 
-
 namespace DB
 {
 
@@ -84,26 +83,23 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 {
     Poco::URI uri (filename);
     S3::URI s3_uri (uri);
-    UInt64 max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
     UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
     UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
     UInt64 max_connections = context->getSettingsRef().s3_max_connections;
 
     StoragePtr storage = StorageS3::create(
-        s3_uri,
-        access_key_id,
-        secret_access_key,
-        StorageID(getDatabaseName(), table_name),
-        format,
-        max_single_read_retries,
-        min_upload_part_size,
-        max_single_part_upload_size,
-        max_connections,
-        getActualTableStructure(context),
-        ConstraintsDescription{},
-        String{},
-        context,
-        compression_method);
+            s3_uri,
+            access_key_id,
+            secret_access_key,
+            StorageID(getDatabaseName(), table_name),
+            format,
+            min_upload_part_size,
+            max_single_part_upload_size,
+            max_connections,
+            getActualTableStructure(context),
+            ConstraintsDescription{},
+            context,
+            compression_method);
 
     storage->startup();
 
