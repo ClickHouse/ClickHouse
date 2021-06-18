@@ -210,7 +210,7 @@ public:
         delegate->onFreeze(wrapped_path);
     }
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context, const String & config_prefix, const DisksMap & map) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     DiskType::Type getType() const override { return DiskType::Type::Encrypted; }
 

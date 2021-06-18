@@ -129,7 +129,7 @@ SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const
 
 void DiskEncrypted::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config,
-    ContextConstPtr /*context*/,
+    ContextPtr /*context*/,
     const String & config_prefix,
     const DisksMap & map)
 {
@@ -157,7 +157,7 @@ void registerDiskEncrypted(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextConstPtr /*context*/,
+                      ContextPtr /*context*/,
                       const DisksMap & map) -> DiskPtr {
 
         String wrapped_disk_name = config.getString(config_prefix + ".disk", "");
