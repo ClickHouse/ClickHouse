@@ -7,7 +7,8 @@ from helpers.cluster import ClickHouseCluster
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", main_configs=["configs/storage_conf.xml"], with_nginx=True)
+        cluster.add_instance("node1", main_configs=["configs/storage_conf.xml"], with_nginx=True)
+        cluster.add_instance("node2", main_configs=["configs/storage_conf_web.xml"], with_nginx=True)
         cluster.start()
         yield cluster
 
@@ -15,43 +16,31 @@ def cluster():
         cluster.shutdown()
 
 
-def test_insert_select(cluster):
-    node = cluster.instances["node"]
-    node.query("""
-        CREATE TABLE test1 (id Int32)
+def test_usage(cluster):
+    node1 = cluster.instances["node1"]
+    node1.query("""
+        CREATE TABLE data (id Int32)
         ENGINE = MergeTree() ORDER BY id
-        SETTINGS storage_policy = 'web';
+        SETTINGS storage_policy = 'def';
     """)
+    node1.query("INSERT INTO data SELECT number FROM numbers(100)")
+    expected = node1.query("SELECT * FROM data ORDER BY id")
 
-    node.query("INSERT INTO test1 SELECT number FROM numbers(100)")
-    result = node.query("SELECT count() FROM test1")
-    assert(int(result) == 100)
+    metadata_path = node1.query("SELECT data_paths FROM system.tables WHERE name='data'")
+    metadata_path = metadata_path[metadata_path.find('/'):metadata_path.rfind('/')+1]
+    print(f'Metadata: {metadata_path}')
 
-    node.query("DETACH TABLE test1")
-    node.query("ATTACH TABLE test1")
-    result = node.query("SELECT count() FROM test1")
-    assert(int(result) == 100)
+    node1.exec_in_container(['bash', '-c',
+                            '/usr/bin/clickhouse web-server-exporter --files-prefix data --url http://nginx:80/test1 --metadata-path {}'.format(metadata_path)], user='root')
+    parts = metadata_path.split('/')
+    uuid = parts[3]
+    print(f'UUID: {uuid}')
+    node2 = cluster.instances["node2"]
 
-    node = cluster.instances["node"]
-    node.query("""
-        CREATE TABLE test2 (id Int32)
-        ENGINE = MergeTree() ORDER BY id
+    node2.query("""
+        ATTACH TABLE test1 UUID '{}'
+        (id Int32) ENGINE = MergeTree() ORDER BY id
         SETTINGS storage_policy = 'web';
-    """)
-
-    node.query("INSERT INTO test2 SELECT number FROM numbers(500000)")
-    result = node.query("SELECT id FROM test2 ORDER BY id")
-    expected = node.query("SELECT number FROM numbers(500000)")
+    """.format(uuid))
+    result = node2.query("SELECT * FROM test1 ORDER BY id")
     assert(result == expected)
-    node.query("INSERT INTO test2 SELECT number FROM numbers(500000, 500000)")
-    node.query("DETACH TABLE test2")
-    node.query("ATTACH TABLE test2")
-    node.query("INSERT INTO test2 SELECT number FROM numbers(1000000, 500000)")
-    result = node.query("SELECT count() FROM test2")
-    assert(int(result) == 1500000)
-    result = node.query("SELECT id FROM test2 WHERE id % 100 = 0 ORDER BY id")
-    assert(result == node.query("SELECT number FROM numbers(1500000) WHERE number % 100 = 0"))
-    result = node.query("SELECT id FROM test2 ORDER BY id")
-    assert(result == node.query("SELECT number FROM numbers(1500000)"))
-    result = node.query("SELECT id FROM test2 WHERE id > 500002 AND id < 1000448 ORDER BY id")
-    assert(result == node.query("SELECT number FROM numbers(1500000) WHERE number > 500002 AND number < 1000448"))
