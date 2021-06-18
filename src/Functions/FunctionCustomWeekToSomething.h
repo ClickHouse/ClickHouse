@@ -3,14 +3,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/CustomWeekTransforms.h>
-#include <Functions/IFunction.h>
-#include <Functions/TransformDateTime64.h>
+#include <Functions/IFunctionImpl.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -24,7 +23,7 @@ class FunctionCustomWeekToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionCustomWeekToSomething>(); }
 
     String getName() const override { return name; }
 
@@ -35,7 +34,7 @@ public:
     {
         if (arguments.size() == 1)
         {
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDateOrDateTime(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -43,7 +42,7 @@ public:
         }
         else if (arguments.size() == 2)
         {
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDateOrDateTime(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -59,7 +58,7 @@ public:
         }
         else if (arguments.size() == 3)
         {
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDateOrDateTime(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -144,15 +143,15 @@ public:
 
         if (checkAndGetDataType<DataTypeDate>(&type))
         {
-            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), date_lut)
-                    == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
+            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), DEFAULT_WEEK_MODE, date_lut)
+                    == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), DEFAULT_WEEK_MODE, date_lut)
                 ? is_monotonic
                 : is_not_monotonic;
         }
         else
         {
-            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), date_lut)
-                    == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), date_lut)
+            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), DEFAULT_WEEK_MODE, date_lut)
+                    == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), DEFAULT_WEEK_MODE, date_lut)
                 ? is_monotonic
                 : is_not_monotonic;
         }

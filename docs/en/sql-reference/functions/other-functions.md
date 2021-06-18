@@ -696,6 +696,10 @@ Returns the server’s uptime in seconds.
 
 Returns the version of the server as a string.
 
+## timezone() {#timezone}
+
+Returns the timezone of the server.
+
 ## blockNumber {#blocknumber}
 
 Returns the sequence number of the data block where the row is located.
@@ -903,64 +907,66 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-Same as for [runningDifference](./other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
+Same as for [runningDifference](../../sql-reference/functions/other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
 ## runningConcurrency {#runningconcurrency}
 
-Calculates the number of concurrent events.
-Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type. 
-The function calculates the total number of active (concurrent) events for each event start time.
-
+Given a series of beginning time and ending time of events, this function calculates concurrency of the events at each of the data point, that is, the beginning time.
 
 !!! warning "Warning"
-    Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception.
-    Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
+    Events spanning multiple data blocks will not be processed correctly. The function resets its state for each new data block.
+
+The result of the function depends on the order of data in the block. It assumes the beginning time is sorted in ascending order.
 
 **Syntax**
 
 ``` sql
-runningConcurrency(start, end)
+runningConcurrency(begin, end)
 ```
 
 **Arguments**
 
--   `start` — A column with the start time of events. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `end` — A column with the end time of events.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `begin` — A column for the beginning time of events (inclusive). [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `end` — A column for the ending time of events (exclusive).  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+Note that two columns `begin` and `end` must have the same type.
 
 **Returned values**
 
--   The number of concurrent events at each event start time.
+-   The concurrency of events at the data point.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md)
 
 **Example**
 
-Consider the table:
+Input table:
 
 ``` text
-┌──────start─┬────────end─┐
-│ 2021-03-03 │ 2021-03-11 │
-│ 2021-03-06 │ 2021-03-12 │
-│ 2021-03-07 │ 2021-03-08 │
-│ 2021-03-11 │ 2021-03-12 │
-└────────────┴────────────┘
+┌───────────────begin─┬─────────────────end─┐
+│ 2020-12-01 00:00:00 │ 2020-12-01 00:59:59 │
+│ 2020-12-01 00:30:00 │ 2020-12-01 00:59:59 │
+│ 2020-12-01 00:40:00 │ 2020-12-01 01:30:30 │
+│ 2020-12-01 01:10:00 │ 2020-12-01 01:30:30 │
+│ 2020-12-01 01:50:00 │ 2020-12-01 01:59:59 │
+└─────────────────────┴─────────────────────┘
 ```
 
 Query:
 
 ``` sql
-SELECT start, runningConcurrency(start, end) FROM example_table;
+SELECT runningConcurrency(begin, end) FROM example
 ```
 
 Result:
 
 ``` text
-┌──────start─┬─runningConcurrency(start, end)─┐
-│ 2021-03-03 │                              1 │
-│ 2021-03-06 │                              2 │
-│ 2021-03-07 │                              3 │
-│ 2021-03-11 │                              2 │
-└────────────┴────────────────────────────────┘
+┌─runningConcurrency(begin, end)─┐
+│                              1 │
+│                              2 │
+│                              3 │
+│                              2 │
+│                              1 │
+└────────────────────────────────┘
 ```
 
 ## MACNumToString(num) {#macnumtostringnum}
@@ -1186,109 +1192,6 @@ SELECT defaultValueOfTypeName('Nullable(Int8)')
 ┌─defaultValueOfTypeName('Nullable(Int8)')─┐
 │                                     ᴺᵁᴸᴸ │
 └──────────────────────────────────────────┘
-```
-
-## indexHint {#indexhint}
-The function is intended for debugging and introspection purposes. The function ignores it's argument and always returns 1. Arguments are not even evaluated.
-
-But for the purpose of index analysis, the argument of this function is analyzed as if it was present directly without being wrapped inside `indexHint` function. This allows to select data in index ranges by the corresponding condition but without further filtering by this condition. The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
-
-**Syntax**
-
-```sql
-SELECT * FROM table WHERE indexHint(<expression>)
-```
-
-**Returned value**
-
-1. Type: [Uint8](https://clickhouse.yandex/docs/en/data_types/int_uint/#diapazony-uint).
-
-**Example**
-
-Here is the example of test data from the table [ontime](../../getting-started/example-datasets/ontime.md).
-
-Input table:
-
-```sql
-SELECT count() FROM ontime
-```
-
-```text
-┌─count()─┐
-│ 4276457 │
-└─────────┘
-```
-
-The table has indexes on the fields `(FlightDate, (Year, FlightDate))`.
-
-Create a query, where the index is not used.
-
-Query:
-
-```sql
-SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
-```
-
-ClickHouse processed the entire table (`Processed 4.28 million rows`).
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-01-01 │   13970 │
-│ 2017-01-02 │   15882 │
-........................
-│ 2017-09-28 │   16411 │
-│ 2017-09-29 │   16384 │
-│ 2017-09-30 │   12520 │
-└────────────┴─────────┘
-```
-
-To apply the index, select a specific date.
-
-Query:
-
-```sql
-SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
-```
-
-By using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-09-15 │   16428 │
-└────────────┴─────────┘
-```
-
-Now wrap the expression `k = '2017-09-15'` into `indexHint` function.
-
-Query:
-
-```sql
-SELECT
-    FlightDate AS k,
-    count()
-FROM ontime
-WHERE indexHint(k = '2017-09-15')
-GROUP BY k
-ORDER BY k ASC
-```
-
-ClickHouse used the index in the same way as the previous time (`Processed 32.74 thousand rows`).
-The expression `k = '2017-09-15'` was not used when generating the result.
-In examle the `indexHint` function allows to see adjacent dates.
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-09-14 │    7071 │
-│ 2017-09-15 │   16428 │
-│ 2017-09-16 │    1077 │
-│ 2017-09-30 │    8167 │
-└────────────┴─────────┘
 ```
 
 ## replicate {#other-functions-replicate}
@@ -1654,7 +1557,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Returns list of values corresponded to list of keys.
 
-If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+If certain doesn’t exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
 
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
 
@@ -1714,7 +1617,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity {#identity}
 
-Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer does not look inside `identity` functions. Also constant folding is not applied too.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn’t look inside `identity` functions. Also constant folding is not applied too.
 
 **Syntax**
 
@@ -1858,6 +1761,7 @@ Result:
 └──────────┴───────────────────────────────────┘
 
 ```
+
 
 ## randomStringUTF8 {#randomstringutf8}
 
@@ -2067,3 +1971,4 @@ Result:
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

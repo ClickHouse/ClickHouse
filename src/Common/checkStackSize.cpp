@@ -1,6 +1,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <pthread.h>
 #include <cstdint>
 
@@ -49,7 +49,7 @@ __attribute__((__weak__)) void checkStackSize()
         stack_address = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) - max_stack_size);
 #else
         pthread_attr_t attr;
-#   if defined(__FreeBSD__) || defined(OS_SUNOS)
+#   if defined(__FreeBSD__)
         pthread_attr_init(&attr);
         if (0 != pthread_attr_get_np(pthread_self(), &attr))
             throwFromErrno("Cannot pthread_attr_get_np", ErrorCodes::CANNOT_PTHREAD_ATTR);

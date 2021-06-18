@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/DummyJSONParser.h>
 #include <Functions/SimdJSONParser.h>
@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <type_traits>
 #include <boost/tti/has_member_function.hpp>
 
@@ -108,7 +108,7 @@ public:
                 document_ok = parser.parse(json, document);
             }
 
-            for (const auto i : collections::range(0, input_rows_count))
+            for (const auto i : ext::range(0, input_rows_count))
             {
                 if (!col_json_const)
                 {
@@ -270,11 +270,11 @@ private:
 
 
 template <typename Name, template<typename> typename Impl>
-class FunctionJSON : public IFunction, WithContext
+class FunctionJSON : public IFunction
 {
 public:
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionJSON>(context_); }
-    FunctionJSON(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionJSON>(context_); }
+    FunctionJSON(const Context & context_) : context(context_) {}
 
     static constexpr auto name = Name::name;
     String getName() const override { return Name::name; }
@@ -291,7 +291,7 @@ public:
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
-        if (getContext()->getSettingsRef().allow_simdjson)
+        if (context.getSettingsRef().allow_simdjson)
             return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
 
@@ -301,6 +301,9 @@ public:
         return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
     }
+
+private:
+    const Context & context;
 };
 
 
@@ -610,8 +613,8 @@ struct JSONExtractTree
     class Node
     {
     public:
-        Node() = default;
-        virtual ~Node() = default;
+        Node() {}
+        virtual ~Node() {}
         virtual bool insertResultToColumn(IColumn &, const Element &) = 0;
     };
 

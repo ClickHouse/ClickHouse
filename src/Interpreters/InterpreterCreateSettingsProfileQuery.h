@@ -6,14 +6,14 @@
 
 namespace DB
 {
-
 class ASTCreateSettingsProfileQuery;
 struct SettingsProfile;
 
-class InterpreterCreateSettingsProfileQuery : public IInterpreter, WithMutableContext
+
+class InterpreterCreateSettingsProfileQuery : public IInterpreter
 {
 public:
-    InterpreterCreateSettingsProfileQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
+    InterpreterCreateSettingsProfileQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
@@ -21,6 +21,6 @@ public:
 
 private:
     ASTPtr query_ptr;
+    Context & context;
 };
-
 }

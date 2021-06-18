@@ -97,29 +97,6 @@ class SettingsClause : public INode
 
 // Statement
 
-class ProjectionSelectStmt : public INode
-{
-    public:
-        ProjectionSelectStmt(PtrTo<ColumnExprList> expr_list);
-
-        void setWithClause(PtrTo<WithClause> clause);
-        void setGroupByClause(PtrTo<GroupByClause> clause);
-        void setOrderByClause(PtrTo<ProjectionOrderByClause> clause);
-
-        ASTPtr convertToOld() const override;
-
-    private:
-        enum ChildIndex : UInt8
-        {
-            COLUMNS = 0,  // ColumnExprList
-            WITH,         // WithClause (optional)
-            GROUP_BY,     // GroupByClause (optional)
-            ORDER_BY,     // OrderByClause (optional)
-
-            MAX_INDEX,
-        };
-};
-
 class SelectStmt : public INode
 {
     public:
