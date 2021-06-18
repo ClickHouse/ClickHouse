@@ -1,6 +1,5 @@
 import time
 import pytest
-import logging
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -8,9 +7,9 @@ from helpers.network import PartitionManager
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_by_path
 
 def fill_node(node):
-    node.query_with_retry(
+    node.query(
     '''
-        CREATE TABLE IF NOT EXISTS test(n UInt32)
+        CREATE TABLE test(n UInt32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test', '{replica}')
         ORDER BY n PARTITION BY n % 10;
     '''.format(replica=node.name))
@@ -40,9 +39,9 @@ def start_cluster():
 def check_data(nodes, detached_parts):
     for node in nodes:
         print("> Replication queue for", node.name, "\n> table\treplica_name\tsource_replica\ttype\tposition\n",
-            node.query_with_retry("SELECT table, replica_name, source_replica, type, position FROM system.replication_queue"))
+            node.query("SELECT table, replica_name, source_replica, type, position FROM system.replication_queue"))
 
-        node.query_with_retry("SYSTEM SYNC REPLICA test")
+        node.query("SYSTEM SYNC REPLICA test")
 
         print("> Checking data integrity for", node.name)
 
@@ -57,7 +56,7 @@ def check_data(nodes, detached_parts):
 
         for other in nodes:
             if other != node:
-                logging.debug(f"> Checking data consistency, {other.name} vs {node.name}")
+                print("> Checking data consistency,", other.name, "vs", node.name)
                 assert_eq_with_retry(other, "SELECT * FROM test ORDER BY n", res)
 
 
@@ -93,12 +92,11 @@ def test_attach_without_fetching(start_cluster):
     # 3. Break the part data on the second node to corrupt the checksums.
     # Replica 3 should download the data from replica 1 as there is no local data.
     # Replica 2 should also download the data from 1 as the checksums won't match.
-    logging.debug("Checking attach with corrupted part data with files missing")
+    print("Checking attach with corrupted part data with files missing")
 
-    to_delete = node_2.exec_in_container(['bash', '-c',
+    print("Before deleting:", node_2.exec_in_container(['bash', '-c',
                             'cd {p} && ls *.bin'.format(
-                                p="/var/lib/clickhouse/data/default/test/detached/2_0_0_0")], privileged=True)
-    logging.debug(f"Before deleting: {to_delete}")
+                                p="/var/lib/clickhouse/data/default/test/detached/2_0_0_0")], privileged=True))
 
     node_2.exec_in_container(['bash', '-c',
                             'cd {p} && rm -fr *.bin'.format(

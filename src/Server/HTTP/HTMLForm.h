@@ -12,8 +12,6 @@
 namespace DB
 {
 
-struct Settings;
-
 class HTMLForm : public Poco::Net::NameValueCollection, private boost::noncopyable
 {
 public:
@@ -21,31 +19,31 @@ public:
 
     enum Options
     {
-        OPT_USE_CONTENT_LENGTH = 0x01,  /// don't use Chunked Transfer-Encoding for multipart requests.
+        OPT_USE_CONTENT_LENGTH = 0x01 // don't use Chunked Transfer-Encoding for multipart requests.
     };
 
     /// Creates an empty HTMLForm and sets the
     /// encoding to "application/x-www-form-urlencoded".
-    explicit HTMLForm(const Settings & settings);
+    HTMLForm();
 
     /// Creates an empty HTMLForm that uses the given encoding.
     /// Encoding must be either "application/x-www-form-urlencoded" (which is the default) or "multipart/form-data".
-    explicit HTMLForm(const Settings & settings, const std::string & encoding);
+    explicit HTMLForm(const std::string & encoding);
 
     /// Creates a HTMLForm from the given HTTP request.
     /// Uploaded files are passed to the given PartHandler.
-    HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler);
+    HTMLForm(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler);
 
     /// Creates a HTMLForm from the given HTTP request.
     /// Uploaded files are silently discarded.
-    HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody);
+    HTMLForm(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody);
 
     /// Creates a HTMLForm from the given HTTP request.
     /// The request must be a GET request and the form data must be in the query string (URL encoded).
     /// For POST requests, you must use one of the constructors taking an additional input stream for the request body.
-    explicit HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request);
+    explicit HTMLForm(const Poco::Net::HTTPRequest & request);
 
-    explicit HTMLForm(const Settings & settings, const Poco::URI & uri);
+    explicit HTMLForm(const Poco::URI & uri);
 
     template <typename T>
     T getParsed(const std::string & key, T default_value)
@@ -78,6 +76,13 @@ private:
     /// This buffer provides data line by line to check for boundary line in a convenient way.
     class MultipartReadBuffer;
 
+    enum Limits
+    {
+        DFL_FIELD_LIMIT = 100,
+        MAX_NAME_LENGTH = 1024,
+        DFL_MAX_VALUE_LENGTH = 256 * 1024
+    };
+
     struct Part
     {
         std::string name;
@@ -86,8 +91,8 @@ private:
 
     using PartVec = std::vector<Part>;
 
-    const size_t max_fields_number, max_field_name_size, max_field_value_size;
-
+    size_t field_limit;
+    size_t value_length_limit;
     std::string encoding;
     std::string boundary;
     PartVec parts;

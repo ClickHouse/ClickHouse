@@ -296,7 +296,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                     break;
                 }
                 else if (changelog_description.from_log_index > start_to_read_from)
-                    LOG_WARNING(log, "Don't have required amount of reserved log records. Need to read from {}, smallest available log index on disk {}.", start_to_read_from, changelog_description.from_log_index);
+                    LOG_WARNING(log, "Don't have required amount of reserved log records. Need to read from {}, smalled available log index on disk {}.", start_to_read_from, changelog_description.from_log_index);
             }
 
             started = true;

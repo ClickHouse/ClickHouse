@@ -28,7 +28,8 @@ class Backport:
     def getBranchesWithRelease(self):
         branches = set()
         for pull_request in self._gh.find_pull_requests("release"):
-            branches.add(pull_request['headRefName'])
+            if not pull_request['merged'] and not pull_request['closed']:
+                branches.add(pull_request['headRefName'])
         return branches
 
     def execute(self, repo, upstream, until_commit, run_cherrypick):

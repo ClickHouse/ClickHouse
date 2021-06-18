@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
 }
 
-DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);

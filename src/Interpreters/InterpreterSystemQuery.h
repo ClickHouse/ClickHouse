@@ -30,10 +30,10 @@ class ASTSystemQuery;
   * - start/stop actions for all existing tables.
   * Note that the actions for tables that will be created after this query will not be affected.
   */
-class InterpreterSystemQuery : public IInterpreter, WithMutableContext
+class InterpreterSystemQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
+    InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextPtr context_);
 
     BlockIO execute() override;
 
@@ -45,9 +45,9 @@ private:
 
     /// Tries to get a replicated table and restart it
     /// Returns pointer to a newly created table if the restart was successful
-    StoragePtr tryRestartReplica(const StorageID & replica, ContextMutablePtr context, bool need_ddl_guard = true);
+    StoragePtr tryRestartReplica(const StorageID & replica, ContextPtr context, bool need_ddl_guard = true);
 
-    void restartReplicas(ContextMutablePtr system_context);
+    void restartReplicas(ContextPtr system_context);
     void syncReplica(ASTSystemQuery & query);
     void dropReplica(ASTSystemQuery & query);
     bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);

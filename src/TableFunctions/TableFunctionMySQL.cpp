@@ -15,7 +15,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageMySQL.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionMySQL.h>
@@ -108,8 +107,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
         columns,
         ConstraintsDescription{},
         String{},
-        context,
-        MySQLSettings{});
+        context);
 
     pool.reset();
 

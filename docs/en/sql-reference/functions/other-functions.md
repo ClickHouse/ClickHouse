@@ -1654,7 +1654,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Returns list of values corresponded to list of keys.
 
-If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+If certain doesn’t exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
 
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
 
@@ -1714,7 +1714,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity {#identity}
 
-Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer does not look inside `identity` functions. Also constant folding is not applied too.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn’t look inside `identity` functions. Also constant folding is not applied too.
 
 **Syntax**
 

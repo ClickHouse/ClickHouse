@@ -1,8 +1,4 @@
----
-toc_priority: 145
----
-
-# rankCorr {#agg_function-rankcorr}
+## rankCorr {#agg_function-rankcorr}
 
 Вычисляет коэффициент ранговой корреляции.
 

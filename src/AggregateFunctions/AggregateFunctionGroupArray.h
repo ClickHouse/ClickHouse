@@ -26,8 +26,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;

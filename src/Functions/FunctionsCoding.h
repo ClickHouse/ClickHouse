@@ -26,7 +26,7 @@
 #include <Common/typeid_cast.h>
 
 #include <arpa/inet.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <type_traits>
 #include <array>
 
@@ -970,9 +970,7 @@ public:
         WhichDataType which(arguments[0]);
 
         if (!which.isStringOrFixedString() &&
-            !which.isDate() &&
-            !which.isDateTime() &&
-            !which.isDateTime64() &&
+            !which.isDateOrDateTime() &&
             !which.isUInt() &&
             !which.isFloat() &&
             !which.isDecimal())

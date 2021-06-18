@@ -18,37 +18,37 @@ toc_title: JSON
 
 Проверяет наличие поля с именем `name`.
 
-Синоним: `simpleJSONHas`.
+Алиас: `simpleJSONHas`.
 
 ## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
 
 Пытается выделить число типа UInt64 из значения поля с именем `name`. Если поле строковое, пытается выделить число из начала строки. Если такого поля нет, или если оно есть, но содержит не число, то возвращает 0.
 
-Синоним: `simpleJSONExtractUInt`.
+Алиас: `simpleJSONExtractUInt`.
 
 ## visitParamExtractInt(params, name) {#visitparamextractintparams-name}
 
 Аналогично для Int64.
 
-Синоним: `simpleJSONExtractInt`.
+Алиас: `simpleJSONExtractInt`.
 
 ## visitParamExtractFloat(params, name) {#visitparamextractfloatparams-name}
 
 Аналогично для Float64.
 
-Синоним: `simpleJSONExtractFloat`.
+Алиас: `simpleJSONExtractFloat`.
 
 ## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
 
 Пытается выделить значение true/false. Результат — UInt8.
 
-Синоним: `simpleJSONExtractBool`.
+Алиас: `simpleJSONExtractBool`.
 
 ## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
 
 Возвращает значение поля, включая разделители.
 
-Синоним: `simpleJSONExtractRaw`.
+Алиас: `simpleJSONExtractRaw`.
 
 Примеры:
 
@@ -61,7 +61,7 @@ visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
 
 Разбирает строку в двойных кавычках. У значения убирается экранирование. Если убрать экранированные символы не удалось, то возвращается пустая строка.
 
-Синоним: `simpleJSONExtractString`.
+Алиас: `simpleJSONExtractString`.
 
 Примеры:
 

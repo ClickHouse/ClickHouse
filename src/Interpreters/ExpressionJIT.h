@@ -5,47 +5,35 @@
 #endif
 
 #if USE_EMBEDDED_COMPILER
+#    include <Functions/IFunction.h>
 #    include <Common/LRUCache.h>
 #    include <Common/HashTable/Hash.h>
+
 
 namespace DB
 {
 
-class CompiledFunction;
-
-class CompiledFunctionCacheEntry
+struct CompiledFunction
 {
-public:
-    CompiledFunctionCacheEntry(std::shared_ptr<CompiledFunction> compiled_function_, size_t compiled_function_size_)
-        : compiled_function(std::move(compiled_function_))
-        , compiled_function_size(compiled_function_size_)
-    {}
-
-    std::shared_ptr<CompiledFunction> getCompiledFunction() const { return compiled_function; }
-
-    size_t getCompiledFunctionSize() const { return compiled_function_size; }
-
-private:
-    std::shared_ptr<CompiledFunction> compiled_function;
-
-    size_t compiled_function_size;
+    FunctionBasePtr function;
+    size_t compiled_size;
 };
 
 struct CompiledFunctionWeightFunction
 {
-    size_t operator()(const CompiledFunctionCacheEntry & compiled_function) const
+    size_t operator()(const CompiledFunction & compiled_function) const
     {
-        return compiled_function.getCompiledFunctionSize();
+        return compiled_function.compiled_size;
     }
 };
 
 /** This child of LRUCache breaks one of it's invariants: total weight may be changed after insertion.
  * We have to do so, because we don't known real memory consumption of generated LLVM code for every function.
  */
-class CompiledExpressionCache : public LRUCache<UInt128, CompiledFunctionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>
+class CompiledExpressionCache : public LRUCache<UInt128, CompiledFunction, UInt128Hash, CompiledFunctionWeightFunction>
 {
 public:
-    using Base = LRUCache<UInt128, CompiledFunctionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>;
+    using Base = LRUCache<UInt128, CompiledFunction, UInt128Hash, CompiledFunctionWeightFunction>;
     using Base::Base;
 };
 

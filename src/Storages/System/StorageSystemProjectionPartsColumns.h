@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 
 
@@ -14,9 +14,9 @@ class Context;
  * columns in projection parts for tables of MergeTree family.
  */
 class StorageSystemProjectionPartsColumns final
-        : public shared_ptr_helper<StorageSystemProjectionPartsColumns>, public StorageSystemPartsBase
+        : public ext::shared_ptr_helper<StorageSystemProjectionPartsColumns>, public StorageSystemPartsBase
 {
-    friend struct shared_ptr_helper<StorageSystemProjectionPartsColumns>;
+    friend struct ext::shared_ptr_helper<StorageSystemProjectionPartsColumns>;
 public:
     std::string getName() const override { return "SystemProjectionPartsColumns"; }
 

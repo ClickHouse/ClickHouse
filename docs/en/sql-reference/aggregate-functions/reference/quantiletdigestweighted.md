@@ -18,10 +18,10 @@ When using multiple `quantile*` functions with different levels in a query, the 
 **Syntax**
 
 ``` sql
-quantileTDigestWeighted(level)(expr, weight)
+quantileTDigest(level)(expr)
 ```
 
-Alias: `medianTDigestWeighted`.
+Alias: `medianTDigest`.
 
 **Arguments**
 

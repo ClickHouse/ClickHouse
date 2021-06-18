@@ -13,7 +13,6 @@
 
 namespace DB
 {
-struct Settings;
 
 struct AggregateFunctionCountData
 {
@@ -100,7 +99,7 @@ public:
     }
 
     /// Reset the state to specified value. This function is not the part of common interface.
-    void set(AggregateDataPtr __restrict place, UInt64 new_count) const
+    void set(AggregateDataPtr __restrict place, UInt64 new_count)
     {
         data(place).count = new_count;
     }

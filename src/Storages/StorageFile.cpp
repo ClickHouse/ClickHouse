@@ -28,6 +28,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <Poco/Path.h>
+#include <Poco/File.h>
+
 #include <re2/re2.h>
 #include <filesystem>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -35,7 +38,6 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
-
 
 namespace fs = std::filesystem;
 
@@ -76,9 +78,10 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
 
     std::vector<std::string> result;
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
-    if (!fs::exists(prefix_without_globs))
+    if (!fs::exists(fs::path(prefix_without_globs)))
+    {
         return result;
-
+    }
     const fs::directory_iterator end;
     for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
     {
@@ -99,7 +102,7 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
             if (re2::RE2::FullMatch(file_name, matcher))
             {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
-                Strings result_part = listFilesWithRegexpMatching(fs::path(full_path) / "", suffix_with_globs.substr(next_slash));
+                Strings result_part = listFilesWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash));
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
@@ -122,20 +125,21 @@ void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_di
     if (!startsWith(table_path, db_dir_path) && table_path != "/dev/null")
         throw Exception("File is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
-    if (fs::exists(table_path) && fs::is_directory(table_path))
+    Poco::File table_path_poco_file = Poco::File(table_path);
+    if (table_path_poco_file.exists() && table_path_poco_file.isDirectory())
         throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
 }
 
 Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextPtr context)
 {
-    fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
-    fs::path fs_table_path(table_path);
-    if (fs_table_path.is_relative())
-        fs_table_path = user_files_absolute_path / fs_table_path;
+    String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
+    Poco::Path poco_path = Poco::Path(table_path);
+    if (poco_path.isRelative())
+        poco_path = Poco::Path(user_files_absolute_path, poco_path);
 
     Strings paths;
-    const String path = fs::weakly_canonical(fs_table_path);
+    const String path = poco_path.absolute().toString();
     if (path.find_first_of("*?{") == std::string::npos)
         paths.push_back(path);
     else
@@ -200,8 +204,8 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     if (args.format_name == "Distributed")
         throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
-    fs::create_directories(table_dir_path);
+    String table_dir_path = base_path + relative_table_dir_path + "/";
+    Poco::File(table_dir_path).createDirectories();
     paths = {getTablePath(table_dir_path, format_name)};
 }
 
@@ -452,7 +456,7 @@ Pipe StorageFile::read(
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
     else
-        if (paths.size() == 1 && !fs::exists(paths[0]))
+        if (paths.size() == 1 && !Poco::File(paths[0]).exists())
         {
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
                 return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
@@ -595,7 +599,7 @@ BlockOutputStreamPtr StorageFile::write(
     if (!paths.empty())
     {
         path = paths[0];
-        fs::create_directories(fs::path(path).parent_path());
+        Poco::File(Poco::Path(path).makeParent()).createDirectories();
     }
 
     return std::make_shared<StorageFileBlockOutputStream>(
@@ -632,8 +636,8 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
     if (path_new == paths[0])
         return;
 
-    fs::create_directories(fs::path(path_new).parent_path());
-    fs::rename(paths[0], path_new);
+    Poco::File(Poco::Path(path_new).parent()).createDirectories();
+    Poco::File(paths[0]).renameTo(path_new);
 
     paths[0] = std::move(path_new);
     renameInMemory(new_table_id);
@@ -655,7 +659,7 @@ void StorageFile::truncate(
     }
     else
     {
-        if (!fs::exists(paths[0]))
+        if (!Poco::File(paths[0]).exists())
             return;
 
         if (0 != ::truncate(paths[0].c_str(), 0))
