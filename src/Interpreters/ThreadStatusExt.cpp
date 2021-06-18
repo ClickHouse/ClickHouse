@@ -1,9 +1,12 @@
 #include <Common/ThreadStatus.h>
 
+#include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/QueryViewsLog.h>
+#include <Parsers/formatAST.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/QueryProfiler.h>
@@ -453,6 +456,45 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
     }
 
     thread_log.add(elem);
+}
+
+void ThreadStatus::logToQueryViewsLog(QueryViewsLog & views_log, const ViewInfo & vinfo)
+{
+    QueryViewsLogElement element;
+
+    element.event_time = time_in_seconds(vinfo.runtime_stats.start);
+    element.event_time_microseconds = time_in_microseconds(vinfo.runtime_stats.start);
+    element.view_duration_ms = vinfo.runtime_stats.elapsed_ms;
+
+    element.initial_query_id = vinfo.runtime_stats.initial_query_id;
+    element.view_name = vinfo.table_id.getNameForLogs();
+    element.view_uuid = vinfo.table_id.uuid;
+    element.view_type = vinfo.runtime_stats.type;
+    if (vinfo.query)
+        element.view_query = serializeAST(*vinfo.query, true); // TODO: Anonymize like query_log ?
+    element.view_target = vinfo.runtime_stats.target_name;
+
+    element.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
+    element.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
+    element.written_rows = progress_out.written_rows.load(std::memory_order_relaxed);
+    element.written_bytes = progress_out.written_bytes.load(std::memory_order_relaxed);
+    element.memory_usage = memory_tracker.get();
+    element.peak_memory_usage = memory_tracker.getPeak();
+    //    if (query_context_ptr->getSettingsRef().log_profile_events != 0) // TODO
+    {
+        element.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
+    }
+
+    element.end_status = EXCEPTION_BEFORE_START;
+    element.exception_code = 0;
+    if (vinfo.exception)
+    {
+        element.exception_code = 0;
+        element.exception = "TODO";
+        element.stack_trace = "TODO";
+    }
+
+    views_log.add(element);
 }
 
 void CurrentThread::initializeQuery()

@@ -37,6 +37,8 @@ struct RUsageCounters;
 struct PerfEventsCounters;
 class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
+struct ViewInfo;
+class QueryViewsLog;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -212,6 +214,8 @@ public:
 
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
+
+    void logToQueryViewsLog(QueryViewsLog & views_log, const ViewInfo & vinfo);
 
 protected:
     void applyQuerySettings();
