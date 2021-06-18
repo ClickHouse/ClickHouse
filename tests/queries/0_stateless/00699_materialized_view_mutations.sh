@@ -2,8 +2,9 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+
+. "$CURDIR"/mergetree_mutations.lib
 
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
@@ -17,14 +18,18 @@ INSERT INTO null_00699 SELECT * FROM numbers(100);
 SELECT count(), min(x), max(x) FROM null_00699;
 SELECT count(), min(x), max(x) FROM view_00699;
 
-ALTER TABLE null_00699 DELETE WHERE x % 2 = 0;"  --mutations_sync=1
+ALTER TABLE null_00699 DELETE WHERE x % 2 = 0;"
+
+wait_for_mutation null_00699 mutation_2.txt
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
 SELECT count(), min(x), max(x) FROM null_00699;
 SELECT count(), min(x), max(x) FROM view_00699;
 
 ALTER TABLE view_00699 DELETE WHERE x % 2 = 0;
-" --mutations_sync=1
+"
+
+wait_for_mutation .inner.view_00699 mutation_2.txt
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
 SELECT count(), min(x), max(x) FROM null_00699;
@@ -32,7 +37,10 @@ SELECT count(), min(x), max(x) FROM view_00699;
 
 ALTER TABLE null_00699 DELETE WHERE x % 2 = 1;
 ALTER TABLE view_00699 DELETE WHERE x % 2 = 1;
-" --mutations_sync=1
+"
+
+wait_for_mutation null_00699 mutation_3.txt
+wait_for_mutation .inner.view_00699 mutation_3.txt
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
 SELECT count(), min(x), max(x) FROM null_00699;

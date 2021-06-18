@@ -24,19 +24,11 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
     const auto & header = getPort(port_kind).getHeader();
     const auto & columns = chunk.getColumns();
 
-    Serializations serializations(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
-
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
     calculateWidths(header, chunk, widths, max_widths, name_widths);
 
-    if (format_settings.pretty.output_format_pretty_row_numbers)
-    {
-        writeString(String(row_number_width, ' '), out);
-    }
     /// Names
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -74,16 +66,6 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
 
     for (size_t row = 0; row < num_rows && total_rows + row < max_rows; ++row)
     {
-        if (format_settings.pretty.output_format_pretty_row_numbers)
-        {
-            // Write row number;
-            auto row_num_string = std::to_string(row + 1) + ". ";
-            for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
-            {
-                writeCString(" ", out);
-            }
-            writeString(row_num_string, out);
-        }
         for (size_t column = 0; column < num_columns; ++column)
         {
             if (column != 0)
@@ -91,8 +73,7 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
 
             const auto & type = *header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
-            writeValueWithPadding(*columns[column], *serializations[column],
-                row, cur_width, max_widths[column], type.shouldAlignRightInPrettyFormats());
+            writeValueWithPadding(*columns[column], type, row, cur_width, max_widths[column]);
         }
 
         writeChar('\n', out);
@@ -118,7 +99,7 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettySpace", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams &,
+        FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
         return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, format_settings);
@@ -127,7 +108,7 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettySpaceNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams &,
+        FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
         FormatSettings changed_settings = format_settings;

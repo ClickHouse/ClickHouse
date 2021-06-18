@@ -1,5 +1,3 @@
-OWNER(g:clickhouse)
-
 PY23_LIBRARY()
 
 PY_SRCS(

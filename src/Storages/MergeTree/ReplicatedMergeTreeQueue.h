@@ -8,11 +8,11 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -22,7 +22,6 @@ class StorageReplicatedMergeTree;
 class MergeTreeDataMergerMutator;
 
 class ReplicatedMergeTreeMergePredicate;
-class ReplicatedMergeTreeMergeStrategyPicker;
 
 
 class ReplicatedMergeTreeQueue
@@ -47,18 +46,11 @@ private:
         }
     };
 
-    struct OperationsInQueue
-    {
-        size_t merges = 0;
-        size_t mutations = 0;
-        size_t merges_with_ttl = 0;
-    };
-
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
+
     StorageReplicatedMergeTree & storage;
-    ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker;
     MergeTreeDataFormatVersion format_version;
 
     String zookeeper_path;
@@ -91,6 +83,9 @@ private:
     /// Used to block other actions on parts in the range covered by future_parts.
     using FuturePartsSet = std::map<String, LogEntryPtr>;
     FuturePartsSet future_parts;
+
+    /// Index of the first log entry that we didn't see yet.
+    Int64 log_pointer = 0;
 
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
     bool currently_executing_drop_or_replace_range = false;
@@ -180,6 +175,9 @@ private:
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
 
+    /// Put a set of (already existing) parts in virtual_parts.
+    void addVirtualParts(const MergeTreeData::DataParts & parts);
+
     /// Insert new entry from log into queue
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
@@ -201,7 +199,6 @@ private:
       * Should be called under state_mutex.
       */
     bool isNotCoveredByFuturePartsImpl(
-        const String & log_entry_name,
         const String & new_part_name, String & out_reason,
         std::lock_guard<std::mutex> & state_lock) const;
 
@@ -232,6 +229,11 @@ private:
         std::optional<time_t> min_unprocessed_insert_time_changed,
         std::optional<time_t> max_processed_insert_time_changed) const;
 
+    /// Returns list of currently executing parts blocking execution a command modifying specified range
+    size_t getConflictsCountForRange(
+        const MergeTreePartInfo & range, const LogEntry & entry, String * out_description,
+        std::lock_guard<std::mutex> & state_lock) const;
+
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
     {
@@ -251,7 +253,6 @@ private:
         ~CurrentlyExecuting();
     };
 
-    using CurrentlyExecutingPtr = std::unique_ptr<CurrentlyExecuting>;
     /// ZK contains a limit on the number or total size of operations in a multi-request.
     /// If the limit is exceeded, the connection is simply closed.
     /// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
@@ -266,13 +267,10 @@ private:
     size_t current_multi_batch_size = 1;
 
 public:
-    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
+    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
     ~ReplicatedMergeTreeQueue();
 
-    /// Clears queue state
-    void clear();
 
-    /// Put a set of (already existing) parts in virtual_parts.
     void initialize(const MergeTreeData::DataParts & parts);
 
     /** Inserts an action to the end of the queue.
@@ -292,7 +290,7 @@ public:
       */
     bool load(zkutil::ZooKeeperPtr zookeeper);
 
-    bool removeFailedQuorumPart(const MergeTreePartInfo & part_info);
+    bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If watch_callback is not empty, will call it when new entries appear in the log.
@@ -315,6 +313,10 @@ public:
       */
     void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current);
 
+    /** Throws and exception if there are currently executing entries in the range .
+     */
+    void checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const LogEntry & entry);
+
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
       * (in order to download a already merged part from another replica).
@@ -324,19 +326,8 @@ public:
     /** Select the next action to process.
       * merger_mutator is used only to check if the merges are not suspended.
       */
-    struct SelectedEntry
-    {
-        ReplicatedMergeTreeQueue::LogEntryPtr log_entry;
-        CurrentlyExecutingPtr currently_executing_holder;
-
-        SelectedEntry(const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_, CurrentlyExecutingPtr && currently_executing_holder_)
-            : log_entry(log_entry_)
-            , currently_executing_holder(std::move(currently_executing_holder_))
-        {}
-    };
-
-    using SelectedEntryPtr = std::shared_ptr<SelectedEntry>;
-    SelectedEntryPtr selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
+    using SelectedEntry = std::pair<ReplicatedMergeTreeQueue::LogEntryPtr, std::unique_ptr<CurrentlyExecuting>>;
+    SelectedEntry selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
 
     /** Execute `func` function to handle the action.
       * In this case, at runtime, mark the queue element as running
@@ -347,7 +338,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Count the number of merges and mutations of single parts in the queue.
-    OperationsInQueue countMergesAndPartMutations() const;
+    std::pair<size_t, size_t> countMergesAndPartMutations() const;
 
     /// Count the total number of active mutations.
     size_t countMutations() const;
@@ -374,6 +365,12 @@ public:
     /// Mark finished mutations as done. If the function needs to be called again at some later time
     /// (because some mutations are probably done but we are not sure yet), returns true.
     bool tryFinalizeMutations(zkutil::ZooKeeperPtr zookeeper);
+
+    /// Prohibit merges in the specified blocks range.
+    /// Add part to virtual_parts, which means that part must exist
+    /// after processing replication log up to log_pointer.
+    /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
+    void disableMergesInBlockRange(const String & part_name);
 
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
@@ -460,7 +457,7 @@ public:
 
     /// Can we assign a merge this part and some other part?
     /// For example a merge of a part and itself is needed for TTL.
-    /// This predicate is checked for the first part of each range.
+    /// This predicate is checked for the first part of each partitition.
     bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
 
     /// Return nonempty optional of desired mutation version and alter version.
@@ -483,9 +480,6 @@ private:
     /// partition ID -> block numbers of the inserts and mutations that are about to commit
     /// (loaded at some later time than prev_virtual_parts).
     std::unordered_map<String, std::set<Int64>> committing_blocks;
-
-    /// List of UUIDs for parts that have their identity "pinned".
-    PinnedPartUUIDs pinned_part_uuids;
 
     /// Quorum state taken at some later time than prev_virtual_parts.
     String inprogress_quorum_part;

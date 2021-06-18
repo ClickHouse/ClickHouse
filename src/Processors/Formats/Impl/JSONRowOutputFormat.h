@@ -16,16 +16,11 @@ namespace DB
 class JSONRowOutputFormat : public IRowOutputFormat
 {
 public:
-    JSONRowOutputFormat(
-        WriteBuffer & out_,
-        const Block & header,
-        const RowOutputFormatParams & params_,
-        const FormatSettings & settings_,
-        bool yield_strings_);
+    JSONRowOutputFormat(WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & settings_);
 
     String getName() const override { return "JSONRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
+    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
@@ -63,7 +58,7 @@ public:
     String getContentType() const override { return "application/json; charset=UTF-8"; }
 
 protected:
-    virtual void writeTotalsField(const IColumn & column, const ISerialization & serialization, size_t row_num);
+    virtual void writeTotalsField(const IColumn & column, const IDataType & type, size_t row_num);
     virtual void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
     virtual void writeTotalsFieldDelimiter() { writeFieldDelimiter(); }
 
@@ -83,8 +78,6 @@ protected:
     Progress progress;
     Stopwatch watch;
     FormatSettings settings;
-
-    bool yield_strings;
 };
 
 }

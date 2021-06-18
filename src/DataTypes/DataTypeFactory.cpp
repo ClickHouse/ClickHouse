@@ -10,8 +10,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -29,14 +27,8 @@ namespace ErrorCodes
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
 {
-    /// Data type parser can be invoked from coroutines with small stack.
-    /// Value 315 is known to cause stack overflow in some test configurations (debug build, sanitizers)
-    /// let's make the threshold significantly lower.
-    /// It is impractical for user to have complex data types with this depth.
-    static constexpr size_t data_type_max_parse_depth = 200;
-
     ParserDataType parser;
-    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, data_type_max_parse_depth);
+    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     return get(ast);
 }
 
@@ -51,7 +43,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
-        return get(ident->name(), {});
+        return get(ident->name, {});
     }
 
     if (const auto * lit = ast->as<ASTLiteral>())
@@ -85,16 +77,6 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
     }
 
     return findCreatorByName(family_name)(parameters);
-}
-
-DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
-{
-    if (!customization->name)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create custom type without name");
-
-    auto type = get(customization->name->getName());
-    type->setCustomization(std::move(customization));
-    return type;
 }
 
 
@@ -156,18 +138,10 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
 
 const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const
 {
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
-
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
-        {
-            if (query_context && query_context->getSettingsRef().log_queries)
-                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
             return it->second;
-        }
     }
 
     String family_name_lowercase = Poco::toLower(family_name);
@@ -175,11 +149,7 @@ const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String &
     {
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
-        {
-            if (query_context && query_context->getSettingsRef().log_queries)
-                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name_lowercase);
             return it->second;
-        }
     }
 
     auto hints = this->getHints(family_name);
@@ -195,6 +165,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDecimal(*this);
     registerDataTypeDate(*this);
     registerDataTypeDateTime(*this);
+    registerDataTypeDateTime64(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);
@@ -210,7 +181,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
-    registerDataTypeMap(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

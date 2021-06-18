@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <common/StringRef.h>
@@ -36,7 +36,7 @@ class FunctionsStringSearchToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearchToString>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringSearchToString>(); }
 
     String getName() const override { return name; }
 
@@ -58,10 +58,10 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr column = arguments[0].column;
-        const ColumnPtr column_needle = arguments[1].column;
+        const ColumnPtr column = block.getByPosition(arguments[0]).column;
+        const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
 
         const ColumnConst * col_needle = typeid_cast<const ColumnConst *>(&*column_needle);
         if (!col_needle)
@@ -75,11 +75,11 @@ public:
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
             Impl::vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
 
-            return col_res;
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };

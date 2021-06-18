@@ -2,7 +2,6 @@
 
 #include <string.h>
 #include <cxxabi.h>
-#include <cstdlib>
 #include <Poco/String.h>
 #include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -14,14 +13,11 @@
 #include <common/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/ErrorCodes.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
 #endif
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -36,34 +32,19 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
-/// - Aborts the process if error code is LOGICAL_ERROR.
-/// - Increments error codes statistics.
-void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+
+Exception::Exception(const std::string & msg, int code)
+    : Poco::Exception(msg, code)
 {
-    // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
+    // In debug builds, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifndef NDEBUG
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", msg);
-        abort();
+        LOG_ERROR(&Poco::Logger::root(), "Logical error: '{}'.", msg);
+        assert(false);
     }
 #endif
-
-    ErrorCodes::increment(code, remote, msg, trace);
-}
-
-Exception::Exception(const std::string & msg, int code, bool remote_)
-    : Poco::Exception(msg, code)
-    , remote(remote_)
-{
-    handle_error_code(msg, code, remote, getStackFramePointers());
-}
-
-Exception::Exception(const std::string & msg, const Exception & nested, int code)
-    : Poco::Exception(msg, nested, code)
-{
-    handle_error_code(msg, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -104,31 +85,6 @@ std::string Exception::getStackTraceString() const
 #endif
 }
 
-Exception::FramePointers Exception::getStackFramePointers() const
-{
-    FramePointers frame_pointers;
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    {
-        frame_pointers.resize(get_stack_trace_size());
-        for (size_t i = 0; i < frame_pointers.size(); ++i)
-        {
-            frame_pointers[i] = get_stack_trace_frames()[i];
-        }
-    }
-#else
-    {
-        size_t stack_trace_size = trace.getSize();
-        size_t stack_trace_offset = trace.getOffset();
-        frame_pointers.reserve(stack_trace_size - stack_trace_offset);
-        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-        {
-            frame_pointers.push_back(trace.getFramePointers()[i]);
-        }
-    }
-#endif
-    return frame_pointers;
-}
-
 
 void throwFromErrno(const std::string & s, int code, int the_errno)
 {
@@ -140,7 +96,12 @@ void throwFromErrnoWithPath(const std::string & s, const std::string & path, int
     throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno, path);
 }
 
-static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
+{
+    tryLogCurrentException(&Poco::Logger::get(log_name), start_of_message);
+}
+
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
 {
     try
     {
@@ -154,32 +115,7 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
     }
 }
 
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
-{
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
-    ///
-    /// And in this case the exception will not be logged, so let's block the
-    /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-    /// Poco::Logger::get can allocate memory too
-    tryLogCurrentExceptionImpl(&Poco::Logger::get(log_name), start_of_message);
-}
-
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
-{
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
-    ///
-    /// And in this case the exception will not be logged, so let's block the
-    /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-    tryLogCurrentExceptionImpl(logger, start_of_message);
-}
-
-static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
+static void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
 {
     path = std::filesystem::absolute(path);
     /// It's possible to get ENOSPC for non existent file (e.g. if there are no free inodes and creat() fails)
@@ -266,12 +202,22 @@ static std::string getExtraExceptionInfo(const std::exception & e)
     String msg;
     try
     {
-        if (const auto * file_exception = dynamic_cast<const fs::filesystem_error *>(&e))
+        if (const auto * file_exception = dynamic_cast<const Poco::FileException *>(&e))
         {
-            if (file_exception->code() == std::errc::no_space_on_device)
-                getNoSpaceLeftInfoMessage(file_exception->path1(), msg);
-            else
-                msg += "\nCannot print extra info for Poco::Exception";
+            if (file_exception->code() == ENOSPC)
+            {
+                /// See Poco::FileImpl::handleLastErrorImpl(...)
+                constexpr const char * expected_error_message = "no space left on device: ";
+                if (startsWith(file_exception->message(), expected_error_message))
+                {
+                    String path = file_exception->message().substr(strlen(expected_error_message));
+                    getNoSpaceLeftInfoMessage(path, msg);
+                }
+                else
+                {
+                    msg += "\nCannot print extra info for Poco::Exception";
+                }
+            }
         }
         else if (const auto * errno_exception = dynamic_cast<const DB::ErrnoException *>(&e))
         {
@@ -296,7 +242,7 @@ static std::string getExtraExceptionInfo(const std::exception & e)
 
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
 {
-    WriteBufferFromOwnString stream;
+    std::stringstream stream;
 
     try
     {
@@ -415,7 +361,7 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
-    WriteBufferFromOwnString stream;
+    std::stringstream stream;
 
     try
     {
@@ -487,42 +433,6 @@ ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_
 {
     String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(false, true);
     return ExecutionStatus(getCurrentExceptionCode(), msg);
-}
-
-ParsingException::ParsingException() = default;
-ParsingException::ParsingException(const std::string & msg, int code)
-    : Exception(msg, code)
-{
-}
-ParsingException::ParsingException(int code, const std::string & message)
-    : Exception(message, code)
-{
-}
-
-/// We use additional field formatted_message_ to make this method const.
-std::string ParsingException::displayText() const
-{
-    try
-    {
-        if (line_number_ == -1)
-            formatted_message_ = message();
-        else
-            formatted_message_ = message() + fmt::format(": (at row {})\n", line_number_);
-    }
-    catch (...)
-    {}
-
-    if (!formatted_message_.empty())
-    {
-        std::string result = name();
-        result.append(": ");
-        result.append(formatted_message_);
-        return result;
-    }
-    else
-    {
-        return Exception::displayText();
-    }
 }
 
 

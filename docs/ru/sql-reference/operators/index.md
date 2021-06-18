@@ -1,8 +1,3 @@
----
-toc_priority: 38
-toc_title: "Операторы"
----
-
 # Операторы {#operatory}
 
 Все операторы преобразуются в соответствующие функции на этапе парсинга запроса, с учётом их приоритетов и ассоциативности.
@@ -53,8 +48,6 @@ toc_title: "Операторы"
 `a LIKE s` - функция `like(a, b)`
 
 `a NOT LIKE s` - функция `notLike(a, b)`
-
-`a ILIKE s` – функция `ilike(a, b)`
 
 `a BETWEEN b AND c` - равнозначно `a >= b AND a <= c`
 
@@ -152,58 +145,19 @@ FROM test.Orders;
 - `QUARTER`
 - `YEAR`
 
-В качестве значения оператора `INTERVAL` вы можете также использовать строковый литерал. Например, выражение `INTERVAL 1 HOUR` идентично выражению `INTERVAL '1 hour'` или `INTERVAL '1' hour`.
-
 !!! warning "Внимание"
     Интервалы различных типов нельзя объединять. Нельзя использовать выражения вида `INTERVAL 4 DAY 1 HOUR`. Вместо этого интервалы можно выразить в единицах меньших или равных наименьшей единице интервала, Например, `INTERVAL 25 HOUR`. Также можно выполнять последовательные операции как показано в примере ниже.
-
-Примеры:
-
-``` sql
-SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR;
-```
-
-``` text
-┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
-│ 2020-11-03 22:09:50 │                                    2020-11-08 01:09:50 │
-└─────────────────────┴────────────────────────────────────────────────────────┘
-```
-
-``` sql
-SELECT now() AS current_date_time, current_date_time + INTERVAL '4 day' + INTERVAL '3 hour';
-```
-
-``` text
-┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
-│ 2020-11-03 22:12:10 │                                    2020-11-08 01:12:10 │
-└─────────────────────┴────────────────────────────────────────────────────────┘
-```
-
-``` sql
-SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERVAL '3' hour;
-```
-
-``` text
-┌───current_date_time─┬─plus(plus(now(), toIntervalDay('4')), toIntervalHour('3'))─┐
-│ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
-└─────────────────────┴────────────────────────────────────────────────────────────┘
-```
-
-Вы можете изменить дату, не используя синтаксис `INTERVAL`, а просто добавив или отняв секунды, минуты и часы. Например, чтобы передвинуть дату на один день вперед, можно прибавить к ней значение `60*60*24`.
-
-!!! note "Примечание"
-    Синтаксис `INTERVAL` или функция `addDays` предпочтительнее для работы с датами. Сложение с числом (например, синтаксис `now() + ...`) не учитывает региональные настройки времени, например, переход на летнее время. 
 
 Пример:
 
 ``` sql
-SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
 ```
 
 ``` text
-┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
-│ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
-└─────────────────────┴─────────────────────┴─────────────────────┘
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
 **Смотрите также**
@@ -313,3 +267,5 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 │ 2 │ 3 │
 └───┴───┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/operators/) <!--hide-->

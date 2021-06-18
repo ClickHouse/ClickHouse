@@ -1,7 +1,6 @@
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
-
 namespace DB
 {
 

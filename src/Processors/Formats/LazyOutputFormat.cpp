@@ -16,13 +16,8 @@ Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
     }
 
     Chunk chunk;
-    if (milliseconds)
-    {
-        if (!queue.tryPop(chunk, milliseconds))
-            return {};
-    }
-    else
-        queue.pop(chunk);
+    if (!queue.tryPop(chunk, milliseconds))
+        return {};
 
     if (chunk)
         info.update(chunk.getNumRows(), chunk.allocatedBytes());

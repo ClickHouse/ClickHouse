@@ -2,7 +2,7 @@ SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS database_for_dict;
 
-CREATE DATABASE database_for_dict;
+CREATE DATABASE database_for_dict Engine = Ordinary;
 
 CREATE TABLE database_for_dict.table_for_dict
 (
@@ -26,7 +26,7 @@ CREATE DICTIONARY database_for_dict.dict1
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
@@ -51,27 +51,6 @@ DROP DICTIONARY database_for_dict.dict1;
 
 SELECT dictGetUInt8('database_for_dict.dict1', 'second_column', toUInt64(11)); -- {serverError 36}
 
--- SOURCE(CLICKHOUSE(...)) uses default params if not specified
-DROP DICTIONARY IF EXISTS database_for_dict.dict1;
-
-CREATE DICTIONARY database_for_dict.dict1
-(
-  key_column UInt64 DEFAULT 0,
-  second_column UInt8 DEFAULT 1,
-  third_column String DEFAULT 'qqq',
-  fourth_column Float64 DEFAULT 42.0
-)
-PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(TABLE 'table_for_dict' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 10)
-LAYOUT(FLAT());
-
-SELECT dictGetUInt8('database_for_dict.dict1', 'second_column', toUInt64(11));
-
-SELECT count(distinct(dictGetUInt8('database_for_dict.dict1', 'second_column', toUInt64(number)))) from numbers(100);
-
-DROP DICTIONARY database_for_dict.dict1;
-
 CREATE DICTIONARY database_for_dict.dict1
 (
   key_column UInt64 DEFAULT 0,
@@ -80,7 +59,7 @@ CREATE DICTIONARY database_for_dict.dict1
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column, third_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1));
 
@@ -102,7 +81,7 @@ CREATE DICTIONARY database_for_dict.dict2
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
@@ -120,7 +99,7 @@ CREATE DICTIONARY database_for_dict.dict3
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
 LIFETIME(0)
 LAYOUT(HASHED());
 

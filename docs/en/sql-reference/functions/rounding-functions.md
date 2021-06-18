@@ -14,7 +14,7 @@ Returns the largest round number that is less than or equal to `x`. A round numb
 Examples: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 
 `x` is any numeric type. The result is a number of the same type.
-For integer arguments, it makes sense to round with a negative `N` value (for non-negative `N`, the function does not do anything).
+For integer arguments, it makes sense to round with a negative `N` value (for non-negative `N`, the function doesn’t do anything).
 If rounding causes overflow (for example, floor(-128, -1)), an implementation-specific result is returned.
 
 ## ceil(x\[, N\]), ceiling(x\[, N\]) {#ceilx-n-ceilingx-n}
@@ -35,7 +35,7 @@ The function returns the nearest number of the specified order. In case when giv
 round(expression [, decimal_places])
 ```
 
-**Arguments**
+**Parameters:**
 
 -   `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
 -   `decimal-places` — An integer value.
@@ -114,7 +114,7 @@ For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 roundBankers(expression [, decimal_places])
 ```
 
-**Arguments**
+**Parameters**
 
 -   `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
 -   `decimal-places` — Decimal places. An integer number.
@@ -185,3 +185,4 @@ Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rou
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/rounding_functions/) <!--hide-->

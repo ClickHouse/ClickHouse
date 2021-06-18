@@ -1,6 +1,5 @@
 #include <Common/SipHash.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorHash.h>
+#include <Common/FieldVisitors.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -72,11 +71,6 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         String column_name = applyVisitor(FieldVisitorToColumnName(), value);
         writeString(column_name, ostr);
     }
-}
-
-void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
-{
-    settings.ostr << applyVisitor(FieldVisitorToString(), value);
 }
 
 }

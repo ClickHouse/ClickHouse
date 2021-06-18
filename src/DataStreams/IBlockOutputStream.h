@@ -57,7 +57,7 @@ public:
       */
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 
-    virtual ~IBlockOutputStream() = default;
+    virtual ~IBlockOutputStream() {}
 
     /** Don't let to alter table while instance of stream is alive.
       */

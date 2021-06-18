@@ -4,14 +4,12 @@
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/TextLog.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
 #include <sys/time.h>
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <common/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/IO.h>
 
 namespace DB
 {
@@ -28,47 +26,15 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         auto matches = masker->wipeSensitiveData(message_text);
         if (matches > 0)
         {
-            tryLogSplit({msg, message_text}); // we will continue with the copy of original message with text modified
+            logSplit({msg, message_text}); // we will continue with the copy of original message with text modified
             return;
         }
 
     }
 
-    tryLogSplit(msg);
+    logSplit(msg);
 }
 
-
-void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
-{
-    try
-    {
-        logSplit(msg);
-    }
-    /// It is better to catch the errors here in order to avoid
-    /// breaking some functionality because of unexpected "File not
-    /// found" (or similar) error.
-    ///
-    /// For example StorageDistributedDirectoryMonitor will mark batch
-    /// as broken, some MergeTree code can also be affected.
-    ///
-    /// Also note, that we cannot log the exception here, since this
-    /// will lead to recursion, using regular tryLogCurrentException().
-    /// but let's log it into the stderr at least.
-    catch (...)
-    {
-        MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-        const std::string & exception_message = getCurrentExceptionMessage(true);
-        const std::string & message = msg.getText();
-
-        /// NOTE: errors are ignored, since nothing can be done.
-        writeRetry(STDERR_FILENO, "Cannot add message to the log: ");
-        writeRetry(STDERR_FILENO, message.data(), message.size());
-        writeRetry(STDERR_FILENO, "\n");
-        writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
-        writeRetry(STDERR_FILENO, "\n");
-    }
-}
 
 void OwnSplitChannel::logSplit(const Poco::Message & msg)
 {
@@ -110,7 +76,6 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         TextLogElement elem;
 
         elem.event_time = msg_ext.time_seconds;
-        elem.event_time_microseconds = msg_ext.time_in_microseconds;
         elem.microseconds = msg_ext.time_microseconds;
 
         elem.thread_name = getThreadName();

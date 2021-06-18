@@ -1,21 +1,14 @@
 #include <Storages/TTLDescription.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTAssignment.h>
-#include <Parsers/ASTLiteral.h>
 #include <Storages/ColumnsDescription.h>
-#include <Interpreters/Context.h>
 
-#include <Parsers/queryToString.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -36,7 +29,7 @@ TTLAggregateDescription::TTLAggregateDescription(const TTLAggregateDescription &
     , expression_result_column_name(other.expression_result_column_name)
 {
     if (other.expression)
-        expression = other.expression->clone();
+        expression = std::make_shared<ExpressionActions>(*other.expression);
 }
 
 TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateDescription & other)
@@ -47,7 +40,7 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
     column_name = other.column_name;
     expression_result_column_name = other.expression_result_column_name;
     if (other.expression)
-        expression = other.expression->clone();
+        expression = std::make_shared<ExpressionActions>(*other.expression);
     else
         expression.reset();
     return *this;
@@ -60,9 +53,9 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 {
     for (const auto & action : ttl_expression->getActions())
     {
-        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
+        if (action.type == ExpressionAction::APPLY_FUNCTION)
         {
-            IFunctionBase & func = *action.node->function_base;
+            IFunctionBase & func = *action.function_base;
             if (!func.isDeterministic())
                 throw Exception(
                     "TTL expression cannot contain non-deterministic functions, "
@@ -83,24 +76,6 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
     }
 }
 
-class FindAggregateFunctionData
-{
-public:
-    using TypeToVisit = ASTFunction;
-    bool has_aggregate_function = false;
-
-    void visit(const ASTFunction & func, ASTPtr &)
-    {
-        /// Do not throw if found aggregate function inside another aggregate function,
-        /// because it will be checked, while creating expressions.
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func.name))
-            has_aggregate_function = true;
-    }
-};
-
-using FindAggregateFunctionFinderMatcher = OneTypeMatcher<FindAggregateFunctionData>;
-using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFinderMatcher, true>;
-
 }
 
 TTLDescription::TTLDescription(const TTLDescription & other)
@@ -113,13 +88,12 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     , aggregate_descriptions(other.aggregate_descriptions)
     , destination_type(other.destination_type)
     , destination_name(other.destination_name)
-    , recompression_codec(other.recompression_codec)
 {
     if (other.expression)
-        expression = other.expression->clone();
+        expression = std::make_shared<ExpressionActions>(*other.expression);
 
     if (other.where_expression)
-        where_expression = other.where_expression->clone();
+        where_expression = std::make_shared<ExpressionActions>(*other.where_expression);
 }
 
 TTLDescription & TTLDescription::operator=(const TTLDescription & other)
@@ -134,13 +108,13 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
         expression_ast.reset();
 
     if (other.expression)
-        expression = other.expression->clone();
+        expression = std::make_shared<ExpressionActions>(*other.expression);
     else
         expression.reset();
 
     result_column = other.result_column;
     if (other.where_expression)
-        where_expression = other.where_expression->clone();
+        where_expression = std::make_shared<ExpressionActions>(*other.where_expression);
     else
         where_expression.reset();
 
@@ -150,19 +124,13 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     aggregate_descriptions = other.aggregate_descriptions;
     destination_type = other.destination_type;
     destination_name = other.destination_name;
-
-    if (other.recompression_codec)
-        recompression_codec = other.recompression_codec->clone();
-    else
-        recompression_codec.reset();
-
     return * this;
 }
 
 TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    ContextPtr context,
+    const Context & context,
     const KeyDescription & primary_key)
 {
     TTLDescription result;
@@ -206,8 +174,11 @@ TTLDescription TTLDescription::getTTLFromAST(
             if (ttl_element->group_by_key.size() > pk_columns.size())
                 throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
 
+            NameSet primary_key_columns_set(pk_columns.begin(), pk_columns.end());
             NameSet aggregation_columns_set;
-            NameSet used_primary_key_columns_set;
+
+            for (const auto & column : primary_key.expression->getRequiredColumns())
+                primary_key_columns_set.insert(column);
 
             for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
@@ -215,54 +186,61 @@ TTLDescription TTLDescription::getTTLFromAST(
                     throw Exception(
                         "TTL Expression GROUP BY key should be a prefix of primary key",
                         ErrorCodes::BAD_TTL_EXPRESSION);
-
-                used_primary_key_columns_set.insert(pk_columns[i]);
             }
 
-            std::vector<std::pair<String, ASTPtr>> aggregations;
-            for (const auto & ast : ttl_element->group_by_assignments)
+            for (const auto & [name, value] : ttl_element->group_by_aggregations)
             {
-                const auto assignment = ast->as<const ASTAssignment &>();
-                auto expression = assignment.expression();
+                if (primary_key_columns_set.count(name))
+                    throw Exception(
+                        "Can not set custom aggregation for column in primary key in TTL Expression",
+                        ErrorCodes::BAD_TTL_EXPRESSION);
 
-                FindAggregateFunctionVisitor::Data data{false};
-                FindAggregateFunctionVisitor(data).visit(expression);
-
-                if (!data.has_aggregate_function)
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                    "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
-
-                expression = addTypeConversionToAST(std::move(expression), columns.getPhysical(assignment.column_name).type->getName());
-                aggregations.emplace_back(assignment.column_name, std::move(expression));
-                aggregation_columns_set.insert(assignment.column_name);
+                aggregation_columns_set.insert(name);
             }
 
-            if (aggregation_columns_set.size() != ttl_element->group_by_assignments.size())
+            if (aggregation_columns_set.size() != ttl_element->group_by_aggregations.size())
                 throw Exception(
                     "Multiple aggregations set for one column in TTL Expression",
                     ErrorCodes::BAD_TTL_EXPRESSION);
 
+
             result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
 
-            const auto & primary_key_expressions = primary_key.expression_list_ast->children;
+            auto aggregations = ttl_element->group_by_aggregations;
 
-            /// Wrap with 'any' aggregate function primary key columns,
-            /// which are not in 'GROUP BY' key and was not set explicitly.
-            /// The separate step, because not all primary key columns are ordinary columns.
-            for (size_t i = ttl_element->group_by_key.size(); i < primary_key_expressions.size(); ++i)
+            for (size_t i = 0; i < pk_columns.size(); ++i)
             {
-                if (!aggregation_columns_set.count(pk_columns[i]))
+                ASTPtr value = primary_key.expression_list_ast->children[i]->clone();
+
+                if (i >= ttl_element->group_by_key.size())
                 {
-                    ASTPtr expr = makeASTFunction("any", primary_key_expressions[i]->clone());
-                    aggregations.emplace_back(pk_columns[i], std::move(expr));
-                    aggregation_columns_set.insert(pk_columns[i]);
+                    ASTPtr value_max = makeASTFunction("max", value->clone());
+                    aggregations.emplace_back(value->getColumnName(), std::move(value_max));
+                }
+
+                if (value->as<ASTFunction>())
+                {
+                    auto syntax_result = TreeRewriter(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
+                    auto expr_actions = ExpressionAnalyzer(value, syntax_result, context).getActions(false);
+                    for (const auto & column : expr_actions->getRequiredColumns())
+                    {
+                        if (i < ttl_element->group_by_key.size())
+                        {
+                            ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column));
+                            aggregations.emplace_back(column, std::move(expr));
+                        }
+                        else
+                        {
+                            ASTPtr expr = makeASTFunction("argMax", std::make_shared<ASTIdentifier>(column), value->clone());
+                            aggregations.emplace_back(column, std::move(expr));
+                        }
+                    }
                 }
             }
 
-            /// Wrap with 'any' aggregate function other columns, which was not set explicitly.
-            for (const auto & column : columns.getOrdinary())
+            for (const auto & column : columns.getAllPhysical())
             {
-                if (!aggregation_columns_set.count(column.name) && !used_primary_key_columns_set.count(column.name))
+                if (!primary_key_columns_set.count(column.name) && !aggregation_columns_set.count(column.name))
                 {
                     ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
                     aggregations.emplace_back(column.name, std::move(expr));
@@ -285,15 +263,11 @@ TTLDescription TTLDescription::getTTLFromAST(
                     result.aggregate_descriptions.push_back(descr);
             }
         }
-        else if (ttl_element->mode == TTLMode::RECOMPRESS)
-        {
-            result.recompression_codec =
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
-        }
     }
 
     checkTTLExpression(result.expression, result.result_column);
+
+
     return result;
 }
 
@@ -301,10 +275,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 TTLTableDescription::TTLTableDescription(const TTLTableDescription & other)
  : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
  , rows_ttl(other.rows_ttl)
- , rows_where_ttl(other.rows_where_ttl)
  , move_ttl(other.move_ttl)
- , recompression_ttl(other.recompression_ttl)
- , group_by_ttl(other.group_by_ttl)
 {
 }
 
@@ -319,10 +290,7 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
         definition_ast.reset();
 
     rows_ttl = other.rows_ttl;
-    rows_where_ttl = other.rows_where_ttl;
     move_ttl = other.move_ttl;
-    recompression_ttl = other.recompression_ttl;
-    group_by_ttl = other.group_by_ttl;
 
     return *this;
 }
@@ -330,7 +298,7 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
 TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    ContextPtr context,
+    const Context & context,
     const KeyDescription & primary_key)
 {
     TTLTableDescription result;
@@ -339,37 +307,19 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
 
     result.definition_ast = definition_ast->clone();
 
-    bool have_unconditional_delete_ttl = false;
+    bool seen_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
         auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key);
-        if (ttl.mode == TTLMode::DELETE)
+        if (ttl.destination_type == DataDestinationType::DELETE)
         {
-            if (!ttl.where_expression)
-            {
-                if (have_unconditional_delete_ttl)
-                    throw Exception("More than one DELETE TTL expression without WHERE expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
-
-                have_unconditional_delete_ttl = true;
-                result.rows_ttl = ttl;
-            }
-            else
-            {
-                result.rows_where_ttl.emplace_back(std::move(ttl));
-            }
-        }
-        else if (ttl.mode == TTLMode::RECOMPRESS)
-        {
-            result.recompression_ttl.emplace_back(std::move(ttl));
-        }
-        else if (ttl.mode == TTLMode::GROUP_BY)
-        {
-            result.group_by_ttl.emplace_back(std::move(ttl));
+            if (seen_delete_ttl)
+                throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
+            result.rows_ttl = ttl;
+            seen_delete_ttl = true;
         }
         else
-        {
             result.move_ttl.emplace_back(std::move(ttl));
-        }
     }
     return result;
 }

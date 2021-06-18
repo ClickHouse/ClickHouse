@@ -1,9 +1,3 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
-#if USE_H3
-
 #include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -13,7 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <common/range.h>
+#include <ext/range.h>
 
 #include <h3api.h>
 
@@ -27,15 +21,12 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
-namespace
-{
-
 class FunctionH3KRing : public IFunction
 {
 public:
     static constexpr auto name = "h3kRing";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3KRing>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3KRing>(); }
 
     std::string getName() const override { return name; }
 
@@ -59,10 +50,10 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
-        const auto * col_k = arguments[1].column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
+        const auto * col_k = block.getByPosition(arguments[1]).column.get();
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
         auto & dst_data = dst->getData();
@@ -72,7 +63,7 @@ public:
 
         std::vector<H3Index> hindex_vec;
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (const auto row : ext::range(0, input_rows_count))
         {
             const H3Index origin_hindex = col_hindex->getUInt(row);
             const int k = col_k->getInt(row);
@@ -102,11 +93,10 @@ public:
             dst_offsets[row] = current_offset;
         }
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
-}
 
 void registerFunctionH3KRing(FunctionFactory & factory)
 {
@@ -114,5 +104,3 @@ void registerFunctionH3KRing(FunctionFactory & factory)
 }
 
 }
-
-#endif

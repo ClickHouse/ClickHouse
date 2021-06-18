@@ -1,35 +1,31 @@
+import json
+import pytest
 import random
+import re
 import string
 import threading
 import time
 from multiprocessing.dummy import Pool
-from helpers.test_tools import assert_logs_contain_with_retry
-
-import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
-# FIXME: each sleep(1) is a time bomb, and not only this cause false positive
-# it also makes the test not reliable (i.e. assertions may be wrong, due timing issues)
-# Seems that some SYSTEM query should be added to wait those things insteadof sleep.
 
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1',
-                             main_configs=['configs/logs_config.xml', "configs/config.d/instant_moves.xml",
-                                           "configs/config.d/storage_configuration.xml",
-                                           "configs/config.d/cluster.xml", ],
-                             with_zookeeper=True,
-                             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
-                             macros={"shard": 0, "replica": 1})
+            config_dir='configs',
+            main_configs=['configs/logs_config.xml'],
+            with_zookeeper=True,
+            tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
+            macros={"shard": 0, "replica": 1} )
 
 node2 = cluster.add_instance('node2',
-                             main_configs=['configs/logs_config.xml', "configs/config.d/instant_moves.xml",
-                                           "configs/config.d/storage_configuration.xml",
-                                           "configs/config.d/cluster.xml", ],
-                             with_zookeeper=True,
-                             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
-                             macros={"shard": 0, "replica": 2})
+            config_dir='configs',
+            main_configs=['configs/logs_config.xml'],
+            with_zookeeper=True,
+            tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
+            macros={"shard": 0, "replica": 2} )
 
 
 @pytest.fixture(scope="module")
@@ -40,6 +36,14 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
+
+def get_random_string(length):
+    symbols = bytes(string.ascii_uppercase + string.digits)
+    result_list = bytearray([0])*length
+    for i in range(length):
+        result_list[i] = random.choice(symbols)
+    return str(result_list)
 
 
 def get_used_disks_for_table(node, table_name, partition=None):
@@ -54,7 +58,6 @@ def get_used_disks_for_table(node, table_name, partition=None):
         ORDER BY modification_time
     """.format(name=table_name, suffix=suffix)).strip().split('\n')
 
-
 def check_used_disks_with_retry(node, table_name, expected_disks, retries):
     for _ in range(retries):
         used_disks = get_used_disks_for_table(node, table_name)
@@ -63,26 +66,13 @@ def check_used_disks_with_retry(node, table_name, expected_disks, retries):
         time.sleep(0.5)
     return False
 
-# Use unique table name for flaky checker, that run tests multiple times
-def unique_table_name(base_name):
-    return f'{base_name}_{int(time.time())}'
-
-def wait_parts_mover(node, table, *args, **kwargs):
-    # wait for MergeTreePartsMover
-    assert_logs_contain_with_retry(node, f'default.{table}.*Removed part from old location', *args, **kwargs)
-
-
 @pytest.mark.parametrize("name,engine,alter", [
-    pytest.param("mt_test_rule_with_invalid_destination", "MergeTree()", 0, id="case0"),
-    pytest.param("replicated_mt_test_rule_with_invalid_destination",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')", 0, id="case1"),
-    pytest.param("mt_test_rule_with_invalid_destination", "MergeTree()", 1, id="case2"),
-    pytest.param("replicated_mt_test_rule_with_invalid_destination",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')", 1, id="case3"),
+    ("mt_test_rule_with_invalid_destination","MergeTree()",0),
+    ("replicated_mt_test_rule_with_invalid_destination","ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')",0),
+    ("mt_test_rule_with_invalid_destination","MergeTree()",1),
+    ("replicated_mt_test_rule_with_invalid_destination","ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')",1),
 ])
 def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
-    name = unique_table_name(name)
-
     try:
         def get_command(x, policy):
             x = x or ""
@@ -136,16 +126,12 @@ def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
 
 
 @pytest.mark.parametrize("name,engine,positive", [
-    pytest.param("mt_test_inserts_to_disk_do_not_work", "MergeTree()", 0, id="mt_test_inserts_to_disk_do_not_work"),
-    pytest.param("replicated_mt_test_inserts_to_disk_do_not_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_disk_do_not_work', '1')", 0, id="replicated_mt_test_inserts_to_disk_do_not_work"),
-    pytest.param("mt_test_inserts_to_disk_work", "MergeTree()", 1, id="mt_test_inserts_to_disk_work_1"),
-    pytest.param("replicated_mt_test_inserts_to_disk_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_disk_work', '1')", 1, id="replicated_mt_test_inserts_to_disk_work_1"),
+    ("mt_test_inserts_to_disk_do_not_work","MergeTree()",0),
+    ("replicated_mt_test_inserts_to_disk_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_disk_do_not_work', '1')",0),
+    ("mt_test_inserts_to_disk_work","MergeTree()",1),
+    ("replicated_mt_test_inserts_to_disk_work","ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_disk_work', '1')",1),
 ])
 def test_inserts_to_disk_work(started_cluster, name, engine, positive):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -157,10 +143,9 @@ def test_inserts_to_disk_work(started_cluster, name, engine, positive):
             SETTINGS storage_policy='small_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        data = []  # 10MB in total
+        data = [] # 10MB in total
         for i in range(10):
-            data.append(("randomPrintableASCII(1024*1024)", "toDateTime({})".format(
-                time.time() - 1 if i > 0 or positive else time.time() + 300)))
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-1 if i > 0 or positive else time.time()+300))) # 1MB row
 
         node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
         used_disks = get_used_disks_for_table(node1, name)
@@ -176,13 +161,10 @@ def test_inserts_to_disk_work(started_cluster, name, engine, positive):
 
 
 @pytest.mark.parametrize("name,engine", [
-    pytest.param("mt_test_moves_work_after_storage_policy_change", "MergeTree()", id="mt_test_moves_work_after_storage_policy_change"),
-    pytest.param("replicated_mt_test_moves_work_after_storage_policy_change",
-     "ReplicatedMergeTree('/clickhouse/test_moves_work_after_storage_policy_change', '1')", id="replicated_mt_test_moves_work_after_storage_policy_change"),
+    ("mt_test_moves_work_after_storage_policy_change","MergeTree()"),
+    ("replicated_mt_test_moves_work_after_storage_policy_change","ReplicatedMergeTree('/clickhouse/test_moves_work_after_storage_policy_change', '1')"),
 ])
 def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -191,28 +173,30 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
             ) ENGINE = {engine}
             ORDER BY tuple()
         """.format(name=name, engine=engine))
-
-        node1.query(
-            """ALTER TABLE {name} MODIFY SETTING storage_policy='default_with_small_jbod_with_external'""".format(
-                name=name))
+ 
+        node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='default_with_small_jbod_with_external'""".format(name=name))
 
         # Second expression is preferred because d1 > now()-3600.
-        node1.query(
-            """ALTER TABLE {name} MODIFY TTL now()-3600 TO DISK 'jbod1', d1 TO DISK 'external'""".format(name=name))
+        node1.query("""ALTER TABLE {name} MODIFY TTL now()-3600 TO DISK 'jbod1', d1 TO DISK 'external'""".format(name=name))
 
         wait_expire_1 = 12
         wait_expire_2 = 4
         time_1 = time.time() + wait_expire_1
+        time_2 = time.time() + wait_expire_1 + wait_expire_2
 
-        data = []  # 10MB in total
+        wait_expire_1_thread = threading.Thread(target=time.sleep, args=(wait_expire_1,))
+        wait_expire_1_thread.start()
+
+        data = [] # 10MB in total
         for i in range(10):
-            data.append(("randomPrintableASCII(1024*1024)", "toDateTime({})".format(time_1)))
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time_1))) # 1MB row
 
         node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod1"}
 
-        wait_parts_mover(node1, name, retry_count=40)
+        wait_expire_1_thread.join()
+        time.sleep(wait_expire_2/2)
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"external"}
@@ -224,16 +208,12 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine,positive", [
-    pytest.param("mt_test_moves_to_disk_do_not_work", "MergeTree()", 0, id="mt_test_moves_to_disk_do_not_work"),
-    pytest.param("replicated_mt_test_moves_to_disk_do_not_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_disk_do_not_work', '1')", 0, id="replicated_mt_test_moves_to_disk_do_not_work"),
-    pytest.param("mt_test_moves_to_disk_work", "MergeTree()", 1, id="mt_test_moves_to_disk_work"),
-    pytest.param("replicated_mt_test_moves_to_disk_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_disk_work', '1')", 1, id="replicated_mt_test_moves_to_disk_work"),
+    ("mt_test_moves_to_disk_do_not_work","MergeTree()",0),
+    ("replicated_mt_test_moves_to_disk_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_disk_do_not_work', '1')",0),
+    ("mt_test_moves_to_disk_work","MergeTree()",1),
+    ("replicated_mt_test_moves_to_disk_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_disk_work', '1')",1),
 ])
 def test_moves_to_disk_work(started_cluster, name, engine, positive):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -246,24 +226,23 @@ def test_moves_to_disk_work(started_cluster, name, engine, positive):
         """.format(name=name, engine=engine))
 
         wait_expire_1 = 12
-        wait_expire_2 = 20
+        wait_expire_2 = 4
         time_1 = time.time() + wait_expire_1
         time_2 = time.time() + wait_expire_1 + wait_expire_2
 
         wait_expire_1_thread = threading.Thread(target=time.sleep, args=(wait_expire_1,))
         wait_expire_1_thread.start()
 
-        data = []  # 10MB in total
+        data = [] # 10MB in total
         for i in range(10):
-            data.append(("randomPrintableASCII(1024*1024)",
-                         "toDateTime({})".format(time_1 if i > 0 or positive else time_2)))
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time_1 if i > 0 or positive else time_2))) # 1MB row
 
         node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod1"}
 
         wait_expire_1_thread.join()
-        time.sleep(wait_expire_2 / 2)
+        time.sleep(wait_expire_2/2)
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"external" if positive else "jbod1"}
@@ -275,13 +254,10 @@ def test_moves_to_disk_work(started_cluster, name, engine, positive):
 
 
 @pytest.mark.parametrize("name,engine", [
-    pytest.param("mt_test_moves_to_volume_work", "MergeTree()", id="mt_test_moves_to_volume_work"),
-    pytest.param("replicated_mt_test_moves_to_volume_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_volume_work', '1')", id="replicated_mt_test_moves_to_volume_work"),
+    ("mt_test_moves_to_volume_work","MergeTree()"),
+    ("replicated_mt_test_moves_to_volume_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_volume_work', '1')"),
 ])
 def test_moves_to_volume_work(started_cluster, name, engine):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -298,19 +274,21 @@ def test_moves_to_volume_work(started_cluster, name, engine):
         wait_expire_1 = 10
         time_1 = time.time() + wait_expire_1
 
-        for p in range(2):
-            data = []  # 10MB in total
-            for i in range(5):
-                data.append(
-                    (str(p), "randomPrintableASCII(1024*1024)", "toDateTime({})".format(time_1)))
+        wait_expire_1_thread = threading.Thread(target=time.sleep, args=(wait_expire_1,))
+        wait_expire_1_thread.start()
 
-            node1.query(
-                "INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+        for p in range(2):
+            data = [] # 10MB in total
+            for i in range(5):
+                data.append((str(p), "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time_1))) # 1MB row
+
+            node1.query("INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {'jbod1', 'jbod2'}
 
-        wait_parts_mover(node1, name, retry_count=40)
+        wait_expire_1_thread.join()
+        time.sleep(1)
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"external"}
@@ -322,16 +300,12 @@ def test_moves_to_volume_work(started_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine,positive", [
-    pytest.param("mt_test_inserts_to_volume_do_not_work", "MergeTree()", 0, id="mt_test_inserts_to_volume_do_not_work"),
-    pytest.param("replicated_mt_test_inserts_to_volume_do_not_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_volume_do_not_work', '1')", 0, id="replicated_mt_test_inserts_to_volume_do_not_work"),
-    pytest.param("mt_test_inserts_to_volume_work", "MergeTree()", 1, id="mt_test_inserts_to_volume_work"),
-    pytest.param("replicated_mt_test_inserts_to_volume_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_volume_work', '1')", 1, id="replicated_mt_test_inserts_to_volume_work"),
+    ("mt_test_inserts_to_volume_do_not_work","MergeTree()",0),
+    ("replicated_mt_test_inserts_to_volume_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_volume_do_not_work', '1')",0),
+    ("mt_test_inserts_to_volume_work","MergeTree()",1),
+    ("replicated_mt_test_inserts_to_volume_work","ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_volume_work', '1')",1),
 ])
 def test_inserts_to_volume_work(started_cluster, name, engine, positive):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -348,13 +322,11 @@ def test_inserts_to_volume_work(started_cluster, name, engine, positive):
         node1.query("SYSTEM STOP MOVES {name}".format(name=name))
 
         for p in range(2):
-            data = []  # 20MB in total
+            data = [] # 20MB in total
             for i in range(10):
-                data.append((str(p), "randomPrintableASCII(1024*1024)", "toDateTime({})".format(
-                    time.time() - 1 if i > 0 or positive else time.time() + 300)))
+                data.append((str(p), "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-1 if i > 0 or positive else time.time()+300))) # 1MB row
 
-            node1.query(
-                "INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+            node1.query("INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"external" if positive else "jbod1"}
@@ -366,13 +338,10 @@ def test_inserts_to_volume_work(started_cluster, name, engine, positive):
 
 
 @pytest.mark.parametrize("name,engine", [
-    pytest.param("mt_test_moves_to_disk_eventually_work", "MergeTree()", id="mt_test_moves_to_disk_eventually_work"),
-    pytest.param("replicated_mt_test_moves_to_disk_eventually_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_disk_eventually_work', '1')", id="replicated_mt_test_moves_to_disk_eventually_work"),
+    ("mt_test_moves_to_disk_eventually_work","MergeTree()"),
+    ("replicated_mt_test_moves_to_disk_eventually_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_disk_eventually_work', '1')"),
 ])
 def test_moves_to_disk_eventually_work(started_cluster, name, engine):
-    name = unique_table_name(name)
-
     try:
         name_temp = name + "_temp"
 
@@ -384,11 +353,11 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
             SETTINGS storage_policy='only_jbod2'
         """.format(name=name_temp))
 
-        data = []  # 35MB in total
+        data = [] # 35MB in total
         for i in range(35):
-            data.append("randomPrintableASCII(1024*1024)")
+            data.append(get_random_string(1024 * 1024)) # 1MB row
 
-        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ",".join(["(" + x + ")" for x in data])))
+        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ",".join(["('" + x + "')" for x in data])))
         used_disks = get_used_disks_for_table(node1, name_temp)
         assert set(used_disks) == {"jbod2"}
 
@@ -402,10 +371,9 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
             SETTINGS storage_policy='jbod1_with_jbod2'
         """.format(name=name, engine=engine))
 
-        data = []  # 10MB in total
+        data = [] # 10MB in total
         for i in range(10):
-            data.append(
-                ("randomPrintableASCII(1024*1024)", "toDateTime({})".format(time.time() - 1)))
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-1))) # 1MB row
 
         node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
         used_disks = get_used_disks_for_table(node1, name)
@@ -413,8 +381,7 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
 
         node1.query("DROP TABLE {} NO DELAY".format(name_temp))
 
-        wait_parts_mover(node1, name)
-
+        time.sleep(2)
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod2"}
 
@@ -426,7 +393,7 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
 
 
 def test_replicated_download_ttl_info(started_cluster):
-    name = unique_table_name("test_replicated_ttl_info")
+    name = "test_replicated_ttl_info"
     engine = "ReplicatedMergeTree('/clickhouse/test_replicated_download_ttl_info', '{replica}')"
     try:
         for i, node in enumerate((node1, node2), start=1):
@@ -442,10 +409,9 @@ def test_replicated_download_ttl_info(started_cluster):
 
         node1.query("SYSTEM STOP MOVES {}".format(name))
 
-        node2.query("INSERT INTO {} (s1, d1) VALUES (randomPrintableASCII(1024*1024), toDateTime({}))".format(name, time.time() - 100))
+        node2.query("INSERT INTO {} (s1, d1) VALUES ('{}', toDateTime({}))".format(name, get_random_string(1024 * 1024), time.time()-100))
 
         assert set(get_used_disks_for_table(node2, name)) == {"external"}
-
         time.sleep(1)
 
         assert node1.query("SELECT count() FROM {}".format(name)).splitlines() == ["1"]
@@ -460,16 +426,12 @@ def test_replicated_download_ttl_info(started_cluster):
 
 
 @pytest.mark.parametrize("name,engine,positive", [
-    pytest.param("mt_test_merges_to_disk_do_not_work", "MergeTree()", 0, id="mt_test_merges_to_disk_do_not_work"),
-    pytest.param("replicated_mt_test_merges_to_disk_do_not_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_merges_to_disk_do_not_work', '1')", 0, id="mt_test_merges_to_disk_do_not_work"),
-    pytest.param("mt_test_merges_to_disk_work", "MergeTree()", 1, id="mt_test_merges_to_disk_work"),
-    pytest.param("replicated_mt_test_merges_to_disk_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_merges_to_disk_work', '1')", 1, id="replicated_mt_test_merges_to_disk_work"),
+    ("mt_test_merges_to_disk_do_not_work","MergeTree()",0),
+    ("replicated_mt_test_merges_to_disk_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_merges_to_disk_do_not_work', '1')",0),
+    ("mt_test_merges_to_disk_work","MergeTree()",1),
+    ("replicated_mt_test_merges_to_disk_work","ReplicatedMergeTree('/clickhouse/replicated_test_merges_to_disk_work', '1')",1),
 ])
 def test_merges_to_disk_work(started_cluster, name, engine, positive):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -485,7 +447,7 @@ def test_merges_to_disk_work(started_cluster, name, engine, positive):
         node1.query("SYSTEM STOP MOVES {}".format(name))
 
         wait_expire_1 = 16
-        wait_expire_2 = 20
+        wait_expire_2 = 4
         time_1 = time.time() + wait_expire_1
         time_2 = time.time() + wait_expire_1 + wait_expire_2
 
@@ -493,29 +455,26 @@ def test_merges_to_disk_work(started_cluster, name, engine, positive):
         wait_expire_1_thread.start()
 
         for _ in range(2):
-            data = []  # 16MB in total
+            data = [] # 16MB in total
             for i in range(8):
-                data.append(("randomPrintableASCII(1024*1024)",
-                             "toDateTime({})".format(time_1 if i > 0 or positive else time_2)))
+                data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time_1 if i > 0 or positive else time_2))) # 1MB row
 
-            node1.query(
-                "INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+            node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod1"}
-        assert "2" == node1.query(
-            "SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
+        assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         wait_expire_1_thread.join()
-        time.sleep(wait_expire_2 / 2)
+        time.sleep(wait_expire_2/2)
 
         node1.query("SYSTEM START MERGES {}".format(name))
         node1.query("OPTIMIZE TABLE {}".format(name))
 
+        time.sleep(1)
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"external" if positive else "jbod1"}
-        assert "1" == node1.query(
-            "SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
+        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "16"
 
@@ -524,13 +483,10 @@ def test_merges_to_disk_work(started_cluster, name, engine, positive):
 
 
 @pytest.mark.parametrize("name,engine", [
-    pytest.param("mt_test_merges_with_full_disk_work", "MergeTree()", id="mt_test_merges_with_full_disk_work"),
-    pytest.param("replicated_mt_test_merges_with_full_disk_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_merges_with_full_disk_work', '1')", id="replicated_mt_test_merges_with_full_disk_work"),
+    ("mt_test_merges_with_full_disk_work","MergeTree()"),
+    ("replicated_mt_test_merges_with_full_disk_work","ReplicatedMergeTree('/clickhouse/replicated_test_merges_with_full_disk_work', '1')"),
 ])
 def test_merges_with_full_disk_work(started_cluster, name, engine):
-    name = unique_table_name(name)
-
     try:
         name_temp = name + "_temp"
 
@@ -542,11 +498,11 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
             SETTINGS storage_policy='only_jbod2'
         """.format(name=name_temp))
 
-        data = []  # 35MB in total
+        data = [] # 35MB in total
         for i in range(35):
-            data.append("randomPrintableASCII(1024*1024)")
+            data.append(get_random_string(1024 * 1024)) # 1MB row
 
-        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ",".join(["(" + x + ")" for x in data])))
+        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ",".join(["('" + x + "')" for x in data])))
         used_disks = get_used_disks_for_table(node1, name_temp)
         assert set(used_disks) == {"jbod2"}
 
@@ -567,16 +523,14 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
         wait_expire_1_thread.start()
 
         for _ in range(2):
-            data = []  # 12MB in total
+            data = [] # 12MB in total
             for i in range(6):
-                data.append(("randomPrintableASCII(1024*1024)", "toDateTime({})".format(time_1)))  # 1MB row
-            node1.query(
-                "INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+                data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time_1))) # 1MB row
+            node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod1"}
-        assert "2" == node1.query(
-            "SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
+        assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         wait_expire_1_thread.join()
 
@@ -584,9 +538,8 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
         time.sleep(1)
 
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}  # Merged to the same disk against the rule.
-        assert "1" == node1.query(
-            "SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
+        assert set(used_disks) == {"jbod1"} # Merged to the same disk against the rule.
+        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "12"
 
@@ -596,16 +549,12 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine,positive", [
-    pytest.param("mt_test_moves_after_merges_do_not_work", "MergeTree()", 0, id="mt_test_moves_after_merges_do_not_work"),
-    pytest.param("replicated_mt_test_moves_after_merges_do_not_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_do_not_work', '1')", 0, id="replicated_mt_test_moves_after_merges_do_not_work"),
-    pytest.param("mt_test_moves_after_merges_work", "MergeTree()", 1, id="mt_test_moves_after_merges_work"),
-    pytest.param("replicated_mt_test_moves_after_merges_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_work', '1')", 1, id="replicated_mt_test_moves_after_merges_work"),
+    ("mt_test_moves_after_merges_do_not_work","MergeTree()",0),
+    ("replicated_mt_test_moves_after_merges_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_do_not_work', '1')",0),
+    ("mt_test_moves_after_merges_work","MergeTree()",1),
+    ("replicated_mt_test_moves_after_merges_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_work', '1')",1),
 ])
 def test_moves_after_merges_work(started_cluster, name, engine, positive):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -618,7 +567,7 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
         """.format(name=name, engine=engine))
 
         wait_expire_1 = 16
-        wait_expire_2 = 20
+        wait_expire_2 = 4
         time_1 = time.time() + wait_expire_1
         time_2 = time.time() + wait_expire_1 + wait_expire_2
 
@@ -626,23 +575,21 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
         wait_expire_1_thread.start()
 
         for _ in range(2):
-            data = []  # 14MB in total
+            data = [] # 14MB in total
             for i in range(7):
-                data.append(("randomPrintableASCII(1024*1024)",
-                             "toDateTime({})".format(time_1 if i > 0 or positive else time_2)))  # 1MB row
+                data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time_1 if i > 0 or positive else time_2))) # 1MB row
 
-            node1.query(
-                "INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+            node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         node1.query("OPTIMIZE TABLE {}".format(name))
+        time.sleep(1)
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod1"}
-        assert "1" == node1.query(
-            "SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
+        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         wait_expire_1_thread.join()
-        time.sleep(wait_expire_2 / 2)
+        time.sleep(wait_expire_2/2)
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"external" if positive else "jbod1"}
@@ -654,22 +601,16 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
 
 
 @pytest.mark.parametrize("name,engine,positive,bar", [
-    pytest.param("mt_test_moves_after_alter_do_not_work", "MergeTree()", 0, "DELETE", id="mt_negative"),
-    pytest.param("replicated_mt_test_moves_after_alter_do_not_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_do_not_work', '1')", 0, "DELETE", id="repicated_negative"),
-    pytest.param("mt_test_moves_after_alter_work", "MergeTree()", 1, "DELETE", id="mt_positive"),
-    pytest.param("replicated_mt_test_moves_after_alter_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_work', '1')", 1, "DELETE", id="repicated_positive"),
-    pytest.param("mt_test_moves_after_alter_do_not_work", "MergeTree()", 0, "TO DISK 'external'", id="mt_external_negative"),
-    pytest.param("replicated_mt_test_moves_after_alter_do_not_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_do_not_work', '1')", 0, "TO DISK 'external'", id="replicated_external_negative"),
-    pytest.param("mt_test_moves_after_alter_work", "MergeTree()", 1, "TO DISK 'external'", id="mt_external_positive"),
-    pytest.param("replicated_mt_test_moves_after_alter_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_work', '1')", 1, "TO DISK 'external'", id="replicated_external_positive"),
+    ("mt_test_moves_after_alter_do_not_work","MergeTree()",0,"DELETE"),
+    ("replicated_mt_test_moves_after_alter_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_do_not_work', '1')",0,"DELETE"),
+    ("mt_test_moves_after_alter_work","MergeTree()",1,"DELETE"),
+    ("replicated_mt_test_moves_after_alter_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_work', '1')",1,"DELETE"),
+    ("mt_test_moves_after_alter_do_not_work","MergeTree()",0,"TO DISK 'external'"),
+    ("replicated_mt_test_moves_after_alter_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_do_not_work', '1')",0,"TO DISK 'external'"),
+    ("mt_test_moves_after_alter_work","MergeTree()",1,"TO DISK 'external'"),
+    ("replicated_mt_test_moves_after_alter_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_work', '1')",1,"TO DISK 'external'"),
 ])
 def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, bar):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -686,12 +627,11 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, b
                 ALTER TABLE {name}
                     MODIFY TTL
                     d1 + INTERVAL 15 MINUTE {bar}
-            """.format(name=name, bar=bar))  # That shall disable TTL.
+            """.format(name=name, bar=bar)) # That shall disable TTL.
 
-        data = []  # 10MB in total
+        data = [] # 10MB in total
         for i in range(10):
-            data.append(
-                ("randomPrintableASCII(1024*1024)", "toDateTime({})".format(time.time() - 1)))  # 1MB row
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-1))) # 1MB row
         node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
@@ -704,13 +644,10 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, b
 
 
 @pytest.mark.parametrize("name,engine", [
-    pytest.param("mt_test_materialize_ttl_in_partition", "MergeTree()", id="mt"),
-    pytest.param("replicated_mt_test_materialize_ttl_in_partition",
-     "ReplicatedMergeTree('/clickhouse/test_materialize_ttl_in_partition', '1')", id="replicated"),
+    ("mt_test_materialize_ttl_in_partition","MergeTree()"),
+    ("replicated_mt_test_materialize_ttl_in_partition","ReplicatedMergeTree('/clickhouse/test_materialize_ttl_in_partition', '1')"),
 ])
 def test_materialize_ttl_in_partition(started_cluster, name, engine):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -723,12 +660,12 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
             SETTINGS storage_policy='small_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        data = []  # 5MB in total
+        data = [] # 5MB in total
         for i in range(5):
-            data.append((str(i), "randomPrintableASCII(1024*1024)",
-                         "toDateTime({})".format(time.time() - 1)))  # 1MB row
-        node1.query(
-            "INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+            data.append((str(i), "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-1))) # 1MB row
+        node1.query("INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+
+        time.sleep(0.5)
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod1"}
@@ -739,7 +676,7 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
                     d1 TO DISK 'external' SETTINGS materialize_ttl_after_modify = 0
             """.format(name=name))
 
-        time.sleep(3)
+        time.sleep(0.5)
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod1"}
@@ -754,7 +691,7 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
                     MATERIALIZE TTL IN PARTITION 4
         """.format(name=name))
 
-        time.sleep(3)
+        time.sleep(0.5)
 
         used_disks_sets = []
         for i in range(len(data)):
@@ -769,16 +706,12 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine,positive", [
-    pytest.param("mt_test_alter_multiple_ttls_positive", "MergeTree()", True, id="positive"),
-    pytest.param("mt_replicated_test_alter_multiple_ttls_positive",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_positive', '1')", True, id="replicated_positive"),
-    pytest.param("mt_test_alter_multiple_ttls_negative", "MergeTree()", False, id="negative"),
-    pytest.param("mt_replicated_test_alter_multiple_ttls_negative",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_negative', '1')", False, id="replicated_negative"),
+    ("mt_test_alter_multiple_ttls_positive", "MergeTree()", True),
+    ("mt_replicated_test_alter_multiple_ttls_positive", "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_positive', '1')", True),
+    ("mt_test_alter_multiple_ttls_negative", "MergeTree()", False),
+    ("mt_replicated_test_alter_multiple_ttls_negative", "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_negative', '1')", False),
 ])
 def test_alter_multiple_ttls(started_cluster, name, engine, positive):
-    name = unique_table_name(name)
-
     """Copyright 2019, Altinity LTD
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -823,12 +756,13 @@ limitations under the License."""
         """.format(name=name))
 
         for p in range(3):
-            data = []  # 6MB in total
+            data = [] # 6MB in total
             now = time.time()
             for i in range(2):
                 p1 = p
+                s1 = get_random_string(1024 * 1024) # 1MB
                 d1 = now - 1 if i > 0 or positive else now + 300
-                data.append("({}, randomPrintableASCII(1024*1024), toDateTime({}))".format(p1, d1))
+                data.append("({}, '{}', toDateTime({}))".format(p1, s1, d1))
             node1.query("INSERT INTO {name} (p1, s1, d1) VALUES {values}".format(name=name, values=",".join(data)))
 
         used_disks = get_used_disks_for_table(node1, name)
@@ -858,6 +792,7 @@ limitations under the License."""
             node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name))
             time.sleep(0.5)
 
+
         if positive:
             assert rows_count == 0
         else:
@@ -868,13 +803,10 @@ limitations under the License."""
 
 
 @pytest.mark.parametrize("name,engine", [
-    pytest.param("concurrently_altering_ttl_mt", "MergeTree()", id="mt"),
-    pytest.param("concurrently_altering_ttl_replicated_mt",
-     "ReplicatedMergeTree('/clickhouse/concurrently_altering_ttl_replicated_mt', '1')", id="replicated_mt"),
+    ("concurrently_altering_ttl_mt","MergeTree()"),
+    ("concurrently_altering_ttl_replicated_mt","ReplicatedMergeTree('/clickhouse/concurrently_altering_ttl_replicated_mt', '1')",),
 ])
 def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -886,7 +818,7 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
-        values = list({random.randint(1, 1000000) for _ in range(0, 1000)})
+        values = list({ random.randint(1, 1000000) for _ in range(0, 1000) })
 
         def insert(num):
             for i in range(num):
@@ -901,9 +833,7 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
                 if move_type == "PART":
                     for _ in range(10):
                         try:
-                            parts = node1.query(
-                                "SELECT name from system.parts where table = '{}' and active = 1".format(
-                                    name)).strip().split('\n')
+                            parts = node1.query("SELECT name from system.parts where table = '{}' and active = 1".format(name)).strip().split('\n')
                             break
                         except QueryRuntimeException:
                             pass
@@ -930,18 +860,13 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
 
         def alter_update(num):
             for i in range(num):
-                try:
-                    node1.query("ALTER TABLE {} UPDATE number = number + 1 WHERE 1".format(name))
-                except:
-                    pass
+                node1.query("ALTER TABLE {} UPDATE number = number + 1 WHERE 1".format(name))
 
         def alter_modify_ttl(num):
             for i in range(num):
                 ttls = []
                 for j in range(random.randint(1, 10)):
-                    what = random.choice(
-                        ["TO VOLUME 'main'", "TO VOLUME 'external'", "TO DISK 'jbod1'", "TO DISK 'jbod2'",
-                         "TO DISK 'external'"])
+                    what = random.choice(["TO VOLUME 'main'", "TO VOLUME 'external'", "TO DISK 'jbod1'", "TO DISK 'jbod2'", "TO DISK 'external'"])
                     when = "now()+{}".format(random.randint(-1, 5))
                     ttls.append("{} {}".format(when, what))
                 try:
@@ -951,7 +876,7 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
 
         def optimize_table(num):
             for i in range(num):
-                try:  # optimize may throw after concurrent alter
+                try: # optimize may throw after concurrent alter
                     node1.query("OPTIMIZE TABLE {} FINAL".format(name), settings={'optimize_throw_if_noop': '1'})
                     break
                 except:
@@ -960,29 +885,26 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
         p = Pool(15)
         tasks = []
         for i in range(5):
-            tasks.append(p.apply_async(insert, (30,)))
-            tasks.append(p.apply_async(alter_move, (30,)))
-            tasks.append(p.apply_async(alter_update, (30,)))
-            tasks.append(p.apply_async(alter_modify_ttl, (30,)))
-            tasks.append(p.apply_async(optimize_table, (30,)))
+            tasks.append(p.apply_async(insert, (100,)))
+            tasks.append(p.apply_async(alter_move, (100,)))
+            tasks.append(p.apply_async(alter_update, (100,)))
+            tasks.append(p.apply_async(alter_modify_ttl, (100,)))
+            tasks.append(p.apply_async(optimize_table, (100,)))
 
         for task in tasks:
             task.get(timeout=120)
 
         assert node1.query("SELECT 1") == "1\n"
-        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "150\n"
+        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "500\n"
     finally:
         node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
 
-
 @pytest.mark.skip(reason="Flacky test")
 @pytest.mark.parametrize("name,positive", [
-    pytest.param("test_double_move_while_select_negative", 0, id="negative"),
-    pytest.param("test_double_move_while_select_positive", 1, id="positive"),
+    ("test_double_move_while_select_negative", 0),
+    ("test_double_move_while_select_positive", 1),
 ])
 def test_double_move_while_select(started_cluster, name, positive):
-    name = unique_table_name(name)
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -994,11 +916,9 @@ def test_double_move_while_select(started_cluster, name, positive):
             SETTINGS storage_policy='small_jbod_with_external'
         """.format(name=name))
 
-        node1.query(
-            "INSERT INTO {name} VALUES (1, randomPrintableASCII(10*1024*1024))".format(name=name))
+        node1.query("INSERT INTO {name} VALUES (1, '{string}')".format(name=name, string=get_random_string(10 * 1024 * 1024)))
 
-        parts = node1.query(
-            "SELECT name FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)).splitlines()
+        parts = node1.query("SELECT name FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)).splitlines()
         assert len(parts) == 1
 
         node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'external'".format(name=name, part=parts[0]))
@@ -1015,18 +935,14 @@ def test_double_move_while_select(started_cluster, name, positive):
         node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'jbod1'".format(name=name, part=parts[0]))
 
         # Fill jbod1 to force ClickHouse to make move of partition 1 to external.
-        node1.query(
-            "INSERT INTO {name} VALUES (2, randomPrintableASCII(9*1024*1024))".format(name=name))
-        node1.query(
-            "INSERT INTO {name} VALUES (3, randomPrintableASCII(9*1024*1024))".format(name=name))
-        node1.query(
-            "INSERT INTO {name} VALUES (4, randomPrintableASCII(9*1024*1024))".format(name=name))
+        node1.query("INSERT INTO {name} VALUES (2, '{string}')".format(name=name, string=get_random_string(9 * 1024 * 1024)))
+        node1.query("INSERT INTO {name} VALUES (3, '{string}')".format(name=name, string=get_random_string(9 * 1024 * 1024)))
+        node1.query("INSERT INTO {name} VALUES (4, '{string}')".format(name=name, string=get_random_string(9 * 1024 * 1024)))
 
-        wait_parts_mover(node1, name, retry_count=40)
+        time.sleep(1)
 
         # If SELECT locked old part on external, move shall fail.
-        assert node1.query(
-            "SELECT disk_name FROM system.parts WHERE table = '{name}' AND active = 1 AND name = '{part}'"
+        assert node1.query("SELECT disk_name FROM system.parts WHERE table = '{name}' AND active = 1 AND name = '{part}'"
                 .format(name=name, part=parts[0])).splitlines() == ["jbod1" if positive else "external"]
 
         thread.join()
@@ -1038,16 +954,12 @@ def test_double_move_while_select(started_cluster, name, positive):
 
 
 @pytest.mark.parametrize("name,engine,positive", [
-    pytest.param("mt_test_alter_with_merge_do_not_work", "MergeTree()", 0, id="mt"),
-    pytest.param("replicated_mt_test_alter_with_merge_do_not_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_alter_with_merge_do_not_work', '1')", 0, id="replicated"),
-    pytest.param("mt_test_alter_with_merge_work", "MergeTree()", 1, id="mt_work"),
-    pytest.param("replicated_mt_test_alter_with_merge_work",
-     "ReplicatedMergeTree('/clickhouse/replicated_test_alter_with_merge_work', '1')", 1, id="replicated_work"),
+    ("mt_test_alter_with_merge_do_not_work","MergeTree()",0),
+    ("replicated_mt_test_alter_with_merge_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_alter_with_merge_do_not_work', '1')",0),
+    ("mt_test_alter_with_merge_work","MergeTree()",1),
+    ("replicated_mt_test_alter_with_merge_work","ReplicatedMergeTree('/clickhouse/replicated_test_alter_with_merge_work', '1')",1),
 ])
 def test_alter_with_merge_work(started_cluster, name, engine, positive):
-    name = unique_table_name(name)
-
     """Copyright 2019, Altinity LTD
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -1074,20 +986,22 @@ limitations under the License."""
             SETTINGS storage_policy='jbods_with_external', merge_with_ttl_timeout=0
         """.format(name=name, engine=engine))
 
+
         def optimize_table(num):
             for i in range(num):
-                try:  # optimize may throw after concurrent alter
+                try: # optimize may throw after concurrent alter
                     node1.query("OPTIMIZE TABLE {} FINAL".format(name), settings={'optimize_throw_if_noop': '1'})
                     break
                 except:
                     pass
 
         for p in range(3):
-            data = []  # 6MB in total
+            data = [] # 6MB in total
             now = time.time()
             for i in range(2):
+                s1 = get_random_string(1024 * 1024) # 1MB
                 d1 = now - 1 if positive else now + 300
-                data.append("(randomPrintableASCII(1024*1024), toDateTime({}))".format(d1))
+                data.append("('{}', toDateTime({}))".format(s1, d1))
             values = ",".join(data)
             node1.query("INSERT INTO {name} (s1, d1) VALUES {values}".format(name=name, values=values))
 
@@ -1105,8 +1019,7 @@ limitations under the License."""
 
         optimize_table(20)
 
-        assert node1.query(
-            "SELECT count() FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)) == "1\n"
+        assert node1.query("SELECT count() FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)) == "1\n"
 
         time.sleep(5)
 
@@ -1128,49 +1041,3 @@ limitations under the License."""
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
-
-
-@pytest.mark.parametrize("name,dest_type,engine", [
-    pytest.param("mt_test_disabled_ttl_move_on_insert_work", "DISK", "MergeTree()", id="disk"),
-    pytest.param("mt_test_disabled_ttl_move_on_insert_work", "VOLUME", "MergeTree()", id="volume"),
-    pytest.param("replicated_mt_test_disabled_ttl_move_on_insert_work", "DISK", "ReplicatedMergeTree('/clickhouse/replicated_test_disabled_ttl_move_on_insert_work', '1')", id="replicated_disk"),
-    pytest.param("replicated_mt_test_disabled_ttl_move_on_insert_work", "VOLUME", "ReplicatedMergeTree('/clickhouse/replicated_test_disabled_ttl_move_on_insert_work', '1')", id="replicated_volume"),
-])
-def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
-    name = unique_table_name(name)
-
-    try:
-        node1.query("""
-            CREATE TABLE {name} (
-                s1 String,
-                d1 DateTime
-            ) ENGINE = {engine}
-            ORDER BY tuple()
-            TTL d1 TO {dest_type} 'external'
-            SETTINGS storage_policy='jbod_without_instant_ttl_move'
-        """.format(name=name, dest_type=dest_type, engine=engine))
-
-        node1.query("SYSTEM STOP MOVES {}".format(name))
-
-        data = []  # 10MB in total
-        for i in range(10):
-            data.append(("randomPrintableASCII(1024*1024)", "toDateTime({})".format(time.time() - 1)))
-
-        node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
-
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}
-        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
-
-        node1.query("SYSTEM START MOVES {}".format(name))
-        time.sleep(3)
-
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external"}
-        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
-
-    finally:
-        try:
-            node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
-        except:
-            pass

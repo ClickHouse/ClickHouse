@@ -1,10 +1,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Interpreters/Context.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -30,52 +28,37 @@ void TableFunctionFactory::registerFunction(const std::string & name, Value crea
 }
 
 TableFunctionPtr TableFunctionFactory::get(
-    const ASTPtr & ast_function,
-    ContextPtr context) const
+    const std::string & name,
+    const Context & context) const
 {
-    const auto * table_function = ast_function->as<ASTFunction>();
-    auto res = tryGet(table_function->name, context);
+    auto res = tryGet(name, context);
     if (!res)
     {
-        auto hints = getHints(table_function->name);
+        auto hints = getHints(name);
         if (!hints.empty())
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}. Maybe you meant: {}", table_function->name , toString(hints));
+            throw Exception("Unknown table function " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_FUNCTION);
         else
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
+            throw Exception("Unknown table function " + name, ErrorCodes::UNKNOWN_FUNCTION);
     }
 
-    res->parseArguments(ast_function, context);
     return res;
 }
 
 TableFunctionPtr TableFunctionFactory::tryGet(
         const std::string & name_param,
-        ContextPtr) const
+        const Context &) const
 {
     String name = getAliasToOrName(name_param);
-    TableFunctionPtr res;
 
     auto it = table_functions.find(name);
     if (table_functions.end() != it)
-        res = it->second();
-    else
-    {
-        it = case_insensitive_table_functions.find(Poco::toLower(name));
-        if (case_insensitive_table_functions.end() != it)
-            res = it->second();
-    }
+        return it->second();
 
-    if (!res)
-        return nullptr;
+    it = case_insensitive_table_functions.find(Poco::toLower(name));
+    if (case_insensitive_table_functions.end() != it)
+        return it->second();
 
-    if (CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, name);
-    }
-
-    return res;
+    return {};
 }
 
 bool TableFunctionFactory::isTableFunctionName(const std::string & name) const

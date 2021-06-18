@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#include <Poco/File.h>
 #include <common/logger_useful.h>
 #include <common/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
@@ -13,9 +14,7 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -38,7 +37,7 @@ StatusFile::FillFunction StatusFile::write_full_info = [](WriteBuffer & out)
 {
     out << "PID: " << getpid() << "\n"
         << "Started at: " << LocalDateTime(time(nullptr)) << "\n"
-        << "Revision: " << ClickHouseRevision::getVersionRevision() << "\n";
+        << "Revision: " << ClickHouseRevision::get() << "\n";
 };
 
 
@@ -46,7 +45,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
     : path(std::move(path_)), fill(std::move(fill_))
 {
     /// If file already exists. NOTE Minor race condition.
-    if (fs::exists(path))
+    if (Poco::File(path).exists())
     {
         std::string contents;
         {

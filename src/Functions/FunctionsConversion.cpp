@@ -1,9 +1,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+FunctionOverloadResolverImplPtr CastOverloadResolver::create(const Context & context)
+{
+    return createImpl(context.getSettingsRef().cast_keep_nullable);
+}
 
 void registerFunctionFixedString(FunctionFactory & factory);
 
@@ -13,7 +19,6 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToUInt16>();
     factory.registerFunction<FunctionToUInt32>();
     factory.registerFunction<FunctionToUInt64>();
-    factory.registerFunction<FunctionToUInt128>();
     factory.registerFunction<FunctionToUInt256>();
     factory.registerFunction<FunctionToInt8>();
     factory.registerFunction<FunctionToInt16>();
@@ -30,11 +35,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal256>();
 
     factory.registerFunction<FunctionToDate>();
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionToDate>("DATE", FunctionFactory::CaseInsensitive);
-
     factory.registerFunction<FunctionToDateTime>();
-    factory.registerFunction<FunctionToDateTime32>();
     factory.registerFunction<FunctionToDateTime64>();
     factory.registerFunction<FunctionToUUID>();
     factory.registerFunction<FunctionToString>();
@@ -42,16 +43,12 @@ void registerFunctionsConversion(FunctionFactory & factory)
     registerFunctionFixedString(factory);
 
     factory.registerFunction<FunctionToUnixTimestamp>();
-
-    factory.registerFunction<CastOverloadResolver<CastType::nonAccurate>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<CastOverloadResolver<CastType::accurate>>();
-    factory.registerFunction<CastOverloadResolver<CastType::accurateOrNull>>();
+    factory.registerFunction<CastOverloadResolver>(FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
     factory.registerFunction<FunctionToUInt32OrZero>();
     factory.registerFunction<FunctionToUInt64OrZero>();
-    factory.registerFunction<FunctionToUInt128OrZero>();
     factory.registerFunction<FunctionToUInt256OrZero>();
     factory.registerFunction<FunctionToInt8OrZero>();
     factory.registerFunction<FunctionToInt16OrZero>();
@@ -70,13 +67,10 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal128OrZero>();
     factory.registerFunction<FunctionToDecimal256OrZero>();
 
-    factory.registerFunction<FunctionToUUIDOrZero>();
-
     factory.registerFunction<FunctionToUInt8OrNull>();
     factory.registerFunction<FunctionToUInt16OrNull>();
     factory.registerFunction<FunctionToUInt32OrNull>();
     factory.registerFunction<FunctionToUInt64OrNull>();
-    factory.registerFunction<FunctionToUInt128OrNull>();
     factory.registerFunction<FunctionToUInt256OrNull>();
     factory.registerFunction<FunctionToInt8OrNull>();
     factory.registerFunction<FunctionToInt16OrNull>();
@@ -95,17 +89,10 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal128OrNull>();
     factory.registerFunction<FunctionToDecimal256OrNull>();
 
-    factory.registerFunction<FunctionToUUIDOrNull>();
-
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUSOrZero>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUSOrNull>();
-    factory.registerFunction<FunctionParseDateTime32BestEffort>();
-    factory.registerFunction<FunctionParseDateTime32BestEffortOrZero>();
-    factory.registerFunction<FunctionParseDateTime32BestEffortOrNull>();
     factory.registerFunction<FunctionParseDateTime64BestEffort>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrNull>();

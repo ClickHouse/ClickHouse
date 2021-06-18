@@ -1,16 +1,10 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
-#if USE_H3
-
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <common/range.h>
+#include <ext/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -18,21 +12,19 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-namespace
-{
-
 class FunctionH3ToParent : public IFunction
 {
 public:
     static constexpr auto name = "h3ToParent";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToParent>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3ToParent>(); }
 
     std::string getName() const override { return name; }
 
@@ -56,16 +48,16 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
-        const auto * col_resolution = arguments[1].column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
+        const auto * col_resolution = block.getByPosition(arguments[1]).column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (const auto row : ext::range(0, input_rows_count))
         {
             const UInt64 hindex = col_hindex->getUInt(row);
             const UInt8 resolution = col_resolution->getUInt(row);
@@ -79,11 +71,10 @@ public:
             dst_data[row] = res;
         }
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
-}
 
 void registerFunctionH3ToParent(FunctionFactory & factory)
 {
@@ -91,5 +82,3 @@ void registerFunctionH3ToParent(FunctionFactory & factory)
 }
 
 }
-
-#endif

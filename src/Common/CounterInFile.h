@@ -7,6 +7,7 @@
 #include <iostream>
 #include <mutex>
 
+#include <Poco/File.h>
 #include <Poco/Exception.h>
 
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -58,7 +59,7 @@ public:
 
         Int64 res = -1;
 
-        bool file_doesnt_exists = !fs::exists(path);
+        bool file_doesnt_exists = !Poco::File(path).exists();
         if (file_doesnt_exists && !create_if_need)
         {
             throw Poco::Exception("File " + path + " does not exist. "
@@ -86,7 +87,7 @@ public:
                 {
                     /// A more understandable error message.
                     if (e.code() == DB::ErrorCodes::CANNOT_READ_ALL_DATA || e.code() == DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-                        throw DB::ParsingException("File " + path + " is empty. You must fill it manually with appropriate value.", e.code());
+                        throw DB::Exception("File " + path + " is empty. You must fill it manually with appropriate value.", e.code());
                     else
                         throw;
                 }
@@ -137,7 +138,7 @@ public:
     // Not thread-safe and not synchronized between processes.
     void fixIfBroken(UInt64 value)
     {
-        bool file_exists = fs::exists(path);
+        bool file_exists = Poco::File(path).exists();
 
         int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
         if (-1 == fd)
