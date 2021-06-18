@@ -349,7 +349,7 @@ Coordination::ZooKeeperRequestPtr deserializeTxnImpl(ReadBuffer & in, bool subtx
 {
     int32_t type;
     Coordination::read(type, in);
-    Coordination::ZooKeeperRequestPtr result;
+    Coordination::ZooKeeperRequestPtr result = nullptr;
     int32_t sub_txn_length = 0;
     if (subtxn)
         Coordination::read(sub_txn_length, in);
