@@ -462,8 +462,8 @@ void ThreadStatus::logToQueryViewsLog(QueryViewsLog & views_log, const ViewInfo 
 {
     QueryViewsLogElement element;
 
-    element.event_time = time_in_seconds(vinfo.runtime_stats.start);
-    element.event_time_microseconds = time_in_microseconds(vinfo.runtime_stats.start);
+    element.event_time = time_in_seconds(vinfo.runtime_stats.event_time);
+    element.event_time_microseconds = time_in_microseconds(vinfo.runtime_stats.event_time);
     element.view_duration_ms = vinfo.runtime_stats.elapsed_ms;
 
     element.initial_query_id = vinfo.runtime_stats.initial_query_id;
@@ -485,13 +485,14 @@ void ThreadStatus::logToQueryViewsLog(QueryViewsLog & views_log, const ViewInfo 
         element.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
     }
 
-    element.end_status = EXCEPTION_BEFORE_START;
+    element.end_status = vinfo.runtime_stats.event_status;
     element.exception_code = 0;
     if (vinfo.exception)
     {
-        element.exception_code = 0;
-        element.exception = "TODO";
-        element.stack_trace = "TODO";
+        element.exception_code = getExceptionErrorCode(vinfo.exception);
+        element.exception = getExceptionMessage(vinfo.exception, false);
+        // if (current_settings.calculate_text_stack_trace) // TODO
+        element.stack_trace = getExceptionStackTraceString(vinfo.exception);
     }
 
     views_log.add(element);

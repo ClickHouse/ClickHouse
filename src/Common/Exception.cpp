@@ -94,6 +94,22 @@ std::string getExceptionStackTraceString(const std::exception & e)
 #endif
 }
 
+std::string getExceptionStackTraceString(std::exception_ptr e)
+{
+    try
+    {
+        std::rethrow_exception(e);
+    }
+    catch (const std::exception & exception)
+    {
+        return getExceptionStackTraceString(exception);
+    }
+    catch (...)
+    {
+        return {};
+    }
+}
+
 
 std::string Exception::getStackTraceString() const
 {
@@ -361,6 +377,30 @@ int getCurrentExceptionCode()
     try
     {
         throw;
+    }
+    catch (const Exception & e)
+    {
+        return e.code();
+    }
+    catch (const Poco::Exception &)
+    {
+        return ErrorCodes::POCO_EXCEPTION;
+    }
+    catch (const std::exception &)
+    {
+        return ErrorCodes::STD_EXCEPTION;
+    }
+    catch (...)
+    {
+        return ErrorCodes::UNKNOWN_EXCEPTION;
+    }
+}
+
+int getExceptionErrorCode(std::exception_ptr e)
+{
+    try
+    {
+        std::rethrow_exception(e);
     }
     catch (const Exception & e)
     {

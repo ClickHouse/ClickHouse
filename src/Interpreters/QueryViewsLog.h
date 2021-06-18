@@ -33,12 +33,19 @@ struct QueryViewsLogElement
 
     struct ViewRuntimeStats
     {
-        UInt64 elapsed_ms = 0;
-        ViewType type = ViewType::DEFAULT;
-        std::shared_ptr<ThreadStatus> thread_status = std::make_shared<ThreadStatus>();
-        String initial_query_id;
-        std::chrono::time_point<std::chrono::system_clock> start;
         String target_name;
+        ViewType type = ViewType::DEFAULT;
+        String initial_query_id;
+        std::shared_ptr<ThreadStatus> thread_status = std::make_shared<ThreadStatus>();
+        UInt64 elapsed_ms = 0;
+        std::chrono::time_point<std::chrono::system_clock> event_time;
+        Status event_status = Status::QUERY_START;
+
+        void setStatus(Status s)
+        {
+            event_status = s;
+            event_time = std::chrono::system_clock::now();
+        }
     };
 
     time_t event_time{};
