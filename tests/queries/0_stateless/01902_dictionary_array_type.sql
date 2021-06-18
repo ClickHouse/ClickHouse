@@ -132,6 +132,7 @@ SELECT dictGetOrDefault('polygon_dictionary', 'array_value', tuple(1.5, 1.5), [2
 DROP DICTIONARY polygon_dictionary;
 DROP TABLE polygon_dictionary_array_source_table;
 
+DROP TABLE IF EXISTS range_dictionary_array_source_table;
 CREATE TABLE range_dictionary_array_source_table
 (
   key UInt64,

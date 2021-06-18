@@ -3,7 +3,7 @@
 #include <Access/IAccessEntity.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -130,15 +130,15 @@ public:
 
     /// Subscribes for all changes.
     /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    ext::scope_guard subscribeForChanges(EntityType type, const OnChangedHandler & handler) const;
+    scope_guard subscribeForChanges(EntityType type, const OnChangedHandler & handler) const;
 
     template <typename EntityClassT>
-    ext::scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(EntityClassT::TYPE, handler); }
+    scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(EntityClassT::TYPE, handler); }
 
     /// Subscribes for changes of a specific entry.
     /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    ext::scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
-    ext::scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
+    scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
+    scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
     bool hasSubscription(EntityType type) const;
     bool hasSubscription(const UUID & id) const;
@@ -161,8 +161,8 @@ protected:
     virtual UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) = 0;
     virtual void removeImpl(const UUID & id) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
-    virtual ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
-    virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const = 0;
+    virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
+    virtual scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const = 0;
     virtual bool hasSubscriptionImpl(const UUID & id) const = 0;
     virtual bool hasSubscriptionImpl(EntityType type) const = 0;
     virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;

@@ -3,7 +3,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <boost/range/join.hpp>
-#include <ext/range.h>
 #include "DictionaryStructure.h"
 #include "writeParenthesisedString.h"
 
@@ -346,7 +345,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
                                                size_t beg, size_t end) const
 {
     auto first = true;
-    for (const auto i : ext::range(beg, end))
+    for (size_t i = beg; i < end; ++i)
     {
         if (!first)
             writeString(" AND ", out);
@@ -358,8 +357,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
         /// key_i=value_i
         writeQuoted(key_description.name, out);
         writeString("=", out);
-        auto serialization = key_description.type->getDefaultSerialization();
-        serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
+        key_description.type_serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
     }
 }
 
@@ -392,7 +390,7 @@ void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out, size_t b
     writeChar('(', out);
 
     auto first = true;
-    for (const auto i : ext::range(beg, end))
+    for (size_t i = beg; i < end; ++i)
     {
         if (!first)
             writeString(", ", out);
@@ -410,13 +408,13 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const si
     writeString("(", out);
 
     auto first = true;
-    for (const auto i : ext::range(beg, end))
+    for (size_t i = beg; i < end; ++i)
     {
         if (!first)
             writeString(", ", out);
 
         first = false;
-        auto serialization = (*dict_struct.key)[i].type->getDefaultSerialization();
+        auto serialization = (*dict_struct.key)[i].type_serialization;
         serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
     }
 

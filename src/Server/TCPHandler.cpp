@@ -1,5 +1,5 @@
 #include <iomanip>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
