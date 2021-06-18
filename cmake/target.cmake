@@ -39,6 +39,12 @@ if (CMAKE_CROSSCOMPILING)
             set (ENABLE_ORC OFF CACHE INTERNAL "")
 
             set (ENABLE_MYSQL OFF CACHE INTERNAL "")
+        elseif (ARCH_PPC64LE)
+            # FIXME: broken dependencies
+            set (ENABLE_PROTOBUF OFF CACHE INTERNAL "")
+            set (ENABLE_GRPC OFF CACHE INTERNAL "")
+            set (USE_SENTRY OFF CACHE INTERNAL "")
+            set (ENABLE_ROCKSDB OFF CACHE INTERNAL "")
         endif ()
     elseif (OS_FREEBSD)
         # FIXME: broken dependencies
@@ -53,7 +59,7 @@ if (CMAKE_CROSSCOMPILING)
     endif ()
 
     # Don't know why but CXX_STANDARD doesn't work for cross-compilation
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20")
 
     message (STATUS "Cross-compiling for target: ${CMAKE_CXX_COMPILE_TARGET}")
 endif ()
