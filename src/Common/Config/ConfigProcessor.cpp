@@ -664,8 +664,8 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         {
             fs::path preprocessed_configs_path("preprocessed_configs/");
             auto new_path = loaded_config.config_path;
-            if (new_path.substr(0, main_config_path.size()) == main_config_path)
-                new_path.replace(0, main_config_path.size(), "");
+            if (new_path.starts_with(main_config_path))
+                new_path.erase(0, main_config_path.size());
             std::replace(new_path.begin(), new_path.end(), '/', '_');
 
             if (preprocessed_dir.empty())
@@ -708,6 +708,8 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
 void ConfigProcessor::setConfigPath(const std::string & config_path)
 {
     main_config_path = config_path;
+    if (!main_config_path.ends_with('/'))
+        main_config_path += '/';
 }
 
 }
