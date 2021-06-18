@@ -2,19 +2,20 @@
 <yandex>
     <storage_configuration>
         <disks>
-            <def>
-                <type>local</type>
-                <path>/</path>
-            </def>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/test1/</endpoint>
+                <files_prefix>data</files_prefix>
+            </web>
         </disks>
         <policies>
-            <def>
+            <web>
                 <volumes>
                     <main>
-                        <disk>def</disk>
+                        <disk>web</disk>
                     </main>
                 </volumes>
-            </def>
+            </web>
         </policies>
     </storage_configuration>
 </yandex>
