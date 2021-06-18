@@ -210,7 +210,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     std::unique_lock<std::mutex> other_db_lock;
     if (inside_database)
         db_lock = std::unique_lock{mutex};
-    else  if (this < &other_db)
+    else if (this < &other_db)
     {
         db_lock = std::unique_lock{mutex};
         other_db_lock = std::unique_lock{other_db.mutex};
