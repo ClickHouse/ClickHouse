@@ -308,6 +308,9 @@ Coordination::ZooKeeperRequestPtr deserializeSetTxn(ReadBuffer & in)
     Coordination::read(result->path, in);
     Coordination::read(result->data, in);
     Coordination::read(result->version, in);
+    /// It stores version + 1 (which should be, not for request)
+    result->version -= 1;
+
     return result;
 }
 
@@ -405,8 +408,7 @@ Coordination::ZooKeeperRequestPtr deserializeMultiTxn(ReadBuffer & in)
     while (length > 0)
     {
         auto subrequest = deserializeTxnImpl(in, true);
-        if (subrequest)
-            result->requests.push_back(subrequest);
+        result->requests.push_back(subrequest);
         length--;
     }
     return result;
@@ -420,14 +422,14 @@ bool isErrorRequest(Coordination::ZooKeeperRequestPtr request)
 bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
 {
     for (const auto & subrequest : dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get())->requests)
-        if (dynamic_cast<Coordination::ZooKeeperRequest *>(subrequest.get())->getOpNum() == Coordination::OpNum::Error)
+        if (subrequest == nullptr)
             return true;
     return false;
 }
 
 }
 
-bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in)
+bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * log)
 {
     int64_t checksum;
     Coordination::read(checksum, in);
@@ -490,7 +492,7 @@ void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string 
     LOG_INFO(log, "Header looks OK");
 
     size_t counter = 0;
-    while (!reader.eof() && deserializeTxn(storage, reader))
+    while (!reader.eof() && deserializeTxn(storage, reader, log))
     {
         counter++;
         if (counter % 1000 == 0)
