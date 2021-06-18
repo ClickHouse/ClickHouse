@@ -6,9 +6,10 @@
 namespace DB
 {
 
-void replaceAliasColumnsInQuery(ASTPtr & ast, const ColumnsDescription & columns, const NameSet & forbidden_columns, ContextPtr context)
+void replaceAliasColumnsInQuery(
+    ASTPtr & ast, const ColumnsDescription & columns, const NameToNameMap & array_join_result_to_source, ContextPtr context)
 {
-    ColumnAliasesVisitor::Data aliases_column_data(columns, forbidden_columns, context);
+    ColumnAliasesVisitor::Data aliases_column_data(columns, array_join_result_to_source, context);
     ColumnAliasesVisitor aliases_column_visitor(aliases_column_data);
     aliases_column_visitor.visit(ast);
 }
