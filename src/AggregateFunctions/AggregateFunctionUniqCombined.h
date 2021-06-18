@@ -1,5 +1,7 @@
 #pragma once
 
+#include <common/bit_cast.h>
+
 #include <Common/CombinedCardinalityEstimator.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
@@ -12,8 +14,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqCombinedBiasData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
-
-#include <ext/bit_cast.h>
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
@@ -52,7 +52,7 @@ namespace detail
     {
         static Ret hash(Float32 x)
         {
-            UInt64 res = ext::bit_cast<UInt64>(x);
+            UInt64 res = bit_cast<UInt64>(x);
             return static_cast<Ret>(intHash64(res));
         }
     };
@@ -62,7 +62,7 @@ namespace detail
     {
         static Ret hash(Float64 x)
         {
-            UInt64 res = ext::bit_cast<UInt64>(x);
+            UInt64 res = bit_cast<UInt64>(x);
             return static_cast<Ret>(intHash64(res));
         }
     };

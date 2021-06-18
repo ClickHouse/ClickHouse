@@ -922,7 +922,10 @@ class ClickHouseCluster:
     def exec_in_container(self, container_id, cmd, detach=False, nothrow=False, use_cli=True, **kwargs):
         if use_cli:
             logging.debug(f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}")
-            result = subprocess_check_call(["docker", "exec", container_id] + cmd, detach=detach, nothrow=nothrow)
+            exec_cmd = ["docker", "exec"]
+            if 'user' in kwargs:
+                exec_cmd += ['-u', kwargs['user']]
+            result = subprocess_check_call(exec_cmd + [container_id] + cmd, detach=detach, nothrow=nothrow)
             return result
         else:
             exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
@@ -1957,7 +1960,7 @@ class ClickHouseInstance:
                 return None
         return None
 
-    def restart_with_latest_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=60):
+    def restart_with_latest_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=15):
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')

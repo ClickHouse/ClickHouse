@@ -10,7 +10,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 
@@ -78,7 +78,7 @@ namespace
 
     void addAllCommands(boost::container::flat_set<std::string_view> & commands)
     {
-        for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+        for (auto condition_type : collections::range(MAX_CONDITION_TYPE))
         {
             const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
             commands.emplace(command);
@@ -99,7 +99,7 @@ namespace
                 return true;
             }
 
-            for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+            for (auto condition_type : collections::range(MAX_CONDITION_TYPE))
             {
                 const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
                 if (ParserKeyword{command.data()}.ignore(pos, expected))
@@ -156,7 +156,7 @@ namespace
             if (!check && !alter)
                 check = filter;
 
-            for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+            for (auto condition_type : collections::range(MAX_CONDITION_TYPE))
             {
                 const auto & type_info = ConditionTypeInfo::get(condition_type);
                 if (commands.count(type_info.command))

@@ -14,7 +14,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <common/defines.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
