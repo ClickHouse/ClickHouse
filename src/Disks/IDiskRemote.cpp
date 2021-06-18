@@ -33,10 +33,9 @@ IDiskRemote::Metadata::Metadata(
         const String & disk_path_,
         const String & metadata_file_path_,
         bool create)
-    : remote_fs_root_path(remote_fs_root_path_)
+    : RemoteMetadata(remote_fs_root_path_, metadata_file_path_)
     , disk_path(disk_path_)
-    , metadata_file_path(metadata_file_path_)
-    , total_size(0), remote_fs_objects(0), ref_count(0)
+    , total_size(0), ref_count(0)
 {
     if (create)
         return;
@@ -416,7 +415,7 @@ void IDiskRemote::removeDirectory(const String & path)
 
 DiskDirectoryIteratorPtr IDiskRemote::iterateDirectory(const String & path)
 {
-    return std::make_unique<RemoteDiskDirectoryIterator>(metadata_path + path, path);
+    return std::make_unique<RemoteDiskDirectoryIterator>(fs::path(metadata_path) / path, path);
 }
 
 

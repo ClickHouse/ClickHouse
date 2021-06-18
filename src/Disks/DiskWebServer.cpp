@@ -1,16 +1,24 @@
 #include "DiskWebServer.h"
 
 #include <common/logger_useful.h>
-#include <Common/quoteString.h>
 
-#include <Interpreters/Context.h>
-
-#include <Disks/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/WriteIndirectBufferFromRemoteFS.h>
-
-#include <IO/WriteBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadIndirectBufferFromWebServer.h>
 #include <IO/SeekAvoidingReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+#include <Disks/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IDiskRemote.h>
+
+#include <re2/re2.h>
+
+#define DIRECTORY_FILE_PATTERN(prefix) fmt::format("{}-(\\w+)-(\\w+\\.\\w+)", prefix)
+#define ROOT_FILE_PATTERN(prefix) fmt::format("{}-(\\w+\\.\\w+)", prefix)
+
+#define MATCH_DIRECTORY_FILE_PATTERN(prefix) fmt::format("{}/(\\w+)/(\\w+\\.\\w+)", prefix)
+#define MATCH_ROOT_FILE_PATTERN(prefix) fmt::format("{}/(\\w+\\.\\w+)", prefix)
+#define MATCH_DIRECTORY_PATTERN(prefix) fmt::format("{}/(\\w+)", prefix)
 
 
 namespace DB
@@ -22,17 +30,91 @@ namespace ErrorCodes
 }
 
 
+static const auto store_uuid_prefix = ".*/[\\w]{3}/[\\w]{8}-[\\w]{4}-[\\w]{4}-[\\w]{4}-[\\w]{12}";
+
+
+/// Fetch contents of .index file from given uri path.
+void DiskWebServer::Metadata::initialize(const String & uri_with_path, const String & files_prefix, ContextPtr context) const
+{
+    ReadWriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(uri_with_path) / ".index"),
+                                         Poco::Net::HTTPRequest::HTTP_GET,
+                                         ReadWriteBufferFromHTTP::OutStreamCallback(),
+                                         ConnectionTimeouts::getHTTPTimeouts(context));
+    String directory, file, remote_file_name;
+    size_t file_size;
+
+    while (!metadata_buf.eof())
+    {
+        readText(remote_file_name, metadata_buf);
+        assertChar('\t', metadata_buf);
+        readIntText(file_size, metadata_buf);
+        assertChar('\n', metadata_buf);
+        LOG_DEBUG(&Poco::Logger::get("DiskWeb"), "Read file: {}, size: {}", remote_file_name, file_size);
+
+        /*
+         * URI/   {prefix}-all_x_x_x-{file}
+         *        ...
+         *        {prefix}-format_version.txt
+         *        {prefix}-detached-{file}
+         *        ...
+         */
+        if (RE2::FullMatch(remote_file_name, re2::RE2(DIRECTORY_FILE_PATTERN(files_prefix)), &directory, &file))
+        {
+            files[directory].insert({file, file_size});
+        }
+        else if (RE2::FullMatch(remote_file_name, re2::RE2(ROOT_FILE_PATTERN(files_prefix)), &file))
+        {
+            files[file].insert({file, file_size});
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected file: {}", remote_file_name);
+    }
+}
+
+
+/* Iterate list of files from .index file on a web server (its contents were put
+ * into DiskWebServer::Metadata) and convert them into paths as though paths in local fs.
+ */
+class DiskWebDirectoryIterator final : public IDiskDirectoryIterator
+{
+public:
+    DiskWebDirectoryIterator(DiskWebServer::Metadata & metadata_, const String & directory_root_)
+        : metadata(metadata_), iter(metadata.files.begin()), directory_root(directory_root_)
+    {
+    }
+
+    void next() override { ++iter; }
+
+    bool isValid() const override { return iter != metadata.files.end(); }
+
+    String path() const override
+    {
+        return fs::path(directory_root) / name();
+    }
+
+    String name() const override
+    {
+        return iter->first;
+    }
+
+private:
+    DiskWebServer::Metadata & metadata;
+    DiskWebServer::FilesDirectory::iterator iter;
+    const String directory_root;
+};
+
+
 class ReadBufferFromWebServer final : public ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>
 {
 public:
     ReadBufferFromWebServer(
-            const String & url_,
-            DiskWebServer::Metadata metadata_,
+            const String & uri_,
+            RemoteMetadata metadata_,
             ContextPtr context_,
             size_t max_read_tries_,
             size_t buf_size_)
         : ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>(metadata_)
-        , url(url_)
+        , uri(uri_)
         , context(context_)
         , max_read_tries(max_read_tries_)
         , buf_size(buf_size_)
@@ -41,55 +123,151 @@ public:
 
     std::unique_ptr<ReadIndirectBufferFromWebServer> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(url) / path, context, max_read_tries, buf_size);
+        return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(uri) / path, context, max_read_tries, buf_size);
     }
 
 private:
-    String url;
+    String uri;
     ContextPtr context;
     size_t max_read_tries;
     size_t buf_size;
 };
 
 
+class WriteBufferFromNothing : public WriteBufferFromFile
+{
+public:
+    WriteBufferFromNothing() : WriteBufferFromFile("/dev/null") {}
+
+    void sync() override {}
+};
+
+
 DiskWebServer::DiskWebServer(
             const String & disk_name_,
-            const String & files_root_path_url_,
+            const String & uri_,
             const String & metadata_path_,
             ContextPtr context_,
             SettingsPtr settings_)
-        : IDiskRemote(disk_name_, files_root_path_url_, metadata_path_, "DiskWebServer", settings_->thread_pool_size)
-        , WithContext(context_->getGlobalContext())
+        : WithContext(context_->getGlobalContext())
+        , log(&Poco::Logger::get("DiskWeb"))
+        , uri(uri_)
+        , name(disk_name_)
+        , metadata_path(metadata_path_)
         , settings(std::move(settings_))
 {
 }
 
 
+String DiskWebServer::getFileName(const String & path) const
+{
+    String result;
+
+    if (RE2::FullMatch(path, MATCH_DIRECTORY_FILE_PATTERN(store_uuid_prefix))
+        && RE2::Extract(path, MATCH_DIRECTORY_FILE_PATTERN(".*"), fmt::format("{}-\\1-\\2", settings->files_prefix), &result))
+        return result;
+
+    if (RE2::FullMatch(path, MATCH_ROOT_FILE_PATTERN(store_uuid_prefix))
+        && RE2::Extract(path, MATCH_ROOT_FILE_PATTERN(".*"), fmt::format("{}-\\1", settings->files_prefix), &result))
+        return result;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected file: {}", path);
+}
+
+
+bool DiskWebServer::findFileInMetadata(const String & path, FileAndSize & file_info) const
+{
+    if (metadata.files.empty())
+        metadata.initialize(uri, settings->files_prefix, getContext());
+
+    String directory_name, file_name;
+
+    if (RE2::FullMatch(path, MATCH_DIRECTORY_FILE_PATTERN(store_uuid_prefix), &directory_name, &file_name))
+    {
+        const auto & directory_files = metadata.files.find(directory_name)->second;
+        auto file = directory_files.find(file_name);
+
+        if (file == directory_files.end())
+            return false;
+
+        file_info = std::make_pair(file_name, file->second);
+    }
+    else if (RE2::FullMatch(path, MATCH_ROOT_FILE_PATTERN(store_uuid_prefix), &file_name))
+    {
+        auto file = metadata.files.find(file_name);
+
+        if (file == metadata.files.end())
+            return false;
+
+        file_info = std::make_pair(file_name, file->second.find(file_name)->second);
+    }
+    else
+        return false;
+
+    return true;
+}
+
+
+bool DiskWebServer::exists(const String & path) const
+{
+    LOG_DEBUG(log, "Checking existance of file: {}", path);
+
+    /// Assume root directory exists.
+    if (re2::RE2::FullMatch(path, re2::RE2(fmt::format("({})/", store_uuid_prefix))))
+        return true;
+
+    FileAndSize file;
+    return findFileInMetadata(path, file);
+}
+
+
 std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
 {
-    auto metadata = readMeta(path);
+    LOG_DEBUG(log, "Read from file by path: {}", path);
 
-    LOG_DEBUG(log, "Read from file by path: {}. Existing objects: {}", backQuote(metadata_path + path), metadata.remote_fs_objects.size());
+    FileAndSize file;
+    if (!findFileInMetadata(path, file))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} not found", path);
 
-    auto reader = std::make_unique<ReadBufferFromWebServer>(remote_fs_root_path, metadata, getContext(), 1, buf_size);
+    RemoteMetadata meta(uri, fs::path(path).parent_path() / fs::path(path).filename());
+    meta.remote_fs_objects.emplace_back(std::make_pair(getFileName(path), file.second));
+
+    auto reader = std::make_unique<ReadBufferFromWebServer>(uri, meta, getContext(), settings->max_read_tries, buf_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
 
-std::unique_ptr<WriteBufferFromFileBase> DiskWebServer::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskWebServer::writeFile(const String &, size_t, WriteMode)
 {
-    auto metadata = readOrCreateMetaForWriting(path, mode);
+    return std::make_unique<WriteBufferFromNothing>();
+}
 
-    auto file_name = generateName();
-    String file_path = fs::path(remote_fs_root_path) / file_name;
 
-    LOG_DEBUG(log, "Write to file url: {}", file_path);
+DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
+{
+    LOG_DEBUG(log, "Iterate directory: {}", path);
+    return std::make_unique<DiskWebDirectoryIterator>(metadata, path);
+}
 
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(getContext());
-    Poco::URI uri(file_path);
-    auto writer = std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_PUT, timeouts, buf_size);
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromHTTP>>(std::move(writer), std::move(metadata), file_name);
+size_t DiskWebServer::getFileSize(const String & path) const
+{
+    FileAndSize file;
+    if (!findFileInMetadata(path, file))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} not found", path);
+    return file.second;
+}
+
+
+bool DiskWebServer::isFile(const String & path) const
+{
+    return RE2::FullMatch(path, MATCH_ROOT_FILE_PATTERN(".*")) || RE2::FullMatch(path, MATCH_DIRECTORY_FILE_PATTERN(".*"));
+}
+
+
+bool DiskWebServer::isDirectory(const String & path) const
+{
+    return RE2::FullMatch(path, MATCH_DIRECTORY_PATTERN(".*"));
 }
 
 
@@ -103,18 +281,18 @@ void registerDiskWebServer(DiskFactory & factory)
         fs::path disk = fs::path(context->getPath()) / "disks" / disk_name;
         fs::create_directories(disk);
 
-        String url{config.getString(config_prefix + ".endpoint")};
-        if (!url.ends_with('/'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "URL must end with '/', but '{}' doesn't.", url);
+        String uri{config.getString(config_prefix + ".endpoint")};
+        if (!uri.ends_with('/'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "URI must end with '/', but '{}' doesn't.", uri);
 
         auto settings = std::make_unique<DiskWebServerSettings>(
             context->getGlobalContext()->getSettingsRef().http_max_single_read_retries,
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-            config.getInt(config_prefix + ".thread_pool_size", 16));
+            config.getString(config_prefix + ".files_prefix", disk_name));
 
         String metadata_path = fs::path(context->getPath()) / "disks" / disk_name / "";
 
-        return std::make_shared<DiskWebServer>(disk_name, url, metadata_path, context, std::move(settings));
+        return std::make_shared<DiskWebServer>(disk_name, uri, metadata_path, context, std::move(settings));
     };
 
     factory.registerDiskType("web", creator);
