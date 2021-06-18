@@ -130,9 +130,14 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
         const auto & dict_type = typeid_cast<const DataTypeLowCardinality *>(column.type.get())->getDictionaryType();
         column.type = std::make_shared<DataTypeLowCardinality>(removeNullable(dict_type));
 
-        ColumnLowCardinality * col_as_lc = typeid_cast<ColumnLowCardinality *>(column.column->assumeMutable().get());
-        if (col_as_lc && col_as_lc->nestedIsNullable())
-            col_as_lc->nestedRemoveNullable();
+        if (column.column && column.column->lowCardinality())
+        {
+            auto mut_col = IColumn::mutate(std::move(column.column));
+            ColumnLowCardinality * col_as_lc = typeid_cast<ColumnLowCardinality *>(mut_col.get());
+            if (col_as_lc && col_as_lc->nestedIsNullable())
+                col_as_lc->nestedRemoveNullable();
+            column.column = std::move(mut_col);
+        }
 
         return;
     }
