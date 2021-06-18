@@ -2,6 +2,8 @@
 
 #include <Common/Exception.h>
 #include <common/types.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -40,7 +42,7 @@ struct DummyJSONParser
         Array getArray() const { return {}; }
         Object getObject() const { return {}; }
 
-        Element getElement() { return {}; }
+        ALWAYS_INLINE Element getUnderlyingElement() const { return {}; }
     };
 
     /// References an array in a JSON document.
@@ -99,7 +101,7 @@ struct DummyJSONParser
 #endif
 };
 
-inline ALWAYS_INLINE std::ostream& operator<<(std::ostream& out, DummyJSONParser::Element)
+inline ALWAYS_INLINE WriteBufferFromString& operator<<(WriteBufferFromString& out, const DB::DummyJSONParser::Element &)
 {
     return out;
 }

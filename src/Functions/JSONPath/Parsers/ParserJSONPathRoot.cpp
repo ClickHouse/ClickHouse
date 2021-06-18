@@ -19,8 +19,7 @@ bool ParserJSONPathRoot::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         expected.add(pos, "dollar sign (start of jsonpath)");
         return false;
     }
-    auto path_root = std::make_shared<ASTJSONPathRoot>();
-    node = path_root;
+    node = std::make_shared<ASTJSONPathRoot>();
     ++pos;
     return true;
 }

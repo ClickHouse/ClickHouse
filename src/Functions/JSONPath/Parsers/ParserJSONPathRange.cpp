@@ -55,7 +55,8 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         }
         else if (pos->type == TokenType::BareWord)
         {
-            if (!ParserKeyword("TO").ignore(pos, expected)) {
+            if (!ParserKeyword("TO").ignore(pos, expected))
+            {
                 return false;
             }
             if (!number_p.parse(pos, number_ptr, expected))

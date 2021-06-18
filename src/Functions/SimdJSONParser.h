@@ -50,7 +50,7 @@ struct SimdJSONParser
         ALWAYS_INLINE Array getArray() const;
         ALWAYS_INLINE Object getObject() const;
 
-        ALWAYS_INLINE simdjson::dom::element getElement() const { return element; }
+        ALWAYS_INLINE simdjson::dom::element getUnderlyingElement() const { return element; }
 
     private:
         simdjson::dom::element element;
@@ -163,6 +163,10 @@ inline ALWAYS_INLINE SimdJSONParser::Array SimdJSONParser::Element::getArray() c
 inline ALWAYS_INLINE SimdJSONParser::Object SimdJSONParser::Element::getObject() const
 {
     return element.get_object().value_unsafe();
+}
+
+inline ALWAYS_INLINE WriteBuffer& operator<<(WriteBuffer& out, const DB::SimdJSONParser::Element & element) {
+    return out << element.getUnderlyingElement();
 }
 
 }
