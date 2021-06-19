@@ -149,6 +149,7 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
         auto mysql_table_name = std::make_shared<ASTLiteral>(table_id.table_name);
         storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
 
+	storage_engine_arguments->children[storage_engine_arguments->children.size() - 1] =  std::make_shared<ASTLiteral>("******");
         /// Unset settings
         storage_children.erase(
             std::remove_if(storage_children.begin(), storage_children.end(),
@@ -193,7 +194,15 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = getDatabaseName();
-    create_query->set(create_query->storage, database_engine_define);
+    auto mark_database_storage_define = database_engine_define->clone();
+    create_query->set(create_query->storage, mark_database_storage_define);
+    ASTStorage * ast_storage = mark_database_storage_define->as<ASTStorage>();
+    ASTs storage_children = ast_storage->children;
+    auto storage_engine_arguments = ast_storage->engine->arguments;
+
+    /// Mark password
+    storage_engine_arguments->children[storage_engine_arguments->children.size() - 1] =  std::make_shared<ASTLiteral>("******");
+
     return create_query;
 }
 
