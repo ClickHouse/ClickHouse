@@ -323,6 +323,7 @@ SRCS(
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
+    lemmatize.cpp
     lengthUTF8.cpp
     less.cpp
     lessOrEquals.cpp
@@ -453,6 +454,7 @@ SRCS(
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stem.cpp
     stringToH3.cpp
     substring.cpp
     subtractDays.cpp
@@ -464,6 +466,7 @@ SRCS(
     subtractWeeks.cpp
     subtractYears.cpp
     svg.cpp
+    synonyms.cpp
     tan.cpp
     tanh.cpp
     tcpPort.cpp

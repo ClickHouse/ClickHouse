@@ -27,8 +27,8 @@ struct StemImpl
         ColumnString::Offsets & res_offsets,
         const String & language)
     {
-        struct sb_stemmer * stemmer = sb_stemmer_new(language.data(), "UTF_8");
-        
+        sb_stemmer * stemmer = sb_stemmer_new(language.data(), "UTF_8");
+
         if (stemmer == nullptr)
         {
             throw Exception(
@@ -45,12 +45,12 @@ struct StemImpl
             /// Note that accessing -1th element is valid for PaddedPODArray.
             size_t original_size = offsets[i] - offsets[i - 1];
             const sb_symbol * result = sb_stemmer_stem(stemmer,
-                                                       reinterpret_cast<const unsigned char *>(data.data() + offsets[i - 1]),
+                                                       reinterpret_cast<const uint8_t *>(data.data() + offsets[i - 1]),
                                                        original_size - 1);
             size_t new_size = sb_stemmer_length(stemmer) + 1;
 
             memcpy(res_data.data() + data_size, result, new_size);
-            
+
             data_size += new_size;
             res_offsets[i] = data_size;
         }
@@ -93,7 +93,7 @@ public:
         const ColumnConst * lang_col = checkAndGetColumn<ColumnConst>(langcolumn.get());
         const ColumnString * words_col = checkAndGetColumn<ColumnString>(strcolumn.get());
 
-        if (!lang_col) 
+        if (!lang_col)
             throw Exception(
                 "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
         if (!words_col)

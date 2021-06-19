@@ -18,14 +18,14 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int UNSUPPORTED_LANGUAGE;
 }
 
 class FunctionSynonyms : public IFunction
 {
 public:
     static constexpr auto name = "synonyms";
-    static FunctionPtr create(ContextPtr context) {
+    static FunctionPtr create(ContextPtr context)
+    {
         return std::make_shared<FunctionSynonyms>(context->getSynonymsExtensions());
     }
 
@@ -93,7 +93,7 @@ public:
             std::string_view word(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1] - 1);
 
             auto synset = extension->getSynonyms(word);
-            
+
             if (synset)
             {
                 for (const auto &token : *synset)

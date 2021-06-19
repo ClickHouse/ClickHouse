@@ -1455,21 +1455,21 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
 SynonymsExtensions & Context::getSynonymsExtensions() const
 {
     auto lock = getLock();
-    
-    if(!shared->synonyms_extensions)
+
+    if (!shared->synonyms_extensions)
         shared->synonyms_extensions.emplace(getConfigRef());
 
-    return *shared->synonyms_extensions;    
+    return *shared->synonyms_extensions;
 }
 
 Lemmatizers & Context::getLemmatizers() const
 {
     auto lock = getLock();
-    
-    if(!shared->lemmatizers)
+
+    if (!shared->lemmatizers)
         shared->lemmatizers.emplace(getConfigRef());
 
-    return *shared->lemmatizers;    
+    return *shared->lemmatizers;
 }
 
 void Context::setProgressCallback(ProgressCallback callback)

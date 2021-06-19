@@ -10,7 +10,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
 }
@@ -71,23 +70,25 @@ Lemmatizers::Lemmatizers(const Poco::Util::AbstractConfiguration & config)
     }
 }
 
-Lemmatizers::LemmPtr Lemmatizers::getLemmatizer(const String & name) {
-        std::lock_guard guard(mutex);
+Lemmatizers::LemmPtr Lemmatizers::getLemmatizer(const String & name)
+{
+    std::lock_guard guard(mutex);
 
-        if (lemmatizers.find(name) != lemmatizers.end())
-            return lemmatizers[name];
-        
-        if (paths.find(name) != paths.end()) {
-            if (!std::filesystem::exists(paths[name]))
-                throw Exception("Incorrect path to lemmatizer: " + paths[name],
-                    ErrorCodes::INVALID_CONFIG_PARAMETER);
+    if (lemmatizers.find(name) != lemmatizers.end())
+        return lemmatizers[name];
 
-            lemmatizers[name] = std::make_shared<Lemmatizer>(paths[name]);
-            return lemmatizers[name];
-        }
+    if (paths.find(name) != paths.end())
+    {
+        if (!std::filesystem::exists(paths[name]))
+            throw Exception("Incorrect path to lemmatizer: " + paths[name],
+                ErrorCodes::INVALID_CONFIG_PARAMETER);
 
-        throw Exception("Lemmatizer named: '" + name + "' is not found",
-            ErrorCodes::INVALID_CONFIG_PARAMETER);
+        lemmatizers[name] = std::make_shared<Lemmatizer>(paths[name]);
+        return lemmatizers[name];
     }
+
+    throw Exception("Lemmatizer named: '" + name + "' is not found",
+        ErrorCodes::INVALID_CONFIG_PARAMETER);
+}
 
 }
