@@ -399,14 +399,12 @@ A projection query is what defines a projection. It has the following grammar:
 It implicitly selects data from the parent table.
 
 #### Storage {#projection-storage}
-Projections are stored inside the part directory. It's similar to an index but contains an subdirectory which stores an anonymous MergeTree table's part. The table is induced by the definition query of the projection. If there is a GROUP BY clause, the underlying storage engine becomes AggregatedMergeTree, and all aggregate functions are converted to either AggregateFunction or SimpleAggregateFunction. If there is an ORDER BY clause, the MergeTree table will use it as its primary key expression. During the merge process, the projection part will be merged via its storage's merge routine. The checksum of the parent table's part will combine the projection's part. Other maintenance jobs are similar to skip indices.
+Projections are stored inside the part directory. It's similar to an index but contains an subdirectory which stores an anonymous MergeTree table's part. The table is induced by the definition query of the projection. If there is a GROUP BY clause, the underlying storage engine becomes AggregatedMergeTree, and all aggregate functions are converted to AggregateFunction. If there is an ORDER BY clause, the MergeTree table will use it as its primary key expression. During the merge process, the projection part will be merged via its storage's merge routine. The checksum of the parent table's part will combine the projection's part. Other maintenance jobs are similar to skip indices.
 
-#### Query Routing {#projection-query-routing}
-1. Check if the projection contains all the needed columns and rows.
-2. If it's an aggregated projection, also check if it has the right columns inside the GROUP BY clause along with required aggregate functions.
-3. If it's an sorted projection, also check how many granules will be selected by the KeyCondition.
-4. Select the best feasible match.
-5. The query pipeline which uses projections will be different from the one that uses the original parts. if the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
+#### Query Analysis {#projection-query-analysis}
+1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
+2. Select the best feasible match, which contains the least granules to read.
+3. The query pipeline which uses projections will be different from the one that uses the original parts. if the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
 
 ## Concurrent Data Access {#concurrent-data-access}
 
