@@ -110,4 +110,4 @@ kill_clickhouse
 
 cp /report.ccr "${OUTPUT_DIR}"/report.ccr
 
-python3 ccr_converter.py /report.ccr "${OUTPUT_DIR}" "${SOURCE_DIR}"
+python3 ccr_converter.py /report.ccr "${OUTPUT_DIR}" "${SOURCE_DIR}" "${GCNO_DIR}"

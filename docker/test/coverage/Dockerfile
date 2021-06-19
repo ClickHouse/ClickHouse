@@ -16,9 +16,10 @@ COPY run.sh /run.sh
 COPY ccr_converter.py /ccr_converter.py
 
 ENV DATASETS="hits visits"
-ENV SOURCE_DIR=/build
 
+ENV SOURCE_DIR=/build
 ENV OUTPUT_DIR=/output
+ENV GCNO_DIR=/gcno
 
 ENV IGNORE='.*contrib.*'
 
