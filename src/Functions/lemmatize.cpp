@@ -3,9 +3,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/Lemmatizers.cpp>
 #include <Interpreters/Context.h>
-
+#include <Interpreters/Lemmatizers.cpp>
 
 namespace DB
 {

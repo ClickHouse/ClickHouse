@@ -1,5 +1,5 @@
 #include <Common/Exception.h>
-#include <Functions/Lemmatizers.h>
+#include <Interpreters/Lemmatizers.h>
 #include <RdrLemmatizer.h>
 
 #include <vector>
