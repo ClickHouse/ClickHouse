@@ -18,29 +18,40 @@ def cluster():
 
 def test_usage(cluster):
     node1 = cluster.instances["node1"]
-    node1.query("""
-        CREATE TABLE data (id Int32)
-        ENGINE = MergeTree() ORDER BY id
-        SETTINGS storage_policy = 'def';
-    """)
-    node1.query("INSERT INTO data SELECT number FROM numbers(100)")
-    expected = node1.query("SELECT * FROM data ORDER BY id")
+    expected = ""
+    uuids = []
+    for i in range(3):
+        node1.query(""" CREATE TABLE data{} (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'def';""".format(i))
+        node1.query("INSERT INTO data{} SELECT number FROM numbers(500000 * {})".format(i, i + 1))
+        expected = node1.query("SELECT * FROM data{} ORDER BY id".format(i))
 
-    metadata_path = node1.query("SELECT data_paths FROM system.tables WHERE name='data'")
-    metadata_path = metadata_path[metadata_path.find('/'):metadata_path.rfind('/')+1]
-    print(f'Metadata: {metadata_path}')
+        metadata_path = node1.query("SELECT data_paths FROM system.tables WHERE name='data{}'".format(i))
+        metadata_path = metadata_path[metadata_path.find('/'):metadata_path.rfind('/')+1]
+        print(f'Metadata: {metadata_path}')
 
-    node1.exec_in_container(['bash', '-c',
-                            '/usr/bin/clickhouse web-server-exporter --files-prefix data --url http://nginx:80/test1 --metadata-path {}'.format(metadata_path)], user='root')
-    parts = metadata_path.split('/')
-    uuid = parts[3]
-    print(f'UUID: {uuid}')
+        node1.exec_in_container(['bash', '-c',
+                                '/usr/bin/clickhouse web-server-exporter --files-prefix data --url http://nginx:80/test1 --metadata-path {}'.format(metadata_path)], user='root')
+        parts = metadata_path.split('/')
+        uuids.append(parts[3])
+        print(f'UUID: {parts[3]}')
+
     node2 = cluster.instances["node2"]
+    for i in range(3):
+        node2.query("""
+            ATTACH TABLE test{} UUID '{}'
+            (id Int32) ENGINE = MergeTree() ORDER BY id
+            SETTINGS storage_policy = 'web';
 
-    node2.query("""
-        ATTACH TABLE test1 UUID '{}'
-        (id Int32) ENGINE = MergeTree() ORDER BY id
-        SETTINGS storage_policy = 'web';
-    """.format(uuid))
-    result = node2.query("SELECT * FROM test1 ORDER BY id")
-    assert(result == expected)
+            -- A crutch with detach/attach, need to fix
+            DETACH TABLE test{};
+            ATTACH TABLE test{};
+        """.format(i, uuids[i], i, i))
+
+        result = node2.query("SELECT count() FROM test{}".format(i))
+        assert(int(result) == 500000 * (i+1))
+
+        #result = node2.query("SELECT id FROM test{} WHERE id % 56 = 3 ORDER BY id".format(i))
+        #assert(result == node1.query("SELECT id FROM data{} WHERE id % 56 = 3 ORDER BY id".format(i)))
+        #result = node2.query("SELECT id FROM test{} WHERE id > 789999 AND id < 1487000".format(i))
+        #assert(result == node1.query("SELECT id FROM data{} WHERE id > 789999 AND id < 1487000".format(i)))
+        print(f"Ok {i}")

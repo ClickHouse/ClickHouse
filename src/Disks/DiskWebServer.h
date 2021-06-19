@@ -33,20 +33,37 @@ public:
                   ContextPtr context,
                   SettingsPtr settings_);
 
-    using FileAndSize = std::pair<String, size_t>;
-    using FilesInfo = std::unordered_map<String, size_t>;
-    using FilesDirectory = std::map<String, FilesInfo>;
+    struct File
+    {
+        String name;
+        size_t size;
+        File(const String & name_ = "", const size_t size_ = 0) : name(name_), size(size_) {}
+        bool operator<(const File & other) const { return name < other.name; }
+        bool operator==(const File & other) const { return name == other.name; }
+    };
+
+    using Directory = std::set<File>;
+
+    /* Each root directory contains either directories like
+     * all_x_x_x/{file}, detached/, etc, or root files like format_version.txt.
+     */
+    using RootDirectory = std::unordered_map<String, Directory>;
+
+    /* Each table is attached via ATTACH TABLE table UUID <uuid> <def>.
+     * Then there is a mapping: {table uuid} -> {root directory}
+     */
+    using TableDirectories = std::unordered_map<String, RootDirectory>;
 
     struct Metadata
     {
         /// Fetch meta only when required.
-        mutable FilesDirectory files;
+        mutable TableDirectories tables_data;
 
         Metadata() {}
-        void initialize(const String & uri_with_path, const String & files_prefix, ContextPtr context) const;
+        void initialize(const String & uri_with_path, const String & files_prefix, const String & uuid, ContextPtr context) const;
     };
 
-    bool findFileInMetadata(const String & path, FileAndSize & file_info) const;
+    bool findFileInMetadata(const String & path, File & file_info) const;
 
     String getFileName(const String & path) const;
 
