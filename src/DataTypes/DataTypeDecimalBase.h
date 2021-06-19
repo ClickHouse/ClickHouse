@@ -18,8 +18,8 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-bool decimalCheckComparisonOverflow(ContextConstPtr context);
-bool decimalCheckArithmeticOverflow(ContextConstPtr context);
+bool decimalCheckComparisonOverflow(ContextPtr context);
+bool decimalCheckArithmeticOverflow(ContextPtr context);
 
 inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 {

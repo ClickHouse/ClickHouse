@@ -20,7 +20,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <algorithm>
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -39,64 +39,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
-}
-
-namespace
-{
-
-TreeRewriterResult modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_result, ContextPtr context)
-{
-
-    TreeRewriterResult new_rewriter_result = rewriter_result;
-    if (removeJoin(select))
-    {
-        /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
-        select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-        new_rewriter_result.aggregates.clear();
-
-        /// Replace select list to remove joined columns
-        auto select_list = std::make_shared<ASTExpressionList>();
-        for (const auto & column : rewriter_result.required_source_columns)
-            select_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
-
-        select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
-
-        const DB::IdentifierMembershipCollector membership_collector{select, context};
-
-        /// Remove unknown identifiers from where, leave only ones from left table
-        auto replace_where = [&membership_collector](ASTSelectQuery & query, ASTSelectQuery::Expression expr)
-        {
-            auto where = query.getExpression(expr, false);
-            if (!where)
-                return;
-
-            const size_t left_table_pos = 0;
-            /// Test each argument of `and` function and select ones related to only left table
-            std::shared_ptr<ASTFunction> new_conj = makeASTFunction("and");
-            for (const auto & node : collectConjunctions(where))
-            {
-                if (membership_collector.getIdentsMembership(node) == left_table_pos)
-                    new_conj->arguments->children.push_back(std::move(node));
-            }
-
-            if (new_conj->arguments->children.empty())
-                /// No identifiers from left table
-                query.setExpression(expr, {});
-            else if (new_conj->arguments->children.size() == 1)
-                /// Only one expression, lift from `and`
-                query.setExpression(expr, std::move(new_conj->arguments->children[0]));
-            else
-                /// Set new expression
-                query.setExpression(expr, std::move(new_conj));
-        };
-        replace_where(select,ASTSelectQuery::Expression::WHERE);
-        replace_where(select,ASTSelectQuery::Expression::PREWHERE);
-        select.setExpression(ASTSelectQuery::Expression::HAVING, {});
-        select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
-    }
-    return new_rewriter_result;
-}
-
 }
 
 StorageMerge::StorageMerge(
@@ -193,7 +135,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     /// should be done on the initiator always.
     ///
     /// Since in case of JOIN query on shards will receive query w/o JOIN (and their columns).
-    /// (see modifySelect()/removeJoin())
+    /// (see removeJoin())
     ///
     /// And for this we need to return FetchColumns.
     if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
@@ -343,7 +285,9 @@ Pipe StorageMerge::createSources(
 
     /// Original query could contain JOIN but we need only the first joined table and its columns.
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
-    auto new_analyzer_res = modifySelect(modified_select, *query_info.syntax_analyzer_result, modified_context);
+
+    TreeRewriterResult new_analyzer_res = *query_info.syntax_analyzer_result;
+    removeJoin(modified_select, new_analyzer_res, modified_context);
     modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
@@ -571,7 +515,7 @@ void StorageMerge::convertingSourceStream(
     if (!where_expression)
         return;
 
-    for (size_t column_index : ext::range(0, header.columns()))
+    for (size_t column_index : collections::range(0, header.columns()))
     {
         ColumnWithTypeAndName header_column = header.getByPosition(column_index);
         ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);

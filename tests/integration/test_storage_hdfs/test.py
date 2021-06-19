@@ -2,7 +2,6 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.hdfs_api import HDFSApi
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_hdfs=True, main_configs=['configs/log_conf.xml'])
@@ -18,7 +17,8 @@ def started_cluster():
 
 
 def test_read_write_storage(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
     node1.query(
         "create table SimpleHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/simple_storage', 'TSV')")
     node1.query("insert into SimpleHDFSStorage values (1, 'Mark', 72.53)")
@@ -27,7 +27,8 @@ def test_read_write_storage(started_cluster):
 
 
 def test_read_write_storage_with_globs(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
     node1.query(
         "create table HDFSStorageWithRange (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1..5}', 'TSV')")
     node1.query(
@@ -69,7 +70,8 @@ def test_read_write_storage_with_globs(started_cluster):
 
 
 def test_read_write_table(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
 
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/simple_table_function", data)
@@ -81,7 +83,8 @@ def test_read_write_table(started_cluster):
 
 
 def test_write_table(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
 
     node1.query(
         "create table OtherHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/other_storage', 'TSV')")
@@ -115,7 +118,8 @@ def test_bad_hdfs_uri(started_cluster):
 
 @pytest.mark.timeout(800)
 def test_globs_in_read_table(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
 
     some_data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     globs_dir = "/dir_for_test_with_globs/"
@@ -148,7 +152,8 @@ def test_globs_in_read_table(started_cluster):
 
 
 def test_read_write_gzip_table(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
 
     data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
     hdfs_api.write_gzip_data("/simple_table_function.gz", data)
@@ -160,7 +165,8 @@ def test_read_write_gzip_table(started_cluster):
 
 
 def test_read_write_gzip_table_with_parameter_gzip(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
 
     data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
     hdfs_api.write_gzip_data("/simple_table_function", data)
@@ -172,7 +178,8 @@ def test_read_write_gzip_table_with_parameter_gzip(started_cluster):
 
 
 def test_read_write_table_with_parameter_none(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
 
     data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
     hdfs_api.write_data("/simple_table_function.gz", data)
@@ -184,7 +191,8 @@ def test_read_write_table_with_parameter_none(started_cluster):
 
 
 def test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
 
     data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
     hdfs_api.write_gzip_data("/simple_table_function.gz", data)
@@ -196,7 +204,8 @@ def test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
 
 
 def test_write_gz_storage(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
 
     node1.query(
         "create table GZHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage.gz', 'TSV')")
@@ -206,7 +215,8 @@ def test_write_gz_storage(started_cluster):
 
 
 def test_write_gzip_storage(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
 
     node1.query(
         "create table GZIPHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/gzip_storage', 'TSV', 'gzip')")
@@ -216,7 +226,8 @@ def test_write_gzip_storage(started_cluster):
 
 
 def test_virtual_columns(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
     node1.query("create table virtual_cols (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/file*', 'TSV')")
     hdfs_api.write_data("/file1", "1\n")
     hdfs_api.write_data("/file2", "2\n")
@@ -226,7 +237,8 @@ def test_virtual_columns(started_cluster):
 
     
 def test_read_files_with_spaces(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
+
     hdfs_api.write_data("/test test test 1.txt", "1\n")
     hdfs_api.write_data("/test test test 2.txt", "2\n")
     hdfs_api.write_data("/test test test 3.txt", "3\n")
