@@ -41,8 +41,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
     INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2,
     ...
-    PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [WHERE] [GROUP BY] [ORDER BY]),
-    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [WHERE] [GROUP BY] [ORDER BY])
+    PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
+    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
@@ -394,7 +394,7 @@ Projections are like materialized views, but defined in part-level. It provides 
 #### Query {#projection-query}
 A projection query is what defines a projection. It has the following grammar:
 
-`SELECT <COLUMN LIST EXPR> [WHERE] [GROUP BY] [ORDER BY]`
+`SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]`
 
 It implicitly selects data from the parent table.
 
