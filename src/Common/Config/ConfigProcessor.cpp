@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <functional>
 #include <filesystem>
+#include <boost/algorithm/string.hpp>
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
@@ -36,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_LOAD_CONFIG;
 }
 
 /// For cutting preprocessed path to this base
@@ -437,6 +439,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
             std::string extension = path.extension();
             std::string base_name = path.stem();
 
+            boost::algorithm::to_lower(extension);
+
             // Skip non-config and temporary files
             if (fs::is_regular_file(path)
                     && (extension == ".xml" || extension == ".conf" || extension == ".yaml" || extension == ".yml")
@@ -462,13 +466,21 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     if (fs::exists(path))
     {
         fs::path p(path);
-        if (p.extension() == ".xml")
+
+        std::string extension = p.extension();
+        boost::algorithm::to_lower(extension);
+
+        if (extension == ".yaml" || extension == ".yml")
+        {
+            config = YAMLParser::parse(path);
+        }
+        else if (extension == ".xml" || extension == ".conf" || extension.empty())
         {
             config = dom_parser.parse(path);
         }
-        else if (p.extension() == ".yaml" || p.extension() == ".yml")
+        else
         {
-            config = YAMLParser::parse(path);
+            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", path);
         }
     }
     else
@@ -507,7 +519,10 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             XMLDocumentPtr with;
 
             fs::path p(merge_file);
-            if (p.extension() == ".yaml" || p.extension() == ".yml")
+            std::string extension = p.extension();
+            boost::algorithm::to_lower(extension);
+
+            if (extension == ".yaml" || extension == ".yml")
             {
                 with = YAMLParser::parse(merge_file);
             }
@@ -649,8 +664,8 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         {
             fs::path preprocessed_configs_path("preprocessed_configs/");
             auto new_path = loaded_config.config_path;
-            if (new_path.substr(0, main_config_path.size()) == main_config_path)
-                new_path.replace(0, main_config_path.size(), "");
+            if (new_path.starts_with(main_config_path))
+                new_path.erase(0, main_config_path.size());
             std::replace(new_path.begin(), new_path.end(), '/', '_');
 
             if (preprocessed_dir.empty())
@@ -693,6 +708,8 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
 void ConfigProcessor::setConfigPath(const std::string & config_path)
 {
     main_config_path = config_path;
+    if (!main_config_path.ends_with('/'))
+        main_config_path += '/';
 }
 
 }

@@ -21,8 +21,8 @@ SRCS(
     DatabaseReplicatedWorker.cpp
     DatabasesCommon.cpp
     MySQL/ConnectionMySQLSettings.cpp
-    MySQL/DatabaseConnectionMySQL.cpp
     MySQL/DatabaseMaterializeMySQL.cpp
+    MySQL/DatabaseMySQL.cpp
     MySQL/FetchTablesColumnsList.cpp
     MySQL/MaterializeMetadata.cpp
     MySQL/MaterializeMySQLSettings.cpp
