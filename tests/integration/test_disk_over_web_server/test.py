@@ -41,17 +41,15 @@ def test_usage(cluster):
             ATTACH TABLE test{} UUID '{}'
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
-
-            -- A crutch with detach/attach, need to fix
-            DETACH TABLE test{};
-            ATTACH TABLE test{};
         """.format(i, uuids[i], i, i))
 
         result = node2.query("SELECT count() FROM test{}".format(i))
         assert(int(result) == 500000 * (i+1))
 
-        #result = node2.query("SELECT id FROM test{} WHERE id % 56 = 3 ORDER BY id".format(i))
-        #assert(result == node1.query("SELECT id FROM data{} WHERE id % 56 = 3 ORDER BY id".format(i)))
-        #result = node2.query("SELECT id FROM test{} WHERE id > 789999 AND id < 1487000".format(i))
-        #assert(result == node1.query("SELECT id FROM data{} WHERE id > 789999 AND id < 1487000".format(i)))
+        result = node2.query("SELECT id FROM test{} WHERE id % 56 = 3 ORDER BY id".format(i))
+        assert(result == node1.query("SELECT id FROM data{} WHERE id % 56 = 3 ORDER BY id".format(i)))
+
+        result = node2.query("SELECT id FROM test{} WHERE id > 789999 AND id < 999999 ORDER BY id".format(i))
+        assert(result == node1.query("SELECT id FROM data{} WHERE id > 789999 AND id < 999999 ORDER BY id".format(i)))
+
         print(f"Ok {i}")

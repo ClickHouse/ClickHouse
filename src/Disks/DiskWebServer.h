@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 struct DiskWebServerSettings
 {
@@ -105,18 +109,13 @@ public:
 
     Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp{}; }
 
-    ReservationPtr reserve(UInt64 /*bytes*/) override { return nullptr; }
-
     /// Write and modification part
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode) override;
 
     void moveFile(const String &, const String &) override {}
 
-    void replaceFile(const String &, const String &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
-    }
+    void replaceFile(const String &, const String &) override {}
 
     void removeFile(const String &) override
     {
@@ -128,7 +127,15 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    void removeRecursive(const String &) override {}
+    ReservationPtr reserve(UInt64 /*bytes*/) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
+
+    void removeRecursive(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
 
     void removeSharedFile(const String &, bool) override {}
 

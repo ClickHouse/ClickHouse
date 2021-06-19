@@ -315,6 +315,7 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
     if (!(status == Poco::Net::HTTPResponse::HTTP_OK
         || status == Poco::Net::HTTPResponse::HTTP_CREATED
         || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
+        || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {
         std::stringstream error_message;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
