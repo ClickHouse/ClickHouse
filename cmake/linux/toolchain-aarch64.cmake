@@ -4,6 +4,7 @@ set (CMAKE_C_COMPILER_TARGET "aarch64-linux-gnu")
 set (CMAKE_CXX_COMPILER_TARGET "aarch64-linux-gnu")
 set (CMAKE_ASM_COMPILER_TARGET "aarch64-linux-gnu")
 set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../toolchain/linux-aarch64/aarch64-linux-gnu/libc")
+get_filename_component (TOOLCHAIN_FILE "${CMAKE_TOOLCHAIN_FILE}" REALPATH)
 
 # We don't use compiler from toolchain because it's gcc-8, and we provide support only for gcc-9.
 set (CMAKE_AR "${CMAKE_CURRENT_LIST_DIR}/../toolchain/linux-aarch64/bin/aarch64-linux-gnu-ar" CACHE FILEPATH "" FORCE)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <optional>
 #include <Storages/IStorage.h>
 
@@ -14,9 +14,9 @@ namespace DB
   * You could also specify a limit (how many zeros to give).
   * If multithreaded is specified, zeros will be generated in several streams.
   */
-class StorageSystemZeros final : public ext::shared_ptr_helper<StorageSystemZeros>, public IStorage
+class StorageSystemZeros final : public shared_ptr_helper<StorageSystemZeros>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageSystemZeros>;
+    friend struct shared_ptr_helper<StorageSystemZeros>;
 public:
     std::string getName() const override { return "SystemZeros"; }
 

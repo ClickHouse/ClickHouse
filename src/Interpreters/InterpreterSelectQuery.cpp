@@ -79,10 +79,11 @@
 #include <common/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <ext/map.h>
-#include <ext/scope_guard_safe.h>
+#include <common/map.h>
+#include <common/scope_guard_safe.h>
 #include <memory>
 
 
@@ -134,7 +135,7 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     tables->children.push_back(tables_elem);
     tables_elem->table_expression = table_expr;
     tables_elem->children.push_back(table_expr);
-    table_expr->database_and_table_name = createTableIdentifier(db_name, table_name);
+    table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(db_name, table_name);
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
@@ -226,7 +227,6 @@ static void checkAccessRightsForSelect(
     ContextPtr context,
     const StorageID & table_id,
     const StorageMetadataPtr & table_metadata,
-    const Strings & required_columns,
     const TreeRewriterResult & syntax_analyzer_result)
 {
     if (!syntax_analyzer_result.has_explicit_columns && table_metadata && !table_metadata->getColumns().empty())
@@ -250,7 +250,7 @@ static void checkAccessRightsForSelect(
     }
 
     /// General check.
-    context->checkAccess(AccessType::SELECT, table_id, required_columns);
+    context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
@@ -545,9 +545,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
     {
-        /// The current user should have the SELECT privilege.
-        /// If this table_id is for a table function we don't check access rights here because in this case they have been already checked in ITableFunction::execute().
-        checkAccessRightsForSelect(context, table_id, metadata_snapshot, required_columns, *syntax_analyzer_result);
+        /// The current user should have the SELECT privilege. If this table_id is for a table
+        /// function we don't check access rights here because in this case they have been already
+        /// checked in ITableFunction::execute().
+        checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_analyzer_result);
 
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
@@ -1636,7 +1637,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 column_expr = column_default->expression->clone();
                 // recursive visit for alias to alias
                 replaceAliasColumnsInQuery(
-                    column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), context);
+                    column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->array_join_result_to_source, context);
 
                 column_expr = addTypeConversionToAST(
                     std::move(column_expr), column_decl.type->getName(), metadata_snapshot->getColumns().getAll(), context);
@@ -1681,7 +1682,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             }
 
             required_columns_after_prewhere_set
-                = ext::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
+                = collections::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
         }
 
         auto syntax_result
@@ -1742,7 +1743,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
-        && typeid_cast<AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
+        && typeid_cast<const AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
 
     if (optimize_trivial_count)
     {
@@ -1766,7 +1767,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         if (num_rows)
         {
-            AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);
+            const AggregateFunctionCount & agg_count = static_cast<const AggregateFunctionCount &>(*func);
 
             /// We will process it up to "WithMergeableState".
             std::vector<char> state(agg_count.sizeOfData());

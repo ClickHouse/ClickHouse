@@ -32,7 +32,7 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
     return func;
 }
 
-ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, ContextConstPtr context)
+ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, ContextPtr context)
 {
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, all_columns);
     const auto actions = ExpressionAnalyzer(ast,
@@ -45,7 +45,7 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const Nam
 
     auto block = actions->getSampleBlock();
 
-    auto desc_type =  block.getByName(ast->getColumnName()).type;
+    auto desc_type =  block.getByName(ast->getAliasOrColumnName()).type;
     if (desc_type->getName() != type_name)
         return addTypeConversionToAST(std::move(ast), type_name);
 

@@ -60,7 +60,8 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 Types of sources (`source_type`):
 
 -   [Local file](#dicts-external_dicts_dict_sources-local_file)
--   [Executable file](#dicts-external_dicts_dict_sources-executable)
+-   [Executable File](#dicts-external_dicts_dict_sources-executable)
+-   [Executable Pool](#dicts-external_dicts_dict_sources-executable_pool)
 -   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 -   DBMS
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
@@ -94,7 +95,7 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 Setting fields:
 
 -   `path` – The absolute path to the file.
--   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
+-   `format` – The file format. All the formats described in [Formats](../../../interfaces/formats.md#formats) are supported.
 
 When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
 
@@ -113,14 +114,47 @@ Example of settings:
     <executable>
         <command>cat /opt/dictionaries/os.tsv</command>
         <format>TabSeparated</format>
+        <implicit_key>false</implicit_key>
     </executable>
 </source>
 ```
 
 Setting fields:
 
--   `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
--   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
+-   `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
+-   `format` — The file format. All the formats described in [Formats](../../../interfaces/formats.md#formats) are supported.
+-   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false.
+
+That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
+
+## Executable Pool {#dicts-external_dicts_dict_sources-executable_pool}
+
+Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct` layouts. 
+
+Executable pool will spawn pool of processes with specified command and keep them running until they exit. The program should read data from STDIN while it is available and output result to STDOUT, and it can wait for next block of data on STDIN. ClickHouse will not close STDIN after processing a block of data but will pipe another chunk of data when needed. The executable script should be ready for this way of data processing — it should poll STDIN and flush data to STDOUT early.
+
+Example of settings:
+
+``` xml
+<source>
+    <executable_pool>
+        <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
+        <format>TabSeparated</format>
+        <pool_size>10</pool_size>
+        <max_command_execution_time>10<max_command_execution_time>
+        <implicit_key>false</implicit_key>
+    </executable_pool>
+</source>
+```
+
+Setting fields:
+
+-   `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
+-   `format` — The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
+-   `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions.
+-   `command_termination_timeout` — Executable pool script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
+-   `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10. Optional parameter.
+-   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false. Optional parameter.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 

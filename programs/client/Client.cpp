@@ -21,7 +21,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
@@ -29,7 +29,6 @@
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
-#include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <Common/UnicodeBar.h>
@@ -85,7 +84,7 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/ProgressBar.h>
+#include <Common/ProgressIndication.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
 
@@ -230,13 +229,13 @@ private:
     String server_version;
     String server_display_name;
 
-    Stopwatch watch;
+    /// true by default - for interactive mode, might be changed when --progress option is checked for
+    /// non-interactive mode.
+    bool need_render_progress = true;
 
-    /// The server periodically sends information about how much data was read since last time.
-    Progress progress;
+    bool written_first_block = false;
 
-    /// Progress bar
-    ProgressBar progress_bar;
+    ProgressIndication progress_indication;
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
@@ -536,7 +535,7 @@ private:
 
         if (!is_interactive)
         {
-            progress_bar.need_render_progress = config().getBool("progress", false);
+            need_render_progress = config().getBool("progress", false);
             echo_queries = config().getBool("echo", false);
             ignore_error = config().getBool("ignore-error", false);
         }
@@ -549,65 +548,6 @@ private:
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
         const auto local_tz = DateLUT::instance().getTimeZone();
-        if (!context->getSettingsRef().use_client_time_zone)
-        {
-            const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
-            if (!time_zone.empty())
-            {
-                try
-                {
-                    DateLUT::setDefaultTimezone(time_zone);
-                }
-                catch (...)
-                {
-                    std::cerr << "Warning: could not switch to server time zone: " << time_zone
-                              << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
-                              << "Proceeding with local time zone." << std::endl
-                              << std::endl;
-                }
-            }
-            else
-            {
-                std::cerr << "Warning: could not determine server time zone. "
-                          << "Proceeding with local time zone." << std::endl
-                          << std::endl;
-            }
-        }
-
-        Strings keys;
-
-        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
-
-        config().keys("prompt_by_server_display_name", keys);
-
-        for (const String & key : keys)
-        {
-            if (key != "default" && server_display_name.find(key) != std::string::npos)
-            {
-                prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
-                break;
-            }
-        }
-
-        /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
-        {
-            String unescaped_prompt_by_server_display_name;
-            ReadBufferFromString in(prompt_by_server_display_name);
-            readEscapedString(unescaped_prompt_by_server_display_name, in);
-            prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
-        }
-
-        /// Prompt may contain the following substitutions in a form of {name}.
-        std::map<String, String> prompt_substitutions{
-            {"host", connection_parameters.host},
-            {"port", toString(connection_parameters.port)},
-            {"user", connection_parameters.user},
-            {"display_name", server_display_name},
-        };
-
-        /// Quite suboptimal.
-        for (const auto & [key, value] : prompt_substitutions)
-            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
         if (is_interactive)
         {
@@ -805,6 +745,66 @@ private:
                           << std::endl;
             }
         }
+
+        if (!context->getSettingsRef().use_client_time_zone)
+        {
+            const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
+            if (!time_zone.empty())
+            {
+                try
+                {
+                    DateLUT::setDefaultTimezone(time_zone);
+                }
+                catch (...)
+                {
+                    std::cerr << "Warning: could not switch to server time zone: " << time_zone
+                              << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
+                              << "Proceeding with local time zone." << std::endl
+                              << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << "Warning: could not determine server time zone. "
+                          << "Proceeding with local time zone." << std::endl
+                          << std::endl;
+            }
+        }
+
+        Strings keys;
+
+        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+
+        config().keys("prompt_by_server_display_name", keys);
+
+        for (const String & key : keys)
+        {
+            if (key != "default" && server_display_name.find(key) != std::string::npos)
+            {
+                prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
+                break;
+            }
+        }
+
+        /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
+        {
+            String unescaped_prompt_by_server_display_name;
+            ReadBufferFromString in(prompt_by_server_display_name);
+            readEscapedString(unescaped_prompt_by_server_display_name, in);
+            prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
+        }
+
+        /// Prompt may contain the following substitutions in a form of {name}.
+        std::map<String, String> prompt_substitutions{
+            {"host", connection_parameters.host},
+            {"port", toString(connection_parameters.port)},
+            {"user", connection_parameters.user},
+            {"display_name", server_display_name},
+        };
+
+        /// Quite suboptimal.
+        for (const auto & [key, value] : prompt_substitutions)
+            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
     }
 
 
@@ -967,12 +967,9 @@ private:
             TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
                 processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-
-            // Echo all queries if asked; makes for a more readable reference
-            // file.
-            if (test_hint.echoQueries())
-                echo_queries = true;
         }
+
+        bool echo_query = echo_queries;
 
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
@@ -1106,9 +1103,20 @@ private:
                 continue;
             }
 
+            // Now we know for sure where the query ends.
+            // Look for the hint in the text of query + insert data + trailing
+            // comments,
+            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
+            // Use the updated query boundaries we just calculated.
+            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
+
+            // Echo all queries if asked; makes for a more readable reference
+            // file.
+            echo_query = test_hint.echoQueries().value_or(echo_query);
+
             try
             {
-                processParsedSingleQuery();
+                processParsedSingleQuery(echo_query);
             }
             catch (...)
             {
@@ -1129,13 +1137,6 @@ private:
                 this_query_end = insert_ast->end;
                 adjustQueryEnd(this_query_end, all_queries_end, context->getSettingsRef().max_parser_depth);
             }
-
-            // Now we know for sure where the query ends.
-            // Look for the hint in the text of query + insert data + trailing
-            // comments,
-            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-            // Use the updated query boundaries we just calculated.
-            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
 
             // Check whether the error (or its absence) matches the test hints
             // (or their absence).
@@ -1201,7 +1202,9 @@ private:
                 client_exception.reset();
                 server_exception.reset();
                 have_error = false;
-                connection->forceConnected(connection_parameters.timeouts);
+
+                if (!connection->checkConnected())
+                    connect();
             }
 
             // Report error.
@@ -1336,7 +1339,7 @@ private:
 
                     fmt::print(
                         stderr,
-                        "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
+                        "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
                     exit(1);
                 }
@@ -1461,7 +1464,7 @@ private:
                     const auto text_3 = ast_3->formatForErrorMessage();
                     if (text_3 != text_2)
                     {
-                        fmt::print(stderr, "The query formatting is broken.\n");
+                        fmt::print(stderr, "Found error: The query formatting is broken.\n");
 
                         printChangedSettings();
 
@@ -1547,14 +1550,14 @@ private:
     // 'query_to_send' -- the query text that is sent to server,
     // 'full_query' -- for INSERT queries, contains the query and the data that
     // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
-    void processParsedSingleQuery()
+    void processParsedSingleQuery(std::optional<bool> echo_query = {})
     {
         resetOutput();
         client_exception.reset();
         server_exception.reset();
         have_error = false;
 
-        if (echo_queries)
+        if (echo_query.value_or(echo_queries))
         {
             writeString(full_query, std_out);
             writeChar('\n', std_out);
@@ -1574,12 +1577,9 @@ private:
             }
         }
 
-        watch.restart();
         processed_rows = 0;
-        progress.reset();
-        progress_bar.show_progress_bar = false;
-        progress_bar.written_progress_chars = 0;
-        progress_bar.written_first_block = false;
+        written_first_block = false;
+        progress_indication.resetProgress();
 
         {
             /// Temporarily apply query settings to context.
@@ -1602,7 +1602,8 @@ private:
             if (with_output && with_output->settings_ast)
                 apply_query_settings(*with_output->settings_ast);
 
-            connection->forceConnected(connection_parameters.timeouts);
+            if (!connection->checkConnected())
+                connect();
 
             ASTPtr input_function;
             if (insert && insert->select)
@@ -1646,16 +1647,15 @@ private:
 
         if (is_interactive)
         {
-            std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
-
-            if (progress.read_rows >= 1000)
-                writeFinalProgress();
+            std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
+            /// Write final progress if it makes sense to do so.
+            writeFinalProgress();
 
             std::cout << std::endl << std::endl;
         }
         else if (print_time_to_stderr)
         {
-            std::cerr << watch.elapsedSeconds() << "\n";
+            std::cerr << progress_indication.elapsedSeconds() << "\n";
         }
     }
 
@@ -1830,6 +1830,19 @@ private:
             /// Send data read from stdin.
             try
             {
+                if (need_render_progress)
+                {
+                    /// Set total_bytes_to_read for current fd.
+                    FileProgress file_progress(0, std_in.size());
+                    progress_indication.updateProgress(Progress(file_progress));
+
+                    /// Set callback to be called on file progress.
+                    progress_indication.setFileProgressCallback(context, true);
+
+                    /// Add callback to track reading from fd.
+                    std_in.setProgressCallback(context);
+                }
+
                 sendDataFrom(std_in, sample, columns_description);
             }
             catch (Exception & e)
@@ -1952,7 +1965,7 @@ private:
                         cancelled = true;
                         if (is_interactive)
                         {
-                            progress_bar.clearProgress();
+                            progress_indication.clearProgressOutput();
                             std::cout << "Cancelling query." << std::endl;
                         }
 
@@ -2179,7 +2192,7 @@ private:
                 current_format = "Vertical";
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-            if (!progress_bar.need_render_progress)
+            if (!need_render_progress)
                 block_out_stream = context->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
             else
                 block_out_stream = context->getOutputStream(current_format, *out_buf, block);
@@ -2238,25 +2251,25 @@ private:
         if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
             return;
 
-        if (progress_bar.need_render_progress)
-            progress_bar.clearProgress();
+        if (need_render_progress)
+            progress_indication.clearProgressOutput();
 
         block_out_stream->write(block);
-        progress_bar.written_first_block = true;
+        written_first_block = true;
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (progress_bar.need_render_progress)
-            progress_bar.writeProgress(progress, watch.elapsed());
+        if (need_render_progress)
+            progress_indication.writeProgress();
     }
 
 
     void onLogData(Block & block)
     {
         initLogsOutputStream();
-        progress_bar.clearProgress();
+        progress_indication.clearProgressOutput();
         logs_out_stream->write(block);
         logs_out_stream->flush();
     }
@@ -2277,28 +2290,23 @@ private:
 
     void onProgress(const Progress & value)
     {
-        if (!progress_bar.updateProgress(progress, value))
+        if (!progress_indication.updateProgress(value))
         {
             // Just a keep-alive update.
             return;
         }
+
         if (block_out_stream)
             block_out_stream->onProgress(value);
-        progress_bar.writeProgress(progress, watch.elapsed());
+
+        if (need_render_progress)
+            progress_indication.writeProgress();
     }
 
 
     void writeFinalProgress()
     {
-        std::cout << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
-                  << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
-
-        size_t elapsed_ns = watch.elapsed();
-        if (elapsed_ns)
-            std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                      << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
-        else
-            std::cout << ". ";
+        progress_indication.writeFinalProgress();
     }
 
 
@@ -2319,7 +2327,7 @@ private:
 
     void onEndOfStream()
     {
-        progress_bar.clearProgress();
+        progress_indication.clearProgressOutput();
 
         if (block_out_stream)
             block_out_stream->writeSuffix();
@@ -2329,9 +2337,9 @@ private:
 
         resetOutput();
 
-        if (is_interactive && !progress_bar.written_first_block)
+        if (is_interactive && !written_first_block)
         {
-            progress_bar.clearProgress();
+            progress_indication.clearProgressOutput();
             std::cout << "Ok." << std::endl;
         }
     }

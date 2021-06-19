@@ -29,6 +29,7 @@ import string
 import multiprocessing
 from contextlib import closing
 
+DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_timeout (=120)"
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
@@ -36,10 +37,14 @@ MESSAGES_TO_RETRY = [
     "Coordination::Exception: Session expired",
     "Coordination::Exception: Connection loss",
     "Coordination::Exception: Operation timeout",
+    "DB::Exception: Operation timeout",
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
-    "DB::Exception: New table appeared in database being dropped or detached. Try again"
+    "DB::Exception: New table appeared in database being dropped or detached. Try again",
+    DISTRIBUTED_DDL_TIMEOUT_MSG # FIXME
 ]
+
+MAX_RETRIES = 5
 
 class Terminated(KeyboardInterrupt):
     pass
@@ -258,7 +263,8 @@ def get_processlist(args):
         query = b"SHOW PROCESSLIST FORMAT Vertical"
         if args.replicated_database:
             query = b"SELECT materialize((hostName(), tcpPort())) as host, * " \
-                    b"FROM clusterAllReplicas('r', system.processes) WHERE query NOT LIKE '%system.processes%' FORMAT Vertical"
+                    b"FROM clusterAllReplicas('test_cluster_database_replicated', system.processes) " \
+                    b"WHERE query NOT LIKE '%system.processes%' FORMAT Vertical"
         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
         (stdout, _) = clickhouse_proc.communicate((query), timeout=20)
         return False, stdout.decode('utf-8')
@@ -279,8 +285,16 @@ def get_stacktraces_from_gdb(server_pid):
 
 # collect server stacktraces from system.stack_trace table
 # it does not work in Sandbox
-def get_stacktraces_from_clickhouse(client):
+def get_stacktraces_from_clickhouse(client, replicated_database=False):
     try:
+        if replicated_database:
+            return subprocess.check_output("{} --allow_introspection_functions=1 --skip_unavailable_shards=1 --query "
+                "\"SELECT materialize((hostName(), tcpPort())) as host, thread_id, "
+                "arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), "
+                "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace "
+                "FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') "
+                "ORDER BY host, thread_id format Vertical\"".format(client), shell=True, stderr=subprocess.STDOUT).decode('utf-8')
+
         return subprocess.check_output("{} --allow_introspection_functions=1 --query "
                "\"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), "
                "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace "
@@ -288,7 +302,6 @@ def get_stacktraces_from_clickhouse(client):
     except Exception as ex:
         print("Error occured while receiving stack traces from client: {}".format(str(ex)))
         return None
-
 
 def get_server_pid(server_tcp_port):
     # lsof does not work in stress tests for some reason
@@ -317,7 +330,7 @@ SERVER_DIED = False
 exit_code = 0
 stop_time = None
 queue = multiprocessing.Queue(maxsize=1)
-
+restarted_tests = []  # (test, stderr)
 
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
@@ -458,11 +471,15 @@ def run_tests_array(all_tests_with_params):
                     else:
                         counter = 1
                         while need_retry(stderr):
+                            restarted_tests.append((case_file, stderr))
                             testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
                             proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                             sleep(2**counter)
                             counter += 1
-                            if counter > 6:
+                            if MAX_RETRIES < counter:
+                                if args.replicated_database:
+                                    if DISTRIBUTED_DDL_TIMEOUT_MSG in stderr:
+                                        SERVER_DIED = True
                                 break
 
                         if proc.returncode != 0:
@@ -522,13 +539,13 @@ def run_tests_array(all_tests_with_params):
                                 status += " - result differs with reference:\n{}\n".format(diff)
                                 status += 'Database: ' + testcase_args.testcase_database
                             else:
-                                if testcase_args.test_runs > 1 and total_time > 30 and 'long' not in name:
+                                if testcase_args.test_runs > 1 and total_time > 60 and 'long' not in name:
                                     # We're in Flaky Check mode, check the run time as well while we're at it.
                                     failures += 1
                                     failures_chain += 1
                                     status += MSG_FAIL
                                     status += print_test_time(total_time)
-                                    status += " - Test runs too long (> 30s). Make it faster.\n"
+                                    status += " - Test runs too long (> 60s). Make it faster.\n"
                                     status += 'Database: ' + testcase_args.testcase_database
                                 else:
                                     passed_total += 1
@@ -917,7 +934,7 @@ def main(args):
             clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
             server_pid = get_server_pid(clickhouse_tcp_port)
             bt = None
-            if server_pid:
+            if server_pid and not args.replicated_database:
                 print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
                 print("\nCollecting stacktraces from all running threads with gdb:")
                 bt = get_stacktraces_from_gdb(server_pid)
@@ -926,7 +943,7 @@ def main(args):
                     bt = None
             if bt is None:
                 print("\nCollecting stacktraces from system.stacktraces table:")
-                bt = get_stacktraces_from_clickhouse(args.client)
+                bt = get_stacktraces_from_clickhouse(args.client, args.replicated_database)
             if bt is None:
                 print(
                     colored(
@@ -940,6 +957,13 @@ def main(args):
             exit_code = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
+
+    if len(restarted_tests) > 0:
+        print("\nSome tests were restarted:\n")
+        for (test_case, stderr) in restarted_tests:
+            print(test_case)
+            print(stderr)
+            print("\n")
 
     if total_tests_run == 0:
         print("No tests were run.")
@@ -1154,6 +1178,7 @@ if __name__ == '__main__':
             os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
         else:
             os.environ['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
+        args.client += ' --use_antlr_parser=1'
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):

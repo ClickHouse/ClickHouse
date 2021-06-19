@@ -68,7 +68,6 @@ def kafka_setup_teardown():
 
 # Tests
 
-@pytest.mark.timeout(180)  # wait to build containers
 def test_kafka_json_as_string(kafka_cluster):
     kafka_produce(kafka_cluster, 'kafka_json_as_string', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }', '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
 
