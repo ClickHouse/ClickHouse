@@ -266,7 +266,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
                + "." + escapeForFileName(table_push.first)
                + "." + escapeForFileName(table_push.second);
 
-    engine_push_str = config.getString(table_prefix + "engine");
+    engine_push_str = config.getString(table_prefix + "engine", "rand()");
 
     {
         ParserStorage parser_storage;
