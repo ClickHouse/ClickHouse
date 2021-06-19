@@ -32,7 +32,7 @@ namespace ErrorCodes
   * splitByChar(sep, s)
   * splitByString(sep, s)
   * splitByRegexp(regexp, s)
-  * 
+  *
   * splitByWhitespace(s)      - split the string by whitespace characters
   * splitByNonAlpha(s)        - split the string by whitespace and punctuation characters
   *

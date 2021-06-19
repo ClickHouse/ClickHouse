@@ -11,15 +11,15 @@ namespace DB
 
 class Lemmatizer;
 
-class Lemmatizers {
+class Lemmatizers
+{
 public:
     using LemmPtr = std::shared_ptr<Lemmatizer>;
 
 private:
-    
     std::mutex mutex;
     std::unordered_map<String, LemmPtr> lemmatizers;
-    std::unordered_map<String, String> paths;     
+    std::unordered_map<String, String> paths;
 
 public:
     Lemmatizers(const Poco::Util::AbstractConfiguration & config);

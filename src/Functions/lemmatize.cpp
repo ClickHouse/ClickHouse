@@ -32,15 +32,15 @@ struct LemmatizeImpl
         UInt64 data_size = 0;
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
-            /// lemmatize() is based on fact that string ends with '\0' 
+            /// lemmatize() uses the fact the fact that each string ends with '\0'
             auto result = lemmatizer->lemmatize(reinterpret_cast<const char *>(data.data() + offsets[i - 1]));
             size_t new_size = strlen(result.get()) + 1;
-            
+
             if (data_size + new_size > res_data.size())
                 res_data.resize(data_size + new_size);
 
             memcpy(res_data.data() + data_size, reinterpret_cast<const unsigned char *>(result.get()), new_size);
-            
+
             data_size += new_size;
             res_offsets[i] = data_size;
         }
@@ -53,7 +53,8 @@ class FunctionLemmatize : public IFunction
 {
 public:
     static constexpr auto name = "lemmatize";
-    static FunctionPtr create(ContextPtr context) {
+    static FunctionPtr create(ContextPtr context)
+    {
         return std::make_shared<FunctionLemmatize>(context->getLemmatizers());
     }
 
@@ -91,7 +92,7 @@ public:
         const ColumnConst * lang_col = checkAndGetColumn<ColumnConst>(langcolumn.get());
         const ColumnString * words_col = checkAndGetColumn<ColumnString>(strcolumn.get());
 
-        if (!lang_col) 
+        if (!lang_col)
             throw Exception(
                 "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
         if (!words_col)

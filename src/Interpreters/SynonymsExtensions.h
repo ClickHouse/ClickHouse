@@ -16,7 +16,7 @@ class ISynonymsExtension
 {
 public:
     using Synset = std::vector<String>;
-    
+
     virtual const Synset * getSynonyms(const std::string_view & token) const = 0;
 
     virtual ~ISynonymsExtension() = default;
@@ -24,9 +24,9 @@ public:
 
 class SynonymsExtensions
 {
-public: 
+public:
     using ExtPtr = std::shared_ptr<ISynonymsExtension>;
-    
+
     SynonymsExtensions(const Poco::Util::AbstractConfiguration & config);
 
     ExtPtr getExtension(const String & name);
@@ -37,12 +37,12 @@ private:
         String path;
         String type;
     };
-    
+
     using ExtContainer = std::unordered_map<String, ExtPtr>;
     using InfoContainer = std::unordered_map<String, Info>;
 
     std::mutex mutex;
-    ExtContainer extentions;
+    ExtContainer extensions;
     InfoContainer info;
 };
 

@@ -20,10 +20,10 @@ namespace ErrorCodes
 class PlainSynonymsExtension : public ISynonymsExtension
 {
 private:
-    using Container = std::list<std::vector<String>>;
+    using Container = std::list<Synset>;
     using LookupTable = std::unordered_map<std::string_view, Synset *>;
-    
-    Container data;
+
+    Container synsets;
     LookupTable table;
 
 public:
@@ -31,20 +31,20 @@ public:
     {
         std::ifstream file(path);
         if (!file.is_open())
-            throw Exception("Cannot find synonyms extention at: " + path,
+            throw Exception("Cannot find synonyms extension at: " + path,
                 ErrorCodes::INVALID_CONFIG_PARAMETER);
 
         String line;
         while (std::getline(file, line))
         {
-            std::vector<String> words;
-            boost::split(words, line, boost::is_any_of("\t "));
-            if (!words.empty())
+            Synset synset;
+            boost::split(synset, line, boost::is_any_of("\t "));
+            if (!synset.empty())
             {
-                data.emplace_back(std::move(words));
+                synsets.emplace_back(std::move(synset));
 
-                for (const auto &i : data.back()) 
-                    table[i] = &data.back();
+                for (const auto &word : synsets.back())
+                    table[word] = &synsets.back();
             }
         }
     }
@@ -126,24 +126,24 @@ SynonymsExtensions::ExtPtr SynonymsExtensions::getExtension(const String & name)
 {
     std::lock_guard guard(mutex);
 
-    if (extentions.find(name) != extentions.end())
-        return extentions[name];
-    
-    if (info.find(name) != info.end()) {
-        const Info & ext_info = info[name];
-        
-        if (ext_info.type == "plain") {
-            extentions[name] = std::make_shared<PlainSynonymsExtension>(ext_info.path);
-        } else if (ext_info.type == "wordnet") {
-            extentions[name] = std::make_shared<WordnetSynonymsExtension>(ext_info.path);
-        } else {
-            throw Exception("Unknown extention type: " + ext_info.type, ErrorCodes::LOGICAL_ERROR);
-        }
+    if (extensions.find(name) != extensions.end())
+        return extensions[name];
 
-        return extentions[name];
+    if (info.find(name) != info.end())
+    {
+        const Info & ext_info = info[name];
+
+        if (ext_info.type == "plain")
+            extensions[name] = std::make_shared<PlainSynonymsExtension>(ext_info.path);
+        else if (ext_info.type == "wordnet")
+            extensions[name] = std::make_shared<WordnetSynonymsExtension>(ext_info.path);
+        else
+            throw Exception("Unknown extension type: " + ext_info.type, ErrorCodes::LOGICAL_ERROR);
+
+        return extensions[name];
     }
 
-    throw Exception("Extention named: '" + name + "' is not found",
+    throw Exception("Extension named: '" + name + "' is not found",
         ErrorCodes::INVALID_CONFIG_PARAMETER);
 }
 
