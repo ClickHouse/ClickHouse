@@ -381,3 +381,24 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
             execute_query(clickhouse_node,
                           "SELECT value FROM mysql('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
                           settings=clickhouse_query_settings)
+
+def test_data_types_support_level_for_mysql_database_engine(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+        mysql_node.query("CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query("CREATE TABLE test.a (id INT key)")
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test, 'root', 'clickhouse')",
+                              settings={"mysql_datatypes_support_level": "decimal,datetime64"})
+
+        assert "MySQL(\\'mysql1:3306\\', \\'test\\', \\'root\\', \\'******\\')" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
+        assert "MySQL(\\'mysql1:3306\\', \\'test\\', \\'a\\', \\'root\\', \\'******\\')" in clickhouse_node.query("SHOW CREATE TABLE test_database.a FORMAT TSV")
+        clickhouse_node.query("DETACH DATABASE test_database")
+
+        # without context settings
+        clickhouse_node.query("ATTACH DATABASE test_database")
+        assert "MySQL(\\'mysql1:3306\\', \\'test\\', \\'root\\', \\'******\\')" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
+        assert "MySQL(\\'mysql1:3306\\', \\'test\\', \\'a\\', \\'root\\', \\'******\\')" in clickhouse_node.query("SHOW CREATE TABLE test_database.a FORMAT TSV")
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
+        mysql_node.query("DROP DATABASE test")
+
