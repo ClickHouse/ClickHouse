@@ -17,7 +17,7 @@ public:
 
     void loadUserDefinedObjects(ContextPtr context);
     void storeUserDefinedDataType(ContextPtr context, const ASTCreateDataTypeQuery & ast);
-    void removeUserDefinedDataType(ContextPtr context, const String & name);
+    static void removeUserDefinedDataType(ContextPtr context, const String & name);
 
 private:
     static void loadUserDefinedObject(ContextPtr context, const String & name, const String & path);

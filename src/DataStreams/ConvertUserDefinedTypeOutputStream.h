@@ -22,7 +22,7 @@ public:
     String getContentType() const override              { return stream->getContentType(); }
 
 private:
-    Block convertUserDefinedTypeToNested(const Block & block) const;
+    static Block convertUserDefinedTypeToNested(const Block & block);
 
 protected:
     BlockOutputStreamPtr stream;

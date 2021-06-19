@@ -22,7 +22,7 @@ Block ConvertUserDefinedTypeOutputStream::getHeader() const
     return convertUserDefinedTypeToNested(stream->getHeader());
 }
 
-Block ConvertUserDefinedTypeOutputStream::convertUserDefinedTypeToNested(const Block & block) const
+Block ConvertUserDefinedTypeOutputStream::convertUserDefinedTypeToNested(const Block & block)
 {
     Block new_block;
     for (const auto& column : block)
