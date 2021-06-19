@@ -1,5 +1,3 @@
-#include <Disks/IDisk.h>
-
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 
@@ -16,18 +14,20 @@
 
 namespace fs = std::filesystem;
 
+#define UUID_PATTERN "[\\w]{8}-[\\w]{4}-[\\w]{4}-[\\w]{4}-[\\w]{12}"
+#define EXTRACT_UUID_PATTERN fmt::format(".*/({})/.*", UUID_PATTERN)
 
 namespace DB
 {
 
-void processTableFiles(const String & url, const fs::path & path, const String & files_prefix)
+void processTableFiles(const String & url, const fs::path & path, const String & files_prefix, String uuid)
 {
-    WriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(url) / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
+    WriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(url) / (".index-" + uuid)), Poco::Net::HTTPRequest::HTTP_PUT);
     fs::directory_iterator dir_end;
 
     auto process_file = [&](const String & file_name, const String & file_path)
     {
-        auto remote_file_name = files_prefix + "-" + file_name;
+        auto remote_file_name = files_prefix + "-" + uuid + "-" + file_name;
         writeText(remote_file_name, metadata_buf);
         writeChar('\t', metadata_buf);
         writeIntText(fs::file_size(file_path), metadata_buf);
@@ -100,17 +100,16 @@ int mainEntryClickHouseWebServerExporter(int argc, char ** argv)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No files-prefix option passed");
 
     fs::path fs_path = fs::canonical(metadata_path);
-    re2::RE2 matcher("(.*/[\\w]{3}/[\\w]{8}-[\\w]{4}-[\\w]{4}-[\\w]{4}-[\\w]{12})/(.*)");
-
-    if (!re2::RE2::FullMatch(metadata_path, matcher))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected path: {}", metadata_path);
+    String uuid;
+    if (!RE2::Extract(metadata_path, EXTRACT_UUID_PATTERN, "\\1", &uuid))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot extract uuid for: {}", metadata_path);
 
     if (options.count("url"))
         url = options["url"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No url option passed");
 
-    processTableFiles(url, fs_path, files_prefix);
+    processTableFiles(url, fs_path, files_prefix, uuid);
 
     return 0;
 }
