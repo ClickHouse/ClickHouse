@@ -5,36 +5,6 @@ toc_title: NLP
 
 # Natural Language Processing functions {#nlp-functions}
 
-## tokenize, tokenizeWhitespace {#tokenize}
-
-Performs tokenization on a given text.
-
-**Syntax**
-
-``` sql
-tokenize(text)
-```
-
-**Arguments**
-
--   `text` — Text that needs to be tokenized. [String](../../sql-reference/data-types/string.md#string).
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT tokenize('I think it is a blessing in disguise.') as res;
-```
-
-Result:
-
-``` text
-┌─res────────────────────────────────────────────────────┐
-│ ['I','think','it','is','a','blessing','in','disguise'] │
-└────────────────────────────────────────────────────────┘
-```
-
 ## stem {#stem}
 
 Performs stemming on a previously tokenized text.

@@ -5,36 +5,6 @@ toc_title: NLP
 
 # Функции для работы с ествественным языком {#nlp-functions}
 
-## tokenize, tokenizeWhitespace {#tokenize}
-
-Данные функции проводят токенизацию - разделение заданного текста на слова.
-
-**Синтаксис**
-
-``` sql
-tokenize(text)
-```
-
-**Аргументы**
-
--   `text` — Текст подлежащий токенизации. [String](../../sql-reference/data-types/string.md#string).
-
-**Примеры**
-
-Запрос:
-
-``` sql
-SELECT tokenize('I think it is a blessing in disguise.') as res;
-```
-
-Результат:
-
-``` text
-┌─res────────────────────────────────────────────────────┐
-│ ['I','think','it','is','a','blessing','in','disguise'] │
-└────────────────────────────────────────────────────────┘
-```
-
 ## stem {#stem}
 
 Данная функция проводит стемминг заданного слова.
