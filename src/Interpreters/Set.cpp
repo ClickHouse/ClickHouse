@@ -527,7 +527,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     auto right_lower = std::lower_bound(indices.begin(), indices.end(), right_point, less);
 
     /// A special case of 1-element KeyRange. It's useful for partition pruning.
-    /// We don't take NULL into account here, as it's special in IN operator.
     bool one_element_range = true;
     for (size_t i = 0; i < tuple_size; ++i)
     {
@@ -541,6 +540,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
                 break;
             }
         }
+        else if ((left.isPositiveInfinity() && right.isPositiveInfinity()) || (left.isNegativeInfinity() && right.isNegativeInfinity()))
+        {
+            /// Special value equality.
+        }
         else
         {
             one_element_range = false;
@@ -552,52 +555,40 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         /// Here we know that there is one element in range.
         /// The main difference with the normal case is that we can definitely say that
         /// condition in this range always TRUE (can_be_false = 0) xor always FALSE (can_be_true = 0).
-        if (left_lower != indices.end() && equals(*left_lower, left_point))
+
+        /// Check if it's an empty range
+        if (!left_included || !right_included)
+            return {false, true};
+        else if (left_lower != indices.end() && equals(*left_lower, left_point))
             return {true, false};
         else
             return {false, true};
     }
 
     /// If there are more than one element in the range, it can always be false. Thus we only need to check if it may be true or not.
+    /// Given left_lower >= left_point, right_lower >= right_point, find if there may be a match in between left_lower and right_lower.
+    if (left_lower + 1 < right_lower)
+    {
+        /// There is an point in between: left_lower + 1
+        return {true, true};
+    }
+    else if (left_lower + 1 == right_lower)
+    {
+        /// Need to check if left_lower is a valid match, as left_point <= left_lower < right_point <= right_lower.
+        /// Note: left_lower is valid.
+        if (left_included || !equals(*left_lower, left_point))
+            return {true, true};
 
-    /// Given X >= x, Y >= y, find if there may be an element z in [X, Y]. Note
-    /// Case 1: [x ... y]
-    if (left_included && right_included)
-        return {left_lower != right_lower || (right_lower != indices.end() && equals(*right_lower, right_point)), true};
-    /// Case 2: [x ... y)
-    else if (left_included && !right_included)
-        // X,   Y
-        // x, y
-        return {left_lower != right_lower, true};
-    /// Case 3: (x ... y]
-    else if (!left_included && right_included)
-        return
-        {
-            //   X,  M, ...,  Y
-            // x,        y
-            left_lower + 1 < right_lower
-            //   X,  Y, ...
-            // x,    y
-            || (right_lower != indices.end() && equals(*right_lower, right_point))
-            //   X,   Y
-            // x,   y
-            || (left_lower < right_lower && !equals(*left_lower, left_point)),
-
-            true
-        };
-    /// Case 4: (x ... y)
-    else
-        return
-        {
-            //   X,  M, ...,  Y
-            // x,        y
-            left_lower + 1 < right_lower
-            //   X,   Y
-            // x,   y
-            || (left_lower < right_lower && !equals(*left_lower, left_point)),
-
-            true
-        };
+        /// We are unlucky that left_point fails to cover a point. Now we need to check if right_point can cover right_lower.
+        /// Check if there is a match at the right boundary.
+        return {right_included && right_lower != indices.end() && equals(*right_lower, right_point), true};
+    }
+    else // left_lower == right_lower
+    {
+        /// Need to check if right_point is a valid match, as left_point < right_point <= left_lower = right_lower.
+        /// Check if there is a match at the left boundary.
+        return {right_included && right_lower != indices.end() && equals(*right_lower, right_point), true};
+    }
 }
 
 bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const

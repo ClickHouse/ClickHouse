@@ -252,14 +252,15 @@ public:
         /// Type tag.
         enum Which
         {
+            NegativeInfinity = -1,
+            PositiveInfinity = -2,
+
             Null    = 0,
-            NegativeInfinity = 1,
-            PositiveInfinity = 2,
-            UInt64  = 3,
-            Int64   = 4,
-            Float64 = 5,
-            UInt128 = 6,
-            Int128  = 7,
+            UInt64  = 1,
+            Int64   = 2,
+            Float64 = 3,
+            UInt128 = 4,
+            Int128  = 5,
 
             String  = 16,
             Array   = 17,
