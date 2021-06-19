@@ -11,6 +11,12 @@
 #include <signal.h>
 
 
+/// NOTE: clickhouse provide override for this function that will return
+/// PTHREAD_STACK_MIN=16K (for compatibility reasons),
+/// but this should be enough for signal stack.
+extern "C" size_t __pthread_get_minstack(const pthread_attr_t * attr);
+
+
 namespace DB
 {
 
@@ -25,8 +31,32 @@ thread_local ThreadStatus * current_thread = nullptr;
 thread_local ThreadStatus * main_thread = nullptr;
 
 #if !defined(SANITIZER) && !defined(ARCADIA_BUILD)
-    alignas(4096) static thread_local char alt_stack[std::max<size_t>(MINSIGSTKSZ, 4096)];
-    static thread_local bool has_alt_stack = false;
+namespace
+{
+
+struct ThreadStack
+{
+    ThreadStack()
+        : size(__pthread_get_minstack(nullptr))
+        , data(aligned_alloc(4096, size))
+    {}
+    ~ThreadStack()
+    {
+        free(data);
+    }
+
+    size_t getSize() const { return size; }
+    void* getData() const { return data; }
+
+private:
+    size_t size;
+    void *data;
+};
+
+}
+
+static thread_local ThreadStack alt_stack;
+static thread_local bool has_alt_stack = false;
 #endif
 
 
@@ -54,9 +84,9 @@ ThreadStatus::ThreadStatus()
 
         /// We have to call 'sigaltstack' before first 'sigaction'. (It does not work other way, for unknown reason).
         stack_t altstack_description{};
-        altstack_description.ss_sp = alt_stack;
+        altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
-        altstack_description.ss_size = sizeof(alt_stack);
+        altstack_description.ss_size = alt_stack.getSize();
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
