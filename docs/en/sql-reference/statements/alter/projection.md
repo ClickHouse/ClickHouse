@@ -7,7 +7,7 @@ toc_title: PROJECTION
 
 The following operations are available:
 
--   `ALTER TABLE [db].name ADD PROJECTION name AS SELECT <COLUMN LIST EXPR> [WHERE] [GROUP BY] [ORDER BY]` - Adds projection description to tables metadata.
+-   `ALTER TABLE [db].name ADD PROJECTION name AS SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]` - Adds projection description to tables metadata.
 
 -   `ALTER TABLE [db].name DROP PROJECTION name` - Removes projection description from tables metadata and deletes projection files from disk.
 
