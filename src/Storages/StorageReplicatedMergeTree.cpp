@@ -391,6 +391,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will be in readonly mode", replica_path);
         is_readonly = true;
+        has_metadata_in_zookeeper = false;
         return;
     }
 
@@ -438,7 +439,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             dropIfEmpty();
             throw;
         }
-    } else
+    }
+    else
     {
         /// In old tables this node may missing or be empty
         String replica_metadata;
@@ -2745,11 +2747,13 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     Strings parts_to_remove_from_zk;
 
     for (const auto & part : local_parts_in_zk)
+    {
         if (active_parts_set.getContainingPart(part).empty())
         {
             parts_to_remove_from_zk.emplace_back(part);
             LOG_WARNING(log, "Source replica does not have part {}. Removing it from ZooKeeper.", part);
         }
+    }
 
     tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
 
@@ -2758,11 +2762,13 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     DataPartsVector parts_to_remove_from_working_set;
 
     for (const auto & part : local_active_parts)
+    {
         if (active_parts_set.getContainingPart(part->name).empty())
         {
             parts_to_remove_from_working_set.emplace_back(part);
             LOG_WARNING(log, "Source replica does not have part {}. Removing it from working set.", part->name);
         }
+    }
 
     if (getSettings()->detach_old_local_parts_when_cloning_replica)
     {
@@ -5072,9 +5078,12 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
     return true;
 }
 
-void StorageReplicatedMergeTree::restoreZKMetadata()
+void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 {
     LOG_INFO(log, "Restoring replica metadata");
+
+    if (!is_readonly || has_metadata_in_zookeeper)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: replica is not readonly");
 
     if (are_restoring_replica.exchange(true))
         throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Replica restoration in progress");

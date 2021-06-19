@@ -54,7 +54,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int NO_ZOOKEEPER;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -454,16 +453,18 @@ void InterpreterSystemQuery::restoreReplica()
     table_replicated.getStatus(status);
 
     if (!status.is_readonly)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Replica must be readonly");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica must be readonly");
 
     const String replica_name = table_replicated.getReplicaName();
     const String& zk_root_path = status.zookeeper_path;
 
     if (String replica_path = zk_root_path + "replicas/" + replica_name; zookeeper->exists(replica_path))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Replica path is present at {} -- nothing to restore", replica_path);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Replica path is present at {} -- nothing to restore. "
+            "If you are sure that metadata it lost and replica path contain some garbage, "
+            "then use SYSTEM DROP REPLICA query first.", replica_path);
 
-    table_replicated.restoreZKMetadata();
+    table_replicated.restoreMetadataInZooKeeper();
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
