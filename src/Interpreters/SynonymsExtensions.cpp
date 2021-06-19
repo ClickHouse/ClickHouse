@@ -1,5 +1,5 @@
 #include <Common/Exception.h>
-#include <Functions/SynonymsExtensions.h>
+#include <Interpreters/SynonymsExtensions.h>
 
 #include <fstream>
 #include <list>

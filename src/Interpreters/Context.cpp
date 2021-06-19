@@ -76,8 +76,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Functions/SynonymsExtensions.h>
-#include <Functions/Lemmatizers.h>
+#include <Interpreters/SynonymsExtensions.h>
+#include <Interpreters/Lemmatizers.h>
 #include <filesystem>
 
 
