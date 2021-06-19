@@ -37,7 +37,8 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
     Poco::URI uri(url);
 
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
-    headers.emplace_back(std::make_pair("Range:", fmt::format("bytes:{}-", offset)));
+    headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-", offset)));
+    LOG_DEBUG(log, "Reading from offset: {}", offset);
 
     return std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
@@ -46,7 +47,8 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
         ConnectionTimeouts::getHTTPTimeouts(context),
         0,
         Poco::Net::HTTPBasicCredentials{},
-        buf_size);
+        buf_size,
+        headers);
 }
 
 
@@ -79,7 +81,7 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
     }
 
     if (!successful_read)
-        throw Exception(ErrorCodes::NETWORK_ERROR, "All read attempts ({}) failed for url {}", max_read_tries, url);
+        throw Exception(ErrorCodes::NETWORK_ERROR, "All read attempts ({}) failed for uri: {}", max_read_tries, url);
 
     if (ret)
     {

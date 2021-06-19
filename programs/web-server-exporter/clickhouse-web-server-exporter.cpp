@@ -17,8 +17,15 @@ namespace fs = std::filesystem;
 #define UUID_PATTERN "[\\w]{8}-[\\w]{4}-[\\w]{4}-[\\w]{4}-[\\w]{12}"
 #define EXTRACT_UUID_PATTERN fmt::format(".*/({})/.*", UUID_PATTERN)
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 
 void processTableFiles(const String & url, const fs::path & path, const String & files_prefix, String uuid)
 {
@@ -102,7 +109,7 @@ int mainEntryClickHouseWebServerExporter(int argc, char ** argv)
     fs::path fs_path = fs::canonical(metadata_path);
     String uuid;
     if (!RE2::Extract(metadata_path, EXTRACT_UUID_PATTERN, "\\1", &uuid))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot extract uuid for: {}", metadata_path);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract uuid for: {}", metadata_path);
 
     if (options.count("url"))
         url = options["url"].as<std::string>();

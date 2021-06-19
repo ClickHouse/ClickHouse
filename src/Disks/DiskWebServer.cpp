@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -59,12 +60,16 @@ void DiskWebServer::Metadata::initialize(const String & uri_with_path, const Str
          */
         if (RE2::FullMatch(remote_file_name, DIRECTORY_FILE_PATTERN(files_prefix), &uuid, &directory, &file))
         {
-            assert(uuid == table_uuid);
+            if (uuid != table_uuid)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uuid: {}, expected: {}", uuid, table_uuid);
+
             tables_data[uuid][directory].emplace(File(file, file_size));
         }
         else if (RE2::FullMatch(remote_file_name, ROOT_FILE_PATTERN(files_prefix), &uuid, &file))
         {
-            assert(uuid == table_uuid);
+            if (uuid != table_uuid)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uuid: {}, expected: {}", uuid, table_uuid);
+
             tables_data[uuid][file].emplace(File(file, file_size));
         }
         else
@@ -168,11 +173,11 @@ String DiskWebServer::getFileName(const String & path) const
     String result;
 
     if (RE2::FullMatch(path, MATCH_DIRECTORY_FILE_PATTERN)
-        && RE2::Extract(path, MATCH_DIRECTORY_FILE_PATTERN, fmt::format("{}-\\1-\\2-\\3", settings->files_prefix), &result))
+        && RE2::Extract(path, MATCH_DIRECTORY_FILE_PATTERN, fmt::format(R"({}-\1-\2-\3)", settings->files_prefix), &result))
         return result;
 
     if (RE2::FullMatch(path, MATCH_ROOT_FILE_PATTERN)
-        && RE2::Extract(path, MATCH_ROOT_FILE_PATTERN, fmt::format("{}-\\1-\\2", settings->files_prefix), &result))
+        && RE2::Extract(path, MATCH_ROOT_FILE_PATTERN, fmt::format(R"({}-\1-\2)", settings->files_prefix), &result))
         return result;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected file: {}", path);
@@ -210,11 +215,7 @@ bool DiskWebServer::findFileInMetadata(const String & path, File & file_info) co
 
 bool DiskWebServer::exists(const String & path) const
 {
-    LOG_DEBUG(log, "Checking existance of file: {}", path);
-
-    // Assume root directory exists.
-    //if (re2::RE2::FullMatch(path, re2::RE2(fmt::format("({})/", store_uuid_prefix))))
-    //    return true;
+    LOG_DEBUG(log, "Checking existence of file: {}", path);
 
     File file;
     return findFileInMetadata(path, file);
