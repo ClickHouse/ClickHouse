@@ -252,9 +252,6 @@ public:
         /// Type tag.
         enum Which
         {
-            NegativeInfinity = -1,
-            PositiveInfinity = -2,
-
             Null    = 0,
             UInt64  = 1,
             Int64   = 2,
@@ -274,6 +271,10 @@ public:
             Int256  = 25,
             Map = 26,
             UUID = 27,
+
+            // Special types for index analysis
+            NegativeInfinity = 254,
+            PositiveInfinity = 255,
         };
 
         static const char * toString(Which which)
