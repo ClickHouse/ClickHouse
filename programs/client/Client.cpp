@@ -1451,10 +1451,9 @@ private:
                 }
                 catch (Exception & e)
                 {
-                    if (e.code() != ErrorCodes::SYNTAX_ERROR)
-                    {
+                    if (e.code() != ErrorCodes::SYNTAX_ERROR &&
+                        e.code() != ErrorCodes::TOO_DEEP_RECURSION)
                         throw;
-                    }
                 }
 
                 if (ast_2)
