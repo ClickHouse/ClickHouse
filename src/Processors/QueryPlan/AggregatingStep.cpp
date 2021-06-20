@@ -95,33 +95,28 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQue
         }
         pipeline.addParallelTransforms(std::move(aggregating_transforms));
 
+        if (grouping_sets_number == 1)
+            return;
+
         Block expression_transforms_output_header;
-        if (!expression_transforms.empty())
+        expression_transforms_output_header = expression_transforms.front()->getOutputs().back().getHeader();
+        pipeline.addParallelTransforms(expression_transforms);
+
+        Processors rearrange_columns_expression_transforms;
+        for (size_t i = 0; i < grouping_sets_number; ++i)
         {
-            // use last output stream as result, convert others to its structure
-            expression_transforms_output_header = expression_transforms.front()->getOutputs().back().getHeader();
-            pipeline.addParallelTransforms(expression_transforms);
+            auto rearrange_columns_action_dag = ActionsDAG::makeConvertingActions(
+                expression_transforms[i]->getOutputs().back().getHeader().getColumnsWithTypeAndName(),
+                expression_transforms_output_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
+            auto rearrange_columns_action = std::make_shared<ExpressionActions>(rearrange_columns_action_dag, ExpressionActionsSettings{});
+            rearrange_columns_expression_transforms.push_back(std::make_shared<ExpressionTransform>(expression_transforms[i]->getOutputs().front().getHeader(), rearrange_columns_action));
         }
-        /// merge all aggregating transforms outputs with ResizeProcessor
 
-        if (grouping_sets_number != 1)
-        {
-            Processors rearrange_columns_expression_transforms;
-            for (size_t i = 0; i < grouping_sets_number; ++i)
-            {
-                auto rearrange_columns_action_dag = ActionsDAG::makeConvertingActions(
-                    expression_transforms[i]->getOutputs().back().getHeader().getColumnsWithTypeAndName(),
-                    expression_transforms_output_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Name);
-                auto rearrange_columns_action = std::make_shared<ExpressionActions>(rearrange_columns_action_dag, ExpressionActionsSettings{});
-                rearrange_columns_expression_transforms.push_back(std::make_shared<ExpressionTransform>(expression_transforms[i]->getOutputs().front().getHeader(), rearrange_columns_action));
-            }
+        pipeline.addParallelTransforms(rearrange_columns_expression_transforms);
 
-            pipeline.addParallelTransforms(rearrange_columns_expression_transforms);
-
-
-            pipeline.resize(1);
-        }
+        auto resize = std::make_shared<ResizeProcessor>(expression_transforms_output_header, grouping_sets_number, 1);
+        pipeline.addTransform(std::move(resize));
     }
     else
     {
