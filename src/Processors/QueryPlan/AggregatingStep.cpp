@@ -7,6 +7,7 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/ForkProcessor.h>
+#include <Processors/ResizeProcessor.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
@@ -94,10 +95,33 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQue
         }
         pipeline.addParallelTransforms(std::move(aggregating_transforms));
 
+        Block expression_transforms_output_header;
         if (!expression_transforms.empty())
-            pipeline.addParallelTransforms(std::move(expression_transforms));
+        {
+            // use last output stream as result, convert others to its structure
+            expression_transforms_output_header = expression_transforms.front()->getOutputs().back().getHeader();
+            pipeline.addParallelTransforms(expression_transforms);
+        }
         /// merge all aggregating transforms outputs with ResizeProcessor
-        // pipeline.resize(1);
+
+        if (grouping_sets_number != 1)
+        {
+            Processors rearrange_columns_expression_transforms;
+            for (size_t i = 0; i < grouping_sets_number; ++i)
+            {
+                auto rearrange_columns_action_dag = ActionsDAG::makeConvertingActions(
+                    expression_transforms[i]->getOutputs().back().getHeader().getColumnsWithTypeAndName(),
+                    expression_transforms_output_header.getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Name);
+                auto rearrange_columns_action = std::make_shared<ExpressionActions>(rearrange_columns_action_dag, ExpressionActionsSettings{});
+                rearrange_columns_expression_transforms.push_back(std::make_shared<ExpressionTransform>(expression_transforms[i]->getOutputs().front().getHeader(), rearrange_columns_action));
+            }
+
+            pipeline.addParallelTransforms(rearrange_columns_expression_transforms);
+
+
+            pipeline.resize(1);
+        }
     }
     else
     {

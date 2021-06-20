@@ -932,8 +932,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         options.to_stage > QueryProcessingStage::WithMergeableState &&
         !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
-    if (query.group_by_with_grouping_sets && query.group_by_with_totals)
-        throw Exception("WITH TOTALS and GROUPING SETS are not supported together", ErrorCodes::NOT_IMPLEMENTED);
+//    if (query.group_by_with_grouping_sets && query.group_by_with_totals)
+//        throw Exception("WITH TOTALS and GROUPING SETS are not supported together", ErrorCodes::NOT_IMPLEMENTED);
 
     if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
     {
@@ -1249,13 +1249,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                     if ((query.group_by_with_rollup || query.group_by_with_cube || query.group_by_with_grouping_sets) && expressions.hasHaving())
                     {
                         if (query.group_by_with_totals)
-<<<<<<< HEAD
-                            throw Exception("WITH TOTALS and WITH ROLLUP or CUBE or GROUPING SETS are not supported together in presence of HAVING", ErrorCodes::NOT_IMPLEMENTED);
-=======
                             throw Exception(
-                                "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING",
+                                "WITH TOTALS and WITH ROLLUP or CUBE or GROUPING SETS are not supported together in presence of HAVING",
                                 ErrorCodes::NOT_IMPLEMENTED);
->>>>>>> deeaa98af519ede9751c58c729d29c84338045b9
                         executeHaving(query_plan, expressions.before_having);
                     }
                 }
@@ -2097,7 +2093,6 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
                 descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
 
     const Settings & settings = context->getSettingsRef();
-<<<<<<< HEAD
     std::shared_ptr<Aggregator::Params> params_ptr;
     if (query.group_by_with_grouping_sets)
     {
@@ -2134,24 +2129,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
             settings.max_threads,
             settings.min_free_disk_space_for_temporary_data);
     }
-=======
 
-    Aggregator::Params params(
-        header_before_aggregation,
-        keys,
-        aggregates,
-        overflow_row,
-        settings.max_rows_to_group_by,
-        settings.group_by_overflow_mode,
-        settings.group_by_two_level_threshold,
-        settings.group_by_two_level_threshold_bytes,
-        settings.max_bytes_before_external_group_by,
-        settings.empty_result_for_aggregation_by_empty_set,
-        context->getTemporaryVolume(),
-        settings.max_threads,
-        settings.min_free_disk_space_for_temporary_data);
-
->>>>>>> deeaa98af519ede9751c58c729d29c84338045b9
     SortDescription group_by_sort_description;
 
     if (group_by_info && settings.optimize_aggregation_in_order && !query.group_by_with_grouping_sets) {
@@ -2171,7 +2149,6 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     LOG_DEBUG(log, "execute aggregation header structure before step: {}", query_plan.getCurrentDataStream().header.dumpStructure());
     auto aggregating_step = std::make_unique<AggregatingStep>(
-<<<<<<< HEAD
             query_plan.getCurrentDataStream(),
             *params_ptr, final,
             settings.max_block_size,
@@ -2181,18 +2158,6 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
             std::move(group_by_info),
             std::move(group_by_sort_description));
     LOG_DEBUG(log, "execute aggregation header structure after step: {}", aggregating_step->getOutputStream().header.dumpStructure());
-=======
-        query_plan.getCurrentDataStream(),
-        params,
-        final,
-        settings.max_block_size,
-        merge_threads,
-        temporary_data_merge_threads,
-        storage_has_evenly_distributed_read,
-        std::move(group_by_info),
-        std::move(group_by_sort_description));
-
->>>>>>> deeaa98af519ede9751c58c729d29c84338045b9
     query_plan.addStep(std::move(aggregating_step));
 }
 
