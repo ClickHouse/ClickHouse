@@ -180,10 +180,15 @@ private:
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
     String current_database;
-    Settings settings;                                  /// Setting for query execution.
+    Settings settings;  /// Setting for query execution.
+
     using ProgressCallback = std::function<void(const Progress & progress)>;
-    ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
-    QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
+    ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
+
+    using FileProgressCallback = std::function<void(const FileProgress & progress)>;
+    FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
+
+    QueryStatus * process_list_elem = nullptr;  /// For tracking total resource usage for query.
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
@@ -297,7 +302,7 @@ private:
 public:
     /// Create initial Context with ContextShared and etc.
     static ContextMutablePtr createGlobal(ContextSharedPart * shared);
-    static ContextMutablePtr createCopy(const ContextWeakConstPtr & other);
+    static ContextMutablePtr createCopy(const ContextWeakPtr & other);
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
@@ -587,6 +592,9 @@ public:
     void setProgressCallback(ProgressCallback callback);
     /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
     ProgressCallback getProgressCallback() const;
+
+    void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
+    FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IBlockInputStream,
       *  to update and monitor information about the total number of resources spent for the query.

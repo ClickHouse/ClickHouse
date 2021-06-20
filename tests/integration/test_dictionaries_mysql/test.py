@@ -5,11 +5,10 @@ from helpers.cluster import ClickHouseCluster
 import time
 import logging
 
-CONFIG_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml',
-                'configs/remote_servers.xml']
-CONFIG_FILES += ['configs/enable_dictionaries.xml', 'configs/log_conf.xml']
+DICTS = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml']
+CONFIG_FILES = ['configs/log_conf.xml', 'configs/remote_servers.xml']
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql=True)
+instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql=True, dictionaries=DICTS)
 
 create_table_mysql_template = """
     CREATE TABLE IF NOT EXISTS `test`.`{}` (
