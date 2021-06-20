@@ -15,17 +15,15 @@ namespace ErrorCodes
 }
 
 
-class Lemmatizer
+class Lemmatizer : public ILemmatizer
 {
 private:
     RdrLemmatizer lemmatizer;
 
 public:
-    using TokenPtr = std::shared_ptr<char []>;
+    explicit Lemmatizer(const String & path) : lemmatizer(path.data()) {}
 
-    Lemmatizer(const String & path) : lemmatizer(path.data()) {}
-
-    TokenPtr lemmatize(const char * token)
+    TokenPtr lemmatize(const char * token) override
     {
         return TokenPtr(lemmatizer.Lemmatize(token));
     }

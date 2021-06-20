@@ -27,7 +27,7 @@ private:
     LookupTable table;
 
 public:
-    PlainSynonymsExtension(const String & path)
+    explicit PlainSynonymsExtension(const String & path)
     {
         std::ifstream file(path);
         if (!file.is_open())
@@ -66,7 +66,7 @@ private:
     wnb::wordnet wn;
 
 public:
-    WordnetSynonymsExtension(const String & path) : wn(path) {}
+    explicit WordnetSynonymsExtension(const String & path) : wn(path) {}
 
     const Synset * getSynonyms(const std::string_view & token) const override
     {

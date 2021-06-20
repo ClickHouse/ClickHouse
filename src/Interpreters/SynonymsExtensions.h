@@ -27,7 +27,7 @@ class SynonymsExtensions
 public:
     using ExtPtr = std::shared_ptr<ISynonymsExtension>;
 
-    SynonymsExtensions(const Poco::Util::AbstractConfiguration & config);
+    explicit SynonymsExtensions(const Poco::Util::AbstractConfiguration & config);
 
     ExtPtr getExtension(const String & name);
 

@@ -4,7 +4,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Lemmatizers.cpp>
+#include <Interpreters/Lemmatizers.h>
 
 namespace DB
 {
@@ -62,7 +62,7 @@ private:
     Lemmatizers & lemmatizers;
 
 public:
-    FunctionLemmatize(Lemmatizers & lemmatizers_)
+    explicit FunctionLemmatize(Lemmatizers & lemmatizers_)
         : lemmatizers(lemmatizers_) {}
 
     String getName() const override { return name; }

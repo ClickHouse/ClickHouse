@@ -33,7 +33,7 @@ private:
     SynonymsExtensions & extensions;
 
 public:
-    FunctionSynonyms(SynonymsExtensions & extensions_)
+    explicit FunctionSynonyms(SynonymsExtensions & extensions_)
         : extensions(extensions_) {}
 
     String getName() const override { return name; }
@@ -92,7 +92,7 @@ public:
         {
             std::string_view word(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1] - 1);
 
-            auto synset = extension->getSynonyms(word);
+            const auto * synset = extension->getSynonyms(word);
 
             if (synset)
             {
