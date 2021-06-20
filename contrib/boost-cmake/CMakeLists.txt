@@ -236,5 +236,6 @@ if (NOT EXTERNAL_BOOST_FOUND)
     add_library (_boost_graph ${SRCS_GRAPH})
     add_library (boost::graph ALIAS _boost_graph)
     target_include_directories (_boost_graph PRIVATE ${LIBRARY_DIR})
+    target_link_libraries(_boost_graph PRIVATE _boost_regex)
 
 endif ()
