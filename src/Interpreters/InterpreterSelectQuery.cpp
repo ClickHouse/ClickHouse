@@ -969,8 +969,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         options.to_stage > QueryProcessingStage::WithMergeableState &&
         !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
-    if (query.group_by_with_grouping_sets && query.group_by_with_totals)
-        throw Exception("WITH TOTALS and GROUPING SETS are not supported together", ErrorCodes::NOT_IMPLEMENTED);
+//    if (query.group_by_with_grouping_sets && query.group_by_with_totals)
+//        throw Exception("WITH TOTALS and GROUPING SETS are not supported together", ErrorCodes::NOT_IMPLEMENTED);
 
     if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
     {
