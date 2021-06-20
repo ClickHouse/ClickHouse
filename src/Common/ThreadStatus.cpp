@@ -8,13 +8,7 @@
 #include <Poco/Logger.h>
 #include <common/getThreadId.h>
 
-#include <signal.h>
-
-
-/// NOTE: clickhouse provide override for this function that will return
-/// PTHREAD_STACK_MIN=16K (for compatibility reasons),
-/// but this should be enough for signal stack.
-extern "C" size_t __pthread_get_minstack(const pthread_attr_t * attr);
+#include <csignal>
 
 
 namespace DB
@@ -34,22 +28,33 @@ thread_local ThreadStatus * main_thread = nullptr;
 namespace
 {
 
+/// Alternative stack for signal handling.
+///
+/// This stack should not be located in the TLS (thread local storage), since:
+/// - TLS locates data on the per-thread stack
+/// - And in case of stack in the signal handler will grow too much,
+///   it will start overwriting TLS storage
+///   (and note, that it is not too small, due to StackTrace obtaining)
+/// - Plus there is no way to determine TLS block size, yes there is
+///   __pthread_get_minstack() in glibc, but it is private and hence not portable.
+///
+/// Also we should not use getStackSize() (pthread_attr_getstack()) since it
+/// will return 8MB, and this is too huge for signal stack.
 struct ThreadStack
 {
     ThreadStack()
-        : size(__pthread_get_minstack(nullptr))
-        , data(aligned_alloc(4096, size))
+        : data(aligned_alloc(4096, size))
     {}
     ~ThreadStack()
     {
         free(data);
     }
 
-    size_t getSize() const { return size; }
+    static size_t getSize() { return size; }
     void* getData() const { return data; }
 
 private:
-    size_t size;
+    static constexpr size_t size = 16 << 10;
     void *data;
 };
 

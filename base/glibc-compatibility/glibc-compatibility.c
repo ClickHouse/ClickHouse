@@ -8,37 +8,8 @@
 extern "C" {
 #endif
 
-#include <pthread.h>
-#include <unistd.h>
-#include <limits.h>
-#include <assert.h>
-
-/// glibc __pthread_get_minstack() will take TLS into account for the minimal
-/// stack size (since you cannot use stack less then TLS block size, otherwise
-/// some variables may be overwritten)
-///
-/// So glibc implementation is:
-///
-///     sysconf(_SC_PAGESIZE) + __static_tls_size + PTHREAD_STACK_MIN;
-///
-/// But this helper cannot do this since:
-/// - __pthread_get_minstack() is hidden in libc (note that rust tried to do
-///     this but revert it to retry loop, for compatibility, while we cannot
-///     use retry loop since this function is used for sigaltstack())
-/// - __static_tls_size is not exported in glibc
-/// - it is not used anywhere except for clickhouse itself (for sigaltstack(),
-///   to handle SIGSEGV only) and using PTHREAD_STACK_MIN (16k) is enough right
-///   now.
-///
-/// Also we cannot use getStackSize() (pthread_attr_getstack()) since it will
-/// return 8MB, and this is too huge for signal stack.
-size_t __pthread_get_minstack(const pthread_attr_t * attr)
-{
-    _Static_assert(PTHREAD_STACK_MIN == 16<<10, "Too small return value of __pthread_get_minstack()");
-    return PTHREAD_STACK_MIN;
-}
-
 #include <signal.h>
+#include <unistd.h>
 #include <string.h>
 #include <sys/syscall.h>
 
@@ -162,6 +133,8 @@ int __open_2(const char *path, int oflag)
     return open(path, oflag);
 }
 
+
+#include <pthread.h>
 
 /// No-ops.
 int pthread_setname_np(pthread_t thread, const char *name) { return 0; }
