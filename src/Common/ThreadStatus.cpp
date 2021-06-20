@@ -7,6 +7,7 @@
 
 #include <Poco/Logger.h>
 #include <common/getThreadId.h>
+#include <common/getPageSize.h>
 
 #include <csignal>
 
@@ -43,10 +44,15 @@ namespace
 struct ThreadStack
 {
     ThreadStack()
-        : data(aligned_alloc(4096, size))
-    {}
+        : data(aligned_alloc(getPageSize(), size))
+    {
+        /// Add a guard page
+        /// (and since the stack grows downward, we need to protect the first page).
+        mprotect(data, getPageSize(), PROT_NONE);
+    }
     ~ThreadStack()
     {
+        mprotect(data, getPageSize(), PROT_WRITE|PROT_READ);
         free(data);
     }
 
