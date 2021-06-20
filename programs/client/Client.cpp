@@ -112,6 +112,7 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int SYNTAX_ERROR;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 
@@ -1267,7 +1268,8 @@ private:
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::SYNTAX_ERROR)
+            if (e.code() != ErrorCodes::SYNTAX_ERROR &&
+                e.code() != ErrorCodes::TOO_DEEP_RECURSION)
                 throw;
         }
 
