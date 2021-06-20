@@ -13,7 +13,7 @@
 #include <type_traits>
 #include <memory>
 
-#include <ext/bit_cast.h>
+#include <common/bit_cast.h>
 #include <common/extended_types.h>
 #include <Core/Defines.h>
 
@@ -211,8 +211,8 @@ private:
     static constexpr size_t NUM_PASSES = (KEY_BITS + (Traits::PART_SIZE_BITS - 1)) / Traits::PART_SIZE_BITS;
 
 
-    static KeyBits keyToBits(Key x) { return ext::bit_cast<KeyBits>(x); }
-    static Key bitsToKey(KeyBits x) { return ext::bit_cast<Key>(x); }
+    static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
+    static Key bitsToKey(KeyBits x) { return bit_cast<Key>(x); }
 
     static ALWAYS_INLINE KeyBits getPart(size_t N, KeyBits x)
     {

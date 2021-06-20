@@ -151,7 +151,7 @@ namespace DB
     public:
         static constexpr auto name = Name::name;
 
-        static FunctionOverloadResolverPtr create(ContextConstPtr)
+        static FunctionOverloadResolverPtr create(ContextPtr)
         {
             return std::make_unique<FromModifiedJulianDayOverloadResolver<Name, nullOnErrors>>();
         }

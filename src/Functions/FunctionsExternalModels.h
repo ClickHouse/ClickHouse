@@ -17,7 +17,7 @@ class FunctionModelEvaluate final : public IFunction
 public:
     static constexpr auto name = "modelEvaluate";
 
-    static FunctionPtr create(ContextConstPtr context);
+    static FunctionPtr create(ContextPtr context);
 
     explicit FunctionModelEvaluate(const ExternalModelsLoader & models_loader_) : models_loader(models_loader_) {}
 

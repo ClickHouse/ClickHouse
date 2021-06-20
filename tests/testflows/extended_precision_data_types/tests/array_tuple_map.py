@@ -39,12 +39,12 @@ def array_func(self, data_type, node=None):
         f'arrayConcat([{to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}],',
         'arrayFilter(x -> x == 1, ']:
 
-        with Scenario(f"Inline - {data_type} - {func}"):
+        with Scenario(f"Inline - {data_type} - {func})"):
             execute_query(f"""
                 SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))
                 """)
 
-        with Scenario(f"Table - {data_type} - {func}"):
+        with Scenario(f"Table - {data_type} - {func})"):
             table_name = get_table_name()
 
             table(name = table_name, data_type = f'Array({data_type})')
@@ -58,12 +58,12 @@ def array_func(self, data_type, node=None):
 
     for func in ['arraySplit((x, y) -> x=y, [0, 0, 0],']:
 
-        with Scenario(f"Inline - {data_type} - {func}"):
+        with Scenario(f"Inline - {data_type} - {func})"):
             execute_query(f"""
                 SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))
                 """)
 
-        with Scenario(f"Table - {data_type} - {func}"):
+        with Scenario(f"Table - {data_type} - {func})"):
             table_name = get_table_name()
 
             table(name = table_name, data_type = f'Array(Array({data_type}))')
@@ -77,12 +77,12 @@ def array_func(self, data_type, node=None):
 
     for func in [f'arrayZip([{to_data_type(data_type,1)}],']:
 
-        with Scenario(f"Inline - {data_type} - {func}"):
+        with Scenario(f"Inline - {data_type} - {func})"):
             execute_query(f"""
                 SELECT {func}array({to_data_type(data_type,3)}))
                 """)
 
-        with Scenario(f"Table - {data_type} - {func}"):
+        with Scenario(f"Table - {data_type} - {func})"):
             table_name = get_table_name()
 
             table(name = table_name, data_type = f'Array(Tuple({data_type}, {data_type}))')
@@ -115,11 +115,11 @@ def array_func(self, data_type, node=None):
 
         if func in ['arrayMin(','arrayMax(','arraySum(', 'arrayAvg('] and data_type in ['Decimal256(0)']:
 
-            with Scenario(f"Inline - {data_type} - {func}"):
+            with Scenario(f"Inline - {data_type} - {func})"):
                 node.query(f"SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))",
                     exitcode = 44, message = 'Exception:')
 
-            with Scenario(f"Table - {data_type} - {func}"):
+            with Scenario(f"Table - {data_type} - {func})"):
                 table_name = get_table_name()
 
                 table(name = table_name, data_type = data_type)
@@ -134,13 +134,13 @@ def array_func(self, data_type, node=None):
 
         else:
 
-            with Scenario(f"Inline - {data_type} - {func}"):
+            with Scenario(f"Inline - {data_type} - {func})"):
 
                 execute_query(f"""
                     SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))
                     """)
 
-            with Scenario(f"Table - {data_type} - {func}"):
+            with Scenario(f"Table - {data_type} - {func})"):
                 table_name = get_table_name()
 
                 table(name = table_name, data_type = data_type)
@@ -161,11 +161,11 @@ def array_func(self, data_type, node=None):
         else:
             exitcode = 43
 
-        with Scenario(f"Inline - {data_type} - {func}"):
+        with Scenario(f"Inline - {data_type} - {func})"):
             node.query(f"SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))",
                 exitcode = exitcode, message = 'Exception:')
 
-        with Scenario(f"Table - {data_type} - {func}"):
+        with Scenario(f"Table - {data_type} - {func})"):
             table_name = get_table_name()
 
             table(name = table_name, data_type = data_type)

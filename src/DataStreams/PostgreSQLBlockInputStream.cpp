@@ -15,7 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <common/logger_useful.h>
 
 
@@ -37,7 +37,7 @@ PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
     , connection_holder(std::move(connection_holder_))
 {
     description.init(sample_block);
-    for (const auto idx : ext::range(0, description.sample_block.columns()))
+    for (const auto idx : collections::range(0, description.sample_block.columns()))
         if (description.types[idx].first == ValueType::vtArray)
             prepareArrayInfo(idx, description.sample_block.getByPosition(idx).type);
     /// pqxx::stream_from uses COPY command, will get error if ';' is present
@@ -70,7 +70,7 @@ Block PostgreSQLBlockInputStream::readImpl()
         if (!row)
             break;
 
-        for (const auto idx : ext::range(0, row->size()))
+        for (const auto idx : collections::range(0, row->size()))
         {
             const auto & sample = description.sample_block.getByPosition(idx);
 

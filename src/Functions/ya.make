@@ -222,6 +222,7 @@ SRCS(
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
+    dateName.cpp
     date_trunc.cpp
     decodeXMLComponent.cpp
     decrypt.cpp
@@ -483,6 +484,7 @@ SRCS(
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp
+    toJSONString.cpp
     toLowCardinality.cpp
     toMinute.cpp
     toModifiedJulianDay.cpp
