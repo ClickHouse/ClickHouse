@@ -39,6 +39,7 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
+
 ## range(end), range(\[start, \] end \[, step\]) {#range}
 
 Returns an array of `UInt` numbers from `start` to `end - 1` by `step`.
@@ -48,14 +49,14 @@ Returns an array of `UInt` numbers from `start` to `end - 1` by `step`.
 range([start, ] end [, step])
 ```
 
-Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
+An exception is thrown if query results in arrays with a total length of more than 100,000,000 elements.
 
 
 **Arguments**
 
--   `start` - The first element of the array. Optional, required if `step` is used. Default value: 0. [UInt](../../data-types/int-uint.md)
--   `end` - The number before which the array of integers is constructed. Required. Must be greater than `start`. [UInt](../../data-types/int-uint.md)
--   `step` - Determines the increment between each integer in the array. Optional. Default value: 1. [UInt](../../data-types/int-uint.md)
+-   `start` - The first element of the array. Optional, required if `step` is used. Default value: 0. [UInt](../data-types/int-uint.md)
+-   `end` - The number before which the array is constructed. Required. Must be greater than `start`. [UInt](../data-types/int-uint.md)
+-   `step` - Determines the incremental step between each element in the array. Optional. Default value: 1. [UInt](../data-types/int-uint.md)
 
 
 **Returned value**
