@@ -26,6 +26,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 #include <filesystem>
+#include <hdfs/hdfs.h>
 
 namespace fs = std::filesystem;
 
@@ -280,15 +281,7 @@ Pipe StorageHDFS::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    size_t begin_of_path;
-    /// This uri is checked for correctness in constructor of StorageHDFS and never modified afterwards
-    auto two_slash = uri.find("//");
-
-    if (two_slash == std::string::npos)
-        begin_of_path = uri.find('/');
-    else
-        begin_of_path = uri.find('/', two_slash + 2);
-
+    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
     const String path_from_uri = uri.substr(begin_of_path);
     const String uri_without_path = uri.substr(0, begin_of_path);
 
@@ -329,6 +322,22 @@ BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageM
         getContext(),
         chooseCompressionMethod(uri, compression_method));
 }
+
+void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr context_, TableExclusiveLockHolder &)
+{
+    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
+    const String path = uri.substr(begin_of_path);
+    const String url = uri.substr(0, begin_of_path);
+
+    HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", context_->getGlobalContext()->getConfigRef());
+    HDFSFSPtr fs = createHDFSFS(builder.get());
+
+    int wait;
+    int ret = hdfsTruncate(fs.get(), path.data(), 0, &wait);
+    if (ret)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to truncate hdfs table: {}", std::string(hdfsGetLastError()));
+}
+
 
 void registerStorageHDFS(StorageFactory & factory)
 {
