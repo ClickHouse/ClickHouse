@@ -1,7 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
@@ -12,9 +12,9 @@ namespace DB
 struct DictionaryStructure;
 class TableFunctionDictionary;
 
-class StorageDictionary final : public ext::shared_ptr_helper<StorageDictionary>, public IStorage, public WithContext
+class StorageDictionary final : public shared_ptr_helper<StorageDictionary>, public IStorage, public WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageDictionary>;
+    friend struct shared_ptr_helper<StorageDictionary>;
     friend class TableFunctionDictionary;
 public:
     std::string getName() const override { return "Dictionary"; }
@@ -74,7 +74,7 @@ private:
     LoadablesConfigurationPtr configuration;
 
     std::atomic<bool> remove_repository_callback_executed = false;
-    ext::scope_guard remove_repository_callback;
+    scope_guard remove_repository_callback;
 
     void removeDictionaryConfigurationFromRepository();
 

@@ -103,7 +103,7 @@
 	url = https://github.com/ClickHouse-Extras/fastops
 [submodule "contrib/orc"]
 	path = contrib/orc
-	url = https://github.com/apache/orc
+	url = https://github.com/ClickHouse-Extras/orc
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11.git
@@ -210,9 +210,6 @@
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
-[submodule "contrib/libpqxx"]
-	path = contrib/libpqxx
-	url = https://github.com/jtv/libpqxx
 [submodule "contrib/libpq"]
 	path = contrib/libpq
 	url = https://github.com/ClickHouse-Extras/libpq
@@ -228,7 +225,9 @@
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/ClickHouse-Extras/datasketches-cpp.git
-
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse-Extras/yaml-cpp.git
+[submodule "contrib/libpqxx"]
+	path = contrib/libpqxx
+	url = https://github.com/ClickHouse-Extras/libpqxx.git

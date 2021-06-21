@@ -24,7 +24,7 @@
 #include <Common/quoteString.h>
 #include "registerTableFunctions.h"
 
-#include <Databases/MySQL/DatabaseConnectionMySQL.h> // for fetchTablesColumnsList
+#include <Databases/MySQL/DatabaseMySQL.h> // for fetchTablesColumnsList
 #include <Common/parseRemoteDescription.h>
 
 

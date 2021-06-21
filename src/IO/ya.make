@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 ADDINCL(
-    contrib/libs/zstd
+    contrib/libs/zstd/include
     contrib/restricted/fast_float
 )
 

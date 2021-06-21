@@ -37,8 +37,9 @@ def query(node, query):
 def setup_nodes():
     try:
         cluster.start()
-        query(server, "CREATE TABLE test_table (x Int32) ENGINE = MergeTree() ORDER BY tuple()")
-        query(server, "INSERT INTO test_table VALUES (5)")
+        query(server, "DROP TABLE IF EXISTS test_allowed_client_hosts")
+        query(server, "CREATE TABLE test_allowed_client_hosts (x Int32) ENGINE = MergeTree() ORDER BY tuple()")
+        query(server, "INSERT INTO test_allowed_client_hosts VALUES (5)")
 
         yield cluster
 
@@ -57,8 +58,8 @@ def test_allowed_host():
     # expected_to_fail.extend([clientC3, clientD2])
 
     for client_node in expected_to_pass:
-        assert query_from_one_node_to_another(client_node, server, "SELECT * FROM test_table") == "5\n"
+        assert query_from_one_node_to_another(client_node, server, "SELECT * FROM test_allowed_client_hosts") == "5\n"
 
     for client_node in expected_to_fail:
         with pytest.raises(Exception, match=r'default: Authentication failed'):
-            query_from_one_node_to_another(client_node, server, "SELECT * FROM test_table")
+            query_from_one_node_to_another(client_node, server, "SELECT * FROM test_allowed_client_hosts")

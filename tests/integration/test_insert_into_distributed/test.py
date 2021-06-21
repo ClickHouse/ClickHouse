@@ -121,7 +121,7 @@ def test_reconnect(started_cluster):
         pm.heal_all()
         time.sleep(1)
         instance.query("INSERT INTO distributed VALUES (3)")
-        time.sleep(1)
+        time.sleep(5)
 
         assert remote.query("SELECT count(*) FROM local1").strip() == '3'
 
