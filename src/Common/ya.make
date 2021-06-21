@@ -63,7 +63,7 @@ SRCS(
     PipeFDs.cpp
     ProcfsMetricsProvider.cpp
     ProfileEvents.cpp
-    ProgressBar.cpp
+    ProgressIndication.cpp
     QueryProfiler.cpp
     RWLock.cpp
     RemoteHostFilter.cpp

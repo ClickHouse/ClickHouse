@@ -218,6 +218,11 @@ def test_system_tables_table(started_cluster, started_mysql_8_0, started_mysql_5
     materialize_with_ddl.system_tables_test(clickhouse_node, started_mysql_5_7, "mysql57")
     materialize_with_ddl.system_tables_test(clickhouse_node, started_mysql_8_0, "mysql80")
 
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_materialize_with_column_comments(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.materialize_with_column_comments_test(clickhouse_node, started_mysql_5_7, "mysql57")
+    materialize_with_ddl.materialize_with_column_comments_test(clickhouse_node, started_mysql_8_0, "mysql80")
+
 
 @pytest.mark.parametrize(('clickhouse_node'), [node_disable_bytes_settings, node_disable_rows_settings])
 def test_mysql_settings(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):

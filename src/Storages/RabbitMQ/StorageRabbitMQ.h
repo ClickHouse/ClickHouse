@@ -3,7 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
@@ -21,9 +21,9 @@ namespace DB
 
 using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
-class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
+class StorageRabbitMQ final: public shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageRabbitMQ>;
+    friend struct shared_ptr_helper<StorageRabbitMQ>;
 
 public:
     std::string getName() const override { return "RabbitMQ"; }

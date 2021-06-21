@@ -33,7 +33,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <ext/map.h>
+#include <common/map.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -1556,13 +1556,13 @@ public:
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(
                     arguments[0], arguments[1], return_type, context),
-                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         }
 
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(context),
-            ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
             return_type);
     }
 

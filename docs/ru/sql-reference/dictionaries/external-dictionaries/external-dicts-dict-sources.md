@@ -61,6 +61,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 
 -   [Локальный файл](#dicts-external_dicts_dict_sources-local_file)
 -   [Исполняемый файл](#dicts-external_dicts_dict_sources-executable)
+-   [Исполняемый пул](#dicts-external_dicts_dict_sources-executable_pool)
 -   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 -   СУБД:
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
@@ -69,6 +70,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
+    -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
     -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
 
 ## Локальный файл {#dicts-external_dicts_dict_sources-local_file}
@@ -93,7 +95,7 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 Поля настройки:
 
 -   `path` — абсолютный путь к файлу.
--   `format` — формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
+-   `format` — формат файла. Поддерживаются все форматы, описанные в разделе [Форматы](../../../interfaces/formats.md#formats).
 
 Если словарь с источником `FILE` создается с помощью DDL-команды (`CREATE DICTIONARY ...`), источник словаря должен быть расположен в каталоге `user_files`. Иначе пользователи базы данных будут иметь доступ к произвольному файлу на узле ClickHouse.
 
@@ -112,6 +114,7 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
     <executable>
         <command>cat /opt/dictionaries/os.tsv</command>
         <format>TabSeparated</format>
+        <implicit_key>false</implicit_key>
     </executable>
 </source>
 ```
@@ -119,9 +122,41 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 Поля настройки:
 
 -   `command` — абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
--   `format` — формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
+-   `format` — формат файла. Поддерживаются все форматы, описанные в разделе [Форматы](../../../interfaces/formats.md#formats).
+-   `implicit_key` — исходный исполняемый файл может возвращать только значения, а соответствие запрошенным ключам определено неявно — порядком строк в результате. Значение по умолчанию: false. Необязательный параметр.
 
-Этот источник словаря может быть настроен только с помощью XML-конфигурации. Создание словарей с исполняемым источником с помощью DDL отключено. Иначе пользователь базы данных сможет выполнить произвольный бинарный файл на узле ClickHouse.
+Этот источник словаря может быть настроен только с помощью XML-конфигурации. Создание словарей с исполняемым источником с помощью DDL запрещено. Иначе пользователь сможет выполнить произвольный бинарный файл на сервере ClickHouse.
+
+## Исполняемый пул {#dicts-external_dicts_dict_sources-executable_pool}
+
+Исполняемый пул позволяет загружать данные из пула процессов. Этот источник не работает со словарями, которые требуют загрузки всех данных из источника. Исполняемый пул работает словарями, которые размещаются [следующими способами](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory): `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct`. 
+
+Исполняемый пул генерирует пул процессов с помощью указанной команды и оставляет их активными, пока они не завершатся. Программа считывает данные из потока STDIN пока он доступен и выводит результат в поток STDOUT, а затем ожидает следующего блока данных из STDIN. ClickHouse не закрывает поток STDIN после обработки блока данных и отправляет в него следующую порцию данных, когда это требуется. Исполняемый скрипт должен быть готов к такому способу обработки данных — он должен заранее опрашивать STDIN и отправлять данные в STDOUT.
+
+Пример настройки:
+
+``` xml
+<source>
+    <executable_pool>
+        <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
+        <format>TabSeparated</format>
+        <pool_size>10</pool_size>
+        <max_command_execution_time>10<max_command_execution_time>
+        <implicit_key>false</implicit_key>
+    </executable_pool>
+</source>
+```
+
+Поля настройки:
+
+-   `command` — абсолютный путь к файлу или имя файла (если каталог программы записан в `PATH`).
+-   `format` — формат файла. Поддерживаются все форматы, описанные в “[Форматы](../../../interfaces/formats.md#formats)”.
+-   `pool_size` — размер пула. Если в поле `pool_size` указан 0, то размер пула не ограничен.
+-   `command_termination_timeout` — скрипт исполняемого пула должен включать основной цикл чтения-записи. После уничтожения словаря канал закрывается. При этом исполняемый файл имеет `command_termination_timeout` секунд для завершения работы, прежде чем ClickHouse пошлет сигнал SIGTERM дочернему процессу. Указывается в секундах. Значение по умолчанию: 10. Необязательный параметр.
+-   `max_command_execution_time` — максимальное количество времени для исполняемого скрипта на обработку блока данных. Указывается в секундах. Значение по умолчанию: 10. Необязательный параметр.
+-   `implicit_key` — исходный исполняемый файл может возвращать только значения, а соответствие запрошенным ключам определено неявно — порядком строк в результате. Значение по умолчанию: false. Необязательный параметр.
+
+Этот источник словаря может быть настроен только с помощью XML-конфигурации. Создание словарей с исполняемым источником с помощью DDL запрещено. Иначе пользователь сможет выполнить произвольный бинарный файл на сервере ClickHouse.
 
 ## HTTP(s) {#dicts-external_dicts_dict_sources-http}
 
@@ -728,5 +763,4 @@ Setting fields:
 -   `table` – Имя таблицы.
 -   `where` – Условие выборки. Синтаксис для условий такой же как для `WHERE` выражения в PostgreSQL, для примера, `id > 10 AND id < 20`. Необязательный параметр.
 -   `invalidate_query` – Запрос для проверки условия загрузки словаря. Необязательный параметр. Читайте больше в разделе [Обновление словарей](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
-
 
