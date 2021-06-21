@@ -44,7 +44,7 @@ MESSAGES_TO_RETRY = [
     DISTRIBUTED_DDL_TIMEOUT_MSG # FIXME
 ]
 
-MAX_RETRIES = 5
+MAX_RETRIES = 3
 
 class Terminated(KeyboardInterrupt):
     pass
