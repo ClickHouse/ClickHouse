@@ -172,7 +172,7 @@ def enable_consistent_hash_plugin(rabbitmq_id):
     return p.returncode == 0
 
 def get_instances_dir():
-    if 'INTEGRATION_TESTS_RUN_ID' in os.environ:
+    if 'INTEGRATION_TESTS_RUN_ID' in os.environ and os.environ['INTEGRATION_TESTS_RUN_ID']:
         return '_instances_' + shlex.quote(os.environ['INTEGRATION_TESTS_RUN_ID'])
     else:
         return '_instances'
