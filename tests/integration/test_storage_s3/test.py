@@ -276,28 +276,28 @@ def test_put_get_with_redirect(started_cluster):
 
 # Test put with restricted S3 server redirect.
 def test_put_with_zero_redirect(started_cluster):
-    # type: (ClickHouseCluster) -> None
+    # type: (clickhousecluster) -> none
 
     bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["s3_max_redirects"]  # type: ClickHouseInstance
-    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    instance = started_cluster.instances["s3_max_redirects"]  # type: clickhouseinstance
+    table_format = "column1 uint32, column2 uint32, column3 uint32"
     values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
     filename = "test.csv"
 
-    # Should work without redirect
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
-        started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename, table_format, values)
+    # should work without redirect
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'csv', '{}') values {}".format(
+        started_cluster.minio_ip, minio_internal_port, bucket, filename, table_format, values)
     run_query(instance, query)
 
-    # Should not work with redirect
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+    # should not work with redirect
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'csv', '{}') values {}".format(
         started_cluster.minio_redirect_host, started_cluster.minio_redirect_port, bucket, filename, table_format, values)
-    exception_raised = False
+    exception_raised = false
     try:
         run_query(instance, query)
-    except Exception as e:
-        assert str(e).find("Too many redirects while trying to access") != -1
-        exception_raised = True
+    except exception as e:
+        assert str(e).find("too many redirects while trying to access") != -1
+        exception_raised = true
     finally:
         assert exception_raised
 
@@ -645,3 +645,28 @@ def test_storage_s3_put_gzip(started_cluster, extension, method):
     f = gzip.GzipFile(fileobj=buf, mode="rb")
     uncompressed_content = f.read().decode()
     assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 708
+
+
+def test_truncate_table(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    name = "truncate"
+
+    instance.query("CREATE TABLE {} (id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV')".format(
+        name, started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, name))
+
+    instance.query("INSERT INTO {} SELECT number FROM numbers(10)".format(name))
+    result = instance.query("SELECT * FROM {}".format(name))
+    assert result == instance.query("SELECT number FROM numbers(10)")
+    instance.query("TRUNCATE TABLE {}".format(name))
+
+    minio = started_cluster.minio_client
+    timeout = 30
+    while timeout > 0:
+        if len(list(minio.list_objects(started_cluster.minio_bucket, 'truncate/'))) == 0:
+            return
+        timeout -= 1
+        time.sleep(1)
+    assert(len(list(minio.list_objects(started_cluster.minio_bucket, 'truncate/'))) == 0)
+    assert instance.query("SELECT * FROM {}".format(name)) == ""
+
