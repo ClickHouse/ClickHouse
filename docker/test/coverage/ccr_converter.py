@@ -4,6 +4,8 @@ from pygments.lexers import CppLexer
 from jinja2 import Environment, FileSystemLoader, ModuleLoader
 from tqdm import tqdm
 
+from io import BytesIO
+
 import argparse
 import os.path
 import struct
@@ -16,6 +18,8 @@ LINES = "Lines"
 EDGES = "Edges"
 FUNCS = "Funcs"
 TESTS = "Tests"
+
+env = None
 
 bounds = { # success bound, warning bound, %
     LINES: [90, 75],
@@ -43,15 +47,23 @@ class GCNO:
     needed to calculate lines coverage from arcs coverage.
     """
 
-    def __init__(self, filename):
-        self.filename = filename
+    def __init__(self, pathname):
+        self.filename = self.get_name_from_path(pathname)
 
-        self.graphs = []
+        # includes own functions only (which source file is equal to filename)
+        self.functions = []
+
         self.is_le = False
 
-        with open(self.filename, "rb") as f:
+        with open(pathname, "rb") as f:
             self.load_file_header(f)
-            self.load_records_and_graphs(f)
+            self.load_records(f)
+
+    def get_name_from_path(self, pathname):
+        if isinstance(pathname, bytes):
+            pathname = pathname.decode('utf-8')
+
+        return os.path.split(pathname)[1]
 
     class Magic:
         BE = b"gcno"
@@ -81,14 +93,13 @@ class GCNO:
             self.arcs_predecessors = []
 
     class GraphFunction():
-        def __init__(self, ident, name, filename, start_line):
+        def __init__(self, ident, name, is_in_header, start_line):
             self.ident = ident
             self.name = name
-            self.filename = filename
             self.start_line = start_line
+            self.is_in_header = is_in_header
 
             self.blocks = []
-            self.block_count = 0
 
         def set_arcs_for_bb(self, next_arc_id, block_no, arcs):
             block = self.blocks[block_no]
@@ -137,10 +148,10 @@ class GCNO:
         self.parse_version(self.read_quad_char(f))
         self.read_uint32(f) # stamp
 
-    def load_records_and_graphs(self, f):
+    def load_records(self, f):
         pos = f.tell()
 
-        current_graph = None
+        current = None
         next_arc_id = 0
 
         size = os.fstat(f.fileno()).st_size
@@ -156,17 +167,24 @@ class GCNO:
                 next_arc_id = 0
 
                 ident, name, filename, start_line = self.read_func_record(record_buf)
-                self.graphs.append(self.GraphFunction(ident, name, filename, start_line))
+                name = name.decode("utf-8")
 
-                current_graph = self.graphs[-1]
+                filename = self.get_name_from_path(filename)
+                is_in_header = filename.endswith(".h")
+
+                if filename.split(".")[0] == self.filename.split(".")[0]:
+                    self.functions.append(self.GraphFunction(ident, name, is_in_header, start_line))
+                    current = self.functions[-1]
+                else:
+                    current = self.GraphFunction(0, "", False, 0) # fake
             elif tag == self.Tag.BLOCKS:
-                current_graph.set_basic_blocks(word_len) # flags are not read as they're going to be ignored
+                current.set_basic_blocks(word_len) # flags are not read as they're going to be ignored
             elif tag == self.Tag.ARCS:
                 block_no, arcs = self.read_arcs_record(record_buf, word_len)
-                next_arc_id = current_graph.set_arcs_for_bb(next_arc_id, block_no, arcs)
+                next_arc_id = current.set_arcs_for_bb(next_arc_id, block_no, arcs)
             elif tag == self.Tag.LINES:
                 block_no, lines = self.read_lines_record(record_buf)
-                current_graph.set_lineset_for_bb(block_no, lines)
+                current.set_lineset_for_bb(block_no, lines)
             else:
                 break
 
@@ -228,8 +246,7 @@ class Entry(enum.IntEnum):
     LIST = 3
 
 class EntryBase:
-    def __init__(self, env, name, url, funcs=None, edges=None, lines=None, tests=None):
-        self.env = env
+    def __init__(self, name, url, funcs=None, edges=None, lines=None, tests=None):
         self.name = name
         self.url = url
 
@@ -264,14 +281,13 @@ class EntryBase:
             "index_url": os.path.join(root_url, "files.html")
         })
 
-        return self.env.get_template(tpl).render(kwargs)
+        return env.get_template(tpl).render(kwargs)
 
 class FileEntry(EntryBase):
-    def __init__(self, env, path, data, tests_with_hits):
+    def __init__(self, path, data, tests_with_hits):
         funcs, edges, lines = data
 
         super().__init__(
-            env,
             path.split("/")[-1],
             os.path.join(args.out_dir, path) + ".html",
             self._helper(funcs),
@@ -314,18 +330,19 @@ class FileEntry(EntryBase):
             not_covered_ent = [(entity, not_covered) for (entity, (_, not_covered)) in data.items()]
 
             output = self.render("file.html", depth,
-                highlighted_sources=lines, entry=entry, not_covered=not_covered_ent)
+                highlighted_sources=lines, entry=self, not_covered=not_covered_ent)
 
-            with open(os.path.join(args.out_dir, entry.full_path) + ".html", "w") as f:
+            with open(os.path.join(args.out_dir, self.full_path) + ".html", "w") as f:
                 f.write(output)
 
 class DirEntry(EntryBase):
-    def __init__(self, env=None, path="", is_root=False, tests_count=0):
-        super().__init__(env, path, path + "/index.html")
+    def __init__(self, path="", is_root=False, tests_count=0):
+        super().__init__(path, path + "/index.html")
 
         self.items = []
         self.is_root = is_root
         self.tests_count = tests_count
+        self.path = path
 
     def add(self, entry):
         self.items.append(entry)
@@ -352,13 +369,14 @@ class DirEntry(EntryBase):
 
         entries = sorted(self.items, key=lambda x: x.name)
 
-        special_entry = copy.deepcopy(self)
-        special_entry.url = "./index.html"
+        special_entry = DirEntry()
+        special_entry.files = self.files
+        special_entry.url = "./" + page_name
 
         depth = 0 if self.is_root else (self.name.count('/') + 1)
 
         with open(os.path.join(path, page_name), "w") as f:
-            f.write(self.render(env, "directory.html", depth,
+            f.write(self.render("directory.html", depth,
                 entries=entries, entry=self, special_entry=special_entry))
 
 class CodeFormatter(HtmlFormatter):
@@ -394,15 +412,6 @@ class CodeFormatter(HtmlFormatter):
 class CCR:
     def __init__(self, args):
         self.args = args
-
-        dir_path = os.path.abspath(os.path.dirname(__file__))
-        tpl_path = os.path.join(dir_path, "templates")
-        compiled_tpl_path = os.path.join(dir_path, "compiled_templates")
-
-        self.env = Environment(loader=FileSystemLoader(tpl_path), trim_blocks=True, enable_async=True)
-
-        self.env.compile_templates(compiled_tpl_path, zip=None, ignore_errors=False)
-        self.env.loader = ModuleLoader(compiled_tpl_path)
 
         self.tests_names = []
         self.files = []
@@ -484,8 +493,8 @@ class CCR:
     def generate_html(self):
         entries = self.get_entries()
 
-        root_entry = DirEntry()
-        files_entry = DirEntry()
+        root_entry = DirEntry(is_root=True)
+        files_entry = DirEntry(is_root=True)
 
         for dir_entry in tqdm(entries):
             root_entry.add(dir_entry)
@@ -496,12 +505,12 @@ class CCR:
                 sf_entry.generate_page()
                 files_entry.add(sf_entry)
 
-        root_entry.generate_page(is_root=True)
+        root_entry.generate_page()
 
         for e in files_entry.items:
             e.name = e.full_path
 
-        files_entry.generate_page(page_name="files.html", is_root=True)
+        files_entry.generate_page(page_name="files.html")
 
     def get_entries(self):
         dir_entries = []
@@ -516,9 +525,9 @@ class CCR:
                 (start_line, index in funcs_hit) for index, (_, start_line) in funcs_instrumented.items()])
 
             edges_with_hits = [(edge_line, edge_line in edges_hit) for edge_line in edges_instrumented]
-            lines_with_hits = self.get_lines_with_hits_for_file(file_name)
+            lines_with_hits = self.get_lines_with_hits_for_file(file_name, edges_with_hits)
 
-            test_file = FileEntry(self.env, path, (funcs_with_hits, edges_with_hits, lines_with_hits),
+            test_file = FileEntry(path, (funcs_with_hits, edges_with_hits, lines_with_hits),
                 [(i, sf_index in test.keys()) for i, test in enumerate(self.tests)])
 
             found = False
@@ -530,7 +539,7 @@ class CCR:
                     break
 
             if not found:
-                dir_entries.append(DirEntry(self.env, dirs))
+                dir_entries.append(DirEntry(dirs))
                 dir_entries[-1].add(test_file)
 
         return sorted(dir_entries, key=lambda x: x.name)
@@ -549,11 +558,48 @@ class CCR:
 
         return acc
 
-    def get_lines_with_hits_for_file(self, file_name):
-        #with open(os.path.join(args.gcno_dir, file_name + ".gcno"), "rb") as gcno:
-        #    pass
+    def get_lines_with_hits_for_file(self, file_name, edges):
+        processing_header = False
 
-        return []
+        # Compiler emits information for .cpp files only but it's ok as we can get headers' coverage
+        # from .cpp files
+        if file_name.endswith(".h"):
+            file_name = file_name.replace(".h", ".cpp")
+            processing_header = True
+
+        lines = []
+
+        gcno_path = os.path.join(args.gcno_dir, file_name + ".gcno")
+
+        try:
+            gcno = GCNO(gcno_path)
+        except:
+            print("Missing gcno file", gcno_path)
+            return []
+
+        for func in gcno.functions:
+            if func.is_in_header != processing_header:
+                continue
+
+            for bb in func.blocks:
+                hit = self.bb_is_covered(bb, edges)
+
+                for line in bb.lines:
+                    lines.extend([(x, hit) for x in bb.lines])
+
+        return sorted(list(set(lines)))
+
+    def bb_is_covered(self, bb, edges):
+        lines = sorted(set(bb.lines))
+
+        if len(lines) == 0:
+            return False
+
+        for edge, hit in edges:
+            if lines[0] <= edge <= lines[-1] and hit:
+                return True
+
+        return False
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='HTML report generator', description="""
@@ -566,5 +612,14 @@ if __name__ == '__main__':
     parser.add_argument('gcno_dir', help="Path to directory with .gcno files generated by the compiler. Absolute path")
 
     args = parser.parse_args()
+
+    dir_path = os.path.abspath(os.path.dirname(__file__))
+    tpl_path = os.path.join(dir_path, "templates")
+    compiled_tpl_path = os.path.join(dir_path, "compiled_templates")
+
+    env = Environment(loader=FileSystemLoader(tpl_path), trim_blocks=True, enable_async=True)
+
+    env.compile_templates(compiled_tpl_path, zip=None, ignore_errors=False)
+    env.loader = ModuleLoader(compiled_tpl_path)
 
     CCR(args)
