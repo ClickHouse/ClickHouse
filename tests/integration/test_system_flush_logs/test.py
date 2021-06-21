@@ -20,9 +20,8 @@ system_logs = [
     ('system.metric_log', 1),
 ]
 
-# Default timeout for flush is 60
-# decrease timeout for the test to show possible issues.
-timeout = pytest.mark.timeout(30)
+# 60 -- Default timeout for flush
+timeout = pytest.mark.timeout(60)
 
 
 @pytest.fixture(scope='module', autouse=True)

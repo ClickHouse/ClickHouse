@@ -29,7 +29,6 @@ from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
-from minio.deleteobjects import DeleteObject
 from helpers.test_tools import assert_eq_with_retry
 
 import docker
@@ -171,6 +170,13 @@ def enable_consistent_hash_plugin(rabbitmq_id):
                         stdout=subprocess.PIPE)
     p.communicate()
     return p.returncode == 0
+
+def get_instances_dir():
+    if 'INTEGRATION_TESTS_RUN_ID' in os.environ:
+        return '_instances_' + shlex.quote(os.environ['INTEGRATION_TESTS_RUN_ID'])
+    else:
+        return '_instances'
+
 
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
@@ -1232,8 +1238,8 @@ class ClickHouseCluster:
                 for bucket in buckets:
                     if minio_client.bucket_exists(bucket):
                         delete_object_list = map(
-                            lambda x: DeleteObject(x.object_name),
-                            minio_client.list_objects(bucket, recursive=True),
+                            lambda x: x.object_name,
+                            minio_client.list_objects_v2(bucket, recursive=True),
                         )
                         errors = minio_client.remove_objects(bucket, delete_object_list)
                         for error in errors:
