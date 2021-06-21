@@ -54,7 +54,7 @@ struct StorageID
 
     String getNameForLogs() const;
 
-    explicit operator bool () const
+    operator bool () const
     {
         return !empty();
     }
@@ -70,7 +70,6 @@ struct StorageID
     }
 
     bool operator<(const StorageID & rhs) const;
-    bool operator==(const StorageID & rhs) const;
 
     void assertNotEmpty() const
     {
@@ -90,7 +89,7 @@ struct StorageID
                                           const String & config_prefix);
 
     /// If dictionary has UUID, then use it as dictionary name in ExternalLoader to allow dictionary renaming.
-    /// ExternalDictnariesLoader::resolveDictionaryName(...) should be used to access such dictionaries by name.
+    /// DatabaseCatalog::resolveDictionaryName(...) should be used to access such dictionaries by name.
     String getInternalDictionaryName() const;
 
 private:

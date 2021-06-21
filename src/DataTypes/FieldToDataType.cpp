@@ -1,3 +1,4 @@
+#include <Common/FieldVisitors.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
@@ -7,7 +8,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EMPTY_DATA_PASSED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -36,6 +37,11 @@ DataTypePtr FieldToDataType::operator() (const UInt64 & x) const
     return std::make_shared<DataTypeUInt64>();
 }
 
+DataTypePtr FieldToDataType::operator() (const UInt128 &) const
+{
+    throw Exception("There are no UInt128 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 DataTypePtr FieldToDataType::operator() (const Int64 & x) const
 {
     if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min()) return std::make_shared<DataTypeInt8>();
@@ -44,34 +50,18 @@ DataTypePtr FieldToDataType::operator() (const Int64 & x) const
     return std::make_shared<DataTypeInt64>();
 }
 
-DataTypePtr FieldToDataType::operator() (const Float64 &) const
+DataTypePtr FieldToDataType::operator() (const Int128 & x) const
 {
-    return std::make_shared<DataTypeFloat64>();
-}
-
-DataTypePtr FieldToDataType::operator() (const UInt128 &) const
-{
-    return std::make_shared<DataTypeUInt128>();
-}
-
-DataTypePtr FieldToDataType::operator() (const Int128 &) const
-{
+    if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min()) return std::make_shared<DataTypeInt8>();
+    if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min()) return std::make_shared<DataTypeInt16>();
+    if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min()) return std::make_shared<DataTypeInt32>();
+    if (x <= std::numeric_limits<Int64>::max() && x >= std::numeric_limits<Int64>::min()) return std::make_shared<DataTypeInt64>();
     return std::make_shared<DataTypeInt128>();
 }
 
-DataTypePtr FieldToDataType::operator() (const UInt256 &) const
+DataTypePtr FieldToDataType::operator() (const Float64 &) const
 {
-    return std::make_shared<DataTypeUInt256>();
-}
-
-DataTypePtr FieldToDataType::operator() (const Int256 &) const
-{
-    return std::make_shared<DataTypeInt256>();
-}
-
-DataTypePtr FieldToDataType::operator() (const UUID &) const
-{
-    return std::make_shared<DataTypeUUID>();
+    return std::make_shared<DataTypeFloat64>();
 }
 
 DataTypePtr FieldToDataType::operator() (const String &) const
@@ -151,6 +141,16 @@ DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) c
 {
     const auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
     return DataTypeFactory::instance().get(name);
+}
+
+DataTypePtr FieldToDataType::operator() (const UInt256 &) const
+{
+    throw Exception("There are no UInt256 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+DataTypePtr FieldToDataType::operator() (const Int256 &) const
+{
+    throw Exception("There are no Int256 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

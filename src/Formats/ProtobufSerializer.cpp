@@ -24,8 +24,6 @@
 #   include <DataTypes/DataTypeMap.h>
 #   include <DataTypes/DataTypeNullable.h>
 #   include <DataTypes/DataTypeTuple.h>
-#   include <DataTypes/Serializations/SerializationDecimal.h>
-#   include <DataTypes/Serializations/SerializationFixedString.h>
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufWriter.h>
 #   include <IO/ReadBufferFromString.h>
@@ -237,7 +235,7 @@ namespace
             }
             catch (...)
             {
-                cannotConvertValue(str, "String", TypeName<DestType>);
+                cannotConvertValue(str, "String", TypeName<DestType>::get());
             }
         }
 
@@ -254,7 +252,7 @@ namespace
             }
             catch (boost::numeric::bad_numeric_cast &)
             {
-                cannotConvertValue(toString(value), TypeName<SrcType>, TypeName<DestType>);
+                cannotConvertValue(toString(value), TypeName<SrcType>::get(), TypeName<DestType>::get());
             }
             return result;
         }
@@ -429,7 +427,7 @@ namespace
                         else if (value == 1)
                             writeUInt(1);
                         else
-                            cannotConvertValue(toString(value), TypeName<NumberType>, field_descriptor.type_name());
+                            cannotConvertValue(toString(value), TypeName<NumberType>::get(), field_descriptor.type_name());
                     };
 
                     read_function = [this]() -> NumberType
@@ -438,7 +436,7 @@ namespace
                         if (u64 < 2)
                             return static_cast<NumberType>(u64);
                         else
-                            cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<NumberType>);
+                            cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<NumberType>::get());
                     };
 
                     default_function = [this]() -> NumberType { return static_cast<NumberType>(field_descriptor.default_value_bool()); };
@@ -492,7 +490,7 @@ namespace
         {
             throw Exception(
                 "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                    + " for serialization of the data type " + quoteString(TypeName<NumberType>),
+                    + " for serialization of the data type " + quoteString(TypeName<NumberType>::get()),
                 ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
         }
 
@@ -507,7 +505,7 @@ namespace
         {
             const auto * enum_value_descriptor = field_descriptor.enum_type()->FindValueByNumber(value);
             if (!enum_value_descriptor)
-                cannotConvertValue(toString(value), TypeName<NumberType>, field_descriptor.type_name());
+                cannotConvertValue(toString(value), TypeName<NumberType>::get(), field_descriptor.type_name());
         }
 
     protected:
@@ -585,11 +583,11 @@ namespace
             {
                 if (row_num < old_size)
                 {
-                    SerializationFixedString::alignStringLength(n, text_buffer, 0);
+                    fixed_string_data_type->alignStringLength(text_buffer, 0);
                     memcpy(data.data() + row_num * n, text_buffer.data(), n);
                 }
                 else
-                    SerializationFixedString::alignStringLength(n, data, old_data_size);
+                    fixed_string_data_type->alignStringLength(data, old_data_size);
             }
             else
             {
@@ -819,7 +817,7 @@ namespace
                 auto str = default_function();
                 arr.insert(str.data(), str.data() + str.size());
                 if constexpr (is_fixed_string)
-                    SerializationFixedString::alignStringLength(n, arr, 0);
+                    fixed_string_data_type->alignStringLength(arr, 0);
                 default_string = std::move(arr);
             }
             return *default_string;
@@ -1240,7 +1238,7 @@ namespace
                             {
                                 WriteBufferFromOwnString buf;
                                 writeText(decimal, scale, buf);
-                                cannotConvertValue(buf.str(), TypeName<DecimalType>, field_descriptor.type_name());
+                                cannotConvertValue(buf.str(), TypeName<DecimalType>::get(), field_descriptor.type_name());
                             }
                         };
 
@@ -1250,7 +1248,7 @@ namespace
                             if (u64 < 2)
                                 return numberToDecimal(static_cast<UInt64>(u64 != 0));
                             else
-                                cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<DecimalType>);
+                                cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<DecimalType>::get());
                         };
 
                         default_function = [this]() -> DecimalType
@@ -1289,7 +1287,7 @@ namespace
         {
             throw Exception(
                 "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                    + " for serialization of the data type " + quoteString(TypeName<DecimalType>),
+                    + " for serialization of the data type " + quoteString(TypeName<DecimalType>::get()),
                 ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
         }
 
@@ -1328,7 +1326,7 @@ namespace
             if constexpr (std::is_same_v<DecimalType, DateTime64>)
                 readDateTime64Text(decimal, scale, buf);
             else
-                SerializationDecimal<DecimalType>::readText(decimal, buf, precision, scale);
+                DataTypeDecimal<DecimalType>::readText(decimal, buf, precision, scale);
             return decimal;
         }
 
@@ -1488,8 +1486,6 @@ namespace
             ReadBufferFromString buf{str};
             time_t tm = 0;
             readDateTimeText(tm, buf);
-            if (tm < 0)
-                tm = 0;
             return tm;
         }
 
@@ -1503,40 +1499,16 @@ namespace
     };
 
 
-    /// Serializes a ColumnVector<UUID> containing UUIDs to a field of type TYPE_STRING or TYPE_BYTES.
-    class ProtobufSerializerUUID : public ProtobufSerializerSingleValue
+    /// Serializes a ColumnVector<UInt128> containing UUIDs to a field of type TYPE_STRING or TYPE_BYTES.
+    class ProtobufSerializerUUID : public ProtobufSerializerNumber<UInt128>
     {
     public:
         ProtobufSerializerUUID(
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerSingleValue(field_descriptor_, reader_or_writer_)
+            : ProtobufSerializerNumber<UInt128>(field_descriptor_, reader_or_writer_)
         {
             setFunctions();
-        }
-
-        void writeRow(size_t row_num) override
-        {
-            const auto & column_vector = assert_cast<const ColumnVector<UUID> &>(*column);
-            write_function(column_vector.getElement(row_num));
-        }
-
-        void readRow(size_t row_num) override
-        {
-            UUID value = read_function();
-            auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
-            if (row_num < column_vector.size())
-                column_vector.getElement(row_num) = value;
-            else
-                column_vector.insertValue(value);
-        }
-
-        void insertDefaults(size_t row_num) override
-        {
-            auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
-            if (row_num < column_vector.size())
-                return;
-            column_vector.insertDefault();
         }
 
     private:
@@ -1550,19 +1522,19 @@ namespace
                     ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
             }
 
-            write_function = [this](UUID value)
+            write_function = [this](UInt128 value)
             {
-                uuidToString(value, text_buffer);
+                uuidToString(static_cast<UUID>(value), text_buffer);
                 writeStr(text_buffer);
             };
 
-            read_function = [this]() -> UUID
+            read_function = [this]() -> UInt128
             {
                 readStr(text_buffer);
-                return parse<UUID>(text_buffer);
+                return stringToUUID(text_buffer);
             };
 
-            default_function = [this]() -> UUID { return parse<UUID>(field_descriptor.default_value_string()); };
+            default_function = [this]() -> UInt128 { return stringToUUID(field_descriptor.default_value_string()); };
         }
 
         static void uuidToString(const UUID & uuid, String & str)
@@ -1571,10 +1543,13 @@ namespace
             writeText(uuid, buf);
         }
 
-        std::function<void(UUID)> write_function;
-        std::function<UUID()> read_function;
-        std::function<UUID()> default_function;
-        String text_buffer;
+        static UUID stringToUUID(const String & str)
+        {
+            ReadBufferFromString buf{str};
+            UUID uuid;
+            readUUIDText(uuid, buf);
+            return uuid;
+        }
     };
 
 

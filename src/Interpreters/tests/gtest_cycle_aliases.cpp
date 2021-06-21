@@ -35,6 +35,6 @@ TEST(QueryNormalizer, SimpleCycleAlias)
     aliases["b"] = parseQuery(parser, "a as b", 0, 0)->children[0];
 
     Settings settings;
-    QueryNormalizer::Data normalizer_data(aliases, {}, false, settings, true);
+    QueryNormalizer::Data normalizer_data(aliases, settings, true);
     EXPECT_THROW(QueryNormalizer(normalizer_data).visit(ast), Exception);
 }

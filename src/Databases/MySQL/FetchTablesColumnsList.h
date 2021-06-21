@@ -3,7 +3,7 @@
 #include "config_core.h"
 #if USE_MYSQL
 
-#include <mysqlxx/PoolWithFailover.h>
+#include <mysqlxx/Pool.h>
 
 #include <common/types.h>
 #include <Core/MultiEnum.h>
@@ -12,16 +12,15 @@
 
 #include <map>
 #include <vector>
-#include <Core/Settings.h>
 
 namespace DB
 {
 
 std::map<String, NamesAndTypesList> fetchTablesColumnsList(
-        mysqlxx::PoolWithFailover & pool,
+        mysqlxx::Pool & pool,
         const String & database_name,
         const std::vector<String> & tables_name,
-        const Settings & settings,
+        bool external_table_functions_use_nulls,
         MultiEnum<MySQLDataTypesSupport> type_support);
 
 }

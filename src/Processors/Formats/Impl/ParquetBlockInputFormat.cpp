@@ -33,15 +33,13 @@ namespace ErrorCodes
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_)
     : IInputFormat(std::move(header_), in_)
 {
+    prepareReader();
 }
 
 Chunk ParquetBlockInputFormat::generate()
 {
     Chunk res;
     const Block & header = getPort().getHeader();
-
-    if (!file_reader)
-        prepareReader();
 
     if (row_group_current >= row_group_total)
         return res;
@@ -64,7 +62,7 @@ void ParquetBlockInputFormat::resetParser()
 
     file_reader.reset();
     column_indices.clear();
-    row_group_current = 0;
+    prepareReader();
 }
 
 void ParquetBlockInputFormat::prepareReader()
@@ -96,7 +94,6 @@ void registerInputFormatProcessorParquet(FormatFactory &factory)
             {
                 return std::make_shared<ParquetBlockInputFormat>(buf, sample);
             });
-    factory.markFormatAsColumnOriented("Parquet");
 }
 
 }

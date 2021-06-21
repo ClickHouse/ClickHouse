@@ -41,18 +41,16 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t max_parts_per_block_,
     bool quorum_parallel_,
     bool deduplicate_,
-    ContextPtr context_,
-    bool is_attach_)
+    bool optimize_on_insert_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , quorum(quorum_)
     , quorum_timeout_ms(quorum_timeout_ms_)
     , max_parts_per_block(max_parts_per_block_)
-    , is_attach(is_attach_)
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
-    , context(context_)
+    , optimize_on_insert(optimize_on_insert_)
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
@@ -136,7 +134,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     if (quorum)
         checkQuorumPrecondition(zookeeper);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
 
     for (auto & current_block : part_blocks)
     {
@@ -144,20 +142,24 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
-
-        /// If optimize_on_insert setting is true, current_block could become empty after merge
-        /// and we didn't create part.
-        if (!part)
-            continue;
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
 
         String block_id;
 
         if (deduplicate)
         {
+            SipHash hash;
+            part->checksums.computeTotalChecksumDataOnly(hash);
+            union
+            {
+                char bytes[16];
+                UInt64 words[2];
+            } hash_value;
+            hash.get128(hash_value.bytes);
+
             /// We add the hash from the data and partition identifier to deduplication ID.
             /// That is, do not insert the same data to the same partition twice.
-            block_id = part->getZeroLevelPartBlockID();
+            block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
             LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
@@ -172,11 +174,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && last_block_is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus(error));
+            PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus(error));
         }
         catch (...)
         {
-            PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
             throw;
         }
     }
@@ -200,11 +202,11 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
     try
     {
         commitPart(zookeeper, part, "");
-        PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
+        PartLog::addNewPart(storage.global_context, part, watch.elapsed());
     }
     catch (...)
     {
-        PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+        PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
         throw;
     }
 }
@@ -256,20 +258,10 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             part->name = part->getNewName(part->info);
 
+            /// Will add log entry about new part.
+
             StorageReplicatedMergeTree::LogEntry log_entry;
-
-            if (is_attach)
-            {
-                log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
-
-                /// We don't need to involve ZooKeeper to obtain the checksums as by the time we get
-                /// the MutableDataPartPtr here, we already have the data thus being able to
-                /// calculate the checksums.
-                log_entry.part_checksum = part->checksums.getTotalChecksumHex();
-            }
-            else
-                log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
-
+            log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
             log_entry.create_time = time(nullptr);
             log_entry.source_replica = storage.replica_name;
             log_entry.new_part_name = part->name;

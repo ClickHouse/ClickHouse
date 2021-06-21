@@ -1,9 +1,7 @@
 #include <Parsers/ASTWindowDefinition.h>
 
 #include <Common/quoteString.h>
-#include <Common/FieldVisitors.h>
 #include <IO/Operators.h>
-
 
 namespace DB
 {
@@ -11,8 +9,6 @@ namespace DB
 ASTPtr ASTWindowDefinition::clone() const
 {
     auto result = std::make_shared<ASTWindowDefinition>();
-
-    result->parent_window_name = parent_window_name;
 
     if (partition_by)
     {
@@ -39,49 +35,30 @@ String ASTWindowDefinition::getID(char) const
 void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
     FormatState & state, FormatStateStacked format_frame) const
 {
-    format_frame.expression_list_prepend_whitespace = false;
-    bool need_space = false;
-
-    if (!parent_window_name.empty())
-    {
-        settings.ostr << backQuoteIfNeed(parent_window_name);
-
-        need_space = true;
-    }
-
     if (partition_by)
     {
-        if (need_space)
-        {
-            settings.ostr << " ";
-        }
-
         settings.ostr << "PARTITION BY ";
         partition_by->formatImpl(settings, state, format_frame);
+    }
 
-        need_space = true;
+    if (partition_by && order_by)
+    {
+        settings.ostr << " ";
     }
 
     if (order_by)
     {
-        if (need_space)
-        {
-            settings.ostr << " ";
-        }
-
         settings.ostr << "ORDER BY ";
         order_by->formatImpl(settings, state, format_frame);
+    }
 
-        need_space = true;
+    if ((partition_by || order_by) && !frame.is_default)
+    {
+        settings.ostr << " ";
     }
 
     if (!frame.is_default)
     {
-        if (need_space)
-        {
-            settings.ostr << " ";
-        }
-
         settings.ostr << WindowFrame::toString(frame.type) << " BETWEEN ";
         if (frame.begin_type == WindowFrame::BoundaryType::Current)
         {
@@ -93,8 +70,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         }
         else
         {
-            settings.ostr << applyVisitor(FieldVisitorToString(),
-                frame.begin_offset);
+            settings.ostr << abs(frame.begin_offset);
             settings.ostr << " "
                 << (!frame.begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
@@ -109,8 +85,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         }
         else
         {
-            settings.ostr << applyVisitor(FieldVisitorToString(),
-                frame.end_offset);
+            settings.ostr << abs(frame.end_offset);
             settings.ostr << " "
                 << (!frame.end_preceding ? "FOLLOWING" : "PRECEDING");
         }

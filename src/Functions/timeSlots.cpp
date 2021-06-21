@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
@@ -109,7 +109,7 @@ class FunctionTimeSlots : public IFunction
 public:
     static constexpr auto name = "timeSlots";
     static constexpr UInt32 TIME_SLOT_SIZE = 1800;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionTimeSlots>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlots>(); }
 
     String getName() const override
     {

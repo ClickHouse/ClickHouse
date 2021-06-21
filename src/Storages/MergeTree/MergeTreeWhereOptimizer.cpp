@@ -29,7 +29,7 @@ static constexpr auto threshold = 2;
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
@@ -37,9 +37,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     : table_columns{ext::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
-    , sorting_key_names{NameSet(
-          metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
-    , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
+    , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
@@ -116,12 +114,12 @@ static bool isConditionGood(const ASTPtr & condition)
 }
 
 
-void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const
+void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node) const
 {
     if (const auto * func_and = node->as<ASTFunction>(); func_and && func_and->name == "and")
     {
         for (const auto & elem : func_and->arguments->children)
-            analyzeImpl(res, elem, is_final);
+            analyzeImpl(res, elem);
     }
     else
     {
@@ -135,7 +133,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
         cond.viable =
             /// Condition depend on some column. Constant expressions are not moved.
             !cond.identifiers.empty()
-            && !cannotBeMoved(node, is_final)
+            && !cannotBeMoved(node)
             /// Do not take into consideration the conditions consisting only of the first primary key column
             && !hasPrimaryKeyAtoms(node)
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
@@ -151,10 +149,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
 }
 
 /// Transform conjunctions chain in WHERE expression to Conditions list.
-MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression, bool is_final) const
+MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression) const
 {
     Conditions res;
-    analyzeImpl(res, expression, is_final);
+    analyzeImpl(res, expression);
     return res;
 }
 
@@ -185,7 +183,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
     if (!select.where() || select.prewhere())
         return;
 
-    Conditions where_conditions = analyze(select.where(), select.final());
+    Conditions where_conditions = analyze(select.where());
     Conditions prewhere_conditions;
 
     UInt64 total_size_of_moved_conditions = 0;
@@ -308,12 +306,6 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 }
 
 
-bool MergeTreeWhereOptimizer::isSortingKey(const String & column_name) const
-{
-    return sorting_key_names.count(column_name);
-}
-
-
 bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
 {
     const auto column_name = expr->getColumnName();
@@ -333,7 +325,7 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & identifiers
 }
 
 
-bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) const
+bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
 {
     if (const auto * function_ptr = ptr->as<ASTFunction>())
     {
@@ -345,22 +337,17 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
             return true;
-
-        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
-        if ("indexHint" == function_ptr->name)
-            return true;
     }
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))
     {
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (array_joined_names.count(*opt_name) ||
-            array_joined_names.count(Nested::extractTableName(*opt_name)) ||
-            (is_final && !isSortingKey(*opt_name)))
+            array_joined_names.count(Nested::extractTableName(*opt_name)))
             return true;
     }
 
     for (const auto & child : ptr->children)
-        if (cannotBeMoved(child, is_final))
+        if (cannotBeMoved(child))
             return true;
 
     return false;

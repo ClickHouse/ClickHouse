@@ -1,18 +1,17 @@
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnNullable.h>
-#include <Core/ColumnNumbers.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Core/ColumnNumbers.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 
 
 namespace DB
 {
-
 namespace
 {
 
@@ -24,12 +23,12 @@ class FunctionCoalesce : public IFunction
 public:
     static constexpr auto name = "coalesce";
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(ContextConstPtr context_) : context(context_) {}
+    explicit FunctionCoalesce(const Context & context_) : context(context_) {}
 
     std::string getName() const override
     {
@@ -160,7 +159,7 @@ public:
     }
 
 private:
-    ContextConstPtr context;
+    const Context & context;
 };
 
 }
