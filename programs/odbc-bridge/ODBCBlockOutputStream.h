@@ -29,7 +29,7 @@ public:
 private:
     Poco::Logger * log;
 
-    nanodbc::ConnectionHolderPtr connection;
+    nanodbc::ConnectionHolderPtr connection_holder;
     std::string db_name;
     std::string table_name;
     Block sample_block;

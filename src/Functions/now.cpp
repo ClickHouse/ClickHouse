@@ -83,7 +83,7 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverPtr create(ContextConstPtr) { return std::make_unique<NowOverloadResolver>(); }
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<NowOverloadResolver>(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

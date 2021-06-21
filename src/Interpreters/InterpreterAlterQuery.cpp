@@ -65,8 +65,7 @@ BlockIO InterpreterAlterQuery::execute()
     auto alter_lock = table->lockForAlter(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    /// Add default database to table identifiers that we can encounter in e.g. default expressions,
-    /// mutation expression, etc.
+    /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(table_id.getDatabaseName());
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
@@ -289,15 +288,22 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         }
         case ASTAlterCommand::MOVE_PARTITION:
         {
-            if ((command.move_destination_type == DataDestinationType::DISK)
-                || (command.move_destination_type == DataDestinationType::VOLUME))
+            switch (command.move_destination_type)
             {
-                required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
-            }
-            else if (command.move_destination_type == DataDestinationType::TABLE)
-            {
-                required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
-                required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
+                case DataDestinationType::DISK: [[fallthrough]];
+                case DataDestinationType::VOLUME:
+                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
+                    break;
+                case DataDestinationType::TABLE:
+                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
+                    required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
+                    break;
+                case DataDestinationType::SHARD:
+                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
+                    required_access.emplace_back(AccessType::MOVE_PARTITION_BETWEEN_SHARDS);
+                    break;
+                case DataDestinationType::DELETE:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected destination type for command.");
             }
             break;
         }

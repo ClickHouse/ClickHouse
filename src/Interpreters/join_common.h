@@ -41,6 +41,8 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
 
+void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
+
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
