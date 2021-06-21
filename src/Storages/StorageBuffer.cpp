@@ -15,13 +15,13 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <common/logger_useful.h>
 #include <common/getThreadId.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -920,7 +920,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     Block structure_of_destination_table = allow_materialized ? destination_metadata_snapshot->getSampleBlock()
                                                               : destination_metadata_snapshot->getSampleBlockNonMaterialized();
     Block block_to_write;
-    for (size_t i : ext::range(0, structure_of_destination_table.columns()))
+    for (size_t i : collections::range(0, structure_of_destination_table.columns()))
     {
         auto dst_col = structure_of_destination_table.getByPosition(i);
         if (block.has(dst_col.name))
