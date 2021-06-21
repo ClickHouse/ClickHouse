@@ -1082,8 +1082,7 @@ void HashJoin::joinBlockImpl(
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
 
-            auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
-            ColumnWithTypeAndName right_col(col.column, col.type, right_col_name);
+            ColumnWithTypeAndName right_col(col.column, col.type, right_key.name);
             if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
                 JoinCommon::changeLowCardinalityInplace(right_col);
             right_col = correctNullability(std::move(right_col), is_nullable);
@@ -1113,8 +1112,7 @@ void HashJoin::joinBlockImpl(
 
             ColumnPtr thin_column = filterWithBlanks(col.column, filter);
 
-            auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
-            ColumnWithTypeAndName right_col(thin_column, col.type, right_col_name);
+            ColumnWithTypeAndName right_col(thin_column, col.type, right_key.name);
             if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
                 JoinCommon::changeLowCardinalityInplace(right_col);
             right_col = correctNullability(std::move(right_col), is_nullable, null_map_filter);
