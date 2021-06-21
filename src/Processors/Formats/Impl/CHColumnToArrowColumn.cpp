@@ -421,11 +421,20 @@ namespace DB
                     || std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>
                     || std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
                 {
-                    fillArrowArrayWithDecimalColumnData<ToDataType>(column, null_bytemap, array_builder, format_name, start, end);
+                    fillArrowArrayWithDecimalColumnData<ToDataType, Int128, arrow::Decimal128, arrow::Decimal128Builder>(column, null_bytemap, array_builder, format_name, start, end);
+                    return true;
                 }
+                if constexpr (std::is_same_v<ToDataType,DataTypeDecimal<Decimal256>>)
+                {
+                    fillArrowArrayWithDecimalColumnData<ToDataType, Int256, arrow::Decimal256, arrow::Decimal256Builder>(column, null_bytemap, array_builder, format_name, start, end);
+                    return true;
+                }
+
                 return false;
             };
-            callOnIndexAndDataType<void>(column_type->getTypeId(), fill_decimal);
+
+            if (!callOnIndexAndDataType<void>(column_type->getTypeId(), fill_decimal))
+                throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array with decimal data with type {}", column_type_name};
         }
     #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
                 else if (#CPP_NUMERIC_TYPE == column_type_name) \
@@ -445,7 +454,7 @@ namespace DB
         }
     }
 
-    template <typename DataType>
+    template <typename DataType, typename FieldType, typename ArrowDecimalType, typename ArrowBuilder>
     static void fillArrowArrayWithDecimalColumnData(
         ColumnPtr write_column,
         const PaddedPODArray<UInt8> * null_bytemap,
@@ -455,7 +464,7 @@ namespace DB
         size_t end)
     {
         const auto & column = assert_cast<const typename DataType::ColumnType &>(*write_column);
-        arrow::DecimalBuilder & builder = assert_cast<arrow::DecimalBuilder &>(*array_builder);
+        ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
         arrow::Status status;
 
         for (size_t value_i = start; value_i < end; ++value_i)
@@ -463,8 +472,10 @@ namespace DB
             if (null_bytemap && (*null_bytemap)[value_i])
                 status = builder.AppendNull();
             else
-                status = builder.Append(
-                    arrow::Decimal128(reinterpret_cast<const uint8_t *>(&column.getElement(value_i).value))); // TODO: try copy column
+            {
+                FieldType element = FieldType(column.getElement(value_i).value);
+                status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
+            }
 
             checkStatus(status, write_column->getName(), format_name);
         }
@@ -512,15 +523,18 @@ namespace DB
                 if constexpr (
                     std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>
                     || std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>
-                    || std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
+                    || std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>
+                    || std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>)
                 {
                     const auto & decimal_type = assert_cast<const ToDataType *>(column_type.get());
                     arrow_type = arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale());
+                    return true;
                 }
 
                 return false;
             };
-            callOnIndexAndDataType<void>(column_type->getTypeId(), create_arrow_type);
+            if (!callOnIndexAndDataType<void>(column_type->getTypeId(), create_arrow_type))
+                throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot convert decimal type {} to arrow type", column_type->getFamilyName()};
             return arrow_type;
         }
 
