@@ -213,7 +213,7 @@ class ClickHouseCluster:
         if self.name:
             instances_dir_name += '_' + self.name
 
-        if 'INTEGRATION_TESTS_RUN_ID' in os.environ:
+        if 'INTEGRATION_TESTS_RUN_ID' in os.environ and os.environ['INTEGRATION_TESTS_RUN_ID']:
             instances_dir_name += '_' + shlex.quote(os.environ['INTEGRATION_TESTS_RUN_ID'])
 
         self.instances_dir = p.join(self.base_dir, instances_dir_name)
