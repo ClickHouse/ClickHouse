@@ -23,7 +23,7 @@ static thread_local void * stack_address = nullptr;
 static thread_local size_t max_stack_size = 0;
 
 /**
- * @param address_ - stack address
+ * @param out_address - if not nullptr, here the address of the stack will be written.
  * @return stack size
  */
 size_t getStackSize(void ** out_address)
