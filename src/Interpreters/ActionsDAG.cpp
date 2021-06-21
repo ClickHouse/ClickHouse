@@ -1228,8 +1228,8 @@ struct ConjunctionNodes
 ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
 {
     ConjunctionNodes conjunction;
-    std::unordered_set<ActionsDAG::Node *> allowed;
-    std::unordered_set<ActionsDAG::Node *> rejected;
+    std::unordered_set<const ActionsDAG::Node *> allowed;
+    std::unordered_set<const ActionsDAG::Node *> rejected;
 
     struct Frame
     {
@@ -1241,7 +1241,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
     };
 
     std::stack<Frame> stack;
-    std::unordered_set<ActionsDAG::Node *> visited_nodes;
+    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
 
     stack.push(Frame{.node = predicate, .is_predicate = true});
     visited_nodes.insert(predicate);
