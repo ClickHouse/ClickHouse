@@ -20,7 +20,7 @@ TEST(QueryNormalizer, SimpleLoopAlias)
     aliases["a"] = parseQuery(parser, "a as a", 0, 0)->children[0];
 
     Settings settings;
-    QueryNormalizer::Data normalizer_data(aliases, {}, false, settings, false);
+    QueryNormalizer::Data normalizer_data(aliases, settings, false);
     EXPECT_THROW(QueryNormalizer(normalizer_data).visit(ast), Exception);
 }
 
