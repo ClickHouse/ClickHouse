@@ -50,11 +50,14 @@ bool ReadBufferFromS3::nextImpl()
 
     if (!res)
         return false;
-    internal_buffer = impl->buffer();
+
+    working_buffer = internal_buffer = impl->buffer();
+    pos = working_buffer.begin();
 
     ProfileEvents::increment(ProfileEvents::S3ReadBytes, internal_buffer.size());
 
-    working_buffer = internal_buffer;
+    offset += working_buffer.size();
+
     return true;
 }
 
@@ -77,7 +80,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 
 off_t ReadBufferFromS3::getPosition()
 {
-    return offset + count();
+    return offset - available();
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
@@ -87,8 +90,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    if (offset != 0)
-        req.SetRange("bytes=" + std::to_string(offset) + "-");
+    req.SetRange(fmt::format("bytes={}-", offset));
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 

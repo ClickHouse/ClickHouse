@@ -322,11 +322,11 @@ private:
             current_buf = initialize();
 
         /// If current buffer has remaining data - use it.
-        if (current_buf && current_buf->next())
+        if (current_buf)
         {
-            working_buffer = current_buf->buffer();
-            absolute_position += working_buffer.size();
-            return true;
+            bool result = nextAndShiftPosition();
+            if (result)
+                return true;
         }
 
         /// If there is no available buffers - nothing to read.
@@ -336,11 +336,23 @@ private:
         ++current_buf_idx;
         const auto & path = metadata.s3_objects[current_buf_idx].first;
         current_buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.s3_root_path + path, buf_size);
-        current_buf->next();
-        working_buffer = current_buf->buffer();
-        absolute_position += working_buffer.size();
+        return nextAndShiftPosition();
+    }
 
-        return true;
+    bool nextAndShiftPosition()
+    {
+        /// Transfer current position and working_buffer to actual ReadBuffer
+        swap(*current_buf);
+        /// Position and working_buffer will be updated in next() call
+        auto result = current_buf->next();
+        /// and assigned to current buffer.
+        swap(*current_buf);
+
+        /// absolute position is shifted by a data size that was read in next() call above.
+        if (result)
+            absolute_position += working_buffer.size();
+
+        return result;
     }
 
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
@@ -937,6 +949,11 @@ void DiskS3::createFileOperationObject(const String & operation_name, UInt64 rev
 
 void DiskS3::startup()
 {
+    auto settings = current_settings.get();
+
+    /// Need to be enabled if it was disabled during shutdown() call.
+    settings->client->EnableRequestProcessing();
+
     if (!send_metadata)
         return;
 
