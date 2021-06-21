@@ -9,7 +9,7 @@
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/convertMySQLDataType.h>
-#    include <Databases/MySQL/DatabaseConnectionMySQL.h>
+#    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/Operators.h>
@@ -46,7 +46,7 @@ constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
 static const std::chrono::seconds lock_acquire_timeout{10};
 
-DatabaseConnectionMySQL::DatabaseConnectionMySQL(
+DatabaseMySQL::DatabaseMySQL(
     ContextPtr context_,
     const String & database_name_,
     const String & metadata_path_,
@@ -63,10 +63,10 @@ DatabaseConnectionMySQL::DatabaseConnectionMySQL(
     , mysql_pool(std::move(pool))
 {
     empty(); /// test database is works fine.
-    thread = ThreadFromGlobalPool{&DatabaseConnectionMySQL::cleanOutdatedTables, this};
+    thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
 
-bool DatabaseConnectionMySQL::empty() const
+bool DatabaseMySQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -82,7 +82,7 @@ bool DatabaseConnectionMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);
@@ -96,12 +96,12 @@ DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(ContextPtr 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 
-bool DatabaseConnectionMySQL::isTableExist(const String & name, ContextPtr local_context) const
+bool DatabaseMySQL::isTableExist(const String & name, ContextPtr local_context) const
 {
     return bool(tryGetTable(name, local_context));
 }
 
-StoragePtr DatabaseConnectionMySQL::tryGetTable(const String & mysql_table_name, ContextPtr local_context) const
+StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPtr local_context) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -160,7 +160,7 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
     return create_table_query;
 }
 
-ASTPtr DatabaseConnectionMySQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
+ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -177,7 +177,7 @@ ASTPtr DatabaseConnectionMySQL::getCreateTableQueryImpl(const String & table_nam
     return getCreateQueryFromStorage(local_tables_cache[table_name].second, database_engine_define);
 }
 
-time_t DatabaseConnectionMySQL::getObjectMetadataModificationTime(const String & table_name) const
+time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_name) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -189,7 +189,7 @@ time_t DatabaseConnectionMySQL::getObjectMetadataModificationTime(const String &
     return time_t(local_tables_cache[table_name].first);
 }
 
-ASTPtr DatabaseConnectionMySQL::getCreateDatabaseQuery() const
+ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = getDatabaseName();
@@ -197,7 +197,7 @@ ASTPtr DatabaseConnectionMySQL::getCreateDatabaseQuery() const
     return create_query;
 }
 
-void DatabaseConnectionMySQL::fetchTablesIntoLocalCache(ContextPtr local_context) const
+void DatabaseMySQL::fetchTablesIntoLocalCache(ContextPtr local_context) const
 {
     const auto & tables_with_modification_time = fetchTablesWithModificationTime(local_context);
 
@@ -205,7 +205,7 @@ void DatabaseConnectionMySQL::fetchTablesIntoLocalCache(ContextPtr local_context
     fetchLatestTablesStructureIntoCache(tables_with_modification_time, local_context);
 }
 
-void DatabaseConnectionMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const
+void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const
 {
     for (auto iterator = local_tables_cache.begin(); iterator != local_tables_cache.end();)
     {
@@ -219,7 +219,7 @@ void DatabaseConnectionMySQL::destroyLocalCacheExtraTables(const std::map<String
     }
 }
 
-void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
+void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
     const std::map<String, UInt64> & tables_modification_time, ContextPtr local_context) const
 {
     std::vector<String> wait_update_tables_name;
@@ -264,7 +264,7 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
     }
 }
 
-std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTime(ContextPtr local_context) const
+std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextPtr local_context) const
 {
     Block tables_status_sample_block
     {
@@ -297,7 +297,7 @@ std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTim
 }
 
 std::map<String, NamesAndTypesList>
-DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr local_context) const
+DatabaseMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -309,7 +309,7 @@ DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tabl
             database_settings->mysql_datatypes_support_level);
 }
 
-void DatabaseConnectionMySQL::shutdown()
+void DatabaseMySQL::shutdown()
 {
     std::map<String, ModifyTimeAndStorage> tables_snapshot;
     {
@@ -324,12 +324,12 @@ void DatabaseConnectionMySQL::shutdown()
     local_tables_cache.clear();
 }
 
-void DatabaseConnectionMySQL::drop(ContextPtr /*context*/)
+void DatabaseMySQL::drop(ContextPtr /*context*/)
 {
     fs::remove_all(getMetadataPath());
 }
 
-void DatabaseConnectionMySQL::cleanOutdatedTables()
+void DatabaseMySQL::cleanOutdatedTables()
 {
     setThreadName("MySQLDBCleaner");
 
@@ -355,7 +355,7 @@ void DatabaseConnectionMySQL::cleanOutdatedTables()
     }
 }
 
-void DatabaseConnectionMySQL::attachTable(const String & table_name, const StoragePtr & storage, const String &)
+void DatabaseMySQL::attachTable(const String & table_name, const StoragePtr & storage, const String &)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -378,7 +378,7 @@ void DatabaseConnectionMySQL::attachTable(const String & table_name, const Stora
         fs::remove(remove_flag);
 }
 
-StoragePtr DatabaseConnectionMySQL::detachTable(const String & table_name)
+StoragePtr DatabaseMySQL::detachTable(const String & table_name)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -394,12 +394,12 @@ StoragePtr DatabaseConnectionMySQL::detachTable(const String & table_name)
     return local_tables_cache[table_name].second;
 }
 
-String DatabaseConnectionMySQL::getMetadataPath() const
+String DatabaseMySQL::getMetadataPath() const
 {
     return metadata_path;
 }
 
-void DatabaseConnectionMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/)
+void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/)
 {
 
     std::lock_guard<std::mutex> lock{mutex};
@@ -416,7 +416,7 @@ void DatabaseConnectionMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*
     }
 }
 
-void DatabaseConnectionMySQL::detachTablePermanently(ContextPtr, const String & table_name)
+void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -448,12 +448,12 @@ void DatabaseConnectionMySQL::detachTablePermanently(ContextPtr, const String & 
     table_iter->second.second->is_dropped = true;
 }
 
-void DatabaseConnectionMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*no_delay*/)
+void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*no_delay*/)
 {
     detachTablePermanently(local_context, table_name);
 }
 
-DatabaseConnectionMySQL::~DatabaseConnectionMySQL()
+DatabaseMySQL::~DatabaseMySQL()
 {
     try
     {
@@ -475,7 +475,7 @@ DatabaseConnectionMySQL::~DatabaseConnectionMySQL()
     }
 }
 
-void DatabaseConnectionMySQL::createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
+void DatabaseMySQL::createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
 {
     const auto & create = create_query->as<ASTCreateQuery>();
 
