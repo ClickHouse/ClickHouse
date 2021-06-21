@@ -170,7 +170,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
         {
             ReadBufferFromString in(value);
             time_t time = 0;
-            readDateTimeText(time, in);
+            readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
             if (time < 0)
                 time = 0;
             assert_cast<ColumnUInt32 &>(column).insertValue(time);
@@ -272,11 +272,11 @@ void PostgreSQLBlockInputStream::prepareArrayInfo(size_t column_idx, const DataT
     else if (which.isDate())
         parser = [](std::string & field) -> Field { return UInt16{LocalDate{field}.getDayNum()}; };
     else if (which.isDateTime())
-        parser = [](std::string & field) -> Field
+        parser = [nested](std::string & field) -> Field
         {
             ReadBufferFromString in(field);
             time_t time = 0;
-            readDateTimeText(time, in);
+            readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(nested.get())->getTimeZone());
             return time;
         };
     else if (which.isDecimal32())

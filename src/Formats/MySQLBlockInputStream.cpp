@@ -169,7 +169,7 @@ namespace
             {
                 ReadBufferFromString in(value);
                 time_t time = 0;
-                readDateTimeText(time, in);
+                readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
                 if (time < 0)
                     time = 0;
                 assert_cast<ColumnUInt32 &>(column).insertValue(time);
