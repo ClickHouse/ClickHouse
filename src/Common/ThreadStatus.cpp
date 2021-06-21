@@ -57,11 +57,11 @@ struct ThreadStack
     }
 
     static size_t getSize() { return size; }
-    void* getData() const { return data; }
+    void * getData() const { return data; }
 
 private:
-    static constexpr size_t size = 16 << 10;
-    void *data;
+    static constexpr size_t size = 16 << 10; /// 16 KiB - not too big but enough to handle error.
+    void * data;
 };
 
 }
