@@ -651,7 +651,7 @@ void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns 
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
         aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
 
-        auto * that = aggregate_functions[i];
+        const auto * that = aggregate_functions[i];
         /// Unnest consecutive trailing -State combinators
         while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();

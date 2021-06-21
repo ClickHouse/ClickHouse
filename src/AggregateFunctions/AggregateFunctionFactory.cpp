@@ -17,9 +17,9 @@
 #include <Common/CurrentThread.h>
 
 #include <Poco/String.h>
-#include "registerAggregateFunctions.h"
 
 #include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
