@@ -29,6 +29,7 @@ import string
 import multiprocessing
 from contextlib import closing
 
+DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_timeout (=120)"
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
@@ -40,7 +41,7 @@ MESSAGES_TO_RETRY = [
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
-    "is executing longer than distributed_ddl_task_timeout (=120)"  # FIXME
+    DISTRIBUTED_DDL_TIMEOUT_MSG # FIXME
 ]
 
 MAX_RETRIES = 5
@@ -476,6 +477,9 @@ def run_tests_array(all_tests_with_params):
                             sleep(2**counter)
                             counter += 1
                             if MAX_RETRIES < counter:
+                                if args.replicated_database:
+                                    if DISTRIBUTED_DDL_TIMEOUT_MSG in stderr:
+                                        SERVER_DIED = True
                                 break
 
                         if proc.returncode != 0:

@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Poco/Event.h>
 
@@ -42,9 +42,9 @@ namespace DB
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer final : public ext::shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
+class StorageBuffer final : public shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
 {
-friend struct ext::shared_ptr_helper<StorageBuffer>;
+friend struct shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
 friend class BufferBlockOutputStream;
 
