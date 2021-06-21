@@ -105,7 +105,8 @@ public:
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage = {},
         const StorageMetadataPtr & metadata_snapshot = {},
-        bool allow_aggregations = false) const;
+        bool allow_aggregations = false,
+        bool allow_self_aliases = true) const;
 
     /// Analyze and rewrite select query
     TreeRewriterResultPtr analyzeSelect(
@@ -119,7 +120,7 @@ public:
 private:
     const Context & context;
 
-    static void normalize(ASTPtr & query, Aliases & aliases, const Settings & settings);
+    static void normalize(ASTPtr & query, Aliases & aliases, const Settings & settings, bool allow_self_aliases);
 };
 
 }

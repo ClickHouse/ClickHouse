@@ -44,14 +44,18 @@ public:
         SetOfASTs current_asts;     /// vertices in the current call stack of this method
         std::string current_alias;  /// the alias referencing to the ancestor of ast (the deepest ancestor with aliases)
 
-        Data(const Aliases & aliases_, ExtractedSettings && settings_)
+        /// It's Ok to have "c + 1 AS c" in queries, but not in table definition
+        const bool allow_self_aliases; /// for constructs like "SELECT column + 1 AS column"
+
+        Data(const Aliases & aliases_, ExtractedSettings && settings_, bool allow_self_aliases_)
             : aliases(aliases_)
             , settings(settings_)
             , level(0)
+            , allow_self_aliases(allow_self_aliases_)
         {}
     };
 
-    QueryNormalizer(Data & data)
+    explicit QueryNormalizer(Data & data)
         : visitor_data(data)
     {}
 
