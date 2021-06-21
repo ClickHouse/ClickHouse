@@ -18,7 +18,7 @@ class ReplicatedMergeTreeSink;
 
 struct ViewInfo
 {
-    ASTPtr query;
+    const ASTPtr query;
     StorageID table_id;
     BlockOutputStreamPtr out;
     std::exception_ptr exception;

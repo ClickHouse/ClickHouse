@@ -12,13 +12,27 @@
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
-#include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
+#include <Common/checkStackSize.h>
+#include <Common/setThreadName.h>
 #include <common/logger_useful.h>
 #include <DataStreams/PushingToSinkBlockOutputStream.h>
 
 #include <atomic>
 #include <chrono>
+
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+extern const Event SlowRead;
+extern const Event MergedRows;
+extern const Event ZooKeeperTransactions;
+}
 
 namespace DB
 {
@@ -72,6 +86,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
     }
 
+    auto thread_group = CurrentThread::getGroup();
+
     for (const auto & database_table : dependencies)
     {
         auto dependent_table = DatabaseCatalog::instance().getTable(database_table, getContext());
@@ -118,7 +134,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             BlockIO io = interpreter.execute();
             out = io.out;
         }
-        else if (auto * live_view = dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+        else if (const auto * live_view = dynamic_cast<const StorageLiveView *>(dependent_table.get()))
         {
             type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // TODO: Optimize this
@@ -129,14 +145,13 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
 
+        auto main_thread = current_thread;
+        auto thread_status = std::make_shared<ThreadStatus>();
+        current_thread = main_thread;
+        thread_status->attachQueryContext(getContext());
+
         QueryViewsLogElement::ViewRuntimeStats runtime_stats{
-            target_name,
-            type,
-            select_context->getInitialQueryId(),
-            std::make_shared<ThreadStatus>(),
-            0,
-            std::chrono::system_clock::now(),
-            QueryViewsLogElement::Status::QUERY_START};
+            target_name, type, thread_status, 0, std::chrono::system_clock::now(), QueryViewsLogElement::Status::QUERY_START};
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, std::move(runtime_stats)});
     }
 
@@ -150,6 +165,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         replicated_output = dynamic_cast<ReplicatedMergeTreeSink *>(sink.get());
         output = std::make_shared<PushingToSinkBlockOutputStream>(std::move(sink));
     }
+    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions, 100);
 }
 
 
@@ -185,7 +201,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             output->write(block);
     }
 
-    if (!views.size())
+    if (views.empty())
         return;
 
     /// Don't process materialized views if this block is duplicate
@@ -198,12 +214,12 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     ThreadPool pool(std::min(max_threads, views.size()));
     for (auto & view : views)
     {
-        auto thread_group = CurrentThread::getGroup();
         pool.scheduleOrThrowOnError([=, &view, this] {
 
             setThreadName("PushingToViews");
-            if (thread_group)
-                CurrentThread::attachToIfDetached(thread_group);
+            current_thread = view.runtime_stats.thread_status.get();
+            ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions, 1);
+            LOG_WARNING(log, "WRITE THREAD");
 
             Stopwatch watch;
             try
@@ -218,7 +234,6 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             if (view.exception)
                 view.runtime_stats.setStatus(QueryViewsLogElement::Status::EXCEPTION_WHILE_PROCESSING);
             view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
-            // TODO: Update other counters
         });
     }
     // Wait for concurrent view processing
@@ -255,7 +270,7 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     if (output)
         output->writeSuffix();
 
-    if (!views.size())
+    if (views.empty())
         return;
     std::exception_ptr first_exception;
     const Settings & settings = getContext()->getSettingsRef();
@@ -274,8 +289,9 @@ void PushingToViewsBlockOutputStream::writeSuffix()
 
         pool.scheduleOrThrowOnError([&] {
             setThreadName("PushingToViews");
-            if (thread_group)
-                CurrentThread::attachToIfDetached(thread_group);
+            current_thread = view.runtime_stats.thread_status.get();
+            ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions, 1);
+            LOG_WARNING(log, "WRITE SUFFIX THREAD");
 
             Stopwatch watch;
             try
@@ -288,7 +304,6 @@ void PushingToViewsBlockOutputStream::writeSuffix()
                 view.exception = std::current_exception();
             }
             view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
-            // TODO: Update other counters
             LOG_TRACE(
                 log,
                 "Pushing from {} to {} took {} ms.",
@@ -396,18 +411,22 @@ void PushingToViewsBlockOutputStream::check_exceptions_in_views()
 
 void PushingToViewsBlockOutputStream::log_query_views()
 {
-    // TODO: Check settings
-    auto views_log = getContext()->getQueryViewsLog();
-    if (!views_log)
+    const auto & settings = getContext()->getSettingsRef();
+    const UInt64 min_query_duration = settings.log_queries_min_query_duration_ms.totalMilliseconds();
+    if (views.empty() || !settings.log_queries || !settings.log_query_views)
         return;
 
     for (auto & view : views)
     {
         if (view.runtime_stats.event_status == QueryViewsLogElement::Status::QUERY_START)
             view.runtime_stats.setStatus(QueryViewsLogElement::Status::EXCEPTION_WHILE_PROCESSING);
+
+        if (min_query_duration && view.runtime_stats.elapsed_ms <= min_query_duration)
+            continue;
+
         try
         {
-            view.runtime_stats.thread_status->logToQueryViewsLog(*views_log, view);
+            view.runtime_stats.thread_status->logToQueryViewsLog(view);
         }
         catch (...)
         {
