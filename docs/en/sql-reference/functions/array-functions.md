@@ -49,19 +49,20 @@ Returns an array of `UInt` numbers from `start` to `end - 1` by `step`.
 range([start, ] end [, step])
 ```
 
-An exception is thrown if query results in arrays with a total length of more than 100,000,000 elements.
-
-
 **Arguments**
 
 -   `start` — The first element of the array. Optional, required if `step` is used. Default value: 0. [UInt](../data-types/int-uint.md)
 -   `end` — The number before which the array is constructed. Required. Must be greater than `start`. [UInt](../data-types/int-uint.md)
 -   `step` — Determines the incremental step between each element in the array. Optional. Default value: 1. [UInt](../data-types/int-uint.md)
 
-
 **Returned value**
 
 -   Array of `UInt` numbers from `start` to `end - 1` by `step`.
+
+**Peculiar properties**
+
+-   All arguments must be positive values: `start`, `end`, `step` are `UInt` data types, as well as the returned array.
+-   An exception is thrown if query results in arrays with a total length of more than 100,000,000 elements.
 
 
 **Examples**
