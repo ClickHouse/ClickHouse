@@ -11,18 +11,16 @@ services:
       - ${KERBERIZED_HDFS_DIR}/../../hdfs_configs/bootstrap.sh:/etc/bootstrap.sh:ro
       - ${KERBERIZED_HDFS_DIR}/secrets:/usr/local/hadoop/etc/hadoop/conf
       - ${KERBERIZED_HDFS_DIR}/secrets/krb_long.conf:/etc/krb5.conf:ro
-      - type: ${KERBERIZED_HDFS_FS:-tmpfs}
-        source: ${KERBERIZED_HDFS_LOGS:-}
-        target: /var/log/hadoop-hdfs
     ports:
-      - ${KERBERIZED_HDFS_NAME_EXTERNAL_PORT}:${KERBERIZED_HDFS_NAME_INTERNAL_PORT} #50070
-      - ${KERBERIZED_HDFS_DATA_EXTERNAL_PORT}:${KERBERIZED_HDFS_DATA_INTERNAL_PORT} #1006
+      - 1006:1006
+      - 50070:50070
+      - 9010:9010
     depends_on:
       - hdfskerberos
     entrypoint: /etc/bootstrap.sh -d
 
   hdfskerberos:
-    image: yandex/clickhouse-kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
+    image: yandex/clickhouse-kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG}
     hostname: hdfskerberos
     volumes:
       - ${KERBERIZED_HDFS_DIR}/secrets:/tmp/keytab

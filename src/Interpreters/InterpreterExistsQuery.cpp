@@ -44,8 +44,7 @@ BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
     {
         if (exists_query->temporary)
         {
-            result = static_cast<bool>(getContext()->tryResolveStorageID(
-                {"", exists_query->table}, Context::ResolveExternal));
+            result = getContext()->tryResolveStorageID({"", exists_query->table}, Context::ResolveExternal);
         }
         else
         {

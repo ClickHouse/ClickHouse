@@ -21,7 +21,7 @@ public:
         Aliases & aliases,
         const NameSet & source_columns_set,
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-        ContextConstPtr context,
+        ContextPtr context,
         const StorageMetadataPtr & metadata_snapshot,
         bool & rewrite_subqueries);
 

@@ -17,7 +17,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -123,7 +122,7 @@ public:
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
-        ContextConstPtr /*context*/) const
+        ContextPtr /*context*/) const
     {
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -153,13 +152,6 @@ public:
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
-
-    virtual void mergeBatch(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const AggregateDataPtr * rhs,
-        Arena * arena) const = 0;
 
     /** The same for single place.
       */
@@ -285,18 +277,6 @@ public:
                 if (places[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
         }
-    }
-
-    void mergeBatch(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const AggregateDataPtr * rhs,
-        Arena * arena) const override
-    {
-        for (size_t i = 0; i < batch_size; ++i)
-            if (places[i])
-                static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
     }
 
     void addBatchSinglePlace(

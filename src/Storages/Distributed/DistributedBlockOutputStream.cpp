@@ -33,10 +33,11 @@
 #include <ext/range.h>
 #include <ext/scope_guard.h>
 
+#include <Poco/DirectoryIterator.h>
+
 #include <future>
 #include <condition_variable>
 #include <mutex>
-#include <filesystem>
 
 
 namespace CurrentMetrics
@@ -49,10 +50,9 @@ namespace ProfileEvents
     extern const Event DistributedSyncInsertionTimeoutExceeded;
 }
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
+
 
 namespace ErrorCodes
 {
@@ -93,8 +93,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     const ASTPtr & query_ast_,
     const ClusterPtr & cluster_,
     bool insert_sync_,
-    UInt64 insert_timeout_,
-    StorageID main_table_)
+    UInt64 insert_timeout_)
     : context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -103,7 +102,6 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , insert_timeout(insert_timeout_)
-    , main_table(main_table_)
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
     const auto & settings = context->getSettingsRef();
@@ -328,11 +326,11 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                         throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto results = shard_info.pool->getManyChecked(timeouts, &settings, PoolMode::GET_ONE, main_table.getQualifiedName());
-                    if (results.empty() || results.front().entry.isNull())
+                    auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
+                    if (connections.empty() || connections.front().isNull())
                         throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
 
-                    job.connection_entry = std::move(results.front().entry);
+                    job.connection_entry = std::move(connections.front());
                 }
                 else
                 {
@@ -632,7 +630,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     if (compression_method == "ZSTD")
         compression_level = settings.network_zstd_compression_level;
 
-    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs);
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
@@ -660,10 +658,10 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// hardlinking to ensure the inode is not freed until we're done
     {
         const std::string path(disk_path + data_path + *it);
-        const std::string tmp_path(path + "/tmp/");
+        Poco::File(path).createDirectory();
 
-        fs::create_directory(path);
-        fs::create_directory(tmp_path);
+        const std::string tmp_path(path + "/tmp/");
+        Poco::File(tmp_path).createDirectory();
 
         const std::string file_name(toString(storage.file_names_increment.get()) + ".bin");
 
@@ -717,7 +715,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         }
 
         // Create hardlink here to reuse increment number
-        const std::string block_file_path(fs::path(path) / file_name);
+        const std::string block_file_path(path + '/' + file_name);
         createHardLink(first_file_tmp_path, block_file_path);
         auto dir_sync_guard = make_directory_sync_guard(*it);
     }
@@ -726,18 +724,18 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// Make hardlinks
     for (; it != dir_names.end(); ++it)
     {
-        const std::string path(fs::path(disk_path) / (data_path + *it));
-        fs::create_directory(path);
+        const std::string path(disk_path + data_path + *it);
+        Poco::File(path).createDirectory();
 
-        const std::string block_file_path(fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin"));
+        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
         createHardLink(first_file_tmp_path, block_file_path);
         auto dir_sync_guard = make_directory_sync_guard(*it);
     }
 
-    auto file_size = fs::file_size(first_file_tmp_path);
+    auto file_size = Poco::File(first_file_tmp_path).getSize();
     /// remove the temporary file, enabling the OS to reclaim inode after all threads
     /// have removed their corresponding files
-    fs::remove(first_file_tmp_path);
+    Poco::File(first_file_tmp_path).remove();
 
     /// Notify
     auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;

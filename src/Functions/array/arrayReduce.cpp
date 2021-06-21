@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -37,7 +37,7 @@ class FunctionArrayReduce : public IFunction
 {
 public:
     static constexpr auto name = "arrayReduce";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionArrayReduce>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReduce>(); }
 
     String getName() const override { return name; }
 

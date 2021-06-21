@@ -30,15 +30,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
-    : max_read_mysql_row_nums((settings.external_storage_max_read_rows) ? settings.external_storage_max_read_rows : settings.max_block_size)
-    , max_read_mysql_bytes_size(settings.external_storage_max_read_bytes)
-    , auto_close(auto_close_)
-    , fetch_by_name(fetch_by_name_)
-    , default_num_tries_on_connection_loss(max_retry_)
-{
-}
-
 MySQLBlockInputStream::Connection::Connection(
     const mysqlxx::PoolWithFailover::Entry & entry_,
     const std::string & query_str)
@@ -53,19 +44,29 @@ MySQLBlockInputStream::MySQLBlockInputStream(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
     const Block & sample_block,
-    const StreamSettings & settings_)
+    const UInt64 max_block_size_,
+    const bool auto_close_,
+    const bool fetch_by_name_)
     : log(&Poco::Logger::get("MySQLBlockInputStream"))
     , connection{std::make_unique<Connection>(entry, query_str)}
-    , settings{std::make_unique<StreamSettings>(settings_)}
+    , max_block_size{max_block_size_}
+    , auto_close{auto_close_}
+    , fetch_by_name(fetch_by_name_)
 {
     description.init(sample_block);
     initPositionMappingFromQueryResultStructure();
 }
 
 /// For descendant MySQLWithFailoverBlockInputStream
-    MySQLBlockInputStream::MySQLBlockInputStream(const Block &sample_block_, const StreamSettings & settings_)
+MySQLBlockInputStream::MySQLBlockInputStream(
+    const Block & sample_block_,
+    UInt64 max_block_size_,
+    bool auto_close_,
+    bool fetch_by_name_)
     : log(&Poco::Logger::get("MySQLBlockInputStream"))
-    , settings(std::make_unique<StreamSettings>(settings_))
+    , max_block_size(max_block_size_)
+    , auto_close(auto_close_)
+    , fetch_by_name(fetch_by_name_)
 {
     description.init(sample_block_);
 }
@@ -75,10 +76,14 @@ MySQLWithFailoverBlockInputStream::MySQLWithFailoverBlockInputStream(
     mysqlxx::PoolWithFailoverPtr pool_,
     const std::string & query_str_,
     const Block & sample_block_,
-    const StreamSettings & settings_)
-: MySQLBlockInputStream(sample_block_, settings_)
-, pool(pool_)
-, query_str(query_str_)
+    const UInt64 max_block_size_,
+    const bool auto_close_,
+    const bool fetch_by_name_,
+    const size_t max_tries_)
+    : MySQLBlockInputStream(sample_block_, max_block_size_, auto_close_, fetch_by_name_)
+    , pool(pool_)
+    , query_str(query_str_)
+    , max_tries(max_tries_)
 {
 }
 
@@ -96,12 +101,12 @@ void MySQLWithFailoverBlockInputStream::readPrefix()
         }
         catch (const mysqlxx::ConnectionLost & ecl)  /// There are two retriable failures: CR_SERVER_GONE_ERROR, CR_SERVER_LOST
         {
-            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, settings->default_num_tries_on_connection_loss, ecl.displayText());
+            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, max_tries, ecl.displayText());
         }
 
-        if (++count_connect_attempts > settings->default_num_tries_on_connection_loss)
+        if (++count_connect_attempts > max_tries)
         {
-            LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, settings->default_num_tries_on_connection_loss);
+            LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, max_tries);
             throw;
         }
     }
@@ -113,57 +118,45 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size)
+    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value)
     {
         switch (type)
         {
             case ValueType::vtUInt8:
                 assert_cast<ColumnUInt8 &>(column).insertValue(value.getUInt());
-                read_bytes_size += 1;
                 break;
             case ValueType::vtUInt16:
                 assert_cast<ColumnUInt16 &>(column).insertValue(value.getUInt());
-                read_bytes_size += 2;
                 break;
             case ValueType::vtUInt32:
                 assert_cast<ColumnUInt32 &>(column).insertValue(value.getUInt());
-                read_bytes_size += 4;
                 break;
             case ValueType::vtUInt64:
                 assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
-                read_bytes_size += 8;
                 break;
             case ValueType::vtInt8:
                 assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
-                read_bytes_size += 1;
                 break;
             case ValueType::vtInt16:
                 assert_cast<ColumnInt16 &>(column).insertValue(value.getInt());
-                read_bytes_size += 2;
                 break;
             case ValueType::vtInt32:
                 assert_cast<ColumnInt32 &>(column).insertValue(value.getInt());
-                read_bytes_size += 4;
                 break;
             case ValueType::vtInt64:
                 assert_cast<ColumnInt64 &>(column).insertValue(value.getInt());
-                read_bytes_size += 8;
                 break;
             case ValueType::vtFloat32:
                 assert_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
-                read_bytes_size += 4;
                 break;
             case ValueType::vtFloat64:
                 assert_cast<ColumnFloat64 &>(column).insertValue(value.getDouble());
-                read_bytes_size += 8;
                 break;
             case ValueType::vtString:
                 assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
-                read_bytes_size += assert_cast<ColumnString &>(column).byteSize();
                 break;
             case ValueType::vtDate:
                 assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
-                read_bytes_size += 2;
                 break;
             case ValueType::vtDateTime:
             {
@@ -173,12 +166,10 @@ namespace
                 if (time < 0)
                     time = 0;
                 assert_cast<ColumnUInt32 &>(column).insertValue(time);
-                read_bytes_size += 4;
                 break;
             }
             case ValueType::vtUUID:
-                assert_cast<ColumnUUID &>(column).insert(parse<UUID>(value.data(), value.size()));
-                read_bytes_size += assert_cast<ColumnUUID &>(column).byteSize();
+                assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
                 break;
             case ValueType::vtDateTime64:[[fallthrough]];
             case ValueType::vtDecimal32: [[fallthrough]];
@@ -188,12 +179,10 @@ namespace
             {
                 ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
                 data_type.getDefaultSerialization()->deserializeWholeText(column, buffer, FormatSettings{});
-                read_bytes_size += column.sizeOfValueIfFixed();
                 break;
             }
             case ValueType::vtFixedString:
                 assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
-                read_bytes_size += column.sizeOfValueIfFixed();
                 break;
             default:
                 throw Exception("Unsupported value type", ErrorCodes::NOT_IMPLEMENTED);
@@ -209,7 +198,7 @@ Block MySQLBlockInputStream::readImpl()
     auto row = connection->result.fetch();
     if (!row)
     {
-        if (settings->auto_close)
+        if (auto_close)
            connection->entry.disconnect();
 
         return {};
@@ -220,8 +209,6 @@ Block MySQLBlockInputStream::readImpl()
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
-    size_t read_bytes_size = 0;
-
     while (row)
     {
         for (size_t index = 0; index < position_mapping.size(); ++index)
@@ -237,12 +224,12 @@ Block MySQLBlockInputStream::readImpl()
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
                     const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
-                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size);
+                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value);
                     column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                 {
-                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size);
+                    insertValue(*sample.type, *columns[index], description.types[index].first, value);
                 }
             }
             else
@@ -258,7 +245,7 @@ Block MySQLBlockInputStream::readImpl()
         }
 
         ++num_rows;
-        if (num_rows == settings->max_read_mysql_row_nums || (settings->max_read_mysql_bytes_size && read_bytes_size >= settings->max_read_mysql_bytes_size))
+        if (num_rows == max_block_size)
             break;
 
         row = connection->result.fetch();
@@ -270,7 +257,7 @@ void MySQLBlockInputStream::initPositionMappingFromQueryResultStructure()
 {
     position_mapping.resize(description.sample_block.columns());
 
-    if (!settings->fetch_by_name)
+    if (!fetch_by_name)
     {
         if (description.sample_block.columns() != connection->result.getNumFields())
             throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "

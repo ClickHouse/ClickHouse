@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
@@ -25,16 +25,16 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction, WithConstContext
+class FunctionHasColumnInTable : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "hasColumnInTable";
-    static FunctionPtr create(ContextConstPtr context_)
+    static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext());
     }
 
-    explicit FunctionHasColumnInTable(ContextConstPtr global_context_) : WithConstContext(global_context_)
+    explicit FunctionHasColumnInTable(ContextPtr global_context_) : WithContext(global_context_)
     {
     }
 
@@ -114,12 +114,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     bool has_column;
     if (host_name.empty())
     {
-        // FIXME this (probably) needs a non-constant access to query context,
-        // because it might initialized a storage. Ideally, the tables required
-        // by the query should be initialized at an earlier stage.
-        const StoragePtr & table = DatabaseCatalog::instance().getTable(
-            {database_name, table_name},
-            const_pointer_cast<Context>(getContext()));
+        const StoragePtr & table = DatabaseCatalog::instance().getTable({database_name, table_name}, getContext());
         auto table_metadata = table->getInMemoryMetadataPtr();
         has_column = table_metadata->getColumns().hasPhysical(column_name);
     }
@@ -135,17 +130,11 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             getContext()->getTCPPort(),
             false);
 
-        // FIXME this (probably) needs a non-constant access to query context,
-        // because it might initialized a storage. Ideally, the tables required
-        // by the query should be initialized at an earlier stage.
-        auto remote_columns = getStructureOfRemoteTable(*cluster,
-            {database_name, table_name},
-            const_pointer_cast<Context>(getContext()));
-
+        auto remote_columns = getStructureOfRemoteTable(*cluster, {database_name, table_name}, getContext());
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    return DataTypeUInt8().createColumnConst(input_rows_count, Field{UInt64(has_column)});
+    return DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
 }
 
 }

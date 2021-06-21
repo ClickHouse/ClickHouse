@@ -13,7 +13,6 @@
 
 namespace DB
 {
-struct Settings;
 
 struct AggregateFunctionCountData
 {

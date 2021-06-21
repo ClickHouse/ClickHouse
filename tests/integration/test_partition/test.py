@@ -42,7 +42,7 @@ def test_partition_simple(partition_table_simple):
 
 
 def exec_bash(cmd):
-    cmd = ["/bin/bash", "-c", cmd.replace('"', '\\"')]
+    cmd = '/bin/bash -c "{}"'.format(cmd.replace('"', '\\"'))
     return instance.exec_in_container(cmd)
 
 

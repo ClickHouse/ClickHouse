@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatFactory.h>
+#include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
@@ -20,14 +21,14 @@ namespace DB
 {
 
 LibraryBridgeHelper::LibraryBridgeHelper(
-        ContextConstPtr context_,
+        ContextPtr context_,
         const Block & sample_block_,
         const Field & dictionary_id_)
-    : IBridgeHelper(context_->getGlobalContext())
+    : IBridgeHelper(context_)
     , log(&Poco::Logger::get("LibraryBridgeHelper"))
     , sample_block(sample_block_)
     , config(context_->getConfigRef())
-    , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
+    , http_timeout(context_->getSettingsRef().http_receive_timeout.value)
     , dictionary_id(dictionary_id_)
 {
     bridge_port = config.getUInt("library_bridge.port", DEFAULT_PORT);

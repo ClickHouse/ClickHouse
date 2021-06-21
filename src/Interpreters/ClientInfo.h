@@ -2,6 +2,7 @@
 
 #include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Common/UInt128.h>
 #include <common/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
 

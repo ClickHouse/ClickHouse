@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,7 +16,7 @@ class FunctionCurrentDatabase : public IFunction
 
 public:
     static constexpr auto name = "currentDatabase";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionCurrentDatabase>(context->getCurrentDatabase());
     }

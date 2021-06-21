@@ -1,6 +1,5 @@
 #include "ODBCBlockOutputStream.h"
 
-#include <Common/hex.h>
 #include <common/logger_useful.h>
 #include <Core/Field.h>
 #include <common/LocalDate.h>
@@ -38,6 +37,7 @@ namespace
         query.IAST::format(settings);
         return buf.str();
     }
+
 }
 
 ODBCBlockOutputStream::ODBCBlockOutputStream(nanodbc::ConnectionHolderPtr connection_,

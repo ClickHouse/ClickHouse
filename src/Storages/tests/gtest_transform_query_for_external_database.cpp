@@ -22,7 +22,7 @@ struct State
 {
     State(const State&) = delete;
 
-    ContextMutablePtr context;
+    ContextPtr context;
 
     static const State & instance()
     {
@@ -85,8 +85,7 @@ private:
             const auto & db_name = tab.table.database;
             database->attachTable(
                 table_name,
-                StorageMemory::create(
-                    StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
+                StorageMemory::create(StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
         context->setCurrentDatabase("test");

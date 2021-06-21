@@ -229,8 +229,7 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         input.setNeeded();
         return Status::NeedData;
     }
-    assert(!is_consume_finished);
-    current_chunk = input.pull(true /* set_not_needed */);
+    current_chunk = input.pull(!is_consume_finished);
     return Status::Ready;
 }
 

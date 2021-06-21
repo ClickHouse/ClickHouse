@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
@@ -30,7 +30,7 @@ class FunctionArrayWithConstant : public IFunction
 public:
     static constexpr auto name = "arrayWithConstant";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionArrayWithConstant>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayWithConstant>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }

@@ -240,7 +240,7 @@ If user is not specified, the query returns privileges for the current user.
 
 Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
 
-`SHOW CREATE USER` does not output user passwords.
+`SHOW CREATE USER` doesn’t output user passwords.
 
 ### Syntax {#show-create-user-syntax}
 

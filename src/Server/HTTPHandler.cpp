@@ -39,6 +39,7 @@
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
+#include <Poco/File.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
@@ -276,7 +277,7 @@ HTTPHandler::~HTTPHandler()
 
 
 bool HTTPHandler::authenticateUser(
-    ContextMutablePtr context,
+    ContextPtr context,
     HTTPServerRequest & request,
     HTMLForm & params,
     HTTPServerResponse & response)
@@ -440,7 +441,7 @@ bool HTTPHandler::authenticateUser(
 
 
 void HTTPHandler::processQuery(
-    ContextMutablePtr context,
+    ContextPtr context,
     HTTPServerRequest & request,
     HTMLForm & params,
     HTTPServerResponse & response,
@@ -936,7 +937,7 @@ DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & 
 {
 }
 
-bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
+bool DynamicQueryHandler::customizeQueryParam(ContextPtr context, const std::string & key, const std::string & value)
 {
     if (key == param_name)
         return true;    /// do nothing
@@ -952,7 +953,7 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
     return false;
 }
 
-std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextPtr context)
 {
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
@@ -991,7 +992,7 @@ PredefinedQueryHandler::PredefinedQueryHandler(
 {
 }
 
-bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
+bool PredefinedQueryHandler::customizeQueryParam(ContextPtr context, const std::string & key, const std::string & value)
 {
     if (receive_params.count(key))
     {
@@ -1002,7 +1003,7 @@ bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, cons
     return false;
 }
 
-void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context)
+void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextPtr context)
 {
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
@@ -1038,7 +1039,7 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     }
 }
 
-std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextPtr context)
 {
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {

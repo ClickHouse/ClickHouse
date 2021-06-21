@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -23,7 +23,7 @@ class FunctionStringToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionStringToString>();
     }

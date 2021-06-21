@@ -47,7 +47,7 @@ public:
 
     bool empty() const override;
 
-    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach) override;
+    void loadStoredObjects(ContextPtr, bool, bool force_attach) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 

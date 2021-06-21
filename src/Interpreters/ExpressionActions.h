@@ -30,6 +30,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
 ///
@@ -57,7 +58,6 @@ public:
         size_t result_position;
 
         std::string toString() const;
-        JSONBuilder::ItemPtr toTree() const;
     };
 
     using Actions = std::vector<Action>;
@@ -108,7 +108,6 @@ public:
     const Block & getSampleBlock() const { return sample_block; }
 
     std::string dumpActions() const;
-    JSONBuilder::ItemPtr toTree() const;
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 

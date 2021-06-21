@@ -4,7 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -24,7 +24,7 @@ class FunctionConsistentHashImpl : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionConsistentHashImpl<Impl>>();
     }

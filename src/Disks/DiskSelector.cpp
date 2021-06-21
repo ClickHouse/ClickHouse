@@ -55,7 +55,11 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
 
     constexpr auto default_disk_name = "default";
-    DisksMap old_disks_minus_new_disks (result->getDisksMap());
+    std::set<String> old_disks_minus_new_disks;
+    for (const auto & [disk_name, _] : result->getDisksMap())
+    {
+        old_disks_minus_new_disks.insert(disk_name);
+    }
 
     for (const auto & disk_name : keys)
     {
@@ -69,11 +73,10 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         }
         else
         {
-            auto disk = old_disks_minus_new_disks[disk_name];
-
-            disk->applyNewSettings(config, context);
-
             old_disks_minus_new_disks.erase(disk_name);
+
+            /// TODO: Ideally ClickHouse shall complain if disk has changed, but
+            /// implementing that may appear as not trivial task.
         }
     }
 
@@ -88,7 +91,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             writeString("Disks ", warning);
 
         int index = 0;
-        for (const auto & [name, _] : old_disks_minus_new_disks)
+        for (const String & name : old_disks_minus_new_disks)
         {
             if (index++ > 0)
                 writeString(", ", warning);

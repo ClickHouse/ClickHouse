@@ -176,9 +176,8 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, expired_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, not_found_keys_size);
 
-    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
-    hit_count.fetch_add(found_keys_size, std::memory_order_relaxed);
-    found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
+    query_count.fetch_add(keys.size());
+    hit_count.fetch_add(found_keys_size);
 
     MutableColumns & fetched_columns_from_storage = result_of_fetch_from_storage.fetched_columns;
     const PaddedPODArray<KeyState> & key_index_to_state_from_storage = result_of_fetch_from_storage.key_index_to_state;
@@ -297,9 +296,8 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, expired_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, not_found_keys_size);
 
-    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
-    hit_count.fetch_add(found_keys_size, std::memory_order_relaxed);
-    found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
+    query_count.fetch_add(keys.size());
+    hit_count.fetch_add(found_keys_size);
 
     size_t keys_to_update_size = expired_keys_size + not_found_keys_size;
     auto update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(key_columns, result_of_fetch_from_storage.key_index_to_state, request, keys_to_update_size);
@@ -367,10 +365,8 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::simple)
     {
-        size_t keys_found;
-        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
+        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
-        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
     else
@@ -385,10 +381,8 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::simple)
     {
-        size_t keys_found;
-        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
+        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
-        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
     else
@@ -674,8 +668,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, requested_keys_size - found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheRequests);
-
-        found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
     }
     else
     {

@@ -24,22 +24,13 @@ namespace
 {
 
 /// Add all required expressions for missing columns calculation
-void addDefaultRequiredExpressionsRecursively(
-    const Block & block, const String & required_column_name, DataTypePtr required_column_type,
-    const ColumnsDescription & columns, ASTPtr default_expr_list_accum, NameSet & added_columns, bool null_as_default)
+void addDefaultRequiredExpressionsRecursively(const Block & block, const String & required_column, const ColumnsDescription & columns, ASTPtr default_expr_list_accum, NameSet & added_columns)
 {
     checkStackSize();
-
-    bool is_column_in_query = block.has(required_column_name);
-    bool convert_null_to_default = false;
-
-    if (is_column_in_query)
-        convert_null_to_default = null_as_default && block.findByName(required_column_name)->type->isNullable() && !required_column_type->isNullable();
-
-    if ((is_column_in_query && !convert_null_to_default) || added_columns.count(required_column_name))
+    if (block.has(required_column) || added_columns.count(required_column))
         return;
 
-    auto column_default = columns.getDefault(required_column_name);
+    auto column_default = columns.getDefault(required_column);
 
     if (column_default)
     {
@@ -52,25 +43,22 @@ void addDefaultRequiredExpressionsRecursively(
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
 
-        auto expr = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
-        if (is_column_in_query && convert_null_to_default)
-            expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(expr));
-        default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
+        auto cast_func = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column).type->getName()));
+        default_expr_list_accum->children.emplace_back(setAlias(cast_func, required_column));
+        added_columns.emplace(required_column);
 
-        added_columns.emplace(required_column_name);
-
-        for (const auto & next_required_column_name : required_columns_names)
-            addDefaultRequiredExpressionsRecursively(block, next_required_column_name, required_column_type, columns, default_expr_list_accum, added_columns, null_as_default);
+        for (const auto & required_column_name : required_columns_names)
+            addDefaultRequiredExpressionsRecursively(block, required_column_name, columns, default_expr_list_accum, added_columns);
     }
 }
 
-ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default)
+ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
 {
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
 
     NameSet added_columns;
     for (const auto & column : required_columns)
-        addDefaultRequiredExpressionsRecursively(block, column.name, column.type, columns, default_expr_list, added_columns, null_as_default);
+        addDefaultRequiredExpressionsRecursively(block, column.name, columns, default_expr_list, added_columns);
 
     if (default_expr_list->children.empty())
         return nullptr;
@@ -143,14 +131,12 @@ ActionsDAGPtr evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
-    ContextPtr context,
-    bool save_unneeded_columns,
-    bool null_as_default)
+    ContextPtr context, bool save_unneeded_columns)
 {
     if (!columns.hasDefaults())
         return nullptr;
 
-    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
+    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns);
     return createExpressions(header, expr_list, save_unneeded_columns, required_columns, context);
 }
 

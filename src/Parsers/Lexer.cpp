@@ -316,12 +316,7 @@ Token Lexer::nextTokenImpl()
         case '?':
             return Token(TokenType::QuestionMark, token_begin, ++pos);
         case ':':
-        {
-            ++pos;
-            if (pos < end && *pos == ':')
-                return Token(TokenType::DoubleColon, token_begin, ++pos);
-            return Token(TokenType::Colon, token_begin, pos);
-        }
+            return Token(TokenType::Colon, token_begin, ++pos);
         case '|':
         {
             ++pos;

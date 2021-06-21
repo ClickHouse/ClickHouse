@@ -191,7 +191,7 @@ private:
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
-    ContextMutablePtr live_view_context;
+    ContextPtr live_view_context;
 
     Poco::Logger * log;
 

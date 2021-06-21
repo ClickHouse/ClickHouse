@@ -35,7 +35,6 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment,
         bool persistent_);
 
     DiskPtr disk;
@@ -92,7 +91,6 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment,
         bool persistent_);
 };
 

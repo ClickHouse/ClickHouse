@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <common/DateLUT.h>
 #include <Core/Field.h>
@@ -16,7 +16,7 @@ class FunctionTimezone : public IFunction
 {
 public:
     static constexpr auto name = "timezone";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionTimezone>();
     }

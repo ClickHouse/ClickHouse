@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -27,7 +27,7 @@ class FunctionEmptyArrayToSingle : public IFunction
 {
 public:
     static constexpr auto name = "emptyArrayToSingle";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
 
     String getName() const override { return name; }
 

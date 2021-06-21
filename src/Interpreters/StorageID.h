@@ -54,7 +54,7 @@ struct StorageID
 
     String getNameForLogs() const;
 
-    explicit operator bool () const
+    operator bool () const
     {
         return !empty();
     }
@@ -70,7 +70,6 @@ struct StorageID
     }
 
     bool operator<(const StorageID & rhs) const;
-    bool operator==(const StorageID & rhs) const;
 
     void assertNotEmpty() const
     {

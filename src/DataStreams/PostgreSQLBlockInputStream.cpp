@@ -161,7 +161,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
         case ValueType::vtUUID:
-            assert_cast<ColumnUUID &>(column).insert(parse<UUID>(value.data(), value.size()));
+            assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
             break;
         case ValueType::vtDate:
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
@@ -193,7 +193,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
 
             size_t dimension = 0, max_dimension = 0, expected_dimensions = array_info[idx].num_dimensions;
             const auto parse_value = array_info[idx].pqxx_parser;
-            std::vector<Row> dimensions(expected_dimensions + 1);
+            std::vector<std::vector<Field>> dimensions(expected_dimensions + 1);
 
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
@@ -210,8 +210,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
                 {
                     max_dimension = std::max(max_dimension, dimension);
 
-                    --dimension;
-                    if (dimension == 0)
+                    if (--dimension == 0)
                         break;
 
                     dimensions[dimension].emplace_back(Array(dimensions[dimension + 1].begin(), dimensions[dimension + 1].end()));

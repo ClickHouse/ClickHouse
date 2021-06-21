@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CombinedCardinalityEstimator.h>
+#include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -21,7 +22,6 @@
 
 namespace DB
 {
-struct Settings;
 namespace detail
 {
     /** Hash function for uniqCombined/uniqCombined64 (based on Ret).

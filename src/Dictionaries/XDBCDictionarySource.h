@@ -31,7 +31,7 @@ public:
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix_,
         const Block & sample_block_,
-        ContextConstPtr context_,
+        ContextPtr context_,
         BridgeHelperPtr bridge);
 
     /// copy-constructor is provided in order to support cloneability
