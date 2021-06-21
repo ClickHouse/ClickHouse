@@ -47,7 +47,7 @@ public:
         }
 
         virtual bool execute() = 0;
-        virtual ~JobWithPriority();
+        virtual ~JobWithPriority() = default;
     };
 
     using Job = std::shared_ptr<JobWithPriority>;

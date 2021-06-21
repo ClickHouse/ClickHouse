@@ -31,6 +31,7 @@ class ReplicatedMergeTreeQueue
 private:
     friend class CurrentlyExecuting;
     friend class ReplicatedMergeTreeMergePredicate;
+    friend class MergeFromLogEntryTask;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;

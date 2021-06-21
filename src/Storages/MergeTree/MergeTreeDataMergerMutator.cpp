@@ -425,7 +425,7 @@ static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeS
 
 
 /// parts should be sorted.
-Future<MergeTreeData::MutableDataPartPtr> MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
+MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,
     const StorageMetadataPtr & metadata_snapshot,
     MergeList::Entry & merge_entry,
@@ -441,7 +441,7 @@ Future<MergeTreeData::MutableDataPartPtr> MergeTreeDataMergerMutator::mergeParts
 {
     auto deduplicate_by_columns_ptr = std::make_shared<Names>(deduplicate_by_columns);
 
-    auto task = std::make_shared<MergeTask>(
+    return std::make_shared<MergeTask>(
         future_part,
         const_cast<StorageMetadataPtr &>(metadata_snapshot),
         merge_entry,
@@ -457,10 +457,6 @@ Future<MergeTreeData::MutableDataPartPtr> MergeTreeDataMergerMutator::mergeParts
         data,
         merges_blocker,
         ttl_merges_blocker);
-
-    while (task->execute()) {} // ?
-
-    return task->getFuture();
 }
 
 
@@ -1415,7 +1411,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
                     projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
                 LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
-                auto tmp_part_future = mergePartsToTemporaryPart(
+                auto tmp_part_merge_task = mergePartsToTemporaryPart(
                     projection_future_part,
                     projection.metadata,
                     merge_entry,
@@ -1428,7 +1424,8 @@ void MergeTreeDataMergerMutator::writeWithProjections(
                     projection_merging_params,
                     new_data_part.get(),
                     "tmp_merge_");
-                next_level_parts.push_back(tmp_part_future.get());
+
+                next_level_parts.push_back(executeInPlace(tmp_part_merge_task));
 
                 next_level_parts.back()->is_temp = true;
             }

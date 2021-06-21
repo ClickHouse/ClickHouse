@@ -862,9 +862,7 @@ bool StorageMergeTree::mergeSelectedParts(
     try
     {
 
-        using PartPtrFuture = Future<MergeTreeData::MutableDataPartPtr>;
-
-        auto new_part_future = merger_mutator.mergePartsToTemporaryPart(
+        auto new_part_task = merger_mutator.mergePartsToTemporaryPart(
             future_part,
             metadata_snapshot,
             *(merge_list_entry),
@@ -876,13 +874,9 @@ bool StorageMergeTree::mergeSelectedParts(
             deduplicate_by_columns,
             merging_params);
 
-        auto second_future = new_part_future.then([&](PartPtrFuture part) {
-            auto anime = part.get();
-            merger_mutator.renameMergedTemporaryPart(anime, future_part->parts, nullptr);
-            write_part_log({});
-        });
-
-        second_future.get();
+        new_part = executeInPlace(new_part_task);
+        merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, nullptr);
+        write_part_log({});
     }
     catch (...)
     {
@@ -1060,7 +1054,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
         executor.execute({[this, metadata_snapshot, merge_entry, share_lock] () mutable
         {
             return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
-        }, PoolType::MERGE_MUTATE});
+        }, PoolType::MUTATE});
         return true;
     }
     if (mutate_entry)
@@ -1068,7 +1062,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
         executor.execute({[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
         {
             return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-        }, PoolType::MERGE_MUTATE});
+        }, PoolType::MUTATE});
         return true;
     }
     else if (auto cmp_lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
@@ -1083,7 +1077,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
             clearOldMutations();
             clearEmptyParts();
             return true;
-        }, PoolType::MERGE_MUTATE});
+        }, PoolType::MUTATE}); // FIXME
         return true;
     }
     return false;

@@ -111,16 +111,6 @@ static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeS
 }
 
 
-bool MergeTaskChain::execute()
-{
-    if (tasks.front()->execute())
-        return true;
-
-    tasks.pop_front();
-    return !tasks.empty();
-}
-
-
 void MergeTask::prepare()
 {
     const String tmp_prefix = parent_part ? prefix : "tmp_merge_";
@@ -927,10 +917,5 @@ void MergeTask::HorizontalMergeImpl::begin()
     task.gathering_column_names.clear();
 }
 
-
-void MergeTaskChain::add(MergeTaskPtr task)
-{
-    tasks.emplace_back(task);
-}
 
 }

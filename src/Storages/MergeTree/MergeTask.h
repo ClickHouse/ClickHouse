@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <Common/Future.h>
 
 #include "Storages/MergeTree/MergeProgress.h"
@@ -10,10 +9,12 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include "Storages/MergeTree/ColumnSizeEstimator.h"
 #include "Storages/MergeTree/MergedColumnOnlyOutputStream.h"
+#include <DataStreams/ColumnGathererStream.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
 #include <memory>
 #include <list>
+
 namespace DB
 {
 
@@ -276,19 +277,11 @@ public:
     void begin() override;
 };
 
-/**
- * This is used for chaining merges of the main parts and projections.
-*/
-class MergeTaskChain : public BackgroundTask
+/// FIXME 
+[[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeInPlace(MergeTaskPtr task)
 {
-public:
-    bool execute() override;
-
-    void add(MergeTaskPtr task);
-
-private:
-    std::list<MergeTaskPtr> tasks;
-};
-
+    while (task->execute()) {}
+    return task->getFuture().get();
+}
 
 }

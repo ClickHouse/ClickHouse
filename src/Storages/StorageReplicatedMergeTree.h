@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergeFromLogEntryTask.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
@@ -281,6 +282,7 @@ private:
     friend class ReplicatedMergeTreeQueue;
     friend class PartMovesBetweenShardsOrchestrator;
     friend class MergeTreeData;
+    friend class MergeFromLogEntryTask;
 
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
@@ -515,6 +517,9 @@ private:
 
 
     ReplicatedMergeTreeQueue::SelectedEntryPtr selectQueueEntry();
+
+
+    MergeFromLogEntryTaskPtr getTaskToProcessMergeQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
     bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 

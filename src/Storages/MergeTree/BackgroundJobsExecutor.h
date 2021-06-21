@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTask.h>
 #include <Common/ThreadPool.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <pcg_random.hpp>
@@ -31,7 +32,8 @@ struct BackgroundTaskSchedulingSettings
 /// background pools. When it receives new job it will execute new task in corresponding pool.
 enum class PoolType
 {
-    MERGE_MUTATE,
+    MERGE,
+    MUTATE,
     MOVE,
     FETCH,
 };
@@ -76,8 +78,11 @@ private:
     /// no new jobs.
     std::atomic<size_t> no_work_done_count{0};
 
+    /// Pool for merges
+    PrioritizedThreadPool pool_for_merges;
     /// Pools where we execute background jobs
     std::unordered_map<PoolType, ThreadPool> pools;
+
     /// Configs for background pools
     std::unordered_map<PoolType, PoolConfig> pools_configs;
 
@@ -101,6 +106,9 @@ public:
 
     /// Executes job in a nested pool
     void execute(JobAndPool job_and_pool);
+
+    /// Execute mergetask
+    void execute(std::shared_ptr<PriorityJobContainer::JobWithPriority> merge_task);
 
     /// Just call finish
     virtual ~IBackgroundJobExecutor();

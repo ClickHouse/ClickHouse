@@ -1568,10 +1568,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             do_fetch = true;
             break;
         case LogEntry::MERGE_PARTS:
-            /// Sometimes it's better to fetch the merged part instead of merging,
-            /// e.g when we don't have all the source parts.
-            do_fetch = !tryExecuteMerge(entry);
-            break;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
         case LogEntry::MUTATE_PART:
             /// Sometimes it's better to fetch mutated part instead of merging.
             do_fetch = !tryExecutePartMutation(entry);
@@ -1587,9 +1584,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected log entry type: {}", static_cast<int>(entry.type));
     }
-
-    if (do_fetch)
-        return executeFetch(entry);
 
     return true;
 }
@@ -1782,7 +1776,6 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             entry.deduplicate_by_columns,
             merging_params);
 
-        part = part_future.get();
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
 
@@ -3149,9 +3142,9 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr StorageReplicatedMergeTree::selectQue
     return selected;
 }
 
+
 bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry)
 {
-
     LogEntryPtr & entry = selected_entry->log_entry;
     return queue.processEntry([this]{ return getZooKeeper(); }, entry, [&](LogEntryPtr & entry_to_process)
     {
@@ -3206,8 +3199,10 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecuto
     if (!selected_entry)
         return false;
 
+    auto job_type = selected_entry->log_entry->type;
+
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
-    if (selected_entry->log_entry->type == LogEntry::GET_PART)
+    if (job_type == LogEntry::GET_PART)
     {
         executor.execute({[this, selected_entry] () mutable
         {
@@ -3215,12 +3210,19 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecuto
         }, PoolType::FETCH});
         return true;
     }
+    else if (job_type == LogEntry::MERGE_PARTS)
+    {
+        auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry->log_entry, *this);
+        executor.execute(task);
+        return true;
+    }
     else
     {
+        /// Execute in common pool. For now it is MUTATE pool
         executor.execute({[this, selected_entry] () mutable
         {
             return processQueueEntry(selected_entry);
-        }, PoolType::MERGE_MUTATE});
+        }, PoolType::MUTATE});
         return true;
     }
 }

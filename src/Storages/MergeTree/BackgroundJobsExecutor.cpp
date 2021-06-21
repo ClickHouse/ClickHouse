@@ -26,6 +26,15 @@ IBackgroundJobExecutor::IBackgroundJobExecutor(
     for (const auto & pool_config : pools_configs_)
     {
         const auto max_pool_size = pool_config.get_max_pool_size();
+
+        if (pool_config.pool_type == PoolType::MERGE)
+        {
+            pool_for_merges.setMaxThreads(max_pool_size);
+            pool_for_merges.setQueueSize(max_pool_size);
+            pool_for_merges.setMaxFreeThreads(0);
+            continue;
+        }
+
         pools.try_emplace(pool_config.pool_type, max_pool_size, 0, max_pool_size, false);
         pools_configs.emplace(pool_config.pool_type, pool_config);
     }
@@ -149,6 +158,16 @@ catch (...) /// Exception while we looking for a task, reschedule
     scheduleTask(/* with_backoff = */ true);
 }
 
+
+void IBackgroundJobExecutor::execute(std::shared_ptr<PriorityJobContainer::JobWithPriority> merge_task)
+{
+    /// TODO: try catch
+    pool_for_merges.scheduleOrThrowOnError(merge_task);
+    scheduleTask(/* with_backoff = */ false);
+}
+
+
+
 void IBackgroundJobExecutor::start()
 {
     std::lock_guard lock(scheduling_task_mutex);
@@ -198,7 +217,13 @@ BackgroundJobsExecutor::BackgroundJobsExecutor(
         global_context_->getBackgroundProcessingTaskSchedulingSettings(),
         {PoolConfig
             {
-                .pool_type = PoolType::MERGE_MUTATE,
+                .pool_type = PoolType::MERGE,
+                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
+                .tasks_metric = CurrentMetrics::BackgroundPoolTask
+            },
+        PoolConfig
+            {
+                .pool_type = PoolType::MUTATE,
                 .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
                 .tasks_metric = CurrentMetrics::BackgroundPoolTask
             },

@@ -11,7 +11,6 @@
 #endif
 
 
-
 template <typename T>
 using Future = boost::future<T>;
 

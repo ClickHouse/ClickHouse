@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeType.h>
+#include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 
 
@@ -94,7 +95,7 @@ public:
       * time_of_merge - the time when the merge was assigned.
       * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
       */
-    Future<MergeTreeData::MutableDataPartPtr> mergePartsToTemporaryPart(
+    MergeTaskPtr mergePartsToTemporaryPart(
         FutureMergedMutatedPartPtr future_part,
         const StorageMetadataPtr & metadata_snapshot,
         MergeListEntry & merge_entry,
