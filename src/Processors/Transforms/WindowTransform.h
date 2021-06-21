@@ -8,7 +8,6 @@
 
 #include <deque>
 
-
 namespace DB
 {
 

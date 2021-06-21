@@ -86,19 +86,18 @@ DataTypePtr convertTypeToNullable(const DataTypePtr & type)
     return makeNullable(type);
 }
 
-void convertColumnToNullable(ColumnWithTypeAndName & column, bool remove_low_card)
+void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability)
 {
-    if (remove_low_card && column.type->lowCardinality())
+    if (low_card_nullability && column.type->lowCardinality())
     {
         column.column = recursiveRemoveLowCardinality(column.column);
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 
-    if (column.type->isNullable() || !canBecomeNullable(column.type))
+    if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 
-    column.type = convertTypeToNullable(column.type);
-
+    column.type = makeNullable(column.type);
     if (column.column)
     {
         if (column.column->lowCardinality())
@@ -159,7 +158,7 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
     ColumnPtr dst_not_null = JoinCommon::emptyNotNullableClone(dst_column);
     bool lowcard_src = JoinCommon::emptyNotNullableClone(src_column)->lowCardinality();
     bool lowcard_dst = dst_not_null->lowCardinality();
-    bool change_lowcard = lowcard_src != lowcard_dst;
+    bool change_lowcard = (!lowcard_src && lowcard_dst) || (lowcard_src && !lowcard_dst);
 
     if (nullable_src && !nullable_dst)
     {
@@ -311,7 +310,7 @@ void createMissedColumns(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & column = block.getByPosition(i);
-        if (!column.column) //-V1051
+        if (!column.column)
             column.column = column.type->createColumn();
     }
 }
@@ -347,11 +346,6 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const TableJ
         for (size_t i = 0; i < columns_to_add.columns(); ++i)
         {
             const auto & col = columns_to_add.getByPosition(i);
-            if (block.has(col.name))
-            {
-                /// For StorageJoin we discarded table qualifiers, so some names may clash
-                continue;
-            }
             block.insert({
                 col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(),
                 col.type,

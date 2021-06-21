@@ -1,5 +1,5 @@
 #include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 
 #include <Core/Block.h>
 
@@ -366,18 +366,6 @@ void Block::setColumns(const Columns & columns)
     size_t num_columns = data.size();
     for (size_t i = 0; i < num_columns; ++i)
         data[i].column = columns[i];
-}
-
-
-void Block::setColumn(size_t position, ColumnWithTypeAndName && column)
-{
-    if (position >= data.size())
-        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Block::setColumn(), max position {}",
-                        position, toString(data.size()));
-
-    data[position].name = std::move(column.name);
-    data[position].type = std::move(column.type);
-    data[position].column = std::move(column.column);
 }
 
 

@@ -13,7 +13,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <common/range.h>
+#include <ext/range.h>
 
 #include <common/unaligned.h>
 #include "Columns/ColumnConst.h"
@@ -674,7 +674,7 @@ UInt128 ColumnUnique<ColumnType>::IncrementalHash::getHash(const ColumnType & co
             column.updateHashWithValue(i, sip_hash);
 
         std::lock_guard lock(mutex);
-        sip_hash.get128(hash);
+        sip_hash.get128(hash.low, hash.high);
         cur_hash = hash;
         num_added_rows.store(column_size);
     }

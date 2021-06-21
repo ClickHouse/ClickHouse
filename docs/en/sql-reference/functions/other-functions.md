@@ -696,6 +696,10 @@ Returns the server’s uptime in seconds.
 
 Returns the version of the server as a string.
 
+## timezone() {#timezone}
+
+Returns the timezone of the server.
+
 ## blockNumber {#blocknumber}
 
 Returns the sequence number of the data block where the row is located.
@@ -1188,109 +1192,6 @@ SELECT defaultValueOfTypeName('Nullable(Int8)')
 └──────────────────────────────────────────┘
 ```
 
-## indexHint {#indexhint}
-The function is intended for debugging and introspection purposes. The function ignores it's argument and always returns 1. Arguments are not even evaluated.
-
-But for the purpose of index analysis, the argument of this function is analyzed as if it was present directly without being wrapped inside `indexHint` function. This allows to select data in index ranges by the corresponding condition but without further filtering by this condition. The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
-
-**Syntax**
-
-```sql
-SELECT * FROM table WHERE indexHint(<expression>)
-```
-
-**Returned value**
-
-1. Type: [Uint8](https://clickhouse.yandex/docs/en/data_types/int_uint/#diapazony-uint).
-
-**Example**
-
-Here is the example of test data from the table [ontime](../../getting-started/example-datasets/ontime.md).
-
-Input table:
-
-```sql
-SELECT count() FROM ontime
-```
-
-```text
-┌─count()─┐
-│ 4276457 │
-└─────────┘
-```
-
-The table has indexes on the fields `(FlightDate, (Year, FlightDate))`.
-
-Create a query, where the index is not used.
-
-Query:
-
-```sql
-SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
-```
-
-ClickHouse processed the entire table (`Processed 4.28 million rows`).
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-01-01 │   13970 │
-│ 2017-01-02 │   15882 │
-........................
-│ 2017-09-28 │   16411 │
-│ 2017-09-29 │   16384 │
-│ 2017-09-30 │   12520 │
-└────────────┴─────────┘
-```
-
-To apply the index, select a specific date.
-
-Query:
-
-```sql
-SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
-```
-
-By using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-09-15 │   16428 │
-└────────────┴─────────┘
-```
-
-Now wrap the expression `k = '2017-09-15'` into `indexHint` function.
-
-Query:
-
-```sql
-SELECT
-    FlightDate AS k,
-    count()
-FROM ontime
-WHERE indexHint(k = '2017-09-15')
-GROUP BY k
-ORDER BY k ASC
-```
-
-ClickHouse used the index in the same way as the previous time (`Processed 32.74 thousand rows`).
-The expression `k = '2017-09-15'` was not used when generating the result.
-In examle the `indexHint` function allows to see adjacent dates.
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-09-14 │    7071 │
-│ 2017-09-15 │   16428 │
-│ 2017-09-16 │    1077 │
-│ 2017-09-30 │    8167 │
-└────────────┴─────────┘
-```
-
 ## replicate {#other-functions-replicate}
 
 Creates an array with a single value.
@@ -1654,7 +1555,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Returns list of values corresponded to list of keys.
 
-If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+If certain doesn’t exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
 
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
 
@@ -1714,7 +1615,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity {#identity}
 
-Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer does not look inside `identity` functions. Also constant folding is not applied too.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn’t look inside `identity` functions. Also constant folding is not applied too.
 
 **Syntax**
 

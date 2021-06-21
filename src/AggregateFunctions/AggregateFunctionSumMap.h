@@ -13,7 +13,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 
-#include <Common/FieldVisitorSum.h>
+#include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <map>
@@ -21,7 +21,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {

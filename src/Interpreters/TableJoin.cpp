@@ -156,12 +156,9 @@ NameSet TableJoin::requiredRightKeys() const
 {
     NameSet required;
     for (const auto & name : key_names_right)
-    {
-        auto rename = renamedRightColumnName(name);
         for (const auto & column : columns_added_by_join)
-            if (rename == column.name)
+            if (name == column.name)
                 required.insert(name);
-    }
     return required;
 }
 
@@ -217,12 +214,12 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
 
 bool TableJoin::leftBecomeNullable(const DataTypePtr & column_type) const
 {
-    return forceNullableLeft() && JoinCommon::canBecomeNullable(column_type);
+    return forceNullableLeft() && column_type->canBeInsideNullable();
 }
 
 bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
 {
-    return forceNullableRight() && JoinCommon::canBecomeNullable(column_type);
+    return forceNullableRight() && column_type->canBeInsideNullable();
 }
 
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
@@ -236,7 +233,7 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
     }
 
     if (rightBecomeNullable(type))
-        type = JoinCommon::convertTypeToNullable(type);
+        type = makeNullable(type);
 
     columns_added_by_join.emplace_back(joined_column.name, type);
 }
@@ -268,7 +265,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns
             /// No need to nullify constants
             bool is_column_const = col.column && isColumnConst(*col.column);
             if (!is_column_const)
-                col.type = JoinCommon::convertTypeToNullable(col.type);
+                col.type = makeNullable(col.type);
         }
     }
 
@@ -465,13 +462,6 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
             name = it->second;
     }
     return dag;
-}
-
-String TableJoin::renamedRightColumnName(const String & name) const
-{
-    if (const auto it = renames.find(name); it != renames.end())
-        return it->second;
-    return name;
 }
 
 }

@@ -20,7 +20,6 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
-#include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Aggregator.h>
@@ -52,7 +51,6 @@ struct EmergingPartInfo
 
 struct CurrentlySubmergingEmergingTagger;
 
-struct SelectQueryOptions;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
@@ -113,7 +111,7 @@ namespace ErrorCodes
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMergerMutator
 
-class MergeTreeData : public IStorage, public WithMutableContext
+class MergeTreeData : public IStorage, public WithContext
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
@@ -128,8 +126,6 @@ public:
     using DataPartState = IMergeTreeDataPart::State;
     using DataPartStates = std::initializer_list<DataPartState>;
     using DataPartStateVector = std::vector<DataPartState>;
-
-    using PinnedPartUUIDsPtr = std::shared_ptr<const PinnedPartUUIDs>;
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
     constexpr static auto DETACHED_DIR_NAME = "detached";
@@ -220,15 +216,15 @@ public:
     /// After this method setColumns must be called
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     /// Create part, that already exists on filesystem.
     /// After this methods 'loadColumnsChecksumsIndexes' must be called.
     MutableDataPartPtr createPart(const String & name,
-        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
-        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
@@ -353,7 +349,7 @@ public:
     MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
                   const StorageInMemoryMetadata & metadata_,
-                  ContextMutablePtr context_,
+                  ContextPtr context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
@@ -361,18 +357,6 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
-    bool getQueryProcessingStageWithAggregateProjection(
-        ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const;
-
-    QueryProcessingStage::Enum getQueryProcessingStage(
-        ContextPtr query_context,
-        QueryProcessingStage::Enum to_stage,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & info) const override;
-
-    ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
-
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -404,11 +388,10 @@ public:
     DataParts getDataParts(const DataPartStates & affordable_states) const;
     /// Returns sorted list of the parts with specified states
     ///  out_states will contain snapshot of each part state
-    DataPartsVector getDataPartsVector(
-        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
+    DataPartsVector getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
 
     /// Returns absolutely all parts (and snapshot of their states)
-    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
+    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
     /// Returns all detached parts
     DetachedPartsInfo getDetachedParts() const;
@@ -613,7 +596,7 @@ public:
 
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
-    void checkPartCanBeDropped(const String & part_name);
+    void checkPartCanBeDropped(const ASTPtr & part);
 
     Pipe alterPartition(
         const StorageMetadataPtr & metadata_snapshot,
@@ -778,13 +761,6 @@ public:
     /// Remove current query id after query finished.
     void removeQueryId(const String & query_id) const;
 
-    /// Return the partition expression types as a Tuple type. Return DataTypeUInt8 if partition expression is empty.
-    DataTypePtr getPartitionValueType() const;
-
-    /// Construct a block consisting only of possible virtual columns for part pruning.
-    /// If one_part is true, fill in at most one part.
-    Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const;
-
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
 
@@ -803,8 +779,6 @@ public:
 
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
-
-    PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
     /// Return main processing background job, like merge/mutate/fetch and so on
     virtual std::optional<JobAndPool> getDataProcessingJob() = 0;
@@ -859,10 +833,6 @@ protected:
     /// Storage settings.
     /// Use get and set to receive readonly versions.
     MultiVersion<MergeTreeSettings> storage_settings;
-
-    /// Used to determine which UUIDs to send to root query executor for deduplication.
-    mutable std::shared_mutex pinned_part_uuids_mutex;
-    PinnedPartUUIDsPtr pinned_part_uuids;
 
     /// Work with data parts
 
@@ -993,23 +963,18 @@ protected:
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
 
-    /// Tries to drop part in background without any waits or throwing exceptions in case of errors.
-    virtual void dropPartNoWaitNoThrow(const String & part_name) = 0;
-
-    virtual void dropPart(const String & part_name, bool detach, ContextPtr context) = 0;
-    virtual void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) = 0;
+    virtual void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr context, bool throw_if_noop = true) = 0;
     virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) = 0;
     virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) = 0;
     virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) = 0;
 
+    /// Makes sense only for replicated tables
     virtual void fetchPartition(
         const ASTPtr & partition,
         const StorageMetadataPtr & metadata_snapshot,
         const String & from,
         bool fetch_part,
         ContextPtr query_context);
-
-    virtual void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context);
 
     void writePartLog(
         PartLogElement::Type type,

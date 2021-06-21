@@ -1,4 +1,5 @@
 #include "MergeTreeDataPartWide.h"
+#include <Poco/File.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
@@ -22,9 +23,8 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
        MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::WIDE, parent_part_)
+        const std::optional<String> & relative_path_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::WIDE)
 {
 }
 
@@ -33,9 +33,8 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::WIDE, parent_part_)
+        const std::optional<String> & relative_path_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::WIDE)
 {
 }
 

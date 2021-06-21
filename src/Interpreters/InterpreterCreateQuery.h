@@ -22,10 +22,10 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 /** Allows to create new table or database,
   *  or create an object for existing table or database.
   */
-class InterpreterCreateQuery : public IInterpreter, WithMutableContext
+class InterpreterCreateQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
+    InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextPtr context_);
 
     BlockIO execute() override;
 
@@ -35,7 +35,6 @@ public:
 
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
-    static ASTPtr formatProjections(const ProjectionsDescription & projections);
 
     void setForceRestoreData(bool has_force_restore_data_flag_)
     {
@@ -67,11 +66,11 @@ private:
         ColumnsDescription columns;
         IndicesDescription indices;
         ConstraintsDescription constraints;
-        ProjectionsDescription projections;
     };
 
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
+    BlockIO createDictionary(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties setProperties(ASTCreateQuery & create) const;

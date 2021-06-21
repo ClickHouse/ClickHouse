@@ -52,7 +52,7 @@ But for storing archives with rare queries, shelves will work.
 ## RAID {#raid}
 
 When using HDD, you can combine their RAID-10, RAID-5, RAID-6 or RAID-50.
-For Linux, software RAID is better (with `mdadm`). We do not recommend using LVM.
+For Linux, software RAID is better (with `mdadm`). We don’t recommend using LVM.
 When creating RAID-10, select the `far` layout.
 If your budget allows, choose RAID-10.
 

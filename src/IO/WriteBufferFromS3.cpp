@@ -112,6 +112,18 @@ void WriteBufferFromS3::finalizeImpl()
     finalized = true;
 }
 
+WriteBufferFromS3::~WriteBufferFromS3()
+{
+    try
+    {
+        finalizeImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
 void WriteBufferFromS3::createMultipartUpload()
 {
     Aws::S3::Model::CreateMultipartUploadRequest req;

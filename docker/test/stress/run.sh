@@ -20,14 +20,6 @@ function configure()
 
     # since we run clickhouse from root
     sudo chown root: /var/lib/clickhouse
-
-    # Set more frequent update period of asynchronous metrics to more frequently update information about real memory usage (less chance of OOM).
-    echo "<yandex><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></yandex>" \
-        > /etc/clickhouse-server/config.d/asynchronous_metrics_update_period_s.xml
-
-    # Set maximum memory usage as half of total memory (less chance of OOM).
-    echo "<yandex><max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio></yandex>" \
-        > /etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml
 }
 
 function stop()
@@ -90,7 +82,7 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-./stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
+./stress --hung-check --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
     && echo -e 'Test script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
@@ -144,7 +136,6 @@ pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhous
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
 tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
-tar -chf /test_output/trace_log_dump.tar /var/lib/clickhouse/data/system/trace_log ||:
 
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%') LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv

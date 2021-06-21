@@ -57,7 +57,6 @@ struct QueryLogElement
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
-    std::set<String> query_projections;
 
     std::unordered_set<String> used_aggregate_functions;
     std::unordered_set<String> used_aggregate_function_combinators;

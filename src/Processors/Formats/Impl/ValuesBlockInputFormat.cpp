@@ -6,6 +6,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Common/FieldVisitors.h>
 #include <Core/Block.h>
 #include <common/find_symbols.h>
 #include <Common/typeid_cast.h>
