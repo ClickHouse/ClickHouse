@@ -12,7 +12,6 @@
 #include <numeric>
 #include <unordered_map>
 #include <unordered_set>
-#include <ext/range.h>
 
 
 namespace DB
@@ -206,7 +205,7 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
     if (key_types.size() != key->size())
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Key structure does not match, expected {}", getKeyDescription());
 
-    for (const auto i : ext::range(0, key_types.size()))
+    for (size_t i = 0; i < key_types.size(); ++i)
     {
         const auto & expected_type = (*key)[i].type;
         const auto & actual_type = key_types[i];

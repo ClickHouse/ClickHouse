@@ -257,27 +257,6 @@ if (USE_EMBEDDED_COMPILER)
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
-    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
-    set_source_files_properties(
-        Dictionaries/FlatDictionary.cpp
-        Dictionaries/HashedDictionary.cpp
-        Dictionaries/CacheDictionary.cpp
-        Dictionaries/IPAddressDictionary.cpp
-        Dictionaries/RangeHashedDictionary.cpp
-        Dictionaries/ComplexKeyHashedDictionary.cpp
-        Dictionaries/ComplexKeyCacheDictionary.cpp
-        Dictionaries/ComplexKeyCacheDictionary_generate1.cpp
-        Dictionaries/ComplexKeyCacheDictionary_generate2.cpp
-        Dictionaries/ComplexKeyCacheDictionary_generate3.cpp
-        Dictionaries/ODBCBlockInputStream.cpp
-        Dictionaries/HTTPDictionarySource.cpp
-        Dictionaries/LibraryDictionarySource.cpp
-        Dictionaries/ExecutableDictionarySource.cpp
-        Dictionaries/ClickHouseDictionarySource.cpp
-        PROPERTIES COMPILE_FLAGS -g0)
-endif ()
-
 # Otherwise it will slow down stack traces printing too much.
 set_source_files_properties(
         Common/Elf.cpp
@@ -496,6 +475,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
         -Wno-zero-as-null-pointer-constant
+        -Wno-covered-switch-default
         -Wno-undef
         -Wno-sign-compare
         -Wno-used-but-marked-unused
