@@ -223,6 +223,11 @@ def test_acls(started_cluster):
 
     yet_other_auth_connection.set("/test_multi_all_acl", b"Y")
 
+    no_auth_connection = get_genuine_zk()
+
+    with pytest.raises(Exception):
+        no_auth_connection.set("/test_multi_all_acl", b"Z")
+
     copy_zookeeper_data()
 
     genuine_connection = get_genuine_zk()

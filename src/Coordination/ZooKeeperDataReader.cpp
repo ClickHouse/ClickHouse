@@ -289,6 +289,7 @@ Coordination::ZooKeeperRequestPtr deserializeCreateTxn(ReadBuffer & in)
     Coordination::read(result->data, in);
     Coordination::read(result->acls, in);
     Coordination::read(result->is_ephemeral, in);
+    result->need_to_hash_acls = false;
     /// How we should use it? It should just increment on request execution
     int32_t parent_c_version;
     Coordination::read(parent_c_version, in);
@@ -476,7 +477,7 @@ bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*l
             if (request->getOpNum() == Coordination::OpNum::Multi && hasErrorsInMultiRequest(request))
                 return true;
 
-            storage.processRequest(request, session_id, zxid);
+            storage.processRequest(request, session_id, zxid, /* check_acl = */ false);
         }
     }
 
