@@ -26,12 +26,12 @@ static thread_local size_t max_stack_size = 0;
  * @param address_ - stack address
  * @return stack size
  */
-size_t getStackSize(void **address_)
+size_t getStackSize(void ** out_address)
 {
     using namespace DB;
 
     size_t size;
-    void *address;
+    void * address;
 
 #if defined(OS_DARWIN)
     // pthread_get_stacksize_np() returns a value too low for the main thread on
@@ -62,8 +62,8 @@ size_t getStackSize(void **address_)
         throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
 #endif // OS_DARWIN
 
-    if (address_)
-        *address_ = address;
+    if (out_address)
+        *out_address = address;
 
     return size;
 }
