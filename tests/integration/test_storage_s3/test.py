@@ -276,28 +276,28 @@ def test_put_get_with_redirect(started_cluster):
 
 # Test put with restricted S3 server redirect.
 def test_put_with_zero_redirect(started_cluster):
-    # type: (clickhousecluster) -> none
+    # type: (ClickHouseCluster) -> None
 
     bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["s3_max_redirects"]  # type: clickhouseinstance
-    table_format = "column1 uint32, column2 uint32, column3 uint32"
+    instance = started_cluster.instances["s3_max_redirects"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
     filename = "test.csv"
 
-    # should work without redirect
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'csv', '{}') values {}".format(
-        started_cluster.minio_ip, minio_internal_port, bucket, filename, table_format, values)
+    # Should work without redirect
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+        started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename, table_format, values)
     run_query(instance, query)
 
-    # should not work with redirect
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'csv', '{}') values {}".format(
+    # Should not work with redirect
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
         started_cluster.minio_redirect_host, started_cluster.minio_redirect_port, bucket, filename, table_format, values)
-    exception_raised = false
+    exception_raised = False
     try:
         run_query(instance, query)
-    except exception as e:
-        assert str(e).find("too many redirects while trying to access") != -1
-        exception_raised = true
+    except Exception as e:
+        assert str(e).find("Too many redirects while trying to access") != -1
+        exception_raised = True
     finally:
         assert exception_raised
 
