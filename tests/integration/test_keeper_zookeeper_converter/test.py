@@ -204,35 +204,35 @@ def test_multi_and_failed_requests(started_cluster):
     compare_states(genuine_connection, fake_connection)
 
 
-#def test_acls(started_cluster):
-#    restart_and_clear_zookeeper()
-#    genuine_connection = get_genuine_zk()
-#    genuine_connection.add_auth('digest', 'user1:password1')
-#    genuine_connection.add_auth('digest', 'user2:password2')
-#    genuine_connection.add_auth('digest', 'user3:password3')
-#
-#    genuine_connection.create("/test_multi_all_acl", b"data", acl=[make_acl("auth", "", all=True)])
-#
-#    other_connection = get_genuine_zk()
-#    other_connection.add_auth('digest', 'user1:password1')
-#    other_connection.set("/test_multi_all_acl", b"X")
-#    assert other_connection.get("/test_multi_all_acl")[0] == b"X"
-#
-#    yet_other_auth_connection = get_genuine_zk()
-#    yet_other_auth_connection.add_auth('digest', 'user2:password2')
-#
-#    yet_other_auth_connection.set("/test_multi_all_acl", b"Y")
-#
-#    copy_zookeeper_data()
-#
-#    genuine_connection = get_genuine_zk()
-#    genuine_connection.add_auth('digest', 'user1:password1')
-#    genuine_connection.add_auth('digest', 'user2:password2')
-#    genuine_connection.add_auth('digest', 'user3:password3')
-#
-#    fake_connection = get_fake_zk()
-#    fake_connection.add_auth('digest', 'user1:password1')
-#    fake_connection.add_auth('digest', 'user2:password2')
-#    fake_connection.add_auth('digest', 'user3:password3')
-#
-#    compare_states(genuine_connection, fake_connection)
+def test_acls(started_cluster):
+    restart_and_clear_zookeeper()
+    genuine_connection = get_genuine_zk()
+    genuine_connection.add_auth('digest', 'user1:password1')
+    genuine_connection.add_auth('digest', 'user2:password2')
+    genuine_connection.add_auth('digest', 'user3:password3')
+
+    genuine_connection.create("/test_multi_all_acl", b"data", acl=[make_acl("auth", "", all=True)])
+
+    other_connection = get_genuine_zk()
+    other_connection.add_auth('digest', 'user1:password1')
+    other_connection.set("/test_multi_all_acl", b"X")
+    assert other_connection.get("/test_multi_all_acl")[0] == b"X"
+
+    yet_other_auth_connection = get_genuine_zk()
+    yet_other_auth_connection.add_auth('digest', 'user2:password2')
+
+    yet_other_auth_connection.set("/test_multi_all_acl", b"Y")
+
+    copy_zookeeper_data()
+
+    genuine_connection = get_genuine_zk()
+    genuine_connection.add_auth('digest', 'user1:password1')
+    genuine_connection.add_auth('digest', 'user2:password2')
+    genuine_connection.add_auth('digest', 'user3:password3')
+
+    fake_connection = get_fake_zk()
+    fake_connection.add_auth('digest', 'user1:password1')
+    fake_connection.add_auth('digest', 'user2:password2')
+    fake_connection.add_auth('digest', 'user3:password3')
+
+    compare_states(genuine_connection, fake_connection)

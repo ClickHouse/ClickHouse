@@ -57,7 +57,7 @@ static String generateDigest(const String & userdata)
 {
     std::vector<String> user_password;
     boost::split(user_password, userdata, [](char c) { return c == ':'; });
-    return user_password[0] + ":" + base64Encode(getSHA1(user_password[1]));
+    return user_password[0] + ":" + base64Encode(getSHA1(userdata));
 }
 
 static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const std::vector<KeeperStorage::AuthID> & session_auths)
@@ -71,14 +71,19 @@ static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, c
 
     for (const auto & node_acl : node_acls)
     {
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "NODE ACL PERMISSIONS {} SESSION PERMS {}", node_acl.permissions, permission);
         if (node_acl.permissions & permission)
         {
             if (node_acl.scheme == "world" && node_acl.id == "anyone")
                 return true;
 
             for (const auto & session_auth : session_auths)
+            {
+                LOG_DEBUG(&Poco::Logger::get("DEBUG"), "NODE ACL SCHEME {} SESSION SCHEME {}", node_acl.scheme, session_auth.scheme);
+                LOG_DEBUG(&Poco::Logger::get("DEBUG"), "NODE ACL AUTHID {} SESSION AUTHID {}", node_acl.id, session_auth.id);
                 if (node_acl.scheme == session_auth.scheme && node_acl.id == session_auth.id)
                     return true;
+            }
         }
     }
 
@@ -353,16 +358,19 @@ struct KeeperStorageGetRequest final : public KeeperStorageRequest
 
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CHECKING ACL FOR PATH {} IN GET", zk_request->getPath());
         auto & container = storage.container;
         auto it = container.find(zk_request->getPath());
         if (it == container.end())
             return true;
 
         const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "NODE ACLID {} ACL SIZE {}",it->value.acl_id, node_acls.size());
         if (node_acls.empty())
             return true;
 
         const auto & session_auths = storage.session_and_auth[session_id];
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "SESSION AUTHS SIZE {}", session_auths.size());
         return checkACL(Coordination::ACL::Read, node_acls, session_auths);
     }
 
@@ -908,14 +916,9 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
     KeeperStorage::ResponsesForSessions results;
     if (new_last_zxid)
     {
-        LOG_INFO(&Poco::Logger::get("DEBUG"), "GOT ZXID {}", *new_last_zxid);
         if (zxid >= *new_last_zxid)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller or equal than current {}. It's a bug", *new_last_zxid, zxid);
         zxid = *new_last_zxid;
-    }
-    else
-    {
-        LOG_INFO(&Poco::Logger::get("DEBUG"), "NO ZXID PROVIDED");
     }
 
     session_expiry_queue.update(session_id, session_and_timeout[session_id]);

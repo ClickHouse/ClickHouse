@@ -429,7 +429,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
 
 }
 
-bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * log)
+bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*log*/)
 {
     int64_t checksum;
     Coordination::read(checksum, in);
