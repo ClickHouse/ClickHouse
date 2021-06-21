@@ -31,3 +31,9 @@ select maxMap(val, cnt) from values ('val Array(Date), cnt Array(Int16)',  ([1],
 select maxMap(val, cnt) from values ('val Array(DateTime(\'Europe/Moscow\')), cnt Array(Int32)',  ([1], [1]), ([1], [2]));
 select maxMap(val, cnt) from values ('val Array(Decimal(10, 2)), cnt Array(Int16)',  (['1.01'], [1]), (['1.01'], [2]));
 select maxMap(val, cnt) from values ('val Array(Enum16(\'a\'=1)), cnt Array(Int16)',  (['a'], [1]), (['a'], [2]));
+
+-- check working with arrays and tuples as values
+select minMap([1, 1, 1], [[1, 2], [1], [1, 2, 3]]);
+select maxMap([1, 1, 1], [[1, 2], [1], [1, 2, 3]]);
+select minMap([1, 1, 1], [(1, 2), (1, 1), (1, 3)]);
+select maxMap([1, 1, 1], [(1, 2), (1, 1), (1, 3)]);
