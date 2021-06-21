@@ -1,5 +1,5 @@
 #include <DataStreams/CheckSortedBlockInputStream.h>
-#include <Common/FieldVisitorDump.h>
+#include <Common/FieldVisitors.h>
 #include <Common/quoteString.h>
 #include <Core/SortDescription.h>
 

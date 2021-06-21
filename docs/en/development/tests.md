@@ -35,7 +35,7 @@ Tests should use (create, drop, etc) only tables in `test` database that is assu
 
 ### Choosing the Test Name
 
-The name of the test starts with a five-digit prefix followed by a descriptive name, such as `00422_hash_function_constexpr.sql`. To choose the prefix, find the largest prefix already present in the directory, and increment it by one. In the meantime, some other tests might be added with the same numeric prefix, but this is OK and does not lead to any problems, you don't have to change it later.
+The name of the test starts with a five-digit prefix followed by a descriptive name, such as `00422_hash_function_constexpr.sql`. To choose the prefix, find the largest prefix already present in the directory, and increment it by one. In the meantime, some other tests might be added with the same numeric prefix, but this is OK and doesn't lead to any problems, you don't have to change it later.
 
 Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that requires server to listen `127.0.0.*`; `distributed` or `global` have the same meaning. `long` is for tests that run slightly longer that one second. You can disable these groups of tests using `--no-zookeeper`, `--no-shard` and `--no-long` options, respectively. Make sure to add a proper prefix to your test name if it needs ZooKeeper or distributed queries.
 
@@ -51,7 +51,7 @@ Do not check for a particular wording of error message, it may change in the fut
 
 ### Testing a Distributed Query
 
-If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`. Remember to add the words `shard` or `distributed` to the test name, so that it is run in CI in correct configurations, where the server is configured to support distributed queries.
+If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`. Remember to add the words `shard` or `distributed` to the test name, so that it is ran in CI in correct configurations, where the server is configured to support distributed queries.
 
 
 ## Known Bugs {#known-bugs}
@@ -60,11 +60,11 @@ If we know some bugs that can be easily reproduced by functional tests, we place
 
 ## Integration Tests {#integration-tests}
 
-Integration tests allow testing ClickHouse in clustered configuration and ClickHouse interaction with other servers like MySQL, Postgres, MongoDB. They are useful to emulate network splits, packet drops, etc. These tests are run under Docker and create multiple containers with various software.
+Integration tests allow to test ClickHouse in clustered configuration and ClickHouse interaction with other servers like MySQL, Postgres, MongoDB. They are useful to emulate network splits, packet drops, etc. These tests are run under Docker and create multiple containers with various software.
 
 See `tests/integration/README.md` on how to run these tests.
 
-Note that integration of ClickHouse with third-party drivers is not tested. Also, we currently do not have integration tests with our JDBC and ODBC drivers.
+Note that integration of ClickHouse with third-party drivers is not tested. Also we currently don’t have integration tests with our JDBC and ODBC drivers.
 
 ## Unit Tests {#unit-tests}
 
@@ -123,7 +123,7 @@ Example with gdb:
 $ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-If the system clickhouse-server is already running and you do not want to stop it, you can change port numbers in your `config.xml` (or override them in a file in `config.d` directory), provide appropriate data path, and run it.
+If the system clickhouse-server is already running and you don’t want to stop it, you can change port numbers in your `config.xml` (or override them in a file in `config.d` directory), provide appropriate data path, and run it.
 
 `clickhouse` binary has almost no dependencies and works across wide range of Linux distributions. To quick and dirty test your changes on a server, you can simply `scp` your fresh built `clickhouse` binary to your server and then run it as in examples above.
 
@@ -161,7 +161,7 @@ $ clickhouse benchmark --concurrency 16 < queries.tsv
 
 Then leave it for a night or weekend and go take a rest.
 
-You should check that `clickhouse-server` does not crash, memory footprint is bounded and performance not degrading over time.
+You should check that `clickhouse-server` doesn’t crash, memory footprint is bounded and performance not degrading over time.
 
 Precise query execution timings are not recorded and not compared due to high variability of queries and environment.
 
@@ -230,7 +230,7 @@ Fuzzers are not built by default. To build fuzzers both `-DENABLE_FUZZING=1` and
 We recommend to disable Jemalloc while building fuzzers. Configuration used to integrate ClickHouse fuzzing to
 Google OSS-Fuzz can be found at `docker/fuzz`.
 
-We also use simple fuzz test to generate random SQL queries and to check that the server does not die executing them.
+We also use simple fuzz test to generate random SQL queries and to check that the server doesn’t die executing them.
 You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
 
 We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.tech/blog/en/2021/fuzzing-clickhouse/).
@@ -332,7 +332,7 @@ We run tests with Yandex internal CI and job automation system named “Sandbox�
 
 Build jobs and tests are run in Sandbox on per commit basis. Resulting packages and test results are published in GitHub and can be downloaded by direct links. Artifacts are stored for several months. When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
 
-We do not use Travis CI due to the limit on time and computational power.
-We do not use Jenkins. It was used before and now we are happy we are not using Jenkins.
+We don’t use Travis CI due to the limit on time and computational power.
+We don’t use Jenkins. It was used before and now we are happy we are not using Jenkins.
 
 [Original article](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->

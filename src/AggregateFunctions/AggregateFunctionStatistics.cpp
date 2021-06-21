@@ -2,11 +2,11 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/AggregateFunctionStatistics.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -16,9 +16,8 @@ namespace ErrorCodes
 namespace
 {
 
-template <template <typename> typename FunctionTemplate>
-AggregateFunctionPtr createAggregateFunctionStatisticsUnary(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+template <template <typename> class FunctionTemplate>
+AggregateFunctionPtr createAggregateFunctionStatisticsUnary(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
@@ -31,9 +30,8 @@ AggregateFunctionPtr createAggregateFunctionStatisticsUnary(
     return res;
 }
 
-template <template <typename, typename> typename FunctionTemplate>
-AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+template <template <typename, typename> class FunctionTemplate>
+AggregateFunctionPtr createAggregateFunctionStatisticsBinary(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     assertBinary(name, argument_types);

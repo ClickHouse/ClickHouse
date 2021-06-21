@@ -73,10 +73,6 @@ public:
     /// Is it a generic compression algorithm like lz4, zstd. Usually it does not make sense to apply generic compression more than single time.
     virtual bool isGenericCompression() const = 0;
 
-    /// It is a codec available only for evaluation purposes and not meant to be used in production.
-    /// It will not be allowed to use unless the user will turn off the safety switch.
-    virtual bool isExperimental() const { return false; }
-
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 

@@ -28,7 +28,7 @@ Function:
 
         This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
--   Provides the result deterministically (it does not depend on the query processing order).
+-   Provides the result deterministically (it doesn’t depend on the query processing order).
 
 We recommend using this function in almost all scenarios.
 

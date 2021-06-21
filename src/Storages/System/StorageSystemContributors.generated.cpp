@@ -340,7 +340,6 @@ const char * auto_contributors[] {
     "Fuwang Hu",
     "fuwhu",
     "Fu Zhe",
-    "fuzhe1989",
     "Gagan Arneja",
     "Gao Qiang",
     "g-arslan",

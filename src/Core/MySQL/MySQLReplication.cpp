@@ -6,10 +6,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <common/DateLUT.h>
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
-
 
 namespace DB
 {

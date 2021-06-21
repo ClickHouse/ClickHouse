@@ -13,7 +13,7 @@ Returns an array of selected substrings. Empty substrings may be selected if the
 **Syntax**
 
 ``` sql
-splitByChar(separator, s)
+splitByChar(<separator>, <s>)
 ```
 
 **Arguments**
@@ -29,12 +29,12 @@ Returns an array of selected substrings. Empty substrings may be selected when:
 -   There are multiple consecutive separators;
 -   The original string `s` is empty.
 
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+Type: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
 ``` sql
-SELECT splitByChar(',', '1,2,3,abcde');
+SELECT splitByChar(',', '1,2,3,abcde')
 ```
 
 ``` text
@@ -50,7 +50,7 @@ Splits a string into substrings separated by a string. It uses a constant string
 **Syntax**
 
 ``` sql
-splitByString(separator, s)
+splitByString(<separator>, <s>)
 ```
 
 **Arguments**
@@ -62,7 +62,7 @@ splitByString(separator, s)
 
 Returns an array of selected substrings. Empty substrings may be selected when:
 
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+Type: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
 
 -   A non-empty separator occurs at the beginning or end of the string;
 -   There are multiple consecutive non-empty separators;
@@ -71,7 +71,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 **Example**
 
 ``` sql
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
+SELECT splitByString(', ', '1, 2 3, 4,5, abcde')
 ```
 
 ``` text
@@ -81,7 +81,7 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ``` sql
-SELECT splitByString('', 'abcde');
+SELECT splitByString('', 'abcde')
 ```
 
 ``` text
@@ -92,12 +92,12 @@ SELECT splitByString('', 'abcde');
 
 ## splitByRegexp(regexp, s) {#splitbyregexpseparator-s}
 
-Splits a string into substrings separated by a regular expression. It uses a regular expression string `regexp` as the separator. If the `regexp` is empty, it will split the string `s` into an array of single characters. If no match is found for this regular expression, the string `s` won't be split.
+Splits a string into substrings separated by a regular expression. It uses a regular expression string `regexp` as the separator. If the `regexp` is empty, it will split the string s into an array of single characters. If no match is found for this regex expression, the string `s` won't be split.
 
 **Syntax**
 
 ``` sql
-splitByRegexp(regexp, s)
+splitByRegexp(<regexp>, <s>)
 ```
 
 **Arguments**
@@ -109,21 +109,17 @@ splitByRegexp(regexp, s)
 
 Returns an array of selected substrings. Empty substrings may be selected when:
 
+
 -   A non-empty regular expression match occurs at the beginning or end of the string;
 -   There are multiple consecutive non-empty regular expression matches;
 -   The original string `s` is empty while the regular expression is not empty.
 
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
+Type: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
 **Example**
 
-Query:
-
 ``` sql
-SELECT splitByRegexp('\\d+', 'a12bc23de345f');
+SELECT splitByRegexp('\\d+', 'a12bc23de345f')
 ```
-
-Result:
 
 ``` text
 ┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
@@ -131,13 +127,9 @@ Result:
 └────────────────────────────────────────┘
 ```
 
-Query:
-
 ``` sql
-SELECT splitByRegexp('', 'abcde');
+SELECT splitByRegexp('', 'abcde')
 ```
-
-Result:
 
 ``` text
 ┌─splitByRegexp('', 'abcde')─┐
@@ -157,7 +149,7 @@ Selects substrings of consecutive bytes from the ranges a-z and A-Z.Returns an a
 **Example**
 
 ``` sql
-SELECT alphaTokens('abca1abc');
+SELECT alphaTokens('abca1abc')
 ```
 
 ``` text

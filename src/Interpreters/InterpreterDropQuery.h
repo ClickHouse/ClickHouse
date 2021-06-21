@@ -16,10 +16,10 @@ class AccessRightsElements;
   * or remove information about table (just forget) from server (DETACH),
   * or just clear all data in table (TRUNCATE).
   */
-class InterpreterDropQuery : public IInterpreter, WithMutableContext
+class InterpreterDropQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
+    InterpreterDropQuery(const ASTPtr & query_ptr_, ContextPtr context_);
 
     /// Drop table or database.
     BlockIO execute() override;

@@ -29,17 +29,18 @@ ASTPtr CreateLiveViewQuery::convertToOld() const
     auto query = std::make_shared<ASTCreateQuery>();
 
     {
-        auto table = std::static_pointer_cast<ASTTableIdentifier>(get(NAME)->convertToOld());
-        query->database = table->getDatabaseName();
-        query->table = table->shortName();
-        query->uuid = has(UUID) ? parseFromString<DB::UUID>(get(UUID)->convertToOld()->as<ASTLiteral>()->value.get<String>()) : table->uuid;
+        auto table_id = getTableIdentifier(get(NAME)->convertToOld());
+        query->database = table_id.database_name;
+        query->table = table_id.table_name;
+        query->uuid
+            = has(UUID) ? parseFromString<DB::UUID>(get(UUID)->convertToOld()->as<ASTLiteral>()->value.get<String>()) : table_id.uuid;
     }
 
     if (has(TIMEOUT))
         query->live_view_timeout.emplace(get(TIMEOUT)->convertToOld()->as<ASTLiteral>()->value.get<UInt64>());
 
     if (has(DESTINATION))
-        query->to_table_id = get(DESTINATION)->convertToOld()->as<ASTTableIdentifier>()->getTableId();
+        query->to_table_id = getTableIdentifier(get(DESTINATION)->convertToOld());
 
     if (has(SCHEMA))
     {

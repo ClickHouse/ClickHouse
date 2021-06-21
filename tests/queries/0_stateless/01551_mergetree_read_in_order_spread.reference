@@ -7,11 +7,22 @@ ExpressionTransform
         (Expression)
         ExpressionTransform × 3
           (SettingQuotaAndLimits)
-            (ReadFromMergeTree)
-            ExpressionTransform × 4
-              MergeTree 0 → 1
+            (Expression)
+            ExpressionTransform × 3
+              (Union)
+                (MergingSorted)
+                  (Expression)
+                  ExpressionTransform
+                    (ReadFromMergeTree)
+                    MergeTree 0 → 1
+                (MergingSorted)
                 MergingSortedTransform 2 → 1
+                  (Expression)
                   ExpressionTransform × 2
+                    (ReadFromMergeTree)
                     MergeTree × 2 0 → 1
-                      ExpressionTransform
-                        MergeTree 0 → 1
+                (MergingSorted)
+                  (Expression)
+                  ExpressionTransform
+                    (ReadFromMergeTree)
+                    MergeTree 0 → 1
