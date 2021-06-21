@@ -43,8 +43,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <ext/range.h>
-#include <ext/bit_cast.h>
+#include <common/range.h>
+#include <common/bit_cast.h>
 
 
 namespace DB
@@ -754,9 +754,9 @@ private:
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
                     if constexpr (std::is_same_v<ToType, UInt64>)
-                        h = IntHash64Impl::apply(ext::bit_cast<UInt64>(vec_from[i]));
+                        h = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
                     else
-                        h = IntHash32Impl::apply(ext::bit_cast<UInt32>(vec_from[i]));
+                        h = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
                 }
                 else
                 {
@@ -774,9 +774,9 @@ private:
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
             if constexpr (std::is_same_v<ToType, UInt64>)
-                hash = IntHash64Impl::apply(ext::bit_cast<UInt64>(value));
+                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
             else
-                hash = IntHash32Impl::apply(ext::bit_cast<UInt32>(value));
+                hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
 
             size_t size = vec_to.size();
             if constexpr (first)

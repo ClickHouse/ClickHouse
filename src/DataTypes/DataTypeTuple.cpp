@@ -1,3 +1,5 @@
+#include <common/map.h>
+#include <common/range.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
@@ -17,10 +19,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-
-#include <ext/map.h>
-#include <ext/enumerate.h>
-#include <ext/range.h>
 
 
 namespace DB
@@ -127,7 +125,7 @@ static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
         // Check that all columns now have the same size.
         size_t new_size = column.size();
 
-        for (auto i : ext::range(0, ext::size(elems)))
+        for (auto i : collections::range(0, elems.size()))
         {
             const auto & element_column = extractElementColumn(column, i);
             if (element_column.size() != new_size)
@@ -141,7 +139,7 @@ static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
     }
     catch (...)
     {
-        for (const auto & i : ext::range(0, ext::size(elems)))
+        for (const auto & i : collections::range(0, elems.size()))
         {
             auto & element_column = extractElementColumn(column, i);
 
@@ -164,14 +162,14 @@ MutableColumnPtr DataTypeTuple::createColumn() const
 
 Field DataTypeTuple::getDefault() const
 {
-    return Tuple(ext::map<Tuple>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
+    return Tuple(collections::map<Tuple>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
 }
 
 void DataTypeTuple::insertDefaultInto(IColumn & column) const
 {
     addElementSafe(elems, column, [&]
     {
-        for (const auto & i : ext::range(0, ext::size(elems)))
+        for (const auto & i : collections::range(0, elems.size()))
             elems[i]->insertDefaultInto(extractElementColumn(column, i));
     });
 }

@@ -22,7 +22,7 @@
 #include <Common/IO.h>
 
 #include <common/phdr_cache.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications

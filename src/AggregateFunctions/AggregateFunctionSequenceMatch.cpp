@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 
-#include <ext/range.h>
+#include <common/range.h>
 
 namespace DB
 {
@@ -43,7 +43,7 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
 
     const auto * time_arg = argument_types.front().get();
 
-    for (const auto i : ext::range(1, arg_count))
+    for (const auto i : collections::range(1, arg_count))
     {
         const auto * cond_arg = argument_types[i].get();
         if (!isUInt8(cond_arg))
