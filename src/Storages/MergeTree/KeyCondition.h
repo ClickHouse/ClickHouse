@@ -228,7 +228,18 @@ class KeyCondition
 public:
     /// Does not take into account the SAMPLE section. all_columns - the set of all columns of the table.
     KeyCondition(
-        const SelectQueryInfo & query_info,
+        const ASTPtr & query,
+        TreeRewriterResultPtr syntax_analyzer_result,
+        PreparedSets prepared_sets_,
+        ContextPtr context,
+        const Names & key_column_names,
+        const ExpressionActionsPtr & key_expr,
+        bool single_point_ = false,
+        bool strict_ = false);
+
+    KeyCondition(
+        const ActionsDAG & dag,
+        PreparedSets prepared_sets_,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -377,11 +388,10 @@ private:
 public:
     static const AtomMap atom_map;
 
-private:
-
     class Tree;
     class FunctionTree;
 
+private:
     BoolMask checkInRange(
         size_t used_key_size,
         const FieldRef * left_key,
@@ -414,14 +424,14 @@ private:
         std::vector<FunctionTree> & out_functions_chain);
 
     bool canConstantBeWrappedByMonotonicFunctions(
-        const ASTPtr & node,
+        const Tree & node,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type);
 
     bool canConstantBeWrappedByFunctions(
-        const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type);
+        const Tree & node, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type);
 
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
