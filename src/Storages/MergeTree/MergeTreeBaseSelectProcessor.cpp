@@ -431,7 +431,7 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
             block.erase(prewhere_info->prewhere_column_name);
         else
         {
-            WhichDataType which(prewhere_column.type);
+            WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
             if (which.isInt() || which.isUInt())
                 prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
             else if (which.isFloat())
