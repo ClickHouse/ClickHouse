@@ -49,6 +49,43 @@ ColumnPtr changeLowCardinality(const ColumnPtr & column, const ColumnPtr & dst_s
 namespace JoinCommon
 {
 
+void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
+{
+    if (column.type->lowCardinality())
+    {
+        column.type = recursiveRemoveLowCardinality(column.type);
+        column.column = column.column->convertToFullColumnIfLowCardinality();
+    }
+    else
+    {
+        column.type = std::make_shared<DataTypeLowCardinality>(column.type);
+        MutableColumnPtr lc = column.type->createColumn();
+        typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column.column, 0, column.column->size());
+        column.column = std::move(lc);
+    }
+}
+
+bool canBecomeNullable(const DataTypePtr & type)
+{
+    bool can_be_inside = type->canBeInsideNullable();
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        can_be_inside |= low_cardinality_type->getDictionaryType()->canBeInsideNullable();
+    return can_be_inside;
+}
+
+/// Add nullability to type.
+/// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
+DataTypePtr convertTypeToNullable(const DataTypePtr & type)
+{
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        const auto & dict_type = low_cardinality_type->getDictionaryType();
+        if (dict_type->canBeInsideNullable())
+            return std::make_shared<DataTypeLowCardinality>(makeNullable(dict_type));
+    }
+    return makeNullable(type);
+}
+
 void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability)
 {
     if (low_card_nullability && column.type->lowCardinality())
@@ -62,7 +99,19 @@ void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nulla
 
     column.type = makeNullable(column.type);
     if (column.column)
-        column.column = makeNullable(column.column);
+    {
+        if (column.column->lowCardinality())
+        {
+            /// Convert nested to nullable, not LowCardinality itself
+            auto mut_col = IColumn::mutate(std::move(column.column));
+            ColumnLowCardinality * col_as_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
+            if (!col_as_lc->nestedIsNullable())
+                col_as_lc->nestedToNullable();
+            column.column = std::move(mut_col);
+        }
+        else
+            column.column = makeNullable(column.column);
+    }
 }
 
 void convertColumnsToNullable(Block & block, size_t starting_pos)
@@ -74,6 +123,24 @@ void convertColumnsToNullable(Block & block, size_t starting_pos)
 /// @warning It assumes that every NULL has default value in nested column (or it does not matter)
 void removeColumnNullability(ColumnWithTypeAndName & column)
 {
+    if (column.type->lowCardinality())
+    {
+        /// LowCardinality(Nullable(T)) case
+        const auto & dict_type = typeid_cast<const DataTypeLowCardinality *>(column.type.get())->getDictionaryType();
+        column.type = std::make_shared<DataTypeLowCardinality>(removeNullable(dict_type));
+
+        if (column.column && column.column->lowCardinality())
+        {
+            auto mut_col = IColumn::mutate(std::move(column.column));
+            ColumnLowCardinality * col_as_lc = typeid_cast<ColumnLowCardinality *>(mut_col.get());
+            if (col_as_lc && col_as_lc->nestedIsNullable())
+                col_as_lc->nestedRemoveNullable();
+            column.column = std::move(mut_col);
+        }
+
+        return;
+    }
+
     if (!column.type->isNullable())
         return;
 
