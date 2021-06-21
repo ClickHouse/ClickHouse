@@ -1,160 +1,160 @@
 I_check_plus_with_Int128_max_and_min_value = r"""
-plus(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1))	plus(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1))
+round(plus(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1)), 7)	round(plus(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1)), 7)
 -170141183460469231731687303715884105728	-170141183460469231731687303715884105727
 """
 
 I_check_plus_with_Int256_max_and_min_value = r"""
-plus(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1))	plus(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1))
+round(plus(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1)), 7)	round(plus(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1)), 7)
 -57896044618658097711785492504343953926634992332820282019728792003956564819968	-57896044618658097711785492504343953926634992332820282019728792003956564819967
 """
 
 I_check_plus_with_UInt128_max_and_min_value = r"""
-plus(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1))	plus(toUInt128(\'0\'), toUInt128(1))
+round(plus(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1)), 7)	round(plus(toUInt128(\'0\'), toUInt128(1)), 7)
 0	1
 """
 
 I_check_plus_with_UInt256_max_and_min_value = r"""
-plus(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1))	plus(toUInt256(\'0\'), toUInt256(1))
+round(plus(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1)), 7)	round(plus(toUInt256(\'0\'), toUInt256(1)), 7)
 0	1
 """
 
 I_check_minus_with_Int128_max_and_min_value = r"""
-minus(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1))	minus(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1))
+round(minus(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1)), 7)	round(minus(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1)), 7)
 170141183460469231731687303715884105726	170141183460469231731687303715884105727
 """
 
 I_check_minus_with_Int256_max_and_min_value = r"""
-minus(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1))	minus(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1))
+round(minus(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1)), 7)	round(minus(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1)), 7)
 57896044618658097711785492504343953926634992332820282019728792003956564819966	57896044618658097711785492504343953926634992332820282019728792003956564819967
 """
 
 I_check_minus_with_UInt128_max_and_min_value = r"""
-minus(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1))	minus(toUInt128(\'0\'), toUInt128(1))
+round(minus(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1)), 7)	round(minus(toUInt128(\'0\'), toUInt128(1)), 7)
 -2	-1
 """
 
 I_check_minus_with_UInt256_max_and_min_value = r"""
-minus(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1))	minus(toUInt256(\'0\'), toUInt256(1))
+round(minus(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1)), 7)	round(minus(toUInt256(\'0\'), toUInt256(1)), 7)
 -2	-1
 """
 
 I_check_multiply_with_Int128_max_and_min_value = r"""
-multiply(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1))	multiply(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1))
+round(multiply(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1)), 7)	round(multiply(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1)), 7)
 170141183460469231731687303715884105727	-170141183460469231731687303715884105728
 """
 
 I_check_multiply_with_Int256_max_and_min_value = r"""
-multiply(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1))	multiply(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1))
+round(multiply(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1)), 7)	round(multiply(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1)), 7)
 57896044618658097711785492504343953926634992332820282019728792003956564819967	-57896044618658097711785492504343953926634992332820282019728792003956564819968
 """
 
 I_check_multiply_with_UInt128_max_and_min_value = r"""
-multiply(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1))	multiply(toUInt128(\'0\'), toUInt128(1))
+round(multiply(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1)), 7)	round(multiply(toUInt128(\'0\'), toUInt128(1)), 7)
 340282366920938463463374607431768211455	0
 """
 
 I_check_multiply_with_UInt256_max_and_min_value = r"""
-multiply(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1))	multiply(toUInt256(\'0\'), toUInt256(1))
+round(multiply(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1)), 7)	round(multiply(toUInt256(\'0\'), toUInt256(1)), 7)
 115792089237316195423570985008687907853269984665640564039457584007913129639935	0
 """
 
 I_check_divide_with_Int128_max_and_min_value = r"""
-divide(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1))	divide(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1))
+round(divide(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1)), 7)	round(divide(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1)), 7)
 1.7014118346046923e38	-1.7014118346046923e38
 """
 
 I_check_divide_with_Int256_max_and_min_value = r"""
-divide(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1))	divide(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1))
+round(divide(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1)), 7)	round(divide(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1)), 7)
 5.78960446186581e76	-5.78960446186581e76
 """
 
 I_check_divide_with_UInt128_max_and_min_value = r"""
-divide(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1))	divide(toUInt128(\'0\'), toUInt128(1))
+round(divide(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1)), 7)	round(divide(toUInt128(\'0\'), toUInt128(1)), 7)
 3.402823669209385e38	0
 """
 
 I_check_divide_with_UInt256_max_and_min_value = r"""
-divide(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1))	divide(toUInt256(\'0\'), toUInt256(1))
+round(divide(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1)), 7)	round(divide(toUInt256(\'0\'), toUInt256(1)), 7)
 1.157920892373162e77	0
 """
 
 I_check_intDiv_with_Int128_max_and_min_value = r"""
-intDiv(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1))	intDiv(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1))
+round(intDiv(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1)), 7)	round(intDiv(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1)), 7)
 170141183460469231731687303715884105727	-170141183460469231731687303715884105728
 """
 
 I_check_intDiv_with_Int256_max_and_min_value = r"""
-intDiv(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1))	intDiv(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1))
+round(intDiv(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1)), 7)	round(intDiv(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1)), 7)
 57896044618658097711785492504343953926634992332820282019728792003956564819967	-57896044618658097711785492504343953926634992332820282019728792003956564819968
 """
 
 I_check_intDiv_with_UInt128_max_and_min_value = r"""
-intDiv(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1))	intDiv(toUInt128(\'0\'), toUInt128(1))
+round(intDiv(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1)), 7)	round(intDiv(toUInt128(\'0\'), toUInt128(1)), 7)
 340282366920938463463374607431768211455	0
 """
 
 I_check_intDiv_with_UInt256_max_and_min_value = r"""
-intDiv(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1))	intDiv(toUInt256(\'0\'), toUInt256(1))
+round(intDiv(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1)), 7)	round(intDiv(toUInt256(\'0\'), toUInt256(1)), 7)
 115792089237316195423570985008687907853269984665640564039457584007913129639935	0
 """
 
 I_check_intDivOrZero_with_Int128_max_and_min_value = r"""
-intDivOrZero(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1))	intDivOrZero(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1))
+round(intDivOrZero(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1)), 7)	round(intDivOrZero(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1)), 7)
 170141183460469231731687303715884105727	-170141183460469231731687303715884105728
 """
 
 I_check_intDivOrZero_with_Int256_max_and_min_value = r"""
-intDivOrZero(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1))	intDivOrZero(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1))
+round(intDivOrZero(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1)), 7)	round(intDivOrZero(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1)), 7)
 57896044618658097711785492504343953926634992332820282019728792003956564819967	-57896044618658097711785492504343953926634992332820282019728792003956564819968
 """
 
 I_check_intDivOrZero_with_UInt128_max_and_min_value = r"""
-intDivOrZero(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1))	intDivOrZero(toUInt128(\'0\'), toUInt128(1))
+round(intDivOrZero(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1)), 7)	round(intDivOrZero(toUInt128(\'0\'), toUInt128(1)), 7)
 340282366920938463463374607431768211455	0
 """
 
 I_check_intDivOrZero_with_UInt256_max_and_min_value = r"""
-intDivOrZero(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1))	intDivOrZero(toUInt256(\'0\'), toUInt256(1))
+round(intDivOrZero(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1)), 7)	round(intDivOrZero(toUInt256(\'0\'), toUInt256(1)), 7)
 115792089237316195423570985008687907853269984665640564039457584007913129639935	0
 """
 
 I_check_modulo_with_Int128_max_and_min_value = r"""
-modulo(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1))	modulo(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1))
+round(modulo(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1)), 7)	round(modulo(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1)), 7)
 0	0
 """
 
 I_check_modulo_with_Int256_max_and_min_value = r"""
-modulo(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1))	modulo(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1))
+round(modulo(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1)), 7)	round(modulo(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1)), 7)
 0	0
 """
 
 I_check_modulo_with_UInt128_max_and_min_value = r"""
-modulo(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1))	modulo(toUInt128(\'0\'), toUInt128(1))
+round(modulo(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1)), 7)	round(modulo(toUInt128(\'0\'), toUInt128(1)), 7)
 0	0
 """
 
 I_check_modulo_with_UInt256_max_and_min_value = r"""
-modulo(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1))	modulo(toUInt256(\'0\'), toUInt256(1))
+round(modulo(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1)), 7)	round(modulo(toUInt256(\'0\'), toUInt256(1)), 7)
 0	0
 """
 
 I_check_moduloOrZero_with_Int128_max_and_min_value = r"""
-moduloOrZero(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1))	moduloOrZero(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1))
+round(moduloOrZero(toInt128(\'170141183460469231731687303715884105727\'), toInt128(1)), 7)	round(moduloOrZero(toInt128(\'-170141183460469231731687303715884105728\'), toInt128(1)), 7)
 0	0
 """
 
 I_check_moduloOrZero_with_Int256_max_and_min_value = r"""
-moduloOrZero(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1))	moduloOrZero(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1))
+round(moduloOrZero(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'), toInt256(1)), 7)	round(moduloOrZero(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'), toInt256(1)), 7)
 0	0
 """
 
 I_check_moduloOrZero_with_UInt128_max_and_min_value = r"""
-moduloOrZero(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1))	moduloOrZero(toUInt128(\'0\'), toUInt128(1))
+round(moduloOrZero(toUInt128(\'340282366920938463463374607431768211455\'), toUInt128(1)), 7)	round(moduloOrZero(toUInt128(\'0\'), toUInt128(1)), 7)
 0	0
 """
 
 I_check_moduloOrZero_with_UInt256_max_and_min_value = r"""
-moduloOrZero(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1))	moduloOrZero(toUInt256(\'0\'), toUInt256(1))
+round(moduloOrZero(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'), toUInt256(1)), 7)	round(moduloOrZero(toUInt256(\'0\'), toUInt256(1)), 7)
 0	0
 """
 
@@ -532,399 +532,399 @@ a
 1
 """
 
-Inline___Int128___arrayPopBack_ = r"""
+Inline___Int128___arrayPopBack__ = r"""
 arrayPopBack(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [3,2]
 """
 
-Table___Int128___arrayPopBack_ = r"""
+Table___Int128___arrayPopBack__ = r"""
 a
 [3,2]
 """
 
-Inline___Int128___arrayPopFront_ = r"""
+Inline___Int128___arrayPopFront__ = r"""
 arrayPopFront(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [2,1]
 """
 
-Table___Int128___arrayPopFront_ = r"""
+Table___Int128___arrayPopFront__ = r"""
 a
 [2,1]
 """
 
-Inline___Int128___arraySort_ = r"""
+Inline___Int128___arraySort__ = r"""
 arraySort(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [1,2,3]
 """
 
-Table___Int128___arraySort_ = r"""
+Table___Int128___arraySort__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Int128___arrayReverseSort_ = r"""
+Inline___Int128___arrayReverseSort__ = r"""
 arrayReverseSort(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [3,2,1]
 """
 
-Table___Int128___arrayReverseSort_ = r"""
+Table___Int128___arrayReverseSort__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Int128___arrayDistinct_ = r"""
+Inline___Int128___arrayDistinct__ = r"""
 arrayDistinct(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [3,2,1]
 """
 
-Table___Int128___arrayDistinct_ = r"""
+Table___Int128___arrayDistinct__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Int128___arrayEnumerate_ = r"""
+Inline___Int128___arrayEnumerate__ = r"""
 arrayEnumerate(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [1,2,3]
 """
 
-Table___Int128___arrayEnumerate_ = r"""
+Table___Int128___arrayEnumerate__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Int128___arrayEnumerateDense_ = r"""
+Inline___Int128___arrayEnumerateDense__ = r"""
 arrayEnumerateDense(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [1,2,3]
 """
 
-Table___Int128___arrayEnumerateDense_ = r"""
+Table___Int128___arrayEnumerateDense__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Int128___arrayEnumerateUniq_ = r"""
+Inline___Int128___arrayEnumerateUniq__ = r"""
 arrayEnumerateUniq(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [1,1,1]
 """
 
-Table___Int128___arrayEnumerateUniq_ = r"""
+Table___Int128___arrayEnumerateUniq__ = r"""
 a
 [1,1,1]
 """
 
-Inline___Int128___arrayReverse_ = r"""
+Inline___Int128___arrayReverse__ = r"""
 arrayReverse(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [1,2,3]
 """
 
-Table___Int128___arrayReverse_ = r"""
+Table___Int128___arrayReverse__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Int128___reverse_ = r"""
+Inline___Int128___reverse__ = r"""
 reverse(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [1,2,3]
 """
 
-Table___Int128___reverse_ = r"""
+Table___Int128___reverse__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Int128___arrayFlatten_ = r"""
+Inline___Int128___arrayFlatten__ = r"""
 arrayFlatten(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [3,2,1]
 """
 
-Table___Int128___arrayFlatten_ = r"""
+Table___Int128___arrayFlatten__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Int128___arrayCompact_ = r"""
+Inline___Int128___arrayCompact__ = r"""
 arrayCompact(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [3,2,1]
 """
 
-Table___Int128___arrayCompact_ = r"""
+Table___Int128___arrayCompact__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Int128___arrayReduceInRanges__sum_____1__5___ = r"""
+Inline___Int128___arrayReduceInRanges__sum_____1__5____ = r"""
 arrayReduceInRanges(\'sum\', array(tuple(1, 5)), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [6]
 """
 
-Table___Int128___arrayReduceInRanges__sum_____1__5___ = r"""
+Table___Int128___arrayReduceInRanges__sum_____1__5____ = r"""
 a
 [6]
 """
 
-Inline___Int128___arrayMap_x_____x___2__ = r"""
+Inline___Int128___arrayMap_x_____x___2___ = r"""
 arrayMap(lambda(tuple(x), plus(x, 2)), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [5,4,3]
 """
 
-Table___Int128___arrayMap_x_____x___2__ = r"""
+Table___Int128___arrayMap_x_____x___2___ = r"""
 a
 [5,4,3]
 """
 
-Inline___Int128___arrayFill_x____x_3_ = r"""
+Inline___Int128___arrayFill_x____x_3__ = r"""
 arrayFill(lambda(tuple(x), equals(x, 3)), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [3,3,3]
 """
 
-Table___Int128___arrayFill_x____x_3_ = r"""
+Table___Int128___arrayFill_x____x_3__ = r"""
 a
 [3,3,3]
 """
 
-Inline___Int128___arrayReverseFill_x____x_3_ = r"""
+Inline___Int128___arrayReverseFill_x____x_3__ = r"""
 arrayReverseFill(lambda(tuple(x), equals(x, 3)), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [3,1,1]
 """
 
-Table___Int128___arrayReverseFill_x____x_3_ = r"""
+Table___Int128___arrayReverseFill_x____x_3__ = r"""
 a
 [3,1,1]
 """
 
-Inline___Int128___arrayConcat__toInt128__3____toInt128__2____toInt128__1____ = r"""
+Inline___Int128___arrayConcat__toInt128__3____toInt128__2____toInt128__1_____ = r"""
 arrayConcat(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [3,2,1,3,2,1]
 """
 
-Table___Int128___arrayConcat__toInt128__3____toInt128__2____toInt128__1____ = r"""
+Table___Int128___arrayConcat__toInt128__3____toInt128__2____toInt128__1_____ = r"""
 a
 [3,2,1,3,2,1]
 """
 
-Inline___Int128___arrayFilter_x____x____1__ = r"""
+Inline___Int128___arrayFilter_x____x____1___ = r"""
 arrayFilter(lambda(tuple(x), equals(x, 1)), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [1]
 """
 
-Table___Int128___arrayFilter_x____x____1__ = r"""
+Table___Int128___arrayFilter_x____x____1___ = r"""
 a
 [1]
 """
 
-Inline___Int128___arraySplit__x__y_____x_y___0__0__0__ = r"""
+Inline___Int128___arraySplit__x__y_____x_y___0__0__0___ = r"""
 arraySplit(lambda(tuple(x, y), equals(x, y)), [0, 0, 0], array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 [[0,0,0]]
 """
 
-Table___Int128___arraySplit__x__y_____x_y___0__0__0__ = r"""
+Table___Int128___arraySplit__x__y_____x_y___0__0__0___ = r"""
 a
 [[0,0,0]]
 """
 
-Inline___Int128___arrayZip__toInt128__1____ = r"""
+Inline___Int128___arrayZip__toInt128__1_____ = r"""
 arrayZip(array(toInt128(\'1\')), array(toInt128(\'3\')))
 [(1,3)]
 """
 
-Table___Int128___arrayZip__toInt128__1____ = r"""
+Table___Int128___arrayZip__toInt128__1_____ = r"""
 a
 [(1,1)]
 """
 
-Inline___Int128___empty_ = r"""
+Inline___Int128___empty__ = r"""
 empty(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 0
 """
 
-Table___Int128___empty_ = r"""
+Table___Int128___empty__ = r"""
 a
 0
 """
 
-Inline___Int128___notEmpty_ = r"""
+Inline___Int128___notEmpty__ = r"""
 notEmpty(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 1
 """
 
-Table___Int128___notEmpty_ = r"""
+Table___Int128___notEmpty__ = r"""
 a
 1
 """
 
-Inline___Int128___length_ = r"""
+Inline___Int128___length__ = r"""
 length(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 3
 """
 
-Table___Int128___length_ = r"""
+Table___Int128___length__ = r"""
 a
 3
 """
 
-Inline___Int128___arrayCount_x____x____1__ = r"""
+Inline___Int128___arrayCount_x____x____1___ = r"""
 arrayCount(lambda(tuple(x), equals(x, 1)), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 1
 """
 
-Table___Int128___arrayCount_x____x____1__ = r"""
+Table___Int128___arrayCount_x____x____1___ = r"""
 a
 1
 """
 
-Inline___Int128___arrayUniq_ = r"""
+Inline___Int128___arrayUniq__ = r"""
 arrayUniq(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 3
 """
 
-Table___Int128___arrayUniq_ = r"""
+Table___Int128___arrayUniq__ = r"""
 a
 3
 """
 
-Inline___Int128___arrayJoin_ = r"""
+Inline___Int128___arrayJoin__ = r"""
 arrayJoin(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 3
 2
 1
 """
 
-Table___Int128___arrayJoin_ = r"""
+Table___Int128___arrayJoin__ = r"""
 a
 1
 2
 3
 """
 
-Inline___Int128___arrayExists_x____x__1_ = r"""
+Inline___Int128___arrayExists_x____x__1__ = r"""
 arrayExists(lambda(tuple(x), equals(x, 1)), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 1
 """
 
-Table___Int128___arrayExists_x____x__1_ = r"""
+Table___Int128___arrayExists_x____x__1__ = r"""
 a
 1
 """
 
-Inline___Int128___arrayAll_x____x__1_ = r"""
+Inline___Int128___arrayAll_x____x__1__ = r"""
 arrayAll(lambda(tuple(x), equals(x, 1)), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 0
 """
 
-Table___Int128___arrayAll_x____x__1_ = r"""
+Table___Int128___arrayAll_x____x__1__ = r"""
 a
 0
 """
 
-Inline___Int128___arrayMin_ = r"""
+Inline___Int128___arrayMin__ = r"""
 arrayMin(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 1
 """
 
-Table___Int128___arrayMin_ = r"""
+Table___Int128___arrayMin__ = r"""
 a
 1
 """
 
-Inline___Int128___arrayMax_ = r"""
+Inline___Int128___arrayMax__ = r"""
 arrayMax(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 3
 """
 
-Table___Int128___arrayMax_ = r"""
+Table___Int128___arrayMax__ = r"""
 a
 3
 """
 
-Inline___Int128___arraySum_ = r"""
+Inline___Int128___arraySum__ = r"""
 arraySum(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 6
 """
 
-Table___Int128___arraySum_ = r"""
+Table___Int128___arraySum__ = r"""
 a
 6
 """
 
-Inline___Int128___arrayAvg_ = r"""
+Inline___Int128___arrayAvg__ = r"""
 arrayAvg(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 2
 """
 
-Table___Int128___arrayAvg_ = r"""
+Table___Int128___arrayAvg__ = r"""
 a
 2
 """
 
-Inline___Int128___arrayReduce__max___ = r"""
+Inline___Int128___arrayReduce__max____ = r"""
 arrayReduce(\'max\', array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 3
 """
 
-Table___Int128___arrayReduce__max___ = r"""
+Table___Int128___arrayReduce__max____ = r"""
 a
 3
 """
 
-Inline___Int128___arrayFirst_x____x__3_ = r"""
+Inline___Int128___arrayFirst_x____x__3__ = r"""
 arrayFirst(lambda(tuple(x), equals(x, 3)), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 3
 """
 
-Table___Int128___arrayFirst_x____x__3_ = r"""
+Table___Int128___arrayFirst_x____x__3__ = r"""
 a
 3
 """
 
-Inline___Int128___arrayFirstIndex_x____x__3_ = r"""
+Inline___Int128___arrayFirstIndex_x____x__3__ = r"""
 arrayFirstIndex(lambda(tuple(x), equals(x, 3)), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 1
 """
 
-Table___Int128___arrayFirstIndex_x____x__3_ = r"""
+Table___Int128___arrayFirstIndex_x____x__3__ = r"""
 a
 1
 """
 
-Inline___Int128___hasAll__toInt128__3____toInt128__2____toInt128__1_____ = r"""
+Inline___Int128___hasAll__toInt128__3____toInt128__2____toInt128__1______ = r"""
 hasAll(array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 1
 """
 
-Table___Int128___hasAll__toInt128__3____toInt128__2____toInt128__1_____ = r"""
+Table___Int128___hasAll__toInt128__3____toInt128__2____toInt128__1______ = r"""
 a
 1
 """
 
-Inline___Int128___hasAny__toInt128__2____toInt128__1_____ = r"""
+Inline___Int128___hasAny__toInt128__2____toInt128__1______ = r"""
 hasAny(array(toInt128(\'2\'), toInt128(\'1\')), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 1
 """
 
-Table___Int128___hasAny__toInt128__2____toInt128__1_____ = r"""
+Table___Int128___hasAny__toInt128__2____toInt128__1______ = r"""
 a
 1
 """
 
-Inline___Int128___hasSubstr__toInt128__2____toInt128__1_____ = r"""
+Inline___Int128___hasSubstr__toInt128__2____toInt128__1______ = r"""
 hasSubstr(array(toInt128(\'2\'), toInt128(\'1\')), array(toInt128(\'3\'), toInt128(\'2\'), toInt128(\'1\')))
 0
 """
 
-Table___Int128___hasSubstr__toInt128__2____toInt128__1_____ = r"""
+Table___Int128___hasSubstr__toInt128__2____toInt128__1______ = r"""
 a
 0
 """
 
-Table___Int128___arrayDifference_ = r"""
+Table___Int128___arrayDifference__ = r"""
 a
 """
 
-Table___Int128___arrayCumSum_ = r"""
+Table___Int128___arrayCumSum__ = r"""
 a
 """
 
-Table___Int128___arrayCumSumNonNegative_ = r"""
+Table___Int128___arrayCumSumNonNegative__ = r"""
 a
 """
 
@@ -1060,399 +1060,399 @@ a
 [1,2]
 """
 
-Inline___Int256___arrayPopBack_ = r"""
+Inline___Int256___arrayPopBack__ = r"""
 arrayPopBack(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [3,2]
 """
 
-Table___Int256___arrayPopBack_ = r"""
+Table___Int256___arrayPopBack__ = r"""
 a
 [3,2]
 """
 
-Inline___Int256___arrayPopFront_ = r"""
+Inline___Int256___arrayPopFront__ = r"""
 arrayPopFront(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [2,1]
 """
 
-Table___Int256___arrayPopFront_ = r"""
+Table___Int256___arrayPopFront__ = r"""
 a
 [2,1]
 """
 
-Inline___Int256___arraySort_ = r"""
+Inline___Int256___arraySort__ = r"""
 arraySort(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [1,2,3]
 """
 
-Table___Int256___arraySort_ = r"""
+Table___Int256___arraySort__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Int256___arrayReverseSort_ = r"""
+Inline___Int256___arrayReverseSort__ = r"""
 arrayReverseSort(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [3,2,1]
 """
 
-Table___Int256___arrayReverseSort_ = r"""
+Table___Int256___arrayReverseSort__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Int256___arrayDistinct_ = r"""
+Inline___Int256___arrayDistinct__ = r"""
 arrayDistinct(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [3,2,1]
 """
 
-Table___Int256___arrayDistinct_ = r"""
+Table___Int256___arrayDistinct__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Int256___arrayEnumerate_ = r"""
+Inline___Int256___arrayEnumerate__ = r"""
 arrayEnumerate(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [1,2,3]
 """
 
-Table___Int256___arrayEnumerate_ = r"""
+Table___Int256___arrayEnumerate__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Int256___arrayEnumerateDense_ = r"""
+Inline___Int256___arrayEnumerateDense__ = r"""
 arrayEnumerateDense(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [1,2,3]
 """
 
-Table___Int256___arrayEnumerateDense_ = r"""
+Table___Int256___arrayEnumerateDense__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Int256___arrayEnumerateUniq_ = r"""
+Inline___Int256___arrayEnumerateUniq__ = r"""
 arrayEnumerateUniq(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [1,1,1]
 """
 
-Table___Int256___arrayEnumerateUniq_ = r"""
+Table___Int256___arrayEnumerateUniq__ = r"""
 a
 [1,1,1]
 """
 
-Inline___Int256___arrayReverse_ = r"""
+Inline___Int256___arrayReverse__ = r"""
 arrayReverse(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [1,2,3]
 """
 
-Table___Int256___arrayReverse_ = r"""
+Table___Int256___arrayReverse__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Int256___reverse_ = r"""
+Inline___Int256___reverse__ = r"""
 reverse(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [1,2,3]
 """
 
-Table___Int256___reverse_ = r"""
+Table___Int256___reverse__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Int256___arrayFlatten_ = r"""
+Inline___Int256___arrayFlatten__ = r"""
 arrayFlatten(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [3,2,1]
 """
 
-Table___Int256___arrayFlatten_ = r"""
+Table___Int256___arrayFlatten__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Int256___arrayCompact_ = r"""
+Inline___Int256___arrayCompact__ = r"""
 arrayCompact(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [3,2,1]
 """
 
-Table___Int256___arrayCompact_ = r"""
+Table___Int256___arrayCompact__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Int256___arrayReduceInRanges__sum_____1__5___ = r"""
+Inline___Int256___arrayReduceInRanges__sum_____1__5____ = r"""
 arrayReduceInRanges(\'sum\', array(tuple(1, 5)), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [6]
 """
 
-Table___Int256___arrayReduceInRanges__sum_____1__5___ = r"""
+Table___Int256___arrayReduceInRanges__sum_____1__5____ = r"""
 a
 [6]
 """
 
-Inline___Int256___arrayMap_x_____x___2__ = r"""
+Inline___Int256___arrayMap_x_____x___2___ = r"""
 arrayMap(lambda(tuple(x), plus(x, 2)), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [5,4,3]
 """
 
-Table___Int256___arrayMap_x_____x___2__ = r"""
+Table___Int256___arrayMap_x_____x___2___ = r"""
 a
 [5,4,3]
 """
 
-Inline___Int256___arrayFill_x____x_3_ = r"""
+Inline___Int256___arrayFill_x____x_3__ = r"""
 arrayFill(lambda(tuple(x), equals(x, 3)), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [3,3,3]
 """
 
-Table___Int256___arrayFill_x____x_3_ = r"""
+Table___Int256___arrayFill_x____x_3__ = r"""
 a
 [3,3,3]
 """
 
-Inline___Int256___arrayReverseFill_x____x_3_ = r"""
+Inline___Int256___arrayReverseFill_x____x_3__ = r"""
 arrayReverseFill(lambda(tuple(x), equals(x, 3)), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [3,1,1]
 """
 
-Table___Int256___arrayReverseFill_x____x_3_ = r"""
+Table___Int256___arrayReverseFill_x____x_3__ = r"""
 a
 [3,1,1]
 """
 
-Inline___Int256___arrayConcat__toInt256__3____toInt256__2____toInt256__1____ = r"""
+Inline___Int256___arrayConcat__toInt256__3____toInt256__2____toInt256__1_____ = r"""
 arrayConcat(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [3,2,1,3,2,1]
 """
 
-Table___Int256___arrayConcat__toInt256__3____toInt256__2____toInt256__1____ = r"""
+Table___Int256___arrayConcat__toInt256__3____toInt256__2____toInt256__1_____ = r"""
 a
 [3,2,1,3,2,1]
 """
 
-Inline___Int256___arrayFilter_x____x____1__ = r"""
+Inline___Int256___arrayFilter_x____x____1___ = r"""
 arrayFilter(lambda(tuple(x), equals(x, 1)), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [1]
 """
 
-Table___Int256___arrayFilter_x____x____1__ = r"""
+Table___Int256___arrayFilter_x____x____1___ = r"""
 a
 [1]
 """
 
-Inline___Int256___arraySplit__x__y_____x_y___0__0__0__ = r"""
+Inline___Int256___arraySplit__x__y_____x_y___0__0__0___ = r"""
 arraySplit(lambda(tuple(x, y), equals(x, y)), [0, 0, 0], array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 [[0,0,0]]
 """
 
-Table___Int256___arraySplit__x__y_____x_y___0__0__0__ = r"""
+Table___Int256___arraySplit__x__y_____x_y___0__0__0___ = r"""
 a
 [[0,0,0]]
 """
 
-Inline___Int256___arrayZip__toInt256__1____ = r"""
+Inline___Int256___arrayZip__toInt256__1_____ = r"""
 arrayZip(array(toInt256(\'1\')), array(toInt256(\'3\')))
 [(1,3)]
 """
 
-Table___Int256___arrayZip__toInt256__1____ = r"""
+Table___Int256___arrayZip__toInt256__1_____ = r"""
 a
 [(1,1)]
 """
 
-Inline___Int256___empty_ = r"""
+Inline___Int256___empty__ = r"""
 empty(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 0
 """
 
-Table___Int256___empty_ = r"""
+Table___Int256___empty__ = r"""
 a
 0
 """
 
-Inline___Int256___notEmpty_ = r"""
+Inline___Int256___notEmpty__ = r"""
 notEmpty(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 1
 """
 
-Table___Int256___notEmpty_ = r"""
+Table___Int256___notEmpty__ = r"""
 a
 1
 """
 
-Inline___Int256___length_ = r"""
+Inline___Int256___length__ = r"""
 length(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 3
 """
 
-Table___Int256___length_ = r"""
+Table___Int256___length__ = r"""
 a
 3
 """
 
-Inline___Int256___arrayCount_x____x____1__ = r"""
+Inline___Int256___arrayCount_x____x____1___ = r"""
 arrayCount(lambda(tuple(x), equals(x, 1)), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 1
 """
 
-Table___Int256___arrayCount_x____x____1__ = r"""
+Table___Int256___arrayCount_x____x____1___ = r"""
 a
 1
 """
 
-Inline___Int256___arrayUniq_ = r"""
+Inline___Int256___arrayUniq__ = r"""
 arrayUniq(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 3
 """
 
-Table___Int256___arrayUniq_ = r"""
+Table___Int256___arrayUniq__ = r"""
 a
 3
 """
 
-Inline___Int256___arrayJoin_ = r"""
+Inline___Int256___arrayJoin__ = r"""
 arrayJoin(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 3
 2
 1
 """
 
-Table___Int256___arrayJoin_ = r"""
+Table___Int256___arrayJoin__ = r"""
 a
 1
 2
 3
 """
 
-Inline___Int256___arrayExists_x____x__1_ = r"""
+Inline___Int256___arrayExists_x____x__1__ = r"""
 arrayExists(lambda(tuple(x), equals(x, 1)), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 1
 """
 
-Table___Int256___arrayExists_x____x__1_ = r"""
+Table___Int256___arrayExists_x____x__1__ = r"""
 a
 1
 """
 
-Inline___Int256___arrayAll_x____x__1_ = r"""
+Inline___Int256___arrayAll_x____x__1__ = r"""
 arrayAll(lambda(tuple(x), equals(x, 1)), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 0
 """
 
-Table___Int256___arrayAll_x____x__1_ = r"""
+Table___Int256___arrayAll_x____x__1__ = r"""
 a
 0
 """
 
-Inline___Int256___arrayMin_ = r"""
+Inline___Int256___arrayMin__ = r"""
 arrayMin(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 1
 """
 
-Table___Int256___arrayMin_ = r"""
+Table___Int256___arrayMin__ = r"""
 a
 1
 """
 
-Inline___Int256___arrayMax_ = r"""
+Inline___Int256___arrayMax__ = r"""
 arrayMax(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 3
 """
 
-Table___Int256___arrayMax_ = r"""
+Table___Int256___arrayMax__ = r"""
 a
 3
 """
 
-Inline___Int256___arraySum_ = r"""
+Inline___Int256___arraySum__ = r"""
 arraySum(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 6
 """
 
-Table___Int256___arraySum_ = r"""
+Table___Int256___arraySum__ = r"""
 a
 6
 """
 
-Inline___Int256___arrayAvg_ = r"""
+Inline___Int256___arrayAvg__ = r"""
 arrayAvg(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 2
 """
 
-Table___Int256___arrayAvg_ = r"""
+Table___Int256___arrayAvg__ = r"""
 a
 2
 """
 
-Inline___Int256___arrayReduce__max___ = r"""
+Inline___Int256___arrayReduce__max____ = r"""
 arrayReduce(\'max\', array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 3
 """
 
-Table___Int256___arrayReduce__max___ = r"""
+Table___Int256___arrayReduce__max____ = r"""
 a
 3
 """
 
-Inline___Int256___arrayFirst_x____x__3_ = r"""
+Inline___Int256___arrayFirst_x____x__3__ = r"""
 arrayFirst(lambda(tuple(x), equals(x, 3)), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 3
 """
 
-Table___Int256___arrayFirst_x____x__3_ = r"""
+Table___Int256___arrayFirst_x____x__3__ = r"""
 a
 3
 """
 
-Inline___Int256___arrayFirstIndex_x____x__3_ = r"""
+Inline___Int256___arrayFirstIndex_x____x__3__ = r"""
 arrayFirstIndex(lambda(tuple(x), equals(x, 3)), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 1
 """
 
-Table___Int256___arrayFirstIndex_x____x__3_ = r"""
+Table___Int256___arrayFirstIndex_x____x__3__ = r"""
 a
 1
 """
 
-Inline___Int256___hasAll__toInt256__3____toInt256__2____toInt256__1_____ = r"""
+Inline___Int256___hasAll__toInt256__3____toInt256__2____toInt256__1______ = r"""
 hasAll(array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 1
 """
 
-Table___Int256___hasAll__toInt256__3____toInt256__2____toInt256__1_____ = r"""
+Table___Int256___hasAll__toInt256__3____toInt256__2____toInt256__1______ = r"""
 a
 1
 """
 
-Inline___Int256___hasAny__toInt256__2____toInt256__1_____ = r"""
+Inline___Int256___hasAny__toInt256__2____toInt256__1______ = r"""
 hasAny(array(toInt256(\'2\'), toInt256(\'1\')), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 1
 """
 
-Table___Int256___hasAny__toInt256__2____toInt256__1_____ = r"""
+Table___Int256___hasAny__toInt256__2____toInt256__1______ = r"""
 a
 1
 """
 
-Inline___Int256___hasSubstr__toInt256__2____toInt256__1_____ = r"""
+Inline___Int256___hasSubstr__toInt256__2____toInt256__1______ = r"""
 hasSubstr(array(toInt256(\'2\'), toInt256(\'1\')), array(toInt256(\'3\'), toInt256(\'2\'), toInt256(\'1\')))
 0
 """
 
-Table___Int256___hasSubstr__toInt256__2____toInt256__1_____ = r"""
+Table___Int256___hasSubstr__toInt256__2____toInt256__1______ = r"""
 a
 0
 """
 
-Table___Int256___arrayDifference_ = r"""
+Table___Int256___arrayDifference__ = r"""
 a
 """
 
-Table___Int256___arrayCumSum_ = r"""
+Table___Int256___arrayCumSum__ = r"""
 a
 """
 
-Table___Int256___arrayCumSumNonNegative_ = r"""
+Table___Int256___arrayCumSumNonNegative__ = r"""
 a
 """
 
@@ -1588,399 +1588,399 @@ a
 [1,2]
 """
 
-Inline___UInt128___arrayPopBack_ = r"""
+Inline___UInt128___arrayPopBack__ = r"""
 arrayPopBack(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [3,2]
 """
 
-Table___UInt128___arrayPopBack_ = r"""
+Table___UInt128___arrayPopBack__ = r"""
 a
 [3,2]
 """
 
-Inline___UInt128___arrayPopFront_ = r"""
+Inline___UInt128___arrayPopFront__ = r"""
 arrayPopFront(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [2,1]
 """
 
-Table___UInt128___arrayPopFront_ = r"""
+Table___UInt128___arrayPopFront__ = r"""
 a
 [2,1]
 """
 
-Inline___UInt128___arraySort_ = r"""
+Inline___UInt128___arraySort__ = r"""
 arraySort(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [1,2,3]
 """
 
-Table___UInt128___arraySort_ = r"""
+Table___UInt128___arraySort__ = r"""
 a
 [1,2,3]
 """
 
-Inline___UInt128___arrayReverseSort_ = r"""
+Inline___UInt128___arrayReverseSort__ = r"""
 arrayReverseSort(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [3,2,1]
 """
 
-Table___UInt128___arrayReverseSort_ = r"""
+Table___UInt128___arrayReverseSort__ = r"""
 a
 [3,2,1]
 """
 
-Inline___UInt128___arrayDistinct_ = r"""
+Inline___UInt128___arrayDistinct__ = r"""
 arrayDistinct(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [3,2,1]
 """
 
-Table___UInt128___arrayDistinct_ = r"""
+Table___UInt128___arrayDistinct__ = r"""
 a
 [3,2,1]
 """
 
-Inline___UInt128___arrayEnumerate_ = r"""
+Inline___UInt128___arrayEnumerate__ = r"""
 arrayEnumerate(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [1,2,3]
 """
 
-Table___UInt128___arrayEnumerate_ = r"""
+Table___UInt128___arrayEnumerate__ = r"""
 a
 [1,2,3]
 """
 
-Inline___UInt128___arrayEnumerateDense_ = r"""
+Inline___UInt128___arrayEnumerateDense__ = r"""
 arrayEnumerateDense(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [1,2,3]
 """
 
-Table___UInt128___arrayEnumerateDense_ = r"""
+Table___UInt128___arrayEnumerateDense__ = r"""
 a
 [1,2,3]
 """
 
-Inline___UInt128___arrayEnumerateUniq_ = r"""
+Inline___UInt128___arrayEnumerateUniq__ = r"""
 arrayEnumerateUniq(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [1,1,1]
 """
 
-Table___UInt128___arrayEnumerateUniq_ = r"""
+Table___UInt128___arrayEnumerateUniq__ = r"""
 a
 [1,1,1]
 """
 
-Inline___UInt128___arrayReverse_ = r"""
+Inline___UInt128___arrayReverse__ = r"""
 arrayReverse(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [1,2,3]
 """
 
-Table___UInt128___arrayReverse_ = r"""
+Table___UInt128___arrayReverse__ = r"""
 a
 [1,2,3]
 """
 
-Inline___UInt128___reverse_ = r"""
+Inline___UInt128___reverse__ = r"""
 reverse(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [1,2,3]
 """
 
-Table___UInt128___reverse_ = r"""
+Table___UInt128___reverse__ = r"""
 a
 [1,2,3]
 """
 
-Inline___UInt128___arrayFlatten_ = r"""
+Inline___UInt128___arrayFlatten__ = r"""
 arrayFlatten(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [3,2,1]
 """
 
-Table___UInt128___arrayFlatten_ = r"""
+Table___UInt128___arrayFlatten__ = r"""
 a
 [3,2,1]
 """
 
-Inline___UInt128___arrayCompact_ = r"""
+Inline___UInt128___arrayCompact__ = r"""
 arrayCompact(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [3,2,1]
 """
 
-Table___UInt128___arrayCompact_ = r"""
+Table___UInt128___arrayCompact__ = r"""
 a
 [3,2,1]
 """
 
-Inline___UInt128___arrayReduceInRanges__sum_____1__5___ = r"""
+Inline___UInt128___arrayReduceInRanges__sum_____1__5____ = r"""
 arrayReduceInRanges(\'sum\', array(tuple(1, 5)), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [6]
 """
 
-Table___UInt128___arrayReduceInRanges__sum_____1__5___ = r"""
+Table___UInt128___arrayReduceInRanges__sum_____1__5____ = r"""
 a
 [6]
 """
 
-Inline___UInt128___arrayMap_x_____x___2__ = r"""
+Inline___UInt128___arrayMap_x_____x___2___ = r"""
 arrayMap(lambda(tuple(x), plus(x, 2)), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [5,4,3]
 """
 
-Table___UInt128___arrayMap_x_____x___2__ = r"""
+Table___UInt128___arrayMap_x_____x___2___ = r"""
 a
 [5,4,3]
 """
 
-Inline___UInt128___arrayFill_x____x_3_ = r"""
+Inline___UInt128___arrayFill_x____x_3__ = r"""
 arrayFill(lambda(tuple(x), equals(x, 3)), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [3,3,3]
 """
 
-Table___UInt128___arrayFill_x____x_3_ = r"""
+Table___UInt128___arrayFill_x____x_3__ = r"""
 a
 [3,3,3]
 """
 
-Inline___UInt128___arrayReverseFill_x____x_3_ = r"""
+Inline___UInt128___arrayReverseFill_x____x_3__ = r"""
 arrayReverseFill(lambda(tuple(x), equals(x, 3)), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [3,1,1]
 """
 
-Table___UInt128___arrayReverseFill_x____x_3_ = r"""
+Table___UInt128___arrayReverseFill_x____x_3__ = r"""
 a
 [3,1,1]
 """
 
-Inline___UInt128___arrayConcat__toUInt128__3____toUInt128__2____toUInt128__1____ = r"""
+Inline___UInt128___arrayConcat__toUInt128__3____toUInt128__2____toUInt128__1_____ = r"""
 arrayConcat(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [3,2,1,3,2,1]
 """
 
-Table___UInt128___arrayConcat__toUInt128__3____toUInt128__2____toUInt128__1____ = r"""
+Table___UInt128___arrayConcat__toUInt128__3____toUInt128__2____toUInt128__1_____ = r"""
 a
 [3,2,1,3,2,1]
 """
 
-Inline___UInt128___arrayFilter_x____x____1__ = r"""
+Inline___UInt128___arrayFilter_x____x____1___ = r"""
 arrayFilter(lambda(tuple(x), equals(x, 1)), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [1]
 """
 
-Table___UInt128___arrayFilter_x____x____1__ = r"""
+Table___UInt128___arrayFilter_x____x____1___ = r"""
 a
 [1]
 """
 
-Inline___UInt128___arraySplit__x__y_____x_y___0__0__0__ = r"""
+Inline___UInt128___arraySplit__x__y_____x_y___0__0__0___ = r"""
 arraySplit(lambda(tuple(x, y), equals(x, y)), [0, 0, 0], array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 [[0,0,0]]
 """
 
-Table___UInt128___arraySplit__x__y_____x_y___0__0__0__ = r"""
+Table___UInt128___arraySplit__x__y_____x_y___0__0__0___ = r"""
 a
 [[0,0,0]]
 """
 
-Inline___UInt128___arrayZip__toUInt128__1____ = r"""
+Inline___UInt128___arrayZip__toUInt128__1_____ = r"""
 arrayZip(array(toUInt128(\'1\')), array(toUInt128(\'3\')))
 [(1,3)]
 """
 
-Table___UInt128___arrayZip__toUInt128__1____ = r"""
+Table___UInt128___arrayZip__toUInt128__1_____ = r"""
 a
 [(1,1)]
 """
 
-Inline___UInt128___empty_ = r"""
+Inline___UInt128___empty__ = r"""
 empty(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 0
 """
 
-Table___UInt128___empty_ = r"""
+Table___UInt128___empty__ = r"""
 a
 0
 """
 
-Inline___UInt128___notEmpty_ = r"""
+Inline___UInt128___notEmpty__ = r"""
 notEmpty(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 1
 """
 
-Table___UInt128___notEmpty_ = r"""
+Table___UInt128___notEmpty__ = r"""
 a
 1
 """
 
-Inline___UInt128___length_ = r"""
+Inline___UInt128___length__ = r"""
 length(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 3
 """
 
-Table___UInt128___length_ = r"""
+Table___UInt128___length__ = r"""
 a
 3
 """
 
-Inline___UInt128___arrayCount_x____x____1__ = r"""
+Inline___UInt128___arrayCount_x____x____1___ = r"""
 arrayCount(lambda(tuple(x), equals(x, 1)), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 1
 """
 
-Table___UInt128___arrayCount_x____x____1__ = r"""
+Table___UInt128___arrayCount_x____x____1___ = r"""
 a
 1
 """
 
-Inline___UInt128___arrayUniq_ = r"""
+Inline___UInt128___arrayUniq__ = r"""
 arrayUniq(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 3
 """
 
-Table___UInt128___arrayUniq_ = r"""
+Table___UInt128___arrayUniq__ = r"""
 a
 3
 """
 
-Inline___UInt128___arrayJoin_ = r"""
+Inline___UInt128___arrayJoin__ = r"""
 arrayJoin(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 3
 2
 1
 """
 
-Table___UInt128___arrayJoin_ = r"""
+Table___UInt128___arrayJoin__ = r"""
 a
 1
 2
 3
 """
 
-Inline___UInt128___arrayExists_x____x__1_ = r"""
+Inline___UInt128___arrayExists_x____x__1__ = r"""
 arrayExists(lambda(tuple(x), equals(x, 1)), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 1
 """
 
-Table___UInt128___arrayExists_x____x__1_ = r"""
+Table___UInt128___arrayExists_x____x__1__ = r"""
 a
 1
 """
 
-Inline___UInt128___arrayAll_x____x__1_ = r"""
+Inline___UInt128___arrayAll_x____x__1__ = r"""
 arrayAll(lambda(tuple(x), equals(x, 1)), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 0
 """
 
-Table___UInt128___arrayAll_x____x__1_ = r"""
+Table___UInt128___arrayAll_x____x__1__ = r"""
 a
 0
 """
 
-Inline___UInt128___arrayMin_ = r"""
+Inline___UInt128___arrayMin__ = r"""
 arrayMin(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 1
 """
 
-Table___UInt128___arrayMin_ = r"""
+Table___UInt128___arrayMin__ = r"""
 a
 1
 """
 
-Inline___UInt128___arrayMax_ = r"""
+Inline___UInt128___arrayMax__ = r"""
 arrayMax(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 3
 """
 
-Table___UInt128___arrayMax_ = r"""
+Table___UInt128___arrayMax__ = r"""
 a
 3
 """
 
-Inline___UInt128___arraySum_ = r"""
+Inline___UInt128___arraySum__ = r"""
 arraySum(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 6
 """
 
-Table___UInt128___arraySum_ = r"""
+Table___UInt128___arraySum__ = r"""
 a
 6
 """
 
-Inline___UInt128___arrayAvg_ = r"""
+Inline___UInt128___arrayAvg__ = r"""
 arrayAvg(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 2
 """
 
-Table___UInt128___arrayAvg_ = r"""
+Table___UInt128___arrayAvg__ = r"""
 a
 2
 """
 
-Inline___UInt128___arrayReduce__max___ = r"""
+Inline___UInt128___arrayReduce__max____ = r"""
 arrayReduce(\'max\', array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 3
 """
 
-Table___UInt128___arrayReduce__max___ = r"""
+Table___UInt128___arrayReduce__max____ = r"""
 a
 3
 """
 
-Inline___UInt128___arrayFirst_x____x__3_ = r"""
+Inline___UInt128___arrayFirst_x____x__3__ = r"""
 arrayFirst(lambda(tuple(x), equals(x, 3)), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 3
 """
 
-Table___UInt128___arrayFirst_x____x__3_ = r"""
+Table___UInt128___arrayFirst_x____x__3__ = r"""
 a
 3
 """
 
-Inline___UInt128___arrayFirstIndex_x____x__3_ = r"""
+Inline___UInt128___arrayFirstIndex_x____x__3__ = r"""
 arrayFirstIndex(lambda(tuple(x), equals(x, 3)), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 1
 """
 
-Table___UInt128___arrayFirstIndex_x____x__3_ = r"""
+Table___UInt128___arrayFirstIndex_x____x__3__ = r"""
 a
 1
 """
 
-Inline___UInt128___hasAll__toUInt128__3____toUInt128__2____toUInt128__1_____ = r"""
+Inline___UInt128___hasAll__toUInt128__3____toUInt128__2____toUInt128__1______ = r"""
 hasAll(array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 1
 """
 
-Table___UInt128___hasAll__toUInt128__3____toUInt128__2____toUInt128__1_____ = r"""
+Table___UInt128___hasAll__toUInt128__3____toUInt128__2____toUInt128__1______ = r"""
 a
 1
 """
 
-Inline___UInt128___hasAny__toUInt128__2____toUInt128__1_____ = r"""
+Inline___UInt128___hasAny__toUInt128__2____toUInt128__1______ = r"""
 hasAny(array(toUInt128(\'2\'), toUInt128(\'1\')), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 1
 """
 
-Table___UInt128___hasAny__toUInt128__2____toUInt128__1_____ = r"""
+Table___UInt128___hasAny__toUInt128__2____toUInt128__1______ = r"""
 a
 1
 """
 
-Inline___UInt128___hasSubstr__toUInt128__2____toUInt128__1_____ = r"""
+Inline___UInt128___hasSubstr__toUInt128__2____toUInt128__1______ = r"""
 hasSubstr(array(toUInt128(\'2\'), toUInt128(\'1\')), array(toUInt128(\'3\'), toUInt128(\'2\'), toUInt128(\'1\')))
 0
 """
 
-Table___UInt128___hasSubstr__toUInt128__2____toUInt128__1_____ = r"""
+Table___UInt128___hasSubstr__toUInt128__2____toUInt128__1______ = r"""
 a
 0
 """
 
-Table___UInt128___arrayDifference_ = r"""
+Table___UInt128___arrayDifference__ = r"""
 a
 """
 
-Table___UInt128___arrayCumSum_ = r"""
+Table___UInt128___arrayCumSum__ = r"""
 a
 """
 
-Table___UInt128___arrayCumSumNonNegative_ = r"""
+Table___UInt128___arrayCumSumNonNegative__ = r"""
 a
 """
 
@@ -2116,399 +2116,399 @@ a
 [1,2]
 """
 
-Inline___UInt256___arrayPopBack_ = r"""
+Inline___UInt256___arrayPopBack__ = r"""
 arrayPopBack(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [3,2]
 """
 
-Table___UInt256___arrayPopBack_ = r"""
+Table___UInt256___arrayPopBack__ = r"""
 a
 [3,2]
 """
 
-Inline___UInt256___arrayPopFront_ = r"""
+Inline___UInt256___arrayPopFront__ = r"""
 arrayPopFront(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [2,1]
 """
 
-Table___UInt256___arrayPopFront_ = r"""
+Table___UInt256___arrayPopFront__ = r"""
 a
 [2,1]
 """
 
-Inline___UInt256___arraySort_ = r"""
+Inline___UInt256___arraySort__ = r"""
 arraySort(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [1,2,3]
 """
 
-Table___UInt256___arraySort_ = r"""
+Table___UInt256___arraySort__ = r"""
 a
 [1,2,3]
 """
 
-Inline___UInt256___arrayReverseSort_ = r"""
+Inline___UInt256___arrayReverseSort__ = r"""
 arrayReverseSort(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [3,2,1]
 """
 
-Table___UInt256___arrayReverseSort_ = r"""
+Table___UInt256___arrayReverseSort__ = r"""
 a
 [3,2,1]
 """
 
-Inline___UInt256___arrayDistinct_ = r"""
+Inline___UInt256___arrayDistinct__ = r"""
 arrayDistinct(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [3,2,1]
 """
 
-Table___UInt256___arrayDistinct_ = r"""
+Table___UInt256___arrayDistinct__ = r"""
 a
 [3,2,1]
 """
 
-Inline___UInt256___arrayEnumerate_ = r"""
+Inline___UInt256___arrayEnumerate__ = r"""
 arrayEnumerate(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [1,2,3]
 """
 
-Table___UInt256___arrayEnumerate_ = r"""
+Table___UInt256___arrayEnumerate__ = r"""
 a
 [1,2,3]
 """
 
-Inline___UInt256___arrayEnumerateDense_ = r"""
+Inline___UInt256___arrayEnumerateDense__ = r"""
 arrayEnumerateDense(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [1,2,3]
 """
 
-Table___UInt256___arrayEnumerateDense_ = r"""
+Table___UInt256___arrayEnumerateDense__ = r"""
 a
 [1,2,3]
 """
 
-Inline___UInt256___arrayEnumerateUniq_ = r"""
+Inline___UInt256___arrayEnumerateUniq__ = r"""
 arrayEnumerateUniq(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [1,1,1]
 """
 
-Table___UInt256___arrayEnumerateUniq_ = r"""
+Table___UInt256___arrayEnumerateUniq__ = r"""
 a
 [1,1,1]
 """
 
-Inline___UInt256___arrayReverse_ = r"""
+Inline___UInt256___arrayReverse__ = r"""
 arrayReverse(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [1,2,3]
 """
 
-Table___UInt256___arrayReverse_ = r"""
+Table___UInt256___arrayReverse__ = r"""
 a
 [1,2,3]
 """
 
-Inline___UInt256___reverse_ = r"""
+Inline___UInt256___reverse__ = r"""
 reverse(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [1,2,3]
 """
 
-Table___UInt256___reverse_ = r"""
+Table___UInt256___reverse__ = r"""
 a
 [1,2,3]
 """
 
-Inline___UInt256___arrayFlatten_ = r"""
+Inline___UInt256___arrayFlatten__ = r"""
 arrayFlatten(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [3,2,1]
 """
 
-Table___UInt256___arrayFlatten_ = r"""
+Table___UInt256___arrayFlatten__ = r"""
 a
 [3,2,1]
 """
 
-Inline___UInt256___arrayCompact_ = r"""
+Inline___UInt256___arrayCompact__ = r"""
 arrayCompact(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [3,2,1]
 """
 
-Table___UInt256___arrayCompact_ = r"""
+Table___UInt256___arrayCompact__ = r"""
 a
 [3,2,1]
 """
 
-Inline___UInt256___arrayReduceInRanges__sum_____1__5___ = r"""
+Inline___UInt256___arrayReduceInRanges__sum_____1__5____ = r"""
 arrayReduceInRanges(\'sum\', array(tuple(1, 5)), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [6]
 """
 
-Table___UInt256___arrayReduceInRanges__sum_____1__5___ = r"""
+Table___UInt256___arrayReduceInRanges__sum_____1__5____ = r"""
 a
 [6]
 """
 
-Inline___UInt256___arrayMap_x_____x___2__ = r"""
+Inline___UInt256___arrayMap_x_____x___2___ = r"""
 arrayMap(lambda(tuple(x), plus(x, 2)), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [5,4,3]
 """
 
-Table___UInt256___arrayMap_x_____x___2__ = r"""
+Table___UInt256___arrayMap_x_____x___2___ = r"""
 a
 [5,4,3]
 """
 
-Inline___UInt256___arrayFill_x____x_3_ = r"""
+Inline___UInt256___arrayFill_x____x_3__ = r"""
 arrayFill(lambda(tuple(x), equals(x, 3)), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [3,3,3]
 """
 
-Table___UInt256___arrayFill_x____x_3_ = r"""
+Table___UInt256___arrayFill_x____x_3__ = r"""
 a
 [3,3,3]
 """
 
-Inline___UInt256___arrayReverseFill_x____x_3_ = r"""
+Inline___UInt256___arrayReverseFill_x____x_3__ = r"""
 arrayReverseFill(lambda(tuple(x), equals(x, 3)), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [3,1,1]
 """
 
-Table___UInt256___arrayReverseFill_x____x_3_ = r"""
+Table___UInt256___arrayReverseFill_x____x_3__ = r"""
 a
 [3,1,1]
 """
 
-Inline___UInt256___arrayConcat__toUInt256__3____toUInt256__2____toUInt256__1____ = r"""
+Inline___UInt256___arrayConcat__toUInt256__3____toUInt256__2____toUInt256__1_____ = r"""
 arrayConcat(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [3,2,1,3,2,1]
 """
 
-Table___UInt256___arrayConcat__toUInt256__3____toUInt256__2____toUInt256__1____ = r"""
+Table___UInt256___arrayConcat__toUInt256__3____toUInt256__2____toUInt256__1_____ = r"""
 a
 [3,2,1,3,2,1]
 """
 
-Inline___UInt256___arrayFilter_x____x____1__ = r"""
+Inline___UInt256___arrayFilter_x____x____1___ = r"""
 arrayFilter(lambda(tuple(x), equals(x, 1)), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [1]
 """
 
-Table___UInt256___arrayFilter_x____x____1__ = r"""
+Table___UInt256___arrayFilter_x____x____1___ = r"""
 a
 [1]
 """
 
-Inline___UInt256___arraySplit__x__y_____x_y___0__0__0__ = r"""
+Inline___UInt256___arraySplit__x__y_____x_y___0__0__0___ = r"""
 arraySplit(lambda(tuple(x, y), equals(x, y)), [0, 0, 0], array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 [[0,0,0]]
 """
 
-Table___UInt256___arraySplit__x__y_____x_y___0__0__0__ = r"""
+Table___UInt256___arraySplit__x__y_____x_y___0__0__0___ = r"""
 a
 [[0,0,0]]
 """
 
-Inline___UInt256___arrayZip__toUInt256__1____ = r"""
+Inline___UInt256___arrayZip__toUInt256__1_____ = r"""
 arrayZip(array(toUInt256(\'1\')), array(toUInt256(\'3\')))
 [(1,3)]
 """
 
-Table___UInt256___arrayZip__toUInt256__1____ = r"""
+Table___UInt256___arrayZip__toUInt256__1_____ = r"""
 a
 [(1,1)]
 """
 
-Inline___UInt256___empty_ = r"""
+Inline___UInt256___empty__ = r"""
 empty(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 0
 """
 
-Table___UInt256___empty_ = r"""
+Table___UInt256___empty__ = r"""
 a
 0
 """
 
-Inline___UInt256___notEmpty_ = r"""
+Inline___UInt256___notEmpty__ = r"""
 notEmpty(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 1
 """
 
-Table___UInt256___notEmpty_ = r"""
+Table___UInt256___notEmpty__ = r"""
 a
 1
 """
 
-Inline___UInt256___length_ = r"""
+Inline___UInt256___length__ = r"""
 length(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 3
 """
 
-Table___UInt256___length_ = r"""
+Table___UInt256___length__ = r"""
 a
 3
 """
 
-Inline___UInt256___arrayCount_x____x____1__ = r"""
+Inline___UInt256___arrayCount_x____x____1___ = r"""
 arrayCount(lambda(tuple(x), equals(x, 1)), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 1
 """
 
-Table___UInt256___arrayCount_x____x____1__ = r"""
+Table___UInt256___arrayCount_x____x____1___ = r"""
 a
 1
 """
 
-Inline___UInt256___arrayUniq_ = r"""
+Inline___UInt256___arrayUniq__ = r"""
 arrayUniq(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 3
 """
 
-Table___UInt256___arrayUniq_ = r"""
+Table___UInt256___arrayUniq__ = r"""
 a
 3
 """
 
-Inline___UInt256___arrayJoin_ = r"""
+Inline___UInt256___arrayJoin__ = r"""
 arrayJoin(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 3
 2
 1
 """
 
-Table___UInt256___arrayJoin_ = r"""
+Table___UInt256___arrayJoin__ = r"""
 a
 1
 2
 3
 """
 
-Inline___UInt256___arrayExists_x____x__1_ = r"""
+Inline___UInt256___arrayExists_x____x__1__ = r"""
 arrayExists(lambda(tuple(x), equals(x, 1)), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 1
 """
 
-Table___UInt256___arrayExists_x____x__1_ = r"""
+Table___UInt256___arrayExists_x____x__1__ = r"""
 a
 1
 """
 
-Inline___UInt256___arrayAll_x____x__1_ = r"""
+Inline___UInt256___arrayAll_x____x__1__ = r"""
 arrayAll(lambda(tuple(x), equals(x, 1)), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 0
 """
 
-Table___UInt256___arrayAll_x____x__1_ = r"""
+Table___UInt256___arrayAll_x____x__1__ = r"""
 a
 0
 """
 
-Inline___UInt256___arrayMin_ = r"""
+Inline___UInt256___arrayMin__ = r"""
 arrayMin(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 1
 """
 
-Table___UInt256___arrayMin_ = r"""
+Table___UInt256___arrayMin__ = r"""
 a
 1
 """
 
-Inline___UInt256___arrayMax_ = r"""
+Inline___UInt256___arrayMax__ = r"""
 arrayMax(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 3
 """
 
-Table___UInt256___arrayMax_ = r"""
+Table___UInt256___arrayMax__ = r"""
 a
 3
 """
 
-Inline___UInt256___arraySum_ = r"""
+Inline___UInt256___arraySum__ = r"""
 arraySum(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 6
 """
 
-Table___UInt256___arraySum_ = r"""
+Table___UInt256___arraySum__ = r"""
 a
 6
 """
 
-Inline___UInt256___arrayAvg_ = r"""
+Inline___UInt256___arrayAvg__ = r"""
 arrayAvg(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 2
 """
 
-Table___UInt256___arrayAvg_ = r"""
+Table___UInt256___arrayAvg__ = r"""
 a
 2
 """
 
-Inline___UInt256___arrayReduce__max___ = r"""
+Inline___UInt256___arrayReduce__max____ = r"""
 arrayReduce(\'max\', array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 3
 """
 
-Table___UInt256___arrayReduce__max___ = r"""
+Table___UInt256___arrayReduce__max____ = r"""
 a
 3
 """
 
-Inline___UInt256___arrayFirst_x____x__3_ = r"""
+Inline___UInt256___arrayFirst_x____x__3__ = r"""
 arrayFirst(lambda(tuple(x), equals(x, 3)), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 3
 """
 
-Table___UInt256___arrayFirst_x____x__3_ = r"""
+Table___UInt256___arrayFirst_x____x__3__ = r"""
 a
 3
 """
 
-Inline___UInt256___arrayFirstIndex_x____x__3_ = r"""
+Inline___UInt256___arrayFirstIndex_x____x__3__ = r"""
 arrayFirstIndex(lambda(tuple(x), equals(x, 3)), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 1
 """
 
-Table___UInt256___arrayFirstIndex_x____x__3_ = r"""
+Table___UInt256___arrayFirstIndex_x____x__3__ = r"""
 a
 1
 """
 
-Inline___UInt256___hasAll__toUInt256__3____toUInt256__2____toUInt256__1_____ = r"""
+Inline___UInt256___hasAll__toUInt256__3____toUInt256__2____toUInt256__1______ = r"""
 hasAll(array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 1
 """
 
-Table___UInt256___hasAll__toUInt256__3____toUInt256__2____toUInt256__1_____ = r"""
+Table___UInt256___hasAll__toUInt256__3____toUInt256__2____toUInt256__1______ = r"""
 a
 1
 """
 
-Inline___UInt256___hasAny__toUInt256__2____toUInt256__1_____ = r"""
+Inline___UInt256___hasAny__toUInt256__2____toUInt256__1______ = r"""
 hasAny(array(toUInt256(\'2\'), toUInt256(\'1\')), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 1
 """
 
-Table___UInt256___hasAny__toUInt256__2____toUInt256__1_____ = r"""
+Table___UInt256___hasAny__toUInt256__2____toUInt256__1______ = r"""
 a
 1
 """
 
-Inline___UInt256___hasSubstr__toUInt256__2____toUInt256__1_____ = r"""
+Inline___UInt256___hasSubstr__toUInt256__2____toUInt256__1______ = r"""
 hasSubstr(array(toUInt256(\'2\'), toUInt256(\'1\')), array(toUInt256(\'3\'), toUInt256(\'2\'), toUInt256(\'1\')))
 0
 """
 
-Table___UInt256___hasSubstr__toUInt256__2____toUInt256__1_____ = r"""
+Table___UInt256___hasSubstr__toUInt256__2____toUInt256__1______ = r"""
 a
 0
 """
 
-Table___UInt256___arrayDifference_ = r"""
+Table___UInt256___arrayDifference__ = r"""
 a
 """
 
-Table___UInt256___arrayCumSum_ = r"""
+Table___UInt256___arrayCumSum__ = r"""
 a
 """
 
-Table___UInt256___arrayCumSumNonNegative_ = r"""
+Table___UInt256___arrayCumSumNonNegative__ = r"""
 a
 """
 
@@ -2644,375 +2644,375 @@ a
 [1,2]
 """
 
-Inline___Decimal256_0____arrayPopBack_ = r"""
+Inline___Decimal256_0____arrayPopBack__ = r"""
 arrayPopBack(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [3,2]
 """
 
-Table___Decimal256_0____arrayPopBack_ = r"""
+Table___Decimal256_0____arrayPopBack__ = r"""
 a
 [3,2]
 """
 
-Inline___Decimal256_0____arrayPopFront_ = r"""
+Inline___Decimal256_0____arrayPopFront__ = r"""
 arrayPopFront(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [2,1]
 """
 
-Table___Decimal256_0____arrayPopFront_ = r"""
+Table___Decimal256_0____arrayPopFront__ = r"""
 a
 [2,1]
 """
 
-Inline___Decimal256_0____arraySort_ = r"""
+Inline___Decimal256_0____arraySort__ = r"""
 arraySort(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [1,2,3]
 """
 
-Table___Decimal256_0____arraySort_ = r"""
+Table___Decimal256_0____arraySort__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Decimal256_0____arrayReverseSort_ = r"""
+Inline___Decimal256_0____arrayReverseSort__ = r"""
 arrayReverseSort(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [3,2,1]
 """
 
-Table___Decimal256_0____arrayReverseSort_ = r"""
+Table___Decimal256_0____arrayReverseSort__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Decimal256_0____arrayDistinct_ = r"""
+Inline___Decimal256_0____arrayDistinct__ = r"""
 arrayDistinct(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [3,2,1]
 """
 
-Table___Decimal256_0____arrayDistinct_ = r"""
+Table___Decimal256_0____arrayDistinct__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Decimal256_0____arrayEnumerate_ = r"""
+Inline___Decimal256_0____arrayEnumerate__ = r"""
 arrayEnumerate(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [1,2,3]
 """
 
-Table___Decimal256_0____arrayEnumerate_ = r"""
+Table___Decimal256_0____arrayEnumerate__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Decimal256_0____arrayEnumerateDense_ = r"""
+Inline___Decimal256_0____arrayEnumerateDense__ = r"""
 arrayEnumerateDense(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [1,2,3]
 """
 
-Table___Decimal256_0____arrayEnumerateDense_ = r"""
+Table___Decimal256_0____arrayEnumerateDense__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Decimal256_0____arrayEnumerateUniq_ = r"""
+Inline___Decimal256_0____arrayEnumerateUniq__ = r"""
 arrayEnumerateUniq(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [1,1,1]
 """
 
-Table___Decimal256_0____arrayEnumerateUniq_ = r"""
+Table___Decimal256_0____arrayEnumerateUniq__ = r"""
 a
 [1,1,1]
 """
 
-Inline___Decimal256_0____arrayReverse_ = r"""
+Inline___Decimal256_0____arrayReverse__ = r"""
 arrayReverse(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [1,2,3]
 """
 
-Table___Decimal256_0____arrayReverse_ = r"""
+Table___Decimal256_0____arrayReverse__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Decimal256_0____reverse_ = r"""
+Inline___Decimal256_0____reverse__ = r"""
 reverse(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [1,2,3]
 """
 
-Table___Decimal256_0____reverse_ = r"""
+Table___Decimal256_0____reverse__ = r"""
 a
 [1,2,3]
 """
 
-Inline___Decimal256_0____arrayFlatten_ = r"""
+Inline___Decimal256_0____arrayFlatten__ = r"""
 arrayFlatten(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [3,2,1]
 """
 
-Table___Decimal256_0____arrayFlatten_ = r"""
+Table___Decimal256_0____arrayFlatten__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Decimal256_0____arrayCompact_ = r"""
+Inline___Decimal256_0____arrayCompact__ = r"""
 arrayCompact(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [3,2,1]
 """
 
-Table___Decimal256_0____arrayCompact_ = r"""
+Table___Decimal256_0____arrayCompact__ = r"""
 a
 [3,2,1]
 """
 
-Inline___Decimal256_0____arrayReduceInRanges__sum_____1__5___ = r"""
+Inline___Decimal256_0____arrayReduceInRanges__sum_____1__5____ = r"""
 arrayReduceInRanges(\'sum\', array(tuple(1, 5)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [6]
 """
 
-Table___Decimal256_0____arrayReduceInRanges__sum_____1__5___ = r"""
+Table___Decimal256_0____arrayReduceInRanges__sum_____1__5____ = r"""
 a
 [6]
 """
 
-Inline___Decimal256_0____arrayMap_x_____x___2__ = r"""
+Inline___Decimal256_0____arrayMap_x_____x___2___ = r"""
 arrayMap(lambda(tuple(x), plus(x, 2)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [5,4,3]
 """
 
-Table___Decimal256_0____arrayMap_x_____x___2__ = r"""
+Table___Decimal256_0____arrayMap_x_____x___2___ = r"""
 a
 [5,4,3]
 """
 
-Inline___Decimal256_0____arrayFill_x____x_3_ = r"""
+Inline___Decimal256_0____arrayFill_x____x_3__ = r"""
 arrayFill(lambda(tuple(x), equals(x, 3)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [3,3,3]
 """
 
-Table___Decimal256_0____arrayFill_x____x_3_ = r"""
+Table___Decimal256_0____arrayFill_x____x_3__ = r"""
 a
 [3,3,3]
 """
 
-Inline___Decimal256_0____arrayReverseFill_x____x_3_ = r"""
+Inline___Decimal256_0____arrayReverseFill_x____x_3__ = r"""
 arrayReverseFill(lambda(tuple(x), equals(x, 3)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [3,1,1]
 """
 
-Table___Decimal256_0____arrayReverseFill_x____x_3_ = r"""
+Table___Decimal256_0____arrayReverseFill_x____x_3__ = r"""
 a
 [3,1,1]
 """
 
-Inline___Decimal256_0____arrayConcat__toDecimal256__3__0___toDecimal256__2__0___toDecimal256__1__0___ = r"""
+Inline___Decimal256_0____arrayConcat__toDecimal256__3__0___toDecimal256__2__0___toDecimal256__1__0____ = r"""
 arrayConcat(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [3,2,1,3,2,1]
 """
 
-Table___Decimal256_0____arrayConcat__toDecimal256__3__0___toDecimal256__2__0___toDecimal256__1__0___ = r"""
+Table___Decimal256_0____arrayConcat__toDecimal256__3__0___toDecimal256__2__0___toDecimal256__1__0____ = r"""
 a
 [3,2,1,3,2,1]
 """
 
-Inline___Decimal256_0____arrayFilter_x____x____1__ = r"""
+Inline___Decimal256_0____arrayFilter_x____x____1___ = r"""
 arrayFilter(lambda(tuple(x), equals(x, 1)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [1]
 """
 
-Table___Decimal256_0____arrayFilter_x____x____1__ = r"""
+Table___Decimal256_0____arrayFilter_x____x____1___ = r"""
 a
 [1]
 """
 
-Inline___Decimal256_0____arraySplit__x__y_____x_y___0__0__0__ = r"""
+Inline___Decimal256_0____arraySplit__x__y_____x_y___0__0__0___ = r"""
 arraySplit(lambda(tuple(x, y), equals(x, y)), [0, 0, 0], array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 [[0,0,0]]
 """
 
-Table___Decimal256_0____arraySplit__x__y_____x_y___0__0__0__ = r"""
+Table___Decimal256_0____arraySplit__x__y_____x_y___0__0__0___ = r"""
 a
 [[0,0,0]]
 """
 
-Inline___Decimal256_0____arrayZip__toDecimal256__1__0___ = r"""
+Inline___Decimal256_0____arrayZip__toDecimal256__1__0____ = r"""
 arrayZip(array(toDecimal256(\'1\', 0)), array(toDecimal256(\'3\', 0)))
 [(1,3)]
 """
 
-Table___Decimal256_0____arrayZip__toDecimal256__1__0___ = r"""
+Table___Decimal256_0____arrayZip__toDecimal256__1__0____ = r"""
 a
 [(1,1)]
 """
 
-Inline___Decimal256_0____empty_ = r"""
+Inline___Decimal256_0____empty__ = r"""
 empty(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 0
 """
 
-Table___Decimal256_0____empty_ = r"""
+Table___Decimal256_0____empty__ = r"""
 a
 0
 """
 
-Inline___Decimal256_0____notEmpty_ = r"""
+Inline___Decimal256_0____notEmpty__ = r"""
 notEmpty(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 1
 """
 
-Table___Decimal256_0____notEmpty_ = r"""
+Table___Decimal256_0____notEmpty__ = r"""
 a
 1
 """
 
-Inline___Decimal256_0____length_ = r"""
+Inline___Decimal256_0____length__ = r"""
 length(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 3
 """
 
-Table___Decimal256_0____length_ = r"""
+Table___Decimal256_0____length__ = r"""
 a
 3
 """
 
-Inline___Decimal256_0____arrayCount_x____x____1__ = r"""
+Inline___Decimal256_0____arrayCount_x____x____1___ = r"""
 arrayCount(lambda(tuple(x), equals(x, 1)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 1
 """
 
-Table___Decimal256_0____arrayCount_x____x____1__ = r"""
+Table___Decimal256_0____arrayCount_x____x____1___ = r"""
 a
 1
 """
 
-Inline___Decimal256_0____arrayUniq_ = r"""
+Inline___Decimal256_0____arrayUniq__ = r"""
 arrayUniq(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 3
 """
 
-Table___Decimal256_0____arrayUniq_ = r"""
+Table___Decimal256_0____arrayUniq__ = r"""
 a
 3
 """
 
-Inline___Decimal256_0____arrayJoin_ = r"""
+Inline___Decimal256_0____arrayJoin__ = r"""
 arrayJoin(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 3
 2
 1
 """
 
-Table___Decimal256_0____arrayJoin_ = r"""
+Table___Decimal256_0____arrayJoin__ = r"""
 a
 1
 2
 3
 """
 
-Inline___Decimal256_0____arrayExists_x____x__1_ = r"""
+Inline___Decimal256_0____arrayExists_x____x__1__ = r"""
 arrayExists(lambda(tuple(x), equals(x, 1)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 1
 """
 
-Table___Decimal256_0____arrayExists_x____x__1_ = r"""
+Table___Decimal256_0____arrayExists_x____x__1__ = r"""
 a
 1
 """
 
-Inline___Decimal256_0____arrayAll_x____x__1_ = r"""
+Inline___Decimal256_0____arrayAll_x____x__1__ = r"""
 arrayAll(lambda(tuple(x), equals(x, 1)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 0
 """
 
-Table___Decimal256_0____arrayAll_x____x__1_ = r"""
+Table___Decimal256_0____arrayAll_x____x__1__ = r"""
 a
 0
 """
 
-Table___Decimal256_0____arrayMin_ = r"""
+Table___Decimal256_0____arrayMin__ = r"""
 a
 """
 
-Table___Decimal256_0____arrayMax_ = r"""
+Table___Decimal256_0____arrayMax__ = r"""
 a
 """
 
-Table___Decimal256_0____arraySum_ = r"""
+Table___Decimal256_0____arraySum__ = r"""
 a
 """
 
-Table___Decimal256_0____arrayAvg_ = r"""
+Table___Decimal256_0____arrayAvg__ = r"""
 a
 """
 
-Inline___Decimal256_0____arrayReduce__max___ = r"""
+Inline___Decimal256_0____arrayReduce__max____ = r"""
 arrayReduce(\'max\', array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 3
 """
 
-Table___Decimal256_0____arrayReduce__max___ = r"""
+Table___Decimal256_0____arrayReduce__max____ = r"""
 a
 3
 """
 
-Inline___Decimal256_0____arrayFirst_x____x__3_ = r"""
+Inline___Decimal256_0____arrayFirst_x____x__3__ = r"""
 arrayFirst(lambda(tuple(x), equals(x, 3)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 3
 """
 
-Table___Decimal256_0____arrayFirst_x____x__3_ = r"""
+Table___Decimal256_0____arrayFirst_x____x__3__ = r"""
 a
 3
 """
 
-Inline___Decimal256_0____arrayFirstIndex_x____x__3_ = r"""
+Inline___Decimal256_0____arrayFirstIndex_x____x__3__ = r"""
 arrayFirstIndex(lambda(tuple(x), equals(x, 3)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 1
 """
 
-Table___Decimal256_0____arrayFirstIndex_x____x__3_ = r"""
+Table___Decimal256_0____arrayFirstIndex_x____x__3__ = r"""
 a
 1
 """
 
-Inline___Decimal256_0____hasAll__toDecimal256__3__0___toDecimal256__2__0___toDecimal256__1__0____ = r"""
+Inline___Decimal256_0____hasAll__toDecimal256__3__0___toDecimal256__2__0___toDecimal256__1__0_____ = r"""
 hasAll(array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 1
 """
 
-Table___Decimal256_0____hasAll__toDecimal256__3__0___toDecimal256__2__0___toDecimal256__1__0____ = r"""
+Table___Decimal256_0____hasAll__toDecimal256__3__0___toDecimal256__2__0___toDecimal256__1__0_____ = r"""
 a
 1
 """
 
-Inline___Decimal256_0____hasAny__toDecimal256__2__0___toDecimal256__1__0____ = r"""
+Inline___Decimal256_0____hasAny__toDecimal256__2__0___toDecimal256__1__0_____ = r"""
 hasAny(array(toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 1
 """
 
-Table___Decimal256_0____hasAny__toDecimal256__2__0___toDecimal256__1__0____ = r"""
+Table___Decimal256_0____hasAny__toDecimal256__2__0___toDecimal256__1__0_____ = r"""
 a
 1
 """
 
-Inline___Decimal256_0____hasSubstr__toDecimal256__2__0___toDecimal256__1__0____ = r"""
+Inline___Decimal256_0____hasSubstr__toDecimal256__2__0___toDecimal256__1__0_____ = r"""
 hasSubstr(array(toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)), array(toDecimal256(\'3\', 0), toDecimal256(\'2\', 0), toDecimal256(\'1\', 0)))
 0
 """
 
-Table___Decimal256_0____hasSubstr__toDecimal256__2__0___toDecimal256__1__0____ = r"""
+Table___Decimal256_0____hasSubstr__toDecimal256__2__0___toDecimal256__1__0_____ = r"""
 a
 0
 """
 
-Table___Decimal256_0____arrayDifference_ = r"""
+Table___Decimal256_0____arrayDifference__ = r"""
 a
 """
 
-Table___Decimal256_0____arrayCumSum_ = r"""
+Table___Decimal256_0____arrayCumSum__ = r"""
 a
 """
 
-Table___Decimal256_0____arrayCumSumNonNegative_ = r"""
+Table___Decimal256_0____arrayCumSumNonNegative__ = r"""
 a
 """
 
@@ -3509,543 +3509,543 @@ a
 """
 
 I_check_exp__with_Int128_using_max_and_min = r"""
-exp(toInt128(\'170141183460469231731687303715884105727\'))	exp(toInt128(\'-170141183460469231731687303715884105728\'))
+round(exp(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(exp(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 inf	0
 """
 
 I_check_exp__with_Int256_using_max_and_min = r"""
-exp(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	exp(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(exp(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(exp(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 inf	0
 """
 
 I_check_exp__with_UInt128_using_max_and_min = r"""
-exp(toUInt128(\'340282366920938463463374607431768211455\'))	exp(toUInt128(\'0\'))
+round(exp(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(exp(toUInt128(\'0\')), 7)
 inf	1
 """
 
 I_check_exp__with_UInt256_using_max_and_min = r"""
-exp(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	exp(toUInt256(\'0\'))
+round(exp(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(exp(toUInt256(\'0\')), 7)
 inf	1
 """
 
 I_check_log__with_Int128_using_max_and_min = r"""
-log(toInt128(\'170141183460469231731687303715884105727\'))	log(toInt128(\'-170141183460469231731687303715884105728\'))
-88.02969193111305	nan
+round(log(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(log(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+88.0296919	nan
 """
 
 I_check_log__with_Int256_using_max_and_min = r"""
-log(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	log(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-176.75253104278605	nan
+round(log(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(log(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+176.752531	nan
 """
 
 I_check_log__with_UInt128_using_max_and_min = r"""
-log(toUInt128(\'340282366920938463463374607431768211455\'))	log(toUInt128(\'0\'))
-88.722839111673	-inf
+round(log(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(log(toUInt128(\'0\')), 7)
+88.7228391	-inf
 """
 
 I_check_log__with_UInt256_using_max_and_min = r"""
-log(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	log(toUInt256(\'0\'))
-177.445678223346	-inf
+round(log(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(log(toUInt256(\'0\')), 7)
+177.4456782	-inf
 """
 
 I_check_ln__with_Int128_using_max_and_min = r"""
-log(toInt128(\'170141183460469231731687303715884105727\'))	log(toInt128(\'-170141183460469231731687303715884105728\'))
-88.02969193111305	nan
+round(log(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(log(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+88.0296919	nan
 """
 
 I_check_ln__with_Int256_using_max_and_min = r"""
-log(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	log(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-176.75253104278605	nan
+round(log(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(log(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+176.752531	nan
 """
 
 I_check_ln__with_UInt128_using_max_and_min = r"""
-log(toUInt128(\'340282366920938463463374607431768211455\'))	log(toUInt128(\'0\'))
-88.722839111673	-inf
+round(log(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(log(toUInt128(\'0\')), 7)
+88.7228391	-inf
 """
 
 I_check_ln__with_UInt256_using_max_and_min = r"""
-log(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	log(toUInt256(\'0\'))
-177.445678223346	-inf
+round(log(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(log(toUInt256(\'0\')), 7)
+177.4456782	-inf
 """
 
 I_check_exp2__with_Int128_using_max_and_min = r"""
-exp2(toInt128(\'170141183460469231731687303715884105727\'))	exp2(toInt128(\'-170141183460469231731687303715884105728\'))
+round(exp2(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(exp2(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 inf	0
 """
 
 I_check_exp2__with_Int256_using_max_and_min = r"""
-exp2(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	exp2(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(exp2(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(exp2(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 inf	0
 """
 
 I_check_exp2__with_UInt128_using_max_and_min = r"""
-exp2(toUInt128(\'340282366920938463463374607431768211455\'))	exp2(toUInt128(\'0\'))
+round(exp2(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(exp2(toUInt128(\'0\')), 7)
 inf	1
 """
 
 I_check_exp2__with_UInt256_using_max_and_min = r"""
-exp2(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	exp2(toUInt256(\'0\'))
+round(exp2(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(exp2(toUInt256(\'0\')), 7)
 inf	1
 """
 
 I_check_log2__with_Int128_using_max_and_min = r"""
-log2(toInt128(\'170141183460469231731687303715884105727\'))	log2(toInt128(\'-170141183460469231731687303715884105728\'))
+round(log2(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(log2(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 127	nan
 """
 
 I_check_log2__with_Int256_using_max_and_min = r"""
-log2(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	log2(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(log2(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(log2(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 255	nan
 """
 
 I_check_log2__with_UInt128_using_max_and_min = r"""
-log2(toUInt128(\'340282366920938463463374607431768211455\'))	log2(toUInt128(\'0\'))
+round(log2(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(log2(toUInt128(\'0\')), 7)
 128	-inf
 """
 
 I_check_log2__with_UInt256_using_max_and_min = r"""
-log2(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	log2(toUInt256(\'0\'))
+round(log2(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(log2(toUInt256(\'0\')), 7)
 256	-inf
 """
 
 I_check_exp10__with_Int128_using_max_and_min = r"""
-exp10(toInt128(\'170141183460469231731687303715884105727\'))	exp10(toInt128(\'-170141183460469231731687303715884105728\'))
+round(exp10(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(exp10(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 inf	0
 """
 
 I_check_exp10__with_Int256_using_max_and_min = r"""
-exp10(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	exp10(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(exp10(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(exp10(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 inf	0
 """
 
 I_check_exp10__with_UInt128_using_max_and_min = r"""
-exp10(toUInt128(\'340282366920938463463374607431768211455\'))	exp10(toUInt128(\'0\'))
+round(exp10(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(exp10(toUInt128(\'0\')), 7)
 inf	1
 """
 
 I_check_exp10__with_UInt256_using_max_and_min = r"""
-exp10(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	exp10(toUInt256(\'0\'))
+round(exp10(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(exp10(toUInt256(\'0\')), 7)
 inf	1
 """
 
 I_check_log10__with_Int128_using_max_and_min = r"""
-log10(toInt128(\'170141183460469231731687303715884105727\'))	log10(toInt128(\'-170141183460469231731687303715884105728\'))
-38.23080944932561	nan
+round(log10(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(log10(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+38.2308094	nan
 """
 
 I_check_log10__with_Int256_using_max_and_min = r"""
-log10(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	log10(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-76.7626488943152	nan
+round(log10(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(log10(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+76.7626489	nan
 """
 
 I_check_log10__with_UInt128_using_max_and_min = r"""
-log10(toUInt128(\'340282366920938463463374607431768211455\'))	log10(toUInt128(\'0\'))
-38.53183944498959	-inf
+round(log10(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(log10(toUInt128(\'0\')), 7)
+38.5318394	-inf
 """
 
 I_check_log10__with_UInt256_using_max_and_min = r"""
-log10(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	log10(toUInt256(\'0\'))
-77.06367888997919	-inf
+round(log10(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(log10(toUInt256(\'0\')), 7)
+77.0636789	-inf
 """
 
 I_check_sqrt__with_Int128_using_max_and_min = r"""
-sqrt(toInt128(\'170141183460469231731687303715884105727\'))	sqrt(toInt128(\'-170141183460469231731687303715884105728\'))
+round(sqrt(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(sqrt(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 13043817825332783000	nan
 """
 
 I_check_sqrt__with_Int256_using_max_and_min = r"""
-sqrt(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	sqrt(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(sqrt(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(sqrt(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 2.4061596916800453e38	nan
 """
 
 I_check_sqrt__with_UInt128_using_max_and_min = r"""
-sqrt(toUInt128(\'340282366920938463463374607431768211455\'))	sqrt(toUInt128(\'0\'))
+round(sqrt(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(sqrt(toUInt128(\'0\')), 7)
 18446744073709552000	0
 """
 
 I_check_sqrt__with_UInt256_using_max_and_min = r"""
-sqrt(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	sqrt(toUInt256(\'0\'))
+round(sqrt(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(sqrt(toUInt256(\'0\')), 7)
 3.402823669209385e38	0
 """
 
 I_check_cbrt__with_Int128_using_max_and_min = r"""
-cbrt(toInt128(\'170141183460469231731687303715884105727\'))	cbrt(toInt128(\'-170141183460469231731687303715884105728\'))
+round(cbrt(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(cbrt(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 5541191377756.637	-5541191377756.637
 """
 
 I_check_cbrt__with_Int256_using_max_and_min = r"""
-cbrt(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	cbrt(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(cbrt(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(cbrt(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 3.8685626227668134e25	-3.8685626227668134e25
 """
 
 I_check_cbrt__with_UInt128_using_max_and_min = r"""
-cbrt(toUInt128(\'340282366920938463463374607431768211455\'))	cbrt(toUInt128(\'0\'))
+round(cbrt(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(cbrt(toUInt128(\'0\')), 7)
 6981463658331.56	0
 """
 
 I_check_cbrt__with_UInt256_using_max_and_min = r"""
-cbrt(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	cbrt(toUInt256(\'0\'))
+round(cbrt(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(cbrt(toUInt256(\'0\')), 7)
 4.874083481260429e25	0
 """
 
 I_check_erf__with_Int128_using_max_and_min = r"""
-erf(toInt128(\'170141183460469231731687303715884105727\'))	erf(toInt128(\'-170141183460469231731687303715884105728\'))
+round(erf(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(erf(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 1	-1
 """
 
 I_check_erf__with_Int256_using_max_and_min = r"""
-erf(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	erf(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(erf(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(erf(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 1	-1
 """
 
 I_check_erf__with_UInt128_using_max_and_min = r"""
-erf(toUInt128(\'340282366920938463463374607431768211455\'))	erf(toUInt128(\'0\'))
+round(erf(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(erf(toUInt128(\'0\')), 7)
 1	0
 """
 
 I_check_erf__with_UInt256_using_max_and_min = r"""
-erf(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	erf(toUInt256(\'0\'))
+round(erf(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(erf(toUInt256(\'0\')), 7)
 1	0
 """
 
 I_check_erfc__with_Int128_using_max_and_min = r"""
-erfc(toInt128(\'170141183460469231731687303715884105727\'))	erfc(toInt128(\'-170141183460469231731687303715884105728\'))
+round(erfc(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(erfc(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 0	2
 """
 
 I_check_erfc__with_Int256_using_max_and_min = r"""
-erfc(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	erfc(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(erfc(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(erfc(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 0	2
 """
 
 I_check_erfc__with_UInt128_using_max_and_min = r"""
-erfc(toUInt128(\'340282366920938463463374607431768211455\'))	erfc(toUInt128(\'0\'))
+round(erfc(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(erfc(toUInt128(\'0\')), 7)
 0	1
 """
 
 I_check_erfc__with_UInt256_using_max_and_min = r"""
-erfc(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	erfc(toUInt256(\'0\'))
+round(erfc(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(erfc(toUInt256(\'0\')), 7)
 0	1
 """
 
 I_check_lgamma__with_Int128_using_max_and_min = r"""
-lgamma(toInt128(\'170141183460469231731687303715884105727\'))	lgamma(toInt128(\'-170141183460469231731687303715884105728\'))
+round(lgamma(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(lgamma(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 1.4807334781359624e40	-1.4807334781359624e40
 """
 
 I_check_lgamma__with_Int256_using_max_and_min = r"""
-lgamma(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	lgamma(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(lgamma(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(lgamma(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 1.0175376379095233e79	-1.0175376379095233e79
 """
 
 I_check_lgamma__with_UInt128_using_max_and_min = r"""
-lgamma(toUInt128(\'340282366920938463463374607431768211455\'))	lgamma(toUInt128(\'0\'))
+round(lgamma(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(lgamma(toUInt128(\'0\')), 7)
 2.985053532594476e40	inf
 """
 
 I_check_lgamma__with_UInt256_using_max_and_min = r"""
-lgamma(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	lgamma(toUInt256(\'0\'))
+round(lgamma(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(lgamma(toUInt256(\'0\')), 7)
 2.0431013718376458e79	inf
 """
 
 I_check_tgamma__with_Int128_using_max_and_min = r"""
-tgamma(toInt128(\'170141183460469231731687303715884105727\'))	tgamma(toInt128(\'-170141183460469231731687303715884105728\'))
+round(tgamma(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(tgamma(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 inf	nan
 """
 
 I_check_tgamma__with_Int256_using_max_and_min = r"""
-tgamma(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	tgamma(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(tgamma(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(tgamma(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 inf	nan
 """
 
 I_check_tgamma__with_UInt128_using_max_and_min = r"""
-tgamma(toUInt128(\'340282366920938463463374607431768211455\'))	tgamma(toUInt128(\'0\'))
+round(tgamma(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(tgamma(toUInt128(\'0\')), 7)
 inf	inf
 """
 
 I_check_tgamma__with_UInt256_using_max_and_min = r"""
-tgamma(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	tgamma(toUInt256(\'0\'))
+round(tgamma(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(tgamma(toUInt256(\'0\')), 7)
 inf	inf
 """
 
 I_check_sin__with_Int128_using_max_and_min = r"""
-sin(toInt128(\'170141183460469231731687303715884105727\'))	sin(toInt128(\'-170141183460469231731687303715884105728\'))
-0.6233855129558702	-0.6233855129558702
+round(sin(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(sin(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+0.6233855	-0.6233855
 """
 
 I_check_sin__with_Int256_using_max_and_min = r"""
-sin(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	sin(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-0.9751222164851924	-0.9751222164851924
+round(sin(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(sin(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+0.9751222	-0.9751222
 """
 
 I_check_sin__with_UInt128_using_max_and_min = r"""
-sin(toUInt128(\'340282366920938463463374607431768211455\'))	sin(toUInt128(\'0\'))
-0.9748685162860586	0
+round(sin(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(sin(toUInt128(\'0\')), 7)
+0.9748685	0
 """
 
 I_check_sin__with_UInt256_using_max_and_min = r"""
-sin(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	sin(toUInt256(\'0\'))
-0.4323066100553458	0
+round(sin(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(sin(toUInt256(\'0\')), 7)
+0.4323066	0
 """
 
 I_check_cos__with_Int128_using_max_and_min = r"""
-cos(toInt128(\'170141183460469231731687303715884105727\'))	cos(toInt128(\'-170141183460469231731687303715884105728\'))
-0.78191463871496	0.78191463871496
+round(cos(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(cos(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+0.7819146	0.7819146
 """
 
 I_check_cos__with_Int256_using_max_and_min = r"""
-cos(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	cos(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-0.22166791133812228	0.22166791133812228
+round(cos(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(cos(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+0.2216679	0.2216679
 """
 
 I_check_cos__with_UInt128_using_max_and_min = r"""
-cos(toUInt128(\'340282366920938463463374607431768211455\'))	cos(toUInt128(\'0\'))
-0.22278100447349308	1
+round(cos(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(cos(toUInt128(\'0\')), 7)
+0.222781	1
 """
 
 I_check_cos__with_UInt256_using_max_and_min = r"""
-cos(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	cos(toUInt256(\'0\'))
--0.9017266741659887	1
+round(cos(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(cos(toUInt256(\'0\')), 7)
+-0.9017267	1
 """
 
 I_check_tan__with_Int128_using_max_and_min = r"""
-tan(toInt128(\'170141183460469231731687303715884105727\'))	tan(toInt128(\'-170141183460469231731687303715884105728\'))
-0.7972552016424389	-0.7972552016424389
+round(tan(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(tan(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+0.7972552	-0.7972552
 """
 
 I_check_tan__with_Int256_using_max_and_min = r"""
-tan(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	tan(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-4.399022892392326	-4.399022892392326
+round(tan(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(tan(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+4.3990229	-4.3990229
 """
 
 I_check_tan__with_UInt128_using_max_and_min = r"""
-tan(toUInt128(\'340282366920938463463374607431768211455\'))	tan(toUInt128(\'0\'))
-4.375905022019283	0
+round(tan(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(tan(toUInt128(\'0\')), 7)
+4.375905	0
 """
 
 I_check_tan__with_UInt256_using_max_and_min = r"""
-tan(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	tan(toUInt256(\'0\'))
--0.4794208959773628	0
+round(tan(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(tan(toUInt256(\'0\')), 7)
+-0.4794209	0
 """
 
 I_check_asin__with_Int128_using_max_and_min = r"""
-asin(toInt128(\'170141183460469231731687303715884105727\'))	asin(toInt128(\'-170141183460469231731687303715884105728\'))
+round(asin(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(asin(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 nan	nan
 """
 
 I_check_asin__with_Int256_using_max_and_min = r"""
-asin(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	asin(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(asin(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(asin(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 nan	nan
 """
 
 I_check_asin__with_UInt128_using_max_and_min = r"""
-asin(toUInt128(\'340282366920938463463374607431768211455\'))	asin(toUInt128(\'0\'))
+round(asin(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(asin(toUInt128(\'0\')), 7)
 nan	0
 """
 
 I_check_asin__with_UInt256_using_max_and_min = r"""
-asin(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	asin(toUInt256(\'0\'))
+round(asin(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(asin(toUInt256(\'0\')), 7)
 nan	0
 """
 
 I_check_acos__with_Int128_using_max_and_min = r"""
-acos(toInt128(\'170141183460469231731687303715884105727\'))	acos(toInt128(\'-170141183460469231731687303715884105728\'))
+round(acos(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(acos(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 nan	nan
 """
 
 I_check_acos__with_Int256_using_max_and_min = r"""
-acos(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	acos(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(acos(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(acos(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 nan	nan
 """
 
 I_check_acos__with_UInt128_using_max_and_min = r"""
-acos(toUInt128(\'340282366920938463463374607431768211455\'))	acos(toUInt128(\'0\'))
-nan	1.5707963267948966
+round(acos(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(acos(toUInt128(\'0\')), 7)
+nan	1.5707963
 """
 
 I_check_acos__with_UInt256_using_max_and_min = r"""
-acos(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	acos(toUInt256(\'0\'))
-nan	1.5707963267948966
+round(acos(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(acos(toUInt256(\'0\')), 7)
+nan	1.5707963
 """
 
 I_check_atan__with_Int128_using_max_and_min = r"""
-atan(toInt128(\'170141183460469231731687303715884105727\'))	atan(toInt128(\'-170141183460469231731687303715884105728\'))
-1.5707963267948966	-1.5707963267948966
+round(atan(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(atan(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+1.5707963	-1.5707963
 """
 
 I_check_atan__with_Int256_using_max_and_min = r"""
-atan(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	atan(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-1.5707963267948966	-1.5707963267948966
+round(atan(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(atan(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+1.5707963	-1.5707963
 """
 
 I_check_atan__with_UInt128_using_max_and_min = r"""
-atan(toUInt128(\'340282366920938463463374607431768211455\'))	atan(toUInt128(\'0\'))
-1.5707963267948966	0
+round(atan(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(atan(toUInt128(\'0\')), 7)
+1.5707963	0
 """
 
 I_check_atan__with_UInt256_using_max_and_min = r"""
-atan(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	atan(toUInt256(\'0\'))
-1.5707963267948966	0
+round(atan(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(atan(toUInt256(\'0\')), 7)
+1.5707963	0
 """
 
 I_check_cosh__with_Int128_using_max_and_min = r"""
-cosh(toInt128(\'170141183460469231731687303715884105727\'))	cosh(toInt128(\'-170141183460469231731687303715884105728\'))
+round(cosh(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(cosh(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 inf	inf
 """
 
 I_check_cosh__with_Int256_using_max_and_min = r"""
-cosh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	cosh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(cosh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(cosh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 inf	inf
 """
 
 I_check_cosh__with_UInt128_using_max_and_min = r"""
-cosh(toUInt128(\'340282366920938463463374607431768211455\'))	cosh(toUInt128(\'0\'))
+round(cosh(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(cosh(toUInt128(\'0\')), 7)
 inf	1
 """
 
 I_check_cosh__with_UInt256_using_max_and_min = r"""
-cosh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	cosh(toUInt256(\'0\'))
+round(cosh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(cosh(toUInt256(\'0\')), 7)
 inf	1
 """
 
 I_check_acosh__with_Int128_using_max_and_min = r"""
-acosh(toInt128(\'170141183460469231731687303715884105727\'))	acosh(toInt128(\'-170141183460469231731687303715884105728\'))
-88.722839111673	nan
+round(acosh(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(acosh(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+88.7228391	nan
 """
 
 I_check_acosh__with_Int256_using_max_and_min = r"""
-acosh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	acosh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-177.445678223346	nan
+round(acosh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(acosh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+177.4456782	nan
 """
 
 I_check_acosh__with_UInt128_using_max_and_min = r"""
-acosh(toUInt128(\'340282366920938463463374607431768211455\'))	acosh(toUInt128(\'0\'))
-89.41598629223294	nan
+round(acosh(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(acosh(toUInt128(\'0\')), 7)
+89.4159863	nan
 """
 
 I_check_acosh__with_UInt256_using_max_and_min = r"""
-acosh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	acosh(toUInt256(\'0\'))
-178.13882540390594	nan
+round(acosh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(acosh(toUInt256(\'0\')), 7)
+178.1388254	nan
 """
 
 I_check_sinh__with_Int128_using_max_and_min = r"""
-sinh(toInt128(\'170141183460469231731687303715884105727\'))	sinh(toInt128(\'-170141183460469231731687303715884105728\'))
+round(sinh(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(sinh(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 inf	-inf
 """
 
 I_check_sinh__with_Int256_using_max_and_min = r"""
-sinh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	sinh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(sinh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(sinh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 inf	-inf
 """
 
 I_check_sinh__with_UInt128_using_max_and_min = r"""
-sinh(toUInt128(\'340282366920938463463374607431768211455\'))	sinh(toUInt128(\'0\'))
+round(sinh(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(sinh(toUInt128(\'0\')), 7)
 inf	0
 """
 
 I_check_sinh__with_UInt256_using_max_and_min = r"""
-sinh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	sinh(toUInt256(\'0\'))
+round(sinh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(sinh(toUInt256(\'0\')), 7)
 inf	0
 """
 
 I_check_asinh__with_Int128_using_max_and_min = r"""
-asinh(toInt128(\'170141183460469231731687303715884105727\'))	asinh(toInt128(\'-170141183460469231731687303715884105728\'))
-88.722839111673	-88.722839111673
+round(asinh(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(asinh(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+88.7228391	-88.7228391
 """
 
 I_check_asinh__with_Int256_using_max_and_min = r"""
-asinh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	asinh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-177.445678223346	-177.445678223346
+round(asinh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(asinh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+177.4456782	-177.4456782
 """
 
 I_check_asinh__with_UInt128_using_max_and_min = r"""
-asinh(toUInt128(\'340282366920938463463374607431768211455\'))	asinh(toUInt128(\'0\'))
-89.41598629223294	0
+round(asinh(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(asinh(toUInt128(\'0\')), 7)
+89.4159863	0
 """
 
 I_check_asinh__with_UInt256_using_max_and_min = r"""
-asinh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	asinh(toUInt256(\'0\'))
-178.13882540390594	0
+round(asinh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(asinh(toUInt256(\'0\')), 7)
+178.1388254	0
 """
 
 I_check_tanh__with_Int128_using_max_and_min = r"""
-tanh(toInt128(\'170141183460469231731687303715884105727\'))	tanh(toInt128(\'-170141183460469231731687303715884105728\'))
+round(tanh(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(tanh(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 1	-1
 """
 
 I_check_tanh__with_Int256_using_max_and_min = r"""
-tanh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	tanh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(tanh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(tanh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 1	-1
 """
 
 I_check_tanh__with_UInt128_using_max_and_min = r"""
-tanh(toUInt128(\'340282366920938463463374607431768211455\'))	tanh(toUInt128(\'0\'))
+round(tanh(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(tanh(toUInt128(\'0\')), 7)
 1	0
 """
 
 I_check_tanh__with_UInt256_using_max_and_min = r"""
-tanh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	tanh(toUInt256(\'0\'))
+round(tanh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(tanh(toUInt256(\'0\')), 7)
 1	0
 """
 
 I_check_atanh__with_Int128_using_max_and_min = r"""
-atanh(toInt128(\'170141183460469231731687303715884105727\'))	atanh(toInt128(\'-170141183460469231731687303715884105728\'))
+round(atanh(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(atanh(toInt128(\'-170141183460469231731687303715884105728\')), 7)
 nan	nan
 """
 
 I_check_atanh__with_Int256_using_max_and_min = r"""
-atanh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	atanh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
+round(atanh(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(atanh(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
 nan	nan
 """
 
 I_check_atanh__with_UInt128_using_max_and_min = r"""
-atanh(toUInt128(\'340282366920938463463374607431768211455\'))	atanh(toUInt128(\'0\'))
+round(atanh(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(atanh(toUInt128(\'0\')), 7)
 nan	0
 """
 
 I_check_atanh__with_UInt256_using_max_and_min = r"""
-atanh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	atanh(toUInt256(\'0\'))
+round(atanh(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(atanh(toUInt256(\'0\')), 7)
 nan	0
 """
 
 I_check_log1p__with_Int128_using_max_and_min = r"""
-log1p(toInt128(\'170141183460469231731687303715884105727\'))	log1p(toInt128(\'-170141183460469231731687303715884105728\'))
-88.02969193111305	nan
+round(log1p(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(log1p(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+88.0296919	nan
 """
 
 I_check_log1p__with_Int256_using_max_and_min = r"""
-log1p(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	log1p(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-176.75253104278605	nan
+round(log1p(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(log1p(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+176.752531	nan
 """
 
 I_check_log1p__with_UInt128_using_max_and_min = r"""
-log1p(toUInt128(\'340282366920938463463374607431768211455\'))	log1p(toUInt128(\'0\'))
-88.722839111673	0
+round(log1p(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(log1p(toUInt128(\'0\')), 7)
+88.7228391	0
 """
 
 I_check_log1p__with_UInt256_using_max_and_min = r"""
-log1p(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	log1p(toUInt256(\'0\'))
-177.445678223346	0
+round(log1p(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(log1p(toUInt256(\'0\')), 7)
+177.4456782	0
 """
 
 I_check_sign__with_Int128_using_max_and_min = r"""
-sign(toInt128(\'170141183460469231731687303715884105727\'))	sign(toInt128(\'-170141183460469231731687303715884105728\'))
-1	-1
+round(sign(toInt128(\'170141183460469231731687303715884105727\')), 7)	round(sign(toInt128(\'-170141183460469231731687303715884105728\')), 7)
+0	0
 """
 
 I_check_sign__with_Int256_using_max_and_min = r"""
-sign(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\'))	sign(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\'))
-1	-1
+round(sign(toInt256(\'57896044618658097711785492504343953926634992332820282019728792003956564819967\')), 7)	round(sign(toInt256(\'-57896044618658097711785492504343953926634992332820282019728792003956564819968\')), 7)
+0	0
 """
 
 I_check_sign__with_UInt128_using_max_and_min = r"""
-sign(toUInt128(\'340282366920938463463374607431768211455\'))	sign(toUInt128(\'0\'))
-1	0
+round(sign(toUInt128(\'340282366920938463463374607431768211455\')), 7)	round(sign(toUInt128(\'0\')), 7)
+0	0
 """
 
 I_check_sign__with_UInt256_using_max_and_min = r"""
-sign(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\'))	sign(toUInt256(\'0\'))
-1	0
+round(sign(toUInt256(\'115792089237316195423570985008687907853269984665640564039457584007913129639935\')), 7)	round(sign(toUInt256(\'0\')), 7)
+0	0
 """
 
 I_check_the_outputs_of_exp__with_Int128 = r"""
@@ -4805,138 +4805,138 @@ a
 """
 
 I_check_exp__with_Decimal256_using_max_and_min = r"""
-exp(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	exp(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(exp(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(exp(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 inf	0
 """
 
 I_check_log__with_Decimal256_using_max_and_min = r"""
-log(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	log(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
-172.69388197463743	nan
+round(log(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(log(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+172.693882	nan
 """
 
 I_check_ln__with_Decimal256_using_max_and_min = r"""
-log(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	log(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
-172.69388197463743	nan
+round(log(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(log(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+172.693882	nan
 """
 
 I_check_exp2__with_Decimal256_using_max_and_min = r"""
-exp2(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	exp2(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(exp2(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(exp2(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 inf	0
 """
 
 I_check_log2__with_Decimal256_using_max_and_min = r"""
-log2(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	log2(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
-249.14460711655218	nan
+round(log2(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(log2(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+249.1446071	nan
 """
 
 I_check_exp10__with_Decimal256_using_max_and_min = r"""
-exp10(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	exp10(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(exp10(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(exp10(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 inf	0
 """
 
 I_check_log10__with_Decimal256_using_max_and_min = r"""
-log10(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	log10(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(log10(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(log10(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 75	nan
 """
 
 I_check_sqrt__with_Decimal256_using_max_and_min = r"""
-sqrt(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	sqrt(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(sqrt(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(sqrt(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 3.1622776601683794e37	nan
 """
 
 I_check_cbrt__with_Decimal256_using_max_and_min = r"""
-cbrt(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	cbrt(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(cbrt(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(cbrt(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 1e25	-1e25
 """
 
 I_check_erf__with_Decimal256_using_max_and_min = r"""
-erf(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	erf(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(erf(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(erf(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 1	-1
 """
 
 I_check_erfc__with_Decimal256_using_max_and_min = r"""
-erfc(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	erfc(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(erfc(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(erfc(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 0	2
 """
 
 I_check_lgamma__with_Decimal256_using_max_and_min = r"""
-lgamma(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	lgamma(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(lgamma(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(lgamma(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 1.7169388197455342e77	-1.7169388197455342e77
 """
 
 I_check_tgamma__with_Decimal256_using_max_and_min = r"""
-tgamma(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	tgamma(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(tgamma(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(tgamma(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 inf	nan
 """
 
 I_check_sin__with_Decimal256_using_max_and_min = r"""
-sin(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	sin(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
-0.66339975236386	-0.66339975236386
+round(sin(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(sin(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+0.6633998	-0.6633998
 """
 
 I_check_cos__with_Decimal256_using_max_and_min = r"""
-cos(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	cos(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
--0.7482651726250322	-0.7482651726250322
+round(cos(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(cos(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+-0.7482652	-0.7482652
 """
 
 I_check_tan__with_Decimal256_using_max_and_min = r"""
-tan(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	tan(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
--0.8865837628611647	0.8865837628611647
+round(tan(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(tan(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+-0.8865838	0.8865838
 """
 
 I_check_asin__with_Decimal256_using_max_and_min = r"""
-asin(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	asin(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(asin(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(asin(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 nan	nan
 """
 
 I_check_acos__with_Decimal256_using_max_and_min = r"""
-acos(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	acos(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(acos(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(acos(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 nan	nan
 """
 
 I_check_atan__with_Decimal256_using_max_and_min = r"""
-atan(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	atan(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
-1.5707963267948966	-1.5707963267948966
+round(atan(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(atan(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+1.5707963	-1.5707963
 """
 
 I_check_cosh__with_Decimal256_using_max_and_min = r"""
-cosh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	cosh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(cosh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(cosh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 inf	inf
 """
 
 I_check_acosh__with_Decimal256_using_max_and_min = r"""
-acosh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	acosh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
-173.38702915511337	nan
+round(acosh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(acosh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+173.3870292	nan
 """
 
 I_check_sinh__with_Decimal256_using_max_and_min = r"""
-sinh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	sinh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(sinh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(sinh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 inf	-inf
 """
 
 I_check_asinh__with_Decimal256_using_max_and_min = r"""
-asinh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	asinh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
-173.38702915511337	-173.38702915511337
+round(asinh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(asinh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+173.3870292	-173.3870292
 """
 
 I_check_tanh__with_Decimal256_using_max_and_min = r"""
-tanh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	tanh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(tanh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(tanh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 1	-1
 """
 
 I_check_atanh__with_Decimal256_using_max_and_min = r"""
-atanh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	atanh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
+round(atanh(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(atanh(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
 nan	nan
 """
 
 I_check_log1p__with_Decimal256_using_max_and_min = r"""
-log1p(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	log1p(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
-172.69388197455342	nan
+round(log1p(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(log1p(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+172.693882	nan
 """
 
 I_check_sign__with_Decimal256_using_max_and_min = r"""
-sign(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))	sign(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0))
-1	-1
+round(sign(toDecimal256(\'1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)	round(sign(toDecimal256(\'-1000000000000000000000000000000000000000000000000000000000000000000000000000\', 0)), 7)
+0	0
 """
 
 I_check_the_outputs_of_exp__with_Decimal256 = r"""

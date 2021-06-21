@@ -3,10 +3,12 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Set.h>
 
 
@@ -67,6 +69,12 @@ public:
         return 2;
     }
 
+    /// Do not use default implementation for LowCardinality.
+    /// For now, Set may be const or non const column, depending on how it was created.
+    /// But we will return UInt8 for any case.
+    /// TODO: we could use special implementation later.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt8>();
@@ -122,7 +130,29 @@ public:
         else
             columns_of_key_columns.insert(left_arg);
 
-        return set->execute(columns_of_key_columns, negative);
+        /// Replace single LowCardinality column to it's dictionary if possible.
+        ColumnPtr lc_indexes = nullptr;
+        if (columns_of_key_columns.columns() == 1)
+        {
+            auto & arg = columns_of_key_columns.safeGetByPosition(0);
+            const auto * col = arg.column.get();
+            if (const auto * const_col = typeid_cast<const ColumnConst *>(col))
+                col = &const_col->getDataColumn();
+
+            if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(col))
+            {
+                lc_indexes = lc->getIndexesPtr();
+                arg.column = lc->getDictionary().getNestedColumn();
+                arg.type = removeLowCardinality(arg.type);
+            }
+        }
+
+        auto res = set->execute(columns_of_key_columns, negative);
+
+        if (lc_indexes)
+            return res->index(*lc_indexes, 0);
+
+        return res;
     }
 };
 

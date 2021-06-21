@@ -10,7 +10,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
 #include <common/setTerminalEcho.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
 #include <readpassphrase.h> // Y_IGNORE

@@ -30,8 +30,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <common/logger_useful.h>
-#include <ext/range.h>
-#include <ext/scope_guard.h>
+#include <common/range.h>
+#include <common/scope_guard.h>
 
 #include <future>
 #include <condition_variable>
@@ -216,7 +216,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, si
     local_jobs_count = 0;
     per_shard_jobs.resize(shards_info.size());
 
-    for (size_t shard_index : ext::range(start, end))
+    for (size_t shard_index : collections::range(start, end))
     {
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
@@ -226,7 +226,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, si
         {
             const auto & replicas = addresses_with_failovers[shard_index];
 
-            for (size_t replica_index : ext::range(0, replicas.size()))
+            for (size_t replica_index : collections::range(0, replicas.size()))
             {
                 if (!replicas[replica_index].is_local || !settings.prefer_localhost_replica)
                 {
@@ -445,7 +445,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         auto current_selector = createSelector(block);
 
         /// Prepare row numbers for each shard
-        for (size_t shard_index : ext::range(0, num_shards))
+        for (size_t shard_index : collections::range(0, num_shards))
             per_shard_jobs[shard_index].shard_current_block_permutation.resize(0);
 
         for (size_t i = 0; i < block.rows(); ++i)
@@ -456,7 +456,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
     {
         /// Run jobs in parallel for each block and wait them
         finished_jobs_count = 0;
-        for (size_t shard_index : ext::range(0, shards_info.size()))
+        for (size_t shard_index : collections::range(0, shards_info.size()))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
                 pool->scheduleOrThrowOnError(runWritingJob(job, block, num_shards));
     }
