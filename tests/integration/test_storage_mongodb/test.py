@@ -13,18 +13,20 @@ node = cluster.add_instance('node', with_mongo=True)
 def started_cluster():
     try:
         cluster.start()
+
         yield cluster
+
     finally:
         cluster.shutdown()
 
 
-def get_mongo_connection(started_cluster):
-    connection_str = 'mongodb://root:clickhouse@localhost:{}'.format(started_cluster.mongo_port)
+def get_mongo_connection():
+    connection_str = 'mongodb://root:clickhouse@localhost:27018'
     return pymongo.MongoClient(connection_str)
 
 
 def test_simple_select(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
+    mongo_connection = get_mongo_connection()
     db = mongo_connection['test']
     db.add_user('root', 'clickhouse')
     simple_mongo_table = db['simple_table']
@@ -43,7 +45,7 @@ def test_simple_select(started_cluster):
 
 
 def test_complex_data_type(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
+    mongo_connection = get_mongo_connection()
     db = mongo_connection['test']
     db.add_user('root', 'clickhouse')
     incomplete_mongo_table = db['complex_table']
@@ -62,7 +64,7 @@ def test_complex_data_type(started_cluster):
 
 
 def test_incorrect_data_type(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
+    mongo_connection = get_mongo_connection()
     db = mongo_connection['test']
     db.add_user('root', 'clickhouse')
     strange_mongo_table = db['strange_table']

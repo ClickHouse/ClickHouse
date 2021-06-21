@@ -208,7 +208,7 @@ This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` forma
 
 ### Configuring Totals Processing {#configuring-totals-processing}
 
-By default, `totals_mode = 'before_having'`. In this case, ‘totals’ is calculated across all rows, including the ones that do not pass through HAVING and `max_rows_to_group_by`.
+By default, `totals_mode = 'before_having'`. In this case, ‘totals’ is calculated across all rows, including the ones that don’t pass through HAVING and `max_rows_to_group_by`.
 
 The other alternatives include only the rows that pass through HAVING in ‘totals’, and behave differently with the setting `max_rows_to_group_by` and `group_by_overflow_mode = 'any'`.
 
@@ -274,4 +274,4 @@ When merging data flushed to the disk, as well as when merging results from remo
 
 When external aggregation is enabled, if there was less than `max_bytes_before_external_group_by` of data (i.e. data was not flushed), the query runs just as fast as without external aggregation. If any temporary data was flushed, the run time will be several times longer (approximately three times).
 
-If you have an [ORDER BY](../../../sql-reference/statements/select/order-by.md) with a [LIMIT](../../../sql-reference/statements/select/limit.md) after `GROUP BY`, then the amount of used RAM depends on the amount of data in `LIMIT`, not in the whole table. But if the `ORDER BY` does not have `LIMIT`, do not forget to enable external sorting (`max_bytes_before_external_sort`).
+If you have an [ORDER BY](../../../sql-reference/statements/select/order-by.md) with a [LIMIT](../../../sql-reference/statements/select/limit.md) after `GROUP BY`, then the amount of used RAM depends on the amount of data in `LIMIT`, not in the whole table. But if the `ORDER BY` doesn’t have `LIMIT`, don’t forget to enable external sorting (`max_bytes_before_external_sort`).

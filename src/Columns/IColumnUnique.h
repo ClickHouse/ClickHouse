@@ -1,6 +1,7 @@
 #pragma once
 #include <optional>
 #include <Columns/IColumn.h>
+#include <Common/UInt128.h>
 
 namespace DB
 {

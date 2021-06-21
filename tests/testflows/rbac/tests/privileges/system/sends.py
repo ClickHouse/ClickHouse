@@ -17,7 +17,7 @@ def replicated_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=check_replicated_privilege,
+        Suite(run=check_replicated_privilege, flags=TE,
             examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in check_replicated_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -38,14 +38,13 @@ def replicated_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=check_replicated_privilege,
+        Suite(run=check_replicated_privilege, flags=TE,
             examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in check_replicated_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege on",[
-    ("ALL", "*.*"),
     ("SYSTEM", "*.*"),
     ("SYSTEM SENDS", "*.*"),
     ("SYSTEM START SENDS", "*.*"),
@@ -68,8 +67,8 @@ def check_replicated_privilege(self, privilege, on, grant_target_name, user_name
     if node is None:
         node = self.context.node
 
-    Suite(test=start_replicated_sends)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name)
-    Suite(test=stop_replicated_sends)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name)
+    Suite(test=start_replicated_sends, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name)
+    Suite(test=stop_replicated_sends, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name)
 
 @TestSuite
 def start_replicated_sends(self, privilege, on, grant_target_name, user_name, node=None):
@@ -86,19 +85,11 @@ def start_replicated_sends(self, privilege, on, grant_target_name, user_name, no
     with table(node, table_name, "ReplicatedMergeTree-sharded_cluster"):
 
         with Scenario("SYSTEM START REPLICATED SENDS without privilege"):
-
-            with When("I grant the user NONE privilege"):
-                node.query(f"GRANT NONE TO {grant_target_name}")
-
-            with And("I grant the user USAGE privilege"):
-                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-            with Then("I check the user can't start sends"):
+            with When("I check the user can't start sends"):
                 node.query(f"SYSTEM START REPLICATED SENDS {table_name}", settings = [("user", f"{user_name}")],
                     exitcode=exitcode, message=message)
 
         with Scenario("SYSTEM START REPLICATED SENDS with privilege"):
-
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -106,7 +97,6 @@ def start_replicated_sends(self, privilege, on, grant_target_name, user_name, no
                 node.query(f"SYSTEM START REPLICATED SENDS {table_name}", settings = [("user", f"{user_name}")])
 
         with Scenario("SYSTEM START REPLICATED SENDS with revoked privilege"):
-
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -132,19 +122,11 @@ def stop_replicated_sends(self, privilege, on, grant_target_name, user_name, nod
     with table(node, table_name, "ReplicatedMergeTree-sharded_cluster"):
 
         with Scenario("SYSTEM STOP REPLICATED SENDS without privilege"):
-
-            with When("I grant the user NONE privilege"):
-                node.query(f"GRANT NONE TO {grant_target_name}")
-
-            with And("I grant the user USAGE privilege"):
-                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-            with Then("I check the user can't stop sends"):
+            with When("I check the user can't stop sends"):
                 node.query(f"SYSTEM STOP REPLICATED SENDS {table_name}", settings = [("user", f"{user_name}")],
                     exitcode=exitcode, message=message)
 
         with Scenario("SYSTEM STOP REPLICATED SENDS with privilege"):
-
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -152,7 +134,6 @@ def stop_replicated_sends(self, privilege, on, grant_target_name, user_name, nod
                 node.query(f"SYSTEM STOP REPLICATED SENDS {table_name}", settings = [("user", f"{user_name}")])
 
         with Scenario("SYSTEM STOP REPLICATED SENDS with revoked privilege"):
-
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -176,7 +157,7 @@ def distributed_privileges_granted_directly(self, node=None):
     with user(node, f"{user_name}"):
         table_name = f"table_name_{getuid()}"
 
-        Suite(run=check_distributed_privilege,
+        Suite(run=check_distributed_privilege, flags=TE,
             examples=Examples("privilege on grant_target_name user_name table_name", [
                 tuple(list(row)+[user_name,user_name,table_name]) for row in check_distributed_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -198,14 +179,13 @@ def distributed_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=check_distributed_privilege,
+        Suite(run=check_distributed_privilege, flags=TE,
             examples=Examples("privilege on grant_target_name user_name table_name", [
                 tuple(list(row)+[role_name,user_name,table_name]) for row in check_distributed_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege on",[
-    ("ALL", "*.*"),
     ("SYSTEM", "*.*"),
     ("SYSTEM SENDS", "*.*"),
     ("SYSTEM START SENDS", "*.*"),
@@ -228,8 +208,8 @@ def check_distributed_privilege(self, privilege, on, grant_target_name, user_nam
     if node is None:
         node = self.context.node
 
-    Suite(test=start_distributed_moves)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
-    Suite(test=stop_distributed_moves)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
+    Suite(test=start_distributed_moves, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
+    Suite(test=stop_distributed_moves, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
 
 @TestSuite
 def start_distributed_moves(self, privilege, on, grant_target_name, user_name, table_name, node=None):
@@ -249,19 +229,11 @@ def start_distributed_moves(self, privilege, on, grant_target_name, user_name, t
                 node.query(f"CREATE TABLE {table_name} (a UInt64) ENGINE = Distributed(sharded_cluster, default, {table0_name}, rand())")
 
             with Scenario("SYSTEM START DISTRIBUTED SENDS without privilege"):
-
-                with When("I grant the user NONE privilege"):
-                    node.query(f"GRANT NONE TO {grant_target_name}")
-
-                with And("I grant the user USAGE privilege"):
-                    node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-                with Then("I check the user can't start merges"):
+                with When("I check the user can't start merges"):
                     node.query(f"SYSTEM START DISTRIBUTED SENDS {table_name}", settings = [("user", f"{user_name}")],
                         exitcode=exitcode, message=message)
 
             with Scenario("SYSTEM START DISTRIBUTED SENDS with privilege"):
-
                 with When(f"I grant {privilege} on the table"):
                     node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -269,7 +241,6 @@ def start_distributed_moves(self, privilege, on, grant_target_name, user_name, t
                     node.query(f"SYSTEM START DISTRIBUTED SENDS {table_name}", settings = [("user", f"{user_name}")])
 
             with Scenario("SYSTEM START DISTRIBUTED SENDS with revoked privilege"):
-
                 with When(f"I grant {privilege} on the table"):
                     node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -302,19 +273,11 @@ def stop_distributed_moves(self, privilege, on, grant_target_name, user_name, ta
                 node.query(f"CREATE TABLE {table_name} (a UInt64) ENGINE = Distributed(sharded_cluster, default, {table0_name}, rand())")
 
             with Scenario("SYSTEM STOP DISTRIBUTED SENDS without privilege"):
-
-                with When("I grant the user NONE privilege"):
-                    node.query(f"GRANT NONE TO {grant_target_name}")
-
-                with And("I grant the user USAGE privilege"):
-                    node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-                with Then("I check the user can't stop merges"):
+                with When("I check the user can't stop merges"):
                     node.query(f"SYSTEM STOP DISTRIBUTED SENDS {table_name}", settings = [("user", f"{user_name}")],
                         exitcode=exitcode, message=message)
 
             with Scenario("SYSTEM STOP DISTRIBUTED SENDS with privilege"):
-
                 with When(f"I grant {privilege} on the table"):
                     node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -322,7 +285,6 @@ def stop_distributed_moves(self, privilege, on, grant_target_name, user_name, ta
                     node.query(f"SYSTEM STOP DISTRIBUTED SENDS {table_name}", settings = [("user", f"{user_name}")])
 
             with Scenario("SYSTEM STOP DISTRIBUTED SENDS with revoked privilege"):
-
                 with When(f"I grant {privilege} on the table"):
                     node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -340,8 +302,6 @@ def stop_distributed_moves(self, privilege, on, grant_target_name, user_name, ta
 @Name("system sends")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_Sends("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SYSTEM SENDS.

@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -13,7 +13,7 @@ class FunctionMaterialize : public IFunction
 {
 public:
     static constexpr auto name = "materialize";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionMaterialize>();
     }
