@@ -133,7 +133,7 @@ ASTPtr SystemQuery::convertToOld() const
             {
                 auto table = std::static_pointer_cast<ASTTableIdentifier>(get(TABLE)->convertToOld());
                 query->database = table->getDatabaseName();
-                query->target_dictionary = table->shortName();
+                query->table = table->getTableId().table_name;
             }
             break;
         case QueryType::REPLICATED_SENDS:

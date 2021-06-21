@@ -112,6 +112,7 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int SYNTAX_ERROR;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 
@@ -1267,7 +1268,8 @@ private:
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::SYNTAX_ERROR)
+            if (e.code() != ErrorCodes::SYNTAX_ERROR &&
+                e.code() != ErrorCodes::TOO_DEEP_RECURSION)
                 throw;
         }
 
@@ -1449,10 +1451,9 @@ private:
                 }
                 catch (Exception & e)
                 {
-                    if (e.code() != ErrorCodes::SYNTAX_ERROR)
-                    {
+                    if (e.code() != ErrorCodes::SYNTAX_ERROR &&
+                        e.code() != ErrorCodes::TOO_DEEP_RECURSION)
                         throw;
-                    }
                 }
 
                 if (ast_2)
@@ -2471,7 +2472,7 @@ public:
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
             ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-            ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
+            ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
