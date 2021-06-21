@@ -345,7 +345,7 @@ public:
         if (ast)
         {
             const auto * func = assert_cast<const ASTFunction *>(ast);
-            return func->arguments ? 0 : func->arguments->size();
+            return func->arguments ? func->arguments->children.size() : 0;
         }
         else
             return dag->children.size();
@@ -1266,6 +1266,8 @@ bool KeyCondition::tryPrepareSetIndex(
             for (size_t i = 0; i < left_args_count; ++i)
                 get_key_tuple_position_mapping(left_arg_tuple.getArgumentAt(i), i);
         }
+        else
+            get_key_tuple_position_mapping(left_arg, 0);
     }
     else
         get_key_tuple_position_mapping(left_arg, 0);
