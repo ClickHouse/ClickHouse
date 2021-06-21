@@ -8,10 +8,9 @@
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
-#include <IO/TimeoutSetter.h>
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/Context.h>
+#include <Client/TimeoutSetter.h>
 
 #include "IServer.h"
 
@@ -58,7 +57,6 @@ struct QueryState
 
     /// Is request cancelled
     bool is_cancelled = false;
-    bool is_connection_closed = false;
     /// empty or not
     bool is_empty = true;
     /// Data was sent.
@@ -67,9 +65,6 @@ struct QueryState
     bool need_receive_data_for_insert = false;
     /// Temporary tables read
     bool temporary_tables_read = false;
-
-    /// A state got uuids to exclude from a query
-    bool part_uuids = false;
 
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
@@ -89,7 +84,7 @@ struct QueryState
         *this = QueryState();
     }
 
-    bool empty() const
+    bool empty()
     {
         return is_empty;
     }
@@ -102,40 +97,37 @@ struct LastBlockInputParameters
     Block header;
 };
 
+
 class TCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    /** parse_proxy_protocol_ - if true, expect and parse the header of PROXY protocol in every connection
-      * and set the information about forwarded address accordingly.
-      * See https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
-      *
-      * Note: immediate IP address is always used for access control (accept-list of IP networks),
-      *  because it allows to check the IP ranges of the trusted proxy.
-      * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
-      */
-    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
-    ~TCPHandler() override;
+    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
+        : Poco::Net::TCPServerConnection(socket_)
+        , server(server_)
+        , log(&Poco::Logger::get("TCPHandler"))
+        , connection_context(server.context())
+        , query_context(server.context())
+    {
+        server_display_name = server.config().getString("display_name", getFQDNOrHostName());
+    }
 
     void run() override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(ContextPtr /*context*/) {}
+    virtual void customizeContext(DB::Context & /*context*/) {}
 
 private:
     IServer & server;
-    bool parse_proxy_protocol = false;
     Poco::Logger * log;
 
     String client_name;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    UInt64 client_tcp_protocol_version = 0;
+    UInt64 client_revision = 0;
 
-    ContextPtr connection_context;
-    ContextPtr query_context;
-
-    size_t unknown_packet_in_send_data = 0;
+    Context connection_context;
+    std::optional<Context> query_context;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
@@ -146,13 +138,6 @@ private:
     Stopwatch after_send_progress;
 
     String default_database;
-
-    /// For inter-server secret (remote_server.*.secret)
-    String salt;
-    String cluster;
-    String cluster_secret;
-
-    std::mutex task_callback_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
@@ -167,16 +152,12 @@ private:
 
     void runImpl();
 
-    bool receiveProxyHeader();
     void receiveHello();
     bool receivePacket();
     void receiveQuery();
-    void receiveIgnoredPartUUIDs();
-    String receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
-    bool readDataNext(size_t poll_interval, time_t receive_timeout);
+    bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & connection_settings);
-    void receiveClusterNameAndSalt();
     std::tuple<size_t, int> getReadTimeouts(const Settings & connection_settings);
 
     [[noreturn]] void receiveUnexpectedData();
@@ -202,8 +183,6 @@ private:
     void sendProgress();
     void sendLogs();
     void sendEndOfStream();
-    void sendPartUUIDs();
-    void sendReadTaskRequestAssumeLocked();
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);

@@ -1,14 +1,11 @@
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
 #include "ConfigProcessor.h"
-#include "YAMLParser.h"
 
 #include <sys/utsname.h>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <sstream>
 #include <functional>
 #include <filesystem>
 #include <Poco/DOM/Text.h>
@@ -20,13 +17,9 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 #include <common/getResource.h>
-#include <common/errnoToString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
-namespace fs = std::filesystem;
 
 using namespace Poco::XML;
 
@@ -236,9 +229,9 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 
 static std::string layerFromHost()
 {
-    struct utsname buf;
+    utsname buf;
     if (uname(&buf))
-        throw Poco::Exception(std::string("uname failed: ") + errnoToString(errno));
+        throw Poco::Exception(std::string("uname failed: ") + std::strerror(errno));
 
     std::string layer = numberFromHost(buf.nodename);
     if (layer.empty())
@@ -440,10 +433,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
             std::string base_name = path.getBaseName();
 
             // Skip non-config and temporary files
-            if (file.isFile() && (extension == "xml" || extension == "conf" || extension == "yaml" || extension == "yml") && !startsWith(base_name, "."))
-            {
-               files.push_back(file.path());
-            }
+            if (file.isFile() && (extension == "xml" || extension == "conf") && !startsWith(base_name, "."))
+                files.push_back(file.path());
         }
     }
 
@@ -457,37 +448,19 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
+    XMLDocumentPtr config;
     LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
-    XMLDocumentPtr config;
-
-    if (fs::exists(path))
+    if (std::filesystem::exists(path))
     {
-        fs::path p(path);
-        if (p.extension() == ".xml")
-        {
-            config = dom_parser.parse(path);
-        }
-        else if (p.extension() == ".yaml" || p.extension() == ".yml")
-        {
-            config = YAMLParser::parse(path);
-        }
+        config = dom_parser.parse(path);
     }
     else
     {
-        /// These embedded files added during build with some cmake magic.
-        /// Look at the end of programs/sever/CMakeLists.txt.
-        std::string embedded_name;
-        if (path == "config.xml")
-            embedded_name = "embedded.xml";
-
-        if (path == "keeper_config.xml")
-            embedded_name = "keeper_embedded.xml";
-
         /// When we can use config embedded in binary.
-        if (!embedded_name.empty())
+        if (path == "config.xml")
         {
-            auto resource = getResource(embedded_name);
+            auto resource = getResource("embedded.xml");
             if (resource.empty())
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
             LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
@@ -506,20 +479,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         {
             LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
-            XMLDocumentPtr with;
-
-            fs::path p(merge_file);
-            if (p.extension() == ".yaml" || p.extension() == ".yml")
-            {
-                with = YAMLParser::parse(merge_file);
-            }
-            else
-            {
-                with = dom_parser.parse(merge_file);
-            }
-
+            XMLDocumentPtr with = dom_parser.parse(merge_file);
             merge(config, with);
-
             contributing_files.push_back(merge_file);
         }
         catch (Exception & e)
@@ -574,7 +535,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     if (has_zk_includes)
         *has_zk_includes = !contributing_zk_paths.empty();
 
-    WriteBufferFromOwnString comment;
+    std::stringstream comment;
     comment <<     " This file was generated automatically.\n";
     comment << "     Do not edit it: it is likely to be discarded and generated again before it's read next time.\n";
     comment << "     Files used to generate this file:";
@@ -649,7 +610,6 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
     {
         if (preprocessed_path.empty())
         {
-            fs::path preprocessed_configs_path("preprocessed_configs/");
             auto new_path = loaded_config.config_path;
             if (new_path.substr(0, main_config_path.size()) == main_config_path)
                 new_path.replace(0, main_config_path.size(), "");
@@ -668,17 +628,15 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 }
                 else
                 {
-                    fs::path loaded_config_path(loaded_config.configuration->getString("path"));
-                    preprocessed_dir = loaded_config_path / preprocessed_configs_path;
+                    preprocessed_dir = loaded_config.configuration->getString("path") + "/preprocessed_configs/";
                 }
             }
             else
             {
-                fs::path preprocessed_dir_path(preprocessed_dir);
-                preprocessed_dir = (preprocessed_dir_path / preprocessed_configs_path).string();
+                preprocessed_dir += "/preprocessed_configs/";
             }
 
-            preprocessed_path = (fs::path(preprocessed_dir) / fs::path(new_path)).string();
+            preprocessed_path = preprocessed_dir + new_path;
             auto preprocessed_path_parent = Poco::Path(preprocessed_path).makeParent();
             if (!preprocessed_path_parent.toString().empty())
                 Poco::File(preprocessed_path_parent).createDirectories();

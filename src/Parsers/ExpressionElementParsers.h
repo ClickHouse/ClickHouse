@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Core/MultiEnum.h>
 #include <Parsers/IParserBase.h>
 
 
@@ -40,16 +39,12 @@ protected:
 
 
 /** An identifier, for example, x_yz123 or `something special`
-  * If allow_query_parameter_ = true, also parses substitutions in form {name:Identifier}
   */
 class ParserIdentifier : public IParserBase
 {
-public:
-    explicit ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    bool allow_query_parameter;
 };
 
 
@@ -59,59 +54,20 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false)
-        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_)
-    {
-    }
-
+    ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false)
+    : table_name_with_optional_uuid(table_name_with_optional_uuid_) {}
 protected:
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool table_name_with_optional_uuid;
-    bool allow_query_parameter;
 };
-
-/** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...)
-  */
-class ParserColumnsTransformers : public IParserBase
-{
-public:
-    enum class ColumnTransformer : UInt8
-    {
-        APPLY,
-        EXCEPT,
-        REPLACE,
-    };
-    using ColumnTransformers = MultiEnum<ColumnTransformer, UInt8>;
-    static constexpr auto AllTransformers = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE};
-
-    explicit ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = AllTransformers, bool is_strict_ = false)
-        : allowed_transformers(allowed_transformers_)
-        , is_strict(is_strict_)
-    {}
-
-protected:
-    const char * getName() const override { return "COLUMNS transformers"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    ColumnTransformers allowed_transformers;
-    bool is_strict;
-};
-
 
 /// Just *
 class ParserAsterisk : public IParserBase
 {
-public:
-    using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    explicit ParserAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
-        : allowed_transformers(allowed_transformers_)
-    {}
-
 protected:
     const char * getName() const override { return "asterisk"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    ColumnTransformers allowed_transformers;
 };
 
 /** Something like t.* or db.table.*
@@ -127,17 +83,9 @@ protected:
   */
 class ParserColumnsMatcher : public IParserBase
 {
-public:
-    using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    explicit ParserColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
-        : allowed_transformers(allowed_transformers_)
-    {}
-
 protected:
     const char * getName() const override { return "COLUMNS matcher"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    ColumnTransformers allowed_transformers;
 };
 
 /** A function, for example, f(x, y + 1, g(z)).
@@ -149,47 +97,11 @@ protected:
 class ParserFunction : public IParserBase
 {
 public:
-    explicit ParserFunction(bool allow_function_parameters_ = true, bool is_table_function_ = false)
-        : allow_function_parameters(allow_function_parameters_), is_table_function(is_table_function_)
-    {
-    }
-
+    ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) {}
 protected:
     const char * getName() const override { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_function_parameters;
-    bool is_table_function;
-};
-
-// A special function parser for view table function.
-// It parses an SELECT query as its argument and doesn't support getColumnName().
-class ParserTableFunctionView : public IParserBase
-{
-protected:
-    const char * getName() const override { return "function"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-// Window reference (the thing that goes after OVER) for window function.
-// Can be either window name or window definition.
-class ParserWindowReference : public IParserBase
-{
-    const char * getName() const override { return "window reference"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserWindowDefinition : public IParserBase
-{
-    const char * getName() const override { return "window definition"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-// The WINDOW clause of a SELECT query that defines a list of named windows.
-// Returns an ASTExpressionList of ASTWindowListElement's.
-class ParserWindowList : public IParserBase
-{
-    const char * getName() const override { return "WINDOW clause"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserCodecDeclarationList : public IParserBase
@@ -209,22 +121,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// Fast path of cast operator "::".
-/// It tries to read literal as text.
-/// If it fails, later operator will be transformed to function CAST.
-/// Examples: "0.1::Decimal(38, 38)", "[1, 2]::Array(UInt8)"
-class ParserCastOperator : public IParserBase
+class ParserCastExpression : public IParserBase
 {
 protected:
-    const char * getName() const override { return "CAST operator"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast);
-class ParserCastAsExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "CAST AS expression"; }
+    const char * getName() const override { return "CAST expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -393,17 +293,6 @@ private:
 /** Prepared statements.
   * Parse query with parameter expression {name:type}.
   */
-class ParserIdentifierOrSubstitution : public IParserBase
-{
-protected:
-    const char * getName() const override { return "identifier or substitution"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/** Prepared statements.
-  * Parse query with parameter expression {name:type}.
-  */
 class ParserSubstitution : public IParserBase
 {
 protected:
@@ -494,14 +383,6 @@ class ParserTTLElement : public IParserBase
 {
 protected:
     const char * getName() const override { return "element of TTL expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/// Part of the UPDATE command or TTL with GROUP BY of the form: col_name = expr
-class ParserAssignment : public IParserBase
-{
-protected:
-    const char * getName() const  override{ return "column assignment"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -18,13 +18,8 @@ public:
     ~DiskAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
-    String getStorageParamsJSON() const override;
-
-    String getPath() const { return directory_path; }
-    bool isPathEqual(const String & directory_path_) const;
-
-    void setReadOnly(bool readonly_) { readonly = readonly_; }
-    bool isReadOnly() const { return readonly; }
+    String getStoragePath() const override { return directory_path; }
+    bool isStorageReadOnly() const override { return readonly; }
 
 private:
     std::optional<UUID> findImpl(EntityType type, const String & name) const override;
@@ -47,8 +42,9 @@ private:
     void scheduleWriteLists(EntityType type);
     bool rebuildLists();
 
-    void listsWritingThreadFunc();
+    void startListsWritingThread();
     void stopListsWritingThread();
+    void listsWritingThreadFunc();
 
     void insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications);
     void removeNoLock(const UUID & id, Notifications & notifications);
@@ -71,14 +67,14 @@ private:
     void prepareNotifications(const UUID & id, const Entry & entry, bool remove, Notifications & notifications) const;
 
     String directory_path;
-    std::atomic<bool> readonly;
+    bool readonly;
     std::unordered_map<UUID, Entry> entries_by_id;
     std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
     boost::container::flat_set<EntityType> types_of_lists_to_write;
     bool failed_to_write_lists = false;                          /// Whether writing of the list files has been failed since the recent restart of the server.
     ThreadFromGlobalPool lists_writing_thread;                   /// List files are written in a separate thread.
     std::condition_variable lists_writing_thread_should_exit;    /// Signals `lists_writing_thread` to exit.
-    bool lists_writing_thread_is_waiting = false;
+    std::atomic<bool> lists_writing_thread_exited = false;
     mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];
     mutable std::mutex mutex;
 };

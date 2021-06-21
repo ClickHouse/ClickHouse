@@ -1,26 +1,26 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/IAST_fwd.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
 
+class Context;
 
 struct ExpressionInfoMatcher
 {
-    struct Data : public WithContext
+    struct Data
     {
+        const Context & context;
         const TablesWithColumns & tables;
 
         bool is_array_join = false;
         bool is_stateful_function = false;
         bool is_aggregate_function = false;
-        bool is_window_function = false;
         bool is_deterministic_function = true;
         std::unordered_set<size_t> unique_reference_tables_pos = {};
     };
@@ -36,6 +36,6 @@ struct ExpressionInfoMatcher
 
 using ExpressionInfoVisitor = ConstInDepthNodeVisitor<ExpressionInfoMatcher, true>;
 
-bool hasNonRewritableFunction(const ASTPtr & node, ContextPtr context);
+bool hasStatefulFunction(const ASTPtr & node, const Context & context);
 
 }

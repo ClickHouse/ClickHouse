@@ -1,23 +1,24 @@
-#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTExpressionList.h>
 
-#include <Columns/ColumnTuple.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
+#include <Interpreters/addTypeConversionToAST.h>
+
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
+
+#include <Columns/ColumnTuple.h>
+
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/addTypeConversionToAST.h>
-#include <Interpreters/misc.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTWithElement.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 namespace DB
 {
@@ -37,10 +38,6 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
 
     /// Don't descend into subqueries in FROM section
     if (node->as<ASTTableExpression>())
-        return false;
-
-    /// Do not go to subqueries defined in with statement
-    if (node->as<ASTWithElement>())
         return false;
 
     if (node->as<ASTSelectQuery>())
@@ -78,21 +75,21 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     auto scalar_query_hash_str = toString(hash.first) + "_" + toString(hash.second);
 
     Block scalar;
-    if (data.getContext()->hasQueryContext() && data.getContext()->getQueryContext()->hasScalar(scalar_query_hash_str))
-        scalar = data.getContext()->getQueryContext()->getScalar(scalar_query_hash_str);
+    if (data.context.hasQueryContext() && data.context.getQueryContext().hasScalar(scalar_query_hash_str))
+        scalar = data.context.getQueryContext().getScalar(scalar_query_hash_str);
     else if (data.scalars.count(scalar_query_hash_str))
         scalar = data.scalars[scalar_query_hash_str];
     else
     {
-        auto subquery_context = Context::createCopy(data.getContext());
-        Settings subquery_settings = data.getContext()->getSettings();
+        Context subquery_context = data.context;
+        Settings subquery_settings = data.context.getSettings();
         subquery_settings.max_result_rows = 1;
         subquery_settings.extremes = false;
-        subquery_context->setSettings(subquery_settings);
+        subquery_context.setSettings(subquery_settings);
 
         ASTPtr subquery_select = subquery.children.at(0);
 
-        auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1, true);
+        auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1);
         options.analyze(data.only_analyze);
 
         auto interpreter = InterpreterSelectWithUnionQuery(subquery_select, subquery_context, options);
@@ -114,14 +111,13 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
         else
         {
-            auto io = interpreter.execute();
+            auto stream = interpreter.execute().getInputStream();
 
             try
             {
-                PullingAsyncPipelineExecutor executor(io.pipeline);
-                while (block.rows() == 0 && executor.pull(block));
+                block = stream->read();
 
-                if (block.rows() == 0)
+                if (!block)
                 {
                     /// Interpret subquery with empty result as Null literal
                     auto ast_new = std::make_unique<ASTLiteral>(Null());
@@ -130,13 +126,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                     return;
                 }
 
-                if (block.rows() != 1)
-                    throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-
-                Block tmp_block;
-                while (tmp_block.rows() == 0 && executor.pull(tmp_block));
-
-                if (tmp_block.rows() != 0)
+                if (block.rows() != 1 || stream->read())
                     throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
             }
             catch (const Exception & e)
@@ -163,11 +153,10 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
     }
 
-    const Settings & settings = data.getContext()->getSettingsRef();
+    const Settings & settings = data.context.getSettingsRef();
 
     // Always convert to literals when there is no query context.
-    if (data.only_analyze || !settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar)
-        || !data.getContext()->hasQueryContext())
+    if (data.only_analyze || !settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar) || !data.context.hasQueryContext())
     {
         auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
         lit->alias = subquery.alias;
@@ -198,7 +187,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
     /// Don't descend into subqueries in arguments of IN operator.
-    /// But if an argument is not subquery, then deeper may be scalar subqueries and we need to descend in them.
+    /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
 
     std::vector<ASTPtr *> out;
     if (checkFunctionIsInOrGlobalInOperator(func))

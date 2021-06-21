@@ -1,5 +1,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
+#include <sstream>
 
 namespace DB
 {
@@ -10,6 +11,8 @@ namespace DB
 
     String queryToString(const IAST & query)
     {
-        return serializeAST(query);
+        std::ostringstream out;
+        formatAST(query, out, false, true);
+        return out.str();
     }
 }

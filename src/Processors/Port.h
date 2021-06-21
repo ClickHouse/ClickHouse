@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <vector>
 #include <variant>
@@ -378,7 +377,7 @@ public:
 ///   * If you finish port, it isFinished().
 ///   * If port isFinished(), you can do nothing with it.
 ///   * If port not isNeeded(), you can only finish() it.
-///   * You can push only if port doesn't hasData().
+///   * You can hush only if port doesn't hasData().
 class OutputPort : public Port
 {
     friend void connect(OutputPort &, InputPort &);

@@ -17,6 +17,10 @@
         "name": "yandex/clickhouse-unbundled-builder",
         "dependent": []
     },
+    "docker/test/coverage": {
+        "name": "yandex/clickhouse-coverage",
+        "dependent": []
+    },
     "docker/test/compatibility/centos": {
         "name": "yandex/clickhouse-test-old-centos",
         "dependent": []
@@ -41,27 +45,31 @@
         "name": "yandex/clickhouse-pvs-test",
         "dependent": []
     },
-    "docker/test/stateless": {
-        "name": "yandex/clickhouse-stateless-test",
-        "dependent": [
-            "docker/test/stateful",
-            "docker/test/coverage",
-            "docker/test/unit"
-        ]
-    },
-    "docker/test/stateless_pytest": {
-        "name": "yandex/clickhouse-stateless-pytest",
-        "dependent": []
-    },
     "docker/test/stateful": {
         "name": "yandex/clickhouse-stateful-test",
         "dependent": [
             "docker/test/stress"
         ]
     },
-    "docker/test/coverage": {
-        "name": "yandex/clickhouse-test-coverage",
+    "docker/test/stateful_with_coverage": {
+        "name": "yandex/clickhouse-stateful-test-with-coverage",
         "dependent": []
+    },
+    "docker/test/stateless": {
+        "name": "yandex/clickhouse-stateless-test",
+        "dependent": [
+            "docker/test/stateful"
+        ]
+    },
+    "docker/test/stateless_pytest": {
+        "name": "yandex/clickhouse-stateless-pytest",
+        "dependent": []
+    },
+    "docker/test/stateless_with_coverage": {
+        "name": "yandex/clickhouse-stateless-test-with-coverage",
+        "dependent": [
+            "docker/test/stateful_with_coverage"
+        ]
     },
     "docker/test/unit": {
         "name": "yandex/clickhouse-unit-test",
@@ -127,19 +135,13 @@
         "name": "yandex/clickhouse-postgresql-java-client",
         "dependent": []
     },
-    "docker/test/integration/kerberos_kdc": {
-        "name": "yandex/clickhouse-kerberos-kdc",
-        "dependent": []
-    },
     "docker/test/base": {
          "name": "yandex/clickhouse-test-base",
          "dependent": [
             "docker/test/stateless",
-            "docker/test/stateless_unbundled",
+            "docker/test/stateless_with_coverage",
             "docker/test/stateless_pytest",
-            "docker/test/integration/base",
-            "docker/test/fuzzer",
-            "docker/test/keeper-jepsen"
+            "docker/test/coverage"
          ]
     },
     "docker/packager/unbundled": {
@@ -152,17 +154,5 @@
          "name": "yandex/clickhouse-stateless-unbundled-test",
          "dependent": [
          ]
-    },
-    "docker/test/integration/kerberized_hadoop": {
-        "name": "yandex/clickhouse-kerberized-hadoop",
-        "dependent": []
-    },
-    "docker/test/sqlancer": {
-        "name": "yandex/clickhouse-sqlancer-test",
-        "dependent": []
-    },
-    "docker/test/keeper-jepsen": {
-        "name": "yandex/clickhouse-keeper-jepsen-test",
-        "dependent": []
     }
 }

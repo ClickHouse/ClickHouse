@@ -63,14 +63,18 @@ namespace ErrorCodes
 
         BlockInputStreamPtr loadUpdatedAll() override
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for RedisDictionarySource");
+            throw Exception{"Method loadUpdatedAll is unsupported for RedisDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
         }
 
         bool supportsSelectiveLoad() const override { return true; }
 
         BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
-        BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+        BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override
+        {
+            // Redis does not support native indexing
+            throw Exception{"Method loadKeys is unsupported for RedisDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+        }
 
         bool isModified() const override { return true; }
 

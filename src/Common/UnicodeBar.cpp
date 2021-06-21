@@ -5,25 +5,33 @@
 #include <common/arithmeticOverflow.h>
 #include <Common/Exception.h>
 #include <Common/UnicodeBar.h>
-#include <Common/NaNUtils.h>
 
-#include <iostream>
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int PARAMETER_OUT_OF_BOUND;
+    }
+}
 
 
 namespace UnicodeBar
 {
-    double getWidth(double x, double min, double max, double max_width)
+    double getWidth(Int64 x, Int64 min, Int64 max, double max_width)
     {
-        if (isNaN(x) || isNaN(min) || isNaN(max))
-            return 0;
-
         if (x <= min)
             return 0;
 
         if (x >= max)
             return max_width;
 
-        return (x - min) / (max - min) * max_width;
+        /// The case when max - min overflows
+        Int64 max_difference;
+        if (common::subOverflow(max, min, max_difference))
+            throw DB::Exception(DB::ErrorCodes::PARAMETER_OUT_OF_BOUND, "The arguments to render unicode bar will lead to arithmetic overflow");
+
+        return (x - min) * max_width / max_difference;
     }
 
     size_t getWidthInBytes(double width)

@@ -18,7 +18,7 @@ String ExpressionBlockInputStream::getName() const { return "Expression"; }
 Block ExpressionBlockInputStream::getTotals()
 {
     totals = children.back()->getTotals();
-    expression->execute(totals);
+    expression->executeOnTotals(totals);
 
     return totals;
 }
@@ -30,6 +30,14 @@ Block ExpressionBlockInputStream::getHeader() const
 
 Block ExpressionBlockInputStream::readImpl()
 {
+    if (!initialized)
+    {
+        if (expression->resultIsAlwaysEmpty())
+            return {};
+
+        initialized = true;
+    }
+
     Block res = children.back()->read();
     if (res)
         expression->execute(res);

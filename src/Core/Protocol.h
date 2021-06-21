@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -52,10 +52,6 @@ namespace DB
 /// Using this block the client can initialize the output formatter and display the prefix of resulting table
 /// beforehand.
 
-/// Marker of the inter-server secret (passed in the user name)
-/// (anyway user cannot be started with a whitespace)
-const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
-
 namespace Protocol
 {
     /// Packet types that server transmits.
@@ -75,11 +71,6 @@ namespace Protocol
             TablesStatusResponse = 9, /// A response to TablesStatus request.
             Log = 10,                 /// System logs of the query execution
             TableColumns = 11,        /// Columns' description for default values calculation
-            PartUUIDs = 12,           /// List of unique parts ids.
-            ReadTaskRequest = 13,     /// String (UUID) describes a request for which next task is needed
-                                      /// This is such an inverted logic, where server sends requests
-                                      /// And client returns back response
-            MAX = ReadTaskRequest,
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -88,23 +79,9 @@ namespace Protocol
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
         inline const char * toString(UInt64 packet)
         {
-            static const char * data[] = {
-                "Hello",
-                "Data",
-                "Exception",
-                "Progress",
-                "Pong",
-                "EndOfStream",
-                "ProfileInfo",
-                "Totals",
-                "Extremes",
-                "TablesStatusResponse",
-                "Log",
-                "TableColumns",
-                "PartUUIDs",
-                "ReadTaskRequest"
-            };
-            return packet <= MAX
+            static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals",
+                "Extremes", "TablesStatusResponse", "Log", "TableColumns" };
+            return packet < 12
                 ? data[packet]
                 : "Unknown packet";
         }
@@ -136,28 +113,13 @@ namespace Protocol
             Ping = 4,                /// Check that connection to the server is alive.
             TablesStatusRequest = 5, /// Check status of tables on the server.
             KeepAlive = 6,           /// Keep the connection alive
-            Scalar = 7,              /// A block of data (compressed or not).
-            IgnoredPartUUIDs = 8,    /// List of unique parts ids to exclude from query processing
-            ReadTaskResponse = 9,     /// TODO:
-
-            MAX = ReadTaskResponse,
+            Scalar = 7               /// A block of data (compressed or not).
         };
 
         inline const char * toString(UInt64 packet)
         {
-            static const char * data[] = {
-                "Hello",
-                "Query",
-                "Data",
-                "Cancel",
-                "Ping",
-                "TablesStatusRequest",
-                "KeepAlive",
-                "Scalar",
-                "IgnoredPartUUIDs",
-                "ReadTaskResponse",
-            };
-            return packet <= MAX
+            static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping", "TablesStatusRequest", "KeepAlive" };
+            return packet < 7
                 ? data[packet]
                 : "Unknown packet";
         }

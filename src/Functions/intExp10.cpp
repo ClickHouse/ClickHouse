@@ -5,13 +5,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
-namespace
-{
 
 template <typename A>
 struct IntExp10Impl
@@ -35,8 +33,6 @@ struct IntExp10Impl
 struct NameIntExp10 { static constexpr auto name = "intExp10"; };
 /// Assumed to be injective for the purpose of query optimization, but in fact it is not injective because of possible overflow.
 using FunctionIntExp10 = FunctionUnaryArithmetic<IntExp10Impl, NameIntExp10, true>;
-
-}
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp10>
 {

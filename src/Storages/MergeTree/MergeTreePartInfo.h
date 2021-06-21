@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tuple>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <common/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
@@ -18,8 +18,6 @@ struct MergeTreePartInfo
     Int64 max_block = 0;
     UInt32 level = 0;
     Int64 mutation = 0;   /// If the part has been mutated or contains mutated parts, is equal to mutation version number.
-
-    bool use_leagcy_max_level = false;  /// For compatibility. TODO remove it
 
     MergeTreePartInfo() = default;
 
@@ -88,8 +86,6 @@ struct MergeTreePartInfo
 
     static constexpr UInt32 MAX_LEVEL = 999999999;
     static constexpr UInt32 MAX_BLOCK_NUMBER = 999999999;
-
-    static constexpr UInt32 LEGACY_MAX_LEVEL = std::numeric_limits<decltype(level)>::max();
 };
 
 /// Information about detached part, which includes its prefix in

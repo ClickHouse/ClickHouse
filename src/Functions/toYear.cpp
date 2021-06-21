@@ -12,8 +12,6 @@ using FunctionToYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToYearI
 void registerFunctionToYear(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToYear>();
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionToYear>("YEAR", FunctionFactory::CaseInsensitive);
 }
 
 }

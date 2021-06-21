@@ -5,45 +5,35 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_CONNECT_RABBITMQ;
+}
+
 /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
  * event loop and handler).
  */
 RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
     AMQP::LibUvHandler(loop_),
     loop(loop_),
-    log(log_),
-    connection_running(false),
-    loop_running(false),
-    loop_state(Loop::STOP)
+    log(log_)
 {
 }
 
-///Method that is called when the connection ends up in an error state.
-void RabbitMQHandler::onError(AMQP::TcpConnection * /* connection */, const char * message)
+void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * message)
 {
     LOG_ERROR(log, "Library error report: {}", message);
-    connection_running.store(false);
-}
 
-void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
-{
-    LOG_TRACE(log, "Connection is ready");
-    connection_running.store(true);
-    loop_state.store(Loop::RUN);
+    if (!connection->usable() || !connection->ready())
+        throw Exception("Connection error", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
 }
 
 void RabbitMQHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);
-
-    LOG_DEBUG(log, "Background loop started");
-    loop_running.store(true);
-
-    while (loop_state.load() == Loop::RUN)
+    /// stop_loop variable is updated in a separate thread
+    while (!stop_loop.load())
         uv_run(loop, UV_RUN_NOWAIT);
-
-    LOG_DEBUG(log, "Background loop ended");
-    loop_running.store(false);
 }
 
 void RabbitMQHandler::iterateLoop()
@@ -51,18 +41,6 @@ void RabbitMQHandler::iterateLoop()
     std::unique_lock lock(startup_mutex, std::defer_lock);
     if (lock.try_lock())
         uv_run(loop, UV_RUN_NOWAIT);
-}
-
-/// Do not need synchronization as in iterateLoop(), because this method is used only for
-/// initial RabbitMQ setup - at this point there is no background loop thread.
-void RabbitMQHandler::startBlockingLoop()
-{
-    uv_run(loop, UV_RUN_DEFAULT);
-}
-
-void RabbitMQHandler::stopLoop()
-{
-    uv_stop(loop);
 }
 
 }

@@ -18,8 +18,6 @@ public:
     bool clusters{false};
     bool cluster{false};
     bool dictionaries{false};
-    bool m_settings{false};
-    bool changed{false};
     bool temporary{false};
 
     String cluster_str;
@@ -38,8 +36,6 @@ public:
     ASTPtr clone() const override;
 
 protected:
-    void formatLike(const FormatSettings & settings) const;
-    void formatLimit(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 

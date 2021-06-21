@@ -13,9 +13,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 class AggregateFunctionCombinatorMerge final : public IAggregateFunctionCombinator
 {
 public:
@@ -57,8 +54,6 @@ public:
         return std::make_shared<AggregateFunctionMerge>(nested_function, argument);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory & factory)
 {

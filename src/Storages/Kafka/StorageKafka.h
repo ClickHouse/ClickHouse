@@ -4,13 +4,13 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/Buffer_fwd.h>
 #include <Storages/Kafka/KafkaSettings.h>
+#include <Interpreters/Context.h>
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
 
 #include <mutex>
-#include <list>
 #include <atomic>
 
 namespace cppkafka
@@ -23,19 +23,16 @@ class Configuration;
 namespace DB
 {
 
-struct StorageKafkaInterceptors;
-
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public ext::shared_ptr_helper<StorageKafka>, public IStorage, WithContext
+class StorageKafka final : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageKafka>;
-    friend struct StorageKafkaInterceptors;
-
 public:
     std::string getName() const override { return "Kafka"; }
 
+    bool supportsSettings() const override { return true; }
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
@@ -44,8 +41,8 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
+        const SelectQueryInfo & query_info,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -53,7 +50,7 @@ public:
     BlockOutputStreamPtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context) override;
+        const Context & context) override;
 
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();
@@ -64,17 +61,16 @@ public:
     const auto & getFormatName() const { return format_name; }
 
     NamesAndTypesList getVirtuals() const override;
-    Names getVirtualColumnNames() const;
-    HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 protected:
     StorageKafka(
         const StorageID & table_id_,
-        ContextPtr context_,
+        Context & context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<KafkaSettings> kafka_settings_);
 
 private:
     // Configuration and state
+    Context & global_context;
     std::unique_ptr<KafkaSettings> kafka_settings;
     const Names topics;
     const String brokers;
@@ -98,30 +94,16 @@ private:
     std::mutex mutex;
 
     // Stream thread
-    struct TaskContext
-    {
-        BackgroundSchedulePool::TaskHolder holder;
-        std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
-        {
-        }
-    };
-    std::vector<std::shared_ptr<TaskContext>> tasks;
-    bool thread_per_consumer = false;
-
-    /// For memory accounting in the librdkafka threads.
-    std::mutex thread_statuses_mutex;
-    std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
-
-    /// Handle error mode
-    HandleKafkaErrorMode handle_error_mode;
+    BackgroundSchedulePool::TaskHolder task;
+    std::atomic<bool> stream_cancelled{false};
 
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
 
     // Update Kafka configuration with values from CH user configuration.
+
     void updateConfiguration(cppkafka::Configuration & conf);
-    void threadFunc(size_t idx);
+    void threadFunc();
 
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;

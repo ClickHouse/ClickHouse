@@ -34,7 +34,7 @@
 
             <!-- Engine of destination tables -->
             <engine>ENGINE=
-                ReplicatedMergeTree
+                ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}/b', '{replica}')
                 PARTITION BY toMonday(date)
                 ORDER BY d
             </engine>

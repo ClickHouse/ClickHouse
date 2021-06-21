@@ -2,13 +2,12 @@
 #include <string.h>
 
 #include <common/unaligned.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 #include "CompressedWriteBuffer.h"
 #include <Compression/CompressionFactory.h>
 
 #include <Common/MemorySanitizer.h>
-#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -50,9 +49,14 @@ CompressedWriteBuffer::CompressedWriteBuffer(
 
 CompressedWriteBuffer::~CompressedWriteBuffer()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-    next();
+    try
+    {
+        next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

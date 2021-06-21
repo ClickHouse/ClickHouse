@@ -3,7 +3,6 @@
 #include <Common/quoteString.h>
 #include <Common/IntervalKind.h>
 #include <ext/range.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -185,10 +184,10 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
 }
 
 
-void ASTCreateQuotaQuery::replaceCurrentUserTag(const String & current_user_name) const
+void ASTCreateQuotaQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
 {
     if (roles)
-        roles->replaceCurrentUserTag(current_user_name);
+        roles->replaceCurrentUserTagWithName(current_user_name);
 }
 
 }

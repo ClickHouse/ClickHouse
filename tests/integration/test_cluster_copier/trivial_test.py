@@ -1,10 +1,13 @@
 import os
+import os.path as p
 import sys
 import time
-from contextlib import contextmanager
-
-import docker
+import datetime
 import pytest
+from contextlib import contextmanager
+import docker
+from kazoo.client import KazooClient
+
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
@@ -15,24 +18,23 @@ COPYING_FAIL_PROBABILITY = 0.33
 MOVING_FAIL_PROBABILITY = 0.1
 cluster = None
 
-
 @pytest.fixture(scope="function")
 def started_cluster():
     global cluster
     try:
         clusters_schema = {
-            "0": {"0": ["0"]},
-            "1": {"0": ["0"]}
+            "0" : {"0" : ["0"]},
+            "1" : {"0" : ["0"]}
         }
 
         cluster = ClickHouseCluster(__file__)
 
-        for cluster_name, shards in clusters_schema.items():
-            for shard_name, replicas in shards.items():
+        for cluster_name, shards in clusters_schema.iteritems():
+            for shard_name, replicas in shards.iteritems():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
-                                         main_configs=[], user_configs=[],
+                                         config_dir="configs",
                                          macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
                                          with_zookeeper=True)
 
@@ -48,10 +50,11 @@ class TaskTrivial:
     def __init__(self, cluster, use_sample_offset):
         self.cluster = cluster
         if use_sample_offset:
-            self.zk_task_path = "/clickhouse-copier/task_trivial_use_sample_offset"
+            self.zk_task_path="/clickhouse-copier/task_trivial_use_sample_offset"
         else:
-            self.zk_task_path = "/clickhouse-copier/task_trivial"
+            self.zk_task_path="/clickhouse-copier/task_trivial"
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_trivial.xml'), 'r').read()
+
 
     def start(self):
         source = cluster.instances['s0_0_0']
@@ -59,14 +62,14 @@ class TaskTrivial:
 
         for node in [source, destination]:
             node.query("DROP DATABASE IF EXISTS default")
-            node.query("CREATE DATABASE IF NOT EXISTS default")
+            node.query("CREATE DATABASE IF NOT EXISTS default ENGINE=Ordinary")
 
         source.query("CREATE TABLE trivial (d UInt64, d1 UInt64 MATERIALIZED d+1) "
                      "ENGINE=ReplicatedMergeTree('/clickhouse/tables/source_trivial_cluster/1/trivial', '1') "
                      "PARTITION BY d % 5 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16")
 
-        source.query("INSERT INTO trivial SELECT * FROM system.numbers LIMIT 1002",
-                     settings={"insert_distributed_sync": 1})
+        source.query("INSERT INTO trivial SELECT * FROM system.numbers LIMIT 1002", settings={"insert_distributed_sync": 1})
+
 
     def check(self):
         source = cluster.instances['s0_0_0']
@@ -83,7 +86,7 @@ def execute_task(task, cmd_options):
     task.start()
 
     zk = cluster.get_kazoo_client('zoo1')
-    print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
+    print "Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1])
 
     zk_task_path = task.zk_task_path
     zk.ensure_path(zk_task_path)
@@ -101,16 +104,16 @@ def execute_task(task, cmd_options):
 
     print(cmd)
 
-    for instance_name, instance in cluster.instances.items():
+    for instance_name, instance in cluster.instances.iteritems():
         container = instance.get_docker_handle()
         exec_id = docker_api.exec_create(container.id, cmd, stderr=True)
         docker_api.exec_start(exec_id, detach=True)
 
         copiers_exec_ids.append(exec_id)
-        print("Copier for {} ({}) has started".format(instance.name, instance.ip_address))
+        print "Copier for {} ({}) has started".format(instance.name, instance.ip_address)
 
     # Wait for copiers stopping and check their return codes
-    for exec_id, instance in zip(copiers_exec_ids, iter(cluster.instances.values())):
+    for exec_id, instance in zip(copiers_exec_ids, cluster.instances.itervalues()):
         while True:
             res = docker_api.exec_inspect(exec_id)
             if not res['Running']:
@@ -135,6 +138,7 @@ def execute_task(task, cmd_options):
         True
     ]
 )
+
 def test_trivial_copy(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--experimental-use-sample-offset', '1'])
@@ -142,7 +146,6 @@ def test_trivial_copy(started_cluster, use_sample_offset):
         print("AAAAA")
         execute_task(TaskTrivial(started_cluster, use_sample_offset), [])
 
-
 @pytest.mark.parametrize(
     ('use_sample_offset'),
     [
@@ -150,6 +153,7 @@ def test_trivial_copy(started_cluster, use_sample_offset):
         True
     ]
 )
+
 def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
@@ -157,7 +161,6 @@ def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
     else:
         execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
-
 @pytest.mark.parametrize(
     ('use_sample_offset'),
     [
@@ -165,6 +168,7 @@ def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
         True
     ]
 )
+
 def test_trivial_copy_with_move_fault(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
@@ -175,6 +179,6 @@ def test_trivial_copy_with_move_fault(started_cluster, use_sample_offset):
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
-        for name, instance in list(cluster.instances.items()):
-            print(name, instance.ip_address)
-        input("Cluster created, press any key to destroy...")
+        for name, instance in cluster.instances.items():
+            print name, instance.ip_address
+        raw_input("Cluster created, press any key to destroy...")

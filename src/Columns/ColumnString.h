@@ -43,19 +43,13 @@ private:
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return offsets[i] - offsets[i - 1]; }
 
     template <bool positive>
-    struct Cmp;
+    struct less;
 
     template <bool positive>
-    struct CmpWithCollation;
+    struct lessWithCollation;
 
     ColumnString() = default;
     ColumnString(const ColumnString & src);
-
-    template <typename Comparator>
-    void getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const;
-
-    template <typename Comparator>
-    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Comparator cmp) const;
 
 public:
     const char * getFamilyName() const override { return "String"; }
@@ -69,12 +63,6 @@ public:
     size_t byteSize() const override
     {
         return chars.size() + offsets.size() * sizeof(offsets[0]);
-    }
-
-    size_t byteSizeAt(size_t n) const override
-    {
-        assert(n < size());
-        return sizeAt(n) + sizeof(offsets[0]);
     }
 
     size_t allocatedBytes() const override
@@ -111,7 +99,7 @@ public:
     }
 
 /// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -128,7 +116,7 @@ public:
         offsets.push_back(new_size);
     }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
@@ -189,8 +177,6 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
-
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         size_t string_size = sizeAt(n);
@@ -242,19 +228,17 @@ public:
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
 
-    bool hasEqualValues() const override;
-
     /// Variant of compareAt for string comparison with respect of collation.
-    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const override;
+    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const;
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
-    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const override;
+    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
 
     /// Sorting with respect of collation.
-    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res) const override;
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
 
-    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const override;
+    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges& equal_range) const;
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
@@ -264,8 +248,6 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
-
-    ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
 
@@ -279,16 +261,12 @@ public:
         return typeid(rhs) == typeid(ColumnString);
     }
 
+
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }
 
     Offsets & getOffsets() { return offsets; }
     const Offsets & getOffsets() const { return offsets; }
-
-    // Throws an exception if offsets/chars are messed up
-    void validate() const;
-
-    bool isCollationSupported() const override { return true; }
 };
 
 

@@ -3,14 +3,12 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 
-#include <Parsers/ASTFunction.h>
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int SYNTAX_ERROR;
+    extern const int LOGICAL_ERROR;
     extern const int AMBIGUOUS_COLUMN_NAME;
 }
 
@@ -53,7 +51,7 @@ std::optional<size_t> tryChooseTable(const ASTIdentifier & identifier, const std
     if ((best_match != ColumnMatch::NoMatch) && same_match)
     {
         if (!allow_ambiguous)
-            throw Exception("Ambiguous column '" + identifier.name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+            throw Exception("Ambiguous column '" + identifier.name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
         best_match = ColumnMatch::Ambiguous;
         return {};
     }
@@ -68,7 +66,7 @@ std::optional<size_t> tryChooseTable(const ASTIdentifier & identifier, const std
 std::optional<String> IdentifierSemantic::getColumnName(const ASTIdentifier & node)
 {
     if (!node.semantic->special)
-        return node.name();
+        return node.name;
     return {};
 }
 
@@ -77,14 +75,14 @@ std::optional<String> IdentifierSemantic::getColumnName(const ASTPtr & ast)
     if (ast)
         if (const auto * id = ast->as<ASTIdentifier>())
             if (!id->semantic->special)
-                return id->name();
+                return id->name;
     return {};
 }
 
 std::optional<String> IdentifierSemantic::getTableName(const ASTIdentifier & node)
 {
     if (node.semantic->special)
-        return node.name();
+        return node.name;
     return {};
 }
 
@@ -93,7 +91,7 @@ std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
     if (ast)
         if (const auto * id = ast->as<ASTIdentifier>())
             if (id->semantic->special)
-                return id->name();
+                return id->name;
     return {};
 }
 
@@ -149,11 +147,11 @@ std::optional<size_t> IdentifierSemantic::chooseTableColumnMatch(const ASTIdenti
 StorageID IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
 {
     if (identifier.name_parts.size() > 2)
-        throw Exception("Syntax error: more than two components in table expression", ErrorCodes::SYNTAX_ERROR);
+        throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
 
     if (identifier.name_parts.size() == 2)
         return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
-    return { "", identifier.name_parts[0], identifier.uuid };
+    return { "", identifier.name, identifier.uuid };
 }
 
 std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const String & table_name)
@@ -211,7 +209,7 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
     return canReferColumnToTable(identifier, table_with_columns.table);
 }
 
-/// Strip qualifications from left side of column name.
+/// Strip qualificators from left side of column name.
 /// Example: 'database.table.name' -> 'name'.
 void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
 {
@@ -234,8 +232,16 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const Da
     if (!to_strip)
         return;
 
-    identifier.name_parts = std::vector<String>(identifier.name_parts.begin() + to_strip, identifier.name_parts.end());
-    identifier.resetFullName();
+    std::vector<String> stripped(identifier.name_parts.begin() + to_strip, identifier.name_parts.end());
+
+    DB::String new_name;
+    for (const auto & part : stripped)
+    {
+        if (!new_name.empty())
+            new_name += '.';
+        new_name += part;
+    }
+    identifier.name.swap(new_name);
 }
 
 void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
@@ -243,94 +249,11 @@ void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const Dat
     String prefix = db_and_table.getQualifiedNamePrefix();
     if (!prefix.empty())
     {
+        String short_name = identifier.shortName();
+        identifier.name = prefix + short_name;
         prefix.resize(prefix.size() - 1); /// crop dot
-        identifier.name_parts = {prefix, identifier.shortName()};
-        identifier.resetFullName();
-        identifier.semantic->table = prefix;
-        identifier.semantic->legacy_compound = true;
+        identifier.name_parts = {prefix, short_name};
     }
-}
-
-std::optional<size_t> IdentifierSemantic::getIdentMembership(const ASTIdentifier & ident, const std::vector<TableWithColumnNamesAndTypes> & tables)
-{
-    std::optional<size_t> table_pos = IdentifierSemantic::getMembership(ident);
-    if (table_pos)
-        return table_pos;
-    return IdentifierSemantic::chooseTableColumnMatch(ident, tables, true);
-}
-
-std::optional<size_t>
-IdentifierSemantic::getIdentsMembership(ASTPtr ast, const std::vector<TableWithColumnNamesAndTypes> & tables, const Aliases & aliases)
-{
-    auto idents = IdentifiersCollector::collect(ast);
-
-    std::optional<size_t> result;
-    for (const auto * ident : idents)
-    {
-        /// short name clashes with alias, ambiguous
-        if (ident->isShort() && aliases.count(ident->shortName()))
-            return {};
-        const auto pos = getIdentMembership(*ident, tables);
-        if (!pos)
-            return {};
-        /// identifiers from different tables
-        if (result && *pos != *result)
-            return {};
-        result = pos;
-    }
-    return result;
-}
-
-IdentifiersCollector::ASTIdentifiers IdentifiersCollector::collect(const ASTPtr & node)
-{
-    IdentifiersCollector::Data ident_data;
-    ConstInDepthNodeVisitor<IdentifiersCollector, true> ident_visitor(ident_data);
-    ident_visitor.visit(node);
-    return ident_data.idents;
-}
-
-bool IdentifiersCollector::needChildVisit(const ASTPtr &, const ASTPtr &)
-{
-    return true;
-}
-
-void IdentifiersCollector::visit(const ASTPtr & node, IdentifiersCollector::Data & data)
-{
-    if (const auto * ident = node->as<ASTIdentifier>())
-        data.idents.push_back(ident);
-}
-
-
-IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuery & select, ContextPtr context)
-{
-    if (ASTPtr with = select.with())
-        QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
-    QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
-
-    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context);
-}
-
-std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr ast) const
-{
-    return IdentifierSemantic::getIdentsMembership(ast, tables, aliases);
-}
-
-static void collectConjunctions(const ASTPtr & node, std::vector<ASTPtr> & members)
-{
-    if (const auto * func = node->as<ASTFunction>(); func && func->name == "and")
-    {
-        for (const auto & child : func->arguments->children)
-            collectConjunctions(child, members);
-        return;
-    }
-    members.push_back(node);
-}
-
-std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
-{
-    std::vector<ASTPtr> members;
-    collectConjunctions(node, members);
-    return members;
 }
 
 }

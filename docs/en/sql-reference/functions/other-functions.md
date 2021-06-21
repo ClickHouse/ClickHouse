@@ -1,5 +1,5 @@
 ---
-toc_priority: 67
+toc_priority: 66
 toc_title: Other
 ---
 
@@ -19,7 +19,7 @@ Gets a named value from the [macros](../../operations/server-configuration-param
 getMacro(name);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
 
@@ -108,7 +108,7 @@ Extracts the trailing part of a string after the last slash or backslash. This f
 basename( expr )
 ```
 
-**Arguments**
+**Parameters**
 
 -   `expr` — Expression resulting in a [String](../../sql-reference/data-types/string.md) type value. All the backslashes must be escaped in the resulting value.
 
@@ -182,103 +182,6 @@ If `NULL` is passed to the function as input, then it returns the `Nullable(Noth
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
 
-## byteSize {#function-bytesize}
-
-Returns estimation of uncompressed byte size of its arguments in memory.
-
-**Syntax**
-
-```sql
-byteSize(argument [, ...])
-```
-
-**Arguments**
-
--   `argument` — Value.
-
-**Returned value**
-
--   Estimation of byte size of the arguments in memory.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
-
-**Examples**
-
-For [String](../../sql-reference/data-types/string.md) arguments the funtion returns the string length + 9 (terminating zero + length).
-
-Query:
-
-```sql
-SELECT byteSize('string');
-```
-
-Result:
-
-```text
-┌─byteSize('string')─┐
-│                 15 │
-└────────────────────┘
-```
-
-Query:
-
-```sql
-CREATE TABLE test
-(
-    `key` Int32,
-    `u8` UInt8,
-    `u16` UInt16,
-    `u32` UInt32,
-    `u64` UInt64,
-    `i8` Int8,
-    `i16` Int16,
-    `i32` Int32,
-    `i64` Int64,
-    `f32` Float32,
-    `f64` Float64
-)
-ENGINE = MergeTree
-ORDER BY key;
-
-INSERT INTO test VALUES(1, 8, 16, 32, 64,  -8, -16, -32, -64, 32.32, 64.64);
-
-SELECT key, byteSize(u8) AS `byteSize(UInt8)`, byteSize(u16) AS `byteSize(UInt16)`, byteSize(u32) AS `byteSize(UInt32)`, byteSize(u64) AS `byteSize(UInt64)`, byteSize(i8) AS `byteSize(Int8)`, byteSize(i16) AS `byteSize(Int16)`, byteSize(i32) AS `byteSize(Int32)`, byteSize(i64) AS `byteSize(Int64)`, byteSize(f32) AS `byteSize(Float32)`, byteSize(f64) AS `byteSize(Float64)` FROM test ORDER BY key ASC FORMAT Vertical;
-```
-
-Result:
-
-``` text
-Row 1:
-──────
-key:               1
-byteSize(UInt8):   1
-byteSize(UInt16):  2
-byteSize(UInt32):  4
-byteSize(UInt64):  8
-byteSize(Int8):    1
-byteSize(Int16):   2
-byteSize(Int32):   4
-byteSize(Int64):   8
-byteSize(Float32): 4
-byteSize(Float64): 8
-```
-
-If the function takes multiple arguments, it returns their combined byte size.
-
-Query:
-
-```sql
-SELECT byteSize(NULL, 1, 0.3, '');
-```
-
-Result:
-
-```text
-┌─byteSize(NULL, 1, 0.3, '')─┐
-│                         19 │
-└────────────────────────────┘
-```
-
 ## materialize(x) {#materializex}
 
 Turns a constant into a full column containing just one value.
@@ -349,7 +252,7 @@ The function is intended for development, debugging and demonstration.
 isConstant(x)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `x` — Expression to check.
 
@@ -420,7 +323,7 @@ Checks whether floating point value is finite.
 
     ifNotFinite(x,y)
 
-**Arguments**
+**Parameters**
 
 -   `x` — Value to be checked for infinity. Type: [Float\*](../../sql-reference/data-types/float.md).
 -   `y` — Fallback value. Type: [Float\*](../../sql-reference/data-types/float.md).
@@ -460,7 +363,7 @@ Allows building a unicode-art diagram.
 
 `bar(x, min, max, width)` draws a band with a width proportional to `(x - min)` and equal to `width` characters when `x = max`.
 
-**Arguments**
+Parameters:
 
 -   `x` — Size to display.
 -   `min, max` — Integer constants. The value must fit in `Int64`.
@@ -514,7 +417,7 @@ ORDER BY h ASC
 Transforms a value according to the explicitly defined mapping of some elements to other ones.
 There are two variations of this function:
 
-### transform(x, array_from, array_to, default) {#transformx-array-from-array-to-default}
+### transform(x, array\_from, array\_to, default) {#transformx-array-from-array-to-default}
 
 `x` – What to transform.
 
@@ -534,7 +437,7 @@ Types:
 Where the same letter is indicated (T or U), for numeric types these might not be matching types, but types that have a common type.
 For example, the first argument can have the Int64 type, while the second has the Array(UInt16) type.
 
-If the ‘x’ value is equal to one of the elements in the ‘array_from’ array, it returns the existing element (that is numbered the same) from the ‘array_to’ array. Otherwise, it returns ‘default’. If there are multiple matching elements in ‘array_from’, it returns one of the matches.
+If the ‘x’ value is equal to one of the elements in the ‘array\_from’ array, it returns the existing element (that is numbered the same) from the ‘array\_to’ array. Otherwise, it returns ‘default’. If there are multiple matching elements in ‘array\_from’, it returns one of the matches.
 
 Example:
 
@@ -556,10 +459,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array_from, array_to) {#transformx-array-from-array-to}
+### transform(x, array\_from, array\_to) {#transformx-array-from-array-to}
 
 Differs from the first variation in that the ‘default’ argument is omitted.
-If the ‘x’ value is equal to one of the elements in the ‘array_from’ array, it returns the matching element (that is numbered the same) from the ‘array_to’ array. Otherwise, it returns ‘x’.
+If the ‘x’ value is equal to one of the elements in the ‘array\_from’ array, it returns the matching element (that is numbered the same) from the ‘array\_to’ array. Otherwise, it returns ‘x’.
 
 Types:
 
@@ -612,74 +515,6 @@ SELECT
 └────────────────┴────────────┘
 ```
 
-## formatReadableQuantity(x) {#formatreadablequantityx}
-
-Accepts the number. Returns a rounded number with a suffix (thousand, million, billion, etc.) as a string.
-
-It is useful for reading big numbers by human.
-
-Example:
-
-``` sql
-SELECT
-    arrayJoin([1024, 1234 * 1000, (4567 * 1000) * 1000, 98765432101234]) AS number,
-    formatReadableQuantity(number) AS number_for_humans
-```
-
-``` text
-┌─────────number─┬─number_for_humans─┐
-│           1024 │ 1.02 thousand     │
-│        1234000 │ 1.23 million      │
-│     4567000000 │ 4.57 billion      │
-│ 98765432101234 │ 98.77 trillion    │
-└────────────────┴───────────────────┘
-```
-
-## formatReadableTimeDelta {#formatreadabletimedelta}
-
-Accepts the time delta in seconds. Returns a time delta with (year, month, day, hour, minute, second) as a string.
-
-**Syntax**
-
-``` sql
-formatReadableTimeDelta(column[, maximum_unit])
-```
-
-**Arguments**
-
--   `column` — A column with numeric time delta.
--   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years.
-
-Example:
-
-``` sql
-SELECT
-    arrayJoin([100, 12345, 432546534]) AS elapsed,
-    formatReadableTimeDelta(elapsed) AS time_delta
-```
-
-``` text
-┌────elapsed─┬─time_delta ─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                         │
-│      12345 │ 3 hours, 25 minutes and 45 seconds                              │
-│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
-└────────────┴─────────────────────────────────────────────────────────────────┘
-```
-
-``` sql
-SELECT
-    arrayJoin([100, 12345, 432546534]) AS elapsed,
-    formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
-```
-
-``` text
-┌────elapsed─┬─time_delta ─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                         │
-│      12345 │ 205 minutes and 45 seconds                                      │
-│  432546534 │ 7209108 minutes and 54 seconds                                  │
-└────────────┴─────────────────────────────────────────────────────────────────┘
-```
-
 ## least(a, b) {#leasta-b}
 
 Returns the smallest value from a and b.
@@ -695,6 +530,10 @@ Returns the server’s uptime in seconds.
 ## version() {#version}
 
 Returns the version of the server as a string.
+
+## timezone() {#timezone}
+
+Returns the timezone of the server.
 
 ## blockNumber {#blocknumber}
 
@@ -719,14 +558,9 @@ neighbor(column, offset[, default_value])
 ```
 
 The result of the function depends on the affected data blocks and the order of data in the block.
+If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
 
-!!! warning "Warning"
-    It can reach the neighbor rows only inside the currently processed data block.
-
-The rows order used during the calculation of `neighbor` can differ from the order of rows returned to the user.
-To prevent that you can make a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
-
-**Arguments**
+**Parameters**
 
 -   `column` — A column name or scalar expression.
 -   `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../sql-reference/data-types/int-uint.md).
@@ -829,13 +663,8 @@ Result:
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
-!!! warning "Warning"
-    It can reach the previous row only inside the currently processed data block.
-    
 The result of the function depends on the affected data blocks and the order of data in the block.
-
-The rows order used during the calculation of `runningDifference` can differ from the order of rows returned to the user.
-To prevent that you can make a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
+If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
 
 Example:
 
@@ -903,65 +732,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-Same as for [runningDifference](./other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
-
-## runningConcurrency {#runningconcurrency}
-
-Calculates the number of concurrent events.
-Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type. 
-The function calculates the total number of active (concurrent) events for each event start time.
-
-
-!!! warning "Warning"
-    Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception.
-    Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
-
-**Syntax**
-
-``` sql
-runningConcurrency(start, end)
-```
-
-**Arguments**
-
--   `start` — A column with the start time of events. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `end` — A column with the end time of events.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Returned values**
-
--   The number of concurrent events at each event start time.
-
-Type: [UInt32](../../sql-reference/data-types/int-uint.md)
-
-**Example**
-
-Consider the table:
-
-``` text
-┌──────start─┬────────end─┐
-│ 2021-03-03 │ 2021-03-11 │
-│ 2021-03-06 │ 2021-03-12 │
-│ 2021-03-07 │ 2021-03-08 │
-│ 2021-03-11 │ 2021-03-12 │
-└────────────┴────────────┘
-```
-
-Query:
-
-``` sql
-SELECT start, runningConcurrency(start, end) FROM example_table;
-```
-
-Result:
-
-``` text
-┌──────start─┬─runningConcurrency(start, end)─┐
-│ 2021-03-03 │                              1 │
-│ 2021-03-06 │                              2 │
-│ 2021-03-07 │                              3 │
-│ 2021-03-11 │                              2 │
-└────────────┴────────────────────────────────┘
-```
+Same as for [runningDifference](../../sql-reference/functions/other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
 ## MACNumToString(num) {#macnumtostringnum}
 
@@ -983,7 +754,7 @@ Returns the number of fields in [Enum](../../sql-reference/data-types/enum.md).
 getSizeOfEnumType(value)
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `value` — Value of type `Enum`.
 
@@ -1012,7 +783,7 @@ Returns size on disk (without taking into account compression).
 blockSerializedSize(value[, value[, ...]])
 ```
 
-**Arguments**
+**Parameters**
 
 -   `value` — Any value.
 
@@ -1044,7 +815,7 @@ Returns the name of the class that represents the data type of the column in RAM
 toColumnTypeName(value)
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `value` — Any type of value.
 
@@ -1084,7 +855,7 @@ Outputs a detailed description of data structures in RAM
 dumpColumnStructure(value)
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `value` — Any type of value.
 
@@ -1114,7 +885,7 @@ Does not include default values for custom columns set by the user.
 defaultValueOfArgumentType(expression)
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
 
@@ -1156,7 +927,7 @@ Does not include default values for custom columns set by the user.
 defaultValueOfTypeName(type)
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `type` — A string representing a type name.
 
@@ -1188,109 +959,6 @@ SELECT defaultValueOfTypeName('Nullable(Int8)')
 └──────────────────────────────────────────┘
 ```
 
-## indexHint {#indexhint}
-The function is intended for debugging and introspection purposes. The function ignores it's argument and always returns 1. Arguments are not even evaluated.
-
-But for the purpose of index analysis, the argument of this function is analyzed as if it was present directly without being wrapped inside `indexHint` function. This allows to select data in index ranges by the corresponding condition but without further filtering by this condition. The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
-
-**Syntax**
-
-```sql
-SELECT * FROM table WHERE indexHint(<expression>)
-```
-
-**Returned value**
-
-1. Type: [Uint8](https://clickhouse.yandex/docs/en/data_types/int_uint/#diapazony-uint).
-
-**Example**
-
-Here is the example of test data from the table [ontime](../../getting-started/example-datasets/ontime.md).
-
-Input table:
-
-```sql
-SELECT count() FROM ontime
-```
-
-```text
-┌─count()─┐
-│ 4276457 │
-└─────────┘
-```
-
-The table has indexes on the fields `(FlightDate, (Year, FlightDate))`.
-
-Create a query, where the index is not used.
-
-Query:
-
-```sql
-SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
-```
-
-ClickHouse processed the entire table (`Processed 4.28 million rows`).
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-01-01 │   13970 │
-│ 2017-01-02 │   15882 │
-........................
-│ 2017-09-28 │   16411 │
-│ 2017-09-29 │   16384 │
-│ 2017-09-30 │   12520 │
-└────────────┴─────────┘
-```
-
-To apply the index, select a specific date.
-
-Query:
-
-```sql
-SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
-```
-
-By using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-09-15 │   16428 │
-└────────────┴─────────┘
-```
-
-Now wrap the expression `k = '2017-09-15'` into `indexHint` function.
-
-Query:
-
-```sql
-SELECT
-    FlightDate AS k,
-    count()
-FROM ontime
-WHERE indexHint(k = '2017-09-15')
-GROUP BY k
-ORDER BY k ASC
-```
-
-ClickHouse used the index in the same way as the previous time (`Processed 32.74 thousand rows`).
-The expression `k = '2017-09-15'` was not used when generating the result.
-In examle the `indexHint` function allows to see adjacent dates.
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-09-14 │    7071 │
-│ 2017-09-15 │   16428 │
-│ 2017-09-16 │    1077 │
-│ 2017-09-30 │    8167 │
-└────────────┴─────────┘
-```
-
 ## replicate {#other-functions-replicate}
 
 Creates an array with a single value.
@@ -1301,7 +969,7 @@ Used for internal implementation of [arrayJoin](../../sql-reference/functions/ar
 SELECT replicate(x, arr);
 ```
 
-**Arguments:**
+**Parameters:**
 
 -   `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
 -   `x` — The value that the resulting array will be filled with.
@@ -1426,104 +1094,7 @@ Result:
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Takes state of aggregate function. Returns result of aggregation (or finalized state when using[-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
-
-**Syntax** 
-
-``` sql
-finalizeAggregation(state)
-```
-
-**Arguments**
-
--   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
-
-**Returned value(s)**
-
--   Value/values that was aggregated.
-
-Type: Value of any types that was aggregated. 
-
-**Examples**
-
-Query:
-
-```sql
-SELECT finalizeAggregation(( SELECT countState(number) FROM numbers(10)));
-```
-
-Result:
-
-```text
-┌─finalizeAggregation(_subquery16)─┐
-│                               10 │
-└──────────────────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT finalizeAggregation(( SELECT sumState(number) FROM numbers(10)));
-```
-
-Result:
-
-```text
-┌─finalizeAggregation(_subquery20)─┐
-│                               45 │
-└──────────────────────────────────┘
-```
-
-Note that `NULL` values are ignored. 
-
-Query:
-
-```sql
-SELECT finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]));
-```
-
-Result:
-
-```text
-┌─finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]))─┐
-│                                                          2 │
-└────────────────────────────────────────────────────────────┘
-```
-
-Combined example:
-
-Query:
-
-```sql
-WITH initializeAggregation('sumState', number) AS one_row_sum_state
-SELECT
-    number,
-    finalizeAggregation(one_row_sum_state) AS one_row_sum,
-    runningAccumulate(one_row_sum_state) AS cumulative_sum
-FROM numbers(10);
-```
-
-Result:
-
-```text
-┌─number─┬─one_row_sum─┬─cumulative_sum─┐
-│      0 │           0 │              0 │
-│      1 │           1 │              1 │
-│      2 │           2 │              3 │
-│      3 │           3 │              6 │
-│      4 │           4 │             10 │
-│      5 │           5 │             15 │
-│      6 │           6 │             21 │
-│      7 │           7 │             28 │
-│      8 │           8 │             36 │
-│      9 │           9 │             45 │
-└────────┴─────────────┴────────────────┘
-```
-
-**See Also** 
-
--   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
--   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
+Takes state of aggregate function. Returns result of aggregation (finalized state).
 
 ## runningAccumulate {#runningaccumulate}
 
@@ -1538,7 +1109,7 @@ Accumulates states of an aggregate function for each row of a data block.
 runningAccumulate(agg_state[, grouping]);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 -   `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
@@ -1644,7 +1215,7 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` st
 joinGet(join_storage_table_name, `value_column`, join_keys)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
 -   `value_column` — name of the column of the table that contains required data.
@@ -1654,7 +1225,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Returns list of values corresponded to list of keys.
 
-If certain doesn’t exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+If certain doesn’t exist in source table then `0` or `null` will be returned based on [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
 
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
 
@@ -1693,15 +1264,15 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, …) {#function-modelevaluate}
+## modelEvaluate(model\_name, …) {#function-modelevaluate}
 
 Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
-## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
+## throwIf(x\[, custom\_message\]) {#throwifx-custom-message}
 
 Throw an exception if the argument is non zero.
-custom_message - is an optional parameter: a constant string, provides an error message
+custom\_message - is an optional parameter: a constant string, provides an error message
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -1715,6 +1286,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ## identity {#identity}
 
 Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn’t look inside `identity` functions. Also constant folding is not applied too.
+
 
 **Syntax**
 
@@ -1748,7 +1320,7 @@ Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/AS
 randomPrintableASCII(length)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `length` — Resulting string length. Positive integer.
 
@@ -1784,7 +1356,7 @@ Generates a binary string of the specified length filled with random bytes (incl
 randomString(length)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `length` — String length. Positive integer.
 
@@ -1832,7 +1404,7 @@ Generates a binary string of the specified length filled with random bytes (incl
 randomFixedString(length);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1859,6 +1431,7 @@ Result:
 
 ```
 
+
 ## randomStringUTF8 {#randomstringutf8}
 
 Generates a random string of a specified length. Result string contains valid UTF-8 code points. The value of code points may be outside of the range of assigned Unicode.
@@ -1869,7 +1442,7 @@ Generates a random string of a specified length. Result string contains valid UT
 randomStringUTF8(length);
 ```
 
-**Arguments**
+**Parameters**
 
 -   `length` — Required length of the resulting string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1896,174 +1469,4 @@ Result:
 
 ```
 
-## getSetting {#getSetting}
-
-Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings).
-
-**Syntax**
-
-```sql
-getSetting('custom_setting');
-```
-
-**Parameter**
-
--   `custom_setting` — The setting name. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   The setting current value.
-
-**Example**
-
-```sql
-SET custom_a = 123;
-SELECT getSetting('custom_a');
-```
-
-**Result**
-
-```
-123
-```
-
-**See Also**
-
--   [Custom Settings](../../operations/settings/index.md#custom_settings)
-
-## isDecimalOverflow {#is-decimal-overflow}
-
-Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is out of its (or specified) precision.
-
-**Syntax**
-
-``` sql
-isDecimalOverflow(d, [p])
-```
-
-**Arguments**
-
--   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
--   `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
-
-**Returned values**
-
--   `1` — Decimal value has more digits then it's precision allow,
--   `0` — Decimal value satisfies the specified precision.
-
-**Example**
-
-Query:
-
-``` sql
-SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
-       isDecimalOverflow(toDecimal32(1000000000, 0)),
-       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
-       isDecimalOverflow(toDecimal32(-1000000000, 0));
-```
-
-Result:
-
-``` text
-1	1	1	1
-```
-
-## countDigits {#count-digits}
-
-Returns number of decimal digits you need to represent the value.
-
-**Syntax**
-
-``` sql
-countDigits(x)
-```
-
-**Arguments**
-
--   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
-
-**Returned value**
-
-Number of digits.
-
-Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
-
- !!! note "Note"
-    For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
-       countDigits(toDecimal64(1, 18)), countDigits(toDecimal64(-1, 18)),
-       countDigits(toDecimal128(1, 38)), countDigits(toDecimal128(-1, 38));
-```
-
-Result:
-
-``` text
-10	10	19	19	39	39
-```
-
-## errorCodeToName {#error-code-to-name}
-
-**Returned value**
-
--   Variable name for the error code.
-
-Type: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
-
-**Syntax**
-
-``` sql
-errorCodeToName(1)
-```
-
-Result:
-
-``` text
-UNSUPPORTED_METHOD
-```
-
-## tcpPort {#tcpPort}
-
-Returns [native interface](../../interfaces/tcp.md) TCP port number listened by this server.
-
-**Syntax**
-
-``` sql
-tcpPort()
-```
-
-**Arguments**
-
--   None.
-
-**Returned value**
-
--   The TCP port number.
-
-Type: [UInt16](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT tcpPort();
-```
-
-Result:
-
-``` text
-┌─tcpPort()─┐
-│      9000 │
-└───────────┘
-```
-
-**See Also**
-
--   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
-
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

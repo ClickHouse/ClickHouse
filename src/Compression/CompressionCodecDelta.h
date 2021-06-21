@@ -12,10 +12,9 @@ public:
 
     uint8_t getMethodByte() const override;
 
-    void updateHash(SipHash & hash) const override;
+    ASTPtr getCodecDesc() const override;
 
 protected:
-
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;

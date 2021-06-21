@@ -1,22 +1,20 @@
 ---
-toc_priority: 39
+toc_priority: 5
 toc_title: USER
 ---
 
 # CREATE USER {#create-user-statement}
 
-Creates [user accounts](../../../operations/access-rights.md#user-account-management).
+Creates a [user account](../../../operations/access-rights.md#user-account-management).
 
 Syntax:
 
 ``` sql
-CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1] 
-        [, name2 [ON CLUSTER cluster_name2] ...]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']}]
+CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
-    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
 `ON CLUSTER` clause allows creating users on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
@@ -31,8 +29,6 @@ There are multiple ways of user identification:
 -   `IDENTIFIED WITH sha256_hash BY 'hash'`
 -   `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 -   `IDENTIFIED WITH double_sha1_hash BY 'hash'`
--   `IDENTIFIED WITH ldap SERVER 'server_name'`
--   `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 
 ## User Host {#user-host}
 
@@ -54,24 +50,12 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 !!! info "Warning"
     ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we don’t recommend to do so.
 
-	
-## GRANTEES Clause {#grantees}
-
-Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#grant-privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#grant-privigele-syntax). Options of the `GRANTEES` clause:
-
--   `user` — Specifies a user this user can grant privileges to.
--   `role` — Specifies a role this user can grant privileges to.
--   `ANY` — This user can grant privileges to anyone. It's the default setting.
--   `NONE` — This user can grant privileges to none.
-
-You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
-
 ## Examples {#create-user-examples}
 
 Create the user account `mira` protected by the password `qwerty`:
 
 ``` sql
-CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 ```
 
 `mira` should start client app at the host where the ClickHouse server runs.
@@ -79,13 +63,13 @@ CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 Create the user account `john`, assign roles to it and make this roles default:
 
 ``` sql
-CREATE USER john DEFAULT ROLE role1, role2;
+CREATE USER john DEFAULT ROLE role1, role2
 ```
 
 Create the user account `john` and make all his future roles default:
 
 ``` sql
-CREATE USER john DEFAULT ROLE ALL;
+ALTER USER user DEFAULT ROLE ALL
 ```
 
 When some role is assigned to `john` in the future, it will become default automatically.
@@ -93,11 +77,5 @@ When some role is assigned to `john` in the future, it will become default autom
 Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
 
 ``` sql
-CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2;
-```
-
-Create the user account `john` and allow him to grant his privileges to the user with `jack` account:
-
-``` sql
-CREATE USER john GRANTEES jack;
+ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
 ```

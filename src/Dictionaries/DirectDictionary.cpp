@@ -1,353 +1,588 @@
 #include "DirectDictionary.h"
-
+#include <IO/WriteHelpers.h>
+#include "DictionaryBlockInputStream.h"
+#include "DictionaryFactory.h"
 #include <Core/Defines.h>
-#include <Common/HashTable/HashMap.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Functions/FunctionHelpers.h>
 
-#include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/HierarchyDictionariesUtils.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int UNSUPPORTED_METHOD;
+    extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
-template <DictionaryKeyType dictionary_key_type>
-DirectDictionary<dictionary_key_type>::DirectDictionary(
+
+DirectDictionary::DirectDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
-    DictionarySourcePtr source_ptr_)
+    DictionarySourcePtr source_ptr_,
+    BlockPtr saved_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
+    , saved_block{std::move(saved_block_)}
 {
-    if (!source_ptr->supportsSelectiveLoad())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", full_name);
+    if (!this->source_ptr->supportsSelectiveLoad())
+        throw Exception{full_name + ": source cannot be used with DirectDictionary", ErrorCodes::UNSUPPORTED_METHOD};
+
+    createAttributes();
 }
 
-template <DictionaryKeyType dictionary_key_type>
-Columns DirectDictionary<dictionary_key_type>::getColumns(
-    const Strings & attribute_names,
-    const DataTypes & result_types,
-    const Columns & key_columns,
-    const DataTypes & key_types [[maybe_unused]],
-    const Columns & default_values_columns) const
+
+void DirectDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
-        dict_struct.validateKeyTypes(key_types);
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    getItemsImpl<UInt64, UInt64>(
+        *hierarchical_attribute,
+        ids,
+        [&](const size_t row, const UInt64 value) { out[row] = value; },
+        [&](const size_t) { return null_value; });
+}
 
-    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
-    const auto requested_keys = extractor.extractAllKeys();
 
-    DictionaryStorageFetchRequest request(dict_struct, attribute_names, result_types, default_values_columns);
+static inline DirectDictionary::Key getAt(const PaddedPODArray<DirectDictionary::Key> & arr, const size_t idx)
+{
+    return arr[idx];
+}
+static inline DirectDictionary::Key getAt(const DirectDictionary::Key & value, const size_t)
+{
+    return value;
+}
 
-    HashMap<KeyType, size_t> key_to_fetched_index;
-    key_to_fetched_index.reserve(requested_keys.size());
+DirectDictionary::Key DirectDictionary::getValueOrNullByKey(const Key & to_find) const
+{
+    std::vector<Key> required_key = {to_find};
 
-    auto fetched_columns_from_storage = request.makeAttributesResultColumns();
-    for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
-    {
-        if (!request.shouldFillResultColumnWithIndex(attribute_index))
-            continue;
-
-        auto & fetched_column_from_storage = fetched_columns_from_storage[attribute_index];
-        fetched_column_from_storage->reserve(requested_keys.size());
-    }
-
-    size_t fetched_key_index = 0;
-
-    Columns block_key_columns;
-    size_t dictionary_keys_size = dict_struct.getKeysNames().size();
-    block_key_columns.reserve(dictionary_keys_size);
-
-    BlockInputStreamPtr stream = getSourceBlockInputStream(key_columns, requested_keys);
-
+    auto stream = source_ptr->loadIds(required_key);
     stream->readPrefix();
 
+    bool is_found = false;
+    Key result = std::get<Key>(hierarchical_attribute->null_values);
     while (const auto block = stream->read())
     {
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < dictionary_keys_size; ++i)
-            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
+        const IColumn & id_column = *block.safeGetByPosition(0).column;
 
-        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
-        auto block_keys = block_keys_extractor.extractAllKeys();
-
-        for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
+        for (const size_t attribute_idx : ext::range(0, attributes.size()))
         {
-            if (!request.shouldFillResultColumnWithIndex(attribute_index))
-                continue;
+            if (is_found)
+                break;
 
-            const auto & block_column = block.safeGetByPosition(dictionary_keys_size + attribute_index).column;
-            fetched_columns_from_storage[attribute_index]->insertRangeFrom(*block_column, 0, block_keys.size());
-        }
+            const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
 
-        for (size_t block_key_index = 0; block_key_index < block_keys.size(); ++block_key_index)
-        {
-            auto block_key = block_keys[block_key_index];
-            key_to_fetched_index[block_key] = fetched_key_index;
-            ++fetched_key_index;
-        }
-
-        block_key_columns.clear();
-    }
-
-    stream->readSuffix();
-
-    Field value_to_insert;
-
-    size_t requested_keys_size = requested_keys.size();
-
-    auto result_columns = request.makeAttributesResultColumns();
-
-    size_t keys_found = 0;
-
-    for (size_t attribute_index = 0; attribute_index < result_columns.size(); ++attribute_index)
-    {
-        if (!request.shouldFillResultColumnWithIndex(attribute_index))
-            continue;
-
-        auto & result_column = result_columns[attribute_index];
-
-        const auto & fetched_column_from_storage = fetched_columns_from_storage[attribute_index];
-        const auto & default_value_provider = request.defaultValueProviderAtIndex(attribute_index);
-
-        result_column->reserve(requested_keys_size);
-
-        for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
-        {
-            const auto requested_key = requested_keys[requested_key_index];
-            const auto * it = key_to_fetched_index.find(requested_key);
-
-            if (it)
+            for (const auto row_idx : ext::range(0, id_column.size()))
             {
-                fetched_column_from_storage->get(it->getMapped(), value_to_insert);
-                ++keys_found;
+                const auto key = id_column[row_idx].get<UInt64>();
+
+                if (key == to_find && hierarchical_attribute->name == attribute_name_by_index.at(attribute_idx))
+                {
+                    result = attribute_column[row_idx].get<Key>();
+                    is_found = true;
+                    break;
+                }
             }
-            else
-                value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
-
-            result_column->insert(value_to_insert);
         }
-    }
-
-    query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
-
-    return request.filterRequestedColumns(result_columns);
-}
-
-template <DictionaryKeyType dictionary_key_type>
-ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
-    const std::string & attribute_name,
-    const DataTypePtr & result_type,
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    const ColumnPtr & default_values_column) const
-{
-    return getColumns({ attribute_name }, { result_type }, key_columns, key_types, { default_values_column }).front();
-}
-
-template <DictionaryKeyType dictionary_key_type>
-ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
-    const Columns & key_columns,
-    const DataTypes & key_types [[maybe_unused]]) const
-{
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
-        dict_struct.validateKeyTypes(key_types);
-
-    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-    DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(key_columns, arena_holder.getComplexKeyArena());
-    auto requested_keys = requested_keys_extractor.extractAllKeys();
-    size_t requested_keys_size = requested_keys.size();
-
-    HashMap<KeyType, size_t> requested_key_to_index;
-    requested_key_to_index.reserve(requested_keys_size);
-
-    for (size_t i = 0; i < requested_keys.size(); ++i)
-    {
-        auto requested_key = requested_keys[i];
-        requested_key_to_index[requested_key] = i;
-    }
-
-    auto result = ColumnUInt8::create(requested_keys_size, false);
-    auto & result_data = result->getData();
-
-    Columns block_key_columns;
-    size_t dictionary_keys_size = dict_struct.getKeysNames().size();
-    block_key_columns.reserve(dictionary_keys_size);
-
-    BlockInputStreamPtr stream = getSourceBlockInputStream(key_columns, requested_keys);
-
-    stream->readPrefix();
-
-    size_t keys_found = 0;
-
-    while (const auto block = stream->read())
-    {
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < dictionary_keys_size; ++i)
-            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
-        size_t block_keys_size = block_keys_extractor.getKeysSize();
-
-        for (size_t i = 0; i < block_keys_size; ++i)
-        {
-            auto block_key = block_keys_extractor.extractCurrentKey();
-
-            const auto * it = requested_key_to_index.find(block_key);
-            assert(it);
-
-            size_t result_data_found_index = it->getMapped();
-            /// block_keys_size cannot be used, due to duplicates.
-            keys_found += !result_data[result_data_found_index];
-            result_data[result_data_found_index] = true;
-
-            block_keys_extractor.rollbackCurrentKey();
-        }
-
-        block_key_columns.clear();
     }
 
     stream->readSuffix();
-
-    query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
 
-template <DictionaryKeyType dictionary_key_type>
-ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
-    ColumnPtr key_column,
-    const DataTypePtr & key_type) const
+template <typename ChildType, typename AncestorType>
+void DirectDictionary::isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    const auto rows = out.size();
+
+    for (const auto row : ext::range(0, rows))
     {
-        size_t keys_found;
-        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
-        query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
-        found_count.fetch_add(keys_found, std::memory_order_relaxed);
-        return result;
+        auto id = getAt(child_ids, row);
+        const auto ancestor_id = getAt(ancestor_ids, row);
+
+        for (size_t i = 0; id != null_value && id != ancestor_id && i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
+            id = getValueOrNullByKey(id);
+
+        out[row] = id != null_value && id == ancestor_id;
     }
-    else
-        return nullptr;
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
-template <DictionaryKeyType dictionary_key_type>
-ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
-    ColumnPtr key_column,
-    ColumnPtr in_key_column,
-    const DataTypePtr & key_type) const
+
+void DirectDictionary::isInVectorVector(
+    const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
-    {
-        size_t keys_found = 0;
-        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
-        query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
-        found_count.fetch_add(keys_found, std::memory_order_relaxed);
-        return result;
-    }
-    else
-        return nullptr;
+    isInImpl(child_ids, ancestor_ids, out);
 }
 
-template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
-    const Columns & key_columns [[maybe_unused]],
-    const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
+void DirectDictionary::isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const
 {
-    size_t requested_keys_size = requested_keys.size();
-
-    BlockInputStreamPtr stream;
-
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-    {
-        std::vector<UInt64> ids;
-        ids.reserve(requested_keys_size);
-
-        for (auto key : requested_keys)
-            ids.emplace_back(key);
-
-        stream = source_ptr->loadIds(ids);
-    }
-    else
-    {
-        std::vector<size_t> requested_rows;
-        requested_rows.reserve(requested_keys_size);
-        for (size_t i = 0; i < requested_keys_size; ++i)
-            requested_rows.emplace_back(i);
-
-        stream = source_ptr->loadKeys(key_columns, requested_rows);
-    }
-
-    return stream;
+    isInImpl(child_ids, ancestor_id, out);
 }
 
-template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getBlockInputStream(const Names & /* column_names */, size_t /* max_block_size */) const
+void DirectDictionary::isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
+{
+    isInImpl(child_id, ancestor_ids, out);
+}
+
+
+#define DECLARE(TYPE) \
+    void DirectDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const \
+    { \
+        const auto & attribute = getAttribute(attribute_name); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+\
+        const auto null_value = std::get<TYPE>(attribute.null_values); \
+\
+        getItemsImpl<TYPE, TYPE>( \
+            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return null_value; }); \
+    }
+DECLARE(UInt8)
+DECLARE(UInt16)
+DECLARE(UInt32)
+DECLARE(UInt64)
+DECLARE(UInt128)
+DECLARE(Int8)
+DECLARE(Int16)
+DECLARE(Int32)
+DECLARE(Int64)
+DECLARE(Float32)
+DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
+#undef DECLARE
+
+void DirectDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
+{
+    const auto & attribute = getAttribute(attribute_name);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+
+    const auto & null_value = std::get<StringRef>(attribute.null_values);
+    getItemsStringImpl<StringRef, StringRef>(
+        attribute,
+        ids,
+        [&](const size_t, const String value) { const auto ref = StringRef{value}; out->insertData(ref.data, ref.size); },
+        [&](const size_t) { return String(null_value.data, null_value.size); });
+}
+
+#define DECLARE(TYPE) \
+    void DirectDictionary::get##TYPE( \
+        const std::string & attribute_name, \
+        const PaddedPODArray<Key> & ids, \
+        const PaddedPODArray<TYPE> & def, \
+        ResultArrayType<TYPE> & out) const \
+    { \
+        const auto & attribute = getAttribute(attribute_name); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+\
+        getItemsImpl<TYPE, TYPE>( \
+            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
+    }
+DECLARE(UInt8)
+DECLARE(UInt16)
+DECLARE(UInt32)
+DECLARE(UInt64)
+DECLARE(UInt128)
+DECLARE(Int8)
+DECLARE(Int16)
+DECLARE(Int32)
+DECLARE(Int64)
+DECLARE(Float32)
+DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
+#undef DECLARE
+
+void DirectDictionary::getString(
+    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
+{
+    const auto & attribute = getAttribute(attribute_name);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+
+    getItemsStringImpl<StringRef, StringRef>(
+        attribute,
+        ids,
+        [&](const size_t, const String value) { const auto ref = StringRef{value}; out->insertData(ref.data, ref.size); },
+        [&](const size_t row) { const auto ref = def->getDataAt(row); return String(ref.data, ref.size); });
+}
+
+#define DECLARE(TYPE) \
+    void DirectDictionary::get##TYPE( \
+        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const \
+    { \
+        const auto & attribute = getAttribute(attribute_name); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+\
+        getItemsImpl<TYPE, TYPE>( \
+            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
+    }
+DECLARE(UInt8)
+DECLARE(UInt16)
+DECLARE(UInt32)
+DECLARE(UInt64)
+DECLARE(UInt128)
+DECLARE(Int8)
+DECLARE(Int16)
+DECLARE(Int32)
+DECLARE(Int64)
+DECLARE(Float32)
+DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
+#undef DECLARE
+
+void DirectDictionary::getString(
+    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
+{
+    const auto & attribute = getAttribute(attribute_name);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+
+    DirectDictionary::getItemsStringImpl<StringRef, StringRef>(
+        attribute,
+        ids,
+        [&](const size_t, const String value) { const auto ref = StringRef{value}; out->insertData(ref.data, ref.size); },
+        [&](const size_t) { return def; });
+}
+
+
+void DirectDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+{
+    const auto & attribute = attributes.front();
+
+    switch (attribute.type)
+    {
+        case AttributeUnderlyingType::utUInt8:
+            has<UInt8>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utUInt16:
+            has<UInt16>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utUInt32:
+            has<UInt32>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utUInt64:
+            has<UInt64>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utUInt128:
+            has<UInt128>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utInt8:
+            has<Int8>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utInt16:
+            has<Int16>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utInt32:
+            has<Int32>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utInt64:
+            has<Int64>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utFloat32:
+            has<Float32>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utFloat64:
+            has<Float64>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utString:
+            has<String>(attribute, ids, out);
+            break;
+
+        case AttributeUnderlyingType::utDecimal32:
+            has<Decimal32>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utDecimal64:
+            has<Decimal64>(attribute, ids, out);
+            break;
+        case AttributeUnderlyingType::utDecimal128:
+            has<Decimal128>(attribute, ids, out);
+            break;
+    }
+}
+
+
+void DirectDictionary::createAttributes()
+{
+    const auto size = dict_struct.attributes.size();
+    attributes.reserve(size);
+
+    for (const auto & attribute : dict_struct.attributes)
+    {
+        attribute_index_by_name.emplace(attribute.name, attributes.size());
+        attribute_name_by_index.emplace(attributes.size(), attribute.name);
+        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value, attribute.name));
+
+        if (attribute.hierarchical)
+        {
+            hierarchical_attribute = &attributes.back();
+
+            if (hierarchical_attribute->type != AttributeUnderlyingType::utUInt64)
+                throw Exception{full_name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
+        }
+    }
+}
+
+
+template <typename T>
+void DirectDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
+{
+    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+}
+
+template <>
+void DirectDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
+{
+    attribute.string_arena = std::make_unique<Arena>();
+    const String & string = null_value.get<String>();
+    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
+}
+
+
+DirectDictionary::Attribute DirectDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value, const std::string & attr_name)
+{
+    Attribute attr{type, {}, {}, attr_name};
+
+    switch (type)
+    {
+        case AttributeUnderlyingType::utUInt8:
+            createAttributeImpl<UInt8>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utUInt16:
+            createAttributeImpl<UInt16>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utUInt32:
+            createAttributeImpl<UInt32>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utUInt64:
+            createAttributeImpl<UInt64>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utUInt128:
+            createAttributeImpl<UInt128>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utInt8:
+            createAttributeImpl<Int8>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utInt16:
+            createAttributeImpl<Int16>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utInt32:
+            createAttributeImpl<Int32>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utInt64:
+            createAttributeImpl<Int64>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utFloat32:
+            createAttributeImpl<Float32>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utFloat64:
+            createAttributeImpl<Float64>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utString:
+            createAttributeImpl<String>(attr, null_value);
+            break;
+
+        case AttributeUnderlyingType::utDecimal32:
+            createAttributeImpl<Decimal32>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utDecimal64:
+            createAttributeImpl<Decimal64>(attr, null_value);
+            break;
+        case AttributeUnderlyingType::utDecimal128:
+            createAttributeImpl<Decimal128>(attr, null_value);
+            break;
+    }
+
+    return attr;
+}
+
+
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+void DirectDictionary::getItemsImpl(
+    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+{
+    const auto rows = ext::size(ids);
+
+    HashMap<Key, OutputType> value_by_key;
+    for (const auto row : ext::range(0, rows))
+        value_by_key[ids[row]] = get_default(row);
+
+    std::vector<Key> to_load;
+    to_load.reserve(value_by_key.size());
+    for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
+        to_load.emplace_back(static_cast<Key>(it->getKey()));
+
+    auto stream = source_ptr->loadIds(to_load);
+    stream->readPrefix();
+
+    while (const auto block = stream->read())
+    {
+        const IColumn & id_column = *block.safeGetByPosition(0).column;
+
+        for (const size_t attribute_idx : ext::range(0, attributes.size()))
+        {
+            const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+
+            for (const auto row_idx : ext::range(0, id_column.size()))
+            {
+                const auto key = id_column[row_idx].get<UInt64>();
+
+                if (value_by_key.find(key) != value_by_key.end() && attribute.name == attribute_name_by_index.at(attribute_idx))
+                {
+                    if (attribute.type == AttributeUnderlyingType::utFloat32)
+                    {
+                        value_by_key[key] = static_cast<Float32>(attribute_column[row_idx].get<Float64>());
+                    }
+                    else
+                    {
+                        value_by_key[key] = static_cast<OutputType>(attribute_column[row_idx].get<AttributeType>());
+                    }
+
+                }
+            }
+        }
+    }
+
+    stream->readSuffix();
+
+    for (const auto row : ext::range(0, rows))
+        set_value(row, value_by_key[ids[row]]);
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
+}
+
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+void DirectDictionary::getItemsStringImpl(
+    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+{
+    const auto rows = ext::size(ids);
+
+    HashMap<Key, String> value_by_key;
+    for (const auto row : ext::range(0, rows))
+        value_by_key[ids[row]] = get_default(row);
+
+    std::vector<Key> to_load;
+    to_load.reserve(value_by_key.size());
+    for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
+        to_load.emplace_back(static_cast<Key>(it->getKey()));
+
+    auto stream = source_ptr->loadIds(to_load);
+    stream->readPrefix();
+
+    while (const auto block = stream->read())
+    {
+        const IColumn & id_column = *block.safeGetByPosition(0).column;
+
+        for (const size_t attribute_idx : ext::range(0, attributes.size()))
+        {
+
+            const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+
+            for (const auto row_idx : ext::range(0, id_column.size()))
+            {
+                const auto key = id_column[row_idx].get<UInt64>();
+                if (value_by_key.find(key) != value_by_key.end() && attribute.name == attribute_name_by_index.at(attribute_idx))
+                {
+                    const String from_source = attribute_column[row_idx].get<String>();
+                    value_by_key[key] = from_source;
+                }
+            }
+        }
+    }
+    stream->readSuffix();
+
+    for (const auto row : ext::range(0, rows))
+        set_value(row, value_by_key[ids[row]]);
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
+}
+
+
+const DirectDictionary::Attribute & DirectDictionary::getAttribute(const std::string & attribute_name) const
+{
+    const auto it = attribute_index_by_name.find(attribute_name);
+    if (it == std::end(attribute_index_by_name))
+        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+
+    return attributes[it->second];
+}
+
+
+template <typename T>
+void DirectDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+{
+    const auto rows = ext::size(ids);
+
+    HashMap<Key, UInt8> has_key;
+    for (const auto row : ext::range(0, rows))
+        has_key[ids[row]] = 0;
+
+    std::vector<Key> to_load;
+    to_load.reserve(has_key.size());
+    for (auto it = has_key.begin(); it != has_key.end(); ++it)
+        to_load.emplace_back(static_cast<Key>(it->getKey()));
+
+    auto stream = source_ptr->loadIds(to_load);
+    stream->readPrefix();
+
+    while (const auto block = stream->read())
+    {
+        const IColumn & id_column = *block.safeGetByPosition(0).column;
+
+        for (const auto row_idx : ext::range(0, id_column.size()))
+        {
+            const auto key = id_column[row_idx].get<UInt64>();
+            has_key[key] = 1;
+        }
+    }
+
+    stream->readSuffix();
+
+    for (const auto row : ext::range(0, rows))
+        out[row] = has_key[ids[row]];
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
+}
+
+
+BlockInputStreamPtr DirectDictionary::getBlockInputStream(const Names & /* column_names */, size_t /* max_block_size */) const
 {
     return source_ptr->loadAll();
 }
 
-namespace
-{
-    template <DictionaryKeyType dictionary_key_type>
-    DictionaryPtr createDirectDictionary(
-        const std::string & full_name,
-        const DictionaryStructure & dict_struct,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        DictionarySourcePtr source_ptr)
-    {
-        const auto * layout_name = dictionary_key_type == DictionaryKeyType::simple ? "direct" : "complex_key_direct";
 
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-        {
-            if (dict_struct.key)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "'key' is not supported for dictionary of layout '{}'",
-                    layout_name);
-        }
-        else
-        {
-            if (dict_struct.id)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "'id' is not supported for dictionary of layout '{}'",
-                    layout_name);
-        }
+void registerDictionaryDirect(DictionaryFactory & factory)
+{
+    auto create_layout = [=](const std::string & full_name,
+                             const DictionaryStructure & dict_struct,
+                             const Poco::Util::AbstractConfiguration & config,
+                             const std::string & config_prefix,
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+    {
+        if (dict_struct.key)
+            throw Exception{"'key' is not supported for dictionary of layout 'direct'", ErrorCodes::UNSUPPORTED_METHOD};
 
         if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "{}: elements .structure.range_min and .structure.range_max should be defined only "
-                "for a dictionary of layout 'range_hashed'",
-                full_name);
+            throw Exception{full_name
+                                + ": elements .structure.range_min and .structure.range_max should be defined only "
+                                  "for a dictionary of layout 'range_hashed'",
+                            ErrorCodes::BAD_ARGUMENTS};
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
         if (config.has(config_prefix + ".lifetime.min") || config.has(config_prefix + ".lifetime.max"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'lifetime' parameter is redundant for the dictionary' of layout '{}'",
-                layout_name);
+            throw Exception{"'lifetime' parameter is redundant for the dictionary' of layout 'direct'", ErrorCodes::BAD_ARGUMENTS};
 
-        return std::make_unique<DirectDictionary<dictionary_key_type>>(dict_id, dict_struct, std::move(source_ptr));
-    }
-}
 
-template class DirectDictionary<DictionaryKeyType::simple>;
-template class DirectDictionary<DictionaryKeyType::complex>;
-
-void registerDictionaryDirect(DictionaryFactory & factory)
-{
-    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::simple>, false);
-    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::complex>, true);
+        return std::make_unique<DirectDictionary>(dict_id, dict_struct, std::move(source_ptr));
+    };
+    factory.registerLayout("direct", create_layout, false);
 }
 
 

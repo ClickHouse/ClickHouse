@@ -1,3 +1,4 @@
+#include <Core/UUID.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -26,7 +27,7 @@ template <typename T>
 static inline String formatQuotedWithPrefix(T x, const char * prefix)
 {
     WriteBufferFromOwnString wb;
-    writeCString(prefix, wb);
+    wb.write(prefix, strlen(prefix));
     writeQuoted(x, wb);
     return wb.str();
 }
@@ -47,11 +48,10 @@ String FieldVisitorDump::operator() (const DecimalField<Decimal32> & x) const { 
 String FieldVisitorDump::operator() (const DecimalField<Decimal64> & x) const { return formatQuotedWithPrefix(x, "Decimal64_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal128> & x) const { return formatQuotedWithPrefix(x, "Decimal128_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal256> & x) const { return formatQuotedWithPrefix(x, "Decimal256_"); }
-String FieldVisitorDump::operator() (const UInt128 & x) const { return formatQuotedWithPrefix(x, "UInt128_"); }
 String FieldVisitorDump::operator() (const UInt256 & x) const { return formatQuotedWithPrefix(x, "UInt256_"); }
-String FieldVisitorDump::operator() (const Int128 & x) const { return formatQuotedWithPrefix(x, "Int128_"); }
 String FieldVisitorDump::operator() (const Int256 & x) const { return formatQuotedWithPrefix(x, "Int256_"); }
-String FieldVisitorDump::operator() (const UUID & x) const { return formatQuotedWithPrefix(x, "UUID_"); }
+String FieldVisitorDump::operator() (const Int128 & x) const { return formatQuotedWithPrefix(x, "Int128_"); }
+String FieldVisitorDump::operator() (const UInt128 & x) const { return formatQuotedWithPrefix(UUID(x), "UUID_"); }
 
 
 String FieldVisitorDump::operator() (const String & x) const
@@ -82,22 +82,6 @@ String FieldVisitorDump::operator() (const Tuple & x) const
     WriteBufferFromOwnString wb;
 
     wb << "Tuple_(";
-    for (auto it = x.begin(); it != x.end(); ++it)
-    {
-        if (it != x.begin())
-            wb << ", ";
-        wb << applyVisitor(*this, *it);
-    }
-    wb << ')';
-
-    return wb.str();
-}
-
-String FieldVisitorDump::operator() (const Map & x) const
-{
-    WriteBufferFromOwnString wb;
-
-    wb << "Map_(";
     for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
@@ -152,11 +136,13 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) cons
 String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal256> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int128 & x) const { return formatQuoted(x); }
-String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(UUID(x)); }
+String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const
+{
+    return formatQuoted(x.data);
+}
 String FieldVisitorToString::operator() (const UInt256 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int256 & x) const { return formatQuoted(x); }
-String FieldVisitorToString::operator() (const UUID & x) const { return formatQuoted(x); }
-String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x.data); }
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
@@ -178,32 +164,6 @@ String FieldVisitorToString::operator() (const Tuple & x) const
 {
     WriteBufferFromOwnString wb;
 
-    // For single-element tuples we must use the explicit tuple() function,
-    // or they will be parsed back as plain literals.
-    if (x.size() > 1)
-    {
-        wb << '(';
-    }
-    else
-    {
-        wb << "tuple(";
-    }
-
-    for (auto it = x.begin(); it != x.end(); ++it)
-    {
-        if (it != x.begin())
-            wb << ", ";
-        wb << applyVisitor(*this, *it);
-    }
-    wb << ')';
-
-    return wb.str();
-}
-
-String FieldVisitorToString::operator() (const Map & x) const
-{
-    WriteBufferFromOwnString wb;
-
     wb << '(';
     for (auto it = x.begin(); it != x.end(); ++it)
     {
@@ -214,67 +174,6 @@ String FieldVisitorToString::operator() (const Map & x) const
     wb << ')';
 
     return wb.str();
-}
-
-
-void FieldVisitorWriteBinary::operator() (const Null &, WriteBuffer &) const { }
-void FieldVisitorWriteBinary::operator() (const UInt64 & x, WriteBuffer & buf) const { DB::writeVarUInt(x, buf); }
-void FieldVisitorWriteBinary::operator() (const Int64 & x, WriteBuffer & buf) const { DB::writeVarInt(x, buf); }
-void FieldVisitorWriteBinary::operator() (const Float64 & x, WriteBuffer & buf) const { DB::writeFloatBinary(x, buf); }
-void FieldVisitorWriteBinary::operator() (const String & x, WriteBuffer & buf) const { DB::writeStringBinary(x, buf); }
-void FieldVisitorWriteBinary::operator() (const UInt128 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
-void FieldVisitorWriteBinary::operator() (const Int128 & x, WriteBuffer & buf) const { DB::writeVarInt(x, buf); }
-void FieldVisitorWriteBinary::operator() (const UInt256 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
-void FieldVisitorWriteBinary::operator() (const Int256 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
-void FieldVisitorWriteBinary::operator() (const UUID & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
-void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal32> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
-void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal64> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
-void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal128> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
-void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
-void FieldVisitorWriteBinary::operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const
-{
-    DB::writeStringBinary(x.name, buf);
-    DB::writeStringBinary(x.data, buf);
-}
-
-void FieldVisitorWriteBinary::operator() (const Array & x, WriteBuffer & buf) const
-{
-    const size_t size = x.size();
-    DB::writeBinary(size, buf);
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        const UInt8 type = x[i].getType();
-        DB::writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, x[i]);
-    }
-}
-
-void FieldVisitorWriteBinary::operator() (const Tuple & x, WriteBuffer & buf) const
-{
-    const size_t size = x.size();
-    DB::writeBinary(size, buf);
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        const UInt8 type = x[i].getType();
-        DB::writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, x[i]);
-    }
-}
-
-
-void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) const
-{
-    const size_t size = x.size();
-    DB::writeBinary(size, buf);
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        const UInt8 type = x[i].getType();
-        writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, x[i]);
-    }
 }
 
 
@@ -314,13 +213,6 @@ void FieldVisitorHash::operator() (const Int128 & x) const
     hash.update(x);
 }
 
-void FieldVisitorHash::operator() (const UUID & x) const
-{
-    UInt8 type = Field::Types::UUID;
-    hash.update(type);
-    hash.update(x);
-}
-
 void FieldVisitorHash::operator() (const Float64 & x) const
 {
     UInt8 type = Field::Types::Float64;
@@ -339,16 +231,6 @@ void FieldVisitorHash::operator() (const String & x) const
 void FieldVisitorHash::operator() (const Tuple & x) const
 {
     UInt8 type = Field::Types::Tuple;
-    hash.update(type);
-    hash.update(x.size());
-
-    for (const auto & elem : x)
-        applyVisitor(*this, elem);
-}
-
-void FieldVisitorHash::operator() (const Map & x) const
-{
-    UInt8 type = Field::Types::Map;
     hash.update(type);
     hash.update(x.size());
 

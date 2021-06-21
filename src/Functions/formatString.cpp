@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 #include <ext/range.h>
 
@@ -22,16 +22,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 template <typename Name>
 class FormatFunction : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FormatFunction>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FormatFunction>(); }
 
     String getName() const override { return name; }
 
@@ -67,9 +64,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr & c0 = arguments[0].column;
+        const ColumnPtr & c0 = block.getByPosition(arguments[0]).column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
 
         if (!c0_const_string)
@@ -88,7 +85,7 @@ public:
         bool has_column_fixed_string = false;
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            const ColumnPtr & column = arguments[i].column;
+            const ColumnPtr & column = block.getByPosition(arguments[i]).column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
             {
                 has_column_string = true;
@@ -122,7 +119,7 @@ public:
             col_res->getOffsets(),
             input_rows_count);
 
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -132,8 +129,6 @@ struct NameFormat
     static constexpr auto name = "format";
 };
 using FunctionFormat = FormatFunction<NameFormat>;
-
-}
 
 void registerFunctionFormat(FunctionFactory & factory)
 {

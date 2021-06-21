@@ -157,7 +157,23 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     const String & setting_name = change.name;
 
     if (setting_name == "profile")
+    {
+        /// TODO Check profile settings in Context::setProfile(...), not here. It will be backward incompatible.
+        const String & profile_name = change.value.safeGet<String>();
+        const auto & profile_settings_changes = manager->getProfileSettings(profile_name);
+        try
+        {
+            /// NOTE We cannot use CLAMP_ON_VIOLATION here, because we cannot modify elements of profile_settings_changes
+            for (auto change_copy : *profile_settings_changes)
+                checkImpl(current_settings, change_copy, THROW_ON_VIOLATION);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(", while trying to set settings profile " + profile_name);
+            throw;
+        }
         return true;
+    }
 
     bool cannot_cast;
     auto cast_value = [&](const Field & x) -> Field

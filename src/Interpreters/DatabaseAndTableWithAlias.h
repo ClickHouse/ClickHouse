@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -16,6 +16,8 @@ namespace DB
 class ASTSelectQuery;
 class ASTIdentifier;
 struct ASTTableExpression;
+class Context;
+
 
 /// Extracts database name (and/or alias) from table expression or identifier
 struct DatabaseAndTableWithAlias
@@ -26,9 +28,9 @@ struct DatabaseAndTableWithAlias
     UUID uuid = UUIDHelpers::Nil;
 
     DatabaseAndTableWithAlias() = default;
-    explicit DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
-    explicit DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
-    explicit DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
+    DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
+    DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
+    DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
 
     /// "alias." or "table." if alias is empty
     String getQualifiedNamePrefix(bool with_dot = true) const;
@@ -47,9 +49,7 @@ struct TableWithColumnNamesAndTypes
 {
     DatabaseAndTableWithAlias table;
     NamesAndTypesList columns;
-    NamesAndTypesList hidden_columns; /// Not general columns like MATERIALIZED, ALIAS, VIRTUAL. They are omitted in * and t.* results by default.
-    NamesAndTypesList alias_columns;
-    NamesAndTypesList materialized_columns;
+    NamesAndTypesList hidden_columns; /// Not general columns like MATERIALIZED and ALIAS. They are omitted in * and t.* results.
 
     TableWithColumnNamesAndTypes(const DatabaseAndTableWithAlias & table_, const NamesAndTypesList & columns_)
         : table(table_)
@@ -63,27 +63,10 @@ struct TableWithColumnNamesAndTypes
 
     void addHiddenColumns(const NamesAndTypesList & addition)
     {
-        addAdditionalColumns(hidden_columns, addition);
-    }
-
-    void addAliasColumns(const NamesAndTypesList & addition)
-    {
-        addAdditionalColumns(alias_columns, addition);
-    }
-
-    void addMaterializedColumns(const NamesAndTypesList & addition)
-    {
-        addAdditionalColumns(materialized_columns, addition);
-    }
-
-private:
-    void addAdditionalColumns(NamesAndTypesList & target, const NamesAndTypesList & addition)
-    {
-        target.insert(target.end(), addition.begin(), addition.end());
-        for (const auto & col : addition)
+        hidden_columns.insert(hidden_columns.end(), addition.begin(), addition.end());
+        for (auto & col : addition)
             names.insert(col.name);
     }
-
 
 private:
     NameSet names;

@@ -25,8 +25,8 @@ protected:
     Pipe read(
             const Names & /* column_names */,
             const StorageMetadataPtr & metadata_snapshot,
-            SelectQueryInfo & query_info,
-            ContextPtr context,
+            const SelectQueryInfo & query_info,
+            const Context & context,
             QueryProcessingStage::Enum /*processed_stage*/,
             const size_t /*max_block_size*/,
             const unsigned /*num_streams*/) override;

@@ -3,9 +3,8 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -14,6 +13,7 @@ namespace DB
 class ASTFunction;
 struct ASTTablesInSelectQueryElement;
 class TableJoin;
+class Context;
 struct Settings;
 struct SelectQueryOptions;
 using Scalars = std::map<String, Block>;
@@ -35,8 +35,6 @@ struct TreeRewriterResult
     Aliases aliases;
     std::vector<const ASTFunction *> aggregates;
 
-    std::vector<const ASTFunction *> window_function_asts;
-
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
     NameToNameMap array_join_result_to_source;
@@ -53,13 +51,6 @@ struct TreeRewriterResult
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 
-    /// Whether the query contains explicit columns like "SELECT column1 + column2 FROM table1".
-    /// Queries like "SELECT count() FROM table1", "SELECT 1" don't contain explicit columns.
-    bool has_explicit_columns = false;
-
-    /// Whether it's possible to use the trivial count optimization,
-    /// i.e. use a fast call of IStorage::totalRows() (or IStorage::totalRowsByPartitionPredicate())
-    /// instead of actual retrieving columns and counting rows.
     bool optimize_trivial_count = false;
 
     /// Cache isRemote() call for storage, because it may be too heavy.
@@ -77,7 +68,6 @@ struct TreeRewriterResult
     void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query, bool is_select);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
-    NameSet getArrayJoinSourceNameSet() const;
     const Scalars & getScalars() const { return scalars; }
 };
 
@@ -92,10 +82,12 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 ///  * scalar subqueries are executed replaced with constants
 ///  * unneeded columns are removed from SELECT clause
 ///  * duplicated columns are removed from ORDER BY, LIMIT BY, USING(...).
-class TreeRewriter : WithContext
+class TreeRewriter
 {
 public:
-    explicit TreeRewriter(ContextPtr context_) : WithContext(context_) {}
+    TreeRewriter(const Context & context_)
+        : context(context_)
+    {}
 
     /// Analyze and rewrite not select query
     TreeRewriterResultPtr analyze(
@@ -115,7 +107,9 @@ public:
         std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings);
+    const Context & context;
+
+    static void normalize(ASTPtr & query, Aliases & aliases, const Settings & settings);
 };
 
 }

@@ -3,10 +3,11 @@
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
+
+class Context;
 
 /// Read block of required columns from Dictionary by UInt64 key column. Rename columns if needed.
 /// Current implementation uses dictHas() + N * dictGet() functions.
@@ -22,19 +23,14 @@ public:
         FunctionWrapper(FunctionOverloadResolverPtr resolver, const ColumnsWithTypeAndName & arguments, Block & block,
                         const ColumnNumbers & arg_positions_, const String & column_name, TypeIndex expected_type);
 
-        void execute(ColumnsWithTypeAndName & columns, size_t rows) const
+        void execute(Block & block, size_t rows) const
         {
-            ColumnsWithTypeAndName args;
-            args.reserve(arg_positions.size());
-            for (auto pos : arg_positions)
-                args.emplace_back(columns[pos]);
-
-            columns[result_pos].column = function->execute(args, columns[result_pos].type, rows, false);
+            function->execute(block, arg_positions, result_pos, rows, false);
         }
     };
 
     DictionaryReader(const String & dictionary_name, const Names & src_column_names, const NamesAndTypesList & result_columns,
-                     ContextPtr context);
+                     const Context & context);
     void readKeys(const IColumn & keys, Block & out_block, ColumnVector<UInt8>::Container & found, std::vector<size_t> & positions) const;
 
 private:

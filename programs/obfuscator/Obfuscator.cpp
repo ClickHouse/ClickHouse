@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
@@ -23,7 +22,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Formats/registerFormats.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
@@ -100,16 +98,16 @@ class IModel
 {
 public:
     /// Call train iteratively for each block to train a model.
-    virtual void train(const IColumn & column) = 0;
+    virtual void train(const IColumn & column);
 
     /// Call finalize one time after training before generating.
-    virtual void finalize() = 0;
+    virtual void finalize();
 
     /// Call generate: pass source data column to obtain a column with anonymized data as a result.
-    virtual ColumnPtr generate(const IColumn & column) = 0;
+    virtual ColumnPtr generate(const IColumn & column);
 
     /// Deterministically change seed to some other value. This can be used to generate more values than were in source.
-    virtual void updateSeed() = 0;
+    virtual void updateSeed();
 
     virtual ~IModel() = default;
 };
@@ -365,21 +363,6 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
     }
 }
 
-static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
-{
-    const UInt128 & src = src_uuid.toUnderType();
-    UInt128 & dst = dst_uuid.toUnderType();
-
-    SipHash hash;
-    hash.update(seed);
-    hash.update(reinterpret_cast<const char *>(&src), sizeof(UUID));
-
-    /// Saving version and variant from an old UUID
-    hash.get128(reinterpret_cast<char *>(&dst));
-
-    dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
-    dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
-}
 
 class FixedStringModel : public IModel
 {
@@ -407,38 +390,6 @@ public:
 
         for (size_t i = 0; i < size; ++i)
             transformFixedString(&src_data[i * string_size], &res_data[i * string_size], string_size, seed);
-
-        return res_column;
-    }
-
-    void updateSeed() override
-    {
-        seed = hash(seed);
-    }
-};
-
-class UUIDModel : public IModel
-{
-private:
-    UInt64 seed;
-
-public:
-    explicit UUIDModel(UInt64 seed_) : seed(seed_) {}
-
-    void train(const IColumn &) override {}
-    void finalize() override {}
-
-    ColumnPtr generate(const IColumn & column) override
-    {
-        const ColumnUUID & src_column = assert_cast<const ColumnUUID &>(column);
-        const auto & src_data = src_column.getData();
-
-        auto res_column = ColumnUUID::create();
-        auto & res_data = res_column->getData();
-
-        res_data.resize(src_data.size());
-        for (size_t i = 0; i < src_column.size(); ++i)
-            transformUUID(src_data[i], res_data[i], seed);
 
         return res_column;
     }
@@ -984,9 +935,6 @@ public:
         if (typeid_cast<const DataTypeFixedString *>(&data_type))
             return std::make_unique<FixedStringModel>(seed);
 
-        if (typeid_cast<const DataTypeUUID *>(&data_type))
-            return std::make_unique<UUIDModel>(seed);
-
         if (const auto * type = typeid_cast<const DataTypeArray *>(&data_type))
             return std::make_unique<ArrayModel>(get(*type->getNestedType(), seed, markov_model_params));
 
@@ -1054,8 +1002,6 @@ try
 {
     using namespace DB;
     namespace po = boost::program_options;
-
-    registerFormats();
 
     po::options_description description = createOptionsDescription("Options", getTerminalWidth());
     description.add_options()
@@ -1133,8 +1079,8 @@ try
     }
 
     SharedContextHolder shared_context = Context::createShared();
-    ContextPtr context = Context::createGlobal(shared_context.get());
-    context->makeGlobalContext();
+    Context context = Context::createGlobal(shared_context.get());
+    context.makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
@@ -1156,7 +1102,7 @@ try
         if (!silent)
             std::cerr << "Training models\n";
 
-        BlockInputStreamPtr input = context->getInputFormat(input_format, file_in, header, max_block_size);
+        BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
 
         input->readPrefix();
         while (Block block = input->read())
@@ -1183,8 +1129,8 @@ try
 
         file_in.seek(0, SEEK_SET);
 
-        BlockInputStreamPtr input = context->getInputFormat(input_format, file_in, header, max_block_size);
-        BlockOutputStreamPtr output = context->getOutputStreamParallelIfPossible(output_format, file_out, header);
+        BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
+        BlockOutputStreamPtr output = context.getOutputFormat(output_format, file_out, header);
 
         if (processed_rows + source_rows > limit)
             input = std::make_shared<LimitBlockInputStream>(input, limit - processed_rows, 0);

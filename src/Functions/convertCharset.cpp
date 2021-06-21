@@ -30,8 +30,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
 
 /** convertCharset(s, from, to)
   *
@@ -162,7 +160,7 @@ private:
 
 public:
     static constexpr auto name = "convertCharset";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertCharset>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertCharset>(); }
 
     String getName() const override
     {
@@ -184,11 +182,11 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & arg_from = arguments[0];
-        const ColumnWithTypeAndName & arg_charset_from = arguments[1];
-        const ColumnWithTypeAndName & arg_charset_to = arguments[2];
+        const ColumnWithTypeAndName & arg_from = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & arg_charset_from = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & arg_charset_to = block.getByPosition(arguments[2]);
 
         const ColumnConst * col_charset_from = checkAndGetColumnConstStringOrFixedString(arg_charset_from.column.get());
         const ColumnConst * col_charset_to = checkAndGetColumnConstStringOrFixedString(arg_charset_to.column.get());
@@ -204,7 +202,7 @@ public:
         {
             auto col_to = ColumnString::create();
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets());
-            return col_to;
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column passed as first argument of function " + getName() + " (must be ColumnString).",
@@ -212,7 +210,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionConvertCharset(FunctionFactory & factory)
 {
