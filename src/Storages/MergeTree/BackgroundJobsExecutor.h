@@ -59,7 +59,7 @@ protected:
         /// This pool type
         PoolType pool_type;
         /// Max pool size in threads
-        size_t max_pool_size;
+        const std::function<size_t()> get_max_pool_size;
         /// Metric that we have to increment when we execute task in this pool
         CurrentMetrics::Metric tasks_metric;
     };
