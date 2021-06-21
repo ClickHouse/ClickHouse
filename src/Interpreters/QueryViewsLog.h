@@ -35,7 +35,6 @@ struct QueryViewsLogElement
     {
         String target_name;
         ViewType type = ViewType::DEFAULT;
-        String initial_query_id;
         std::shared_ptr<ThreadStatus> thread_status = std::make_shared<ThreadStatus>();
         UInt64 elapsed_ms = 0;
         std::chrono::time_point<std::chrono::system_clock> event_time;
@@ -63,7 +62,6 @@ struct QueryViewsLogElement
     UInt64 read_bytes{};
     UInt64 written_rows{};
     UInt64 written_bytes{};
-    Int64 memory_usage{};
     Int64 peak_memory_usage{};
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
 

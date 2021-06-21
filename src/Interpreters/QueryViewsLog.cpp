@@ -47,7 +47,6 @@ Block QueryViewsLogElement::createBlock()
         {std::make_shared<DataTypeUInt64>(), "read_bytes"},
         {std::make_shared<DataTypeUInt64>(), "written_rows"},
         {std::make_shared<DataTypeUInt64>(), "written_bytes"},
-        {std::make_shared<DataTypeInt64>(), "memory_usage"},
         {std::make_shared<DataTypeInt64>(), "peak_memory_usage"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
@@ -78,7 +77,6 @@ void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(read_bytes);
     columns[i++]->insert(written_rows);
     columns[i++]->insert(written_bytes);
-    columns[i++]->insert(memory_usage);
     columns[i++]->insert(peak_memory_usage);
 
     if (profile_counters)
