@@ -105,7 +105,7 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 2.  Table schema, i.e. list of columns and their [data types](../sql-reference/data-types/index.md).
 3.  [Table engine](../engines/table-engines/index.md) and its settings, which determines all the details on how queries to this table will be physically executed.
 
-Yandex.Metrica is a web analytics service, and sample dataset does not cover its full functionality, so there are only two tables to create:
+Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
 
 -   `hits` is a table with each action done by all users on all websites covered by the service.
 -   `visits` is a table that contains pre-built sessions instead of individual actions.

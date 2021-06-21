@@ -31,12 +31,13 @@ namespace ErrorCodes
 
 
 StorageView::StorageView(
-    const StorageID & table_id_, const ASTCreateQuery & query, const ColumnsDescription & columns_, const String & comment)
+    const StorageID & table_id_,
+    const ASTCreateQuery & query,
+    const ColumnsDescription & columns_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setComment(comment);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -129,7 +130,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
     {
         // If it's a view table function, add a fake db.table name.
         if (table_expression->table_function && table_expression->table_function->as<ASTFunction>()->name == "view")
-            table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__view");
+            table_expression->database_and_table_name = std::make_shared<ASTIdentifier>("__view");
         else
             throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
     }
@@ -172,7 +173,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_id, args.query, args.columns, args.comment);
+        return StorageView::create(args.table_id, args.query, args.columns);
     });
 }
 

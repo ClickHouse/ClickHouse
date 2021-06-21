@@ -5,7 +5,7 @@ toc_title: URLs
 
 # Functions for Working with URLs {#functions-for-working-with-urls}
 
-All these functions do not follow the RFC. They are maximally simplified for improved performance.
+All these functions don’t follow the RFC. They are maximally simplified for improved performance.
 
 ## Functions that Extract Parts of a URL {#functions-that-extract-parts-of-a-url}
 
@@ -398,7 +398,7 @@ Result:
 
 ## Functions that Remove Part of a URL {#functions-that-remove-part-of-a-url}
 
-If the URL does not have anything similar, the URL remains unchanged.
+If the URL doesn’t have anything similar, the URL remains unchanged.
 
 ### cutWWW {#cutwww}
 

@@ -1,5 +1,6 @@
 #pragma once
 
+
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashingImpl.h>
@@ -14,8 +15,6 @@
 
 #include <Core/Defines.h>
 #include <memory>
-#include <cassert>
-
 
 namespace DB
 {
@@ -166,7 +165,8 @@ public:
         size_t operator()(const DictionaryKey & key) const
         {
             SipHash hash;
-            hash.update(key.hash);
+            hash.update(key.hash.low);
+            hash.update(key.hash.high);
             hash.update(key.size);
             return hash.get64();
         }
@@ -594,11 +594,8 @@ struct HashMethodKeysFixed
                 return prepared_keys[row];
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
-            if constexpr (sizeof(Key) <= 16)
-            {
-                assert(!has_low_cardinality && !has_nullable_keys);
+            if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
                 return packFixedShuffle<Key>(columns_data.get(), keys_size, key_sizes.data(), row, masks.get());
-            }
 #endif
             return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
         }

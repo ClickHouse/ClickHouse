@@ -21,7 +21,7 @@ TableArgExpr::TableArgExpr(PtrTo<TableFunctionExpr> function) : INode{function}
 {
 }
 
-TableArgExpr::TableArgExpr(PtrTo<Identifier> identifier) : INode{identifier}
+TableArgExpr::TableArgExpr(PtrTo<TableIdentifier> identifier) : INode{identifier}
 {
 }
 
@@ -149,7 +149,7 @@ antlrcpp::Any ParseTreeVisitor::visitTableArgExpr(ClickHouseParser::TableArgExpr
 {
     if (ctx->literal()) return std::make_shared<TableArgExpr>(visit(ctx->literal()).as<PtrTo<Literal>>());
     if (ctx->tableFunctionExpr()) return std::make_shared<TableArgExpr>(visit(ctx->tableFunctionExpr()).as<PtrTo<TableFunctionExpr>>());
-    if (ctx->nestedIdentifier()) return std::make_shared<TableArgExpr>(visit(ctx->nestedIdentifier()).as<PtrTo<Identifier>>());
+    if (ctx->tableIdentifier()) return std::make_shared<TableArgExpr>(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
     __builtin_unreachable();
 }
 

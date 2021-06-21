@@ -13,10 +13,10 @@ class Context;
 /** Return a list of tables or databases meets specified conditions.
   * Interprets a query through replacing it to SELECT query from system.tables or system.databases.
   */
-class InterpreterShowTablesQuery : public IInterpreter, WithMutableContext
+class InterpreterShowTablesQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterShowTablesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
+    InterpreterShowTablesQuery(const ASTPtr & query_ptr_, ContextPtr context_);
 
     BlockIO execute() override;
 

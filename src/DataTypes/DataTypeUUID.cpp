@@ -16,16 +16,6 @@ SerializationPtr DataTypeUUID::doGetDefaultSerialization() const
     return std::make_shared<SerializationUUID>();
 }
 
-Field DataTypeUUID::getDefault() const
-{
-    return UUID{};
-}
-
-MutableColumnPtr DataTypeUUID::createColumn() const
-{
-    return ColumnVector<UUID>::create();
-}
-
 void registerDataTypeUUID(DataTypeFactory & factory)
 {
     factory.registerSimpleDataType("UUID", [] { return DataTypePtr(std::make_shared<DataTypeUUID>()); });
