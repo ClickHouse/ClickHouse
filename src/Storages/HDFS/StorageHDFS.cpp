@@ -26,7 +26,6 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 #include <filesystem>
-#include <hdfs/hdfs.h>
 
 namespace fs = std::filesystem;
 
@@ -35,6 +34,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ACCESS_DENIED;
 }
 
 StorageHDFS::StorageHDFS(
@@ -334,7 +334,7 @@ void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr 
 
     int ret = hdfsDelete(fs.get(), path.data(), 0);
     if (ret)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to truncate hdfs table: {}", std::string(hdfsGetLastError()));
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Unable to truncate hdfs table: {}", std::string(hdfsGetLastError()));
 }
 
 
