@@ -71,9 +71,6 @@ namespace ErrorCodes
 
 }
 
-/// ANSI escape sequence for intense color in terminal.
-#define HILITE "\033[1m"
-#define END_HILITE "\033[0m"
 
 using namespace DB;
 namespace po = boost::program_options;
@@ -562,32 +559,20 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         bool stdin_is_a_tty = isatty(STDIN_FILENO);
         bool stdout_is_a_tty = isatty(STDOUT_FILENO);
-
-        /// dpkg or apt installers can ask for non-interactive work explicitly.
-
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
-        bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
-
-        bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
-
-        /// We can ask password even if stdin is closed/redirected but /dev/tty is available.
-        bool can_ask_password = !noninteractive && stdout_is_a_tty;
+        bool is_interactive = stdin_is_a_tty && stdout_is_a_tty;
 
         if (has_password_for_default_user)
         {
-            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
+            fmt::print("Password for default user is already specified. To remind or reset, see {} and {}.\n",
                        users_config_file.string(), users_d.string());
         }
-        else if (!can_ask_password)
+        else if (!is_interactive)
         {
-            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+            fmt::print("Password for default user is empty string. See {} and {} to change it.\n",
                        users_config_file.string(), users_d.string());
         }
         else
         {
-            /// NOTE: When installing debian package with dpkg -i, stdin is not a terminal but we are still being able to enter password.
-            /// More sophisticated method with /dev/tty is used inside the `readpassphrase` function.
-
             char buf[1000] = {};
             std::string password;
             if (auto * result = readpassphrase("Enter password for default user: ", buf, sizeof(buf), 0))
@@ -615,7 +600,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</yandex>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
+                fmt::print("Password for default user is saved in file {}.\n", password_file);
 #else
                 out << "<yandex>\n"
                     "    <users>\n"
@@ -626,12 +611,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</yandex>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
+                fmt::print("Password for default user is saved in plaintext in file {}.\n", password_file);
 #endif
                 has_password_for_default_user = true;
             }
             else
-                fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+                fmt::print("Password for default user is empty string. See {} and {} to change it.\n",
                            users_config_file.string(), users_d.string());
         }
 
@@ -656,6 +641,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 " This is optional. Taskstats accounting will be disabled."
                 " To enable taskstats accounting you may add the required capability later manually.\"",
             "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
+        fmt::print(" {}\n", command);
         executeScript(command);
 #endif
 
@@ -844,8 +830,8 @@ namespace
                 fmt::print("The pidof command returned unusual output.\n");
             }
 
-            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
-            copyData(sh->err, std_err);
+            WriteBufferFromFileDescriptor stderr(STDERR_FILENO);
+            copyData(sh->err, stderr);
 
             sh->tryWait();
         }

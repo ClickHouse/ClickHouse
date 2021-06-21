@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -497,8 +498,7 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
 bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    assert(node);
-    ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
+    ASTFunction * function = dynamic_cast<ASTFunction *>(node.get());
 
     // Variant 1:
     // function_name ( * ) OVER window_name
@@ -511,7 +511,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserIdentifier window_name_parser;
         if (window_name_parser.parse(pos, window_name_ast, expected))
         {
-            function.window_name = getIdentifierName(window_name_ast);
+            function->window_name = getIdentifierName(window_name_ast);
             return true;
         }
         else
@@ -523,7 +523,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     // Variant 2:
     // function_name ( * ) OVER ( window_definition )
     ParserWindowDefinition parser_definition;
-    return parser_definition.parse(pos, function.window_definition, expected);
+    return parser_definition.parse(pos, function->window_definition, expected);
 }
 
 static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
@@ -533,7 +533,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     ParserKeyword keyword_groups("GROUPS");
     ParserKeyword keyword_range("RANGE");
 
-    node->frame.is_default = false;
     if (keyword_rows.ignore(pos, expected))
     {
         node->frame.type = WindowFrame::FrameType::Rows;
@@ -549,7 +548,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     else
     {
         /* No frame clause. */
-        node->frame.is_default = true;
         return true;
     }
 
@@ -581,8 +579,30 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         else if (parser_literal.parse(pos, ast_literal, expected))
         {
             const Field & value = ast_literal->as<ASTLiteral &>().value;
-            node->frame.begin_offset = value;
+            if (!isInt64FieldType(value.getType()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Only integer frame offsets are supported, '{}' is not supported.",
+                    Field::Types::toString(value.getType()));
+            }
+            node->frame.begin_offset = value.get<Int64>();
             node->frame.begin_type = WindowFrame::BoundaryType::Offset;
+            // We can easily get a UINT64_MAX here, which doesn't even fit into
+            // int64_t. Not sure what checks we are going to need here after we
+            // support floats and dates.
+            if (node->frame.begin_offset > INT_MAX || node->frame.begin_offset < INT_MIN)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame offset must be between {} and {}, but {} is given",
+                    INT_MAX, INT_MIN, node->frame.begin_offset);
+            }
+
+            if (node->frame.begin_offset < 0)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame start offset must be greater than zero, {} given",
+                    node->frame.begin_offset);
+            }
         }
         else
         {
@@ -598,8 +618,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             node->frame.begin_preceding = false;
             if (node->frame.begin_type == WindowFrame::BoundaryType::Unbounded)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame start cannot be UNBOUNDED FOLLOWING");
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Frame start UNBOUNDED FOLLOWING is not implemented");
             }
         }
         else
@@ -630,8 +650,28 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             else if (parser_literal.parse(pos, ast_literal, expected))
             {
                 const Field & value = ast_literal->as<ASTLiteral &>().value;
-                node->frame.end_offset = value;
+                if (!isInt64FieldType(value.getType()))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Only integer frame offsets are supported, '{}' is not supported.",
+                        Field::Types::toString(value.getType()));
+                }
+                node->frame.end_offset = value.get<Int64>();
                 node->frame.end_type = WindowFrame::BoundaryType::Offset;
+
+                if (node->frame.end_offset > INT_MAX || node->frame.end_offset < INT_MIN)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Frame offset must be between {} and {}, but {} is given",
+                        INT_MAX, INT_MIN, node->frame.end_offset);
+                }
+
+                if (node->frame.end_offset < 0)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Frame end offset must be greater than zero, {} given",
+                        node->frame.end_offset);
+                }
             }
             else
             {
@@ -643,8 +683,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                 node->frame.end_preceding = true;
                 if (node->frame.end_type == WindowFrame::BoundaryType::Unbounded)
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Frame end cannot be UNBOUNDED PRECEDING");
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Frame end UNBOUNDED PRECEDING is not implemented");
                 }
             }
             else if (keyword_following.ignore(pos, expected))
@@ -657,6 +697,11 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                 return false;
             }
         }
+    }
+
+    if (!(node->frame == WindowFrame{}))
+    {
+        node->frame.is_default = false;
     }
 
     return true;
@@ -795,101 +840,7 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
-{
-    /// Convert to canonical representation in functional form: CAST(expr, 'type')
-    auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_ast));
-
-    auto expr_list_args = std::make_shared<ASTExpressionList>();
-    expr_list_args->children.push_back(expr_ast);
-    expr_list_args->children.push_back(std::move(type_literal));
-
-    auto func_node = std::make_shared<ASTFunction>();
-    func_node->name = "CAST";
-    func_node->arguments = std::move(expr_list_args);
-    func_node->children.push_back(func_node->arguments);
-
-    return func_node;
-}
-
-template <TokenType ...tokens>
-static bool isOneOf(TokenType token)
-{
-    return ((token == tokens) || ...);
-}
-
-
-bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    /// Parse numbers (including decimals), strings and arrays of them.
-
-    const char * data_begin = pos->begin;
-    bool is_string_literal = pos->type == TokenType::StringLiteral;
-    if (pos->type == TokenType::Number || is_string_literal)
-    {
-        ++pos;
-    }
-    else if (pos->type == TokenType::OpeningSquareBracket)
-    {
-        TokenType last_token = TokenType::OpeningSquareBracket;
-        while (pos.isValid())
-        {
-            if (pos->type == TokenType::OpeningSquareBracket)
-            {
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::Comma>(last_token))
-                    return false;
-            }
-            else if (pos->type == TokenType::ClosingSquareBracket)
-            {
-                if (last_token == TokenType::Comma)
-                    return false;
-            }
-            else if (pos->type == TokenType::Comma)
-            {
-                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::Comma>(last_token))
-                    return false;
-            }
-            else if (isOneOf<TokenType::Number, TokenType::StringLiteral>(pos->type))
-            {
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::Comma>(last_token))
-                    return false;
-            }
-            else
-            {
-                break;
-            }
-
-            last_token = pos->type;
-            ++pos;
-        }
-    }
-
-    ASTPtr type_ast;
-    const char * data_end = pos->begin;
-
-    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
-        && ParserDataType().parse(pos, type_ast, expected))
-    {
-        String s;
-        size_t data_size = data_end - data_begin;
-        if (is_string_literal)
-        {
-            ReadBufferFromMemory buf(data_begin, data_size);
-            readQuotedStringWithSQLStyle(s, buf);
-            assert(buf.count() == data_size);
-        }
-        else
-            s = String(data_begin, data_size);
-
-        auto literal = std::make_shared<ASTLiteral>(std::move(s));
-        node = createFunctionCast(literal, type_ast);
-        return true;
-    }
-
-    return false;
-}
-
-bool ParserCastAsExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Either CAST(expr AS type) or CAST(expr, 'type')
     /// The latter will be parsed normally as a function later.
@@ -904,7 +855,20 @@ bool ParserCastAsExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         && ParserDataType().parse(pos, type_node, expected)
         && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
     {
-        node = createFunctionCast(expr_node, type_node);
+        /// Convert to canonical representation in functional form: CAST(expr, 'type')
+
+        auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_node));
+
+        auto expr_list_args = std::make_shared<ASTExpressionList>();
+        expr_list_args->children.push_back(expr_node);
+        expr_list_args->children.push_back(std::move(type_literal));
+
+        auto func_node = std::make_shared<ASTFunction>();
+        func_node->name = "CAST";
+        func_node->arguments = std::move(expr_list_args);
+        func_node->children.push_back(func_node->arguments);
+
+        node = std::move(func_node);
         return true;
     }
 
@@ -2033,13 +1997,13 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserSubquery().parse(pos, node, expected)
-        || ParserCastOperator().parse(pos, node, expected)
         || ParserTupleOfLiterals().parse(pos, node, expected)
+        || ParserMapOfLiterals().parse(pos, node, expected)
         || ParserParenthesisExpression().parse(pos, node, expected)
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)
         || ParserLiteral().parse(pos, node, expected)
-        || ParserCastAsExpression().parse(pos, node, expected)
+        || ParserCastExpression().parse(pos, node, expected)
         || ParserExtractExpression().parse(pos, node, expected)
         || ParserDateAddExpression().parse(pos, node, expected)
         || ParserDateDiffExpression().parse(pos, node, expected)

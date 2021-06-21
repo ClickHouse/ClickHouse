@@ -22,7 +22,7 @@ struct State
 {
     State(const State&) = delete;
 
-    ContextPtr context;
+    Context context;
 
     static const State & instance()
     {
@@ -74,7 +74,7 @@ private:
     };
 
     explicit State()
-        : context(Context::createCopy(getContext().context))
+        : context(getContext().context)
     {
         tryRegisterFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
@@ -85,11 +85,10 @@ private:
             const auto & db_name = tab.table.database;
             database->attachTable(
                 table_name,
-                StorageMemory::create(
-                    StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
+                StorageMemory::create(StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
-        context->setCurrentDatabase("test");
+        context.setCurrentDatabase("test");
     }
 };
 

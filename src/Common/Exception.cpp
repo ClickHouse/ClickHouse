@@ -34,9 +34,9 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
-/// - Aborts the process if error code is LOGICAL_ERROR.
-/// - Increments error codes statistics.
-void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+/// Aborts the process if error code is LOGICAL_ERROR.
+/// Increments error codes statistics.
+void handle_error_code([[maybe_unused]] const std::string & msg, int code)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -47,21 +47,20 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
         abort();
     }
 #endif
-
-    ErrorCodes::increment(code, remote, msg, trace);
+    ErrorCodes::increment(code);
 }
 
 Exception::Exception(const std::string & msg, int code, bool remote_)
     : Poco::Exception(msg, code)
     , remote(remote_)
 {
-    handle_error_code(msg, code, remote, getStackFramePointers());
+    handle_error_code(msg, code);
 }
 
 Exception::Exception(const std::string & msg, const Exception & nested, int code)
     : Poco::Exception(msg, nested, code)
 {
-    handle_error_code(msg, code, remote, getStackFramePointers());
+    handle_error_code(msg, code);
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -102,31 +101,6 @@ std::string Exception::getStackTraceString() const
 #endif
 }
 
-Exception::FramePointers Exception::getStackFramePointers() const
-{
-    FramePointers frame_pointers;
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    {
-        frame_pointers.resize(get_stack_trace_size());
-        for (size_t i = 0; i < frame_pointers.size(); ++i)
-        {
-            frame_pointers[i] = get_stack_trace_frames()[i];
-        }
-    }
-#else
-    {
-        size_t stack_trace_size = trace.getSize();
-        size_t stack_trace_offset = trace.getOffset();
-        frame_pointers.reserve(stack_trace_size - stack_trace_offset);
-        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-        {
-            frame_pointers.push_back(trace.getFramePointers()[i]);
-        }
-    }
-#endif
-    return frame_pointers;
-}
-
 
 void throwFromErrno(const std::string & s, int code, int the_errno)
 {
@@ -150,7 +124,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
+    MemoryTracker::LockExceptionInThread lock_memory_tracker;
 
     try
     {

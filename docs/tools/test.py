@@ -3,8 +3,33 @@
 import logging
 import os
 import sys
+
 import bs4
+
+import logging
+import os
 import subprocess
+
+import bs4
+
+
+def test_amp(paths, lang):
+    try:
+        # Get latest amp validator version
+        subprocess.check_call('amphtml-validator --help',
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL,
+                              shell=True)
+    except subprocess.CalledProcessError:
+        subprocess.check_call('npm i -g amphtml-validator', stderr=subprocess.DEVNULL, shell=True)
+
+    paths = ' '.join(paths)
+    command = f'amphtml-validator {paths}'
+    try:
+        subprocess.check_output(command, shell=True).decode('utf-8')
+    except subprocess.CalledProcessError:
+        logging.error(f'Invalid AMP for {lang}')
+        raise
 
 
 def test_template(template_path):
@@ -43,17 +68,17 @@ def test_single_page(input_path, lang):
             f,
             features='html.parser'
         )
-
         anchor_points = set()
-
         duplicate_anchor_points = 0
         links_to_nowhere = 0
-
         for tag in soup.find_all():
             for anchor_point in [tag.attrs.get('name'), tag.attrs.get('id')]:
                 if anchor_point:
-                    anchor_points.add(anchor_point)
-
+                    if anchor_point in anchor_points:
+                        duplicate_anchor_points += 1
+                        logging.info('Duplicate anchor point: %s' % anchor_point)
+                    else:
+                        anchor_points.add(anchor_point)
         for tag in soup.find_all():
             href = tag.attrs.get('href')
             if href and href.startswith('#') and href != '#':
@@ -62,8 +87,11 @@ def test_single_page(input_path, lang):
                     logging.info("Tag %s", tag)
                     logging.info('Link to nowhere: %s' % href)
 
+        if duplicate_anchor_points:
+            logging.warning('Found %d duplicate anchor points' % duplicate_anchor_points)
+
         if links_to_nowhere:
-            if lang == 'en' or lang == 'ru':
+            if lang == 'en' or lang == 'ru':  # TODO: check all languages again
                 logging.error(f'Found {links_to_nowhere} links to nowhere in {lang}')
                 sys.exit(1)
             else:
