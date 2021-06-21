@@ -8,7 +8,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -22,8 +21,8 @@ namespace
 AggregateFunctionPtr createAggregateFunctionCategoricalIV(
     const std::string & name,
     const DataTypes & arguments,
-    const Array & params,
-    const Settings *)
+    const Array & params
+)
 {
     assertNoParameters(name, params);
 

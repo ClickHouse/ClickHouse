@@ -1,6 +1,10 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+
+#include <Poco/File.h>
+#include <Poco/Path.h>
+
 #include <common/logger_useful.h>
 
 #include <atomic>
@@ -24,7 +28,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -32,12 +36,12 @@ public:
     BlockOutputStreamPtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context) override;
+        const Context & context) override;
 
     void truncate(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /* metadata_snapshot */,
-        ContextPtr /* context */,
+        const Context & /* context */,
         TableExclusiveLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
@@ -45,7 +49,7 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
-    struct CommonArguments : public WithContext
+    struct CommonArguments
     {
         StorageID table_id;
         std::string format_name;
@@ -53,18 +57,12 @@ public:
         std::string compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
-        const String & comment;
+        const Context & context;
     };
 
     NamesAndTypesList getVirtuals() const override;
 
-    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context);
-
-    /// Check if the format is column-oriented.
-    /// Is is useful because column oriented formats could effectively skip unknown columns
-    /// So we can create a header of only required columns in read method and ask
-    /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool isColumnOriented() const;
+    static Strings getPathsList(const String & table_path, const String & user_files_path, const Context & context);
 
 protected:
     friend class StorageFileSource;

@@ -14,14 +14,10 @@ class Block;
 struct ExtraBlock;
 using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
-class TableJoin;
-
 class IJoin
 {
 public:
     virtual ~IJoin() = default;
-
-    virtual const TableJoin & getTableJoin() const = 0;
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
@@ -40,10 +36,6 @@ public:
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
     virtual bool alwaysReturnsEmptySet() const { return false; }
-
-    /// StorageJoin/Dictionary is already filled. No need to call addJoinedBlock.
-    /// Different query plan is used for such joins.
-    virtual bool isFilled() const { return false; }
 
     virtual BlockInputStreamPtr createStreamWithNonJoinedRows(const Block &, UInt64) const { return {}; }
 };

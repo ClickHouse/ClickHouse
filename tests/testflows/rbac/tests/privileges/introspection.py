@@ -35,7 +35,7 @@ def addressToLine_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=addressToLine,
+        Suite(run=addressToLine, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in addressToLine.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -56,14 +56,13 @@ def addressToLine_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=addressToLine,
+        Suite(run=addressToLine, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in addressToLine.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("INTROSPECTION",),
     ("INTROSPECTION FUNCTIONS",),
     ("addressToLine",),
@@ -81,13 +80,7 @@ def addressToLine(self, privilege, grant_target_name, user_name, node=None):
 
     with Scenario("addressToLine without privilege"):
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use addressToLine"):
+        with When("I check the user can't use addressToLine"):
             node.query(f"WITH addressToLine(toUInt64(dummy)) AS addr SELECT 1 WHERE addr = ''", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -123,7 +116,7 @@ def addressToSymbol_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=addressToSymbol,
+        Suite(run=addressToSymbol, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in addressToSymbol.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -144,14 +137,13 @@ def addressToSymbol_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=addressToSymbol,
+        Suite(run=addressToSymbol, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in addressToSymbol.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("INTROSPECTION",),
     ("INTROSPECTION FUNCTIONS",),
     ("addressToSymbol",),
@@ -169,13 +161,7 @@ def addressToSymbol(self, privilege, grant_target_name, user_name, node=None):
 
     with Scenario("addressToSymbol without privilege"):
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use addressToSymbol"):
+        with When("I check the user can't use addressToSymbol"):
             node.query(f"WITH addressToSymbol(toUInt64(dummy)) AS addr SELECT 1 WHERE addr = ''", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -211,7 +197,7 @@ def demangle_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=demangle,
+        Suite(run=demangle, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in demangle.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -232,14 +218,13 @@ def demangle_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=demangle,
+        Suite(run=demangle, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in demangle.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("INTROSPECTION",),
     ("INTROSPECTION FUNCTIONS",),
     ("demangle",),
@@ -257,13 +242,7 @@ def demangle(self, privilege, grant_target_name, user_name, node=None):
 
     with Scenario("demangle without privilege"):
 
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user can't use demangle"):
+        with When("I check the user can't use demangle"):
             node.query(f"WITH demangle(toString(dummy)) AS addr SELECT 1 WHERE addr = ''", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -291,8 +270,6 @@ def demangle(self, privilege, grant_target_name, user_name, node=None):
 @Name("introspection")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_Introspection("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of INTROSPECTION.

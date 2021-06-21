@@ -3,11 +3,10 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Poco/File.h>
+#include <Poco/Path.h>
 #include <Interpreters/Context.h>
 #include <unistd.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -22,12 +21,12 @@ namespace ErrorCodes
 }
 
 /// A function to read file as a string.
-class FunctionFile : public IFunction, WithConstContext
+class FunctionFile : public IFunction
 {
 public:
     static constexpr auto name = "file";
-    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionFile>(context_); }
-    explicit FunctionFile(ContextConstPtr context_) : WithConstContext(context_) {}
+    static FunctionPtr create(const Context &context) { return std::make_shared<FunctionFile>(context); }
+    explicit FunctionFile(const Context &context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -69,19 +68,21 @@ public:
         {
             const char * filename = reinterpret_cast<const char *>(&chars[source_offset]);
 
-            fs::path user_files_absolute_path = fs::canonical(fs::path(getContext()->getUserFilesPath()));
-            fs::path file_path(filename);
-            if (file_path.is_relative())
-                file_path = user_files_absolute_path / file_path;
-            fs::path file_absolute_path = fs::canonical(file_path);
-            checkReadIsAllowedOrThrow(user_files_absolute_path.string(), file_absolute_path);
+            const String user_files_path = context.getUserFilesPath();
+            String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
+            Poco::Path poco_filepath = Poco::Path(filename);
+            if (poco_filepath.isRelative())
+                poco_filepath = Poco::Path(user_files_absolute_path, poco_filepath);
+            const String file_absolute_path = poco_filepath.absolute().toString();
+            checkReadIsAllowedOrThrow(user_files_absolute_path, file_absolute_path);
 
-            checked_filenames[row] = file_absolute_path.string();
+            checked_filenames[row] = file_absolute_path;
+            auto file = Poco::File(file_absolute_path);
 
-            if (!fs::exists(file_absolute_path))
-                throw Exception(fmt::format("File {} doesn't exist.", file_absolute_path.string()), ErrorCodes::FILE_DOESNT_EXIST);
+            if (!file.exists())
+                throw Exception(fmt::format("File {} doesn't exist.", file_absolute_path), ErrorCodes::FILE_DOESNT_EXIST);
 
-            const auto current_file_size = fs::file_size(file_absolute_path);
+            const auto current_file_size = Poco::File(file_absolute_path).getSize();
 
             result_offset += current_file_size + 1;
             res_offsets[row] = result_offset;
@@ -112,14 +113,16 @@ private:
     void checkReadIsAllowedOrThrow(const std::string & user_files_absolute_path, const std::string & file_absolute_path) const
     {
         // If run in Local mode, no need for path checking.
-        if (getContext()->getApplicationType() != Context::ApplicationType::LOCAL)
+        if (context.getApplicationType() != Context::ApplicationType::LOCAL)
             if (file_absolute_path.find(user_files_absolute_path) != 0)
                 throw Exception("File is not inside " + user_files_absolute_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
-        fs::path fs_path(file_absolute_path);
-        if (fs::exists(fs_path) && fs::is_directory(fs_path))
+        Poco::File path_poco_file = Poco::File(file_absolute_path);
+        if (path_poco_file.exists() && path_poco_file.isDirectory())
             throw Exception("File can't be a directory", ErrorCodes::INCORRECT_FILE_NAME);
     }
+
+    const Context & context;
 };
 
 

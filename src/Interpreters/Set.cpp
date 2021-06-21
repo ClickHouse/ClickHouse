@@ -1,6 +1,8 @@
 #include <optional>
 
 #include <Core/Field.h>
+#include <Common/FieldVisitors.h>
+#include <Core/Row.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>

@@ -1,6 +1,5 @@
 #include <Access/IAccessStorage.h>
 #include <Access/User.h>
-#include <Access/Credentials.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -418,60 +417,53 @@ void IAccessStorage::notify(const Notifications & notifications)
 
 
 UUID IAccessStorage::login(
-    const Credentials & credentials,
+    const String & user_name,
+    const String & password,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
     bool replace_exception_with_cannot_authenticate) const
 {
     try
     {
-        return loginImpl(credentials, address, external_authenticators);
+        return loginImpl(user_name, password, address, external_authenticators);
     }
     catch (...)
     {
         if (!replace_exception_with_cannot_authenticate)
             throw;
 
-        tryLogCurrentException(getLogger(), credentials.getUserName() + ": Authentication failed");
-        throwCannotAuthenticate(credentials.getUserName());
+        tryLogCurrentException(getLogger(), user_name + ": Authentication failed");
+        throwCannotAuthenticate(user_name);
     }
 }
 
 
 UUID IAccessStorage::loginImpl(
-    const Credentials & credentials,
+    const String & user_name,
+    const String & password,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators) const
 {
-    if (auto id = find<User>(credentials.getUserName()))
+    if (auto id = find<User>(user_name))
     {
         if (auto user = tryRead<User>(*id))
         {
+            if (!isPasswordCorrectImpl(*user, password, external_authenticators))
+                throwInvalidPassword();
+
             if (!isAddressAllowedImpl(*user, address))
                 throwAddressNotAllowed(address);
-
-            if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
-                throwInvalidCredentials();
 
             return *id;
         }
     }
-    throwNotFound(EntityType::USER, credentials.getUserName());
+    throwNotFound(EntityType::USER, user_name);
 }
 
 
-bool IAccessStorage::areCredentialsValidImpl(
-    const User & user,
-    const Credentials & credentials,
-    const ExternalAuthenticators & external_authenticators) const
+bool IAccessStorage::isPasswordCorrectImpl(const User & user, const String & password, const ExternalAuthenticators & external_authenticators) const
 {
-    if (!credentials.isReady())
-        return false;
-
-    if (credentials.getUserName() != user.getName())
-        return false;
-
-    return user.authentication.areCredentialsValid(credentials, external_authenticators);
+    return user.authentication.isCorrectPassword(user.getName(), password, external_authenticators);
 }
 
 
@@ -479,7 +471,6 @@ bool IAccessStorage::isAddressAllowedImpl(const User & user, const Poco::Net::IP
 {
     return user.allowed_client_hosts.contains(address);
 }
-
 
 UUID IAccessStorage::getIDOfLoggedUser(const String & user_name) const
 {
@@ -587,9 +578,9 @@ void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address
     throw Exception("Connections from " + address.toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 }
 
-void IAccessStorage::throwInvalidCredentials()
+void IAccessStorage::throwInvalidPassword()
 {
-    throw Exception("Invalid credentials", ErrorCodes::WRONG_PASSWORD);
+    throw Exception("Invalid password", ErrorCodes::WRONG_PASSWORD);
 }
 
 void IAccessStorage::throwCannotAuthenticate(const String & user_name)

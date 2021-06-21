@@ -251,36 +251,11 @@ class Task_non_partitioned_table:
         instance = cluster.instances['s1_1_0']
         instance.query("DROP TABLE copier_test1_1")
 
-class Task_self_copy:
 
-    def __init__(self, cluster):
-        self.cluster = cluster
-        self.zk_task_path = "/clickhouse-copier/task_self_copy"
-        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_self_copy.xml'), 'r').read()
-
-    def start(self):
-        instance = cluster.instances['s0_0_0']
-        instance.query("CREATE DATABASE db1;")
-        instance.query(
-            "CREATE TABLE db1.source_table (`a` Int8, `b` String, `c` Int8) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity = 8192")
-        instance.query("CREATE DATABASE db2;")
-        instance.query(
-            "CREATE TABLE db2.destination_table (`a` Int8, `b` String, `c` Int8) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity = 8192")
-        instance.query("INSERT INTO db1.source_table VALUES (1, 'ClickHouse', 1);")
-        instance.query("INSERT INTO db1.source_table VALUES (2, 'Copier', 2);")
-
-    def check(self):
-        instance = cluster.instances['s0_0_0']
-        assert TSV(instance.query("SELECT * FROM db2.destination_table ORDER BY a")) == TSV(instance.query("SELECT * FROM db1.source_table ORDER BY a"))
-        instance = cluster.instances['s0_0_0']
-        instance.query("DROP DATABASE db1 SYNC")
-        instance.query("DROP DATABASE db2 SYNC")
-
-
-def execute_task(started_cluster, task, cmd_options):
+def execute_task(task, cmd_options):
     task.start()
 
-    zk = started_cluster.get_kazoo_client('zoo1')
+    zk = cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
     try:
@@ -293,7 +268,7 @@ def execute_task(started_cluster, task, cmd_options):
     zk.create(zk_task_path + "/description", task.copier_task_config.encode())
 
     # Run cluster-copier processes on each node
-    docker_api = started_cluster.docker_client.api
+    docker_api = docker.from_env().api
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
@@ -305,7 +280,7 @@ def execute_task(started_cluster, task, cmd_options):
     copiers = random.sample(list(cluster.instances.keys()), 3)
 
     for instance_name in copiers:
-        instance = started_cluster.instances[instance_name]
+        instance = cluster.instances[instance_name]
         container = instance.get_docker_handle()
         instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs/config-copier.xml"),
                                         "/etc/clickhouse-server/config-copier.xml")
@@ -318,7 +293,7 @@ def execute_task(started_cluster, task, cmd_options):
 
     # Wait for copiers stopping and check their return codes
     for exec_id, instance_name in zip(copiers_exec_ids, copiers):
-        instance = started_cluster.instances[instance_name]
+        instance = cluster.instances[instance_name]
         while True:
             res = docker_api.exec_inspect(exec_id)
             if not res['Running']:
@@ -344,9 +319,9 @@ def execute_task(started_cluster, task, cmd_options):
 )
 def test_copy_simple(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(started_cluster, Task1(started_cluster), ['--experimental-use-sample-offset', '1'])
+        execute_task(Task1(started_cluster), ['--experimental-use-sample-offset', '1'])
     else:
-        execute_task(started_cluster, Task1(started_cluster), [])
+        execute_task(Task1(started_cluster), [])
 
 
 @pytest.mark.parametrize(
@@ -358,10 +333,10 @@ def test_copy_simple(started_cluster, use_sample_offset):
 )
 def test_copy_with_recovering(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(started_cluster, Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
+        execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
                                               '--experimental-use-sample-offset', '1'])
     else:
-        execute_task(started_cluster, Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
+        execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 
 @pytest.mark.parametrize(
@@ -373,45 +348,40 @@ def test_copy_with_recovering(started_cluster, use_sample_offset):
 )
 def test_copy_with_recovering_after_move_faults(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(started_cluster, Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
+        execute_task(Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
                                               '--experimental-use-sample-offset', '1'])
     else:
-        execute_task(started_cluster, Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
+        execute_task(Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition(started_cluster):
-    execute_task(started_cluster, Task2(started_cluster, "test1"), [])
+    execute_task(Task2(started_cluster, "test1"), [])
 
 
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition_with_recovering(started_cluster):
-    execute_task(started_cluster, Task2(started_cluster, "test2"), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
+    execute_task(Task2(started_cluster, "test2"), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition_with_recovering_after_move_faults(started_cluster):
-    execute_task(started_cluster, Task2(started_cluster, "test3"), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
+    execute_task(Task2(started_cluster, "test3"), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 
 def test_block_size(started_cluster):
-    execute_task(started_cluster, Task_test_block_size(started_cluster), [])
+    execute_task(Task_test_block_size(started_cluster), [])
 
 
 def test_no_index(started_cluster):
-    execute_task(started_cluster, Task_no_index(started_cluster), [])
+    execute_task(Task_no_index(started_cluster), [])
 
 
 def test_no_arg(started_cluster):
-    execute_task(started_cluster, Task_no_arg(started_cluster), [])
-
+    execute_task(Task_no_arg(started_cluster), [])
 
 def test_non_partitioned_table(started_cluster):
-    execute_task(started_cluster, Task_non_partitioned_table(started_cluster), [])
-
-
-def test_self_copy(started_cluster):
-    execute_task(started_cluster, Task_self_copy(started_cluster), [])
+    execute_task(Task_non_partitioned_table(started_cluster), [])
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:

@@ -7,7 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteHelpers.h>
@@ -36,9 +36,9 @@ class FunctionAddressToLine : public IFunction
 {
 public:
     static constexpr auto name = "addressToLine";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(const Context & context)
     {
-        context->checkAccess(AccessType::addressToLine);
+        context.checkAccess(AccessType::addressToLine);
         return std::make_shared<FunctionAddressToLine>();
     }
 

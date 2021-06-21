@@ -5,8 +5,7 @@
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
+#include <Functions/IFunctionImpl.h>
 
 namespace DB
 {
@@ -33,7 +32,7 @@ class FunctionsStringSimilarity : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionsStringSimilarity>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringSimilarity>(); }
 
     String getName() const override { return name; }
 

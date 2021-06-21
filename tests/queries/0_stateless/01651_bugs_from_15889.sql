@@ -8,7 +8,7 @@ INSERT INTO xp SELECT '2020-01-01', number, '' FROM numbers(100000);
 
 CREATE TABLE xp_d AS xp ENGINE = Distributed(test_shard_localhost, currentDatabase(), xp);
 
-SELECT count(7 = (SELECT number FROM numbers(0) ORDER BY number ASC NULLS FIRST LIMIT 7)) FROM xp_d PREWHERE toYYYYMM(A) GLOBAL IN (SELECT NULL = (SELECT number FROM numbers(1) ORDER BY number DESC NULLS LAST LIMIT 1), toYYYYMM(min(A)) FROM xp_d) WHERE B > NULL; -- { serverError 8 }
+SELECT count(7 = (SELECT number FROM numbers(0) ORDER BY number ASC NULLS FIRST LIMIT 7)) FROM xp_d PREWHERE toYYYYMM(A) GLOBAL IN (SELECT NULL = (SELECT number FROM numbers(1) ORDER BY number DESC NULLS LAST LIMIT 1), toYYYYMM(min(A)) FROM xp_d) WHERE B > NULL; -- { serverError 20 }
 
 SELECT count() FROM xp_d WHERE A GLOBAL IN (SELECT NULL); -- { serverError 53 }
 
@@ -45,7 +45,7 @@ SYSTEM FLUSH LOGS;
 WITH concat(addressToLine(arrayJoin(trace) AS addr), '#') AS symbol
 SELECT count() > 7
 FROM trace_log AS t
-WHERE (query_id =
+WHERE (query_id = 
 (
     SELECT
         [NULL, NULL, NULL, NULL, 0.00009999999747378752, NULL, NULL, NULL, NULL, NULL],
@@ -60,7 +60,7 @@ WHERE (query_id =
 WITH addressToSymbol(arrayJoin(trace)) AS symbol
 SELECT count() > 0
 FROM trace_log AS t
-WHERE greaterOrEquals(event_date, ignore(ignore(ignore(NULL, '')), 256), yesterday()) AND (trace_type = 'Memory') AND (query_id =
+WHERE greaterOrEquals(event_date, ignore(ignore(ignore(NULL, '')), 256), yesterday()) AND (trace_type = 'Memory') AND (query_id = 
 (
     SELECT
         ignore(ignore(ignore(ignore(65536)), ignore(65537), ignore(2)), ''),
@@ -82,7 +82,7 @@ WITH (
         WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
-    ) AS time_with_microseconds,
+    ) AS time_with_microseconds, 
     (
         SELECT
             inf,
@@ -101,7 +101,7 @@ WITH (
         WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
-    ) AS time_with_microseconds,
+    ) AS time_with_microseconds, 
     (
         SELECT query_start_time
         FROM system.query_log

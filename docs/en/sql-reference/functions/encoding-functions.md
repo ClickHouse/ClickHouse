@@ -30,7 +30,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello;
+SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello
 ```
 
 Result:
@@ -86,6 +86,8 @@ hex(arg)
 The function is using uppercase letters `A-F` and not using any prefixes (like `0x`) or suffixes (like `h`).
 
 For integer arguments, it prints hex digits (“nibbles”) from the most significant to least significant (big endian or “human readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if leading digit is zero.
+
+Example:
 
 **Example**
 
@@ -149,62 +151,10 @@ Result:
 └──────────────────┘
 ```
 
-## unhex {#unhexstr}
+## unhex(str) {#unhexstr}
 
-Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
-
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
-
-!!! note "Note"
-    If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8. 
-
-Alias: `UNHEX`.
-
-**Syntax**
-
-``` sql
-unhex(arg)
-```
-
-**Arguments**
-
--   `arg` — A string containing any number of hexadecimal digits. Type: [String](../../sql-reference/data-types/string.md).
-
-Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
-
-**Returned value**
-
--   A binary string (BLOB).
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-``` sql
-SELECT unhex('303132'), UNHEX('4D7953514C');
-```
-
-Result:
-``` text
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
-│ 012             │ MySQL               │
-└─────────────────┴─────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num;
-```
-
-Result:
-
-``` text
-┌──num─┐
-│ 4095 │
-└──────┘
-```
+Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown).
+If you want to convert the result to a number, you can use the ‘reverse’ and ‘reinterpretAsType’ functions.
 
 ## UUIDStringToNum(str) {#uuidstringtonumstr}
 
@@ -221,3 +171,5 @@ Accepts an integer. Returns a string containing the list of powers of two that t
 ## bitmaskToArray(num) {#bitmasktoarraynum}
 
 Accepts an integer. Returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed. Numbers in the array are in ascending order.
+
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/encoding_functions/) <!--hide-->

@@ -2,17 +2,15 @@
 #include <AggregateFunctions/AggregateFunctionTopK.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-
+#include "registerAggregateFunctions.h"
 
 #define TOP_K_MAX_SIZE 0xFFFFFF
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -59,7 +57,7 @@ static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_ty
 
 
 template <bool is_weighted>
-AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     if (!is_weighted)
     {

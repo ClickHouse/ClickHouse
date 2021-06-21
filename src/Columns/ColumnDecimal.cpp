@@ -80,12 +80,6 @@ const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 }
 
 template <typename T>
-const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
-{
-    return pos + sizeof(T);
-}
-
-template <typename T>
 UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
