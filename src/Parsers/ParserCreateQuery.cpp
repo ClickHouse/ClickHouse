@@ -177,7 +177,8 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     auto projection = std::make_shared<ASTProjectionDeclaration>();
     projection->name = name->as<ASTIdentifier &>().name();
-    projection->set(projection->query, query);
+    projection->query = query;
+    projection->children.emplace_back(projection->query);
     node = projection;
 
     return true;
@@ -492,7 +493,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
     }
 
-    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
+    StorageID table_id = getTableIdentifier(table);
 
     // Shortcut for ATTACH a previously detached table
     bool short_attach = attach && !from_path;
@@ -729,14 +730,14 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->if_not_exists = if_not_exists;
     query->is_live_view = true;
 
-    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
+    StorageID table_id = getTableIdentifier(table);
     query->database = table_id.database_name;
     query->table = table_id.table_name;
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
     if (to_table)
-        query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
+        query->to_table_id = getTableIdentifier(to_table);
 
     query->set(query->columns_list, columns_list);
 
@@ -945,14 +946,14 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->replace_view = replace_view;
 
-    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
+    StorageID table_id = getTableIdentifier(table);
     query->database = table_id.database_name;
     query->table = table_id.table_name;
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
     if (to_table)
-        query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
+        query->to_table_id = getTableIdentifier(to_table);
     if (to_inner_uuid)
         query->to_inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.get<String>());
 
@@ -1032,7 +1033,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->is_dictionary = true;
     query->attach = attach;
 
-    auto dict_id = name->as<ASTTableIdentifier>()->getTableId();
+    StorageID dict_id = getTableIdentifier(name);
     query->database = dict_id.database_name;
     query->table = dict_id.table_name;
     query->uuid = dict_id.uuid;

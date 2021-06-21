@@ -76,8 +76,6 @@
 #include <cassert>
 
 
-namespace fs = std::filesystem;
-
 namespace
 {
 const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
@@ -160,7 +158,7 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 /// The columns list in the original INSERT query is incorrect because inserted blocks are transformed
 /// to the form of the sample block of the Distributed table. So we rewrite it and add all columns from
 /// the sample block instead.
-ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block)
+ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
 {
     auto query = std::make_shared<ASTInsertQuery>();
     query->table_id = StorageID(database, table);
@@ -168,7 +166,7 @@ ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::s
     auto columns = std::make_shared<ASTExpressionList>();
     query->columns = columns;
     query->children.push_back(columns);
-    for (const auto & col : sample_block)
+    for (const auto & col : sample_block_non_materialized)
         columns->children.push_back(std::make_shared<ASTIdentifier>(col.name));
 
     return query;
@@ -609,7 +607,7 @@ void StorageDistributed::read(
     ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
         modified_query_ast, local_context, query_info,
         sharding_key_expr, sharding_key_column_name,
-        query_info.cluster);
+        getCluster());
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -648,16 +646,11 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     bool insert_sync = settings.insert_distributed_sync || settings.insert_shard_id || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
-    Block sample_block;
-    if (!settings.insert_allow_materialized_columns)
-        sample_block = metadata_snapshot->getSampleBlockNonMaterialized();
-    else
-        sample_block = metadata_snapshot->getSampleBlock();
-
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
         local_context, *this, metadata_snapshot,
-        createInsertToRemoteTableQuery(remote_database, remote_table, sample_block),
+        createInsertToRemoteTableQuery(
+            remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
         cluster, insert_sync, timeout, StorageID{remote_database, remote_table});
 }
 
@@ -709,7 +702,7 @@ QueryPipelinePtr StorageDistributed::distributedWrite(const ASTInsertQuery & que
     std::vector<std::unique_ptr<QueryPipeline>> pipelines;
 
     String new_query_str = queryToString(new_query);
-    for (size_t shard_index : collections::range(0, shards_info.size()))
+    for (size_t shard_index : ext::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
         if (shard_info.isLocal())
@@ -871,7 +864,7 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
 {
     const std::string path(disk->getPath() + relative_data_path);
-    fs::create_directories(path);
+    Poco::File{path}.createDirectories();
 
     std::filesystem::directory_iterator begin(path);
     std::filesystem::directory_iterator end;

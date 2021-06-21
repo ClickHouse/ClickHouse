@@ -112,6 +112,7 @@ SRCS(
     QueryPlan/LimitStep.cpp
     QueryPlan/MergeSortingStep.cpp
     QueryPlan/MergingAggregatedStep.cpp
+    QueryPlan/MergingFinal.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
     QueryPlan/Optimizations/QueryPlanOptimizationSettings.cpp

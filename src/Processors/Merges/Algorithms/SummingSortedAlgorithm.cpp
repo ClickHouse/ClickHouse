@@ -5,14 +5,13 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <Common/FieldVisitorSum.h>
+#include <Common/FieldVisitors.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
-
 
 namespace DB
 {
@@ -115,9 +114,6 @@ static bool isInPartitionKey(const std::string & column_name, const Names & part
     auto is_in_partition_key = std::find(partition_key_columns.begin(), partition_key_columns.end(), column_name);
     return is_in_partition_key != partition_key_columns.end();
 }
-
-
-using Row = std::vector<Field>;
 
 /// Returns true if merge result is not empty
 static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,

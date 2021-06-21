@@ -5,6 +5,9 @@ import pytest
 import requests
 from helpers.cluster import ClickHouseCluster
 
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler())
+
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -57,7 +60,7 @@ def get_minio_stat(cluster):
         "rx_bytes": 0,
         "tx_bytes": 0,
     }
-    stat = requests.get(url="http://{}:{}/minio/prometheus/metrics".format(cluster.minio_ip, cluster.minio_port)).text.split(
+    stat = requests.get(url="http://{}:{}/minio/prometheus/metrics".format("localhost", cluster.minio_port)).text.split(
         "\n")
     for line in stat:
         x = re.search("s3_requests_total(\{.*\})?\s(\d+)(\s.*)?", line)
