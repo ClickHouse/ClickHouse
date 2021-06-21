@@ -25,7 +25,8 @@ IBackgroundJobExecutor::IBackgroundJobExecutor(
 {
     for (const auto & pool_config : pools_configs_)
     {
-        pools.try_emplace(pool_config.pool_type, pool_config.max_pool_size, 0, pool_config.max_pool_size, false);
+        const auto max_pool_size = pool_config.get_max_pool_size();
+        pools.try_emplace(pool_config.pool_type, max_pool_size, 0, max_pool_size, false);
         pools_configs.emplace(pool_config.pool_type, pool_config);
     }
 }
@@ -86,11 +87,17 @@ void IBackgroundJobExecutor::execute(JobAndPool job_and_pool)
 try
 {
     auto & pool_config = pools_configs[job_and_pool.pool_type];
+    const auto max_pool_size = pool_config.get_max_pool_size();
+
     /// If corresponding pool is not full increment metric and assign new job
-    if (incrementMetricIfLessThanMax(CurrentMetrics::values[pool_config.tasks_metric], pool_config.max_pool_size))
+    if (incrementMetricIfLessThanMax(CurrentMetrics::values[pool_config.tasks_metric], max_pool_size))
     {
         try /// this try required because we have to manually decrement metric
         {
+            /// Synchronize pool size, because config could be reloaded
+            pools[job_and_pool.pool_type].setMaxThreads(max_pool_size);
+            pools[job_and_pool.pool_type].setQueueSize(max_pool_size);
+
             pools[job_and_pool.pool_type].scheduleOrThrowOnError([this, pool_config, job{std::move(job_and_pool.job)}] ()
             {
                 try /// We don't want exceptions in background pool
@@ -188,8 +195,19 @@ BackgroundJobsExecutor::BackgroundJobsExecutor(
     : IBackgroundJobExecutor(
         global_context_,
         global_context_->getBackgroundProcessingTaskSchedulingSettings(),
-        {PoolConfig{PoolType::MERGE_MUTATE, global_context_->getSettingsRef().background_pool_size, CurrentMetrics::BackgroundPoolTask},
-         PoolConfig{PoolType::FETCH, global_context_->getSettingsRef().background_fetches_pool_size, CurrentMetrics::BackgroundFetchesPoolTask}})
+        {PoolConfig
+            {
+                .pool_type = PoolType::MERGE_MUTATE,
+                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
+                .tasks_metric = CurrentMetrics::BackgroundPoolTask
+            },
+        PoolConfig
+            {
+                .pool_type = PoolType::FETCH,
+                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_fetches_pool_size; },
+                .tasks_metric = CurrentMetrics::BackgroundFetchesPoolTask
+            }
+        })
     , data(data_)
 {
 }
@@ -210,7 +228,13 @@ BackgroundMovesExecutor::BackgroundMovesExecutor(
     : IBackgroundJobExecutor(
         global_context_,
         global_context_->getBackgroundMoveTaskSchedulingSettings(),
-      {PoolConfig{PoolType::MOVE, global_context_->getSettingsRef().background_move_pool_size, CurrentMetrics::BackgroundMovePoolTask}})
+        {PoolConfig
+            {
+                .pool_type = PoolType::MOVE,
+                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_move_pool_size; },
+                .tasks_metric = CurrentMetrics::BackgroundMovePoolTask
+            }
+        })
     , data(data_)
 {
 }
