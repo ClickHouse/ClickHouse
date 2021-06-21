@@ -1,5 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 #include <optional>
 #include <unordered_set>
 
@@ -234,7 +234,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
         if (given_select.prewhere())
             select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.prewhere()->clone());
-        // TODO will row policy filter work?
 
         // After overriding the group by clause, we finish the possible aggregations directly
         if (processed_stage >= QueryProcessingStage::Enum::WithMergeableState && given_select.groupBy())

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
@@ -26,6 +26,7 @@
 #include <Interpreters/PartLog.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/Throttler.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Processors/Pipe.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
@@ -34,7 +35,7 @@
 namespace DB
 {
 
-/** The engine that uses the merge tree (see MergeTreeData) and replicated through ZooKeeper.
+/** The engine that uses the merge tree (see MergeTreeData) and is replicated through ZooKeeper.
   *
   * ZooKeeper is used for the following things:
   * - the structure of the table (/metadata, /columns)
@@ -56,6 +57,7 @@ namespace DB
   * Log - a sequence of entries (LogEntry) about what to do.
   * Each entry is one of:
   * - normal data insertion (GET),
+  * - data insertion with a possible attach from local data (ATTACH),
   * - merge (MERGE),
   * - delete the partition (DROP).
   *
@@ -64,10 +66,8 @@ namespace DB
   * Despite the name of the "queue", execution can be reordered, if necessary (shouldExecuteLogEntry, executeLogEntry).
   * In addition, the records in the queue can be generated independently (not from the log), in the following cases:
   * - when creating a new replica, actions are put on GET from other replicas (createReplica);
-  * - if the part is corrupt (removePartAndEnqueueFetch) or absent during the check (at start - checkParts, while running - searchForMissingPart),
-  *   actions are put on GET from other replicas;
-  *
-  * TODO Update the GET part after rewriting the code (search locally).
+  * - if the part is corrupt (removePartAndEnqueueFetch) or absent during the check
+  *   (at start - checkParts, while running - searchForMissingPart), actions are put on GET from other replicas;
   *
   * The replica to which INSERT was made in the queue will also have an entry of the GET of this data.
   * Such an entry is considered to be executed as soon as the queue handler sees it.
@@ -79,9 +79,9 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
-class StorageReplicatedMergeTree final : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
+class StorageReplicatedMergeTree final : public shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
 {
-    friend struct ext::shared_ptr_helper<StorageReplicatedMergeTree>;
+    friend struct shared_ptr_helper<StorageReplicatedMergeTree>;
 public:
     void startup() override;
     void shutdown() override;
@@ -239,7 +239,28 @@ public:
     /// Get best replica having this partition on S3
     String getSharedDataReplica(const IMergeTreeDataPart & part) const;
 
+    inline String getReplicaName() const { return replica_name; }
+
+    /// Restores table metadata if ZooKeeper lost it.
+    /// Used only on restarted readonly replicas (not checked). All active (Committed) parts are moved to detached/
+    /// folder and attached. Parts in all other states are just moved to detached/ folder.
+    void restoreMetadataInZooKeeper();
+
+    /// Get throttler for replicated fetches
+    ThrottlerPtr getFetchesThrottler() const
+    {
+        return replicated_fetches_throttler;
+    }
+
+    /// Get throttler for replicated sends
+    ThrottlerPtr getSendsThrottler() const
+    {
+        return replicated_sends_throttler;
+    }
+
 private:
+    std::atomic_bool are_restoring_replica {false};
+
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
@@ -319,7 +340,7 @@ private:
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
     /// Limiting parallel fetches per node
-    static std::atomic_uint total_fetches;
+    static inline std::atomic_uint total_fetches {0};
 
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
@@ -363,6 +384,11 @@ private:
 
     const size_t replicated_fetches_pool_size;
 
+    /// Throttlers used in DataPartsExchange to lower maximum fetch/sends
+    /// speed.
+    ThrottlerPtr replicated_fetches_throttler;
+    ThrottlerPtr replicated_sends_throttler;
+
     template <class Func>
     void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
 
@@ -371,8 +397,9 @@ private:
       */
     bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);
 
-    /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
-      */
+    /**
+     * Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
+     */
     void createReplica(const StorageMetadataPtr & metadata_snapshot);
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
@@ -420,8 +447,6 @@ private:
 
     /// Just removes part from ZooKeeper using previous method
     void removePartFromZooKeeper(const String & part_name);
-
-    void removePartsFromFilesystem(const DataPartsVector & parts);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
