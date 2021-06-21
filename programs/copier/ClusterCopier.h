@@ -18,11 +18,13 @@ public:
     ClusterCopier(const String & task_path_,
                   const String & host_id_,
                   const String & proxy_database_name_,
-                  ContextPtr context_)
+                  ContextPtr context_,
+                  Poco::Logger * log_)
             : WithContext(context_),
             task_zookeeper_path(task_path_),
             host_id(host_id_),
-            working_database_name(proxy_database_name_) {}
+            working_database_name(proxy_database_name_),
+            log(log_) {}
 
     void init();
 
