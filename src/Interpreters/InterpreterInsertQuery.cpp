@@ -189,12 +189,11 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & union_modes = select_query.list_of_modes;
 
                 /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
-                is_trivial_insert_select
-                    = std::all_of(
-                          union_modes.begin(),
-                          union_modes.end(),
-                          [](const ASTSelectWithUnionQuery::Mode & mode) { return mode == ASTSelectWithUnionQuery::Mode::ALL; })
-                    && std::all_of(selects.begin(), selects.end(), [](const ASTPtr & select) { return isTrivialSelect(select); });
+                const auto mode_is_all = [](const auto & mode) { return mode == ASTSelectWithUnionQuery::Mode::ALL; };
+
+                is_trivial_insert_select =
+                    std::all_of(union_modes.begin(), union_modes.end(), std::move(mode_is_all))
+                    && std::all_of(selects.begin(), selects.end(), isTrivialSelect);
             }
 
             if (is_trivial_insert_select)

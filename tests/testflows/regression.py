@@ -23,14 +23,14 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     with Pool(8) as pool:
         try:
             run_scenario(pool, tasks, Feature(test=load("example.regression", "regression")), args)
-            #run_scenario(pool, tasks, Feature(test=load("ldap.regression", "regression")), args)
-            #run_scenario(pool, tasks, Feature(test=load("rbac.regression", "regression")), args)
+            run_scenario(pool, tasks, Feature(test=load("ldap.regression", "regression")), args)
+            run_scenario(pool, tasks, Feature(test=load("rbac.regression", "regression")), args)
             run_scenario(pool, tasks, Feature(test=load("aes_encryption.regression", "regression")), args)
             run_scenario(pool, tasks, Feature(test=load("map_type.regression", "regression")), args)
             run_scenario(pool, tasks, Feature(test=load("window_functions.regression", "regression")), args)
             run_scenario(pool, tasks, Feature(test=load("datetime64_extended_range.regression", "regression")), args)
             #run_scenario(pool, tasks, Feature(test=load("kerberos.regression", "regression")), args)
-            #run_scenario(pool, tasks, Feature(test=load("extended_precision_data_types.regression", "regression")), args)
+            run_scenario(pool, tasks, Feature(test=load("extended_precision_data_types.regression", "regression")), args)
         finally:
             join(tasks)
 
