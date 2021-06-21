@@ -21,7 +21,6 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 
 #include <Interpreters/TablesStatus.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <Compression/ICompressionCodec.h>
 
@@ -41,7 +40,6 @@ struct ExternalTableData
     /// Pipe of data form table;
     std::unique_ptr<Pipe> pipe;
     std::string table_name;
-    std::function<std::unique_ptr<Pipe>()> creating_pipe_callback;
     /// Flag if need to stop reading.
     std::atomic_bool is_cancelled = false;
 };
@@ -53,6 +51,8 @@ class Connection;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
+
+using Scalars = std::map<String, Block>;
 
 
 /// Packet that could be received from server.
@@ -88,9 +88,9 @@ public:
         const String & user_, const String & password_,
         const String & cluster_,
         const String & cluster_secret_,
-        const String & client_name_,
-        Protocol::Compression compression_,
-        Protocol::Secure secure_,
+        const String & client_name_ = "client",
+        Protocol::Compression compression_ = Protocol::Compression::Enable,
+        Protocol::Secure secure_ = Protocol::Secure::Disable,
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_), default_database(default_database_),
@@ -111,7 +111,7 @@ public:
         setDescription();
     }
 
-    virtual ~Connection() = default;
+    virtual ~Connection() {}
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_)
@@ -140,8 +140,6 @@ public:
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
 
-    Protocol::Compression getCompression() const { return compression; }
-
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
         const ConnectionTimeouts & timeouts,
@@ -161,8 +159,6 @@ public:
     void sendExternalTablesData(ExternalTablesData & data);
     /// Send parts' uuids to excluded them from query processing
     void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
-
-    void sendReadTaskResponse(const String &);
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
@@ -274,7 +270,7 @@ private:
     class LoggerWrapper
     {
     public:
-        explicit LoggerWrapper(Connection & parent_)
+        LoggerWrapper(Connection & parent_)
             : log(nullptr), parent(parent_)
         {
         }
@@ -309,10 +305,10 @@ private:
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);
 
-    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
-    std::unique_ptr<Exception> receiveException() const;
-    Progress receiveProgress() const;
-    BlockStreamProfileInfo receiveProfileInfo() const;
+    std::vector<String> receiveMultistringMessage(UInt64 msg_type);
+    std::unique_ptr<Exception> receiveException();
+    Progress receiveProgress();
+    BlockStreamProfileInfo receiveProfileInfo();
 
     void initInputBuffers();
     void initBlockInput();

@@ -16,60 +16,46 @@ The following assumptions are made:
 
 ## visitParamHas(params, name) {#visitparamhasparams-name}
 
-Checks whether there is a field with the `name` name.
-
-Alias: `simpleJSONHas`.
+Checks whether there is a field with the ‘name’ name.
 
 ## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
 
-Parses UInt64 from the value of the field named `name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field doesn’t exist, or it exists but doesn’t contain a number, it returns 0.
-
-Alias: `simpleJSONExtractUInt`.
+Parses UInt64 from the value of the field named ‘name’. If this is a string field, it tries to parse a number from the beginning of the string. If the field doesn’t exist, or it exists but doesn’t contain a number, it returns 0.
 
 ## visitParamExtractInt(params, name) {#visitparamextractintparams-name}
 
 The same as for Int64.
 
-Alias: `simpleJSONExtractInt`.
-
 ## visitParamExtractFloat(params, name) {#visitparamextractfloatparams-name}
 
 The same as for Float64.
-
-Alias: `simpleJSONExtractFloat`.
 
 ## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
 
 Parses a true/false value. The result is UInt8.
 
-Alias: `simpleJSONExtractBool`.
-
 ## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
 
 Returns the value of a field, including separators.
 
-Alias: `simpleJSONExtractRaw`.
-
 Examples:
 
 ``` sql
-visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"';
-visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
+visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
+visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
 
 ## visitParamExtractString(params, name) {#visitparamextractstringparams-name}
 
 Parses the string in double quotes. The value is unescaped. If unescaping failed, it returns an empty string.
 
-Alias: `simpleJSONExtractString`.
-
 Examples:
 
 ``` sql
-visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0';
-visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺';
-visitParamExtractString('{"abc":"\\u263"}', 'abc') = '';
-visitParamExtractString('{"abc":"hello}', 'abc') = '';
+visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
+visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
+visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
+visitParamExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
@@ -213,7 +199,7 @@ Parses key-value pairs from a JSON where the values are of the given ClickHouse 
 Example:
 
 ``` sql
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)]
 ```
 
 ## JSONExtractRaw(json\[, indices_or_keys\]…) {#jsonextractrawjson-indices-or-keys}
@@ -225,7 +211,7 @@ If the part does not exist or has a wrong type, an empty string will be returned
 Example:
 
 ``` sql
-SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]';
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
 ## JSONExtractArrayRaw(json\[, indices_or_keys…\]) {#jsonextractarrayrawjson-indices-or-keys}
@@ -237,7 +223,7 @@ If the part does not exist or isn’t array, an empty array will be returned.
 Example:
 
 ``` sql
-SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']';
+SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']'
 ```
 
 ## JSONExtractKeysAndValuesRaw {#json-extract-keys-and-values-raw}
@@ -267,7 +253,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-referen
 Query:
 
 ``` sql
-SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}');
+SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}')
 ```
 
 Result:
@@ -281,7 +267,7 @@ Result:
 Query:
 
 ``` sql
-SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', 'b');
+SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', 'b')
 ```
 
 Result:
@@ -295,7 +281,7 @@ Result:
 Query:
 
 ``` sql
-SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', -1, 'c');
+SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', -1, 'c')
 ```
 
 Result:
@@ -306,3 +292,4 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/json_functions/) <!--hide-->

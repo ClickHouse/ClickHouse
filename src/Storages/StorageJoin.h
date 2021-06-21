@@ -27,7 +27,7 @@ class StorageJoin final : public ext::shared_ptr_helper<StorageJoin>, public Sto
 public:
     String getName() const override { return "Join"; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
@@ -45,7 +45,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;

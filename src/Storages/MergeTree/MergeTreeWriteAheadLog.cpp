@@ -30,7 +30,7 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     , disk(disk_)
     , name(name_)
     , path(storage.getRelativeDataPath() + name_)
-    , pool(storage.getContext()->getSchedulePool())
+    , pool(storage.global_context.getSchedulePool())
 {
     init();
     sync_task = pool.createTask("MergeTreeWriteAheadLog::sync", [this]

@@ -17,7 +17,7 @@ public:
 
     String getName() const override { return "Cube"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
     const Aggregator::Params & getParams() const;
 private:

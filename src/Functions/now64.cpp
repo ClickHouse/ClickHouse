@@ -3,7 +3,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Common/assert_cast.h>
@@ -31,7 +30,7 @@ Field nowSubsecond(UInt32 scale)
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
 
-    DecimalUtils::DecimalComponents<DateTime64> components{spec.tv_sec, spec.tv_nsec};
+    DecimalUtils::DecimalComponents<DateTime64::NativeType> components{spec.tv_sec, spec.tv_nsec};
 
     // clock_gettime produces subsecond part in nanoseconds, but decimalFromComponents fractional is scale-dependent.
     // Andjust fractional to scale, e.g. for 123456789 nanoseconds:
@@ -107,18 +106,17 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverImplPtr create(ContextPtr) { return std::make_unique<Now64OverloadResolver>(); }
+    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<Now64OverloadResolver>(); }
 
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
     {
         UInt32 scale = DataTypeDateTime64::default_scale;
-        String timezone_name;
 
-        if (arguments.size() > 2)
+        if (arguments.size() > 1)
         {
-            throw Exception("Arguments size of function " + getName() + " should be 0, or 1, or 2", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception("Arguments size of function " + getName() + " should be 0 or 1", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
-        if (!arguments.empty())
+        if (arguments.size() == 1)
         {
             const auto & argument = arguments[0];
             if (!isInteger(argument.type) || !argument.column || !isColumnConst(*argument.column))
@@ -130,12 +128,8 @@ public:
 
             scale = argument.column->get64(0);
         }
-        if (arguments.size() == 2)
-        {
-            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
-        }
 
-        return std::make_shared<DataTypeDateTime64>(scale, timezone_name);
+        return std::make_shared<DataTypeDateTime64>(scale);
     }
 
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr & result_type) const override

@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
@@ -45,7 +46,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
     const String & table_data_path_relative,
-    ContextPtr context,
+    Context & context,
     bool has_force_restore_data_flag)
 {
     ast_create_query.attach = true;
@@ -62,21 +63,14 @@ std::pair<String, StoragePtr> createTableFromAST(
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.table, storage};
     }
+    /// We do not directly use `InterpreterCreateQuery::execute`, because
+    /// - the database has not been loaded yet;
+    /// - the code is simpler, since the query is already brought to a suitable form.
+    if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
+        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    ColumnsDescription columns;
-    ConstraintsDescription constraints;
-
-    if (!ast_create_query.is_dictionary)
-    {
-        /// We do not directly use `InterpreterCreateQuery::execute`, because
-        /// - the database has not been loaded yet;
-        /// - the code is simpler, since the query is already brought to a suitable form.
-        if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
-            throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-
-        columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
-        constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
-    }
+    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
+    ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
 
     return
     {
@@ -85,7 +79,7 @@ std::pair<String, StoragePtr> createTableFromAST(
             ast_create_query,
             table_data_path_relative,
             context,
-            context->getGlobalContext(),
+            context.getGlobalContext(),
             columns,
             constraints,
             has_force_restore_data_flag)
@@ -148,12 +142,10 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
     ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
-    ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
-    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
 
     if (metadata.select.select_query)
     {
@@ -196,23 +188,23 @@ DatabaseOnDisk::DatabaseOnDisk(
     const String & metadata_path_,
     const String & data_path_,
     const String & logger,
-    ContextPtr local_context)
-    : DatabaseWithOwnTablesBase(name, logger, local_context)
+    const Context & context)
+    : DatabaseWithOwnTablesBase(name, logger, context)
     , metadata_path(metadata_path_)
     , data_path(data_path_)
 {
-    Poco::File(local_context->getPath() + data_path).createDirectories();
+    Poco::File(context.getPath() + data_path).createDirectories();
     Poco::File(metadata_path).createDirectories();
 }
 
 
 void DatabaseOnDisk::createTable(
-    ContextPtr local_context,
+    const Context & context,
     const String & table_name,
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    const auto & settings = local_context->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
     assert(table_name == create.table);
 
@@ -228,17 +220,19 @@ void DatabaseOnDisk::createTable(
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
-    if (isTableExist(table_name, getContext()))
-        throw Exception(
-            ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
+    if (isDictionaryExist(table_name))
+        throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS, "Dictionary {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
+
+    if (isTableExist(table_name, global_context))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
     String table_metadata_path = getObjectMetadataPath(table_name);
 
     if (create.attach_short_syntax)
     {
         /// Metadata already exists, table was detached
-        removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
         attachTable(table_name, table, getTableDataPath(create));
+        removeDetachedPermanentlyFlag(table_name, table_metadata_path);
         return;
     }
 
@@ -247,7 +241,7 @@ void DatabaseOnDisk::createTable(
 
     if (create.attach && Poco::File(table_metadata_path).exists())
     {
-        ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, table_metadata_path);
+        ASTPtr ast_detached = parseQueryFromMetadata(log, context, table_metadata_path);
         auto & create_detached = ast_detached->as<ASTCreateQuery &>();
 
         // either both should be Nil, either values should be equal
@@ -274,14 +268,14 @@ void DatabaseOnDisk::createTable(
         out.close();
     }
 
-    commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
+    commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, context);
 
-    removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, false);
+    removeDetachedPermanentlyFlag(table_name, table_metadata_path);
 }
 
 /// If the table was detached permanently we will have a flag file with
 /// .sql.detached extension, is not needed anymore since we attached the table back
-void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & table_name, const String & table_metadata_path, bool) const
+void DatabaseOnDisk::removeDetachedPermanentlyFlag(const String & table_name, const String & table_metadata_path) const
 {
     try
     {
@@ -299,7 +293,7 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
 
 void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                       ContextPtr /*query_context*/)
+                                       const Context & /*query_context*/)
 {
     try
     {
@@ -317,7 +311,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
 }
 
-void DatabaseOnDisk::detachTablePermanently(ContextPtr, const String & table_name)
+void DatabaseOnDisk::detachTablePermanently(const Context &, const String & table_name)
 {
     auto table = detachTable(table_name);
 
@@ -333,7 +327,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr, const String & table_nam
     }
 }
 
-void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*no_delay*/)
+void DatabaseOnDisk::dropTable(const Context & context, const String & table_name, bool /*no_delay*/)
 {
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
@@ -355,7 +349,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         table->drop();
         table->is_dropped = true;
 
-        Poco::File table_data_dir{local_context->getPath() + table_data_path_relative};
+        Poco::File table_data_dir{context.getPath() + table_data_path_relative};
         if (table_data_dir.exists())
             table_data_dir.remove(true);
     }
@@ -393,7 +387,7 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
 }
 
 void DatabaseOnDisk::renameTable(
-        ContextPtr local_context,
+        const Context & context,
         const String & table_name,
         IDatabase & to_database,
         const String & to_table_name,
@@ -424,16 +418,15 @@ void DatabaseOnDisk::renameTable(
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
-    StoragePtr table = tryGetTable(table_name, getContext());
+    StoragePtr table = tryGetTable(table_name, global_context);
     detachTable(table_name);
     UUID prev_uuid = UUIDHelpers::Nil;
     try
     {
-        table_lock = table->lockExclusively(
-            local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+        table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
         table_metadata_path = getObjectMetadataPath(table_name);
-        attach_query = parseQueryFromMetadata(log, local_context, table_metadata_path);
+        attach_query = parseQueryFromMetadata(log, context, table_metadata_path);
         auto & create = attach_query->as<ASTCreateQuery &>();
         create.database = to_database.getDatabaseName();
         create.table = to_table_name;
@@ -461,7 +454,7 @@ void DatabaseOnDisk::renameTable(
     }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
-    to_database.createTable(local_context, to_table_name, table, attach_query);
+    to_database.createTable(context, to_table_name, table, attach_query);
 
     Poco::File(table_metadata_path).remove();
 
@@ -480,10 +473,10 @@ void DatabaseOnDisk::renameTable(
 
 
 /// It returns create table statement (even if table is detached)
-ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
+ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
 {
     ASTPtr ast;
-    bool has_table = tryGetTable(table_name, getContext()) != nullptr;
+    bool has_table = tryGetTable(table_name, global_context) != nullptr;
     auto table_metadata_path = getObjectMetadataPath(table_name);
     try
     {
@@ -504,11 +497,11 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
     ASTPtr ast;
 
-    auto settings = getContext()->getSettingsRef();
+    auto settings = global_context.getSettingsRef();
     {
         std::lock_guard lock(mutex);
-        auto database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
-        ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, true);
+        auto database_metadata_path = global_context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
+        ast = parseQueryFromMetadata(log, global_context, database_metadata_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
         ast_create_query.database = database_name;
@@ -525,10 +518,10 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     return ast;
 }
 
-void DatabaseOnDisk::drop(ContextPtr local_context)
+void DatabaseOnDisk::drop(const Context & context)
 {
     assert(tables.empty());
-    Poco::File(local_context->getPath() + getDataPath()).remove(false);
+    Poco::File(context.getPath() + getDataPath()).remove(false);
     Poco::File(getMetadataPath()).remove(false);
 }
 
@@ -548,14 +541,14 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
         return static_cast<time_t>(0);
 }
 
-void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const IteratingFunction & process_metadata_file) const
+void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const IteratingFunction & process_metadata_file) const
 {
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
         assert(getUUID() == UUIDHelpers::Nil);
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
-        if (Poco::File(local_context->getPath() + getDataPath() + '/' + object_name).exists())
+        if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
         {
             Poco::File(getMetadataPath() + file_name).renameTo(getMetadataPath() + object_name + ".sql");
             LOG_WARNING(log, "Object {} was not dropped previously and will be restored", backQuote(object_name));
@@ -622,12 +615,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     pool.wait();
 }
 
-ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
-    Poco::Logger * logger,
-    ContextPtr local_context,
-    const String & metadata_file_path,
-    bool throw_on_error /*= true*/,
-    bool remove_empty /*= false*/)
+ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * logger, const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/)
 {
     String query;
 
@@ -655,7 +643,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         return nullptr;
     }
 
-    auto settings = local_context->getSettingsRef();
+    auto settings = context.getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
@@ -674,12 +662,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         table_name = unescapeForFileName(table_name);
 
         if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
-            LOG_WARNING(
-                logger,
-                "File {} contains both UUID and table name. Will use name `{}` instead of `{}`",
-                metadata_file_path,
-                table_name,
-                create.table);
+            LOG_WARNING(logger, "File {} contains both UUID and table name. Will use name `{}` instead of `{}`", metadata_file_path, table_name, create.table);
         create.table = table_name;
     }
 
@@ -688,7 +671,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
 
 ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metadata_path, bool throw_on_error) const
 {
-    ASTPtr ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, throw_on_error);
+    ASTPtr ast = parseQueryFromMetadata(log, global_context, database_metadata_path, throw_on_error);
 
     if (ast)
     {

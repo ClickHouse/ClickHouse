@@ -1,5 +1,6 @@
 ---
-title: "What does “не тормозит” mean?"
+title: "What does \u201C\u043D\u0435 \u0442\u043E\u0440\u043C\u043E\u0437\u0438\u0442\
+  \u201D mean?"
 toc_hidden: true
 toc_priority: 11
 ---

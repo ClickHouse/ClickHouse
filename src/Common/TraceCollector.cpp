@@ -24,10 +24,7 @@ namespace
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
     ///
     /// And it cannot be large, since otherwise it will not fit into PIPE_BUF.
-    /// The performance test query ids can be surprisingly long like
-    /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
-    /// so make some allowance for them as well.
-    constexpr size_t QUERY_ID_MAX_LEN = 128;
+    constexpr size_t QUERY_ID_MAX_LEN = sizeof("00000000-0000-0000-0000-000000000000") - 1; // 36
 }
 
 LazyPipeFDs pipe;

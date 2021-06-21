@@ -1,15 +1,18 @@
 #pragma once
+#include <Processors/IProcessor.h>
+#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Pipe.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/IProcessor.h>
-#include <Processors/Pipe.h>
+
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 
 namespace DB
 {
+
+class Context;
 
 class IOutputFormat;
 
@@ -24,11 +27,6 @@ struct SubqueryForSet;
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 struct SizeLimits;
-
-struct ExpressionActionsSettings;
-
-class IJoin;
-using JoinPtr = std::shared_ptr<IJoin>;
 
 class QueryPipeline
 {
@@ -55,7 +53,6 @@ public:
     void addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter);
     /// Add transform with getNumStreams() input ports.
     void addTransform(ProcessorPtr transform);
-    void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
     /// Transform pipeline in general way.
@@ -91,24 +88,15 @@ public:
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static QueryPipeline unitePipelines(
             std::vector<std::unique_ptr<QueryPipeline>> pipelines,
+            const Block & common_header,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
-    /// Join two pipelines together using JoinPtr.
-    /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
-    static std::unique_ptr<QueryPipeline> joinPipelines(
-        std::unique_ptr<QueryPipeline> left,
-        std::unique_ptr<QueryPipeline> right,
-        JoinPtr join,
-        size_t max_block_size,
-        Processors * collected_processors = nullptr);
-
     /// Add other pipeline and execute it before current one.
-    /// Pipeline must have empty header, it should not generate any chunk.
-    /// This is used for CreatingSets.
+    /// Pipeline must have same header.
     void addPipelineBefore(QueryPipeline pipeline);
 
-    void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context);
+    void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context);
 
     PipelineExecutorPtr execute();
 
@@ -135,7 +123,7 @@ public:
     {
         auto num_threads = pipe.maxParallelStreams();
 
-        if (max_threads) //-V1051
+        if (max_threads)
             num_threads = std::min(num_threads, max_threads);
 
         return std::max<size_t>(1, num_threads);

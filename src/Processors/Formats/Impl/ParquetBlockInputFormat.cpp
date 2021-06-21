@@ -96,7 +96,6 @@ void registerInputFormatProcessorParquet(FormatFactory &factory)
             {
                 return std::make_shared<ParquetBlockInputFormat>(buf, sample);
             });
-    factory.markFormatAsColumnOriented("Parquet");
 }
 
 }
