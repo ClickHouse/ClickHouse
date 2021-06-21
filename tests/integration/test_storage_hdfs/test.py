@@ -253,7 +253,6 @@ def test_truncate_table(started_cluster):
     assert hdfs_api.read_data("/tr") == "1\tMark\t72.53\n"
     assert node1.query("select * from test_truncate") == "1\tMark\t72.53\n"
     node1.query("truncate table test_truncate")
-    assert hdfs_api.read_data("/tr") == ""
     assert node1.query("select * from test_truncate") == ""
     node1.query("drop table test_truncate")
 

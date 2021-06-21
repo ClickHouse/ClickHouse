@@ -332,8 +332,7 @@ void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr 
     HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", context_->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
-    int wait;
-    int ret = hdfsTruncate(fs.get(), path.data(), 0, &wait);
+    int ret = hdfsDelete(fs.get(), path.data(), 0);
     if (ret)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to truncate hdfs table: {}", std::string(hdfsGetLastError()));
 }
