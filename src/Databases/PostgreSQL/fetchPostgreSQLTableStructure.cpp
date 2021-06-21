@@ -157,7 +157,7 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
             tx.commit();
         }
 
-        for (auto & i : recheck_arrays_indexes)
+        for (const auto & i : recheck_arrays_indexes)
         {
             const auto & name_and_type = columns[i];
 
