@@ -151,6 +151,7 @@ private:
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 
+    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
 };
 

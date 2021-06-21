@@ -424,7 +424,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(storage, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
-    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
     /// First, break a sequence of commands into stages.
