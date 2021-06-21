@@ -11,7 +11,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 
 namespace DB
