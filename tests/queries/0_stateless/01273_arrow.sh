@@ -109,4 +109,3 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE arrow_decimal VALUES (0.123, 0.1
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_decimal FORMAT Arrow" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_decimal FORMAT Arrow"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_decimal"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE arrow_decimal"
-
