@@ -173,9 +173,7 @@ void IBackgroundJobExecutor::triggerTask()
 
 void IBackgroundJobExecutor::backgroundTaskFunction()
 {
-    if (scheduleJob())
-        scheduleTask(/* with_backoff = */ false);
-    else
+    if (!scheduleJob())
         scheduleTask(/* with_backoff = */ true);
 }
 
