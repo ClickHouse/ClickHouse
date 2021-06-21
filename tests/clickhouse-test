@@ -489,7 +489,7 @@ def run_tests_array(all_tests_with_params):
                             if MAX_RETRIES < counter:
                                 if args.replicated_database:
                                     if DISTRIBUTED_DDL_TIMEOUT_MSG in stderr:
-                                        SERVER_DIED = True
+                                        server_died.set()
                                 break
 
                         if proc.returncode != 0:
