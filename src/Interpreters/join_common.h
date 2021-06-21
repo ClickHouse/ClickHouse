@@ -36,6 +36,13 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const TableJ
 
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
+<<<<<<< HEAD
+bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
+
+void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
+
+=======
+>>>>>>> upstream/backport/21.3/24061
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
