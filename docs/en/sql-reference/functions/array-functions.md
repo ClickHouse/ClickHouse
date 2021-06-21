@@ -59,7 +59,7 @@ range([start, ] end [, step])
 
 -   Array of `UInt` numbers from `start` to `end - 1` by `step`.
 
-**Peculiar properties**
+**Implementation details**
 
 -   All arguments must be positive values: `start`, `end`, `step` are `UInt` data types, as well as the returned array.
 -   An exception is thrown if query results in arrays with a total length of more than 100,000,000 elements.
