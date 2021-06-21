@@ -308,6 +308,22 @@ def test_postgres_distributed(started_cluster):
     assert(result == 'host2\nhost4\n' or result == 'host3\nhost4\n')
 
 
+def test_postgres_ndim(started_cluster):
+    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
+    cursor = conn.cursor()
+    cursor.execute('CREATE TABLE arr1 (a Integer[])')
+    cursor.execute("INSERT INTO arr1 SELECT '{{1}, {2}}'")
+
+    # The point is in creating a table via 'as select *', in postgres att_ndim will not be correct in this case.
+    cursor.execute('CREATE TABLE arr2 AS SELECT * FROM arr1')
+    cursor.execute("SELECT attndims AS dims FROM pg_attribute WHERE attrelid = 'arr2'::regclass; ")
+    result = cursor.fetchall()[0]
+    assert(int(result[0]) == 0)
+
+    result = node1.query('''SELECT toTypeName(a) FROM postgresql('postgres1:5432', 'clickhouse', 'arr2', 'postgres', 'mysecretpassword')''')
+    assert(result.strip() == "Array(Array(Nullable(Int32)))")
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")
