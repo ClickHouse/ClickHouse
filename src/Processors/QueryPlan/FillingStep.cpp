@@ -38,8 +38,11 @@ FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_
 
 void FillingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
+        if (stream_type == QueryPipeline::StreamType::Totals)
+            return nullptr;
+
         return std::make_shared<FillingTransform>(header, sort_description);
     });
 }
