@@ -116,6 +116,54 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
     return res;
 }
 
+static void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, bool legacy = false)
+{
+    switch (node.type)
+    {
+        case (ActionsDAG::ActionType::INPUT):
+            writeString(node.result_name, out);
+            break;
+        case (ActionsDAG::ActionType::COLUMN):
+            writeString(node.result_name, out);
+            break;
+        case (ActionsDAG::ActionType::ALIAS):
+            appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
+            break;
+        case (ActionsDAG::ActionType::ARRAY_JOIN):
+            writeCString("arrayJoin(", out);
+            appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
+            writeChar(')', out);
+            break;
+        case (ActionsDAG::ActionType::FUNCTION):
+        {
+            auto name = node.function_base->getName();
+            if (legacy && name == "modulo")
+                writeCString("moduleLegacy", out);
+            else
+                writeString(name, out);
+
+            writeChar('(', out);
+            bool first = true;
+            for (const auto * arg : node.children)
+            {
+                if (!first)
+                    writeCString(", ", out);
+                first = false;
+
+                appendColumnNameWithoutAlias(*arg, out, legacy);
+            }
+            writeChar(')', out);
+        }
+    }
+}
+
+static std::string getColumnNameWithoutAlias(const ActionsDAG::Node & node, bool legacy = false)
+{
+    WriteBufferFromOwnString out;
+    appendColumnNameWithoutAlias(node, out, legacy);
+    return std::move(out.str());
+}
+
 class KeyCondition::Tree
 {
 public:
@@ -127,24 +175,20 @@ public:
         if (ast)
             return ast->getColumnNameWithoutAlias();
         else
-            getColumnNameWithoutAlias(dag);
+            return getColumnNameWithoutAlias(*dag);
     }
 
-    // size_t numChildren() const
-    // {
-    //     if (ast)
-    //         return ast->children.size();
-    //     else
-    //         return dag->children.size();
-    // }
-
-    // Tree getChildrenAt(size_t idx) const
-    // {
-    //     if (ast)
-    //         return Tree(ast->children[idx].get());
-    //     else
-    //         return Tree(dag->children[idx]);
-    // }
+    std::string getColumnNameLegacy() const
+    {
+        if (ast)
+        {
+            auto adjusted_ast = ast->clone();
+            KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
+            return adjusted_ast->getColumnNameWithoutAlias();
+        }
+        else
+            return getColumnNameWithoutAlias(*dag, true);
+    }
 
     bool isFunction() const
     {
@@ -185,7 +229,7 @@ public:
         return res;
     }
 
-    bool getConstant(Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
+    bool getConstant(const Block & block_with_constants, Field & out_value, DataTypePtr & out_type) const
     {
         if (ast)
         {
@@ -584,6 +628,123 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
     return need_inversion ? makeASTFunction("not", cloned_node) : cloned_node;
 }
 
+static const ActionsDAG::Node & cloneASTWithInversionPushDown(
+    const ActionsDAG::Node & node,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted,
+    const ContextPtr & context,
+    const bool need_inversion)
+{
+    {
+        auto it = to_inverted.find(&node);
+        if (it != to_inverted.end())
+            return *it->second;
+    }
+
+    const ActionsDAG::Node * res = nullptr;
+
+    switch (node.type)
+    {
+        case (ActionsDAG::ActionType::INPUT):
+            /// Should be already added
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone input in cloneASTWithInversionPushDown");
+        case (ActionsDAG::ActionType::COLUMN):
+        {
+            res = &inverted_dag.addInput({node.column, node.result_type, node.result_name});
+            break;
+        }
+        case (ActionsDAG::ActionType::ALIAS):
+        {
+            /// Ignore aliases
+            const auto & alias = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
+            to_inverted[&node] = &alias;
+            return alias;
+        }
+        case (ActionsDAG::ActionType::ARRAY_JOIN):
+        {
+            const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, false);
+            res = &inverted_dag.addArrayJoin(arg, node.result_name);
+            break;
+        }
+        case (ActionsDAG::ActionType::FUNCTION):
+        {
+            auto name = node.function_base->getName();
+            if (name == "not")
+            {
+                const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
+                to_inverted[&node] = &arg;
+                return arg;
+            }
+
+            if (isLogicalOperator(name))
+            {
+                ActionsDAG::NodeRawConstPtrs children(node.children);
+
+                for (auto & arg : children)
+                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
+
+                FunctionOverloadResolverPtr function_builder;
+                if (name == "indexHint")
+                    function_builder = node.function_builder;
+                else if (name == "and")
+                    function_builder = FunctionFactory::instance().get("or", context);
+                else if (name == "or")
+                    function_builder = FunctionFactory::instance().get("and", context);
+
+                assert(function_builder);
+
+                const auto & func = inverted_dag.addFunction(function_builder, children, "");
+                to_inverted[&node] = &func;
+                return func;
+            }
+
+            ActionsDAG::NodeRawConstPtrs children(node.children);
+
+            for (auto & arg : children)
+                arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, false);
+
+            auto it = inverse_relations.find(name);
+            if (it != inverse_relations.end())
+            {
+                const auto & func_name = need_inversion ? it->second : it->first;
+                auto function_builder = FunctionFactory::instance().get(func_name, context);
+                const auto & func = inverted_dag.addFunction(function_builder, children, "");
+                to_inverted[&node] = &func;
+                return func;
+            }
+
+            res = &inverted_dag.addFunction(node.function_builder, children, "");
+        }
+    }
+
+    if (need_inversion)
+        res = &inverted_dag.addFunction(FunctionFactory::instance().get("not", context), {res}, "");
+
+    to_inverted[&node] = res;
+    return *res;
+}
+
+static ActionsDAGPtr cloneASTWithInversionPushDown(const ActionsDAG & dag, const ContextPtr & context)
+{
+    auto res = std::make_shared<ActionsDAG>(dag.getRequiredColumns());
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
+    const auto & res_inputs = res->getInputs();
+    auto it = res_inputs.begin();
+    for (const auto * input : dag.getInputs())
+    {
+        to_inverted[input] = *it;
+        ++it;
+    }
+
+    ActionsDAG::NodeRawConstPtrs index;
+    index.reserve(dag.getIndex().size());
+    for (const auto * node : dag.getIndex())
+        index.push_back(&cloneASTWithInversionPushDown(*node, *res, to_inverted, context, false));
+
+    return res;
+}
+
 
 inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
 inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
@@ -617,7 +778,9 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
 }
 
 KeyCondition::KeyCondition(
-    const SelectQueryInfo & query_info,
+    const ASTPtr & query,
+    TreeRewriterResultPtr syntax_analyzer_result,
+    PreparedSets prepared_sets_,
     ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
@@ -625,7 +788,7 @@ KeyCondition::KeyCondition(
     bool strict_)
     : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
-    , prepared_sets(query_info.sets)
+    , prepared_sets(std::move(prepared_sets_))
     , single_point(single_point_)
     , strict(strict_)
 {
@@ -639,9 +802,9 @@ KeyCondition::KeyCondition(
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
-    Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
+    Block block_with_constants = getBlockWithConstants(query, syntax_analyzer_result, context);
 
-    const ASTSelectQuery & select = query_info.query->as<ASTSelectQuery &>();
+    const ASTSelectQuery & select = query->as<ASTSelectQuery &>();
     if (select.where() || select.prewhere())
     {
         ASTPtr filter_query;
@@ -657,7 +820,43 @@ KeyCondition::KeyCondition(
           * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
           * are pushed down and applied (when possible) to leaf nodes.
           */
-        traverseAST(cloneASTWithInversionPushDown(filter_query), context, block_with_constants);
+        auto ast = cloneASTWithInversionPushDown(filter_query);
+        traverseAST(Tree(ast.get()), context, block_with_constants);
+    }
+    else
+    {
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+    }
+}
+
+KeyCondition::KeyCondition(
+    const ActionsDAG & dag,
+    PreparedSets prepared_sets_,
+    ContextPtr context,
+    const Names & key_column_names,
+    const ExpressionActionsPtr & key_expr_,
+    bool single_point_,
+    bool strict_)
+    : key_expr(key_expr_)
+    , key_subexpr_names(getAllSubexpressionNames(*key_expr))
+    , prepared_sets(std::move(prepared_sets_))
+    , single_point(single_point_)
+    , strict(strict_)
+{
+    for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
+    {
+        std::string name = key_column_names[i];
+        if (!key_columns.count(name))
+            key_columns[name] = i;
+    }
+
+    auto inverted_dag = cloneASTWithInversionPushDown(dag, context);
+
+    if (!inverted_dag->getIndex().empty())
+    {
+        Block empty;
+        for (const auto * node : inverted_dag->getIndex())
+            traverseAST(Tree(node), context, empty);
     }
     else
     {
@@ -797,13 +996,13 @@ void KeyCondition::traverseAST(const Tree & node, ContextPtr context, Block & bl
 }
 
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
-    const ASTPtr & node,
+    const Tree & node,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type)
 {
-    String expr_name = node->getColumnNameWithoutAlias();
+    String expr_name = node.getColumnName();
     if (key_subexpr_names.count(expr_name) == 0)
         return false;
 
@@ -904,9 +1103,9 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 
 /// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
 bool KeyCondition::canConstantBeWrappedByFunctions(
-    const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
+    const Tree & node, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
-    String expr_name = ast->getColumnNameWithoutAlias();
+    String expr_name = node.getColumnName();
 
     if (key_subexpr_names.count(expr_name) == 0)
     {
@@ -919,9 +1118,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         /// The case `f(modulo(...))` for totally monotonic `f ` is consedered to be rare.
         ///
         /// Note: for negative values, we can filter more partitions then needed.
-        auto adjusted_ast = ast->clone();
-        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
-        expr_name = adjusted_ast->getColumnName();
+        expr_name = node.getColumnNameLegacy();
 
         if (key_subexpr_names.count(expr_name) == 0)
             return false;
@@ -933,14 +1130,14 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (out_value.isNull())
         return false;
 
-    for (const auto & node : key_expr->getNodes())
+    for (const auto & dag_node : key_expr->getNodes())
     {
-        auto it = key_columns.find(node.result_name);
+        auto it = key_columns.find(dag_node.result_name);
         if (it != key_columns.end())
         {
             std::stack<const ActionsDAG::Node *> chain;
 
-            const auto * cur_node = &node;
+            const auto * cur_node = &dag_node;
             bool is_valid_chain = true;
 
             while (is_valid_chain)
@@ -1280,7 +1477,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 }
 
 
-static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const ASTPtr & node)
+static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const KeyCondition::Tree & node)
 {
     try
     {
@@ -1290,7 +1487,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
     {
         throw Exception("Key expression contains comparison between inconvertible types: " +
             desired_type->getName() + " and " + src_type->getName() +
-            " inside " + queryToString(node),
+            " inside " + node.getColumnName(),
             ErrorCodes::BAD_TYPE_OF_FIELD);
     }
 }
@@ -1381,22 +1578,22 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
                 else
                     return false;
             }
-            else if (getConstant(args[0], block_with_constants, const_value, const_type))
+            else if (func.getArgumentAt(0).getConstant(block_with_constants, const_value, const_type))
             {
-                if (isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
+                if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(1), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 1;
                 }
                 else if (
                     !strict_condition
-                    && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                    && canConstantBeWrappedByMonotonicFunctions(func.getArgumentAt(1), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 1;
                     is_constant_transformed = true;
                 }
                 else if (
                     single_point && func_name == "equals" && !strict_condition
-                    && canConstantBeWrappedByFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                    && canConstantBeWrappedByFunctions(func.getArgumentAt(1), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
@@ -1490,7 +1687,7 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
 
         return atom_it->second(out, const_value);
     }
-    else if (getConstant(node, block_with_constants, const_value, const_type))
+    else if (node.getConstant(block_with_constants, const_value, const_type))
     {
         /// For cases where it says, for example, `WHERE 0 AND something`
 

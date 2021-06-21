@@ -677,7 +677,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
         minmax_idx_condition.emplace(
-            query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
+            query_info.query, query_info.syntax_analyzer_result, query_info.sets, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
         partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
@@ -1116,7 +1116,7 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
-    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
+    KeyCondition key_condition(query_info.query, query_info.syntax_analyzer_result, query_info.sets, context, primary_key_columns, primary_key.expression);
 
     if (key_condition.alwaysUnknownOrTrue())
     {
