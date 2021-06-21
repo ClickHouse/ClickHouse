@@ -183,6 +183,9 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 
     size_t bytesSize() const override { return CreateRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
+
+    /// During recovery from log we don't rehash ACLs
+    bool need_to_hash_acls = true;
 };
 
 struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
