@@ -15,6 +15,7 @@ alter table rmt update s = 's'||toString(n) where 1;
 
 select * from rmt;
 alter table rmt replace partition '0' from mt;
+
 system sync replica rmt;
 
 select table, partition_id, name, rows from system.parts where database=currentDatabase() and table in ('mt', 'rmt') and active=1 order by table, name;
