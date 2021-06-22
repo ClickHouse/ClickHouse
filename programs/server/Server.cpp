@@ -390,7 +390,7 @@ void Server::initialize(Poco::Util::Application & self)
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
-    LOG_INFO(&logger(), "OS Name = {}, OS Version = {}, OS Architecture = {}",
+    LOG_INFO(&logger(), "OS name: {}, version: {}, architecture: {}",
         Poco::Environment::osName(),
         Poco::Environment::osVersion(),
         Poco::Environment::osArchitecture());
