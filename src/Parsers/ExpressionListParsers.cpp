@@ -22,9 +22,10 @@ const char * ParserMultiplicativeExpression::operators[] =
     nullptr
 };
 
-const char * ParserUnaryMinusExpression::operators[] =
+const char * ParserUnaryExpression::operators[] =
 {
     "-",     "negate",
+    "NOT",   "not",
     nullptr
 };
 
@@ -539,7 +540,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
 }
 
 
-bool ParserUnaryMinusExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserUnaryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// As an exception, negative numbers should be parsed as literals, and not as an application of the operator.
 

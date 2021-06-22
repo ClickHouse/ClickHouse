@@ -423,6 +423,9 @@ KeyCondition::KeyCondition(
       */
     Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
+    for (const auto & [name, _] : query_info.syntax_analyzer_result->array_join_result_to_source)
+        array_joined_columns.insert(name);
+
     const ASTSelectQuery & select = query_info.query->as<ASTSelectQuery &>();
     if (select.where() || select.prewhere())
     {
@@ -610,6 +613,10 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     DataTypePtr & out_type)
 {
     String expr_name = node->getColumnNameWithoutAlias();
+
+    if (array_joined_columns.count(expr_name))
+        return false;
+
     if (key_subexpr_names.count(expr_name) == 0)
         return false;
 
@@ -713,6 +720,9 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
     String expr_name = ast->getColumnNameWithoutAlias();
+
+    if (array_joined_columns.count(expr_name))
+        return false;
 
     if (key_subexpr_names.count(expr_name) == 0)
     {
@@ -1074,6 +1084,9 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
     // Key columns should use canonical names for index analysis
     String name = node->getColumnNameWithoutAlias();
+
+    if (array_joined_columns.count(name))
+        return false;
 
     auto it = key_columns.find(name);
     if (key_columns.end() != it)
