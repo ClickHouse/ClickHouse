@@ -22,6 +22,7 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -323,7 +324,7 @@ void StorageMergeTree::alter(
 
 
 /// While exists, marks parts as 'currently_merging_mutating_parts' and reserves free space on filesystem.
-StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
+CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     FutureMergedMutatedPartPtr future_part_,
     size_t total_size,
     StorageMergeTree & storage_,
@@ -379,7 +380,7 @@ StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
 }
 
-StorageMergeTree::CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
+CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
 {
     std::lock_guard lock(storage.currently_processing_in_background_mutex);
 
@@ -831,61 +832,14 @@ bool StorageMergeTree::merge(
     if (!merge_mutate_entry)
         return false;
 
-    return mergeSelectedParts(metadata_snapshot, deduplicate, deduplicate_by_columns, *merge_mutate_entry, table_lock_holder);
-}
+    auto task = std::make_shared<MergePlainMergeTreeTask>(
+        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder);
 
-bool StorageMergeTree::mergeSelectedParts(
-    const StorageMetadataPtr & metadata_snapshot,
-    bool deduplicate,
-    const Names & deduplicate_by_columns,
-    MergeMutateSelectedEntry & merge_mutate_entry,
-    TableLockHolder & table_lock_holder)
-{
-    auto & future_part = merge_mutate_entry.future_part;
-    Stopwatch stopwatch;
-    MutableDataPartPtr new_part;
-
-    auto merge_list_entry = getContext()->getMergeList().insert(getStorageID(), future_part);
-
-    auto write_part_log = [&] (const ExecutionStatus & execution_status)
-    {
-        writePartLog(
-            PartLogElement::MERGE_PARTS,
-            execution_status,
-            stopwatch.elapsed(),
-            future_part->name,
-            new_part,
-            future_part->parts,
-            merge_list_entry.get());
-    };
-
-    try
-    {
-
-        auto new_part_task = merger_mutator.mergePartsToTemporaryPart(
-            future_part,
-            metadata_snapshot,
-            *(merge_list_entry),
-            table_lock_holder,
-            time(nullptr),
-            getContext(),
-            merge_mutate_entry.tagger->reserved_space,
-            deduplicate,
-            deduplicate_by_columns,
-            merging_params);
-
-        new_part = executeInPlace(new_part_task);
-        merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, nullptr);
-        write_part_log({});
-    }
-    catch (...)
-    {
-        write_part_log(ExecutionStatus::fromCurrentException());
-        throw;
-    }
+    executeHere(task);
 
     return true;
 }
+
 
 bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
 {
@@ -893,7 +847,7 @@ bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & p
     return currently_merging_mutating_parts.count(part);
 }
 
-std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
+std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
     const StorageMetadataPtr & metadata_snapshot, String * /* disable_reason */, TableLockHolder & /* table_lock_holder */)
 {
     size_t max_ast_elements = getContext()->getSettingsRef().max_expanded_ast_elements;
@@ -1051,10 +1005,9 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
 
     if (merge_entry)
     {
-        executor.execute({[this, metadata_snapshot, merge_entry, share_lock] () mutable
-        {
-            return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
-        }, PoolType::MUTATE});
+        Names empty;
+        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, empty, merge_entry, share_lock);
+        executor.execute(task);
         return true;
     }
     if (mutate_entry)

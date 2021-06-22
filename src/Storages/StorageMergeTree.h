@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
@@ -157,38 +158,8 @@ private:
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, const String & file_name);
 
-    struct CurrentlyMergingPartsTagger
-    {
-        FutureMergedMutatedPartPtr future_part;
-        ReservationPtr reserved_space;
-        StorageMergeTree & storage;
-        // Optional tagger to maintain volatile parts for the JBOD balancer
-        std::optional<CurrentlySubmergingEmergingTagger> tagger;
-
-        CurrentlyMergingPartsTagger(
-            FutureMergedMutatedPartPtr future_part_,
-            size_t total_size,
-            StorageMergeTree & storage_,
-            const StorageMetadataPtr & metadata_snapshot,
-            bool is_mutation);
-
-        ~CurrentlyMergingPartsTagger();
-    };
-
-    using CurrentlyMergingPartsTaggerPtr = std::unique_ptr<CurrentlyMergingPartsTagger>;
     friend struct CurrentlyMergingPartsTagger;
 
-    struct MergeMutateSelectedEntry
-    {
-        FutureMergedMutatedPartPtr future_part;
-        CurrentlyMergingPartsTaggerPtr tagger;
-        MutationCommands commands;
-        MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr && tagger_, const MutationCommands & commands_)
-            : future_part(std::move(future_part_))
-            , tagger(std::move(tagger_))
-            , commands(commands_)
-        {}
-    };
 
     std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
@@ -201,7 +172,6 @@ private:
         bool optimize_skip_merged_partitions = false,
         SelectPartsDecision * select_decision_out = nullptr);
 
-    bool mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, const Names & deduplicate_by_columns, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);
 
     std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder);
     bool mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);
@@ -242,6 +212,7 @@ private:
     friend class MergeTreeProjectionBlockOutputStream;
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
+    friend class MergePlainMergeTreeTask;
 
 
 protected:

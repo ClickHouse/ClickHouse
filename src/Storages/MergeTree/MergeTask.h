@@ -277,8 +277,8 @@ public:
     void begin() override;
 };
 
-/// FIXME 
-[[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeInPlace(MergeTaskPtr task)
+/// FIXME
+[[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
     while (task->execute()) {}
     return task->getFuture().get();

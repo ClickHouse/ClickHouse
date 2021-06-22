@@ -1425,7 +1425,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
                     new_data_part.get(),
                     "tmp_merge_");
 
-                next_level_parts.push_back(executeInPlace(tmp_part_merge_task));
+                next_level_parts.push_back(executeHere(tmp_part_merge_task));
 
                 next_level_parts.back()->is_temp = true;
             }
