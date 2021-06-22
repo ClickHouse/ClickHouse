@@ -238,14 +238,14 @@ public:
       *  Example: multiIf(cond, else, then) and multiIf(cond1, else1, cond2, else2, ...), the first
       *  version can enable enable_lazy_execution_for_common_descendants_of_arguments setting, the second - not.
       */
-    virtual bool isShortCircuit(ShortCircuitSettings * /*settings*/, size_t /*number_of_arguments*/) const { return false; }
+    virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
 
     /** Should we evaluate this function lazily in short-circuit function arguments?
       * If function can throw an exception or it's computationally heavy, then
       * it's suitable, otherwise it's not (due to the overhead of lazy execution).
       * Suitability may depend on function arguments.
       */
-    virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
+    virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     /// The property of monotonicity for a certain range.
     struct Monotonicity
@@ -423,8 +423,8 @@ public:
     virtual bool isStateful() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
-    virtual bool isShortCircuit(ShortCircuitSettings * /*settings*/, size_t /*number_of_arguments*/) const { return false; }
-    virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
+    virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
+    virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 

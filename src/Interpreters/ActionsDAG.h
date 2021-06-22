@@ -70,12 +70,8 @@ public:
     /// States for lazy function execution in short-circuit function arguments.
     enum class LazyExecution
     {
-        /// Don't execute lazily.
         DISABLED,
-        /// Execute lazily if it's possible (additional checks are required).
         ENABLED,
-        /// Always execute lazily.
-        FORCE_ENABLED,
     };
 
     struct Node

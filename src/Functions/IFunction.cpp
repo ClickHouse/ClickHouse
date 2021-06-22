@@ -378,10 +378,17 @@ static std::optional<DataTypes> removeNullables(const DataTypes & types)
 
 bool IFunction::isCompilable(const DataTypes & arguments) const
 {
+
     if (useDefaultImplementationForNulls())
         if (auto denulled = removeNullables(arguments))
-            return isCompilableImpl(*denulled);
-    return isCompilableImpl(arguments);
+        {
+            bool res = isCompilableImpl(*denulled);
+            LOG_DEBUG(&Poco::Logger::get("IFunction"), "Function {}, isCompilable: {}", getName(), res);
+            return res;
+        }
+    bool res = isCompilableImpl(arguments);
+    LOG_DEBUG(&Poco::Logger::get("IFunction"), "Function {}, isCompilable: {}", getName(), res);
+    return res;
 }
 
 llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, Values values) const

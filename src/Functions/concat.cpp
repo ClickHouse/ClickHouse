@@ -44,7 +44,7 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

@@ -1,30 +1,30 @@
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/MaskOperations.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/MaskOperations.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/GatherUtils/GatherUtils.h>
-#include <Functions/GatherUtils/Algorithms.h>
-#include <Functions/FunctionIfBase.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionIfBase.h>
+#include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -955,8 +955,8 @@ private:
             return;
         }
 
-        IColumn::Filter mask;
-        auto mask_info = getMaskFromColumn(arguments[0].column, mask);
+        IColumn::Filter mask(arguments[0].column->size(), 1);
+        auto mask_info = extractMaskInplace(mask, arguments[0].column);
         maskedExecute(arguments[1], mask, mask_info);
         maskedExecute(arguments[2], mask, mask_info, /*inverted=*/true);
     }
@@ -970,14 +970,14 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isShortCircuit(ShortCircuitSettings * settings, size_t /*number_of_arguments*/) const override
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
-        settings->enable_lazy_execution_for_first_argument = false;
-        settings->enable_lazy_execution_for_common_descendants_of_arguments = false;
-        settings->force_enable_lazy_execution = false;
+        settings.enable_lazy_execution_for_first_argument = false;
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
+        settings.force_enable_lazy_execution = false;
         return true;
     }
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.

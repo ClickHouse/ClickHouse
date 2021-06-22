@@ -52,7 +52,7 @@ public:
         return return_type;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {

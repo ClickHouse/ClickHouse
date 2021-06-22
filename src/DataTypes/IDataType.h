@@ -29,6 +29,13 @@ using DataTypes = std::vector<DataTypePtr>;
 struct NameAndTypePair;
 class SerializationInfo;
 
+struct DataTypeWithConstInfo
+{
+    DataTypePtr type;
+    bool is_const;
+};
+
+using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 /** Properties of data type.
   *

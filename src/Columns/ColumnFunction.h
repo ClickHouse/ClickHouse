@@ -5,9 +5,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
 
-class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
-
 
 namespace DB
 {
@@ -16,6 +13,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+class IFunctionBase;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 /** A column containing a lambda expression.
   * Behaves like a constant-column. Contains an expression, but not input or output data.

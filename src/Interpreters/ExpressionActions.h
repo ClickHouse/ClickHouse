@@ -135,14 +135,13 @@ private:
     void linearizeActions();
 
     /// Enable lazy execution for short-circuit function arguments.
-    void rewriteShortCircuitArguments(
-        const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & need_outside, bool force_enable_lazy_execution);
+    bool rewriteShortCircuitArguments(
+        const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & used_only_in_short_circuit_functions, bool force_enable_lazy_execution);
 
     /// Find short-circuit functions in actions and enable lazy execution for actions that are used in their arguments.
-    void rewriteArgumentsForShortCircuitFunctions(
-        const std::list<ActionsDAG::Node> & nodes,
-        const std::vector<Data> & data,
-        const std::unordered_map<const ActionsDAG::Node *, size_t> & reverse_index);
+    void rewriteArgumentsForShortCircuitFunctions();
+
+    std::pair<std::vector<Data>, std::unordered_map<const Node *, size_t>> getDataAndReverseIndex();
 };
 
 

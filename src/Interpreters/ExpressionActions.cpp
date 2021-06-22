@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
-#include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -18,6 +17,7 @@
 #include <queue>
 #include <stack>
 #include <Common/JSONBuilder.h>
+
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
@@ -38,11 +38,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int TOO_MANY_TEMPORARY_COLUMNS;
-    extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
-    extern const int TYPE_MISMATCH;
+extern const int LOGICAL_ERROR;
+extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+extern const int TOO_MANY_TEMPORARY_COLUMNS;
+extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
+extern const int TYPE_MISMATCH;
 }
 
 ExpressionActions::~ExpressionActions() = default;
@@ -51,6 +51,10 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     : settings(settings_)
 {
     actions_dag = actions_dag_->clone();
+
+    /// It's important to rewrite short-circuit arguments before compiling expressions.
+    if (settings.use_short_circuit_function_evaluation)
+        rewriteArgumentsForShortCircuitFunctions();
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
@@ -70,12 +74,25 @@ ExpressionActionsPtr ExpressionActions::clone() const
     return std::make_shared<ExpressionActions>(*this);
 }
 
-void ExpressionActions::rewriteShortCircuitArguments(const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & need_outside, bool force_enable_lazy_execution)
+static DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
+    DataTypesWithConstInfo types;
+    types.reserve(nodes.size());
+    for (const auto & child : nodes)
+    {
+        bool is_const = child->column && isColumnConst(*child->column);
+        types.push_back({child->result_type, is_const});
+    }
+    return types;
+}
+
+bool ExpressionActions::rewriteShortCircuitArguments(const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & used_only_in_short_circuit_functions, bool force_enable_lazy_execution)
+{
+    bool has_lazy_node = false;
     for (const auto * child : children)
     {
-        /// Skip actions that are needed outside or have already been rewritten.
-        if (!need_outside.contains(child) || need_outside.at(child) || child->lazy_execution != ActionsDAG::LazyExecution::DISABLED)
+        /// Skip actions that are needed outside shirt-circuit functions or have already been rewritten.
+        if (!used_only_in_short_circuit_functions.contains(child) || !used_only_in_short_circuit_functions.at(child) || child->lazy_execution != ActionsDAG::LazyExecution::DISABLED)
             continue;
 
         /// We cannot propagate lazy execution through arrayJoin, because when we execute
@@ -88,36 +105,63 @@ void ExpressionActions::rewriteShortCircuitArguments(const ActionsDAG::NodeRawCo
         switch (child->type)
         {
             case ActionsDAG::ActionType::FUNCTION:
+            {
                 /// Propagate lazy execution through function arguments.
-                rewriteShortCircuitArguments(child->children, need_outside, force_enable_lazy_execution);
-                const_cast<ActionsDAG::Node *>(child)->lazy_execution = force_enable_lazy_execution ? ActionsDAG::LazyExecution::FORCE_ENABLED : ActionsDAG::LazyExecution::ENABLED;
+                bool has_lazy_child = rewriteShortCircuitArguments(child->children, used_only_in_short_circuit_functions, force_enable_lazy_execution);
+
+                /// Use lazy execution when:
+                ///  - It's force enabled.
+                ///  - Function is suitable for lazy execution.
+                ///  - Function has lazy executed arguments.
+                if (force_enable_lazy_execution || has_lazy_child || child->function_base->isSuitableForShortCircuitArgumentsExecution(getDataTypesWithConstInfoFromNodes(child->children)))
+                {
+                    has_lazy_node = true;
+                    const_cast<ActionsDAG::Node *>(child)->lazy_execution = ActionsDAG::LazyExecution::ENABLED;
+                }
                 break;
+            }
             case ActionsDAG::ActionType::ALIAS:
                 /// Propagate lazy execution through alias.
-                rewriteShortCircuitArguments(child->children, need_outside, force_enable_lazy_execution);
+                has_lazy_node |= rewriteShortCircuitArguments(child->children, used_only_in_short_circuit_functions, force_enable_lazy_execution);
                 break;
             default:
                 break;
         }
     }
+    return has_lazy_node;
 }
 
-void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
-    const std::list<ActionsDAG::Node> & nodes,
-    const std::vector<Data> & data,
-    const std::unordered_map<const ActionsDAG::Node *, size_t> & reverse_index)
+void ExpressionActions::rewriteArgumentsForShortCircuitFunctions()
 {
+    auto [data, reverse_index] = getDataAndReverseIndex();
+
+    const auto & nodes = getNodes();
+
     IFunctionBase::ShortCircuitSettings short_circuit_settings;
+
+    /// We should enable lazy execution for all actions that are used only in arguments of
+    /// short-circuit functions. To determine if an action is used somewhere else we will use
+    /// BFS, started from action with short-circuit function. If an action has parent that we didn't
+    /// visited earlier, it means that this action is used somewhere else. After BFS we will
+    /// have map used_only_in_short_circuit_functions: node -> is this node used only in short circuit functions.
+    std::unordered_map<const ActionsDAG::Node *, bool> used_only_in_short_circuit_functions;
+
+    /// The set of nodes to skip in BFS. It's used in two cases:
+    /// 1) To skip first argument if enable_lazy_execution_for_first_argument is false and it's used in the other arguments.
+    /// Examples: and(expr, expr), and(expr, expr1(..., expr, ...)).
+    /// 2) To skip repeated arguments if enable_lazy_execution_for_common_descendants_of_arguments is false.
+    /// Example: if(cond, expr, expr).
+    /// We store map short-circuit node -> skip list.
+    std::unordered_map<const ActionsDAG::Node *, std::unordered_set<const ActionsDAG::Node *>> skip_nodes;
+
+    /// The set of nodes that are short-circuit functions.
+    std::unordered_set<const ActionsDAG::Node *> short_circuit_nodes;
+
     for (const auto & node : nodes)
     {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(&short_circuit_settings, node.children.size()) && !node.children.empty())
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(short_circuit_settings, node.children.size()) && !node.children.empty())
         {
-            /// We should enable lazy execution for all actions that are used only in arguments of
-            /// short-circuit function. To determine if an action is used somewhere else we use
-            /// BFS, started from action with short-circuit function. If an action has parent that we didn't
-            /// visited earlier, it means that this action is used somewhere else. After BFS we will
-            /// have map need_outside: node -> is this node used somewhere else.
-            std::unordered_map<const ActionsDAG::Node *, bool> need_outside;
+            short_circuit_nodes.insert(&node);
             std::deque<const ActionsDAG::Node *> queue;
 
             /// For some short-circuit function we shouldn't enable lazy execution for actions that are common
@@ -126,18 +170,11 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
             /// parents with different argument ancestor, this node is common descendants of two different function arguments.
             std::unordered_map<const ActionsDAG::Node *, int> argument_ancestor;
 
-            /// The set of nodes to skip in BFS. It's used in two cases:
-            /// 1) To skip first argument if enable_lazy_execution_for_first_argument is false and it's used in the other arguments.
-            /// Examples: and(expr, expr), and(expr, expr1(..., expr, ...)).
-            /// 2) To skip repeated arguments if enable_lazy_execution_for_common_descendants_of_arguments is false.
-            /// Example: if(cond, expr, expr).
-            std::unordered_set<const ActionsDAG::Node *> skip_nodes;
-
             size_t i = 0;
             if (!short_circuit_settings.enable_lazy_execution_for_first_argument)
             {
                 ++i;
-                skip_nodes.insert(node.children[0]);
+                skip_nodes[&node].insert(node.children[0]);
             }
 
             for (; i < node.children.size(); ++i)
@@ -147,42 +184,43 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
                 {
                     /// Check repeated argument.
                     if (argument_ancestor.contains(node.children[i]))
-                        skip_nodes.insert(node.children[i]);
+                        skip_nodes[&node].insert(node.children[i]);
                     else
                         argument_ancestor[node.children[i]] = i;
                 }
             }
 
-            need_outside[&node] = false;
             while (!queue.empty())
             {
                 const ActionsDAG::Node * cur = queue.front();
                 queue.pop_front();
 
-                if (skip_nodes.contains(cur))
+                if (skip_nodes[&node].contains(cur))
                     continue;
 
-                bool is_need_outside = false;
+                bool is_used_only_in_short_circuit_functions = true;
                 /// If action is used in result, we can't enable lazy execution.
                 if (data[reverse_index.at(cur)].used_in_result)
-                    is_need_outside = true;
+                    is_used_only_in_short_circuit_functions = false;
                 else
                 {
                     for (const auto * parent : data[reverse_index.at(cur)].parents)
                     {
-                        if (!need_outside.contains(parent) || need_outside[parent])
+                        /// Mark this node as needed outside shirt-circuit functions if (it's parent is not
+                        /// short-circuit or node in it's skip list) AND parent is marked as needed outside.
+                        if ((!short_circuit_nodes.contains(parent) || skip_nodes[parent].contains(cur)) && (!used_only_in_short_circuit_functions.contains(parent) || !used_only_in_short_circuit_functions[parent]))
                         {
-                            is_need_outside = true;
+                            is_used_only_in_short_circuit_functions = false;
                             break;
                         }
 
                         if (!short_circuit_settings.enable_lazy_execution_for_common_descendants_of_arguments && argument_ancestor.contains(parent))
                         {
-                            /// If this node already has argument ancestor index and it doesn't match
-                            /// the index of the parent argument ancestor, mark this node as needed outside.
+                            /// If this node already has argument ancestor index and it doesn't match the index
+                            /// of the parent argument ancestor, mark this node as needed outside shirt-circuit functions.
                             if (argument_ancestor.contains(cur) && argument_ancestor[cur] != argument_ancestor[parent])
                             {
-                                is_need_outside = true;
+                                is_used_only_in_short_circuit_functions = false;
                                 break;
                             }
                             argument_ancestor[cur] = argument_ancestor[parent];
@@ -190,12 +228,12 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
                     }
                 }
 
-                need_outside[cur] = is_need_outside;
+                used_only_in_short_circuit_functions[cur] = is_used_only_in_short_circuit_functions;
 
-                /// If this action is needed outside, all it's descendants are also needed outside
-                /// and we don't have to add them in queue (if action is not in need_outside we
+                /// If this action is needed outside shirt-circuit functions, all it's descendants are also needed outside
+                /// and we don't have to add them in queue (if action is not in is_used_only_in_short_circuit_functions we
                 /// treat it as it's needed outside).
-                if (!is_need_outside)
+                if (is_used_only_in_short_circuit_functions)
                 {
                     for (const auto * child : cur->children)
                         queue.push_back(child);
@@ -203,20 +241,15 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
             }
             /// Recursively enable lazy execution for actions that
             /// aren't needed outside short-circuit function arguments.
-            rewriteShortCircuitArguments(node.children, need_outside, short_circuit_settings.force_enable_lazy_execution);
+            rewriteShortCircuitArguments(node.children, used_only_in_short_circuit_functions, short_circuit_settings.force_enable_lazy_execution);
         }
     }
 }
 
-void ExpressionActions::linearizeActions()
+std::pair<std::vector<ExpressionActions::Data>, std::unordered_map<const ActionsDAG::Node *, size_t>> ExpressionActions::getDataAndReverseIndex()
 {
-    /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
-    /// Algorithm traverses DAG starting from nodes without children.
-    /// For every node we support the number of created children, and if all children are created, put node into queue.
-
     const auto & nodes = getNodes();
     const auto & index = actions_dag->getIndex();
-    const auto & inputs = actions_dag->getInputs();
 
     std::vector<Data> data(nodes.size());
     std::unordered_map<const Node *, size_t> reverse_index;
@@ -228,11 +261,6 @@ void ExpressionActions::linearizeActions()
         reverse_index[&node] = id;
     }
 
-    /// There are independent queues for arrayJoin and other actions.
-    /// We delay creation of arrayJoin as long as we can, so that they will be executed closer to end.
-    std::queue<const Node *> ready_nodes;
-    std::queue<const Node *> ready_array_joins;
-
     for (const auto * node : index)
         data[reverse_index[node]].used_in_result = true;
 
@@ -242,14 +270,32 @@ void ExpressionActions::linearizeActions()
             data[reverse_index[child]].parents.emplace_back(&node);
     }
 
+    return {std::move(data), std::move(reverse_index)};
+}
+
+
+void ExpressionActions::linearizeActions()
+{
+    /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
+    /// Algorithm traverses DAG starting from nodes without children.
+    /// For every node we support the number of created children, and if all children are created, put node into queue.
+
+    auto [data, reverse_index] = getDataAndReverseIndex();
+
+    const auto & nodes = getNodes();
+    const auto & index = actions_dag->getIndex();
+    const auto & inputs = actions_dag->getInputs();
+
+    /// There are independent queues for arrayJoin and other actions.
+    /// We delay creation of arrayJoin as long as we can, so that they will be executed closer to end.
+    std::queue<const Node *> ready_nodes;
+    std::queue<const Node *> ready_array_joins;
+
     for (const auto & node : nodes)
     {
         if (node.children.empty())
             ready_nodes.emplace(&node);
     }
-
-    if (settings.use_short_circuit_function_evaluation)
-        rewriteArgumentsForShortCircuitFunctions(nodes, data, reverse_index);
 
     /// Every argument will have fixed position in columns list.
     /// If argument is removed, it's position may be reused by other action.
@@ -432,8 +478,8 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
                     list_of_non_const_columns << "\n" << column.name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                + ". Maximum: " + std::to_string(settings.max_temporary_non_const_columns),
-                ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
+                            + ". Maximum: " + std::to_string(settings.max_temporary_non_const_columns),
+                            ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
         }
     }
 }
@@ -484,16 +530,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     arguments[i] = columns[action.arguments[i].pos];
             }
 
-            /// Use lazy execution when:
-            ///  - It's force enabled.
-            ///  - It's is enabled and function is suitable for lazy execution or it has lazy executed arguments.
-            if (action.node->lazy_execution == ActionsDAG::LazyExecution::FORCE_ENABLED
-                || (action.node->lazy_execution == ActionsDAG::LazyExecution::ENABLED
-                    && (action.node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
-                        || checkShirtCircuitArguments(arguments) != -1)))
-            {
-                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true);
-            }
+            if (action.node->lazy_execution == ActionsDAG::LazyExecution::ENABLED)
+                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
@@ -587,10 +625,10 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) const
 {
     ExecutionContext execution_context
-    {
-        .inputs = block.data,
-        .num_rows = num_rows,
-    };
+        {
+            .inputs = block.data,
+            .num_rows = num_rows,
+        };
 
     execution_context.inputs_pos.assign(required_columns.size(), -1);
 
