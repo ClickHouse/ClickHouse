@@ -15,6 +15,7 @@
 #include <utility>
 #include <memory>
 
+
 namespace DB
 {
 
@@ -115,7 +116,7 @@ public:
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
-                 const Names & key_names_right_)
+              const Names & key_names_right_)
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)

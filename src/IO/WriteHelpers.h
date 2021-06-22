@@ -880,6 +880,7 @@ inline std::enable_if_t<std::is_floating_point_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeText(const String & x, WriteBuffer & buf) { writeString(x.c_str(), x.size(), buf); }
+inline void writeText(const std::string_view & x, WriteBuffer & buf) { writeString(x.data(), x.size(), buf); }
 
 /// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
 template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }

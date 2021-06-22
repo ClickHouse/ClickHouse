@@ -525,6 +525,11 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     addConditionJoinColumn(right_sample_block, JoinTableSide::Right);
     JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, right_columns_to_add);
 
+    for (const auto & right_key : key_names_right)
+    {
+        if (right_sample_block.getByName(right_key).type->lowCardinality())
+            lowcard_right_keys.push_back(right_key);
+    }
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
     JoinCommon::removeLowCardinalityInplace(right_sample_block, key_names_right);
 
@@ -669,6 +674,7 @@ bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
 
 void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
+    Names lowcard_keys = lowcard_right_keys;
     if (block)
     {
         JoinCommon::checkTypesOfMasks(block, mask_column_name_left, right_sample_block, mask_column_name_right);
@@ -679,6 +685,13 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
 
         materializeBlockInplace(block);
+
+        for (const auto & column_name : key_names_left)
+        {
+            if (block.getByName(column_name).type->lowCardinality())
+                lowcard_keys.push_back(column_name);
+        }
+
         JoinCommon::removeLowCardinalityInplace(block, key_names_left, false);
 
         sortBlock(block, left_sort_description);
@@ -716,6 +729,14 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     if (needConditionJoinColumn())
         block.erase(deriveTempName(mask_column_name_left));
+
+    for (const auto & column_name : lowcard_keys)
+    {
+        if (!block.has(column_name))
+            continue;
+        if (auto & col = block.getByName(column_name); !col.type->lowCardinality())
+            JoinCommon::changeLowCardinalityInplace(col);
+    }
 
     JoinCommon::restoreLowCardinalityInplace(block);
 }

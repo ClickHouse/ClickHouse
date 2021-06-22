@@ -1,5 +1,5 @@
 #include <iomanip>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
@@ -1135,8 +1135,9 @@ void TCPHandler::receiveQuery()
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-                                                                                                      : SettingsWriteFormat::BINARY;
+    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
+        ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+        : SettingsWriteFormat::BINARY;
     Settings passed_settings;
     passed_settings.read(*in, settings_format);
 

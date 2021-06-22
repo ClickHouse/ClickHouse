@@ -59,6 +59,8 @@ ColumnPtr getColumnAsMask(const Block & block, const String & column_name);
 /// Split key and other columns by keys name list
 void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others);
 
+void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
+
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
