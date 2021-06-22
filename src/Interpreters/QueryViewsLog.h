@@ -23,12 +23,20 @@ class ThreadStatus;
 
 struct QueryViewsLogElement
 {
-    using Status = QueryLogElementType;
+    enum class ViewStatus : int8_t
+    {
+        INIT = 1,
+        WRITTEN_PREFIX = 2,
+        WRITTEN_BLOCK = 3,
+        WRITTEN_SUFFIX = 4
+    };
+
+
     enum class ViewType : int8_t
     {
-        DEFAULT,
-        MATERIALIZED,
-        LIVE
+        DEFAULT = 1,
+        MATERIALIZED = 2,
+        LIVE = 3
     };
 
     struct ViewRuntimeStats
@@ -38,9 +46,9 @@ struct QueryViewsLogElement
         std::shared_ptr<ThreadStatus> thread_status = std::make_shared<ThreadStatus>();
         UInt64 elapsed_ms = 0;
         std::chrono::time_point<std::chrono::system_clock> event_time;
-        Status event_status = Status::QUERY_START;
+        ViewStatus event_status = ViewStatus::INIT;
 
-        void setStatus(Status s)
+        void setStatus(ViewStatus s)
         {
             event_status = s;
             event_time = std::chrono::system_clock::now();
@@ -65,7 +73,7 @@ struct QueryViewsLogElement
     Int64 peak_memory_usage{};
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
 
-    Status end_status{EXCEPTION_BEFORE_START};
+    ViewStatus status;
     Int32 exception_code{};
     String exception;
     String stack_trace;

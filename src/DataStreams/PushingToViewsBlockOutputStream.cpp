@@ -1,7 +1,7 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/NestedUtils.h>
@@ -18,21 +18,12 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
+#include <common/scope_guard.h>
 #include <Common/setThreadName.h>
 #include <common/logger_useful.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
 
 #include <atomic>
 #include <chrono>
-
-#include <Common/ProfileEvents.h>
-
-namespace ProfileEvents
-{
-extern const Event SlowRead;
-extern const Event MergedRows;
-extern const Event ZooKeeperTransactions;
-}
 
 namespace DB
 {
@@ -137,7 +128,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         else if (const auto * live_view = dynamic_cast<const StorageLiveView *>(dependent_table.get()))
         {
             type = QueryViewsLogElement::ViewType::LIVE;
-            query = live_view->getInnerQuery(); // TODO: Optimize this
+            query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true);
         }
@@ -145,13 +136,13 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
 
-        auto main_thread = current_thread;
+        auto * main_thread = current_thread;
         auto thread_status = std::make_shared<ThreadStatus>();
         current_thread = main_thread;
         thread_status->attachQueryContext(getContext());
 
         QueryViewsLogElement::ViewRuntimeStats runtime_stats{
-            target_name, type, thread_status, 0, std::chrono::system_clock::now(), QueryViewsLogElement::Status::QUERY_START};
+            target_name, type, thread_status, 0, std::chrono::system_clock::now(), QueryViewsLogElement::ViewStatus::INIT};
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, std::move(runtime_stats)});
     }
 
@@ -165,7 +156,6 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         replicated_output = dynamic_cast<ReplicatedMergeTreeSink *>(sink.get());
         output = std::make_shared<PushingToSinkBlockOutputStream>(std::move(sink));
     }
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions, 100);
 }
 
 
@@ -208,37 +198,43 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     if (!getContext()->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views && replicated_output && replicated_output->lastBlockIsDuplicate())
         return;
 
-    // Push to each view. Only parallel if available
     const Settings & settings = getContext()->getSettingsRef();
     const size_t max_threads = settings.parallel_view_processing ? settings.max_threads : 1;
-    ThreadPool pool(std::min(max_threads, views.size()));
-    for (auto & view : views)
+    bool exception_happened = false;
+    if (max_threads > 1)
     {
-        pool.scheduleOrThrowOnError([=, &view, this] {
+        ThreadPool pool(std::min(max_threads, views.size()));
+        auto thread_group = CurrentThread::getGroup();
+        std::atomic_uint8_t exception_count = 0;
+        for (auto & view : views)
+        {
+            pool.scheduleOrThrowOnError([&] {
+                setThreadName("PushingToViews");
+                if (exception_count.load(std::memory_order_relaxed))
+                    return;
 
-            setThreadName("PushingToViews");
-            current_thread = view.runtime_stats.thread_status.get();
-            ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions, 1);
-            LOG_WARNING(log, "WRITE THREAD");
-
-            Stopwatch watch;
-            try
-            {
                 process(block, view);
-            }
-            catch (...)
-            {
-                view.exception = std::current_exception();
-            }
-            /* process might have set view.exception without throwing */
-            if (view.exception)
-                view.runtime_stats.setStatus(QueryViewsLogElement::Status::EXCEPTION_WHILE_PROCESSING);
-            view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
-        });
+                if (view.exception)
+                    exception_count.fetch_add(1, std::memory_order_relaxed);
+            });
+        }
+        pool.wait();
+        exception_happened = exception_count.load(std::memory_order_relaxed) != 0;
     }
-    // Wait for concurrent view processing
-    pool.wait();
-    check_exceptions_in_views();
+    else
+    {
+        for (auto & view : views)
+        {
+            process(block, view);
+            if (view.exception)
+            {
+                exception_happened = true;
+                break;
+            }
+        }
+    }
+    if (exception_happened)
+        check_exceptions_in_views();
 }
 
 void PushingToViewsBlockOutputStream::writePrefix()
@@ -248,20 +244,12 @@ void PushingToViewsBlockOutputStream::writePrefix()
 
     for (auto & view : views)
     {
-        Stopwatch watch;
-        try
+        process_prefix(view);
+        if (view.exception)
         {
-            view.out->writePrefix();
-        }
-        catch (Exception & ex)
-        {
-            ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
-            view.exception = std::current_exception();
-            view.runtime_stats.setStatus(QueryViewsLogElement::Status::EXCEPTION_WHILE_PROCESSING);
             log_query_views();
             throw;
         }
-        view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
     }
 }
 
@@ -272,62 +260,60 @@ void PushingToViewsBlockOutputStream::writeSuffix()
 
     if (views.empty())
         return;
-    std::exception_ptr first_exception;
-    const Settings & settings = getContext()->getSettingsRef();
 
     /// Run writeSuffix() for views in separate thread pool.
     /// In could have been done in PushingToViewsBlockOutputStream::process, however
     /// it is not good if insert into main table fail but into view succeed.
+    const Settings & settings = getContext()->getSettingsRef();
     const size_t max_threads = settings.parallel_view_processing ? settings.max_threads : 1;
-    ThreadPool pool(std::min(max_threads, views.size()));
-    auto thread_group = CurrentThread::getGroup();
-
-    for (auto & view : views)
+    bool exception_happened = false;
+    if (max_threads > 1)
     {
-        if (view.exception)
-            continue;
+        ThreadPool pool(std::min(max_threads, views.size()));
+        auto thread_group = CurrentThread::getGroup();
+        std::atomic_uint8_t exception_count = 0;
+        for (auto & view : views)
+        {
+            pool.scheduleOrThrowOnError([&] {
+                setThreadName("PushingToViews");
+                if (exception_count.load(std::memory_order_relaxed))
+                    return;
 
-        pool.scheduleOrThrowOnError([&] {
-            setThreadName("PushingToViews");
-            current_thread = view.runtime_stats.thread_status.get();
-            ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions, 1);
-            LOG_WARNING(log, "WRITE SUFFIX THREAD");
-
-            Stopwatch watch;
-            try
-            {
-                view.out->writeSuffix();
-                view.runtime_stats.setStatus(QueryViewsLogElement::Status::QUERY_FINISH);
-            }
-            catch (...)
-            {
-                view.exception = std::current_exception();
-            }
-            view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
-            LOG_TRACE(
-                log,
-                "Pushing from {} to {} took {} ms.",
-                storage->getStorageID().getNameForLogs(),
-                view.table_id.getNameForLogs(),
-                view.runtime_stats.elapsed_ms);
-        });
+                process_suffix(view);
+                if (view.exception)
+                    exception_count.fetch_add(1, std::memory_order_relaxed);
+            });
+        }
+        pool.wait();
+        exception_happened = exception_count.load(std::memory_order_relaxed) != 0;
     }
-    // Wait for concurrent view processing
-    pool.wait();
-    check_exceptions_in_views();
+    else
+    {
+        for (auto & view : views)
+        {
+            process_suffix(view);
+            if (view.exception)
+            {
+                exception_happened = true;
+                break;
+            }
+        }
+    }
+    if (exception_happened)
+        check_exceptions_in_views();
 
-    UInt64 milliseconds = main_watch.elapsedMilliseconds();
     if (views.size() > 1)
     {
-        LOG_DEBUG(log, "Pushing from {} to {} views took {} ms.",
-            storage->getStorageID().getNameForLogs(), views.size(),
-            milliseconds);
+        UInt64 milliseconds = main_watch.elapsedMilliseconds();
+        LOG_DEBUG(log, "Pushing from {} to {} views took {} ms.", storage->getStorageID().getNameForLogs(), views.size(), milliseconds);
     }
     log_query_views();
 }
 
 void PushingToViewsBlockOutputStream::flush()
 {
+    LOG_DEBUG(log, "{} FLUSH CALLED", storage->getStorageID().getNameForLogs());
+
     if (output)
         output->flush();
 
@@ -337,6 +323,11 @@ void PushingToViewsBlockOutputStream::flush()
 
 void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & view)
 {
+    Stopwatch watch;
+    auto * source_thread = current_thread; // Change thread context to store individual metrics per view
+    current_thread = view.runtime_stats.thread_status.get();
+    SCOPE_EXIT({ current_thread = source_thread; });
+
     try
     {
         BlockInputStreamPtr in;
@@ -385,6 +376,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
         }
 
         in->readSuffix();
+        view.runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::WRITTEN_BLOCK);
     }
     catch (Exception & ex)
     {
@@ -394,6 +386,66 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
     catch (...)
     {
         view.exception = std::current_exception();
+    }
+
+    view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
+}
+
+void PushingToViewsBlockOutputStream::process_prefix(ViewInfo & view)
+{
+    Stopwatch watch;
+    auto * source_thread = current_thread; // Change thread context to store individual metrics per view
+    current_thread = view.runtime_stats.thread_status.get();
+    SCOPE_EXIT({ current_thread = source_thread; });
+
+    try
+    {
+        view.out->writePrefix();
+        view.runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::WRITTEN_PREFIX);
+    }
+    catch (Exception & ex)
+    {
+        ex.addMessage("while writing prefix to view " + view.table_id.getNameForLogs());
+        view.exception = std::current_exception();
+    }
+    catch (...)
+    {
+        view.exception = std::current_exception();
+    }
+    view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
+}
+
+
+void PushingToViewsBlockOutputStream::process_suffix(ViewInfo & view)
+{
+    Stopwatch watch;
+    auto * source_thread = current_thread; // Change thread context to store individual metrics per view
+    current_thread = view.runtime_stats.thread_status.get();
+    SCOPE_EXIT({ current_thread = source_thread; });
+
+    try
+    {
+        view.out->writeSuffix();
+        view.runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::WRITTEN_SUFFIX);
+    }
+    catch (Exception & ex)
+    {
+        ex.addMessage("while writing suffix to view " + view.table_id.getNameForLogs());
+        view.exception = std::current_exception();
+    }
+    catch (...)
+    {
+        view.exception = std::current_exception();
+    }
+    view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
+    if (!view.exception)
+    {
+        LOG_TRACE(
+            log,
+            "Pushing from {} to {} took {} ms.",
+            storage->getStorageID().getNameForLogs(),
+            view.table_id.getNameForLogs(),
+            view.runtime_stats.elapsed_ms);
     }
 }
 
@@ -418,9 +470,6 @@ void PushingToViewsBlockOutputStream::log_query_views()
 
     for (auto & view : views)
     {
-        if (view.runtime_stats.event_status == QueryViewsLogElement::Status::QUERY_START)
-            view.runtime_stats.setStatus(QueryViewsLogElement::Status::EXCEPTION_WHILE_PROCESSING);
-
         if (min_query_duration && view.runtime_stats.elapsed_ms <= min_query_duration)
             continue;
 

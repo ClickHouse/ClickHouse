@@ -59,6 +59,8 @@ private:
     ContextMutablePtr insert_context;
 
     void process(const Block & block, ViewInfo & view);
+    void process_prefix(ViewInfo & view);
+    void process_suffix(ViewInfo & view);
     void check_exceptions_in_views();
     void log_query_views();
 };
