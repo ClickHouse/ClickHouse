@@ -2,8 +2,8 @@
 // MurmurHash2 was written by Austin Appleby, and is placed in the public
 // domain. The author hereby disclaims copyright to this source code.
 
-#ifndef _MURMURHASH2_H_
-#define _MURMURHASH2_H_
+#ifndef MURMURHASH2_H
+#define MURMURHASH2_H
 
 #include <stddef.h>
 
@@ -38,7 +38,7 @@ uint64_t MurmurHash64B      ( const void * key, size_t len, uint64_t seed );
 uint32_t MurmurHash2A       ( const void * key, size_t len, uint32_t seed );
 uint32_t MurmurHashNeutral2 ( const void * key, size_t len, uint32_t seed );
 uint32_t MurmurHashAligned2 ( const void * key, size_t len, uint32_t seed );
- 
+
 #ifdef __cplusplus
 }
 #endif
