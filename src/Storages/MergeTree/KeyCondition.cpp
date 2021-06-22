@@ -683,7 +683,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 return arg;
             }
 
-            if (isLogicalOperator(name))
+            if (isLogicalOperator(name) && need_inversion)
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
@@ -868,6 +868,8 @@ KeyCondition::KeyCondition(
     if (!dag_nodes.nodes.empty())
     {
         auto inverted_dag = cloneASTWithInversionPushDown(std::move(dag_nodes.nodes), context);
+
+        // std::cerr << "========== inverted dag: " << inverted_dag->dumpDAG() << std::endl;
 
         Block empty;
         for (const auto * node : inverted_dag->getIndex())
