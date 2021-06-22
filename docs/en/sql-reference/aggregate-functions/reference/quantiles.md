@@ -28,8 +28,11 @@ quantilesExactExclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
--   `level` — Leveles of quantiles. Possible values: (0, 1) — bounds not included. [Float](../../../sql-reference/data-types/float.md).
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+
+**Parameters**
+
+-   `level` — Leveles of quantiles. Possible values: (0, 1) — bounds not included. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
@@ -77,8 +80,11 @@ quantilesExactInclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
--   `level` — Leveles of quantiles. Possible values: [0, 1] — bounds included. [Float](../../../sql-reference/data-types/float.md).
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+
+**Parameters**
+
+-   `level` — Leveles of quantiles. Possible values: [0, 1] — bounds included. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
