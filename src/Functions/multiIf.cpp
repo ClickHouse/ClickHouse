@@ -1,14 +1,14 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionIfBase.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/MaskOperations.h>
-#include <Interpreters/castColumn.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionIfBase.h>
+#include <Interpreters/castColumn.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -40,14 +40,14 @@ public:
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
-    bool isShortCircuit(ShortCircuitSettings * settings, size_t number_of_arguments) const override
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
     {
-        settings->enable_lazy_execution_for_first_argument = false;
-        settings->enable_lazy_execution_for_common_descendants_of_arguments = (number_of_arguments != 3);
-        settings->force_enable_lazy_execution = false;
+        settings.enable_lazy_execution_for_first_argument = false;
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = (number_of_arguments != 3);
+        settings.force_enable_lazy_execution = false;
         return true;
     }
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
@@ -268,18 +268,23 @@ private:
         if (last_short_circuit_argument_index < 0)
             return;
 
-        /// In multiIf we should execute the next condition only
-        /// if all previous once are false. So, we will filter
-        /// the next condition by inverted disjunction of previous once.
-        /// The next expression should be executed only if it's condition is
-        /// true and all previous conditions are false. So, we will
-        /// use default_value_in_expanding = 0 while extracting mask from
-        /// executed condition and filter expression by this mask.
+        /// Let's denote x_i' = maskedExecute(x_i, mask).
+        /// multiIf(x_0, y_0, x_1, y_1, x_2, y_2, ..., x_{n-1}, y_{n-1}, y_n)
+        /// We will support mask_i = !x_0 & !x_1 & ... & !x_i
+        /// and condition_i = !x_0 & ... & !x_{i - 1} & x_i
+        /// Base:
+        /// mask_0 and condition_0 is 1 everywhere, x_0' = x_0.
+        /// Iteration:
+        /// condition_i = extractMask(mask_{i - 1}, x_{i - 1}')
+        /// y_i' = maskedExecute(y_i, condition)
+        /// mask_i = extractMask(mask_{i - 1}, !x_{i - 1}')
+        /// x_i' = maskedExecute(x_i, mask)
+        /// Also we will treat NULL as 0 if x_i' is Nullable.
 
-        IColumn::Filter current_mask;
-        MaskInfo current_mask_info = {.has_once = true, .has_zeros = false};
-        IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);
-        MaskInfo disjunctions_mask_info = {.has_once = false, .has_zeros = true};
+        IColumn::Filter mask(arguments[0].column->size(), 1);
+        MaskInfo mask_info = {.has_ones = true, .has_zeros = false};
+        IColumn::Filter condition_mask(arguments[0].column->size(), 1);
+        MaskInfo condition_mask_info = {.has_ones = true, .has_zeros = false};
 
         int i = 1;
         while (i <= last_short_circuit_argument_index)
@@ -288,32 +293,32 @@ private:
             /// If condition is const or null and value is false, we can skip execution of expression after this condition.
             if ((isColumnConst(*cond_column) || cond_column->onlyNull()) && !cond_column->empty() && !cond_column->getBool(0))
             {
-                current_mask_info.has_once = false;
-                current_mask_info.has_zeros = true;
+                condition_mask_info.has_ones = false;
+                condition_mask_info.has_zeros = true;
             }
             else
             {
-                current_mask_info = getMaskFromColumn(arguments[i - 1].column, current_mask, false, &mask_disjunctions, 0, true);
-                maskedExecute(arguments[i], current_mask, current_mask_info, false);
+                condition_mask_info = extractMask(mask, cond_column, condition_mask);
+                maskedExecute(arguments[i], condition_mask, condition_mask_info);
             }
 
             /// Check if the condition is always true and we don't need to execute the rest arguments.
-            if (!current_mask_info.has_zeros)
+            if (!condition_mask_info.has_zeros)
                 break;
 
             ++i;
             if (i > last_short_circuit_argument_index)
                 break;
 
-            /// Make a disjunction only if it make sense.
-            if (current_mask_info.has_once)
-                disjunctions_mask_info = disjunctionMasks(mask_disjunctions, current_mask);
+            /// Extract mask only if it make sense.
+            if (condition_mask_info.has_ones)
+                mask_info = extractMask<true>(mask, cond_column, mask);
 
-            /// If current disjunction of previous conditions doesn't have zeros, we don't need to execute the rest arguments.
-            if (!disjunctions_mask_info.has_zeros)
+            /// mask is a inverted disjunction of previous conditions and if it doesn't have once, we don't need to execute the rest arguments.
+            if (!mask_info.has_ones)
                 break;
 
-            maskedExecute(arguments[i], mask_disjunctions, disjunctions_mask_info, true);
+            maskedExecute(arguments[i], mask, mask_info);
             ++i;
         }
 

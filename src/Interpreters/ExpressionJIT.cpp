@@ -166,13 +166,13 @@ public:
         return dag.compile(builder, values);
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & arguments) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         for (const auto & f : nested_functions)
-            if (name == f->getName() && f->isSuitableForShortCircuitArgumentsExecution(arguments))
-                return true;
+            if (!f->isSuitableForShortCircuitArgumentsExecution(arguments))
+                return false;
 
-        return false;
+        return true;
     }
 
     String getName() const override { return name; }
@@ -328,6 +328,16 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
         return false;
 
     auto & function = *node.function_base;
+
+    IFunction::ShortCircuitSettings settings;
+    if (function.isShortCircuit(settings, node.children.size()))
+    {
+        for (const auto & child : node.children)
+        {
+            if (child->lazy_execution == ActionsDAG::LazyExecution::ENABLED)
+                return false;
+        }
+    }
 
     if (!canBeNativeType(*function.getResultType()))
         return false;

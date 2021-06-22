@@ -111,3 +111,13 @@ select toColumnTypeName(toInt64OrZero(toString(number))) from numbers(5);
 select toTypeName(toDecimal32OrZero(toString(number), 5)) from numbers(5);
 select toColumnTypeName(toDecimal32OrZero(toString(number), 5)) from numbers(5);
 
+select if(if(number > 0, intDiv(42, number), 0), intDiv(42, number), 8) from numbers(5);
+select if(number > 0, intDiv(42, number), 0), if(number = 0, 0, intDiv(42, number)) from numbers(5);
+
+select Null or isNull(intDiv(number, 1)) from numbers(5);
+
+set compile_expressions = 1;
+select if(number > 0, intDiv(42, number), 1) from numbers(5);
+select if(number > 0, intDiv(42, number), 1) from numbers(5);
+select if(number > 0, intDiv(42, number), 1) from numbers(5);
+select if(number > 0, intDiv(42, number), 1) from numbers(5);

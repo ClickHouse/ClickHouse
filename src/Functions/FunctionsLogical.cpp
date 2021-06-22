@@ -1,20 +1,23 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/FieldVisitors.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -508,14 +511,27 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
             : result_type;
 }
 
-template <typename Name>
-static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & null_bytemap)
+template <bool inverted>
+static void applyTernaryLogicImpl(const IColumn::Filter & mask, IColumn::Filter & null_bytemap)
 {
     for (size_t i = 0; i != mask.size(); ++i)
     {
-        if (null_bytemap[i] && ((Name::name == NameAnd::name && !mask[i]) || (Name::name == NameOr::name && mask[i])))
+        UInt8 value = mask[i];
+        if constexpr (inverted)
+            value = !value;
+
+        if (null_bytemap[i] && value)
             null_bytemap[i] = 0;
     }
+}
+
+template <typename Name>
+static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & null_bytemap)
+{
+    if (Name::name == NameAnd::name)
+        applyTernaryLogicImpl<true>(mask, null_bytemap);
+    else if (Name::name == NameOr::name)
+        applyTernaryLogicImpl<false>(mask, null_bytemap);
 }
 
 template <typename Impl, typename Name>
@@ -524,20 +540,30 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    /// In AND (OR) function we need to execute the next argument
-    /// only if all previous once are true (false). We will filter the next
-    /// argument by conjunction (inverted disjunction) of all previous once.
-    /// To not make conjunction (inverted disjunction) every iteration, we will use
-    /// default_value_in_expanding = 0 (1) while converting column to mask,
-    /// so after converting we will get needed conjunction (inverted disjunction).
+    /// Let's denote x_i' = maskedExecute(x_i, mask).
+    /// 1) AND(x_0, x_1, x_2, ..., x_n)
+    /// We will support mask_i = x_0 & x_1 & ... & x_i.
+    /// Base:
+    /// mask_0 is 1 everywhere, x_0' = x_0.
+    /// Iteration:
+    /// mask_i = extractMask(mask_{i - 1}, x_{i - 1}')
+    /// x_i' = maskedExecute(x_i, mask)
+    /// Also we will treat NULL as 1 if x_i' is Nullable
+    /// to support ternary logic.
+    /// The result is mask_n.
+    ///
+    /// 1) OR(x_0, x_1, x_2, ..., x_n)
+    /// We will support mask_i = !x_0 & !x_1 & ... & !x_i.
+    /// mask_0 is 1 everywhere, x_0' = x_0.
+    /// mask = extractMask(mask, !x_{i - 1}')
+    /// x_i' = maskedExecute(x_i, mask)
+    /// Also we will treat NULL as 0 if x_i' is Nullable
+    /// to support ternary logic.
+    /// The result is !mask_n.
 
-    /// Set null_value according to ternary logic.
-    UInt8 null_value = Name::name == NameAnd::name ? 1 : 0;
     bool inverted = Name::name != NameAnd::name;
-    UInt8 default_value_in_expanding = Name::name == NameAnd::name ? 0 : 1;
-
-    IColumn::Filter mask;
-    IColumn::Filter * mask_used_in_expanding = nullptr;
+    UInt8 null_value = UInt8(Name::name == NameAnd::name);
+    IColumn::Filter mask(arguments[0].column->size(), 1);
 
     /// If result is nullable, we need to create null bytemap of the resulting column.
     /// We will fill it while extracting mask from arguments.
@@ -545,23 +571,23 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    MaskInfo mask_info = {.has_once = true, .has_zeros = false};
-    for (size_t i = 1; i < arguments.size(); ++i)
+    MaskInfo mask_info;
+    for (size_t i = 1; i <= arguments.size(); ++i)
     {
-        mask_info = getMaskFromColumn(arguments[i - 1].column, mask, inverted, mask_used_in_expanding, default_value_in_expanding, false, null_value, nullptr, nulls.get());
-        /// If mask doesn't have once, we don't need to execute the rest arguments,
-        /// because the result won't change.
-        if (!mask_info.has_once)
-            break;
-        maskedExecute(arguments[i], mask, mask_info, false);
-        mask_used_in_expanding = &mask;
-    }
+        if (inverted)
+            mask_info = extractMaskInplaceWithNulls<true>(mask, arguments[i - 1].column, nulls.get(), null_value);
+        else
+            mask_info = extractMaskInplaceWithNulls<false>(mask, arguments[i - 1].column, nulls.get(), null_value);
 
-    /// Extract mask from the last argument only if we executed it.
-    if (mask_info.has_once)
-        getMaskFromColumn(arguments[arguments.size() - 1].column, mask, false, mask_used_in_expanding, default_value_in_expanding, false, null_value, nullptr, nulls.get());
-    /// For OR function current mask is inverted disjunction, so, we need to inverse it.
-    else if (inverted)
+        /// If mask doesn't have ones, we don't need to execute the rest arguments,
+        /// because the result won't change.
+        if (!mask_info.has_ones || i == arguments.size())
+            break;
+
+        maskedExecute(arguments[i], mask, mask_info, false);
+    }
+    /// For OR function we need to inverse mask to get the resulting column.
+    if (inverted)
         inverseMask(mask);
 
     if (nulls)

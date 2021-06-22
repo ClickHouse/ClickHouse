@@ -955,9 +955,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & arguments) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
-        return (IsOperation<Op>::div_int || IsOperation<Op>::modulo) && !isColumnConst(*arguments[1].column);
+        return (IsOperation<Op>::div_int || IsOperation<Op>::modulo) && !arguments[1].is_const;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
