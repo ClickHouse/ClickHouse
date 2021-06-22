@@ -80,6 +80,12 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
+    void addFilter(ActionsDAGPtr expression, std::string column_name)
+    {
+        added_filter = std::move(expression);
+        added_filter_column_name = std::move(column_name);
+    }
+
 private:
     const MergeTreeReaderSettings reader_settings;
 
@@ -90,6 +96,9 @@ private:
     const MergeTreeData & data;
     SelectQueryInfo query_info;
     PrewhereInfoPtr prewhere_info;
+
+    ActionsDAGPtr added_filter;
+    std::string added_filter_column_name;
 
     StorageMetadataPtr metadata_snapshot;
     StorageMetadataPtr metadata_snapshot_base;
