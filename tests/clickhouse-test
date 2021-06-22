@@ -139,7 +139,8 @@ def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
     testcase_args = copy.deepcopy(args)
 
     testcase_args.testcase_start_time = datetime.now()
-    testcase_args.testcase_client = f"{testcase_args.client} --log_comment='{case_file}'"
+    testcase_basename = os.path.basename(case_file)
+    testcase_args.testcase_client = f"{testcase_args.client} --log_comment='{testcase_basename}'"
 
     if testcase_args.database:
         database = testcase_args.database
