@@ -246,3 +246,4 @@
 01901_test_attach_partition_from
 01910_view_dictionary
 01824_prefer_global_in_and_join
+01576_alias_column_rewrite

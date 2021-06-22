@@ -598,7 +598,7 @@ class ClickHouseCluster:
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')])
         self.base_hdfs_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')]
-        print("HDFS BASE CMD:{}".format(self.base_hdfs_cmd))
+        logging.debug("HDFS BASE CMD:{self.base_hdfs_cmd)}")
         return self.base_hdfs_cmd
 
     def setup_kerberized_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1489,9 +1489,9 @@ class ClickHouseCluster:
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
 
-                logging.debug("Waiting for ClickHouse start...")
+                logging.debug("Waiting for ClickHouse start in {instance}, ip: {instance.ip_address}...")
                 instance.wait_for_start(start_timeout)
-                logging.debug("ClickHouse started")
+                logging.debug("ClickHouse {instance} started")
 
                 instance.client = Client(instance.ip_address, command=self.client_bin_path)
 
@@ -1885,8 +1885,7 @@ class ClickHouseInstance:
         self.start_clickhouse(stop_start_wait_sec)
 
     def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
-        container_id = self.get_docker_handle().id
-        return self.cluster.exec_in_container(container_id, cmd, detach, nothrow, **kwargs)
+        return self.cluster.exec_in_container(self.docker_id, cmd, detach, nothrow, **kwargs)
 
     def contains_in_log(self, substring):
         result = self.exec_in_container(
@@ -1926,8 +1925,7 @@ class ClickHouseInstance:
             ["bash", "-c", "echo $(if [ -e '{}' ]; then echo 'yes'; else echo 'no'; fi)".format(path)]) == 'yes\n'
 
     def copy_file_to_container(self, local_path, dest_path):
-        container_id = self.get_docker_handle().id
-        return self.cluster.copy_file_to_container(container_id, local_path, dest_path)
+        return self.cluster.copy_file_to_container(self.docker_id, local_path, dest_path)
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c",
@@ -1982,6 +1980,7 @@ class ClickHouseInstance:
         self.get_docker_handle().start()
 
     def wait_for_start(self, start_timeout=None, connection_timeout=None):
+        handle = self.get_docker_handle()
 
         if start_timeout is None or start_timeout <= 0:
             raise Exception("Invalid timeout: {}".format(start_timeout))
@@ -2004,11 +2003,10 @@ class ClickHouseInstance:
                 return False
 
         while True:
-            handle = self.get_docker_handle()
+            handle.reload()
             status = handle.status
             if status == 'exited':
-                raise Exception("Instance `{}' failed to start. Container status: {}, logs: {}"
-                                .format(self.name, status, handle.logs().decode('utf-8')))
+                raise Exception(f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}")
 
             deadline = start_time + start_timeout
             # It is possible that server starts slowly.
@@ -2018,9 +2016,8 @@ class ClickHouseInstance:
 
             current_time = time.time()
             if current_time >= deadline:
-                raise Exception("Timed out while waiting for instance `{}' with ip address {} to start. "
-                                "Container status: {}, logs: {}".format(self.name, self.ip_address, status,
-                                                                        handle.logs().decode('utf-8')))
+                raise Exception(f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. " \
+                                f"Container status: {status}, logs: {handle.logs().decode('utf-8')}")
 
             socket_timeout = min(start_timeout, deadline - current_time)
 
