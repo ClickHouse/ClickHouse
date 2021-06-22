@@ -1,5 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 #include <optional>
 #include <unordered_set>
 

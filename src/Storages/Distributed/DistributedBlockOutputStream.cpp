@@ -30,8 +30,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <common/logger_useful.h>
-#include <ext/range.h>
-#include <ext/scope_guard.h>
+#include <common/range.h>
+#include <common/scope_guard.h>
 
 #include <future>
 #include <condition_variable>
@@ -102,6 +102,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     , query_string(queryToString(query_ast_))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
+    , allow_materialized(context->getSettingsRef().insert_allow_materialized_columns)
     , insert_timeout(insert_timeout_)
     , main_table(main_table_)
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
@@ -115,7 +116,10 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
 
 Block DistributedBlockOutputStream::getHeader() const
 {
-    return metadata_snapshot->getSampleBlock();
+    if (!allow_materialized)
+        return metadata_snapshot->getSampleBlockNonMaterialized();
+    else
+        return metadata_snapshot->getSampleBlock();
 }
 
 
@@ -129,18 +133,20 @@ void DistributedBlockOutputStream::write(const Block & block)
 {
     Block ordinary_block{ block };
 
-    /* They are added by the AddingDefaultBlockOutputStream, and we will get
-     * different number of columns eventually */
-    for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
+    if (!allow_materialized)
     {
-        if (ordinary_block.has(col.name))
+        /* They are added by the AddingDefaultBlockOutputStream, and we will get
+         * different number of columns eventually */
+        for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
         {
-            ordinary_block.erase(col.name);
-            LOG_DEBUG(log, "{}: column {} will be removed, because it is MATERIALIZED",
-                storage.getStorageID().getNameForLogs(), col.name);
+            if (ordinary_block.has(col.name))
+            {
+                ordinary_block.erase(col.name);
+                LOG_DEBUG(log, "{}: column {} will be removed, because it is MATERIALIZED",
+                    storage.getStorageID().getNameForLogs(), col.name);
+            }
         }
     }
-
 
     if (insert_sync)
         writeSync(ordinary_block);
@@ -210,7 +216,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, si
     local_jobs_count = 0;
     per_shard_jobs.resize(shards_info.size());
 
-    for (size_t shard_index : ext::range(start, end))
+    for (size_t shard_index : collections::range(start, end))
     {
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
@@ -220,7 +226,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, si
         {
             const auto & replicas = addresses_with_failovers[shard_index];
 
-            for (size_t replica_index : ext::range(0, replicas.size()))
+            for (size_t replica_index : collections::range(0, replicas.size()))
             {
                 if (!replicas[replica_index].is_local || !settings.prefer_localhost_replica)
                 {
@@ -375,7 +381,7 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                 /// to resolve tables (in InterpreterInsertQuery::getTable())
                 auto copy_query_ast = query_ast->clone();
 
-                InterpreterInsertQuery interp(copy_query_ast, job.local_context);
+                InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized);
                 auto block_io = interp.execute();
 
                 job.stream = block_io.out;
@@ -439,7 +445,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         auto current_selector = createSelector(block);
 
         /// Prepare row numbers for each shard
-        for (size_t shard_index : ext::range(0, num_shards))
+        for (size_t shard_index : collections::range(0, num_shards))
             per_shard_jobs[shard_index].shard_current_block_permutation.resize(0);
 
         for (size_t i = 0; i < block.rows(); ++i)
@@ -450,7 +456,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
     {
         /// Run jobs in parallel for each block and wait them
         finished_jobs_count = 0;
-        for (size_t shard_index : ext::range(0, shards_info.size()))
+        for (size_t shard_index : collections::range(0, shards_info.size()))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
                 pool->scheduleOrThrowOnError(runWritingJob(job, block, num_shards));
     }
@@ -611,8 +617,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t sh
 
 void DistributedBlockOutputStream::writeToLocal(const Block & block, size_t repeats)
 {
-    /// Async insert does not support settings forwarding yet whereas sync one supports
-    InterpreterInsertQuery interp(query_ast, context);
+    InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
     auto block_io = interp.execute();
 

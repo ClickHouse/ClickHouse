@@ -111,7 +111,7 @@
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
-            "with_coverage": true
+            "with_coverage": false
         },
         {
             "compiler": "clang-11",
@@ -204,18 +204,6 @@
             }
         },
         "Functional stateful tests (debug)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "deb",
-                "build_type": "debug",
-                "sanitizer": "none",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
-        "Functional stateless tests (ANTLR debug)": {
             "required_build_properties": {
                 "compiler": "clang-11",
                 "package_type": "deb",
