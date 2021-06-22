@@ -130,18 +130,6 @@ struct ReplicatedMergeTreeLogEntryData
     /// selection of merges. These parts are added to queue.virtual_parts.
     Strings getVirtualPartNames(MergeTreeDataFormatVersion format_version) const;
 
-    /// Returns set of parts that denote the block number ranges that should be blocked during the entry execution.
-    /// These parts are added to future_parts.
-    Strings getBlockingPartNames(MergeTreeDataFormatVersion format_version) const
-    {
-        Strings res = getVirtualPartNames(format_version);
-
-        if (type == CLEAR_COLUMN)
-            res.emplace_back(new_part_name);
-
-        return res;
-    }
-
     /// Returns fake part for drop range (for DROP_RANGE and REPLACE_RANGE)
     std::optional<String> getDropRange(MergeTreeDataFormatVersion format_version) const;
 
