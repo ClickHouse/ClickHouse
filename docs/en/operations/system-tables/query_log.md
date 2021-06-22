@@ -155,5 +155,6 @@ Settings:             {'background_pool_size':'32','load_balancing':'random','al
 **See Also**
 
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+-   [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — This table contains information about each view executed during a query.
 
 [Original article](https://clickhouse.tech/docs/en/operations/system-tables/query_log) <!--hide-->

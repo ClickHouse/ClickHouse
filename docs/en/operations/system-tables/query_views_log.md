@@ -1,0 +1,83 @@
+# system.query_views_log {#system_tables-query_views_log}
+
+Contains information about the dependent views executed when running a query, for example, the view type or the execution time.
+
+To start logging:
+
+1.  Configure parameters in the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) section.
+2.  Set [log_query_views](../../operations/settings/settings.md#settings-log-query-views) to 1.
+
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+
+ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
+
+Columns:
+
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the last event of the view happened.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution.
+-   `event_time_microsecinds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution with microseconds precision.
+-   `view_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of view execution (sum of its stages).
+-   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
+-   `view_name` ([String](../../sql-reference/data-types/string.md)) — Name of the view.
+-   `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — UUID of the view.
+-   `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the view. Values:
+    -   `'Default' = 1` — [Default views](../../sql-reference/statements/create/view.md#normal). Should not appear in this log.
+    -   `'Materialized' = 2` — [Materialized views](../../sql-reference/statements/create/view.md#materialized).
+    -   `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
+-   `view_query` ([String](../../sql-reference/data-types/string.md)) — The query executed by the view.
+-   `view_target` ([String](../../sql-reference/data-types/string.md)) — The name of the view target table.
+-   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
+-   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read bytes.
+-   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written rows.
+-   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written bytes.
+-   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this view.
+-   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events).
+-   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
+-   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the view. Values:
+    -   `'Init' = 1` — The view was cancelled before writing anything to storage.
+    -   `'WrittenPrefix' = 2` — The view was cancelled after writing its prefix to storage.
+    -   `'WrittenBlock' = 3` — The view was cancelled after writing its blocks to storage. It might have materialized the input wholly, partially or none at all.
+    -   `'WrittenSuffix' = 4` — The view wrote its suffix to storage. It completed successfully.
+-   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
+-   `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
+-   `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
+
+**Example**
+
+``` sql
+ SELECT * FROM system.query_views_log LIMIT 1 \G
+```
+
+``` text
+Row 1:
+──────
+event_date:              2021-06-22
+event_time:              2021-06-22 13:23:07
+event_time_microseconds: 2021-06-22 13:23:07.738221
+view_duration_ms:        0
+initial_query_id:        c3a1ac02-9cad-479b-af54-9e9c0a7afd70
+view_name:               default.matview_inner
+view_uuid:               00000000-0000-0000-0000-000000000000
+view_type:               Materialized
+view_query:              SELECT * FROM default.table_b
+view_target:             default.`.inner.matview_inner`
+read_rows:               4
+read_bytes:              64
+written_rows:            2
+written_bytes:           32
+peak_memory_usage:       4196188
+ProfileEvents.Names:     ['FileOpen','WriteBufferFromFileDescriptorWrite','WriteBufferFromFileDescriptorWriteBytes','IOBufferAllocs','IOBufferAllocBytes','DiskWriteElapsedMicroseconds','InsertedRows','InsertedBytes','SelectedRows','SelectedBytes','ContextLock','RWLockAcquiredReadLocks','RealTimeMicroseconds','UserTimeMicroseconds','SystemTimeMicroseconds','SoftPageFaults']
+ProfileEvents.Values:    [3,3,154,5,5242955,23,2,32,4,64,11,1,12458571345,1955,5860,110]
+status:                  WrittenSuffix
+exception_code:          0
+exception:
+stack_trace:
+```
+
+**See Also**
+
+-   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
+-   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_thread_log) <!--hide-->
