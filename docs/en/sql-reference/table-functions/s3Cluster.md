@@ -44,4 +44,4 @@ SELECT count(*) FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{
 **See Also**
 
 -   [S3 engine](../../engines/table-engines/integrations/s3.md)
--   [S3 table function](../../sql-reference/table-functions/s3.md)
+-   [s3 table function](../../sql-reference/table-functions/s3.md)
