@@ -1569,7 +1569,7 @@ Possible values:
 
 -   0 — Disabled (final query processing is done on the initiator node).
 -   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
--   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possilbe when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+-   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
 
 **Example**
 
@@ -1621,7 +1621,7 @@ Possible values:
 
 Default value: 0
 
-## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shardslrewrite-in}
+## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shards-rewrite-in}
 
 Rewrite IN in query for remote shards to exclude values that does not belong to the shard (requires optimize_skip_unused_shards).
 
@@ -2084,7 +2084,7 @@ Default value: 16.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recomended to use default value.
+Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recommended to use default value.
 
 Possible values:
 
