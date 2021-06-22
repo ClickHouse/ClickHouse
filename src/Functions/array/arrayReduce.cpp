@@ -11,7 +11,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 
 namespace DB
@@ -37,7 +37,7 @@ class FunctionArrayReduce : public IFunction
 {
 public:
     static constexpr auto name = "arrayReduce";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionArrayReduce>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReduce>(); }
 
     String getName() const override { return name; }
 

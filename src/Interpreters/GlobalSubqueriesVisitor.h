@@ -62,7 +62,7 @@ public:
                 return;
 
             bool is_table = false;
-            ASTPtr subquery_or_table_name = ast; /// ASTIdentifier | ASTSubquery | ASTTableExpression
+            ASTPtr subquery_or_table_name = ast; /// ASTTableIdentifier | ASTSubquery | ASTTableExpression
 
             if (const auto * ast_table_expr = ast->as<ASTTableExpression>())
             {
@@ -74,7 +74,7 @@ public:
                     is_table = true;
                 }
             }
-            else if (ast->as<ASTIdentifier>())
+            else if (ast->as<ASTTableIdentifier>())
                 is_table = true;
 
             if (!subquery_or_table_name)
@@ -122,11 +122,11 @@ public:
                 *  instead of doing a subquery, you just need to read it.
                 */
 
-            auto database_and_table_name = createTableIdentifier("", external_table_name);
+            auto database_and_table_name = std::make_shared<ASTTableIdentifier>(external_table_name);
             if (set_alias)
             {
                 String alias = subquery_or_table_name->tryGetAlias();
-                if (auto * table_name = subquery_or_table_name->as<ASTIdentifier>())
+                if (auto * table_name = subquery_or_table_name->as<ASTTableIdentifier>())
                     if (alias.empty())
                         alias = table_name->shortName();
                 database_and_table_name->setAlias(alias);
@@ -192,7 +192,9 @@ private:
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if (func.name == "globalIn" || func.name == "globalNotIn")
+        if ((data.getContext()->getSettingsRef().prefer_global_in_and_join
+             && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
+            || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
             ASTPtr & ast = func.arguments->children[1];
 
@@ -201,8 +203,12 @@ private:
             {
                 if (func.name == "globalIn")
                     func.name = "in";
-                else
+                else if (func.name == "globalNotIn")
                     func.name = "notIn";
+                else if (func.name == "globalNullIn")
+                    func.name = "nullIn";
+                else if (func.name == "globalNotNullIn")
+                    func.name = "notNullIn";
                 return;
             }
 
@@ -214,7 +220,9 @@ private:
     /// GLOBAL JOIN
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
-        if (table_elem.table_join && table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global)
+        if (table_elem.table_join
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global
+                || data.getContext()->getSettingsRef().prefer_global_in_and_join))
         {
             data.addExternalStorage(table_elem.table_expression, true);
             data.has_global_subqueries = true;

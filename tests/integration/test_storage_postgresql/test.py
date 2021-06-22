@@ -188,6 +188,11 @@ def test_non_default_scema(started_cluster):
     result = node1.query('SELECT * FROM test_pg_table_schema_with_dots')
     assert(result == expected)
 
+    cursor.execute('INSERT INTO "test_schema"."test_table" SELECT i FROM generate_series(100, 199) as t(i)')
+    result = node1.query('SELECT * FROM {}'.format(table_function))
+    expected = node1.query('SELECT number FROM numbers(200)')
+    assert(result == expected)
+
 
 def test_concurrent_queries(started_cluster):
     conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
@@ -301,6 +306,21 @@ def test_postgres_distributed(started_cluster):
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
     started_cluster.unpause_container('postgres1')
     assert(result == 'host2\nhost4\n' or result == 'host3\nhost4\n')
+
+
+def test_datetime_with_timezone(started_cluster):
+    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE test_timezone (ts timestamp without time zone, ts_z timestamp with time zone)")
+    cursor.execute("insert into test_timezone select '2014-04-04 20:00:00', '2014-04-04 20:00:00'::timestamptz at time zone 'America/New_York';")
+    cursor.execute("select * from test_timezone")
+    result = cursor.fetchall()[0]
+    print(result[0], str(result[1])[:-6])
+    node1.query("create table test_timezone ( ts DateTime, ts_z DateTime('America/New_York')) ENGINE PostgreSQL('postgres1:5432', 'clickhouse', 'test_timezone', 'postgres', 'mysecretpassword');")
+    assert(node1.query("select ts from test_timezone").strip() == str(result[0]))
+    # [:-6] because 2014-04-04 16:00:00+00:00 -> 2014-04-04 16:00:00
+    assert(node1.query("select ts_z from test_timezone").strip() == str(result[1])[:-6])
+    assert(node1.query("select * from test_timezone") == "2014-04-04 20:00:00\t2014-04-04 16:00:00\n")
 
 
 if __name__ == '__main__':

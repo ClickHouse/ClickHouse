@@ -14,7 +14,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include "registerTableFunctions.h"
 
 

@@ -13,7 +13,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include <h3api.h>
 
@@ -35,7 +35,7 @@ class FunctionH3KRing : public IFunction
 public:
     static constexpr auto name = "h3kRing";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionH3KRing>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3KRing>(); }
 
     std::string getName() const override { return name; }
 
@@ -72,7 +72,7 @@ public:
 
         std::vector<H3Index> hindex_vec;
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const H3Index origin_hindex = col_hindex->getUInt(row);
             const int k = col_k->getInt(row);

@@ -1,7 +1,7 @@
 #include "ExecutableDictionarySource.h"
 
 #include <functional>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Interpreters/Context.h>
@@ -62,7 +62,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     Block & sample_block_,
-    ContextConstPtr context_)
+    ContextPtr context_)
     : log(&Poco::Logger::get("ExecutableDictionarySource"))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
@@ -71,8 +71,6 @@ ExecutableDictionarySource::ExecutableDictionarySource(
 {
     /// Remove keys from sample_block for implicit_key dictionary because
     /// these columns will not be returned from source
-    /// Implicit key means that the source script will return only values,
-    /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
     if (configuration.implicit_key)
     {
         auto keys_names = dict_struct.getKeysNames();
@@ -133,7 +131,7 @@ namespace
     {
     public:
         BlockInputStreamWithBackgroundThread(
-            ContextConstPtr context,
+            ContextPtr context,
             const std::string & format,
             const Block & sample_block,
             const std::string & command_str,
@@ -258,7 +256,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextConstPtr context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
@@ -277,11 +275,11 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 
         ExecutableDictionarySource::Configuration configuration
         {
-            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
             .command = config.getString(settings_config_prefix + ".command"),
             .format = config.getString(settings_config_prefix + ".format"),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
+            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false)
         };
 
         return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);
