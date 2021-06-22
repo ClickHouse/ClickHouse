@@ -111,9 +111,11 @@ CROSS JOIN system.numbers AS c
 
 Настройки:
 
--  `header` — выводит выходной заголовок для шага. По умолчанию: 0.
--  `description` — выводит описание шага. По умолчанию: 1.
--  `actions` — выводит подробную информацию о действиях, выполняемых на данном шаге. По умолчанию: 0.
+-   `header` — выводит выходной заголовок для шага. По умолчанию: 0.
+-   `description` — выводит описание шага. По умолчанию: 1.
+-   `indexes` — показывает используемые индексы, количество отфильтрованных кусков и гранул для каждого примененного индекса. По умолчанию: 0. Поддерживается для таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+-   `actions` — выводит подробную информацию о действиях, выполняемых на данном шаге. По умолчанию: 0.
+-   `json` — выводит шаги выполнения запроса в виде строки в формате [JSON](../../interfaces/formats.md#json). По умолчанию: 0. Чтобы избежать ненужного экранирования, рекомендуется использовать формат [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
 
 Пример:
 
@@ -133,6 +135,225 @@ Union
 
 !!! note "Примечание"
     Оценка стоимости выполнения шага и запроса не поддерживается.
+	
+При `json = 1` шаги выполнения запроса выводятся в формате JSON. Каждый узел — это словарь, в котором всегда есть ключи `Node Type` и `Plans`. `Node Type` — это строка с именем шага. `Plans` — это массив с описаниями дочерних шагов. Другие дополнительные ключи могут быть добавлены в зависимости от типа узла и настроек.
+
+Пример:
+
+```sql
+EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Union",
+      "Plans": [
+        {
+          "Node Type": "Expression",
+          "Plans": [
+            {
+              "Node Type": "SettingQuotaAndLimits",
+              "Plans": [
+                {
+                  "Node Type": "ReadFromStorage"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Node Type": "Expression",
+          "Plans": [
+            {
+              "Node Type": "SettingQuotaAndLimits",
+              "Plans": [
+                {
+                  "Node Type": "ReadFromStorage"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
+
+При `description` = 1 к шагу добавляется ключ `Description`:
+
+```json
+{
+  "Node Type": "ReadFromStorage",
+  "Description": "SystemOne"
+}
+```
+
+При `header` = 1 к шагу добавляется ключ `Header` в виде массива столбцов.
+
+Пример:
+
+```sql
+EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Header": [
+        {
+          "Name": "1",
+          "Type": "UInt8"
+        },
+        {
+          "Name": "plus(2, dummy)",
+          "Type": "UInt16"
+        }
+      ],
+      "Plans": [
+        {
+          "Node Type": "SettingQuotaAndLimits",
+          "Header": [
+            {
+              "Name": "dummy",
+              "Type": "UInt8"
+            }
+          ],
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage",
+              "Header": [
+                {
+                  "Name": "dummy",
+                  "Type": "UInt8"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
+  
+При `indexes` = 1 добавляется ключ `Indexes`. Он содержит массив используемых индексов. Каждый индекс описывается как строка в формате JSON с ключом `Type` (`MinMax`, `Partition`, `PrimaryKey` или `Skip`) и дополнительные ключи:
+
+-   `Name` — имя индекса (на данный момент используется только для индекса `Skip`).
+-   `Keys` — массив столбцов, используемых индексом.
+-   `Condition` — строка с используемым условием.
+-   `Description` — индекс (на данный момент используется только для индекса `Skip`).
+-   `Initial Parts` — количество кусков до применения индекса.
+-   `Selected Parts` — количество кусков после применения индекса.
+-   `Initial Granules` — количество гранул до применения индекса.
+-   `Selected Granulesis` — количество гранул после применения индекса.
+
+Пример:
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Indexes": [
+  {
+    "Type": "MinMax",
+    "Keys": ["y"],
+    "Condition": "(y in [1, +inf))",
+    "Initial Parts": 5,
+    "Selected Parts": 4,
+    "Initial Granules": 12,
+    "Selected Granules": 11
+  },
+  {
+    "Type": "Partition",
+    "Keys": ["y", "bitAnd(z, 3)"],
+    "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
+    "Initial Parts": 4,
+    "Selected Parts": 3,
+    "Initial Granules": 11,
+    "Selected Granules": 10
+  },
+  {
+    "Type": "PrimaryKey",
+    "Keys": ["x", "y"],
+    "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
+    "Initial Parts": 3,
+    "Selected Parts": 2,
+    "Initial Granules": 10,
+    "Selected Granules": 6
+  },
+  {
+    "Type": "Skip",
+    "Name": "t_minmax",
+    "Description": "minmax GRANULARITY 2",
+    "Initial Parts": 2,
+    "Selected Parts": 1,
+    "Initial Granules": 6,
+    "Selected Granules": 2
+  },
+  {
+    "Type": "Skip",
+    "Name": "t_set",
+    "Description": "set GRANULARITY 2",
+    "Initial Parts": 1,
+    "Selected Parts": 1,
+    "Initial Granules": 2,
+    "Selected Granules": 1
+  }
+]
+```
+
+При `actions` = 1 добавляются ключи, зависящие от типа шага.
+
+Пример:
+
+```sql
+EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Expression": {
+        "Inputs": [],
+        "Actions": [
+          {
+            "Node Type": "Column",
+            "Result Type": "UInt8",
+            "Result Type": "Column",
+            "Column": "Const(UInt8)",
+            "Arguments": [],
+            "Removed Arguments": [],
+            "Result": 0
+          }
+        ],
+        "Outputs": [
+          {
+            "Name": "1",
+            "Type": "UInt8"
+          }
+        ],
+        "Positions": [0],
+        "Project Input": true
+      },
+      "Plans": [
+        {
+          "Node Type": "SettingQuotaAndLimits",
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
 
 ### EXPLAIN PIPELINE {#explain-pipeline}
 
@@ -141,7 +362,6 @@ Union
 -   `header` — выводит заголовок для каждого выходного порта. По умолчанию: 0.
 -   `graph` — выводит граф, описанный на языке [DOT](https://ru.wikipedia.org/wiki/DOT_(язык)). По умолчанию: 0.
 -   `compact` — выводит граф в компактном режиме, если включена настройка `graph`. По умолчанию: 1.
--   `indexes` — показывает используемые индексы, количество отфильтрованных кусков и гранул для каждого примененного индекса. По умолчанию: 0. Поддерживается для таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
 Пример:
 

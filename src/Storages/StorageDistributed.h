@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -36,9 +36,9 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed final : public ext::shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
+class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageDistributed>;
+    friend struct shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
     friend class StorageSystemDistributionQueue;
@@ -51,6 +51,7 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool isRemote() const override { return true; }

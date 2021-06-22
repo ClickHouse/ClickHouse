@@ -54,6 +54,12 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "get\n" << new_part_name;
             break;
 
+        case CLONE_PART_FROM_SHARD:
+            out << "clone_part_from_shard\n"
+                << new_part_name << "\n"
+                << "source_shard: " << source_shard;
+            break;
+
         case ATTACH_PART:
             out << "attach\n" << new_part_name << "\n"
                 << "part_checksum: " << part_checksum;
@@ -140,6 +146,10 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "metadata_str_size:\n";
             out << metadata_str.size() << "\n";
             out << metadata_str;
+            break;
+
+        case SYNC_PINNED_PART_UUIDS:
+            out << "sync_pinned_part_uuids\n";
             break;
 
         default:
@@ -306,6 +316,16 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         metadata_str.resize(metadata_size);
         in.readStrict(&metadata_str[0], metadata_size);
     }
+    else if (type_str == "sync_pinned_part_uuids")
+    {
+        type = SYNC_PINNED_PART_UUIDS;
+    }
+    else if (type_str == "clone_part_from_shard")
+    {
+        type = CLONE_PART_FROM_SHARD;
+        in >> new_part_name;
+        in >> "\nsource_shard: " >> source_shard;
+    }
 
     if (!trailing_newline_found)
         in >> "\n";
@@ -393,6 +413,24 @@ ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String
     return res;
 }
 
+std::optional<String> ReplicatedMergeTreeLogEntryData::getDropRange(MergeTreeDataFormatVersion format_version) const
+{
+    if (type == DROP_RANGE)
+        return new_part_name;
+
+    if (type == REPLACE_RANGE)
+    {
+        auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
+        if (!ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range_info))
+        {
+            /// It's REPLACE, not MOVE or ATTACH, so drop range is real
+            return replace_range_entry->drop_range_part_name;
+        }
+    }
+
+    return {};
+}
+
 Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormatVersion format_version) const
 {
     /// Doesn't produce any part
@@ -403,21 +441,22 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
     if (type == DROP_RANGE)
         return {new_part_name};
 
-    /// CLEAR_COLUMN and CLEAR_INDEX are deprecated since 20.3
-    if (type == CLEAR_COLUMN || type == CLEAR_INDEX)
-        return {};
-
     if (type == REPLACE_RANGE)
     {
         Strings res = replace_range_entry->new_part_names;
         auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
-        if (!ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range_info))
-        {
-            /// It's REPLACE, not MOVE or ATTACH, so drop range is real
-            res.emplace_back(replace_range_entry->drop_range_part_name);
-        }
+        if (auto drop_range = getDropRange(format_version))
+            res.emplace_back(*drop_range);
         return res;
     }
+
+    /// Doesn't produce any part.
+    if (type == SYNC_PINNED_PART_UUIDS)
+        return {};
+
+    /// Doesn't produce any part by itself.
+    if (type == CLONE_PART_FROM_SHARD)
+        return {};
 
     return {new_part_name};
 }

@@ -5,7 +5,7 @@
 #endif
 
 #if USE_LIBPQXX
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -16,9 +16,9 @@ namespace DB
 {
 
 
-class StoragePostgreSQL final : public ext::shared_ptr_helper<StoragePostgreSQL>, public IStorage
+class StoragePostgreSQL final : public shared_ptr_helper<StoragePostgreSQL>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StoragePostgreSQL>;
+    friend struct shared_ptr_helper<StoragePostgreSQL>;
 public:
     StoragePostgreSQL(
         const StorageID & table_id_,
