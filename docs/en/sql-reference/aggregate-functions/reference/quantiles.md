@@ -89,7 +89,6 @@ Type of array values:
 -   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
 -   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
-
 **Example**
 
 Query:
