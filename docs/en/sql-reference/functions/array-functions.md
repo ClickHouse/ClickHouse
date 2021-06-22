@@ -52,7 +52,7 @@ range([start, ] end [, step])
 **Arguments**
 
 -   `start` — The first element of the array. Optional, required if `step` is used. Default value: 0. [UInt](../data-types/int-uint.md)
--   `end` — The number before which the array is constructed. Required. Must be greater than `start`. [UInt](../data-types/int-uint.md)
+-   `end` — The number before which the array is constructed. Required. [UInt](../data-types/int-uint.md)
 -   `step` — Determines the incremental step between each element in the array. Optional. Default value: 1. [UInt](../data-types/int-uint.md)
 
 **Returned value**
