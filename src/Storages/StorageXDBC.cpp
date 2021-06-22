@@ -8,7 +8,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Poco/Path.h>
 #include <Processors/Pipe.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>

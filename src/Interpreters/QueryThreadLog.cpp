@@ -51,6 +51,8 @@ Block QueryThreadLogElement::createBlock()
         {std::make_shared<DataTypeString>(),        "initial_query_id"},
         {DataTypeFactory::instance().get("IPv6"),   "initial_address"},
         {std::make_shared<DataTypeUInt16>(),        "initial_port"},
+        {std::make_shared<DataTypeDateTime>(),      "initial_query_start_time"},
+        {std::make_shared<DataTypeDateTime64>(6),   "initial_query_start_time_microseconds"},
         {std::make_shared<DataTypeUInt8>(),         "interface"},
         {std::make_shared<DataTypeString>(),        "os_user"},
         {std::make_shared<DataTypeString>(),        "client_hostname"},

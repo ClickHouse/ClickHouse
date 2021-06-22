@@ -1,10 +1,11 @@
 #pragma once
 
+#include <common/types.h>
+#include <common/bit_cast.h>
+#include <Common/HashTable/HashMap.h>
+
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <Common/HashTable/HashMap.h>
-#include <common/types.h>
-#include <ext/bit_cast.h>
 
 
 namespace DB
@@ -102,13 +103,13 @@ private:
     /// Take the most significant 16 bits of the floating point number.
     BFloat16 toBFloat16(const Value & x) const
     {
-        return ext::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
+        return bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
     }
 
     /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
     Float32 toFloat32(const BFloat16 & x) const
     {
-        return ext::bit_cast<Float32>(x << 16);
+        return bit_cast<Float32>(x << 16);
     }
 
     using Pair = PairNoInit<Float32, Weight>;

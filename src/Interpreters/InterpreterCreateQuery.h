@@ -22,10 +22,10 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 /** Allows to create new table or database,
   *  or create an object for existing table or database.
   */
-class InterpreterCreateQuery : public IInterpreter, WithContext
+class InterpreterCreateQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextPtr context_);
+    InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
 
     BlockIO execute() override;
 

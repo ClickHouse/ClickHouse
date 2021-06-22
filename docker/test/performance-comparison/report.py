@@ -453,7 +453,10 @@ if args.report == 'main':
             text += tableRow(r, attrs, anchor)
 
         text += tableEnd()
-        tables.append(text)
+
+        # Don't add an empty table.
+        if very_unstable_queries:
+            tables.append(text)
 
     add_unstable_queries()
 
@@ -486,7 +489,7 @@ if args.report == 'main':
         text = tableStart('Test Times')
         text += tableHeader(columns, attrs)
 
-        allowed_average_run_time = 1.6 # 30 seconds per test at 7 runs
+        allowed_average_run_time = 3.75 # 60 seconds per test at (7 + 1) * 2 runs
         for r in rows:
             anchor = f'{currentTableAnchor()}.{r[0]}'
             total_runs = (int(r[7]) + 1) * 2  # one prewarm run, two servers
@@ -552,14 +555,15 @@ if args.report == 'main':
         message_array.append(str(slower_queries) + ' slower')
 
     if unstable_partial_queries:
-        unstable_queries += unstable_partial_queries
-        error_tests += unstable_partial_queries
+        very_unstable_queries += unstable_partial_queries
         status = 'failure'
 
     # Don't show mildly unstable queries, only the very unstable ones we
     # treat as errors.
     if very_unstable_queries:
-        status = 'failure'
+        if very_unstable_queries > 3:
+            error_tests += very_unstable_queries
+            status = 'failure'
         message_array.append(str(very_unstable_queries) + ' unstable')
 
     error_tests += slow_average_tests

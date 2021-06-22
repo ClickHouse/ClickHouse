@@ -102,6 +102,9 @@ enum class AccessType
     M(KILL_QUERY, "", GLOBAL, ALL) /* allows to kill a query started by another user
                                       (anyone can kill his own queries) */\
     \
+    M(MOVE_PARTITION_BETWEEN_SHARDS, "", GLOBAL, ALL) /* required to be able to move a part/partition to a table
+                                                         identified by it's ZooKeeper path */\
+    \
     M(CREATE_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
     M(ALTER_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
     M(DROP_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
@@ -151,6 +154,7 @@ enum class AccessType
     M(SYSTEM_DROP_REPLICA, "DROP REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_SYNC_REPLICA, "SYNC REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_RESTART_REPLICA, "RESTART REPLICA", TABLE, SYSTEM) \
+    M(SYSTEM_RESTORE_REPLICA, "RESTORE REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_FLUSH_DISTRIBUTED, "FLUSH DISTRIBUTED", TABLE, SYSTEM_FLUSH) \
     M(SYSTEM_FLUSH_LOGS, "FLUSH LOGS", GLOBAL, SYSTEM_FLUSH) \
     M(SYSTEM_FLUSH, "", GROUP, SYSTEM) \
