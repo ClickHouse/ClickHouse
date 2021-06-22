@@ -28,12 +28,20 @@ typedef unsigned __int64 uint64_t;
 
 //-----------------------------------------------------------------------------
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 uint32_t MurmurHash2        ( const void * key, size_t len, uint32_t seed );
 uint64_t MurmurHash64A      ( const void * key, size_t len, uint64_t seed );
 uint64_t MurmurHash64B      ( const void * key, size_t len, uint64_t seed );
 uint32_t MurmurHash2A       ( const void * key, size_t len, uint32_t seed );
 uint32_t MurmurHashNeutral2 ( const void * key, size_t len, uint32_t seed );
 uint32_t MurmurHashAligned2 ( const void * key, size_t len, uint32_t seed );
+ 
+#ifdef __cplusplus
+}
+#endif
 
 //-----------------------------------------------------------------------------
 
