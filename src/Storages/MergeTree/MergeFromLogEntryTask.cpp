@@ -109,7 +109,11 @@ bool MergeFromLogEntryTask::executeImpl()
         case State::NEED_PREPARE :
         {
             if (!prepare())
+            {
                 state = State::CANT_MERGE_NEED_FETCH;
+                return true;
+            }
+
 
             state = State::NEED_EXECUTE_INNER_MERGE;
             return true;
