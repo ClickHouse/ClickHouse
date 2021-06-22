@@ -171,9 +171,10 @@ SELECT quantileExactHigh(number) FROM numbers(10)
 
 Эта функция эквивалентна Excel функции [PERCENTILE.EXC](https://support.microsoft.com/en-us/office/percentile-exc-function-bbaa7204-e9e1-4010-85bf-c31dc5dce4ba), [тип R6](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 
-Внутренние состояния функций `quantileExactExclusive` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantilesExactExclusive](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantilesexactexclusive), это повысит эффективность запроса.
+Если в одном запросе вызывается несколько функций `quantileExactExclusive` с разными значениями `level`, эти функции вычисляются независимо друг от друга. В таких случаях используйте функцию [quantilesExactExclusive](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantilesexactexclusive), запрос будет выполняться эффективнее.
 
-**Синтакс**
+**Синтаксис**
+
 
 ``` sql
 quantileExactExclusive(level)(expr)
@@ -181,8 +182,10 @@ quantileExactExclusive(level)(expr)
 
 **Аргументы**
 
--   `level` — уровень квантиля. Необязательный параметр. Возможные значения: (0, 1). Значения по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)). [Float](../../../sql-reference/data-types/float.md).
--   `expr` — выражение, зависящее от значений столбцов, возвращающее данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `level` — уровень квантиля. Необязательный параметр. Возможные значения: (0, 1) — граничные значения не учитываются. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)). [Float](../../../sql-reference/data-types/float.md).
+
+-   `expr` — выражение, зависящее от значений столбцов. Возвращает данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
+
 
 **Возвращаемое значение**
 
@@ -220,9 +223,10 @@ SELECT quantileExactExclusive(0.6)(x) FROM (SELECT number AS x FROM num);
 
 Эта функция эквивалентна Excel функции [PERCENTILE.INC](https://support.microsoft.com/en-us/office/percentile-inc-function-680f9539-45eb-410b-9a5e-c1355e5fe2ed), [тип R7](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 
-Внутренние состояния функций `quantileExactInclusive` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantilesExactInclusive](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantilesexactexclusive), это повысит эффективность запроса.
+Если в одном запросе вызывается несколько функций `quantileExactInclusive` с разными значениями `level`, эти функции вычисляются независимо друг от друга. В таких случаях используйте функцию [quantilesExactInclusive](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantilesexactinclusive), запрос будет выполняться эффективнее.
 
-**Синтакс**
+**Синтаксис**
+
 
 ``` sql
 quantileExactInclusive(level)(expr)
@@ -230,7 +234,8 @@ quantileExactInclusive(level)(expr)
 
 **Аргументы**
 
--   `level` — уровень квантиля. Необязательный параметр. Возможные значения: [0, 1]. Значения по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)). [Float](../../../sql-reference/data-types/float.md).
+-   `level` — уровень квантиля. Необязательный параметр. Возможные значения: [0, 1] — граничные значения учитываются. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)). [Float](../../../sql-reference/data-types/float.md).
+
 -   `expr` — выражение, зависящее от значений столбцов, возвращающее данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Возвращаемое значение**
@@ -265,4 +270,3 @@ SELECT quantileExactInclusive(0.6)(x) FROM (SELECT number AS x FROM num);
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
-
