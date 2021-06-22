@@ -347,6 +347,20 @@ Coordination::ZooKeeperRequestPtr deserializeErrorTxn(ReadBuffer & in)
     return nullptr;
 }
 
+Coordination::ZooKeeperRequestPtr deserializeSetACLTxn(ReadBuffer & in)
+{
+    std::shared_ptr<Coordination::ZooKeeperSetACLRequest> result = std::make_shared<Coordination::ZooKeeperSetACLRequest>();
+
+    Coordination::read(result->path, in);
+    Coordination::read(result->acls, in);
+    Coordination::read(result->version, in);
+    /// It stores version + 1 (which should be, not for request)
+    result->version -= 1;
+    result->need_to_hash_acls = false;
+
+    return result;
+}
+
 Coordination::ZooKeeperRequestPtr deserializeMultiTxn(ReadBuffer & in);
 
 Coordination::ZooKeeperRequestPtr deserializeTxnImpl(ReadBuffer & in, bool subtxn)
@@ -370,6 +384,9 @@ Coordination::ZooKeeperRequestPtr deserializeTxnImpl(ReadBuffer & in, bool subtx
             break;
         case 5:
             result = deserializeSetTxn(in);
+            break;
+        case 7:
+            result = deserializeSetACLTxn(in);
             break;
         case 13:
             result = deserializeCheckVersionTxn(in);

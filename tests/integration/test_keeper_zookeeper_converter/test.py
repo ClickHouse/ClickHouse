@@ -223,6 +223,11 @@ def test_acls(started_cluster):
 
     yet_other_auth_connection.set("/test_multi_all_acl", b"Y")
 
+    genuine_connection.add_auth('digest', 'user3:password3')
+
+    # just to check that we are able to deserialize it
+    genuine_connection.set_acls("/test_multi_all_acl", acls=[make_acl("auth", "", read=True, write=False, create=True, delete=True, admin=True)])
+
     no_auth_connection = get_genuine_zk()
 
     with pytest.raises(Exception):
@@ -241,3 +246,13 @@ def test_acls(started_cluster):
     fake_connection.add_auth('digest', 'user3:password3')
 
     compare_states(genuine_connection, fake_connection)
+
+    for connection in [genuine_connection, fake_connection]:
+        acls, stat = connection.get_acls("/test_multi_all_acl")
+        assert stat.aversion == 1
+        assert len(acls) == 3
+        for acl in acls:
+            assert acl.acl_list == ['READ', 'CREATE', 'DELETE', 'ADMIN']
+            assert acl.id.scheme == 'digest'
+            assert acl.perms == 29
+        assert acl.id.id in ('user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=', 'user2:lo/iTtNMP+gEZlpUNaCqLYO3i5U=', 'user3:wr5Y0kEs9nFX3bKrTMKxrlcFeWo=')
