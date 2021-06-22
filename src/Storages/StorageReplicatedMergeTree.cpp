@@ -1585,6 +1585,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected log entry type: {}", static_cast<int>(entry.type));
     }
 
+    if (do_fetch)
+        executeFetch(entry);
+
     return true;
 }
 

@@ -41,6 +41,7 @@ bool MergePlainMergeTreeTask::execute()
             return false;
         }
     }
+    return false;
 }
 
 

@@ -161,6 +161,7 @@ bool MergeFromLogEntryTask::executeImpl()
             return false;
         }
     }
+    return false;
 }
 
 
