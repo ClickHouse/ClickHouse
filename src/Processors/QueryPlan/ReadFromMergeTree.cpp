@@ -788,16 +788,38 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
-    KeyCondition key_condition(query_info.query, query_info.syntax_analyzer_result, query_info.sets, context, primary_key_columns, primary_key.expression);
+    std::optional<KeyCondition> key_condition;
 
-    if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
+    if (settings.query_plan_optimize_primary_key)
+    {
+        ActionDAGNodes nodes;
+        if (prewhere_info)
+        {
+            const auto & node = prewhere_info->prewhere_actions->getActionsDAG().findInIndex(prewhere_info->prewhere_column_name);
+            nodes.nodes.push_back(&node);
+        }
+
+        if (added_filter)
+        {
+            const auto & node = added_filter->findInIndex(added_filter_column_name);
+            nodes.nodes.push_back(&node);
+        }
+
+        key_condition.emplace(std::move(nodes), query_info.sets, context, primary_key_columns, primary_key.expression);
+    }
+    else
+    {
+        key_condition.emplace(query_info.query, query_info.syntax_analyzer_result, query_info.sets, context, primary_key_columns, primary_key.expression);
+    }
+
+    if (settings.force_primary_key && key_condition->alwaysUnknownOrTrue())
     {
         throw Exception(
             ErrorCodes::INDEX_NOT_USED,
             "Primary key ({}) is not used and setting 'force_primary_key' is set.",
             fmt::join(primary_key_columns, ", "));
     }
-    LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
+    LOG_DEBUG(log, "Key condition: {}", key_condition->toString());
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
@@ -806,7 +828,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         max_block_numbers_to_read.get(), log, result.index_stats);
 
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
-        select, metadata_snapshot->getColumns().getAllPhysical(), parts, key_condition,
+        select, metadata_snapshot->getColumns().getAllPhysical(), parts, *key_condition,
         data, metadata_snapshot, context, sample_factor_column_queried, log);
 
     if (result.sampling.read_nothing)
@@ -823,7 +845,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         metadata_snapshot,
         query_info,
         context,
-        key_condition,
+        *key_condition,
         reader_settings,
         log,
         requested_num_streams,

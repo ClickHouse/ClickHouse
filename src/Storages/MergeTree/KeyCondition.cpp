@@ -201,7 +201,7 @@ public:
         if (ast)
             return typeid_cast<const ASTLiteral *>(ast);
         else
-            return dag->type == ActionsDAG::ActionType::COLUMN;
+            return dag->column && isColumnConst(*dag->column);
     }
 
     ColumnWithTypeAndName getConstant() const
@@ -310,10 +310,16 @@ public:
         {
             if (dag->column)
             {
-                const auto * col_set = typeid_cast<const ColumnSet *>(dag->column.get());
-                auto set = col_set->getData();
-                if (set->isCreated())
-                    return set;
+                const IColumn * col = dag->column.get();
+                if (const auto * col_const = typeid_cast<const ColumnConst *>(col))
+                    col = &col_const->getDataColumn();
+
+                if (const auto * col_set = typeid_cast<const ColumnSet *>(col))
+                {
+                    auto set = col_set->getData();
+                    if (set->isCreated())
+                        return set;
+                }
             }
         }
 
