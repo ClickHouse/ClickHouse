@@ -15,7 +15,7 @@ for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -n --query "CREATE TABLE ttl_table$i(
         key DateTime
     )
-    ENGINE ReplicatedMergeTree('/test/01921_concurrent_ttl_and_normal_merges/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/ttl_table', '$i')
+    ENGINE ReplicatedMergeTree('/test/01921_concurrent_ttl_and_normal_merges/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ttl_table', '$i')
     ORDER BY tuple()
     TTL key + INTERVAL 1 SECOND
     SETTINGS merge_with_ttl_timeout=1, max_replicated_merges_with_ttl_in_queue=100, max_number_of_merges_with_ttl_in_pool=100;"
