@@ -39,7 +39,7 @@ class Task:
         for instance_name, _ in cluster.instances.items():
             instance = cluster.instances[instance_name]
             instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_taxi_data.xml'), self.container_task_file)
-            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
+            logging.debug(f"Copied task file to container of '{instance_name}' instance. Path {self.container_task_file}")
 
 
     def start(self):
@@ -48,11 +48,11 @@ class Task:
             node.query("DROP DATABASE IF EXISTS dailyhistory SYNC;")
             node.query("DROP DATABASE IF EXISTS monthlyhistory SYNC;")
 
-        instance = cluster.instances['first']
+        first = cluster.instances['first']
 
         # daily partition database
-        instance.query("CREATE DATABASE IF NOT EXISTS dailyhistory on cluster events;")
-        instance.query("""CREATE TABLE dailyhistory.yellow_tripdata_staging ON CLUSTER events
+        first.query("CREATE DATABASE IF NOT EXISTS dailyhistory on cluster events;")
+        first.query("""CREATE TABLE dailyhistory.yellow_tripdata_staging ON CLUSTER events
         (
             id UUID DEFAULT generateUUIDv4(),
             vendor_id String,
@@ -84,12 +84,12 @@ class Task:
         ORDER BY (tpep_pickup_datetime, id)
         PARTITION BY (toYYYYMMDD(tpep_pickup_datetime))""")
 
-        instance.query("""CREATE TABLE dailyhistory.yellow_tripdata
+        first.query("""CREATE TABLE dailyhistory.yellow_tripdata
             ON CLUSTER events
             AS dailyhistory.yellow_tripdata_staging
             ENGINE = Distributed('events', 'dailyhistory', yellow_tripdata_staging, sipHash64(id) % 3);""")
 
-        instance.query("""INSERT INTO dailyhistory.yellow_tripdata
+        first.query("""INSERT INTO dailyhistory.yellow_tripdata
             SELECT * FROM generateRandom(
                 'id UUID DEFAULT generateUUIDv4(),
                 vendor_id String,
@@ -119,8 +119,8 @@ class Task:
             1, 10, 2) LIMIT 50;""")
 
         # monthly partition database
-        instance.query("create database IF NOT EXISTS monthlyhistory on cluster events;")
-        instance.query("""CREATE TABLE monthlyhistory.yellow_tripdata_staging ON CLUSTER events
+        first.query("create database IF NOT EXISTS monthlyhistory on cluster events;")
+        first.query("""CREATE TABLE monthlyhistory.yellow_tripdata_staging ON CLUSTER events
         (
             id UUID DEFAULT generateUUIDv4(),
             vendor_id String,
@@ -153,16 +153,16 @@ class Task:
         ORDER BY (tpep_pickup_datetime, id)
         PARTITION BY (pickup_location_id, toYYYYMM(tpep_pickup_datetime))""")
 
-        instance.query("""CREATE TABLE monthlyhistory.yellow_tripdata
+        first.query("""CREATE TABLE monthlyhistory.yellow_tripdata
             ON CLUSTER events
             AS monthlyhistory.yellow_tripdata_staging
             ENGINE = Distributed('events', 'monthlyhistory', yellow_tripdata_staging, sipHash64(id) % 3);""")
 
 
     def check(self):
-        instance = cluster.instances["first"]
-        a = TSV(instance.query("SELECT count() from dailyhistory.yellow_tripdata"))
-        b = TSV(instance.query("SELECT count() from monthlyhistory.yellow_tripdata"))
+        first = cluster.instances["first"]
+        a = TSV(first.query("SELECT count() from dailyhistory.yellow_tripdata"))
+        b = TSV(first.query("SELECT count() from monthlyhistory.yellow_tripdata"))
         assert a == b, "Distributed tables"
 
         for instance_name, instance in cluster.instances.items():
@@ -187,10 +187,10 @@ def execute_task(started_cluster, task, cmd_options):
     task.start()
 
     zk = started_cluster.get_kazoo_client('zoo1')
-    print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
+    logging.debug("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
     # Run cluster-copier processes on each node
-    docker_api = docker.from_env().api
+    docker_api = started_cluster.docker_client.api
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
@@ -201,9 +201,9 @@ def execute_task(started_cluster, task, cmd_options):
            '--base-dir', '/var/log/clickhouse-server/copier']
     cmd += cmd_options
 
-    print(cmd)
+    logging.debug(f"execute_task cmd: {cmd}")
 
-    for instance_name, instance in started_cluster.instances.items():
+    for instance_name in started_cluster.instances.keys():
         instance = started_cluster.instances[instance_name]
         container = instance.get_docker_handle()
         instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs_three_nodes/config-copier.xml"), "/etc/clickhouse-server/config-copier.xml")
