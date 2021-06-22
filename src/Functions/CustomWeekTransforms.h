@@ -97,6 +97,11 @@ struct ToWeekImpl
         YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
         return yw.second;
     }
+    static inline UInt8 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum(d), week_mode);
+        return yw.second;
+    }
     static inline UInt8 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode);
