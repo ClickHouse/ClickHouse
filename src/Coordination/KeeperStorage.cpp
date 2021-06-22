@@ -678,6 +678,111 @@ struct KeeperStorageCheckRequest final : public KeeperStorageRequest
     }
 };
 
+
+struct KeeperStorageSetACLRequest final : public KeeperStorageRequest
+{
+    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    {
+        auto & container = storage.container;
+        auto it = container.find(zk_request->getPath());
+        if (it == container.end())
+            return true;
+
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        if (node_acls.empty())
+            return true;
+
+        const auto & session_auths = storage.session_and_auth[session_id];
+        return checkACL(Coordination::ACL::Admin, node_acls, session_auths);
+    }
+
+    using KeeperStorageRequest::KeeperStorageRequest;
+
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t session_id) const override
+    {
+        auto & container = storage.container;
+
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperSetACLResponse & response = dynamic_cast<Coordination::ZooKeeperSetACLResponse &>(*response_ptr);
+        Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*zk_request);
+        auto it = container.find(request.path);
+        if (it == container.end())
+        {
+            response.error = Coordination::Error::ZNONODE;
+        }
+        else if (request.version != -1 && request.version != it->value.stat.aversion)
+        {
+            response.error = Coordination::Error::ZBADVERSION;
+        }
+        else
+        {
+            auto & session_auth_ids = storage.session_and_auth[session_id];
+            Coordination::ACLs node_acls;
+
+            if (!fixupACL(request.acls, session_auth_ids, node_acls, request.need_to_hash_acls))
+            {
+                response.error = Coordination::Error::ZINVALIDACL;
+                return {response_ptr, {}};
+            }
+
+            uint64_t acl_id = storage.acl_map.convertACLs(node_acls);
+            storage.acl_map.addUsage(acl_id);
+
+            storage.container.updateValue(request.path, [acl_id] (KeeperStorage::Node & node)
+            {
+                node.acl_id = acl_id;
+                ++node.stat.aversion;
+            });
+
+            response.stat = it->value.stat;
+            response.error = Coordination::Error::ZOK;
+        }
+
+        /// It cannot be used insied multitransaction?
+        return { response_ptr, {} };
+    }
+};
+
+struct KeeperStorageGetACLRequest final : public KeeperStorageRequest
+{
+    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    {
+        auto & container = storage.container;
+        auto it = container.find(zk_request->getPath());
+        if (it == container.end())
+            return true;
+
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        if (node_acls.empty())
+            return true;
+
+        const auto & session_auths = storage.session_and_auth[session_id];
+        /// LOL, GetACL require more permissions, then SetACL...
+        return checkACL(Coordination::ACL::Admin | Coordination::ACL::Read, node_acls, session_auths);
+    }
+    using KeeperStorageRequest::KeeperStorageRequest;
+
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperGetACLResponse & response = dynamic_cast<Coordination::ZooKeeperGetACLResponse &>(*response_ptr);
+        Coordination::ZooKeeperGetACLRequest & request = dynamic_cast<Coordination::ZooKeeperGetACLRequest &>(*zk_request);
+        auto & container = storage.container;
+        auto it = container.find(request.path);
+        if (it == container.end())
+        {
+            response.error = Coordination::Error::ZNONODE;
+        }
+        else
+        {
+            response.stat = it->value.stat;
+            response.acl = storage.acl_map.convertNumber(it->value.acl_id);
+        }
+
+        return {response_ptr, {}};
+    }
+};
+
 struct KeeperStorageMultiRequest final : public KeeperStorageRequest
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
@@ -904,6 +1009,8 @@ KeeperWrapperFactory::KeeperWrapperFactory()
     registerKeeperRequestWrapper<Coordination::OpNum::SimpleList, KeeperStorageListRequest>(*this);
     registerKeeperRequestWrapper<Coordination::OpNum::Check, KeeperStorageCheckRequest>(*this);
     registerKeeperRequestWrapper<Coordination::OpNum::Multi, KeeperStorageMultiRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::SetACL, KeeperStorageSetACLRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::GetACL, KeeperStorageGetACLRequest>(*this);
 }
 
 
