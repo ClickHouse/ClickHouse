@@ -459,6 +459,8 @@ private:
     const ExpressionActionsPtr key_expr;
     /// All intermediate columns are used to calculate key_expr.
     const NameSet key_subexpr_names;
+
+    NameSet array_joined_columns;
     PreparedSets prepared_sets;
 
     // If true, always allow key_expr to be wrapped by function
