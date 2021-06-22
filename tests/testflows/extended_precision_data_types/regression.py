@@ -22,7 +22,7 @@ xflags = {
 @XFlags(xflags)
 @Name("extended precision data types")
 @Specifications(
-    QA_SRS020_ClickHouse_Extended_Precision_Data_Types
+    SRS020_ClickHouse_Extended_Precision_Data_Types
 )
 @Requirements(
     RQ_SRS_020_ClickHouse_Extended_Precision("1.0"),
