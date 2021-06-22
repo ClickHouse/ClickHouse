@@ -110,7 +110,9 @@
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
         "00738_lock_for_inner_table",
-        "01153_attach_mv_uuid"
+        "01153_attach_mv_uuid",
+        /// Sometimes cannot lock file most likely due to concurrent or adjacent tests, but we don't care how it works in Ordinary database.
+        "rocksdb"
     ],
     "database-replicated": [
         /// Unclassified

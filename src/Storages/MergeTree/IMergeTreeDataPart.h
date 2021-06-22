@@ -223,6 +223,12 @@ public:
         DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
     };
 
+    static constexpr auto all_part_states =
+    {
+        State::Temporary, State::PreCommitted, State::Committed, State::Outdated, State::Deleting,
+        State::DeleteOnDestroy
+    };
+
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
