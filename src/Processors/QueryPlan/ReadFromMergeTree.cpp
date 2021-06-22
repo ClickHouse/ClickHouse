@@ -805,7 +805,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
             nodes.nodes.push_back(&node);
         }
 
-        key_condition.emplace(std::move(nodes), query_info.sets, context, primary_key_columns, primary_key.expression);
+        key_condition.emplace(std::move(nodes), query_info.syntax_analyzer_result, query_info.sets, context, primary_key_columns, primary_key.expression);
     }
     else
     {

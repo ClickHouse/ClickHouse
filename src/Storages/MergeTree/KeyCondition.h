@@ -240,6 +240,7 @@ public:
 
     KeyCondition(
         ActionDAGNodes dag_nodes,
+        TreeRewriterResultPtr syntax_analyzer_result,
         PreparedSets prepared_sets_,
         ContextPtr context,
         const Names & key_column_names,

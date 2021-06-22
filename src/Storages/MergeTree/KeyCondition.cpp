@@ -842,6 +842,7 @@ KeyCondition::KeyCondition(
 
 KeyCondition::KeyCondition(
     ActionDAGNodes dag_nodes,
+    TreeRewriterResultPtr syntax_analyzer_result,
     PreparedSets prepared_sets_,
     ContextPtr context,
     const Names & key_column_names,
@@ -860,6 +861,9 @@ KeyCondition::KeyCondition(
         if (!key_columns.count(name))
             key_columns[name] = i;
     }
+
+    for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
+        array_joined_columns.insert(name);
 
     if (!dag_nodes.nodes.empty())
     {
