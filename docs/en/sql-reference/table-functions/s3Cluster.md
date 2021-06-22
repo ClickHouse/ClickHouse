@@ -35,7 +35,7 @@ SELECT * FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{clickho
 Count the total amount of rows in all files in the cluster `cluster_simple`:
 
 ``` sql
-SELECT count(*) from s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))');
+SELECT count(*) FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))');
 ```
 
 !!! warning "Warning"
