@@ -37,12 +37,16 @@ def stop_clickhouse():
 def start_clickhouse():
     node.start_clickhouse()
 
-def copy_zookeeper_data():
+def copy_zookeeper_data(make_zk_snapshots):
     stop_zookeeper()
+
+    if make_zk_snapshots: # force zookeeper to create snapshot
+        start_zookeeper()
+        stop_zookeeper()
+
     stop_clickhouse()
     clear_clickhouse_data()
     convert_zookeeper_data()
-    print(node.exec_in_container)
     start_zookeeper()
     start_clickhouse()
 
@@ -97,7 +101,13 @@ def compare_states(zk1, zk2, path="/"):
         print("Checking child", os.path.join(path, children))
         compare_states(zk1, zk2, os.path.join(path, children))
 
-def test_smoke(started_cluster):
+@pytest.mark.parametrize(
+    ('create_snapshots'),
+    [
+        True, False
+    ]
+)
+def test_smoke(started_cluster, create_snapshots):
     restart_and_clear_zookeeper()
 
     genuine_connection = get_genuine_zk()
@@ -105,7 +115,7 @@ def test_smoke(started_cluster):
 
     assert genuine_connection.get("/test")[0] == b"data"
 
-    copy_zookeeper_data()
+    copy_zookeeper_data(create_snapshots)
 
     genuine_connection = get_genuine_zk()
     fake_connection = get_fake_zk()
@@ -115,7 +125,13 @@ def test_smoke(started_cluster):
 def get_bytes(s):
     return s.encode()
 
-def test_simple_crud_requests(started_cluster):
+@pytest.mark.parametrize(
+    ('create_snapshots'),
+    [
+        True, False
+    ]
+)
+def test_simple_crud_requests(started_cluster, create_snapshots):
     restart_and_clear_zookeeper()
 
     genuine_connection = get_genuine_zk()
@@ -144,7 +160,7 @@ def test_simple_crud_requests(started_cluster):
     for i in range(10):
         genuine_connection.create("/test_ephemeral/" + str(i), get_bytes("dataX" + str(i)), ephemeral=True)
 
-    copy_zookeeper_data()
+    copy_zookeeper_data(create_snapshots)
 
     genuine_connection = get_genuine_zk()
     fake_connection = get_fake_zk()
@@ -159,8 +175,13 @@ def test_simple_crud_requests(started_cluster):
     second_children = list(sorted(fake_connection.get_children("/test_sequential")))
     assert first_children == second_children, "Childrens are not equal on path " + path
 
-
-def test_multi_and_failed_requests(started_cluster):
+@pytest.mark.parametrize(
+    ('create_snapshots'),
+    [
+        True, False
+    ]
+)
+def test_multi_and_failed_requests(started_cluster, create_snapshots):
     restart_and_clear_zookeeper()
 
     genuine_connection = get_genuine_zk()
@@ -196,15 +217,20 @@ def test_multi_and_failed_requests(started_cluster):
     assert genuine_connection.exists('/test_bad_transaction2') is None
     assert genuine_connection.exists('/test_multitransactions/freddy0') is not None
 
-    copy_zookeeper_data()
+    copy_zookeeper_data(create_snapshots)
 
     genuine_connection = get_genuine_zk()
     fake_connection = get_fake_zk()
 
     compare_states(genuine_connection, fake_connection)
 
-
-def test_acls(started_cluster):
+@pytest.mark.parametrize(
+    ('create_snapshots'),
+    [
+        True, False
+    ]
+)
+def test_acls(started_cluster, create_snapshots):
     restart_and_clear_zookeeper()
     genuine_connection = get_genuine_zk()
     genuine_connection.add_auth('digest', 'user1:password1')
@@ -233,7 +259,7 @@ def test_acls(started_cluster):
     with pytest.raises(Exception):
         no_auth_connection.set("/test_multi_all_acl", b"Z")
 
-    copy_zookeeper_data()
+    copy_zookeeper_data(create_snapshots)
 
     genuine_connection = get_genuine_zk()
     genuine_connection.add_auth('digest', 'user1:password1')
