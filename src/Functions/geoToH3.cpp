@@ -83,12 +83,12 @@ public:
             LatLng coord;
             coord.lng = degsToRads(lon);
             coord.lat = degsToRads(lat);
-	    
+ 
 	    H3Index hindex;
 	    H3Error err = latLngToCell(&coord, res, &hindex);
 	    if (err) {
                 throw Exception(
-                    "Incorrect coorinates lat:" + std::to_string(coord.lat) + " lng:" + std::to_string(coord.lng) + " err:" + std::to_string(err),
+                    "Incorrect coordinates lat:" + std::to_string(coord.lat) + " lng:" + std::to_string(coord.lng) + " err:" + std::to_string(err),
                     ErrorCodes::INCORRECT_DATA);
 	    }
 
