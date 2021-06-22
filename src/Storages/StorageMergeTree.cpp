@@ -832,8 +832,10 @@ bool StorageMergeTree::merge(
     if (!merge_mutate_entry)
         return false;
 
+    auto deduplicate_by_columns_ptr = std::make_shared<Names>(deduplicate_by_columns);
+
     auto task = std::make_shared<MergePlainMergeTreeTask>(
-        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder);
+        *this, metadata_snapshot, deduplicate, deduplicate_by_columns_ptr, merge_mutate_entry, table_lock_holder);
 
     executeHere(task);
 
@@ -1005,7 +1007,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
 
     if (merge_entry)
     {
-        Names empty;
+        auto empty = std::make_shared<Names>();
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, empty, merge_entry, share_lock);
         executor.execute(task);
         return true;

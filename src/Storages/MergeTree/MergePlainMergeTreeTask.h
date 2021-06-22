@@ -58,7 +58,7 @@ public:
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
         bool deduplicate_,
-        const Names & deduplicate_by_columns_,
+        NamesPtr deduplicate_by_columns_,
         std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry_,
         TableLockHolder & table_lock_holder_)
         : PriorityJobContainer::JobWithPriority(0) // FIXME: equal priority
@@ -90,7 +90,7 @@ private:
 
     StorageMetadataPtr metadata_snapshot;
     bool deduplicate;
-    const Names & deduplicate_by_columns;
+    NamesPtr deduplicate_by_columns;
     std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry{nullptr};
 
     TableLockHolder & table_lock_holder;
