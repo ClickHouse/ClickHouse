@@ -28,8 +28,11 @@ quantilesExactExclusive(level1, level2, ...)(expr)
 
 **Аргументы**
 
--   `level` — уровень квантилей. Возможные значения: (0, 1) — граничные значения не учитываются. [Float](../../../sql-reference/data-types/float.md).
 -   `expr` — выражение, зависящее от значений столбцов. Возвращает данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
+
+**Параметры**
+
+-   `level` — уровень квантилей. Возможные значения: (0, 1) — граничные значения не учитываются. [Float](../../../sql-reference/data-types/float.md).
 
 **Возвращаемые значения**
 
@@ -77,8 +80,11 @@ quantilesExactInclusive(level1, level2, ...)(expr)
 
 **Аргументы**
 
+-   `expr` — выражение, зависящее от значений столбцов. Возвращает данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
+
+**Параметры**
+
 -   `level` — уровень квантилей. Возможные значения: [0, 1] — граничные значения учитываются. [Float](../../../sql-reference/data-types/float.md).
--   `expr` — выражение, зависящее от значений столбцов, возвращающее данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Возвращаемые значения**
 
