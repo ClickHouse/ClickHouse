@@ -590,7 +590,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
 
     try
     {
-        auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
+        auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns, {}, {}, false, /* allow_self_aliases = */ false);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
             if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
