@@ -109,10 +109,7 @@ public:
 
     constexpr explicit operator bool() const noexcept;
 
-    template <class T>
-    using _integral_not_wide_integer_class = typename std::enable_if<std::is_arithmetic<T>::value, T>::type;
-
-    template <class T, class = _integral_not_wide_integer_class<T>>
+    template <typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>, T>>
     constexpr operator T() const noexcept;
 
     constexpr operator long double() const noexcept;

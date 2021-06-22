@@ -9,15 +9,15 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 
 namespace DB
 {
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromBasePartsOfProjection final : public ext::shared_ptr_helper<StorageFromBasePartsOfProjection>, public IStorage
+class StorageFromBasePartsOfProjection final : public shared_ptr_helper<StorageFromBasePartsOfProjection>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageFromBasePartsOfProjection>;
+    friend struct shared_ptr_helper<StorageFromBasePartsOfProjection>;
 
 public:
     String getName() const override { return "FromBasePartsOfProjection"; }

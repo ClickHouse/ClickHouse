@@ -1,0 +1,23 @@
+version: '2.3'
+services:
+  bridge1:
+    image: yandex/clickhouse-jdbc-bridge
+    command: |
+      /bin/bash -c 'cat << EOF > config/datasources/self.json
+      {
+        "self": {
+          "jdbcUrl": "jdbc:clickhouse://instance:8123/test",
+          "username": "default",
+          "password": "",
+          "maximumPoolSize": 5
+        }
+      }
+      EOF
+      ./docker-entrypoint.sh'
+    ports:
+      - 9020:9019
+    healthcheck:
+      test: ["CMD", "curl", "-s", "localhost:9019/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30

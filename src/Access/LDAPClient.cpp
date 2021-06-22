@@ -1,6 +1,6 @@
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <common/logger_useful.h>
 
 #include <Poco/Logger.h>
