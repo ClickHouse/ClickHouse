@@ -1,4 +1,5 @@
 #include <memory>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
@@ -21,6 +22,7 @@ namespace ErrorCodes
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
     extern const int ROW_AND_ROWS_TOGETHER;
     extern const int FIRST_AND_NEXT_TOGETHER;
+    extern const int DISTINCT_ON_AND_LIMIT_BY_TOGETHER;
 }
 
 
@@ -32,6 +34,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_select("SELECT");
     ParserKeyword s_all("ALL");
     ParserKeyword s_distinct("DISTINCT");
+    ParserKeyword s_distinct_on("DISTINCT ON");
     ParserKeyword s_from("FROM");
     ParserKeyword s_prewhere("PREWHERE");
     ParserKeyword s_where("WHERE");
@@ -94,6 +97,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    bool has_distinct_on = false;
+
     /// SELECT [ALL/DISTINCT] [TOP N [WITH TIES]] expr list
     {
         bool has_all = false;
@@ -102,6 +107,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (s_all.ignore(pos, expected))
             has_all = true;
+
+        if (s_distinct_on.ignore(pos, expected)) {
+            has_distinct_on = true;
+            if (!exp_list.parse(pos, limit_by_expression_list, expected))
+                return false;
+            limit_by_length = std::make_shared<ASTLiteral>(Field{UInt8(1)});
+        }
 
         if (s_distinct.ignore(pos, expected))
             select_query->distinct = true;
@@ -263,6 +275,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             /// So we have to ignore WITH TIES exactly in LIMIT BY state.
             if (limit_with_ties_occured)
                 throw Exception("Can not use WITH TIES alongside LIMIT BY", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
+
+            if (has_distinct_on)
+                throw Exception("Can not use distinct on alongside LIMIT BY", ErrorCodes::DISTINCT_ON_AND_LIMIT_BY_TOGETHER);
 
             limit_by_length = limit_length;
             limit_by_offset = limit_offset;
