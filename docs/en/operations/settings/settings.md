@@ -3071,8 +3071,8 @@ Sets the data format of a [nested](../../sql-reference/data-types/nested-data-st
 
 Possible values:
 
--   0 — Nested column is flattened to separate arrays.
--   1 — Nested column is flattened to a singe array of tuples.
+-   1 — Nested column is flattened to separate arrays.
+-   0 — Nested column stays a single array of tuples.
 
 Default value: `1`.
 
