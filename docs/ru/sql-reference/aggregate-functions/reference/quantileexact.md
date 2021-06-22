@@ -2,7 +2,9 @@
 toc_priority: 202
 ---
 
-# quantileExact {#quantileexact}
+# Функции quantileExact {#quantileexact-functions}
+
+## quantileExact {#quantileexact}
 
 Точно вычисляет [квантиль](https://ru.wikipedia.org/wiki/Квантиль) числовой последовательности.
 
@@ -50,7 +52,7 @@ SELECT quantileExact(number) FROM numbers(10)
 └───────────────────────┘
 ```
 
-# quantileExactLow {#quantileexactlow}
+## quantileExactLow {#quantileexactlow}
 
 Как и `quantileExact`, эта функция вычисляет точный [квантиль](https://en.wikipedia.org/wiki/Quantile) числовой последовательности данных.
 
@@ -109,7 +111,7 @@ SELECT quantileExactLow(number) FROM numbers(10)
 │                        4 │
 └──────────────────────────┘
 ```
-# quantileExactHigh {#quantileexacthigh}
+## quantileExactHigh {#quantileexacthigh}
 
 Как и `quantileExact`, эта функция вычисляет точный [квантиль](https://en.wikipedia.org/wiki/Quantile) числовой последовательности данных.
 
