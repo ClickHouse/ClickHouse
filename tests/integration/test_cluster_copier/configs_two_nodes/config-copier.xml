@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <yandex>
     <logger>
         <level>information</level>
@@ -8,4 +9,12 @@
         <stderr>/var/log/clickhouse-server/copier/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/copier/stdout.log</stdout>
     </logger>
+
+    <zookeeper>
+        <node index="1">
+            <host>zoo1</host>
+            <port>2181</port>
+        </node>
+        <session_timeout_ms>2000</session_timeout_ms>
+    </zookeeper>
 </yandex>
