@@ -97,9 +97,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    bool has_distinct_on = false;
-
-    /// SELECT [ALL/DISTINCT] [TOP N [WITH TIES]] expr list
+    /// SELECT [DISTINCT ON expr] [ALL/DISTINCT] [TOP N [WITH TIES]] expr list
     {
         bool has_all = false;
         if (!s_select.ignore(pos, expected))
@@ -108,8 +106,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (s_all.ignore(pos, expected))
             has_all = true;
 
-        if (s_distinct_on.ignore(pos, expected)) {
-            has_distinct_on = true;
+        if (s_distinct_on.ignore(pos, expected))
+        {
             if (!exp_list.parse(pos, limit_by_expression_list, expected))
                 return false;
             limit_by_length = std::make_shared<ASTLiteral>(Field{UInt8(1)});
@@ -276,8 +274,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (limit_with_ties_occured)
                 throw Exception("Can not use WITH TIES alongside LIMIT BY", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
 
-            if (has_distinct_on)
-                throw Exception("Can not use distinct on alongside LIMIT BY", ErrorCodes::DISTINCT_ON_AND_LIMIT_BY_TOGETHER);
+            if (limit_by_length)
+                throw Exception("Can not use DISTINCT ON alongside LIMIT BY", ErrorCodes::DISTINCT_ON_AND_LIMIT_BY_TOGETHER);
 
             limit_by_length = limit_length;
             limit_by_offset = limit_offset;
