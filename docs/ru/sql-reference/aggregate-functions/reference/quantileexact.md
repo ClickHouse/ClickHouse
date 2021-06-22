@@ -161,6 +161,104 @@ SELECT quantileExactHigh(number) FROM numbers(10)
 └───────────────────────────┘
 ```
 
+## quantileExactExclusive {#quantileexactexclusive}
+
+Точно вычисляет [квантиль](https://ru.wikipedia.org/wiki/Квантиль) числовой последовательности.
+
+Чтобы получить точный результат, все переданные значения собираются в массив, который затем частично сортируется. Таким образом, функция потребляет объем памяти `O(n)`, где `n` — количество переданных значений. Для небольшого числа значений эта функция эффективна.
+
+Эта функция эквивалентна Excel функции [PERCENTILE.EXC](https://support.microsoft.com/en-us/office/percentile-exc-function-bbaa7204-e9e1-4010-85bf-c31dc5dce4ba), [тип R6](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
+
+Внутренние состояния функций `quantileExactExclusive` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantilesExactExclusive](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantilesexactexclusive), это повысит эффективность запроса.
+
+**Синтакс**
+
+``` sql
+quantileExactExclusive(level)(expr)
+```
+
+**Аргументы**
+
+-   `level` — уровень квантиля. Необязательный параметр. Возможные значения: (0, 1). Значения по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)). [Float](../../../float.md).
+-   `expr` — выражение, зависящее от значений столбцов, возвращающее данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
+
+**Возвращаемое значение**
+
+-   Квантиль заданного уровня.
+
+Тип:
+
+-   [Float64](../../../sql-reference/data-types/float.md) для входных данных числового типа.
+-   [Date](../../../sql-reference/data-types/date.md), если входные значения имеют тип `Date`.
+-   [DateTime](../../../sql-reference/data-types/datetime.md), если входные значения имеют тип `DateTime`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE num AS numbers(1000);
+
+SELECT quantileExactExclusive(0.6)(x) FROM (SELECT number AS x FROM num);
+```
+
+Результат:
+
+``` text
+┌─quantileExactExclusive(0.6)(x)─┐
+│                          599.6 │
+└────────────────────────────────┘
+```
+
+## quantileExactInclusive {#quantileexactinclusive}
+
+Точно вычисляет [квантиль](https://ru.wikipedia.org/wiki/Квантиль) числовой последовательности.
+
+Чтобы получить точный результат, все переданные значения собираются в массив, который затем частично сортируется. Таким образом, функция потребляет объем памяти `O(n)`, где `n` — количество переданных значений. Для небольшого числа значений эта функция эффективна.
+
+Эта функция эквивалентна Excel функции [PERCENTILE.INC](https://support.microsoft.com/en-us/office/percentile-inc-function-680f9539-45eb-410b-9a5e-c1355e5fe2ed), [тип R7](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
+
+Внутренние состояния функций `quantileExactInclusive` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantilesExactInclusive](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantilesexactexclusive), это повысит эффективность запроса.
+
+**Синтакс**
+
+``` sql
+quantileExactInclusive(level)(expr)
+```
+
+**Аргументы**
+
+-   `level` — уровень квантиля. Необязательный параметр. Возможные значения: [0, 1]. Значения по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)). [Float](../../../float.md).
+-   `expr` — выражение, зависящее от значений столбцов, возвращающее данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
+
+**Возвращаемые значения**
+
+-   Квантиль заданного уровня.
+
+Тип:
+
+-   [Float64](../../../sql-reference/data-types/float.md) для входных данных числового типа.
+-   [Date](../../../sql-reference/data-types/date.md), если входные значения имеют тип `Date`.
+-   [DateTime](../../../sql-reference/data-types/datetime.md), если входные значения имеют тип `DateTime`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE num AS numbers(1000);
+
+SELECT quantileExactInclusive(0.6)(x) FROM (SELECT number AS x FROM num);
+```
+
+Результат:
+
+``` text
+┌─quantileExactInclusive(0.6)(x)─┐
+│                          599.4 │
+└────────────────────────────────┘
+```
+
 **Смотрите также**
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
