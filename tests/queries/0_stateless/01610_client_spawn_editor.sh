@@ -1,7 +1,7 @@
 #!/usr/bin/expect -f
 
 log_user 0
-set timeout 5
+set timeout 60
 match_max 100000
 
 if ![info exists env(CLICKHOUSE_PORT_TCP)] {set env(CLICKHOUSE_PORT_TCP) 9000}

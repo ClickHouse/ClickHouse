@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Common/formatReadable.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace ProfileEvents
@@ -217,7 +217,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
     std::vector<size_t> per_part_sum_marks;
     Block sample_block = metadata_snapshot->getSampleBlock();
 
-    for (const auto i : ext::range(0, parts.size()))
+    for (const auto i : collections::range(0, parts.size()))
     {
         const auto & part = parts[i];
 

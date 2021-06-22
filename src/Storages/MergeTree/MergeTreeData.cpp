@@ -55,7 +55,7 @@
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
 
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -904,7 +904,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     std::mutex mutex;
 
-    DataPartsVector broken_parts_to_remove;
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
 
@@ -913,12 +912,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     ThreadPool pool(num_threads);
 
-    for (size_t i = 0; i < part_names_with_disks.size(); ++i)
+    for (auto & part_names_with_disk : part_names_with_disks)
     {
-        pool.scheduleOrThrowOnError([&, i]
+        pool.scheduleOrThrowOnError([&]
         {
-            const auto & part_name = part_names_with_disks[i].first;
-            const auto part_disk_ptr = part_names_with_disks[i].second;
+            const auto & part_name = part_names_with_disk.first;
+            const auto part_disk_ptr = part_names_with_disk.second;
 
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
@@ -960,55 +959,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
-            /// Ignore and possibly delete broken parts that can appear as a result of hard server restart.
+            /// Ignore broken parts that can appear as a result of hard server restart.
             if (broken)
             {
-                if (part->info.level == 0)
-                {
-                    /// It is impossible to restore level 0 parts.
-                    LOG_ERROR(log, "Considering to remove broken part {}{} because it's impossible to repair.", getFullPathOnDisk(part_disk_ptr), part_name);
-                    std::lock_guard loading_lock(mutex);
-                    broken_parts_to_remove.push_back(part);
-                }
-                else
-                {
-                    /// Count the number of parts covered by the broken part. If it is at least two, assume that
-                    /// the broken part was created as a result of merging them and we won't lose data if we
-                    /// delete it.
-                    size_t contained_parts = 0;
-
-                    LOG_ERROR(log, "Part {}{} is broken. Looking for parts to replace it.", getFullPathOnDisk(part_disk_ptr), part_name);
-
-                    for (const auto & [contained_name, contained_disk_ptr] : part_names_with_disks)
-                    {
-                        if (contained_name == part_name)
-                            continue;
-
-                        MergeTreePartInfo contained_part_info;
-                        if (!MergeTreePartInfo::tryParsePartName(contained_name, &contained_part_info, format_version))
-                            continue;
-
-                        if (part->info.contains(contained_part_info))
-                        {
-                            LOG_ERROR(log, "Found part {}{}", getFullPathOnDisk(contained_disk_ptr), contained_name);
-                            ++contained_parts;
-                        }
-                    }
-
-                    if (contained_parts >= 2)
-                    {
-                        LOG_ERROR(log, "Considering to remove broken part {}{} because it covers at least 2 other parts", getFullPathOnDisk(part_disk_ptr), part_name);
-                        std::lock_guard loading_lock(mutex);
-                        broken_parts_to_remove.push_back(part);
-                    }
-                    else
-                    {
-                        LOG_ERROR(log, "Detaching broken part {}{} because it covers less than 2 parts. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
-                        std::lock_guard loading_lock(mutex);
-                        broken_parts_to_detach.push_back(part);
-                        ++suspicious_broken_parts;
-                    }
-                }
+                LOG_ERROR(log, "Detaching broken part {}{}. If it happened after update, it is likely because of backward incompability. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
+                std::lock_guard loading_lock(mutex);
+                broken_parts_to_detach.push_back(part);
+                ++suspicious_broken_parts;
 
                 return;
             }
@@ -1055,10 +1012,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
             ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
-    for (auto & part : broken_parts_to_remove)
-        part->remove();
     for (auto & part : broken_parts_to_detach)
-        part->renameToDetached("");
+        part->renameToDetached("broken_on_start");
 
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
@@ -1160,6 +1115,16 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
                         LOG_WARNING(log, "Removing temporary directory {}", fullPath(disk, it->path()));
                         disk->removeRecursive(it->path());
                     }
+                }
+                /// see getModificationTime()
+                catch (const ErrnoException & e)
+                {
+                    if (e.getErrno() == ENOENT)
+                    {
+                        /// If the file is already deleted, do nothing.
+                    }
+                    else
+                        throw;
                 }
                 catch (const fs::filesystem_error & e)
                 {
@@ -2191,8 +2156,7 @@ bool MergeTreeData::renameTempPartAndReplace(
 
     LOG_TRACE(log, "Renaming temporary part {} to {}.", part->relative_path, part_name);
 
-    auto it_duplicate = data_parts_by_info.find(part_info);
-    if (it_duplicate != data_parts_by_info.end())
+    if (auto it_duplicate = data_parts_by_info.find(part_info); it_duplicate != data_parts_by_info.end())
     {
         String message = "Part " + (*it_duplicate)->getNameWithState() + " already exists";
 
@@ -2736,17 +2700,16 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             /// We do not check allow_s3_zero_copy_replication here because data may be shared
             /// when allow_s3_zero_copy_replication turned on and off again
 
-            original_active_part->keep_s3_on_delete = false;
+            original_active_part->force_keep_shared_data = false;
 
             if (original_active_part->volume->getDisk()->getType() == DiskType::Type::S3)
             {
                 if (part_copy->volume->getDisk()->getType() == DiskType::Type::S3
                         && original_active_part->getUniqueId() == part_copy->getUniqueId())
-                {   /// May be when several volumes use the same S3 storage
-                    original_active_part->keep_s3_on_delete = true;
+                {
+                    /// May be when several volumes use the same S3 storage
+                    original_active_part->force_keep_shared_data = true;
                 }
-                else
-                    original_active_part->keep_s3_on_delete = !unlockSharedData(*original_active_part);
             }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);

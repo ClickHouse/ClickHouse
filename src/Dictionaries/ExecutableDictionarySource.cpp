@@ -1,7 +1,7 @@
 #include "ExecutableDictionarySource.h"
 
 #include <functional>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Interpreters/Context.h>
