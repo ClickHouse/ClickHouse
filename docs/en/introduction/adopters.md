@@ -150,5 +150,6 @@ toc_title: Adopters
 | <a href="https://www.tesla.com/" class="favicon">Tesla</a> | Electric vehicle and clean energy company | — | — | — | [Vacancy description, March 2021](https://news.ycombinator.com/item?id=26306170) |
 | <a href="https://www.kgk-global.com/en/" class="favicon">KGK Global</a> | Vehicle monitoring | — | — | — | [Press release, June 2021](https://zoom.cnews.ru/news/item/530921) |
 | <a href="https://www.bilibili.com/" class="favicon">BiliBili</a> | Video sharing | — | — | — | [Blog post, June 2021](https://chowdera.com/2021/06/20210622012241476b.html) |
+| <a href="https://gigapipe.com/" class="favicon">Gigapipe</a> | Managed ClickHouse | Main product | — | — | [Official website](https://gigapipe.com/) |
 
 [Original article](https://clickhouse.tech/docs/en/introduction/adopters/) <!--hide-->
