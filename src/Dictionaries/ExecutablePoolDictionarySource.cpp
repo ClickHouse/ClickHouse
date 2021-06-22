@@ -1,7 +1,7 @@
 #include "ExecutablePoolDictionarySource.h"
 
 #include <functional>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -32,7 +32,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     Block & sample_block_,
-    ContextConstPtr context_)
+    ContextPtr context_)
     : log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
     , dict_struct{dict_struct_}
     , configuration{configuration_}
@@ -273,7 +273,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextConstPtr context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
@@ -308,9 +308,9 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command = config.getString(settings_config_prefix + ".command"),
             .format = config.getString(settings_config_prefix + ".format"),
             .pool_size = config.getUInt64(settings_config_prefix + ".size"),
-            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
             .command_termination_timeout = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
-            .max_command_execution_time = max_command_execution_time
+            .max_command_execution_time = max_command_execution_time,
+            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
         };
 
         return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);

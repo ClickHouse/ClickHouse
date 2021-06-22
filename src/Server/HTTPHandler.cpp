@@ -31,7 +31,7 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <common/getFQDNOrHostName.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -895,7 +895,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-        HTMLForm params(request);
+        HTMLForm params(request_context->getSettingsRef(), request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
         /// FIXME: maybe this check is already unnecessary.

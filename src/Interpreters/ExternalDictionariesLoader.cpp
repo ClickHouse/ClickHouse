@@ -23,9 +23,9 @@ namespace ErrorCodes
 }
 
 /// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
-ExternalDictionariesLoader::ExternalDictionariesLoader(ContextConstPtr global_context_)
+ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context_)
     : ExternalLoader("external dictionary", &Poco::Logger::get("ExternalDictionariesLoader"))
-    , WithConstContext(global_context_)
+    , WithContext(global_context_)
 {
     setConfigSettings({"dictionary", "name", "database", "uuid"});
     enableAsyncLoading(true);
@@ -42,26 +42,26 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), created_from_ddl);
 }
 
-ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextConstPtr local_context) const
+ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
     return std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
 }
 
-ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextConstPtr local_context) const
+ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
     return std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 }
 
 
-void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary_name, ContextConstPtr local_context) const
+void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
     loadOrReload(resolved_dictionary_name);
 }
 
-DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextConstPtr query_context) const
+DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
 {
     std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
 

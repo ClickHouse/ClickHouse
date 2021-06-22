@@ -1,7 +1,7 @@
 #include "MySQLHandler.h"
 
 #include <limits>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Columns/ColumnVector.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>

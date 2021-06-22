@@ -160,7 +160,7 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 /// The columns list in the original INSERT query is incorrect because inserted blocks are transformed
 /// to the form of the sample block of the Distributed table. So we rewrite it and add all columns from
 /// the sample block instead.
-ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
+ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block)
 {
     auto query = std::make_shared<ASTInsertQuery>();
     query->table_id = StorageID(database, table);
@@ -168,7 +168,7 @@ ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::s
     auto columns = std::make_shared<ASTExpressionList>();
     query->columns = columns;
     query->children.push_back(columns);
-    for (const auto & col : sample_block_non_materialized)
+    for (const auto & col : sample_block)
         columns->children.push_back(std::make_shared<ASTIdentifier>(col.name));
 
     return query;
@@ -288,6 +288,7 @@ void replaceConstantExpressions(
 /// is one of the following:
 /// - QueryProcessingStage::Complete
 /// - QueryProcessingStage::WithMergeableStateAfterAggregation
+/// - QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit
 /// - none (in this case regular WithMergeableState should be used)
 std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, bool extremes, const Block & sharding_key_block)
 {
@@ -349,13 +350,13 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
     // ORDER BY
     const ASTPtr order_by = select.orderBy();
     if (order_by)
-        return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     // LIMIT BY
     // LIMIT
     // OFFSET
     if (select.limitBy() || select.limitLength() || select.limitOffset())
-        return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
     return QueryProcessingStage::Complete;
@@ -514,10 +515,22 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     if (settings.distributed_group_by_no_merge)
     {
         if (settings.distributed_group_by_no_merge == DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION)
-            return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        {
+            if (settings.distributed_push_down_limit)
+                return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+            else
+                return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        }
         else
+        {
+            /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
+            /// (since in this case queries processed separatelly and the initiator is just a proxy in this case).
             return QueryProcessingStage::Complete;
+        }
     }
+
+    if (settings.distributed_push_down_limit)
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
@@ -648,11 +661,16 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     bool insert_sync = settings.insert_distributed_sync || settings.insert_shard_id || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
+    Block sample_block;
+    if (!settings.insert_allow_materialized_columns)
+        sample_block = metadata_snapshot->getSampleBlockNonMaterialized();
+    else
+        sample_block = metadata_snapshot->getSampleBlock();
+
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
         local_context, *this, metadata_snapshot,
-        createInsertToRemoteTableQuery(
-            remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
+        createInsertToRemoteTableQuery(remote_database, remote_table, sample_block),
         cluster, insert_sync, timeout, StorageID{remote_database, remote_table});
 }
 
@@ -704,7 +722,7 @@ QueryPipelinePtr StorageDistributed::distributedWrite(const ASTInsertQuery & que
     std::vector<std::unique_ptr<QueryPipeline>> pipelines;
 
     String new_query_str = queryToString(new_query);
-    for (size_t shard_index : ext::range(0, shards_info.size()))
+    for (size_t shard_index : collections::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
         if (shard_info.isLocal())

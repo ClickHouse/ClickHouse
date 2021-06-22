@@ -2,7 +2,7 @@
 
 #include <map>
 #include <shared_mutex>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Disks/IDisk.h>
 #include <Storages/IStorage.h>
@@ -16,11 +16,11 @@ namespace DB
 /** Implements simple table engine without support of indices.
   * The data is stored in a compressed form.
   */
-class StorageLog final : public ext::shared_ptr_helper<StorageLog>, public IStorage
+class StorageLog final : public shared_ptr_helper<StorageLog>, public IStorage
 {
     friend class LogSource;
     friend class LogBlockOutputStream;
-    friend struct ext::shared_ptr_helper<StorageLog>;
+    friend struct shared_ptr_helper<StorageLog>;
 
 public:
     String getName() const override { return "Log"; }
