@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
@@ -12,9 +12,9 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge final : public ext::shared_ptr_helper<StorageMerge>, public IStorage, WithContext
+class StorageMerge final : public shared_ptr_helper<StorageMerge>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageMerge>;
+    friend struct shared_ptr_helper<StorageMerge>;
 public:
     std::string getName() const override { return "Merge"; }
 
@@ -92,7 +92,7 @@ protected:
         const Block & header,
         const StorageWithLockAndName & storage_with_lock,
         Names & real_column_names,
-        ContextPtr modified_context,
+        ContextMutablePtr modified_context,
         size_t streams_num,
         bool has_table_virtual_column,
         bool concat_streams = false);
