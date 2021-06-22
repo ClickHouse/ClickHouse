@@ -3065,4 +3065,66 @@ SELECT
 FROM fuse_tbl
 ```
 
+## flatten_nested {#flatten-nested}
+
+Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
+
+Possible values:
+
+-   0 — Nested column is flattened to separate arrays.
+-   1 — Nested column is flattened to a singe array of tuples.
+
+Default value: `1`.
+
+**Usage**
+
+If the setting is set to `0`, it is possible to use an arbitrary level of nesting.
+
+With the setting set to `1`:
+
+``` sql
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Result:
+
+``` text
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n.a` Array(UInt32),
+    `n.b` Array(UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+With the setting set to `0`:
+
+``` sql
+SET flatten_nested = 0;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Result:
+
+``` text
+┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n` Nested(a UInt32, b UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
