@@ -514,7 +514,7 @@ void ThreadStatus::logToQueryViewsLog(const ViewInfo & vinfo)
         element.profile_counters = events;
     }
 
-    element.end_status = vinfo.runtime_stats.event_status;
+    element.status = vinfo.runtime_stats.event_status;
     element.exception_code = 0;
     if (vinfo.exception)
     {

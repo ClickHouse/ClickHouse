@@ -19,11 +19,11 @@ namespace DB
 {
 Block QueryViewsLogElement::createBlock()
 {
-    auto query_status_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-        {"QueryStart", static_cast<Int8>(QUERY_START)},
-        {"QueryFinish", static_cast<Int8>(QUERY_FINISH)},
-        {"ExceptionBeforeStart", static_cast<Int8>(EXCEPTION_BEFORE_START)},
-        {"ExceptionWhileProcessing", static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}});
+    auto view_status_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
+        {"Init", static_cast<Int8>(ViewStatus::INIT)},
+        {"WrittenPrefix", static_cast<Int8>(ViewStatus::WRITTEN_PREFIX)},
+        {"WrittenBlock", static_cast<Int8>(ViewStatus::WRITTEN_BLOCK)},
+        {"WrittenSuffix", static_cast<Int8>(ViewStatus::WRITTEN_SUFFIX)}});
 
     auto view_type_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
         {"Default", static_cast<Int8>(ViewType::DEFAULT)},
@@ -51,7 +51,7 @@ Block QueryViewsLogElement::createBlock()
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
 
-        {std::move(query_status_datatype), "end_status"},
+        {std::move(view_status_datatype), "status"},
         {std::make_shared<DataTypeInt32>(), "exception_code"},
         {std::make_shared<DataTypeString>(), "exception"},
         {std::make_shared<DataTypeString>(), "stack_trace"}};
@@ -91,7 +91,7 @@ void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insertDefault();
     }
 
-    columns[i++]->insert(end_status);
+    columns[i++]->insert(status);
     columns[i++]->insert(exception_code);
     columns[i++]->insertData(exception.data(), exception.size());
     columns[i++]->insertData(stack_trace.data(), stack_trace.size());
