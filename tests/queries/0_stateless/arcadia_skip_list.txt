@@ -247,3 +247,4 @@
 01910_view_dictionary
 01824_prefer_global_in_and_join
 01576_alias_column_rewrite
+01924_argmax_bitmap_state
