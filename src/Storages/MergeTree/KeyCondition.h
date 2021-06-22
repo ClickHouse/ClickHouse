@@ -18,6 +18,7 @@ class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+struct ActionDAGNodes;
 
 /** A field, that can be stored in two representations:
   * - A standalone field.
@@ -238,7 +239,7 @@ public:
         bool strict_ = false);
 
     KeyCondition(
-        const ActionsDAG & dag,
+        ActionDAGNodes dag_nodes,
         PreparedSets prepared_sets_,
         ContextPtr context,
         const Names & key_column_names,
