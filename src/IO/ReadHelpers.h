@@ -1248,19 +1248,23 @@ bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
 
 struct PcgDeserializer
 {
-    static void deserializePcg32(const pcg32_fast & rng, ReadBuffer & buf)
+    static void deserializePcg32(pcg32_fast & rng, ReadBuffer & buf)
     {
-        decltype(rng.state_) multiplier, increment, state;
+        /// multiplier and increment are constants for this particular rng.
+        /// They are used as invariants.
+        decltype(rng.state_) multiplier, increment;
         readText(multiplier, buf);
         assertChar(' ', buf);
         readText(increment, buf);
         assertChar(' ', buf);
-        readText(state, buf);
 
         if (multiplier != rng.multiplier())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", rng.multiplier(), multiplier);
         if (increment != rng.increment())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", rng.increment(), increment);
+
+        /// state is assigned directly to the rng instance.
+        readText(rng.state_, buf);
     }
 };
 
