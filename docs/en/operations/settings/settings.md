@@ -1727,6 +1727,19 @@ Possible values:
 
 Default value: 0.
 
+## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
+
+Optimizes functions (if possible) to subcolumns to reduce amount of read data. 
+
+-   
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `value`.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Type: seconds
