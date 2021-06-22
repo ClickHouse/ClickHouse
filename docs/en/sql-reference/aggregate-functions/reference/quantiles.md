@@ -32,7 +32,7 @@ quantilesExactExclusive(level1, level2, ...)(expr)
 
 **Parameters**
 
--   `level` — Leveles of quantiles. Possible values: (0, 1) — bounds not included. [Float](../../../sql-reference/data-types/float.md).
+-   `level` — Levels of quantiles. Possible values: (0, 1) — bounds not included. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
@@ -84,7 +84,7 @@ quantilesExactInclusive(level1, level2, ...)(expr)
 
 **Parameters**
 
--   `level` — Leveles of quantiles. Possible values: [0, 1] — bounds included. [Float](../../../sql-reference/data-types/float.md).
+-   `level` — Levels of quantiles. Possible values: [0, 1] — bounds included. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
