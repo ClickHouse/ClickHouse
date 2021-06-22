@@ -18,9 +18,9 @@ toc_priority: 201
 
 Эта функция эквивалентна Excel функции [PERCENTILE.EXC](https://support.microsoft.com/en-us/office/percentile-exc-function-bbaa7204-e9e1-4010-85bf-c31dc5dce4ba), [тип R6](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 
-Работает более эффективно с наборами уровней, чем [quantilesExactExclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactexclusive).
+С наборами уровней работает эффективнее, чем [quantilesExactExclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactexclusive).
 
-**Синтакс**
+**Синтаксис**
 
 ``` sql
 quantilesExactExclusive(level1, level2, ...)(expr)
@@ -28,8 +28,8 @@ quantilesExactExclusive(level1, level2, ...)(expr)
 
 **Аргументы**
 
--   `level` — уровень квантилей. Возможные значения: (0, 1). [Float](../../../sql-reference/data-types/float.md).
--   `expr` — выражение, зависящее от значений столбцов, возвращающее данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `level` — уровень квантилей. Возможные значения: (0, 1) — граничные значения не учитываются. [Float](../../../sql-reference/data-types/float.md).
+-   `expr` — выражение, зависящее от значений столбцов. Возвращает данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Возвращаемые значения**
 
@@ -67,7 +67,7 @@ SELECT quantilesExactExclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(x) FROM 
 
 Эта функция эквивалентна Excel функции [PERCENTILE.INC](https://support.microsoft.com/en-us/office/percentile-inc-function-680f9539-45eb-410b-9a5e-c1355e5fe2ed), [тип R7](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 
-Работает более эффективно с наборами уровней, чем [quantilesExactInclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantilesexactinclusive).
+С наборами уровней работает эффективнее, чем [quantilesExactInclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantilesexactinclusive).
 
 **Синтаксис**
 
@@ -77,7 +77,7 @@ quantilesExactInclusive(level1, level2, ...)(expr)
 
 **Аргументы**
 
--   `level` — уровень квантилей. Возможные значения: [0, 1]. [Float](../../../sql-reference/data-types/float.md).
+-   `level` — уровень квантилей. Возможные значения: [0, 1] — граничные значения учитываются. [Float](../../../sql-reference/data-types/float.md).
 -   `expr` — выражение, зависящее от значений столбцов, возвращающее данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Возвращаемые значения**
