@@ -120,9 +120,7 @@ static void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuf
 {
     switch (node.type)
     {
-        case (ActionsDAG::ActionType::INPUT):
-            writeString(node.result_name, out);
-            break;
+        case (ActionsDAG::ActionType::INPUT): [[fallthrough]];
         case (ActionsDAG::ActionType::COLUMN):
             writeString(node.result_name, out);
             break;
@@ -167,8 +165,8 @@ static std::string getColumnNameWithoutAlias(const ActionsDAG::Node & node, bool
 class KeyCondition::Tree
 {
 public:
-    explicit Tree(const IAST * ast_) : ast(ast_) {}
-    explicit Tree(const ActionsDAG::Node * dag_) : dag(dag_) {}
+    explicit Tree(const IAST * ast_) : ast(ast_) { assert(ast); }
+    explicit Tree(const ActionsDAG::Node * dag_) : dag(dag_) { assert(dag); }
 
     std::string getColumnName() const
     {
