@@ -34,7 +34,7 @@
 
 //-----------------------------------------------------------------------------
 
-uint32_t MurmurHash2 ( const void * key, int len, uint32_t seed )
+uint32_t MurmurHash2 ( const void * key, size_t len, uint32_t seed )
 {
   // 'm' and 'r' are mixing constants generated offline.
   // They're not really 'magic', they just happen to work well.
@@ -93,7 +93,7 @@ uint32_t MurmurHash2 ( const void * key, int len, uint32_t seed )
 
 // 64-bit hash for 64-bit platforms
 
-uint64_t MurmurHash64A ( const void * key, int len, uint64_t seed )
+uint64_t MurmurHash64A ( const void * key, size_t len, uint64_t seed )
 {
   const uint64_t m = BIG_CONSTANT(0xc6a4a7935bd1e995);
   const int r = 47;
@@ -139,7 +139,7 @@ uint64_t MurmurHash64A ( const void * key, int len, uint64_t seed )
 
 // 64-bit hash for 32-bit platforms
 
-uint64_t MurmurHash64B ( const void * key, int len, uint64_t seed )
+uint64_t MurmurHash64B ( const void * key, size_t len, uint64_t seed )
 {
   const uint32_t m = 0x5bd1e995;
   const int r = 24;
@@ -203,7 +203,7 @@ uint64_t MurmurHash64B ( const void * key, int len, uint64_t seed )
 
 #define mmix(h,k) { k *= m; k ^= k >> r; k *= m; h *= m; h ^= k; }
 
-uint32_t MurmurHash2A ( const void * key, int len, uint32_t seed )
+uint32_t MurmurHash2A ( const void * key, size_t len, uint32_t seed )
 {
   const uint32_t m = 0x5bd1e995;
   const int r = 24;
@@ -270,7 +270,7 @@ public:
     m_size  = 0;
   }
 
-  void Add ( const unsigned char * data, int len )
+  void Add ( const unsigned char * data, size_t len )
   {
     m_size += len;
 
@@ -306,7 +306,7 @@ private:
   static const uint32_t m = 0x5bd1e995;
   static const int r = 24;
 
-  void MixTail ( const unsigned char * & data, int & len )
+  void MixTail ( const unsigned char * & data, size_t & len )
   {
     while( len && ((len<4) || m_count) )
     {
@@ -336,7 +336,7 @@ private:
 // Same as MurmurHash2, but endian- and alignment-neutral.
 // Half the speed though, alas.
 
-uint32_t MurmurHashNeutral2 ( const void * key, int len, uint32_t seed )
+uint32_t MurmurHashNeutral2 ( const void * key, size_t len, uint32_t seed )
 {
   const uint32_t m = 0x5bd1e995;
   const int r = 24;
@@ -391,7 +391,7 @@ uint32_t MurmurHashNeutral2 ( const void * key, int len, uint32_t seed )
 #define MIX(h,k,m) { k *= m; k ^= k >> r; k *= m; h *= m; h ^= k; }
 
 
-uint32_t MurmurHashAligned2 ( const void * key, int len, uint32_t seed )
+uint32_t MurmurHashAligned2 ( const void * key, size_t len, uint32_t seed )
 {
   const uint32_t m = 0x5bd1e995;
   const int r = 24;
@@ -400,7 +400,7 @@ uint32_t MurmurHashAligned2 ( const void * key, int len, uint32_t seed )
 
   uint32_t h = seed ^ len;
 
-  int align = (uint64_t)data & 3;
+  size_t align = (uint64_t)data & 3;
 
   if(align && (len >= 4))
   {
