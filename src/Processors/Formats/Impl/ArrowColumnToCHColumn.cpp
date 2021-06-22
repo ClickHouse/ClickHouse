@@ -52,7 +52,7 @@ namespace DB
             {arrow::Type::DOUBLE, "Float64"},
 
             {arrow::Type::BOOL, "UInt8"},
-            {arrow::Type::DATE32, "Date"},
+            {arrow::Type::DATE32, "Date32"},
             {arrow::Type::DATE64, "DateTime"},
             {arrow::Type::TIMESTAMP, "DateTime"},
 
@@ -156,7 +156,7 @@ namespace DB
 
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
-                UInt32 days_num = static_cast<UInt32>(chunk.Value(value_i));
+                Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
                 if (days_num > DATE_LUT_MAX_DAY_NUM)
                 {
                     // TODO: will it rollback correctly?

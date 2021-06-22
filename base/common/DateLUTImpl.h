@@ -783,6 +783,11 @@ public:
         return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
     }
 
+    inline time_t toRelativeHourNum(Int64 t) const
+    {
+        return toRelativeHourNum(static_cast<time_t>(t));
+    }
+
     template <typename DateOrTime>
     inline time_t toRelativeHourNum(DateOrTime v) const
     {
