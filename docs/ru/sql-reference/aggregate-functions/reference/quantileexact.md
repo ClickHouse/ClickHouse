@@ -181,7 +181,7 @@ quantileExactExclusive(level)(expr)
 
 **Аргументы**
 
--   `level` — уровень квантиля. Необязательный параметр. Возможные значения: (0, 1). Значения по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)). [Float](../../../float.md).
+-   `level` — уровень квантиля. Необязательный параметр. Возможные значения: (0, 1). Значения по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)). [Float](../../../sql-reference/data-types/float.md).
 -   `expr` — выражение, зависящее от значений столбцов, возвращающее данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Возвращаемое значение**
@@ -230,7 +230,7 @@ quantileExactInclusive(level)(expr)
 
 **Аргументы**
 
--   `level` — уровень квантиля. Необязательный параметр. Возможные значения: [0, 1]. Значения по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)). [Float](../../../float.md).
+-   `level` — уровень квантиля. Необязательный параметр. Возможные значения: [0, 1]. Значения по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)). [Float](../../../sql-reference/data-types/float.md).
 -   `expr` — выражение, зависящее от значений столбцов, возвращающее данные [числовых типов](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) или [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Возвращаемые значения**
