@@ -1019,7 +1019,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
 
     if (merge_entry)
     {
-        executor.execute({[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
+        executor.execute({[this, metadata_snapshot, merge_entry, share_lock] () mutable
         {
             return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
         }, PoolType::MERGE_MUTATE});
