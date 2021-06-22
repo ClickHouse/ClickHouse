@@ -70,23 +70,23 @@ Result:
 
 Collect all the keys and sum corresponding values.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
-mapAdd(Tuple(Array, Array), Tuple(Array, Array) [, ...])
+mapAdd(arg1, arg2 [, ...])
 ```
 
-**Arguments** 
+**Arguments**
 
-Arguments are [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [maps](../../sql-reference/data-types/map.md) or [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
--   Returns one [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
+-   Depending on the arguments returns one [map](../../sql-reference/data-types/map.md) o [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
 
 **Example**
 
-Query:
+Query with a tuple map:
 
 ``` sql
 SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTypeName(res) as type;
@@ -98,6 +98,11 @@ Result:
 ┌─res───────────┬─type───────────────────────────────┐
 │ ([1,2],[2,2]) │ Tuple(Array(UInt8), Array(UInt64)) │
 └───────────────┴────────────────────────────────────┘
+```
+
+Query with `Map` type:
+
+``` sql
 ```
 
 ## mapSubtract {#function-mapsubtract}
