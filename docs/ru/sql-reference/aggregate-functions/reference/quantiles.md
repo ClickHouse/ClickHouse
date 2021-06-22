@@ -2,7 +2,8 @@
 toc_priority: 201
 ---
 
-# quantiles Functions {#quantiles-functions}
+# Функции для нескольких квантилей {#quantiles-functions}
+
 ## quantiles {#quantiles}
 
 Синтаксис: `quantiles(level1, level2, …)(x)`

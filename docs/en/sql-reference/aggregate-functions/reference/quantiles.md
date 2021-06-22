@@ -3,6 +3,7 @@ toc_priority: 201
 ---
 
 # quantiles Functions {#quantiles-functions}
+
 ## quantiles {#quantiles}
 
 Syntax: `quantiles(level1, level2, …)(x)`
