@@ -3080,9 +3080,12 @@ Default value: `1`.
 
 If the setting is set to `0`, it is possible to use an arbitrary level of nesting.
 
-With the setting set to `1`:
+**Examples**
+
+Query:
 
 ``` sql
+SET flatten_nested = 1;
 CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
 SHOW CREATE TABLE t_nest;
@@ -3103,7 +3106,7 @@ SETTINGS index_granularity = 8192 │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-With the setting set to `0`:
+Query:
 
 ``` sql
 SET flatten_nested = 0;
