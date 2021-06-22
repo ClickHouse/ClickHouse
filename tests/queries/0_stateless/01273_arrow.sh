@@ -102,3 +102,4 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE arrow_types1"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE arrow_types2"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE arrow_types3"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE arrow_types4"
+
