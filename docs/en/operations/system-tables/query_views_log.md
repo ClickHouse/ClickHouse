@@ -31,8 +31,8 @@ Columns:
 -   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written rows.
 -   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written bytes.
 -   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this view.
--   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events).
--   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
+-   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics for this view. The description of them could be found in the table [system.events](#system_tables-events). It does not include events of views dependent on this one.
+-   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics for this view that are listed in the `ProfileEvents.Names` column.
 -   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the view. Values:
     -   `'Init' = 1` — The view was cancelled before writing anything to storage.
     -   `'WrittenPrefix' = 2` — The view was cancelled after writing its prefix to storage.

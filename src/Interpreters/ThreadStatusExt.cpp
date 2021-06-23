@@ -494,7 +494,7 @@ void ThreadStatus::logToQueryViewsLog(const ViewInfo & vinfo)
     element.event_time_microseconds = time_in_microseconds(vinfo.runtime_stats.event_time);
     element.view_duration_ms = vinfo.runtime_stats.elapsed_ms;
 
-    element.initial_query_id = query_id; // query_context_ptr->getInitialQueryId();
+    element.initial_query_id = query_id;
     element.view_name = vinfo.table_id.getNameForLogs();
     element.view_uuid = vinfo.table_id.uuid;
     element.view_type = vinfo.runtime_stats.type;
