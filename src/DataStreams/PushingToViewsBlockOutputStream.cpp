@@ -349,7 +349,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
         /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
         std::optional<InterpreterSelectQuery> select;
 
-        if (view.query)
+        if (view.runtime_stats.type == QueryViewsLogElement::ViewType::MATERIALIZED)
         {
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
