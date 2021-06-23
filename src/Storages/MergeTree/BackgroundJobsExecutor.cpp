@@ -188,6 +188,7 @@ void IBackgroundJobExecutor::finish()
         scheduling_task->deactivate();
         for (auto & [pool_type, pool] : pools)
             pool.wait();
+        pool_for_merges.wait();
     }
 }
 
