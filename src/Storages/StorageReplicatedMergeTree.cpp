@@ -2194,39 +2194,27 @@ bool StorageReplicatedMergeTree::executeFetchShared(
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
-
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
+    /// Delete the parts contained in the range to be deleted.
+    /// It's important that no old parts remain (after the merge), because otherwise,
+    ///  after adding a new replica, this new replica downloads them, but does not delete them.
+    /// And, if you do not, the parts will come to life after the server is restarted.
+    /// Therefore, we use all data parts.
+
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     DataPartsVector parts_to_remove;
     {
         auto data_parts_lock = lockParts();
-        /// It's a DROP PART
-        if (!drop_range_info.isFakeDropRangePart())
-        {
-            auto containing_part = getActiveContainingPart(drop_range_info, MergeTreeDataPartState::Committed, data_parts_lock);
-            if (containing_part && containing_part->info != drop_range_info)
-            {
-               LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range_info.getPartName(), containing_part->name);
-               return;
-            }
-        }
-
-        if (entry.detach)
-            LOG_DEBUG(log, "Detaching parts.");
-        else
-            LOG_DEBUG(log, "Removing parts.");
-
-
-        /// Delete the parts contained in the range to be deleted.
-        /// It's important that no old parts remain (after the merge), because otherwise,
-        ///  after adding a new replica, this new replica downloads them, but does not delete them.
-        /// And, if you do not, the parts will come to life after the server is restarted.
-        /// Therefore, we use all data parts.
-        ///
         parts_to_remove = removePartsInRangeFromWorkingSet(drop_range_info, true, data_parts_lock);
+        if (parts_to_remove.empty())
+            return;
     }
+
+    if (entry.detach)
+        LOG_DEBUG(log, "Detaching parts.");
+    else
+        LOG_DEBUG(log, "Removing parts.");
 
     if (entry.detach)
     {
