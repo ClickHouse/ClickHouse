@@ -105,7 +105,10 @@ private:
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
     {
         if (!identifier.compound())
+        {
             ast = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
+            ast->setAlias(identifier.alias);
+        }
     }
 
     void visit(ASTSubquery & subquery, ASTPtr &) const
