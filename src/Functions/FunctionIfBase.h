@@ -14,7 +14,7 @@ class FunctionIfBase : public IFunction
 {
 #if USE_EMBEDDED_COMPILER
 public:
-    bool isCompilableImpl(const DataTypes & ) const override
+    bool isCompilableImpl(const DataTypes & types) const override
     {
         /// It's difficult to compare Date and DateTime - cannot use JIT compilation.
         bool has_date = false;
