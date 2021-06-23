@@ -75,6 +75,54 @@ SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map
 └───────────────────────────────┘
 ```
 
+## Subcolumn Map.keys {#subcolumn-keys}
+
+To read all keys of a `Map` you can use the subcolumn `keys`, which doesn't read the whole column.
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t_map (`a` Map(String, UInt64)) ENGINE = Memory;
+
+INSERT INTO t_map VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
+
+SELECT a.keys FROM t_map;
+```
+
+Result:
+
+``` text
+┌─a.keys─────────────────┐
+│ ['key1','key2','key3'] │
+└────────────────────────┘
+```
+
+## Subcolumn Map.values {#subcolumn-keys}
+
+To read all values of a `Map` you can use the subcolumn `values`, which doesn't read the whole column.
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t_map (`a` Map(String, UInt64)) ENGINE = Memory;
+
+INSERT INTO t_map VALUES (map('key1', 1, 'key2', 2, 'key3', 3))
+
+SELECT a.values FROM t_map;
+```
+
+Result:
+
+``` text
+┌─a.values─┐
+│ [1,2,3]  │
+└──────────┘
+```
+
 **See Also**
 
 -   [map()](../../sql-reference/functions/tuple-map-functions.md#function-map) function
