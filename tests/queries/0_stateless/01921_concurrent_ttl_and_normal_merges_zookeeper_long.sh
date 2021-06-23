@@ -7,9 +7,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 NUM_REPLICAS=5
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ttl_table$i"
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ttl_table$i" &
 done
 
+wait
 
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -n --query "CREATE TABLE ttl_table$i(
@@ -18,7 +19,7 @@ for i in $(seq 1 $NUM_REPLICAS); do
     ENGINE ReplicatedMergeTree('/test/01921_concurrent_ttl_and_normal_merges/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ttl_table', '$i')
     ORDER BY tuple()
     TTL key + INTERVAL 1 SECOND
-    SETTINGS merge_with_ttl_timeout=1, max_replicated_merges_with_ttl_in_queue=100, max_number_of_merges_with_ttl_in_pool=100;"
+    SETTINGS merge_with_ttl_timeout=1, max_replicated_merges_with_ttl_in_queue=100, max_number_of_merges_with_ttl_in_pool=100, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
 done
 
 function optimize_thread
@@ -66,5 +67,7 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue where table l
 $CLICKHOUSE_CLIENT --query "SELECT COUNT() > 0 FROM system.part_log where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}'"
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ttl_table$i"
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ttl_table$i" &
 done
+
+wait
