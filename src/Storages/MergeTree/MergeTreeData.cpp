@@ -2328,15 +2328,15 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
 
     for (const DataPartPtr & part : partition_range)
     {
+        if (part->info.partition_id != drop_range.partition_id)
+            throw Exception("Unexpected partition_id of part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
         /// It's a DROP PART and it's already executed by fetching some covering part
         if (part->info != drop_range && part->info.contains(drop_range))
         {
             LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
             return {};
         }
-
-        if (part->info.partition_id != drop_range.partition_id)
-            throw Exception("Unexpected partition_id of part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         if (part->info.min_block < drop_range.min_block)
         {
