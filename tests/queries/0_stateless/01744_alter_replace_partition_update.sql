@@ -31,9 +31,9 @@ alter table x attach partition ('daily', '2021-03-28 00:00:00') from partition (
 
 select * from x order by type, dt, i;
 
-create table x1 (type Enum8('hourly' = 0, 'hourly_staging' = 1, 'daily' = 2, 'daily_staging' = 3), dt DateTime, i int) engine ReplicatedMergeTree('/clickhouse/tables/test_01744/01/x', '1') partition by (type, if(toUInt8(type) < 2, dt, toStartOfDay(dt))) order by (dt, i);
+create table x1 (type Enum8('hourly' = 0, 'hourly_staging' = 1, 'daily' = 2, 'daily_staging' = 3), dt DateTime, i int) engine ReplicatedMergeTree('/clickhouse/tables/test_01744_{database}/01/x', '1') partition by (type, if(toUInt8(type) < 2, dt, toStartOfDay(dt))) order by (dt, i);
 
-create table x2 (type Enum8('hourly' = 0, 'hourly_staging' = 1, 'daily' = 2, 'daily_staging' = 3), dt DateTime, i int) engine ReplicatedMergeTree('/clickhouse/tables/test_01744/01/x', '2') partition by (type, if(toUInt8(type) < 2, dt, toStartOfDay(dt))) order by (dt, i);
+create table x2 (type Enum8('hourly' = 0, 'hourly_staging' = 1, 'daily' = 2, 'daily_staging' = 3), dt DateTime, i int) engine ReplicatedMergeTree('/clickhouse/tables/test_01744_{database}/01/x', '2') partition by (type, if(toUInt8(type) < 2, dt, toStartOfDay(dt))) order by (dt, i);
 
 insert into x1 values ('daily', '2021-03-28 01:00:00', 10), ('daily', '2021-03-28 02:00:00', 20);
 insert into x1 values ('hourly', '2021-03-28 05:00:00', 60), ('hourly', '2021-03-28 06:00:00', 70);
