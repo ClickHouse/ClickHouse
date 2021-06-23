@@ -41,7 +41,9 @@ public:
         size_t estimated_size,
         size_t aio_threshold,
         size_t mmap_threshold,
-        MMappedFileCache * mmap_cache) const override;
+        MMappedFileCache * mmap_cache,
+        size_t offset,
+        size_t length) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,

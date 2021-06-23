@@ -31,13 +31,15 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, UInt64 max_single_read_retries_, size_t buffer_size_)
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, UInt64 max_single_read_retries_, size_t buffer_size_, size_t init_offset_, size_t init_length_)
     : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
     , max_single_read_retries(max_single_read_retries_)
     , buffer_size(buffer_size_)
+    , init_offset(init_offset_)
+    , init_length(init_length_)
 {
 }
 
@@ -114,19 +116,26 @@ off_t ReadBufferFromS3::getPosition()
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
-
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    req.SetRange(fmt::format("bytes={}-", offset));
+
+    auto real_offset = offset;
+    if (!inited && init_offset > 0)
+        real_offset = init_offset;
+    if (init_length > 0)
+        req.SetRange(fmt::format("bytes={}-{}", real_offset, real_offset + init_length));
+    else
+        req.SetRange(fmt::format("bytes={}-", real_offset));
+    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}, Length: {}", bucket, key, real_offset, init_length);
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())
     {
         read_result = outcome.GetResultWithOwnership();
-        return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
+        inited = true;
+        return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size, init_offset);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);

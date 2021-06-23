@@ -12,8 +12,21 @@ namespace ErrorCodes
 
 bool ReadBufferFromIStream::nextImpl()
 {
-    istr.read(internal_buffer.begin(), internal_buffer.size());
-    size_t gcount = istr.gcount();
+    size_t gcount = 0;
+    if (offset && offset - read_pos > internal_buffer.size())
+    {
+        gcount = internal_buffer.size();
+    }
+    else if (read_pos < offset)
+    {
+        gcount = offset - read_pos;
+    }
+    else
+    {
+        istr.read(internal_buffer.begin(), internal_buffer.size());
+        gcount = istr.gcount();
+    }
+    read_pos += gcount;
 
     if (!gcount)
     {
@@ -31,8 +44,8 @@ bool ReadBufferFromIStream::nextImpl()
     return true;
 }
 
-ReadBufferFromIStream::ReadBufferFromIStream(std::istream & istr_, size_t size)
-    : BufferWithOwnMemory<ReadBuffer>(size), istr(istr_)
+ReadBufferFromIStream::ReadBufferFromIStream(std::istream & istr_, size_t size, size_t offset_)
+    : BufferWithOwnMemory<ReadBuffer>(size), istr(istr_), offset(offset_)
 {
 }
 

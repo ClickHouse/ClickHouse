@@ -31,12 +31,17 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     /// Compute the size of the buffer.
     size_t max_mark_range_bytes = 0;
     size_t sum_mark_range_bytes = 0;
-
+    size_t min_left_mark = std::numeric_limits<size_t>::max();
+    size_t max_right_mark = 0;
     for (const auto & mark_range : all_mark_ranges)
     {
         size_t left_mark = mark_range.begin;
         size_t right_mark = mark_range.end;
 
+        if (left_mark < min_left_mark)
+            min_left_mark = left_mark;
+        if (right_mark > max_right_mark)
+            max_right_mark = right_mark;
         /// NOTE: if we are reading the whole file, then right_mark == marks_count
         /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
 
@@ -70,6 +75,24 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         sum_mark_range_bytes += mark_range_bytes;
     }
 
+    size_t offset = marks_loader.getMark(min_left_mark).offset_in_compressed_file;
+    size_t limit = file_size;
+
+    if (max_right_mark + 1 < marks_count)
+    {
+        size_t next_offset = 0;
+        for (auto i = max_right_mark + 1; i < marks_count; ++i)
+        {
+            auto next_block_offset = marks_loader.getMark(i).offset_in_compressed_file;
+            if (next_block_offset > limit)
+            {
+                next_offset = next_block_offset;
+                break;
+            }
+        }
+        if (next_offset > offset)
+            limit = next_offset;
+    }
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
     if (max_mark_range_bytes == 0)
@@ -82,7 +105,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             fullPath(disk, path_prefix + data_file_extension),
-            [this, buffer_size, sum_mark_range_bytes, &settings]()
+            [this, buffer_size, sum_mark_range_bytes, &settings, offset, limit]()
             {
                 return disk->readFile(
                     path_prefix + data_file_extension,
@@ -90,7 +113,9 @@ MergeTreeReaderStream::MergeTreeReaderStream(
                     sum_mark_range_bytes,
                     settings.min_bytes_to_use_direct_io,
                     settings.min_bytes_to_use_mmap_io,
-                    settings.mmap_cache.get());
+                    settings.mmap_cache.get(),
+                    offset,
+                    limit - offset);
             },
             uncompressed_cache);
 
@@ -112,7 +137,9 @@ MergeTreeReaderStream::MergeTreeReaderStream(
                 sum_mark_range_bytes,
                 settings.min_bytes_to_use_direct_io,
                 settings.min_bytes_to_use_mmap_io,
-                settings.mmap_cache.get())
+                settings.mmap_cache.get(),
+                offset,
+                limit - offset)
         );
 
         if (profile_callback)

@@ -123,18 +123,22 @@ public:
         const String & bucket_,
         DiskS3::Metadata metadata_,
         size_t max_single_read_retries_,
-        size_t buf_size_)
+        size_t buf_size_,
+        size_t init_offset_,
+        size_t init_length_)
         : ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>(metadata_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
         , max_single_read_retries(max_single_read_retries_)
         , buf_size(buf_size_)
+        , init_offset(init_offset_)
+        , init_length(init_length_)
     {
     }
 
     std::unique_ptr<ReadBufferFromS3> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, max_single_read_retries, buf_size);
+        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, max_single_read_retries, buf_size, init_offset, init_length);
     }
 
 private:
@@ -142,6 +146,8 @@ private:
     const String & bucket;
     UInt64 max_single_read_retries;
     size_t buf_size;
+    size_t init_offset = 0;
+    size_t init_length = 0;
 };
 
 DiskS3::DiskS3(
@@ -218,7 +224,7 @@ void DiskS3::moveFile(const String & from_path, const String & to_path, bool sen
     fs::rename(fs::path(metadata_path) / from_path, fs::path(metadata_path) / to_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
+std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *, size_t offset, size_t length) const
 {
     auto settings = current_settings.get();
     auto metadata = readMeta(path);
@@ -226,7 +232,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
     LOG_DEBUG(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto reader = std::make_unique<ReadIndirectBufferFromS3>(settings->client, bucket, metadata, settings->s3_max_single_read_retries, buf_size);
+    auto reader = std::make_unique<ReadIndirectBufferFromS3>(settings->client, bucket, metadata, settings->s3_max_single_read_retries, buf_size, offset, length);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
