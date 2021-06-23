@@ -3,7 +3,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <boost/range/join.hpp>
-#include <ext/range.h>
 #include "DictionaryStructure.h"
 #include "writeParenthesisedString.h"
 
@@ -346,7 +345,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
                                                size_t beg, size_t end) const
 {
     auto first = true;
-    for (const auto i : ext::range(beg, end))
+    for (size_t i = beg; i < end; ++i)
     {
         if (!first)
             writeString(" AND ", out);
@@ -391,7 +390,7 @@ void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out, size_t b
     writeChar('(', out);
 
     auto first = true;
-    for (const auto i : ext::range(beg, end))
+    for (size_t i = beg; i < end; ++i)
     {
         if (!first)
             writeString(", ", out);
@@ -409,7 +408,7 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const si
     writeString("(", out);
 
     auto first = true;
-    for (const auto i : ext::range(beg, end))
+    for (size_t i = beg; i < end; ++i)
     {
         if (!first)
             writeString(", ", out);

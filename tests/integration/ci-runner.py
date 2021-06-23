@@ -377,8 +377,8 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = ' '.join([test for test in sorted(test_names)])
             parallel_cmd = " --parallel {} ".format(num_workers) if num_workers > 0 else ""
-            cmd = "cd {}/tests/integration && ./runner --tmpfs {} -t {} {} '-ss -rfEp --color=no --durations=0 {}' | tee {}".format(
-                repo_path, image_cmd, test_cmd, parallel_cmd, _get_deselect_option(self.should_skip_tests()), output_path)
+            cmd = "cd {}/tests/integration && ./runner --tmpfs {} -t {} {} '-ss -rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
+                repo_path, image_cmd, test_cmd, parallel_cmd, i, _get_deselect_option(self.should_skip_tests()), output_path)
 
             with open(log_path, 'w') as log:
                 logging.info("Executing cmd: %s", cmd)
