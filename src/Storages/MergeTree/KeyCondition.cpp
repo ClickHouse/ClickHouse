@@ -10,6 +10,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
+#include <Functions/indexHint.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
@@ -683,7 +684,27 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 return arg;
             }
 
-            if (isLogicalOperator(name) && need_inversion)
+            if (name == "indexHint")
+            {
+                ActionsDAG::NodeRawConstPtrs children;
+                if (const auto * adaptor = typeid_cast<const FunctionToOverloadResolverAdaptor *>(node.function_builder.get()))
+                {
+                    if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction()))
+                    {
+                        const auto & index_hint_dag = index_hint->getActions();
+                        children = index_hint_dag->getIndex();
+
+                        for (auto & arg : children)
+                            arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
+                    }
+                }
+
+                const auto & func = inverted_dag.addFunction(node.function_builder, children, "");
+                to_inverted[&node] = &func;
+                return func;
+            }
+
+            if (need_inversion && (name == "and" || name == "or"))
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
@@ -691,9 +712,8 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
 
                 FunctionOverloadResolverPtr function_builder;
-                if (name == "indexHint")
-                    function_builder = node.function_builder;
-                else if (name == "and")
+
+                if (name == "and")
                     function_builder = FunctionFactory::instance().get("or", context);
                 else if (name == "or")
                     function_builder = FunctionFactory::instance().get("and", context);
