@@ -283,7 +283,7 @@ public:
 
         String result;
         WriteBufferFromString out(result);
-        out << current_element;
+        out << current_element.getUnderlyingElement();
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
         col_str.insertData(result.data(), result.size());
         return true;
@@ -324,7 +324,7 @@ public:
                     out << ", ";
                 }
                 success = true;
-                out << current_element;
+                out << current_element.getUnderlyingElement();
             }
             else if (status == VisitorStatus::Error)
             {
