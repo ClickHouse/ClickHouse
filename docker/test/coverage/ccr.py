@@ -19,6 +19,7 @@ FUNCS = "Funcs"
 TESTS = "Tests"
 
 env = None
+tests_count = 0
 
 bounds = {  # success bound, warning bound, %
     LINES: [90, 75],
@@ -301,7 +302,7 @@ class EntryBase:
             "PERCENT": Entry.PERCENT,
             "LIST": Entry.LIST,
             "TESTS": TESTS,
-            "tests_total": len(self.tests[3]),
+            "tests_total": tests_count,
             "generated_at": date.today(),
             "root_url": os.path.join(root_url, "index.html"),
             "index_url": os.path.join(root_url, "files.html")
@@ -345,7 +346,9 @@ class FileEntry(EntryBase):
         for entity_type, entity in types_and_lists:
             covered, not_covered = set(), set()
 
-            for i, is_covered in entity[3]:
+            items_with_hits = entity[3]
+
+            for i, is_covered in items_with_hits:
                 (covered if is_covered else not_covered).add(i)
 
             covered, not_covered = sorted(covered), sorted(not_covered)
@@ -370,12 +373,11 @@ class FileEntry(EntryBase):
 
 
 class DirEntry(EntryBase):
-    def __init__(self, path="", is_root=False, tests_count=0):
+    def __init__(self, path="", is_root=False):
         super().__init__(path, path + "/index.html")
 
         self.items = []
         self.is_root = is_root
-        self.tests_count = tests_count
         self.path = path
 
     def add(self, entry):
@@ -386,7 +388,7 @@ class DirEntry(EntryBase):
         self._recalc(entry, "funcs")
 
         test_hit = max(self.tests[0], entry.tests[0])
-        self.tests = test_hit, 0, self.percent(test_hit, self.tests_count), []
+        self.tests = test_hit, 0, self.percent(test_hit, tests_count), []
 
     def _recalc(self, entry, name):
         old = getattr(self, name)
@@ -404,7 +406,10 @@ class DirEntry(EntryBase):
         entries = sorted(self.items, key=lambda x: x.name)
 
         special_entry = DirEntry()
-        special_entry.items = self.items
+
+        for item in self.items:
+            special_entry.add(item)
+
         special_entry.url = "./" + page_name
 
         depth = 0 if self.is_root else (self.name.count('/') + 1)
@@ -475,6 +480,9 @@ class CCR:
 
         print("{} tests, {} source files".format(
             len(self.tests), len(self.files)))
+
+        global tests_count
+        tests_count = len(self.tests)
 
     def read_header(self, f):
         """
@@ -640,7 +648,7 @@ if __name__ == '__main__':
     env = Environment(
         loader=FileSystemLoader(tpl_path), trim_blocks=True, enable_async=True)
 
-    # comment these 2 lines for more readable error
+    # comment these 2 lines for readable errors
     env.compile_templates(compiled_tpl_path, zip=None, ignore_errors=False)
     env.loader = ModuleLoader(compiled_tpl_path)
 
