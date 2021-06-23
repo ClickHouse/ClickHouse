@@ -145,6 +145,7 @@ protected:
     Poco::Logger * log = nullptr;
 
     friend class CurrentThread;
+    friend class PushingToViewsBlockOutputStream;
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
@@ -215,7 +216,6 @@ public:
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
-    void logToQueryViewsLog(const ViewInfo & vinfo);
 
 protected:
     void applyQuerySettings();
@@ -227,6 +227,8 @@ protected:
     void finalizeQueryProfiler();
 
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
+
+    void logToQueryViewsLog(const ViewInfo & vinfo);
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
