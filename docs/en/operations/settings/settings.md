@@ -1591,6 +1591,18 @@ FORMAT PrettyCompactMonoBlock
 
 Default value: 0
 
+## distributed_push_down_limit (#distributed-push-down-limit}
+
+LIMIT will be applied on each shard separatelly. Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
+
+Possible values:
+
+-  0 - Disabled
+-  1 - Enabled
+
+!!! note "Note"
+    That with this setting the result of the query may be inaccurate.
+
 ## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
 
 Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
@@ -3065,6 +3077,71 @@ SELECT
     sumCount(b).2,
     (sumCount(b).1) / (sumCount(b).2)    
 FROM fuse_tbl
+```
+
+## flatten_nested {#flatten-nested}
+
+Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
+
+Possible values:
+
+-   1 — Nested column is flattened to separate arrays.
+-   0 — Nested column stays a single array of tuples.
+
+Default value: `1`.
+
+**Usage**
+
+If the setting is set to `0`, it is possible to use an arbitrary level of nesting.
+
+**Examples**
+
+Query:
+
+``` sql
+SET flatten_nested = 1;
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Result:
+
+``` text
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n.a` Array(UInt32),
+    `n.b` Array(UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SET flatten_nested = 0;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Result:
+
+``` text
+┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n` Nested(a UInt32, b UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

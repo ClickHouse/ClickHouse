@@ -111,7 +111,7 @@
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
-            "with_coverage": true
+            "with_coverage": false
         },
         {
             "compiler": "clang-11",
