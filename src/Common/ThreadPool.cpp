@@ -91,7 +91,7 @@ void PriorityJobContainer::executeJobOrThrowOnError(PriorityJobContainer::Job &&
         if (job->execute())
         {
             /// Job wants to be executed one more time
-            std::lock_guard lock(mutex);
+            /// Called without lock, because it acquires lock by itself
             emplace(std::move(job));
             return;
         }
