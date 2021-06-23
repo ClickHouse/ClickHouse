@@ -1393,8 +1393,7 @@ void StorageMergeTree::replacePartitionFromOrUpdate(
             future_part.name = src_part->getNewName(dst_part_info);
             future_part.type = src_part->getType();
             auto reservation = tryReserveSpace(MergeTreeDataMergerMutator::estimateNeededDiskSpace({src_part}), src_part->volume);
-            auto table_id = getStorageID();
-            MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+            MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(getStorageID(), future_part);
             Stopwatch stopwatch;
 
             auto write_part_log = [&] (const ExecutionStatus & execution_status)
