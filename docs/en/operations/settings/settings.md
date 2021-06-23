@@ -1737,7 +1737,7 @@ These function can be tranformed:
 -   [empty](../../sql-reference/functions/array-functions.md#function-empty) to read subcolumn [size0](../../sql-reference/data-types/array.md#array-size).
 -   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) to read subcolumn [size0](../../sql-reference/data-types/array.md#array-size).
 -   [isNull](../../sql-reference/operators/index.md#operator-is-null) to read subcolumn [null](../../sql-reference/data-types/nullable.md#finding-null).
--   [isNotNull](../../sql-reference/operators.md#is-not-null#is-not-null) to read subcolumn [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [isNotNull](../../sql-reference/operators/index.md#is-not-null#is-not-null) to read subcolumn [null](../../sql-reference/data-types/nullable.md#finding-null).
 -   [count](../../sql-reference/aggregate-functions/reference/count.md) to read subcolumn [null](../../sql-reference/data-types/nullable.md#finding-null).
 -   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) to read subcolumn [keys](../../sql-reference/data-types/map.md#subcolumn-keys).
 -   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) to read subcolumn [values](../../sql-reference/data-types/map.md#subcolumn-values).
