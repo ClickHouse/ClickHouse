@@ -13,7 +13,7 @@ COPY s3downloader /s3downloader
 COPY templates/ /templates/
 
 COPY run.sh /run.sh
-COPY ccr_converter.py /ccr_converter.py
+COPY ccr.py /ccr.py
 
 ENV DATASETS="hits visits"
 
