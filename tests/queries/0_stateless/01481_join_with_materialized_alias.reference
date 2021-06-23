@@ -1,0 +1,1 @@
+CREATE MATERIALIZED VIEW default.meterialized_table TO default.meterialized_table_storage\n(\n    `day` Date,\n    `id` UInt64\n) AS\nSELECT\n    A.day AS day,\n    B.id AS id\nFROM default.t1 AS A\nINNER JOIN default.t2 AS B ON A.id = B.id
