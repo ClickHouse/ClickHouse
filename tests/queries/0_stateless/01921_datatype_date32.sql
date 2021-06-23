@@ -1,12 +1,7 @@
 drop table if exists t1;
 create table t1(x1 Date32) engine Memory;
 
-insert into t1 values
-      ('1925-01-01'),
-      ('1924-01-01'),
-      ('2282-12-31'),
-      ('2283-12-31'),
-      ('2021-6-22');
+insert into t1 values ('1925-01-01'),('1924-01-01'),('2282-12-31'),('2283-12-31'),('2021-06-22');
 
 select x1 from t1;
 select '-------toYear---------';
@@ -33,7 +28,7 @@ select '-------toMonday---------';
 select toMonday(x1) from t1;
 select '-------toISOWeek---------';
 select toISOWeek(x1) from t1;
-select '-------toISOWeek---------';
+select '-------toISOYear---------';
 select toISOYear(x1) from t1;
 select '-------toWeek---------';
 select toWeek(x1) from t1;
@@ -78,7 +73,7 @@ select toRelativeMinuteNum(x1) from t1; -- { serverError 43 }
 select '-------toRelativeSecondNum---------';
 select toRelativeSecondNum(x1) from t1; -- { serverError 43 }
 select '-------toTime---------';
-select toTime(x1) from t1;
+select toTime(x1) from t1; -- { serverError 43 }
 select '-------toYYYYMM---------';
 select toYYYYMM(x1) from t1;
 select '-------toYYYYMMDD---------';
@@ -86,35 +81,38 @@ select toYYYYMMDD(x1) from t1;
 select '-------toYYYYMMDDhhmmss---------';
 select toYYYYMMDDhhmmss(x1) from t1;
 select '-------addSeconds---------';
-select addSeconds(x1) from t1;
+select addSeconds(x1, 3600) from t1;
 select '-------addMinutes---------';
-select addMinutes(x1) from t1;
+select addMinutes(x1, 60) from t1;
 select '-------addHours---------';
-select addHours(x1) from t1;
+select addHours(x1, 12) from t1;
 select '-------addDays---------';
-select addDays(x1) from t1;
+select addDays(x1, 7) from t1;
 select '-------addWeeks---------';
-select addWeeks(x1) from t1;
+select addWeeks(x1, 1) from t1;
 select '-------addMonths---------';
-select addMonths(x1) from t1;
+select addMonths(x1, 1) from t1;
 select '-------addQuarters---------';
-select addQuarters(x1) from t1;
+select addQuarters(x1, 1) from t1;
 select '-------addYears---------';
-select addYears(x1) from t1;
+select addYears(x1, 1) from t1;
 select '-------subtractSeconds---------';
-select subtractSeconds(x1) from t1;
+select subtractSeconds(x1, 3600) from t1;
 select '-------subtractMinutes---------';
-select subtractMinutes(x1) from t1;
+select subtractMinutes(x1, 60) from t1;
 select '-------subtractHours---------';
-select subtractHours(x1) from t1;
+select subtractHours(x1, 1) from t1;
 select '-------subtractDays---------';
-select subtractDays(x1) from t1;
+select subtractDays(x1, 7) from t1;
 select '-------subtractWeeks---------';
-select subtractWeeks(x1) from t1;
+select subtractWeeks(x1, 1) from t1;
 select '-------subtractMonths---------';
-select subtractMonths(x1) from t1;
+select subtractMonths(x1, 1) from t1;
 select '-------subtractQuarters---------';
-select subtractQuarters(x1) from t1;
+select subtractQuarters(x1, 1) from t1;
 select '-------subtractYears---------';
-select subtractYears(x1) from t1;
+select subtractYears(x1, 1) from t1;
+select '-------toDate32---------';
+select toDate32('1925-01-01'), toDate32(toDate('2000-01-01'));
+select toDate32OrZero('1924-01-01'), toDate32OrNull('1924-01-01');
 

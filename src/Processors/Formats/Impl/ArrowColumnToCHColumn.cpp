@@ -147,7 +147,7 @@ namespace DB
 /// Arrow stores Parquet::DATE in Int32, while ClickHouse stores Date in UInt16. Therefore, it should be checked before saving
     static void fillColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, IColumn & internal_column)
     {
-        PaddedPODArray<UInt16> & column_data = assert_cast<ColumnVector<UInt16> &>(internal_column).getData();
+        PaddedPODArray<Int32> & column_data = assert_cast<ColumnVector<Int32> &>(internal_column).getData();
         column_data.reserve(arrow_column->length());
 
         for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
@@ -157,7 +157,7 @@ namespace DB
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
                 Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
-                if (days_num > DATE_LUT_MAX_DAY_NUM)
+                if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM)
                 {
                     // TODO: will it rollback correctly?
                     throw Exception
