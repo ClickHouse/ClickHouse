@@ -150,6 +150,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
 
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
+    size_t maxParallelStreams = 0;
 
     while (!stack.empty())
     {
@@ -164,11 +165,15 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
         size_t next_child = frame.pipelines.size();
         if (next_child == frame.node->children.size())
         {
-            bool limit_max_threads = frame.pipelines.empty();
+            bool limit_max_threads = frame.pipelines.empty(); //leaf node
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
 
-            if (limit_max_threads && max_threads)
-                last_pipeline->limitMaxThreads(max_threads);
+            if (limit_max_threads)
+            {
+                maxParallelStreams += last_pipeline->getMaxParallelStreams();
+                if (max_threads)
+                    last_pipeline->limitMaxThreads(max_threads);
+            }
 
             stack.pop();
         }
@@ -179,6 +184,8 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
     for (auto & context : interpreter_context)
         last_pipeline->addInterpreterContext(std::move(context));
 
+    if (maxParallelStreams > 0)
+        last_pipeline->setMaxParallelStreams(maxParallelStreams);
     return last_pipeline;
 }
 

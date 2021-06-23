@@ -107,6 +107,8 @@ public:
     void setLeafLimits(const SizeLimits & leaf_limits);
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
 
+    void setMaxParallelStreams(size_t num_threads) { max_parallel_streams = num_threads; }
+
     /// Do not allow to change the table while the processors of pipe are alive.
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.

@@ -141,6 +141,10 @@ public:
         return std::max<size_t>(1, num_threads);
     }
 
+    size_t getMaxParallelStreams() { return pipe.maxParallelStreams(); }
+    void setMaxParallelStreams(size_t max_parallel_streams) { pipe.setMaxParallelStreams(max_parallel_streams); }
+
+
     /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
 
