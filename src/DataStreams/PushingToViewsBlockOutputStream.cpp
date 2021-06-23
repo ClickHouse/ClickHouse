@@ -161,14 +161,6 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     }
 }
 
-PushingToViewsBlockOutputStream::~PushingToViewsBlockOutputStream()
-{
-    /// ThreadStatus destructor modifies current_thread and we don't want that
-    auto * running_thread = current_thread;
-    views.clear();
-    current_thread = running_thread;
-}
-
 
 Block PushingToViewsBlockOutputStream::getHeader() const
 {
