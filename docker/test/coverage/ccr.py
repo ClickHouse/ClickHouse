@@ -146,6 +146,10 @@ class GCNO:
         lines = {}
         hit_edges = [e for e, hit in edges if hit]
 
+        if file_name not in self.sf_to_funcs:
+            print(f"No gcno data for {file_name}, lines coverage is disabled")
+            return []
+
         for func in self.sf_to_funcs[file_name]:
             for bb in func.blocks:
                 bb_lines = sorted(set(bb.lines))
@@ -334,7 +338,7 @@ class FileEntry(EntryBase):
             return
 
         data = {}
-        not_covered = []
+        not_covered_entities = []
 
         types_and_lists = self.types_and_lists()
 
@@ -347,7 +351,7 @@ class FileEntry(EntryBase):
             covered, not_covered = sorted(covered), sorted(not_covered)
 
             data[entity_type] = covered, not_covered
-            not_covered.append((entity_type, not_covered))
+            not_covered_entities.append((entity_type, not_covered))
 
         with open(src_file_path, "r") as sf:
             lines = highlight(sf.read(), CppLexer(), CodeFormatter(data))
@@ -357,7 +361,7 @@ class FileEntry(EntryBase):
             output = self.render(
                 "file.html", depth,
                 highlighted_sources=lines, entry=self,
-                not_covered=not_covered)
+                not_covered=not_covered_entities)
 
             html_file = os.path.join(args.out_dir, self.full_path) + ".html"
 
@@ -452,6 +456,8 @@ class CCR:
         self.tests = []
 
         self.gcno = GCNO(args.gcno_dir)
+
+        print(len(self.gcno.sf_to_funcs), "source files in gcno files")
 
         with open(self.args.report_file, "r") as f:
             self.read(f)
@@ -634,6 +640,7 @@ if __name__ == '__main__':
     env = Environment(
         loader=FileSystemLoader(tpl_path), trim_blocks=True, enable_async=True)
 
+    # comment these 2 lines for more readable error
     env.compile_templates(compiled_tpl_path, zip=None, ignore_errors=False)
     env.loader = ModuleLoader(compiled_tpl_path)
 
