@@ -15,8 +15,8 @@ Columns:
 
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the last event of the view happened.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution.
--   `event_time_microsecinds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution with microseconds precision.
--   `view_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of view execution (sum of its stages).
+-   `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution with microseconds precision.
+-   `view_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of view execution (sum of its stages) in milliseconds.
 -   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
 -   `view_name` ([String](../../sql-reference/data-types/string.md)) — Name of the view.
 -   `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — UUID of the view.

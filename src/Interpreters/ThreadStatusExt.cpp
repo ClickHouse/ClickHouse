@@ -481,7 +481,6 @@ static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 
 void ThreadStatus::logToQueryViewsLog(const ViewInfo & vinfo)
 {
-    updatePerformanceCounters();
     auto query_context_ptr = query_context.lock();
     if (!query_context_ptr)
         return;
