@@ -51,9 +51,10 @@ struct AddSecondsImpl
     {
         return t + delta;
     }
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d)) + delta;
+        // use default datetime64 scale
+        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta) * 1000;
     }
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
@@ -75,9 +76,10 @@ struct AddMinutesImpl
     {
         return t + delta * 60;
     }
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60;
+        // use default datetime64 scale
+        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60) * 1000;
     }
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
@@ -98,9 +100,10 @@ struct AddHoursImpl
     {
         return t + delta * 3600;
     }
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600;
+        // use default datetime64 scale
+        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600) * 1000;
     }
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
@@ -474,6 +477,8 @@ public:
 
         if constexpr (std::is_same_v<ResultDataType, DataTypeDate>)
             return std::make_shared<DataTypeDate>();
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>)
+            return std::make_shared<DataTypeDate32>();
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
         {
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
@@ -482,8 +487,15 @@ public:
         {
             // TODO (vnemkov): what if there is an overload of Transform::execute() that returns DateTime64 from DateTime or Date ?
             // Shall we use the default scale or one from optional argument ?
-            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
-            return std::make_shared<DataTypeDateTime64>(datetime64_type.getScale(), extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+            if (arguments[0].type->getTypeId() == TypeIndex::DateTime64)
+            {
+                const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
+                return std::make_shared<DataTypeDateTime64>(datetime64_type.getScale(), extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+            }
+            else
+            {
+                return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+            }
         }
         else
         {
