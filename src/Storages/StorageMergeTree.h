@@ -108,8 +108,6 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
-    BackgroundJobsExecutor background_executor;
-    BackgroundMovesExecutor background_moves_executor;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
@@ -134,6 +132,14 @@ private:
 
     std::atomic<bool> shutdown_called {false};
 
+
+
+    /// Must be last fields to be destroyed first.
+    BackgroundJobsExecutor background_executor;
+    BackgroundMovesExecutor background_moves_executor;
+
+
+private:
     void loadMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting

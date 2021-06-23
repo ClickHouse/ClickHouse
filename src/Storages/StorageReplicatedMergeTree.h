@@ -353,8 +353,6 @@ private:
     int metadata_version = 0;
     /// Threads.
 
-    BackgroundJobsExecutor background_executor;
-    BackgroundMovesExecutor background_moves_executor;
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
@@ -613,6 +611,11 @@ private:
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
+
+
+    /// Must be the last
+    BackgroundJobsExecutor background_executor;
+    BackgroundMovesExecutor background_moves_executor;
 
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
