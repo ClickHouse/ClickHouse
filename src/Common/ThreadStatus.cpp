@@ -149,7 +149,8 @@ ThreadStatus::~ThreadStatus()
 
     if (deleter)
         deleter();
-    current_thread = nullptr;
+    if (current_thread == this)
+        current_thread = nullptr;
 }
 
 void ThreadStatus::updatePerformanceCounters()
