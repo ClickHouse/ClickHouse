@@ -204,6 +204,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     if (table_join->dictionary_reader)
     {
+        LOG_DEBUG(log, "Performing join over dict");
         data->type = Type::DICT;
         std::get<MapsOne>(data->maps).create(Type::DICT);
         chooseMethod(key_columns, key_sizes); /// init key_sizes
@@ -326,8 +327,9 @@ public:
     FindResult findKey(const TableJoin & table_join, size_t row, const Arena &)
     {
         const DictionaryReader & reader = *table_join.dictionary_reader;
-        if (!read_result)
+        if (!dictionary_read)
         {
+            dictionary_read = true;
             reader.readKeys(*key_columns[0], read_result, found, positions);
             result.block = &read_result;
 
@@ -345,6 +347,7 @@ private:
     const ColumnRawPtrs & key_columns;
     Block read_result;
     Mapped result;
+    bool dictionary_read = false;
     ColumnVector<UInt8>::Container found;
     std::vector<size_t> positions;
 };
