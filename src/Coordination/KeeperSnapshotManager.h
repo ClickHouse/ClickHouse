@@ -14,7 +14,10 @@ enum SnapshotVersion : uint8_t
 {
     V0 = 0,
     V1 = 1, /// with ACL map
+    V2 = 2, /// with 64 bit buffer header
 };
+
+static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V2;
 
 struct KeeperStorageSnapshot
 {
@@ -30,7 +33,7 @@ public:
 
     KeeperStorage * storage;
 
-    SnapshotVersion version = SnapshotVersion::V1;
+    SnapshotVersion version = CURRENT_SNAPSHOT_VERSION;
     SnapshotMetadataPtr snapshot_meta;
     int64_t session_id;
     size_t snapshot_container_size;
