@@ -1384,7 +1384,7 @@ initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
 **Аргументы**
 
 -   `aggregate_function` — название агрегатной функции, состояние которой нужно создать. [String](../../sql-reference/data-types/string.md#string).
--   `arg` — аргументы, которые передается агрегатную функцию.
+-   `arg` — аргументы, которые передаются в агрегатную функцию.
 
 **Возвращаемое значение**
 
