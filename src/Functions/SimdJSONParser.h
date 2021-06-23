@@ -165,7 +165,8 @@ inline ALWAYS_INLINE SimdJSONParser::Object SimdJSONParser::Element::getObject()
     return element.get_object().value_unsafe();
 }
 
-inline ALWAYS_INLINE WriteBuffer& operator<<(WriteBuffer& out, const DB::SimdJSONParser::Element & element) {
+inline ALWAYS_INLINE WriteBuffer& operator<<(WriteBuffer& out, const DB::SimdJSONParser::Element & element)
+{
     return out << element.getUnderlyingElement();
 }
 
