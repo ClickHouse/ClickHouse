@@ -2328,8 +2328,8 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
 
     for (const DataPartPtr & part : partition_range)
     {
-        /// It's a DROP_PART and it's already executed by fetching some covering part
-        if (part->info.contains(drop_range))
+        /// It's a DROP PART and it's already executed by fetching some covering part
+        if (part->info != drop_range && part->info.contains(drop_range))
         {
             LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
             return {};
