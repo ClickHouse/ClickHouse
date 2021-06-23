@@ -8,6 +8,7 @@ toc_title: Map(key, value)
 `Map(key, value)` data type stores `key:value` pairs. 
 
 **Parameters** 
+
 -   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md) or [Integer](../../sql-reference/data-types/int-uint.md).
 -   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Array](../../sql-reference/data-types/array.md).
 
