@@ -127,6 +127,7 @@ bool MergeFromLogEntryTask::executeImpl()
             }
             catch (...)
             {
+                /// Maybe part is nullptr here?
                 write_part_log(ExecutionStatus::fromCurrentException());
                 throw;
             }
@@ -361,6 +362,8 @@ bool MergeFromLogEntryTask::prepare()
 
 bool MergeFromLogEntryTask::commit()
 {
+    part = merge_task->getFuture().get();
+
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, transaction_ptr.get());
 
     try
