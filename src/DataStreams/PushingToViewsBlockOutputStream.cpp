@@ -78,8 +78,6 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
     }
 
-    auto thread_group = CurrentThread::getGroup();
-
     for (const auto & database_table : dependencies)
     {
         auto dependent_table = DatabaseCatalog::instance().getTable(database_table, getContext());
@@ -137,14 +135,18 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
 
-        auto * main_thread = current_thread;
+        /// We are creating a ThreadStatus per view to store its metrics individually
+        /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
+        /// Later on, before doing any task related to a view, we'll switch to its ThreadStatus, do the work,
+        /// and switch back to the original thread_status.
+        auto * running_thread = current_thread;
         auto thread_status = std::make_shared<ThreadStatus>();
-        current_thread = main_thread;
         thread_status->attachQueryContext(getContext());
 
         QueryViewsLogElement::ViewRuntimeStats runtime_stats{
             target_name, type, thread_status, 0, std::chrono::system_clock::now(), QueryViewsLogElement::ViewStatus::INIT};
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, std::move(runtime_stats)});
+        current_thread = running_thread;
     }
 
     /// Do not push to destination table if the flag is set
@@ -157,6 +159,14 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         replicated_output = dynamic_cast<ReplicatedMergeTreeSink *>(sink.get());
         output = std::make_shared<PushingToSinkBlockOutputStream>(std::move(sink));
     }
+}
+
+PushingToViewsBlockOutputStream::~PushingToViewsBlockOutputStream()
+{
+    /// ThreadStatus destructor modifies current_thread and we don't want that
+    auto * running_thread = current_thread;
+    views.clear();
+    current_thread = running_thread;
 }
 
 
@@ -200,12 +210,11 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         return;
 
     const Settings & settings = getContext()->getSettingsRef();
-    const size_t max_threads = settings.parallel_view_processing ? settings.max_threads : 1;
+    const size_t max_threads = std::min(views.size(), (settings.parallel_view_processing ? static_cast<size_t>(settings.max_threads) : 1));
     bool exception_happened = false;
     if (max_threads > 1)
     {
-        ThreadPool pool(std::min(max_threads, views.size()));
-        auto thread_group = CurrentThread::getGroup();
+        ThreadPool pool(max_threads);
         std::atomic_uint8_t exception_count = 0;
         for (auto & view : views)
         {
@@ -266,12 +275,11 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     /// In could have been done in PushingToViewsBlockOutputStream::process, however
     /// it is not good if insert into main table fail but into view succeed.
     const Settings & settings = getContext()->getSettingsRef();
-    const size_t max_threads = settings.parallel_view_processing ? settings.max_threads : 1;
+    const size_t max_threads = std::min(views.size(), (settings.parallel_view_processing ? static_cast<size_t>(settings.max_threads) : 1));
     bool exception_happened = false;
     if (max_threads > 1)
     {
-        ThreadPool pool(std::min(max_threads, views.size()));
-        auto thread_group = CurrentThread::getGroup();
+        ThreadPool pool(max_threads);
         std::atomic_uint8_t exception_count = 0;
         for (auto & view : views)
         {
@@ -313,8 +321,6 @@ void PushingToViewsBlockOutputStream::writeSuffix()
 
 void PushingToViewsBlockOutputStream::flush()
 {
-    LOG_DEBUG(log, "{} FLUSH CALLED", storage->getStorageID().getNameForLogs());
-
     if (output)
         output->flush();
 
@@ -325,13 +331,13 @@ void PushingToViewsBlockOutputStream::flush()
 void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & view)
 {
     Stopwatch watch;
-    // Change thread context to store individual metrics per view
-    auto * source_thread = current_thread;
+    /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
+    auto * running_thread = current_thread;
     current_thread = view.runtime_stats.thread_status.get();
     *current_thread->last_rusage = RUsageCounters::current();
     SCOPE_EXIT({
         current_thread->updatePerformanceCounters();
-        current_thread = source_thread;
+        current_thread = running_thread;
     });
 
     try
@@ -400,13 +406,13 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
 void PushingToViewsBlockOutputStream::process_prefix(ViewInfo & view)
 {
     Stopwatch watch;
-    // Change thread context to store individual metrics per view
-    auto * source_thread = current_thread;
+    /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
+    auto * running_thread = current_thread;
     current_thread = view.runtime_stats.thread_status.get();
     *current_thread->last_rusage = RUsageCounters::current();
     SCOPE_EXIT({
         current_thread->updatePerformanceCounters();
-        current_thread = source_thread;
+        current_thread = running_thread;
     });
 
     try
@@ -430,13 +436,13 @@ void PushingToViewsBlockOutputStream::process_prefix(ViewInfo & view)
 void PushingToViewsBlockOutputStream::process_suffix(ViewInfo & view)
 {
     Stopwatch watch;
-    // Change thread context to store individual metrics per view
-    auto * source_thread = current_thread;
+    /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
+    auto * running_thread = current_thread;
     current_thread = view.runtime_stats.thread_status.get();
     *current_thread->last_rusage = RUsageCounters::current();
     SCOPE_EXIT({
         current_thread->updatePerformanceCounters();
-        current_thread = source_thread;
+        current_thread = running_thread;
     });
 
     try
