@@ -11,11 +11,13 @@ bool ParserJSONPathStar::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         return false;
     }
     ++pos;
-    if (pos->type != TokenType::Asterisk) {
+    if (pos->type != TokenType::Asterisk)
+    {
         return false;
     }
     ++pos;
-    if (pos->type != TokenType::ClosingSquareBracket) {
+    if (pos->type != TokenType::ClosingSquareBracket)
+    {
         expected.add(pos, "Closing square bracket");
         return false;
     }
