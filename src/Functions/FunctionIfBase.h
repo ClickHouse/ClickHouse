@@ -16,27 +16,27 @@ class FunctionIfBase : public IFunction
 public:
     bool isCompilableImpl(const DataTypes & ) const override
     {
-//        /// It's difficult to compare Date and DateTime - cannot use JIT compilation.
-//        bool has_date = false;
-//        bool has_datetime = false;
-//
-//        for (const auto & type : types)
-//        {
-//            auto type_removed_nullable = removeNullable(type);
-//            WhichDataType which(type_removed_nullable);
-//
-//            if (which.isDate())
-//                has_date = true;
-//            if (which.isDateTime())
-//                has_datetime = true;
-//
-//            if (has_date && has_datetime)
-//                return false;
-//
-//            if (!isCompilableType(type_removed_nullable))
-//                return false;
-//        }
-        return false;
+        /// It's difficult to compare Date and DateTime - cannot use JIT compilation.
+        bool has_date = false;
+        bool has_datetime = false;
+
+        for (const auto & type : types)
+        {
+            auto type_removed_nullable = removeNullable(type);
+            WhichDataType which(type_removed_nullable);
+
+            if (which.isDate())
+                has_date = true;
+            if (which.isDateTime())
+                has_datetime = true;
+
+            if (has_date && has_datetime)
+                return false;
+
+            if (!isCompilableType(type_removed_nullable))
+                return false;
+        }
+        return true;
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
