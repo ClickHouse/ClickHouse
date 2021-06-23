@@ -19,7 +19,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -91,7 +90,7 @@ private:
 
             const DataTypeTuple * tup = checkAndGetDataType<DataTypeTuple>(arg.get());
             if (!tup)
-                throw Exception{getName() + " accepts at least two map tuples", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+                throw Exception(getName() + " accepts at least two map tuples", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             auto elems = tup->getElements();
             if (elems.size() != 2)
@@ -107,8 +106,8 @@ private:
 
             auto result_type = v->getNestedType();
             if (!result_type->canBePromoted())
-                throw Exception{
-                    "Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(
+                    "Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             auto promoted_val_type = result_type->promoteNumericType();
             if (!key_type)
@@ -133,13 +132,13 @@ private:
         {
             const auto * map = checkAndGetDataType<DataTypeMap>(arg.get());
             if (!map)
-                throw Exception{getName() + " accepts at least two maps", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+                throw Exception(getName() + " accepts at least two maps", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             const auto & v = map->getValueType();
 
             if (!v->canBePromoted())
-                throw Exception{
-                    "Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(
+                    "Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             auto promoted_val_type = v->promoteNumericType();
             if (!key_type)
@@ -158,14 +157,14 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
-            throw Exception{getName() + " accepts at least two maps", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(getName() + " accepts at least two maps", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (arguments[0]->getTypeId() == TypeIndex::Tuple)
             return getReturnTypeForTuples(arguments);
         else if (arguments[0]->getTypeId() == TypeIndex::Map)
             return getReturnTypeForMaps(arguments);
         else
-            throw Exception{getName() + " only accepts maps", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(getName() + " only accepts maps", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     template <typename KeyType, typename ValType>
@@ -301,9 +300,9 @@ private:
             case TypeIndex::Float64:
                 return execute2<KeyType, Float64>(row_count, args, res_type);
             default:
-                throw Exception{
+                throw Exception(
                     "Illegal column type " + res_value_type->getName() + " for values in arguments of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 
@@ -388,7 +387,7 @@ private:
             }
             else
                 throw Exception{
-                    "Illegal column type " + key_type->getName() + " in arguments of function " + getName(),
+                    "Illegal column type " + arguments[0].type->getName() + " in arguments of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
