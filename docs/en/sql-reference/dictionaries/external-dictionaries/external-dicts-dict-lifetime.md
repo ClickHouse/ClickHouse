@@ -92,7 +92,7 @@ It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to onl
 
 -   If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
 -   If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.
--   If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of WHERE, where `update_field` is compared as greater or equal with the last update time.
+-   If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of `WHERE`, where `update_field` is compared as greater or equal with the last update time.
 
 If `update_field` option is set, additional option `update_lag` can be set. Value of `update_lag` option is subtracted from previous update time before request updated data.
 
