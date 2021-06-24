@@ -39,6 +39,17 @@ inline void writeHexByteLowercase(UInt8 byte, void * out)
     memcpy(out, &hex_byte_to_char_lowercase_table[static_cast<size_t>(byte) * 2], 2);
 }
 
+extern const char * const bin_byte_to_char_table;
+
+inline void writeBinByte(UInt8 byte, void * out)
+{
+    memcpy(out, &bin_byte_to_char_table[static_cast<size_t>(byte) * 8], 8);
+}
+
+inline void writeSingleBinByte(UInt8 byte, void * out)
+{
+    memcpy(out, &hex_digit_to_char_uppercase_table[static_cast<size_t>(byte)], 1);
+}
 
 /// Produces hex representation of an unsigned int with leading zeros (for checksums)
 template <typename TUInt>
