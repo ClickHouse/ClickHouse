@@ -11,7 +11,9 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
+#include <Common/FieldVisitorToString.h>
 #include <Coordination/KeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -342,9 +344,9 @@ struct ContextSharedPart
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     ConfigurationPtr external_models_config;
-    ext::scope_guard models_repository_guard;
+    scope_guard models_repository_guard;
 
-    ext::scope_guard dictionaries_xmls;
+    scope_guard dictionaries_xmls;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -363,6 +365,10 @@ struct ContextSharedPart
     mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     mutable std::optional<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+
+    mutable ThrottlerPtr replicated_fetches_throttler; /// A server-wide throttler for replicated fetches
+    mutable ThrottlerPtr replicated_sends_throttler; /// A server-wide throttler for replicated sends
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -538,7 +544,7 @@ ContextMutablePtr Context::createCopy(const ContextPtr & other)
     return std::shared_ptr<Context>(new Context(*other));
 }
 
-ContextMutablePtr Context::createCopy(const ContextWeakConstPtr & other)
+ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 {
     auto ptr = other.lock();
     if (!ptr) throw Exception("Can't copy an expired context", ErrorCodes::LOGICAL_ERROR);
@@ -1628,6 +1634,26 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     return *shared->message_broker_schedule_pool;
 }
 
+ThrottlerPtr Context::getReplicatedFetchesThrottler() const
+{
+    auto lock = getLock();
+    if (!shared->replicated_fetches_throttler)
+        shared->replicated_fetches_throttler = std::make_shared<Throttler>(
+            settings.max_replicated_fetches_network_bandwidth_for_server);
+
+    return shared->replicated_fetches_throttler;
+}
+
+ThrottlerPtr Context::getReplicatedSendsThrottler() const
+{
+    auto lock = getLock();
+    if (!shared->replicated_sends_throttler)
+        shared->replicated_sends_throttler = std::make_shared<Throttler>(
+            settings.max_replicated_sends_network_bandwidth_for_server);
+
+    return shared->replicated_sends_throttler;
+}
+
 bool Context::hasDistributedDDL() const
 {
     return getConfigRef().has("distributed_ddl");
@@ -2583,7 +2609,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
 
         auto resolved_id = StorageID::createEmpty();
-        auto try_resolve = [&](ContextConstPtr context) -> bool
+        auto try_resolve = [&](ContextPtr context) -> bool
         {
             const auto & tables = context->external_tables_mapping;
             auto it = tables.find(storage_id.getTableName());
