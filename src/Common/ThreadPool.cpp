@@ -61,7 +61,8 @@ bool QueueJobContainer::executeJobOrThrowOnError(QueueJobContainer::Job && job)
         /// job should be reset before decrementing scheduled_jobs to
         /// ensure that the Job destroyed before wait() returns.
         job = {};
-        throw;
+        // throw;
+        return true;
     }
 }
 
@@ -109,8 +110,9 @@ bool PriorityJobContainer::executeJobOrThrowOnError(PriorityJobContainer::Job &&
         /// job should be reset before decrementing scheduled_jobs to
         /// ensure that the Job destroyed before wait() returns.
         job.reset();
-        DB::tryLogCurrentException(&Poco::Logger::get("abacaba"));
-        throw;
+        // DB::tryLogCurrentException(&Poco::Logger::get("abacaba"));
+        // throw;
+        return true;
     }
 }
 
