@@ -31,4 +31,4 @@ The `system.part_log` table contains the following columns:
 
 The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/part_log) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/part_log) <!--hide-->

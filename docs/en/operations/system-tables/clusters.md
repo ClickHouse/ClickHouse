@@ -23,4 +23,4 @@ Please note that `errors_count` is updated once per query to the cluster, but `e
 -   [distributed\_replica\_error\_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
 -   [distributed\_replica\_error\_half\_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/clusters) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/clusters) <!--hide-->

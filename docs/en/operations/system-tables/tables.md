@@ -52,4 +52,4 @@ This table contains the following columns (the column type is shown in brackets)
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/tables) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/tables) <!--hide-->
