@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
