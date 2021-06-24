@@ -6,4 +6,4 @@ You can use this table for tests, or if you need to do a brute force search.
 
 Reads from this table are not parallelized.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/numbers) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/numbers) <!--hide-->

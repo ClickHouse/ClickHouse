@@ -120,5 +120,5 @@ WHERE
 
 If this query doesn’t return anything, it means that everything is fine.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/replicas) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/replicas) <!--hide-->
 

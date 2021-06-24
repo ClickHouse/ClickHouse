@@ -4,4 +4,4 @@ The same as [system.numbers](../../operations/system-tables/numbers.md) but read
 
 Used for tests.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/numbers_mt) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/numbers_mt) <!--hide-->

@@ -10,4 +10,4 @@ Columns:
 -   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/merge_tree_settings) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/merge_tree_settings) <!--hide-->

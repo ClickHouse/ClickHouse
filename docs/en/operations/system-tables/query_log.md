@@ -138,5 +138,5 @@ Settings.Values:      ['0','random','1','10000000000']
 
 -   [system.query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_log) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/query_log) <!--hide-->
 
