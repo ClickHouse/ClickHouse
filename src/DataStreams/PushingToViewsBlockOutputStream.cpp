@@ -86,7 +86,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         ASTPtr query;
         BlockOutputStreamPtr out;
         QueryViewsLogElement::ViewType type = QueryViewsLogElement::ViewType::DEFAULT;
-        String target_name = database_table.getNameForLogs();
+        String target_name = database_table.getFullTableName();
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
@@ -98,7 +98,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
-            target_name = inner_table_id.getNameForLogs();
+            target_name = inner_table_id.getFullTableName();
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->table_id = inner_table_id;
@@ -147,6 +147,13 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             target_name, type, thread_status, 0, std::chrono::system_clock::now(), QueryViewsLogElement::ViewStatus::INIT};
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, std::move(runtime_stats)});
         current_thread = running_thread;
+
+        /// Add the view to the query_log
+        if (!no_destination)
+        {
+            getContext()->getQueryContext()->addQueryAccessInfo(
+                backQuoteIfNeed(database_table.getDatabaseName()), target_name, {}, "", database_table.getFullTableName());
+        }
     }
 
     /// Do not push to destination table if the flag is set
