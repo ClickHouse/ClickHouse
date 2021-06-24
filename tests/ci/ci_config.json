@@ -155,7 +155,7 @@
         },
         {
             "compiler": "clang-11-ppc64le",
-            "build_type": "",
+            "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
             "bundled": "bundled",
