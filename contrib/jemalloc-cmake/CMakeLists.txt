@@ -12,6 +12,7 @@ else ()
 endif ()
 
 if (WITH_COVERAGE)
+    # Speed up contribs and uninstrumented own source code.
     set (ENABLE_JEMALLOC ON)
 endif()
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <unordered_map>
 #include <Access/RowPolicy.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
@@ -181,7 +180,6 @@ private:
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
     String current_database;
-
     Settings settings;  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;

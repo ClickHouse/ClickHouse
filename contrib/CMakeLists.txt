@@ -165,7 +165,7 @@ if(USE_INTERNAL_SNAPPY_LIBRARY)
 endif()
 
 if (USE_INTERNAL_PARQUET_LIBRARY)
-    # We dont use arrow's cmakefiles because they use too many depends and download some libs in compile time
+    # We don't use arrow's cmake files because they use too many depends and download some libs in compile time
     # But you can update auto-generated parquet files manually:
     # cd {BUILD_DIR}/contrib/arrow/cpp/src/parquet && mkdir -p build && cd build
     # cmake .. -DARROW_COMPUTE=ON -DARROW_PARQUET=ON -DARROW_SIMD_LEVEL=NONE -DARROW_VERBOSE_THIRDPARTY_BUILD=ON

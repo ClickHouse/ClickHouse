@@ -1428,9 +1428,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         ::detail::Writer::instance().onServerInitialized();
 #endif
 
-        /// Can't use SCOPE_EXIT macro here due to macro-conditional call of dumpCoverageReportIfPossible.
-        /// Otherwise a -Wembedded-directive would be raised.
-        [[maybe_unused]] const auto m = ext::make_scope_guard([&]{
+        SCOPE_EXIT({
             LOG_DEBUG(log, "Received termination signal.");
             LOG_DEBUG(log, "Waiting for current connections to close.");
 

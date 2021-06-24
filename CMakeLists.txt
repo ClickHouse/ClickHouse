@@ -308,7 +308,7 @@ if (WITH_COVERAGE)
     if (COMPILER_CLANG)
         message(STATUS "Code coverage runtime: ON")
 
-        # Provide blocklist to all files (so compiler driver could exclude unneeded)
+        # Provide blocklist to all files (so compiler driver could exclude unneeded ones)
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -fsanitize-coverage-blocklist=${CMAKE_CURRENT_SOURCE_DIR}/blocklist.txt")
 
         set(WITH_COVERAGE_FLAGS "-ftest-coverage -fsanitize-coverage=trace-pc-guard,pc-table")

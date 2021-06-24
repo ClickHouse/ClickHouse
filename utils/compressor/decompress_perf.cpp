@@ -23,7 +23,6 @@
 #include <Common/CoverageCallbacks.h>
 #endif
 
-
 /** for i in *.bin; do ./decompress_perf < $i > /dev/null; done
   */
 

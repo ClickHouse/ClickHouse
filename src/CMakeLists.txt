@@ -257,7 +257,7 @@ if (USE_EMBEDDED_COMPILER)
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
-# coverage for everything in src/
+# Coverage for everything in src/
 foreach (module ${all_modules})
     set_target_properties(${module} PROPERTIES COMPILE_FLAGS "${WITH_COVERAGE_FLAGS}")
 endforeach ()
@@ -267,7 +267,7 @@ if (WITH_COVERAGE)
         Common/Coverage.cpp
         Common/ThreadPool.cpp # Otherwise tests run about x2 slower.
 
-        # Otherwise it will slow down stack traces printing too much.
+        # Instrumentation slows down stack traces printing too much.
         Common/Elf.cpp
         Common/Dwarf.cpp
         Common/SymbolIndex.cpp

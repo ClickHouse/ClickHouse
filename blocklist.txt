@@ -1,4 +1,4 @@
-# There's no way to portably mangle the type name, so it's just for x86_64
+# There's no way to mangle the type name portably, so it's just for x86_64.
 # Place here files that are instrumented even when providing noinstrument flags
 #
 # Global variables init for iostream
