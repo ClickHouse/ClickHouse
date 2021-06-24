@@ -59,8 +59,11 @@ timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 
 wait
 
+for i in $(seq 1 $NUM_REPLICAS); do
+    $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA ttl_table$i"
+done
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}' and type='MERGE_PARTS' and last_exception like '%but should be merged into%' FORMAT Vertical"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}' and type='MERGE_PARTS' and last_exception != '' FORMAT Vertical"
 $CLICKHOUSE_CLIENT --query "SELECT COUNT() > 0 FROM system.part_log where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}'"
 
 for i in $(seq 1 $NUM_REPLICAS); do
