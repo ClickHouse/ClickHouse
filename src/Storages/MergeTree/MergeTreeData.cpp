@@ -55,7 +55,7 @@
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
 
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -904,7 +904,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     std::mutex mutex;
 
-    DataPartsVector broken_parts_to_remove;
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
 
@@ -913,12 +912,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     ThreadPool pool(num_threads);
 
-    for (size_t i = 0; i < part_names_with_disks.size(); ++i)
+    for (auto & part_names_with_disk : part_names_with_disks)
     {
-        pool.scheduleOrThrowOnError([&, i]
+        pool.scheduleOrThrowOnError([&]
         {
-            const auto & part_name = part_names_with_disks[i].first;
-            const auto part_disk_ptr = part_names_with_disks[i].second;
+            const auto & part_name = part_names_with_disk.first;
+            const auto part_disk_ptr = part_names_with_disk.second;
 
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
@@ -960,55 +959,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
-            /// Ignore and possibly delete broken parts that can appear as a result of hard server restart.
+            /// Ignore broken parts that can appear as a result of hard server restart.
             if (broken)
             {
-                if (part->info.level == 0)
-                {
-                    /// It is impossible to restore level 0 parts.
-                    LOG_ERROR(log, "Considering to remove broken part {}{} because it's impossible to repair.", getFullPathOnDisk(part_disk_ptr), part_name);
-                    std::lock_guard loading_lock(mutex);
-                    broken_parts_to_remove.push_back(part);
-                }
-                else
-                {
-                    /// Count the number of parts covered by the broken part. If it is at least two, assume that
-                    /// the broken part was created as a result of merging them and we won't lose data if we
-                    /// delete it.
-                    size_t contained_parts = 0;
-
-                    LOG_ERROR(log, "Part {}{} is broken. Looking for parts to replace it.", getFullPathOnDisk(part_disk_ptr), part_name);
-
-                    for (const auto & [contained_name, contained_disk_ptr] : part_names_with_disks)
-                    {
-                        if (contained_name == part_name)
-                            continue;
-
-                        MergeTreePartInfo contained_part_info;
-                        if (!MergeTreePartInfo::tryParsePartName(contained_name, &contained_part_info, format_version))
-                            continue;
-
-                        if (part->info.contains(contained_part_info))
-                        {
-                            LOG_ERROR(log, "Found part {}{}", getFullPathOnDisk(contained_disk_ptr), contained_name);
-                            ++contained_parts;
-                        }
-                    }
-
-                    if (contained_parts >= 2)
-                    {
-                        LOG_ERROR(log, "Considering to remove broken part {}{} because it covers at least 2 other parts", getFullPathOnDisk(part_disk_ptr), part_name);
-                        std::lock_guard loading_lock(mutex);
-                        broken_parts_to_remove.push_back(part);
-                    }
-                    else
-                    {
-                        LOG_ERROR(log, "Detaching broken part {}{} because it covers less than 2 parts. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
-                        std::lock_guard loading_lock(mutex);
-                        broken_parts_to_detach.push_back(part);
-                        ++suspicious_broken_parts;
-                    }
-                }
+                LOG_ERROR(log, "Detaching broken part {}{}. If it happened after update, it is likely because of backward incompability. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
+                std::lock_guard loading_lock(mutex);
+                broken_parts_to_detach.push_back(part);
+                ++suspicious_broken_parts;
 
                 return;
             }
@@ -1055,10 +1012,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
             ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
-    for (auto & part : broken_parts_to_remove)
-        part->remove();
     for (auto & part : broken_parts_to_detach)
-        part->renameToDetached("");
+        part->renameToDetached("broken_on_start");
 
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
@@ -1160,6 +1115,16 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
                         LOG_WARNING(log, "Removing temporary directory {}", fullPath(disk, it->path()));
                         disk->removeRecursive(it->path());
                     }
+                }
+                /// see getModificationTime()
+                catch (const ErrnoException & e)
+                {
+                    if (e.getErrno() == ENOENT)
+                    {
+                        /// If the file is already deleted, do nothing.
+                    }
+                    else
+                        throw;
                 }
                 catch (const fs::filesystem_error & e)
                 {
@@ -2191,8 +2156,7 @@ bool MergeTreeData::renameTempPartAndReplace(
 
     LOG_TRACE(log, "Renaming temporary part {} to {}.", part->relative_path, part_name);
 
-    auto it_duplicate = data_parts_by_info.find(part_info);
-    if (it_duplicate != data_parts_by_info.end())
+    if (auto it_duplicate = data_parts_by_info.find(part_info); it_duplicate != data_parts_by_info.end())
     {
         String message = "Part " + (*it_duplicate)->getNameWithState() + " already exists";
 
@@ -2736,17 +2700,16 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             /// We do not check allow_s3_zero_copy_replication here because data may be shared
             /// when allow_s3_zero_copy_replication turned on and off again
 
-            original_active_part->keep_s3_on_delete = false;
+            original_active_part->force_keep_shared_data = false;
 
             if (original_active_part->volume->getDisk()->getType() == DiskType::Type::S3)
             {
                 if (part_copy->volume->getDisk()->getType() == DiskType::Type::S3
                         && original_active_part->getUniqueId() == part_copy->getUniqueId())
-                {   /// May be when several volumes use the same S3 storage
-                    original_active_part->keep_s3_on_delete = true;
+                {
+                    /// May be when several volumes use the same S3 storage
+                    original_active_part->force_keep_shared_data = true;
                 }
-                else
-                    original_active_part->keep_s3_on_delete = !unlockSharedData(*original_active_part);
             }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
@@ -3848,7 +3811,7 @@ static void selectBestProjection(
     const Names & required_columns,
     ProjectionCandidate & candidate,
     ContextPtr query_context,
-    const PartitionIdToMaxBlock * max_added_blocks,
+    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks,
     const Settings & settings,
     const MergeTreeData::DataPartsVector & parts,
     ProjectionCandidate *& selected_candidate,
@@ -3869,21 +3832,16 @@ static void selectBestProjection(
     if (projection_parts.empty())
         return;
 
-    candidate.merge_tree_data_select_base_cache = std::make_unique<MergeTreeDataSelectCache>();
-    candidate.merge_tree_data_select_projection_cache = std::make_unique<MergeTreeDataSelectCache>();
-    reader.readFromParts(
+    auto sum_marks = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
         metadata_snapshot,
         candidate.desc->metadata,
         query_info, // TODO syntax_analysis_result set in index
         query_context,
-        0, // max_block_size is unused when getting cache
         settings.max_threads,
-        max_added_blocks,
-        candidate.merge_tree_data_select_projection_cache.get());
+        max_added_blocks);
 
-    size_t sum_marks = candidate.merge_tree_data_select_projection_cache->sum_marks;
     if (normal_parts.empty())
     {
         // All parts are projection parts which allows us to use in_order_optimization.
@@ -3892,18 +3850,15 @@ static void selectBestProjection(
     }
     else
     {
-        reader.readFromParts(
+        sum_marks += reader.estimateNumMarksToRead(
             normal_parts,
             required_columns,
             metadata_snapshot,
             metadata_snapshot,
             query_info, // TODO syntax_analysis_result set in index
             query_context,
-            0, // max_block_size is unused when getting cache
             settings.max_threads,
-            max_added_blocks,
-            candidate.merge_tree_data_select_base_cache.get());
-        sum_marks += candidate.merge_tree_data_select_base_cache->sum_marks;
+            max_added_blocks);
     }
 
     // We choose the projection with least sum_marks to read.
@@ -3923,6 +3878,10 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         return false;
 
     const auto & query_ptr = query_info.query;
+
+    // Currently projections don't support final yet.
+    if (auto * select = query_ptr->as<ASTSelectQuery>(); select && select->final())
+        return false;
 
     InterpreterSelectQuery select(
         query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
@@ -4131,32 +4090,21 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     if (!candidates.empty())
     {
         // First build a MergeTreeDataSelectCache to check if a projection is indeed better than base
-        query_info.merge_tree_data_select_cache = std::make_unique<MergeTreeDataSelectCache>();
+        // query_info.merge_tree_data_select_cache = std::make_unique<MergeTreeDataSelectCache>();
 
-        std::unique_ptr<PartitionIdToMaxBlock> max_added_blocks;
+        std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
         if (settings.select_sequential_consistency)
         {
             if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(this))
-                max_added_blocks = std::make_unique<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
+                max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
         }
 
         auto parts = getDataPartsVector();
         MergeTreeDataSelectExecutor reader(*this);
-        reader.readFromParts(
-            parts,
-            analysis_result.required_columns,
-            metadata_snapshot,
-            metadata_snapshot,
-            query_info, // TODO syntax_analysis_result set in index
-            query_context,
-            0, // max_block_size is unused when getting cache
-            settings.max_threads,
-            max_added_blocks.get(),
-            query_info.merge_tree_data_select_cache.get());
 
-        // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
-        size_t min_sum_marks = query_info.merge_tree_data_select_cache->sum_marks + 1;
         ProjectionCandidate * selected_candidate = nullptr;
+        size_t min_sum_marks = std::numeric_limits<size_t>::max();
+        bool has_ordinary_projection = false;
         /// Favor aggregate projections
         for (auto & candidate : candidates)
         {
@@ -4169,17 +4117,33 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     analysis_result.required_columns,
                     candidate,
                     query_context,
-                    max_added_blocks.get(),
+                    max_added_blocks,
                     settings,
                     parts,
                     selected_candidate,
                     min_sum_marks);
             }
+            else
+                has_ordinary_projection = true;
         }
 
         /// Select the best normal projection if no aggregate projection is available
-        if (!selected_candidate)
+        if (!selected_candidate && has_ordinary_projection)
         {
+            min_sum_marks = reader.estimateNumMarksToRead(
+                parts,
+                analysis_result.required_columns,
+                metadata_snapshot,
+                metadata_snapshot,
+                query_info, // TODO syntax_analysis_result set in index
+                query_context,
+                settings.max_threads,
+                max_added_blocks);
+
+            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
+            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
+            min_sum_marks += 1;
+
             for (auto & candidate : candidates)
             {
                 if (candidate.desc->type == ProjectionDescription::Type::Normal)
@@ -4191,7 +4155,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                         analysis_result.required_columns,
                         candidate,
                         query_context,
-                        max_added_blocks.get(),
+                        max_added_blocks,
                         settings,
                         parts,
                         selected_candidate,
@@ -4911,7 +4875,11 @@ void MergeTreeData::removeQueryId(const String & query_id) const
 {
     std::lock_guard lock(query_id_set_mutex);
     if (query_id_set.find(query_id) == query_id_set.end())
+    {
+        /// Do not throw exception, because this method is used in destructor.
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
+        assert(false);
+    }
     else
         query_id_set.erase(query_id);
 }
@@ -5091,7 +5059,10 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
     for (const auto & part : submerging_parts)
     {
         if (!storage.currently_submerging_big_parts.count(part))
-            LOG_WARNING(log, "currently_submerging_big_parts doesn't contain part {} to erase. This is a bug", part->name);
+        {
+            LOG_ERROR(log, "currently_submerging_big_parts doesn't contain part {} to erase. This is a bug", part->name);
+            assert(false);
+        }
         else
             storage.currently_submerging_big_parts.erase(part);
     }

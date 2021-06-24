@@ -976,6 +976,19 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: 1024.
 
+## max_distributed_depth {#max-distributed-depth}
+
+Ограничивает максимальную глубину рекурсивных запросов для [Distributed](../../engines/table-engines/special/distributed.md) таблиц.
+
+Если значение превышено, сервер генерирует исключение.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — глубина не ограничена.
+
+Значение по умолчанию: `5`.
+
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 Таймаут в миллисекундах на соединение с удалённым сервером, для движка таблиц Distributed, если используются секции shard и replica в описании кластера.
@@ -2065,7 +2078,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   Положительное целое число.
 
-Значение по умолчанию: 16.
+Значение по умолчанию: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
@@ -2362,18 +2375,6 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
-
-## allow_experimental_bigint_types {#allow_experimental_bigint_types}
-
-Включает или отключает поддержку целочисленных значений, превышающих максимальное значение, допустимое для типа `int`.
-
-Возможные значения:
-
--   1 — большие целочисленные значения поддерживаются.
--   0 — большие целочисленные значения не поддерживаются.
-
-Значение по умолчанию: `0`.
-
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
@@ -2954,6 +2955,72 @@ SELECT
     sumCount(b).2,
     (sumCount(b).1) / (sumCount(b).2)
 FROM fuse_tbl
+```
+
+## flatten_nested {#flatten-nested}
+
+Устанавливает формат данных у [вложенных](../../sql-reference/data-types/nested-data-structures/nested.md) столбцов.
+
+Возможные значения:
+
+-   1 — вложенный столбец преобразуется к отдельным массивам.
+-   0 — вложенный столбец преобразуется к массиву кортежей.
+
+Значение по умолчанию: `1`.
+
+**Использование**
+
+Если установлено значение `0`, можно использовать любой уровень вложенности.
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SET flatten_nested = 1;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Результат:
+
+``` text
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n.a` Array(UInt32),
+    `n.b` Array(UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SET flatten_nested = 0;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Результат:
+
+``` text
+┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n` Nested(a UInt32, b UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

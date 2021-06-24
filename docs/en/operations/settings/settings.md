@@ -986,6 +986,19 @@ The maximum number of simultaneous connections with remote servers for distribut
 
 Default value: 1024.
 
+## max_distributed_depth {#max-distributed-depth}
+
+Limits the maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
+
+If the value is exceeded, the server throws an exception.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited depth.
+
+Default value: `5`.
+
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
@@ -1578,6 +1591,18 @@ FORMAT PrettyCompactMonoBlock
 
 Default value: 0
 
+## distributed_push_down_limit (#distributed-push-down-limit}
+
+LIMIT will be applied on each shard separatelly. Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
+
+Possible values:
+
+-  0 - Disabled
+-  1 - Enabled
+
+!!! note "Note"
+    That with this setting the result of the query may be inaccurate.
+
 ## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
 
 Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
@@ -2056,7 +2081,7 @@ Possible values:
 
 -   Any positive integer.
 
-Default value: 16.
+Default value: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
@@ -2535,17 +2560,6 @@ Result
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
-
-## allow_experimental_bigint_types {#allow_experimental_bigint_types}
-
-Enables or disables integer values exceeding the range that is supported by the int data type.
-
-Possible values:
-
--   1 — The bigint data type is enabled.
--   0 — The bigint data type is disabled.
-
-Default value: `0`.
 
 ## persistent {#persistent}
 
@@ -3063,6 +3077,71 @@ SELECT
     sumCount(b).2,
     (sumCount(b).1) / (sumCount(b).2)    
 FROM fuse_tbl
+```
+
+## flatten_nested {#flatten-nested}
+
+Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
+
+Possible values:
+
+-   1 — Nested column is flattened to separate arrays.
+-   0 — Nested column stays a single array of tuples.
+
+Default value: `1`.
+
+**Usage**
+
+If the setting is set to `0`, it is possible to use an arbitrary level of nesting.
+
+**Examples**
+
+Query:
+
+``` sql
+SET flatten_nested = 1;
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Result:
+
+``` text
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n.a` Array(UInt32),
+    `n.b` Array(UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SET flatten_nested = 0;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Result:
+
+``` text
+┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n` Nested(a UInt32, b UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

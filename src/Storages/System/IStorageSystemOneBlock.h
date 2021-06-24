@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Pipe.h>
 

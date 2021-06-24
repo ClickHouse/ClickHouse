@@ -12,7 +12,7 @@ class ASTProjectionDeclaration : public IAST
 {
 public:
     String name;
-    ASTPtr query;
+    IAST * query;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Projection"; }
