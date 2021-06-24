@@ -49,6 +49,12 @@ PostgreSQL `Array` types are converted into ClickHouse arrays.
 
 !!! info "Note"
     Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
+	
+Supports multiple replicas that must be listed by a character `|`. For example:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword');
+```
 
 Replicas priority for PostgreSQL dictionary source is supported. The bigger the number in map, the less the priority. The highest priority is `0`. 
 

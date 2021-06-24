@@ -55,6 +55,12 @@ Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL s
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
+Supports multiple replicas that must be listed by a character `|`. For example:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
+
 ## Usage Example {#usage-example}
 
 Table in MySQL:
