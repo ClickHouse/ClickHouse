@@ -4,8 +4,8 @@
 #include <farmhash.h>
 #include <metrohash.h>
 #if !defined(ARCADIA_BUILD)
-#    include <murmurhash2.h>
-#    include <murmurhash3.h>
+#    include <MurmurHash2.h>
+#    include <MurmurHash3.h>
 #    include "config_functions.h"
 #    include "config_core.h"
 #endif

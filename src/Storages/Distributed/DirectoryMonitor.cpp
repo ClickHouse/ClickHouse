@@ -60,13 +60,12 @@ namespace
     constexpr const std::chrono::minutes decrease_error_count_period{5};
 
     template <typename PoolFactory>
-    ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory, Poco::Logger * log)
+    ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory, const Cluster::ShardsInfo & shards_info, Poco::Logger * log)
     {
         ConnectionPoolPtrs pools;
 
-        for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+        auto make_connection = [&](const Cluster::Address & address)
         {
-            Cluster::Address address = Cluster::Address::fromFullString(boost::copy_range<std::string>(*it));
             try
             {
                 pools.emplace_back(factory(address));
@@ -76,10 +75,35 @@ namespace
                 if (e.code() == ErrorCodes::INCORRECT_FILE_NAME)
                 {
                     tryLogCurrentException(log);
-                    continue;
+                    return;
                 }
                 throw;
             }
+        };
+
+        for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+        {
+            const std::string & dirname = boost::copy_range<std::string>(*it);
+            Cluster::Address address = Cluster::Address::fromFullString(dirname);
+            if (address.shard_index && dirname.ends_with("_all_replicas"))
+            {
+                if (address.shard_index > shards_info.size())
+                {
+                    LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
+                    continue;
+                }
+
+                const auto & shard_info = shards_info[address.shard_index - 1];
+                size_t replicas = shard_info.per_replica_pools.size();
+
+                for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
+                {
+                    address.replica_index = replica_index;
+                    make_connection(address);
+                }
+            }
+            else
+                make_connection(address);
         }
 
         return pools;
@@ -420,13 +444,13 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
 
-        /// check new format shard{shard_index}_number{replica_index}
+        /// check new format shard{shard_index}_replica{replica_index}
         /// (shard_index and replica_index starts from 1)
         if (address.shard_index != 0)
         {
             if (!address.replica_index)
                 throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "Wrong replica_index ({})", address.replica_index, name);
+                    "Wrong replica_index={} ({})", address.replica_index, name);
 
             if (address.shard_index > shards_info.size())
                 throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
@@ -475,7 +499,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             address.secure);
     };
 
-    auto pools = createPoolsForAddresses(name, pool_factory, storage.log);
+    auto pools = createPoolsForAddresses(name, pool_factory, storage.getCluster()->getShardsInfo(), storage.log);
 
     const auto settings = storage.getContext()->getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
