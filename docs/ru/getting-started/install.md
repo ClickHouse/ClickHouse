@@ -87,7 +87,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Внутри образов используются официальные `deb` пакеты.
 
-### Из единого бинарника {#from-single-binary}
+### Из единого бинарного файла {#from-single-binary}
 
 Для установки ClickHouse на Linux можно использовать единый переносимый бинарник из последнего коммита ветки `master`: https://builds.clickhouse.tech/master/amd64/clickhouse.
 
