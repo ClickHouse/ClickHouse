@@ -6,6 +6,9 @@ set (CLICKHOUSE_CLIENT_SOURCES
 )
 
 if (WITH_COVERAGE)
+    # During coverage testing client is invoked > n times, where n is tests_count.
+    # We don't need every resulting profile.
+    # Instrumenting client slows down testing substantially.
     set_source_files_properties(
         Client.cpp
         ConnectionParameters.cpp

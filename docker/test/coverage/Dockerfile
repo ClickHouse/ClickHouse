@@ -2,12 +2,8 @@ FROM yandex/clickhouse-stateless-test
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
-        apt-get install --yes --no-install-recommends \
-            cmake \
-    && pip3 install \
-            jinja2  \
-            pygments \
-            tqdm
+        apt-get install --yes --no-install-recommends cmake \
+    && pip3 install jinja2 pygments
 
 COPY s3downloader /s3downloader
 COPY templates/ /templates/

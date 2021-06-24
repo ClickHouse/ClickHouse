@@ -103,7 +103,6 @@ Writer::Writer()
 
 Writer& Writer::instance()
 {
-    /// Meyer's singleton.
     static Writer w;
     return w;
 }
