@@ -86,8 +86,6 @@ private:
             names.insert(col.name);
     }
 
-
-private:
     NameSet names;
 };
 

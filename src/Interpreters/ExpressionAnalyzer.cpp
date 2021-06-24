@@ -11,7 +11,6 @@
 #include <Parsers/DumpASTNode.h>
 
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/IColumn.h>
 
 #include <Interpreters/ArrayJoinAction.h>
@@ -900,8 +899,10 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
             *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
             * - this function shows the expression JOIN _data1.
             */
-        auto interpreter = interpretSubquery(join_element.table_expression, getContext(), original_right_columns, query_options);
+            
 
+        auto interpreter = interpretSubquery(
+            join_element.table_expression, getContext(), original_right_columns, query_options.copy().setWithMaterialized());
         {
             joined_plan = std::make_unique<QueryPlan>();
             interpreter->buildQueryPlan(*joined_plan);

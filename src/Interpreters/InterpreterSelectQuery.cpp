@@ -68,7 +68,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/JoiningTransform.h>
 
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
@@ -330,7 +329,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             metadata_snapshot = storage->getInMemoryMetadataPtr();
     }
 
-    if (has_input || !joined_tables.resolveTables())
+    if (has_input || !joined_tables.resolveTables(options.with_materialized))
         joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
 
     /// Rewrite JOINs
@@ -339,7 +338,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context->getSettingsRef());
 
         joined_tables.reset(getSelectQuery());
-        joined_tables.resolveTables();
+        joined_tables.resolveTables(options.with_materialized);
 
         if (storage && joined_tables.isLeftTableSubquery())
         {
