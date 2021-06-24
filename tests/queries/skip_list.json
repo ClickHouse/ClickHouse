@@ -297,6 +297,7 @@
         "01192_rename_database_zookeeper",
         "01213_alter_rename_column",
         "01232_untuple",
+        "01240_join_get_or_null",
         "01244_optimize_distributed_group_by_sharding_key",
         "01254_dict_load_after_detach_attach",
         "01256_misspell_layout_name_podshumok",
@@ -510,7 +511,12 @@
         "01892_setting_limit_offset_distributed",
         "01902_dictionary_array_type",
         "01903_ssd_cache_dictionary_array_type",
-        "01905_to_json_string"
+        "01905_to_json_string",
+        "01913_fix_column_transformer_replace_format",
+        "01913_if_int_decimal",
+        "01913_join_push_down_bug",
+        "01921_with_fill_with_totals",
+        "01924_argmax_bitmap_state"
     ],
     "parallel":
     [
