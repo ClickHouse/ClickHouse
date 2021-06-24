@@ -1,4 +1,4 @@
-{"stage":"Query log rows","read_rows":"100","written_rows":"201"}
-{"stage":"Depending views","view_name":"default.matview_a_to_b","view_query":"SELECT toFloat64(a) AS a, b AS count FROM default.table_a"}
-{"stage":"Depending views","view_name":"default.matview_b_to_c","view_query":"SELECT sum(a) AS a FROM default.table_b"}
-{"stage":"Depending views","view_name":"default.table_b_live_view","view_query":"SELECT sum(a + b) FROM default.table_b"}
+{"stage":"Query log rows","read_rows":"100","written_rows":"201","databases":["_table_function","default"],"tables":["_table_function.numbers","default.table_a","default.table_b","default.table_b_live_view","default.table_c"],"views":["default.matview_a_to_b","default.matview_b_to_c","default.table_b_live_view"]}
+{"stage":"Depending views","view_name":"default.matview_a_to_b","view_target":"default.table_b","view_query":"SELECT toFloat64(a) AS a, b AS count FROM default.table_a"}
+{"stage":"Depending views","view_name":"default.matview_b_to_c","view_target":"default.table_c","view_query":"SELECT sum(a) AS a FROM default.table_b"}
+{"stage":"Depending views","view_name":"default.table_b_live_view","view_target":"default.table_b_live_view","view_query":"SELECT sum(a + b) FROM default.table_b"}
