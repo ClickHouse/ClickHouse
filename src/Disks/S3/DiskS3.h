@@ -102,12 +102,13 @@ public:
 
     void startup() override;
 
-    /// Return some uniq string for file
-    /// Required for distinguish different copies of the same part on S3
+    /// Return some uniq string for file, overrode for remote disk
+    /// Required for distinguish different copies of the same part on remote disk
     String getUniqueId(const String & path) const override;
 
     /// Check file exists and ClickHouse has an access to it
-    /// Required for S3 to ensure that replica has access to data wroten by other node
+    /// Overrode in remote disk
+    /// Required for remote disk to ensure that replica has access to data written by other node
     bool checkUniqueId(const String & id) const override;
 
     /// Dumps current revision counter into file 'revision.txt' at given path.

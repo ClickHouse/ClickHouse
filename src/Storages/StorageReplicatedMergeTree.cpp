@@ -608,10 +608,18 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     zookeeper->createIfNotExists(replica_path + "/mutation_pointer", String());
 
     /// Nodes for zero-copy S3 replication
-    if (storage_settings.get()->allow_s3_zero_copy_replication)
+    const auto settings = getSettings();
+    if (settings->allow_s3_zero_copy_replication)
     {
         zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_s3", String());
         zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_s3/shared", String());
+    }
+
+    /// Nodes for zero-copy HDFS replication
+    if (settings->allow_hdfs_zero_copy_replication)
+    {
+        zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_hdfs", String());
+        zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_hdfs/shared", String());
     }
 
     /// Part movement.
@@ -1728,23 +1736,24 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
 
-    if (storage_settings_ptr->allow_s3_zero_copy_replication)
+    auto disk_type = reserved_space->getDisk()->getType();
+    if ((disk_type == DiskType::Type::S3
+        && storage_settings_ptr->allow_s3_zero_copy_replication
+        && merge_strategy_picker.shouldMergeOnSingleReplicaS3Shared(entry))
+        || (disk_type == DiskType::Type::HDFS
+        && storage_settings_ptr->allow_hdfs_zero_copy_replication
+        && merge_strategy_picker.shouldMergeOnSingleReplicaHdfsShared(entry)))
     {
-        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::Type::S3)
-        {
-            if (merge_strategy_picker.shouldMergeOnSingleReplicaS3Shared(entry))
-            {
-                if (!replica_to_execute_merge_picked)
-                    replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+        if (!replica_to_execute_merge_picked)
+            replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
 
-                if (replica_to_execute_merge)
-                {
-                    LOG_DEBUG(log,
-                        "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold",
-                        entry.new_part_name, replica_to_execute_merge.value());
-                    return false;
-                }
-            }
+        if (replica_to_execute_merge)
+        {
+            const auto * param = (disk_type == DiskType::Type::S3) ? "s3_execute_merges_on_single_replica_time_threshold" : "hdfs_execute_merges_on_single_replica_time_threshold";
+            LOG_DEBUG(log,
+                "Prefer fetching part {} from replica {} due to {}",
+                entry.new_part_name, replica_to_execute_merge.value(), param);
+            return false;
         }
     }
 
@@ -2168,7 +2177,7 @@ bool StorageReplicatedMergeTree::executeFetchShared(
 {
     if (source_replica.empty())
     {
-        LOG_INFO(log, "No active replica has part {} on S3.", new_part_name);
+        LOG_INFO(log, "No active replica has part {} on S3/HDFS.", new_part_name);
         return false;
     }
 
@@ -7203,7 +7212,16 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     DiskPtr disk = part.volume->getDisk();
     if (!disk)
         return;
-    if (disk->getType() != DB::DiskType::Type::S3)
+    String zero_copy;
+    if (disk->getType() == DiskType::Type::S3)
+    {
+        zero_copy = "zero_copy_s3";
+    }
+    else if (disk->getType() == DiskType::Type::HDFS)
+    {
+        zero_copy = "zero_copy_hdfs";
+    }
+    else
         return;
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
@@ -7213,7 +7231,7 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     String id = part.getUniqueId();
     boost::replace_all(id, "/", "_");
 
-    String zookeeper_node = fs::path(zookeeper_path) / "zero_copy_s3" / "shared" / part.name / id / replica_name;
+    String zookeeper_node = fs::path(zookeeper_path) / zero_copy / "shared" / part.name / id / replica_name;
 
     LOG_TRACE(log, "Set zookeeper lock {}", zookeeper_node);
 
@@ -7244,7 +7262,16 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
     DiskPtr disk = part.volume->getDisk();
     if (!disk)
         return true;
-    if (disk->getType() != DB::DiskType::Type::S3)
+    String zero_copy;
+    if (disk->getType() == DiskType::Type::S3)
+    {
+        zero_copy = "zero_copy_s3";
+    }
+    else if (disk->getType() == DiskType::Type::HDFS)
+    {
+        zero_copy = "zero_copy_hdfs";
+    }
+    else
         return true;
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
@@ -7254,7 +7281,7 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
     String id = part.getUniqueId();
     boost::replace_all(id, "/", "_");
 
-    String zookeeper_part_node = fs::path(zookeeper_path) / "zero_copy_s3" / "shared" / part.name;
+    String zookeeper_part_node = fs::path(zookeeper_path) / zero_copy / "shared" / part.name;
     String zookeeper_part_uniq_node = fs::path(zookeeper_part_node) / id;
     String zookeeper_node = fs::path(zookeeper_part_uniq_node) / replica_name;
 
@@ -7289,16 +7316,14 @@ bool StorageReplicatedMergeTree::tryToFetchIfShared(
     const DiskPtr & disk,
     const String & path)
 {
-    const auto data_settings = getSettings();
-    if (!data_settings->allow_s3_zero_copy_replication)
+    const auto settings = getSettings();
+    auto disk_type = disk->getType();
+    if (!(disk_type==DiskType::Type::S3 && settings->allow_s3_zero_copy_replication) && !(disk_type==DiskType::Type::HDFS && settings->allow_hdfs_zero_copy_replication))
         return false;
 
-    if (disk->getType() != DB::DiskType::Type::S3)
-        return false;
+    String replica = getSharedDataReplica(part, disk_type);
 
-    String replica = getSharedDataReplica(part);
-
-    /// We can't fetch part when none replicas have this part on S3
+    /// We can't fetch part when none replicas have this part on a same type remote disk
     if (replica.empty())
         return false;
 
@@ -7307,7 +7332,7 @@ bool StorageReplicatedMergeTree::tryToFetchIfShared(
 
 
 String StorageReplicatedMergeTree::getSharedDataReplica(
-    const IMergeTreeDataPart & part) const
+    const IMergeTreeDataPart & part, DiskType::Type disk_type) const
 {
     String best_replica;
 
@@ -7315,7 +7340,18 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     if (!zookeeper)
         return best_replica;
 
-    String zookeeper_part_node = fs::path(zookeeper_path) / "zero_copy_s3" / "shared" / part.name;
+    String zero_copy;
+    if (disk_type == DiskType::Type::S3)
+    {
+        zero_copy = "zero_copy_s3";
+    }
+    else if (disk_type == DiskType::Type::HDFS)
+    {
+        zero_copy = "zero_copy_hdfs";
+    }
+    else
+        return best_replica;
+    String zookeeper_part_node = fs::path(zookeeper_path) / zero_copy / "shared" / part.name;
 
     Strings ids;
     zookeeper->tryGetChildren(zookeeper_part_node, ids);

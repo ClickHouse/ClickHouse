@@ -217,13 +217,13 @@ public:
     /// Performs action on disk startup.
     virtual void startup() {}
 
-    /// Return some uniq string for file, overrode for S3
-    /// Required for distinguish different copies of the same part on S3
+    /// Return some uniq string for file, overrode for remote disk
+    /// Required for distinguish different copies of the same part on remote disk
     virtual String getUniqueId(const String & path) const { return path; }
 
     /// Check file exists and ClickHouse has an access to it
-    /// Overrode in DiskS3
-    /// Required for S3 to ensure that replica has access to data written by other node
+    /// Overrode in remote disk
+    /// Required for remote disk to ensure that replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
     /// Invoked on partitions freeze query.
