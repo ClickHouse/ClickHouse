@@ -4,7 +4,7 @@
 #include <optional>
 #include <mutex>
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aggregator.h>
@@ -21,10 +21,10 @@ namespace DB
   * Creates and stores all the data in the Aggregator,
   * allowing reads and writes to it.
   */
-class StorageAggregatingMemory final : public ext::shared_ptr_helper<StorageAggregatingMemory>, public IStorage
+class StorageAggregatingMemory final : public shared_ptr_helper<StorageAggregatingMemory>, public IStorage
 {
-friend class AggregatingOutputStream;
-friend struct ext::shared_ptr_helper<StorageAggregatingMemory>;
+    friend class AggregatingOutputStream;
+    friend struct shared_ptr_helper<StorageAggregatingMemory>;
 
 public:
     String getName() const override { return "AggregatingMemory"; }

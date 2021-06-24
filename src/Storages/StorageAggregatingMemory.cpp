@@ -232,9 +232,9 @@ private:
     ExpressionActionsPtr expression_actions;
 };
 
-class StorageSource final : public ext::shared_ptr_helper<StorageSource>, public IStorage
+class StorageSource final : public shared_ptr_helper<StorageSource>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageSource>;
+    friend struct shared_ptr_helper<StorageSource>;
 public:
     String getName() const override { return "Source"; }
 
