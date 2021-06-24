@@ -42,7 +42,7 @@ struct SelectQueryOptions
     bool ignore_alias = false;
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
-    bool with_materialized = false; /// asterisk include materialized columns
+    bool with_all_cols = false; /// asterisk include materialized and aliased columns
 
     SelectQueryOptions(
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
@@ -118,9 +118,9 @@ struct SelectQueryOptions
         return *this;
     }
 
-    SelectQueryOptions & setWithMaterialized(bool value = true)
+    SelectQueryOptions & setWithAllColumns(bool value = true)
     {
-        with_materialized = value;
+        with_all_cols = value;
         return *this;
     }
 };
