@@ -67,5 +67,4 @@ You should be concerned about the sharding scheme in the following cases:
 
 -   [MySQL table engine](../../../engines/table-engines/integrations/mysql.md)
 -   [PostgreSQL table engine](../../../engines/table-engines/integrations/postgresql.md)
--   [URL Table Engine](../../../engines/table-engines/integrations/url.md)
--   [Distributed Table Engine](../../../engines/table-engines/special/distributed.md)
+-   [Distributed table engine](../../../engines/table-engines/special/distributed.md)
