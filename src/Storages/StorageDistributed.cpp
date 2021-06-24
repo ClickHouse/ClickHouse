@@ -1155,6 +1155,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
     for (const DiskPtr & disk : data_volume->getDisks())
     {
+        disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(relative_data_path, new_path_to_table_data);
 
         auto new_path = disk->getPath() + new_path_to_table_data;
