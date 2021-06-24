@@ -96,7 +96,7 @@ To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.doc
 
 ### Single Binary {#from-single-binary}
 
-You can install ClickHouse on Linux using a single portable binary from the latest commit of the `master` branch: https://builds.clickhouse.tech/master/amd64/clickhouse.
+You can install ClickHouse on Linux using a single portable binary from the latest commit of the `master` branch: [https://builds.clickhouse.tech/master/amd64/clickhouse].
 
 ``` bash
 curl -O 'https://builds.clickhouse.tech/master/amd64/clickhouse' && chmod a+x clickhouse
