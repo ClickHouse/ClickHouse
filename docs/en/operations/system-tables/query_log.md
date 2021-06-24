@@ -177,4 +177,4 @@ used_table_functions:                ['numbers']
 
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_log) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/query_log) <!--hide-->

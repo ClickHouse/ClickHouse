@@ -14,7 +14,6 @@ Columns:
 -   `query` (String) – The query text. For `INSERT`, it does not include the data to insert.
 -   `query_id` (String) – Query ID, if defined.
 
-
 ```sql
 :) SELECT * FROM system.processes LIMIT 10 FORMAT Vertical;
 ```
@@ -61,4 +60,4 @@ Settings.Values:      ['0','in_order','1','10000000000']
 1 rows in set. Elapsed: 0.002 sec. 
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/processes) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/processes) <!--hide-->

@@ -115,4 +115,4 @@ ProfileEvents.Values:          [1,1,11,11,591,148,3,71,29,6533808,1,11,72,18,47,
 
 -   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_thread_log) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/query_thread_log) <!--hide-->
