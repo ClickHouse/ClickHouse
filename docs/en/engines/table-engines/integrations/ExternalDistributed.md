@@ -24,7 +24,7 @@ The table structure can differ from the original table structure:
 
 -   Column names should be the same as in the original table, but you can use just some of these columns and in any order.
 -   Column types may differ from those in the original table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
--   Setting `external_table_functions_use_nulls` defines how to handle Nullable columns. Default is 1, if 0 - table function will not make nullable columns and will insert default values instead of nulls. This is also applicable for null values inside array data types.
+-   The `external_table_functions_use_nulls` setting defines how to handle Nullable columns. Default is 1, if 0 - table function will not make nullable columns and will insert default values instead of nulls. This is also applicable for null values inside array data types.
 
 **Engine Parameters**
 
@@ -52,7 +52,7 @@ Each shard can have a weight defined in the config file. By default, the weight 
 
 To select the shard that a row of data is sent to, the sharding expression is analyzed, and its remainder is taken from dividing it by the total weight of the shards. The row is sent to the shard that corresponds to the half-interval of the remainders from `prev_weight` to `prev_weights + weight`, where `prev_weights` is the total weight of the shards with the smallest number, and `weight` is the weight of this shard. For example, if there are two shards, and the first has a weight of 9 while the second has a weight of 10, the row will be sent to the first shard for the remainders from the range \[0, 9), and to the second for the remainders from the range \[9, 19).
 
-The sharding expression can be any expression from constants and table columns that returns an integer. For example, you can use the expression `rand()` for random distribution of data, or `UserID` for distribution by the remainder from dividing the user’s ID (then the data of a single user will reside on a single shard, which simplifies running IN and JOIN by users). If one of the columns is not distributed evenly enough, you can wrap it in a hash function: [intHash64](../../../sql-reference/functions/hash-functions.md#inthash64)(UserID).
+The sharding expression can be any expression from constants and table columns that returns an integer. For example, you can use the expression `rand()` for random distribution of data, or `UserID` for distribution by the remainder from dividing the user’s ID (then the data of a single user will reside on a single shard, which simplifies running `IN` and `JOIN` by users). If one of the columns is not distributed evenly enough, you can wrap it in a hash function [intHash64](../../../sql-reference/functions/hash-functions.md#inthash64)(UserID).
 
 A simple reminder from the division is a limited solution for sharding and is not always appropriate. It works for medium and large volumes of data (dozens of servers), but not for very large volumes of data (hundreds of servers or more). In the latter case, use the sharding scheme required by the subject area, rather than using entries in Distributed tables.
 
