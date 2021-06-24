@@ -170,9 +170,9 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
 
             if (limit_max_threads)
             {
-                maxParallelStreams += last_pipeline->getMaxParallelStreams();
                 if (max_threads)
                     last_pipeline->limitMaxThreads(max_threads);
+                maxParallelStreams += last_pipeline->getMaxParallelStreams();
             }
 
             stack.pop();
