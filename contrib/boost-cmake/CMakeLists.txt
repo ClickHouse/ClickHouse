@@ -13,8 +13,6 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         regex
         context
         coroutine
-        date_time
-        thread
     )
 
     if(Boost_INCLUDE_DIR AND Boost_FILESYSTEM_LIBRARY AND Boost_FILESYSTEM_LIBRARY AND
@@ -34,7 +32,6 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         add_library (_boost_system INTERFACE)
         add_library (_boost_context INTERFACE)
         add_library (_boost_coroutine INTERFACE)
-
 
         target_link_libraries (_boost_filesystem INTERFACE ${Boost_FILESYSTEM_LIBRARY})
         target_link_libraries (_boost_iostreams INTERFACE ${Boost_IOSTREAMS_LIBRARY})
