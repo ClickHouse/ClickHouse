@@ -25,7 +25,7 @@ public:
     bool empty() const;
     Job pop();
 
-    static void executeJobOrThrowOnError(Job && job);
+    static bool executeJobOrThrowOnError(Job && job);
 
 private:
     std::queue<Job> jobs;
@@ -52,18 +52,17 @@ public:
 
     using Job = std::shared_ptr<JobWithPriority>;
 
-    template <typename... Args>
-    void emplace(Args && ... args);
+    void emplace(Job job);
 
     bool empty() const;
     Job pop();
 
-    void executeJobOrThrowOnError(Job && job);
+    bool executeJobOrThrowOnError(Job && job);
 
 private:
     /// Use mutex, because executeJobOrThrowOnError will be called without external lock
     /// But we will touch `jobs` in this method
-    std::mutex mutex;
+    mutable std::mutex mutex;
     std::priority_queue<Job> jobs;
 };
 

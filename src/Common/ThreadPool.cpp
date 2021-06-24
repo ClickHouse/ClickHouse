@@ -4,9 +4,12 @@
 
 #include <cassert>
 #include <type_traits>
+#include <common/logger_useful.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
+
+#include <iostream>
 
 namespace DB
 {
@@ -43,7 +46,7 @@ bool QueueJobContainer::empty() const
     return jobs.empty();
 }
 
-void QueueJobContainer::executeJobOrThrowOnError(QueueJobContainer::Job && job)
+bool QueueJobContainer::executeJobOrThrowOnError(QueueJobContainer::Job && job)
 {
     try
     {
@@ -51,6 +54,7 @@ void QueueJobContainer::executeJobOrThrowOnError(QueueJobContainer::Job && job)
         /// job should be reset before decrementing scheduled_jobs to
         /// ensure that the Job destroyed before wait() returns.
         job = {};
+        return true;
     }
     catch (...)
     {
@@ -62,11 +66,10 @@ void QueueJobContainer::executeJobOrThrowOnError(QueueJobContainer::Job && job)
 }
 
 
-template <typename... Args>
-void PriorityJobContainer::emplace(Args && ... args)
+void PriorityJobContainer::emplace(PriorityJobContainer::Job job)
 {
     std::lock_guard lock(mutex);
-    jobs.emplace(std::forward<Args>(args)...);
+    jobs.emplace(job);
 }
 
 PriorityJobContainer::Job PriorityJobContainer::pop()
@@ -81,10 +84,12 @@ PriorityJobContainer::Job PriorityJobContainer::pop()
 
 bool PriorityJobContainer::empty() const
 {
+    std::lock_guard lock(mutex);
+    std::cout << "jobs in pool " << jobs.size() << std::endl;
     return jobs.empty();
 }
 
-void PriorityJobContainer::executeJobOrThrowOnError(PriorityJobContainer::Job && job)
+bool PriorityJobContainer::executeJobOrThrowOnError(PriorityJobContainer::Job && job)
 {
     try
     {
@@ -93,17 +98,19 @@ void PriorityJobContainer::executeJobOrThrowOnError(PriorityJobContainer::Job &&
             /// Job wants to be executed one more time
             /// Called without lock, because it acquires lock by itself
             emplace(std::move(job));
-            return;
+            return false;
         }
         /// job should be reset before decrementing scheduled_jobs to
         /// ensure that the Job destroyed before wait() returns.
         job.reset();
+        return true;
     }
     catch (...)
     {
         /// job should be reset before decrementing scheduled_jobs to
         /// ensure that the Job destroyed before wait() returns.
         job.reset();
+        DB::tryLogCurrentException(&Poco::Logger::get("abacaba"));
         throw;
     }
 }
@@ -300,6 +307,7 @@ bool ThreadPoolImpl<Thread, JobContainer>::finished() const
 template <typename Thread, typename JobContainer>
 void ThreadPoolImpl<Thread, JobContainer>::worker(typename std::list<Thread>::iterator thread_it)
 {
+    (void)thread_it;
     DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_all_threads(
         std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
@@ -320,6 +328,8 @@ void ThreadPoolImpl<Thread, JobContainer>::worker(typename std::list<Thread>::it
                 return; /// shutdown is true, simply finish the thread.
         }
 
+        bool decrement_tasks_count = false;
+
         if (!need_shutdown)
         {
             try
@@ -328,7 +338,7 @@ void ThreadPoolImpl<Thread, JobContainer>::worker(typename std::list<Thread>::it
                 CurrentMetrics::Increment metric_active_threads(
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
-                jobs.executeJobOrThrowOnError(std::move(job));
+                decrement_tasks_count = jobs.executeJobOrThrowOnError(std::move(job));
             }
             catch (...)
             {
@@ -349,7 +359,13 @@ void ThreadPoolImpl<Thread, JobContainer>::worker(typename std::list<Thread>::it
 
         {
             std::unique_lock lock(mutex);
-            --scheduled_jobs;
+
+            if (decrement_tasks_count)
+                --scheduled_jobs;
+
+
+            /// Maybe there are some tasks to do?
+            new_job_or_shutdown.notify_all();
 
             if (threads.size() > scheduled_jobs + max_free_threads)
             {

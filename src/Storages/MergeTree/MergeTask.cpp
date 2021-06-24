@@ -591,6 +591,7 @@ bool MergeTask::executeVerticalMergeForAllColumns()
 
 bool MergeTask::execute()
 {
+    std::cout << "MergeTask::execute()" << std::endl;
     switch (state)
     {
         case MergeTaskState::NEED_PREPARE:

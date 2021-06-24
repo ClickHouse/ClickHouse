@@ -94,6 +94,7 @@ MergeInfo MergeListElement::getInfo() const
 MergeListElement::~MergeListElement()
 {
     /// Unplug memory_tracker from current background processing pool thread
+
     if (background_thread_memory_tracker)
         background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
 }
