@@ -1,5 +1,7 @@
 #pragma once
 
+#include <common/bit_cast.h>
+#include <Common/HashTable/Hash.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -13,8 +15,6 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <ext/bit_cast.h>
-#include <Common/HashTable/Hash.h>
 #include <Interpreters/BloomFilter.h>
 
 namespace DB

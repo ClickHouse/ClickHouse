@@ -25,7 +25,7 @@
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -908,7 +908,7 @@ namespace
                 else
                 {
                     NamesAndTypesList columns;
-                    for (size_t column_idx : ext::range(external_table.columns_size()))
+                    for (size_t column_idx : collections::range(external_table.columns_size()))
                     {
                         const auto & name_and_type = external_table.columns(column_idx);
                         NameAndTypePair column;
@@ -1524,7 +1524,7 @@ private:
     {
         std::lock_guard lock{mutex};
         responders_for_new_calls.resize(CALL_MAX);
-        for (CallType call_type : ext::range(CALL_MAX))
+        for (CallType call_type : collections::range(CALL_MAX))
             makeResponderForNewCall(call_type);
     }
 

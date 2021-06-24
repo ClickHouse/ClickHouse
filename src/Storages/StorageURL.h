@@ -2,7 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
@@ -104,9 +104,9 @@ private:
     BlockOutputStreamPtr writer;
 };
 
-class StorageURL : public ext::shared_ptr_helper<StorageURL>, public IStorageURLBase
+class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
 {
-    friend struct ext::shared_ptr_helper<StorageURL>;
+    friend struct shared_ptr_helper<StorageURL>;
 public:
     StorageURL(
         const Poco::URI & uri_,

@@ -55,7 +55,7 @@
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
 
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -1116,6 +1116,16 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
                         disk->removeRecursive(it->path());
                     }
                 }
+                /// see getModificationTime()
+                catch (const ErrnoException & e)
+                {
+                    if (e.getErrno() == ENOENT)
+                    {
+                        /// If the file is already deleted, do nothing.
+                    }
+                    else
+                        throw;
+                }
                 catch (const fs::filesystem_error & e)
                 {
                     if (e.code() == std::errc::no_such_file_or_directory)
@@ -2146,8 +2156,7 @@ bool MergeTreeData::renameTempPartAndReplace(
 
     LOG_TRACE(log, "Renaming temporary part {} to {}.", part->relative_path, part_name);
 
-    auto it_duplicate = data_parts_by_info.find(part_info);
-    if (it_duplicate != data_parts_by_info.end())
+    if (auto it_duplicate = data_parts_by_info.find(part_info); it_duplicate != data_parts_by_info.end())
     {
         String message = "Part " + (*it_duplicate)->getNameWithState() + " already exists";
 

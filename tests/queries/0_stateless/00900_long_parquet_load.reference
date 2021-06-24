@@ -298,24 +298,40 @@ Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Not y
 [[['a','b'],['c','d']],[[],['e']]]	1
 [[['a','b'],['c','d'],['e']],[[],['f']]]	1
 === Try load data from nested_maps.snappy.parquet
-Code: 70. DB::Ex---tion: The type "map" of an input column "a" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
-
+{'a':{1:1,2:0}}	1	1
+{'b':{1:1}}	1	1
+{'c':{}}	1	1
+{'d':{}}	1	1
+{'e':{1:1}}	1	1
+{'f':{3:1,4:0,5:1}}	1	1
 === Try load data from non_hadoop_lz4_compressed.parquet
 1593604800	abc	42
 1593604800	def	7.7
 1593604801	abc	42.125
 1593604801	def	7.7
 === Try load data from nonnullable.impala.parquet
-../contrib/arrow/cpp/src/arrow/array/array_nested.cc:192:  Check failed: (self->list_type_->value_type()->id()) == (data->child_data[0]->type->id()) 
+8	[-1]	[[-1,-2],[]]	{'k1':-1}	[{},{'k1':1},{},{}]	(-1,[-1],([[(-1)]]),{})
 === Try load data from nullable.impala.parquet
-../contrib/arrow/cpp/src/arrow/array/array_nested.cc:192:  Check failed: (self->list_type_->value_type()->id()) == (data->child_data[0]->type->id()) 
+1	[1,2,3]	[[1,2],[3,4]]	{'k1':1,'k2':100}	[{'k1':1}]	(1,[1],([[(10),(-10)],[(11)]]),{'foo':(([1.1]))})
+2	[NULL,1,2,NULL,3,NULL]	[[NULL,1,2,NULL],[3,NULL,4],[],[]]	{'k1':2,'k2':NULL}	[{'k3':NULL,'k1':1},{},{}]	(NULL,[NULL],([[(NULL),(10),(NULL),(-10),(NULL)],[(11),(NULL)],[],[]]),{'g1':(([2.2,NULL])),'g2':(([])),'g3':(([])),'g4':(([])),'g5':(([]))})
+3	[]	[[]]	{}	[{},{}]	(NULL,[],([]),{})
+4	[]	[]	{}	[]	(NULL,[],([]),{})
+5	[]	[]	{}	[]	(NULL,[],([]),{'foo':(([2.2,3.3]))})
+6	[]	[]	{}	[]	(NULL,[],([]),{})
+7	[]	[[],[5,6]]	{'k1':NULL,'k3':NULL}	[]	(7,[2,3,NULL],([[],[(NULL)],[]]),{})
 === Try load data from nullable_list.parquet
 [1,NULL,2]	[NULL,'Some string',NULL]	[0.00,NULL,42.42]
 [NULL]	[NULL]	[NULL]
 []	[]	[]
 === Try load data from nulls.snappy.parquet
-Code: 70. DB::Ex---tion: The type "struct" of an input column "b_struct" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
-
+(NULL)
+(NULL)
+(NULL)
+(NULL)
+(NULL)
+(NULL)
+(NULL)
+(NULL)
 === Try load data from single_nan.parquet
 \N
 === Try load data from userdata1.parquet
