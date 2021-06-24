@@ -69,4 +69,4 @@ is_in_sampling_key:      0
 compression_codec:       
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/columns) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/columns) <!--hide-->
