@@ -129,7 +129,8 @@ TablesWithColumns getDatabaseAndTablesWithColumns(
         NamesAndTypesList materialized;
         NamesAndTypesList aliases;
         NamesAndTypesList virtuals;
-        NamesAndTypesList names_and_types = getColumnsFromTableExpression(*table_expression, context, materialized, aliases, virtuals);
+        NamesAndTypesList names_and_types = getColumnsFromTableExpression(
+            *table_expression, context, materialized, aliases, virtuals);
 
         removeDuplicateColumns(names_and_types);
 

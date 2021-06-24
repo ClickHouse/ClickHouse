@@ -185,9 +185,9 @@ StoragePtr JoinedTables::getLeftTableStorage()
     return DatabaseCatalog::instance().getTable(table_id, context);
 }
 
-bool JoinedTables::resolveTables()
+bool JoinedTables::resolveTables(bool with_materialized)
 {
-    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context, true);
+    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context, with_materialized);
     if (tables_with_columns.size() != table_expressions.size())
         throw Exception("Unexpected tables count", ErrorCodes::LOGICAL_ERROR);
 

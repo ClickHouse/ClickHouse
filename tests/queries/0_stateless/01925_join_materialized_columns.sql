@@ -9,6 +9,8 @@ INSERT INTO t2 VALUES ('2020-01-01 12:00:00', 'fact1', 't2_val2'), ('2020-02-05 
 
 SELECT * FROM t1 JOIN t2 ON t1.foo = t2.bar WHERE t2.dt >= '2020-02-01';
 SELECT '-';
+SELECT t1.*, t1.dt, t2.*, t2.dt FROM t1 JOIN t2 ON t1.foo = t2.bar WHERE t2.dt >= '2020-02-01';
+SELECT '-';
 SELECT t1.dt, t2.dt FROM t1 JOIN t2 ON t1.foo = t2.bar ORDER BY t1.dt;
 SELECT '-';
 SELECT * FROM t1 ALL JOIN t2 ON t1.dt = t2.dt ORDER BY t1.time, t2.time;
