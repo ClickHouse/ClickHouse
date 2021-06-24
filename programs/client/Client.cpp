@@ -2446,6 +2446,8 @@ public:
                     {
                         /// param_name value
                         ++arg_num;
+                        if (arg_num >= argc)
+                            throw Exception("Parameter requires value", ErrorCodes::BAD_ARGUMENTS);
                         arg = argv[arg_num];
                         query_parameters.emplace(String(param_continuation), String(arg));
                     }
