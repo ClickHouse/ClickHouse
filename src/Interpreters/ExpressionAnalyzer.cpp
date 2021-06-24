@@ -900,7 +900,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
             * - this function shows the expression JOIN _data1.
             */
         auto interpreter = interpretSubquery(
-            join_element.table_expression, getContext(), original_right_columns, query_options.copy().setWithMaterialized());
+            join_element.table_expression, getContext(), original_right_columns, query_options.copy().setWithAllColumns());
         {
             joined_plan = std::make_unique<QueryPlan>();
             interpreter->buildQueryPlan(*joined_plan);

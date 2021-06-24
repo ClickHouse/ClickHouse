@@ -23,6 +23,6 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
 TablesWithColumns getDatabaseAndTablesWithColumns(
         const ASTTableExprConstPtrs & table_expressions,
         ContextPtr context,
-        bool add_materialized = false);
+        bool include_all = false);
 
 }

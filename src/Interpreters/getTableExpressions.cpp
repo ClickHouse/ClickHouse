@@ -116,13 +116,13 @@ static NamesAndTypesList getColumnsFromTableExpression(
 TablesWithColumns getDatabaseAndTablesWithColumns(
         const ASTTableExprConstPtrs & table_expressions,
         ContextPtr context,
-        bool add_materialized)
+        bool include_all)
 {
     TablesWithColumns tables_with_columns;
 
     String current_database = context->getCurrentDatabase();
-    bool include_alias_cols = context->getSettingsRef().asterisk_include_alias_columns;
-    bool include_materialized_cols = add_materialized || context->getSettingsRef().asterisk_include_materialized_columns;
+    bool include_alias_cols = include_all || context->getSettingsRef().asterisk_include_alias_columns;
+    bool include_materialized_cols = include_all || context->getSettingsRef().asterisk_include_materialized_columns;
 
     for (const ASTTableExpression * table_expression : table_expressions)
     {

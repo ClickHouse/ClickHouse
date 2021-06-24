@@ -897,9 +897,9 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         const auto & right_table = tables_with_columns[1];
         auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
         cols_from_joined = right_table.columns;
-        /// query can use materialized columns from right joined table, add it to columns_from_joined_table
-        cols_from_joined.insert(
-            cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
+        /// query can use materialized or aliased columns from right joined table,
+        /// we want to request it for right table
+        cols_from_joined.insert(cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
 
         result.analyzed_join->deduplicateAndQualifyColumnNames(
             source_columns_set, right_table.table.getQualifiedNamePrefix());
