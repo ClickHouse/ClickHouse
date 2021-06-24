@@ -85,7 +85,6 @@ PriorityJobContainer::Job PriorityJobContainer::pop()
 bool PriorityJobContainer::empty() const
 {
     std::lock_guard lock(mutex);
-    std::cout << "jobs in pool " << jobs.size() << std::endl;
     return jobs.empty();
 }
 

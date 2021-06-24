@@ -1,8 +1,6 @@
 #include "MergeTreeDataMergerMutator.h"
 
 
-#include <Common/Future.h>
-
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>

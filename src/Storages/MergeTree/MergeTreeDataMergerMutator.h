@@ -3,7 +3,6 @@
 #include <atomic>
 #include <functional>
 
-#include <Common/Future.h>
 #include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
