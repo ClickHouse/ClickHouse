@@ -157,6 +157,8 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
             assert_cast<ColumnFloat64 &>(column).insertValue(pqxx::from_string<double>(value));
             break;
         case ValueType::vtFixedString:[[fallthrough]];
+        case ValueType::vtEnum8:
+        case ValueType::vtEnum16:
         case ValueType::vtString:
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
