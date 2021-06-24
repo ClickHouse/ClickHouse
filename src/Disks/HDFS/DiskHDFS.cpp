@@ -153,6 +153,21 @@ void DiskHDFS::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
         });
 }
 
+String DiskHDFS::getUniqueId(const String & path) const
+{
+    Metadata metadata(remote_fs_root_path, metadata_path, path);
+    String id;
+    if (!metadata.remote_fs_objects.empty())
+        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
+    return id;
+}
+
+bool DiskHDFS::checkUniqueId(const String & hdfs_uri) const
+{
+    const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
+    const String path = hdfs_uri.substr(begin_of_path);
+    return (0 == hdfsExists(hdfs_fs.get(), path.c_str()));
+}
 
 namespace
 {

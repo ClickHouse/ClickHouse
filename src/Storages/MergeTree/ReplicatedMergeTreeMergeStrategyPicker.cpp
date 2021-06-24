@@ -67,6 +67,17 @@ bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplicaS3Shared(
 }
 
 
+bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplicaHdfsShared(const ReplicatedMergeTreeLogEntryData & entry) const
+{
+    time_t threshold = hdfs_execute_merges_on_single_replica_time_threshold;
+    return (
+        threshold > 0       /// feature turned on
+        && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS /// it is a merge log entry
+        && entry.create_time + threshold > time(nullptr)          /// not too much time waited
+    );
+}
+
+
 /// that will return the same replica name for ReplicatedMergeTreeLogEntry on all the replicas (if the replica set is the same).
 /// that way each replica knows who is responsible for doing a certain merge.
 
@@ -100,24 +111,31 @@ std::optional<String> ReplicatedMergeTreeMergeStrategyPicker::pickReplicaToExecu
 
 void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 {
-    auto threshold = storage.getSettings()->execute_merges_on_single_replica_time_threshold.totalSeconds();
+    const auto settings = storage.getSettings();
+    auto threshold = settings->execute_merges_on_single_replica_time_threshold.totalSeconds();
     auto threshold_s3 = 0;
-    if (storage.getSettings()->allow_s3_zero_copy_replication)
-        threshold_s3 = storage.getSettings()->s3_execute_merges_on_single_replica_time_threshold.totalSeconds();
+    if (settings->allow_s3_zero_copy_replication)
+        threshold_s3 = settings->s3_execute_merges_on_single_replica_time_threshold.totalSeconds();
+    auto threshold_hdfs = 0;
+    if (settings->allow_hdfs_zero_copy_replication)
+        threshold_hdfs = settings->hdfs_execute_merges_on_single_replica_time_threshold.totalSeconds();
 
     if (threshold == 0)
         /// we can reset the settings w/o lock (it's atomic)
         execute_merges_on_single_replica_time_threshold = threshold;
     if (threshold_s3 == 0)
         s3_execute_merges_on_single_replica_time_threshold = threshold_s3;
-    if (threshold == 0 && threshold_s3 == 0)
+    if (threshold_hdfs == 0)
+        hdfs_execute_merges_on_single_replica_time_threshold = threshold_hdfs;
+    if (threshold == 0 && threshold_s3 == 0 && threshold_hdfs == 0)
         return;
 
     auto now = time(nullptr);
 
     /// the setting was already enabled, and last state refresh was done recently
     if (((threshold != 0 && execute_merges_on_single_replica_time_threshold != 0)
-        || (threshold_s3 != 0 && s3_execute_merges_on_single_replica_time_threshold != 0))
+        || (threshold_s3 != 0 && s3_execute_merges_on_single_replica_time_threshold != 0)
+        || (threshold_hdfs != 0 && hdfs_execute_merges_on_single_replica_time_threshold != 0))
         && now - last_refresh_time < REFRESH_STATE_MINIMUM_INTERVAL_SECONDS)
         return;
 
@@ -155,6 +173,8 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
         execute_merges_on_single_replica_time_threshold = threshold;
     if (threshold_s3 != 0)
         s3_execute_merges_on_single_replica_time_threshold = threshold_s3;
+    if (threshold_hdfs != 0)
+        hdfs_execute_merges_on_single_replica_time_threshold = threshold_hdfs;
     last_refresh_time = now;
     current_replica_index = current_replica_index_tmp;
     active_replicas = active_replicas_tmp;

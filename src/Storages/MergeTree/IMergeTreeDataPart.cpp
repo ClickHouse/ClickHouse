@@ -1505,11 +1505,11 @@ String IMergeTreeDataPart::getUniqueId() const
 
     auto disk = volume->getDisk();
 
-    if (disk->getType() == DB::DiskType::Type::S3)
+    if (disk->getType() == DiskType::Type::S3 || disk->getType() == DiskType::Type::HDFS)
         id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
 
     if (id.empty())
-        throw Exception("Can't get unique S3 object", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can't get unique S3/HDFS object", ErrorCodes::LOGICAL_ERROR);
 
     return id;
 }

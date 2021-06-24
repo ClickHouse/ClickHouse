@@ -54,6 +54,7 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION = 4;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID = 5;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_S3_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_HDFS_COPY = 8;
 
 
 std::string getEndpointId(const std::string & node_id)
@@ -122,7 +123,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     }
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_HDFS_COPY))});
 
     ++total_sends;
     SCOPE_EXIT({--total_sends;});
@@ -169,24 +170,34 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             writeUUIDText(part->uuid, out);
 
         bool try_use_s3_copy = false;
+        bool try_use_hdfs_copy = false;
+        int send_s3_metadata = parse<int>(params.get("send_s3_metadata", "0"));
+        int send_hdfs_metadata = parse<int>(params.get("send_hdfs_metadata", "0"));
+        auto disk_type = part->volume->getDisk()->getType();
 
-        if (data_settings->allow_s3_zero_copy_replication
+        if (disk_type == DiskType::Type::S3
+                && send_s3_metadata
+                && data_settings->allow_s3_zero_copy_replication
                 && client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_S3_COPY)
         { /// if source and destination are in the same S3 storage we try to use S3 CopyObject request first
-            int send_s3_metadata = parse<int>(params.get("send_s3_metadata", "0"));
-            if (send_s3_metadata == 1)
-            {
-                auto disk = part->volume->getDisk();
-                if (disk->getType() == DB::DiskType::Type::S3)
-                {
-                    try_use_s3_copy = true;
-                }
-            }
+            try_use_s3_copy = true;
+        }
+        else if (disk_type == DiskType::Type::HDFS
+                && send_hdfs_metadata
+                && data_settings->allow_hdfs_zero_copy_replication
+                && client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_HDFS_COPY)
+        { /// if source and destination are in the same HDFS storage
+            try_use_hdfs_copy = true;
         }
         if (try_use_s3_copy)
         {
             response.addCookie({"send_s3_metadata", "1"});
-            sendPartS3Metadata(part, out);
+            sendPartFromDiskRemoteMeta(part, out);
+        }
+        else if (try_use_hdfs_copy)
+        {
+            response.addCookie({"send_hdfs_metadata", "1"});
+            sendPartFromDiskRemoteMeta(part, out);
         }
         else if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
         {
@@ -323,7 +334,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     return data_checksums;
 }
 
-void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
+void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
 {
     /// We'll take a list of files from the list of checksums.
     MergeTreeData::DataPart::Checksums checksums = part->checksums;
@@ -333,8 +344,8 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
         checksums.files[file_name] = {};
 
     auto disk = part->volume->getDisk();
-    if (disk->getType() != DB::DiskType::Type::S3)
-        throw Exception("S3 disk is not S3 anymore", ErrorCodes::LOGICAL_ERROR);
+    if (disk->getType() != DiskType::Type::S3 && disk->getType() != DiskType::Type::HDFS)
+        throw Exception("remote disk is not remote anymore", ErrorCodes::LOGICAL_ERROR);
 
     part->storage.lockSharedData(*part);
 
@@ -351,9 +362,9 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
         fs::path metadata(metadata_file);
 
         if (!fs::exists(metadata))
-            throw Exception("S3 metadata '" + file_name + "' is not exists", ErrorCodes::CORRUPTED_DATA);
+            throw Exception("remote metadata '" + file_name + "' is not exists", ErrorCodes::CORRUPTED_DATA);
         if (!fs::is_regular_file(metadata))
-            throw Exception("S3 metadata '" + file_name + "' is not a file", ErrorCodes::CORRUPTED_DATA);
+            throw Exception("remote metadata '" + file_name + "' is not a file", ErrorCodes::CORRUPTED_DATA);
         UInt64 file_size = fs::file_size(metadata);
 
         writeStringBinary(it.first, out);
@@ -399,8 +410,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     bool to_detached,
     const String & tmp_prefix_,
     std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
-    bool try_use_s3_copy,
-    const DiskPtr disk_s3)
+    bool try_zero_copy,
+    const DiskPtr disk_remote)
 {
     if (blocker.isCancelled())
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
@@ -417,34 +428,60 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         {"endpoint",                getEndpointId(replica_path)},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_HDFS_COPY)},
         {"compress",                "false"}
     });
 
-    if (try_use_s3_copy && disk_s3 && disk_s3->getType() != DB::DiskType::Type::S3)
-        throw Exception("Try to fetch shared s3 part on non-s3 disk", ErrorCodes::LOGICAL_ERROR);
+    bool try_use_s3_copy = false;
+    bool try_use_hdfs_copy = false;
+    if (try_zero_copy && disk_remote && disk_remote->getType() != DiskType::Type::S3 && disk_remote->getType() != DiskType::Type::HDFS)
+        throw Exception("Try to fetch shared part on non-shared disk", ErrorCodes::LOGICAL_ERROR);
 
     Disks disks_s3;
-
-    if (!data_settings->allow_s3_zero_copy_replication)
-        try_use_s3_copy = false;
-
-    if (try_use_s3_copy)
+    Disks disks_hdfs;
+    if (try_zero_copy)
     {
-        if (disk_s3)
-            disks_s3.push_back(disk_s3);
+        try_use_s3_copy = true;
+        try_use_hdfs_copy = true;
+        if (!data_settings->allow_s3_zero_copy_replication)
+        {
+            try_use_s3_copy = false;
+        }
         else
         {
-            disks_s3 = data.getDisksByType(DiskType::Type::S3);
-
-            if (disks_s3.empty())
-                try_use_s3_copy = false;
+            if (disk_remote && disk_remote->getType() == DiskType::Type::S3)
+                disks_s3.push_back(disk_remote);
+            else
+            {
+                disks_s3 = data.getDisksByType(DiskType::Type::S3);
+                if (disks_s3.empty())
+                    try_use_s3_copy = false;
+            }
+        }
+        if (!data_settings->allow_hdfs_zero_copy_replication)
+        {
+            try_use_hdfs_copy = false;
+        }
+        else
+        {
+            if (disk_remote && disk_remote->getType() == DiskType::Type::HDFS)
+                disks_hdfs.push_back(disk_remote);
+            else
+            {
+                disks_hdfs = data.getDisksByType(DiskType::Type::HDFS);
+                if (disks_hdfs.empty())
+                    try_use_hdfs_copy = false;
+            }
         }
     }
 
     if (try_use_s3_copy)
     {
         uri.addQueryParameter("send_s3_metadata", "1");
+    }
+    if (try_use_hdfs_copy)
+    {
+        uri.addQueryParameter("send_hdfs_metadata", "1");
     }
 
     Poco::Net::HTTPBasicCredentials creds{};
@@ -468,13 +505,24 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     int server_protocol_version = parse<int>(in.getResponseCookie("server_protocol_version", "0"));
 
     int send_s3 = parse<int>(in.getResponseCookie("send_s3_metadata", "0"));
+    int send_hdfs = parse<int>(in.getResponseCookie("send_hdfs_metadata", "0"));
 
-    if (send_s3 == 1)
+    if (send_s3 == 1 || send_hdfs == 1)
     {
-        if (server_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_S3_COPY)
-            throw Exception("Got 'send_s3_metadata' cookie with old protocol version", ErrorCodes::LOGICAL_ERROR);
-        if (!try_use_s3_copy)
-            throw Exception("Got 'send_s3_metadata' cookie when was not requested", ErrorCodes::LOGICAL_ERROR);
+        if (send_s3 == 1)
+        {
+            if (server_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_S3_COPY)
+                throw Exception("Got 'send_s3_metadata' cookie with old protocol version", ErrorCodes::LOGICAL_ERROR);
+            if (!try_use_s3_copy)
+                throw Exception("Got 'send_s3_metadata' cookie when was not requested", ErrorCodes::LOGICAL_ERROR);
+        }
+        if (send_hdfs == 1)
+        {
+            if (server_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_HDFS_COPY)
+                throw Exception("Got 'send_hdfs_metadata' cookie with old protocol version", ErrorCodes::LOGICAL_ERROR);
+            if (!try_use_hdfs_copy)
+                throw Exception("Got 'send_hdfs_metadata' cookie when was not requested", ErrorCodes::LOGICAL_ERROR);
+        }
 
         size_t sum_files_size = 0;
         readBinary(sum_files_size, in);
@@ -495,7 +543,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             /// When we have multi-volume storage, one of them was chosen, depends on TTL, free space, etc.
             /// Chosen one may be S3 or not.
             DiskPtr disk = reservation->getDisk();
-            if (disk && disk->getType() == DiskType::Type::S3)
+            if (send_s3 && disk && disk->getType() == DiskType::Type::S3)
             {
                 for (const auto & d : disks_s3)
                 {
@@ -507,12 +555,24 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
                     }
                 }
             }
+            if (send_hdfs && disk && disk->getType() == DiskType::Type::HDFS)
+            {
+                for (const auto & d : disks_hdfs)
+                {
+                    if (d->getPath() == disk->getPath())
+                    {
+                        Disks disks_tmp = { disk };
+                        disks_hdfs.swap(disks_tmp);
+                        break;
+                    }
+                }
+            }
         }
 
         String part_type = "Wide";
         readStringBinary(part_type, in);
         if (part_type == "InMemory")
-            throw Exception("Got 'send_s3_metadata' cookie for in-memory part", ErrorCodes::INCORRECT_PART_TYPE);
+            throw Exception("Got 'send_s3_metadata' or 'send_hdfs_metadata' cookie for in-memory part", ErrorCodes::INCORRECT_PART_TYPE);
 
         UUID part_uuid = UUIDHelpers::Nil;
 
@@ -522,13 +582,16 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
         try
         {
-            return downloadPartToS3(part_name, replica_path, to_detached, tmp_prefix_, std::move(disks_s3), in, throttler);
+            if (send_s3)
+                return downloadPartToDiskRemoteMeta(part_name, replica_path, to_detached, tmp_prefix_, std::move(disks_s3), in, throttler);
+            else
+                return downloadPartToDiskRemoteMeta(part_name, replica_path, to_detached, tmp_prefix_, std::move(disks_hdfs), in, throttler);
         }
         catch (const Exception & e)
         {
             if (e.code() != ErrorCodes::S3_ERROR)
                 throw;
-            /// Try again but without S3 copy
+            /// Try again but without S3/HDFS copy
             return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
                 user, password, interserver_scheme, throttler, to_detached, tmp_prefix_, nullptr, false);
         }
@@ -794,30 +857,35 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     return new_data_part;
 }
 
-MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
+MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     const String & part_name,
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
-    const Disks & disks_s3,
+    const Disks & disks_remote,
     PooledReadWriteBufferFromHTTP & in,
     ThrottlerPtr throttler)
 {
-    if (disks_s3.empty())
-        throw Exception("No S3 disks anymore", ErrorCodes::LOGICAL_ERROR);
+    if (disks_remote.empty())
+        throw Exception("No remote disks anymore", ErrorCodes::LOGICAL_ERROR);
 
     String part_id;
     readStringBinary(part_id, in);
 
-    DiskPtr disk = disks_s3[0];
-
-    for (const auto & disk_s3 : disks_s3)
+    DiskPtr disk = nullptr;
+    for (const auto & disk_remote : disks_remote)
     {
-        if (disk_s3->checkUniqueId(part_id))
+        if (disk_remote->checkUniqueId(part_id))
         {
-            disk = disk_s3;
+            disk = disk_remote;
             break;
         }
+    }
+    if (disk == nullptr)
+    {
+        LOG_WARNING(log, "Part {} unique id {} doesn't exist on this replica's remote disks. Will retry fetching part disabling zero-copy.",
+            part_name, part_id);
+        throw Exception("Part " + part_name + " unique id " + part_id + " doesn't exist on this replica's remote disks.", ErrorCodes::S3_ERROR);
     }
 
     static const String TMP_PREFIX = "tmp_fetch_";

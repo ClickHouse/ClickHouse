@@ -58,6 +58,15 @@ public:
 
     RemoteFSPathKeeperPtr createFSPathKeeper() const override;
 
+    /// Return some uniq string for file, overrode for remote disk
+    /// Required for distinguish different copies of the same part on remote disk
+    String getUniqueId(const String & path) const override;
+
+    /// Check file exists and ClickHouse has an access to it
+    /// Overrode in remote disk
+    /// Required for remote disk to ensure that replica has access to data written by other node
+    bool checkUniqueId(const String & hdfs_uri) const override;
+
 private:
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }
 
