@@ -842,6 +842,7 @@
         "01870_modulo_partition_key",
         "01870_buffer_flush", // creates database
         "01889_postgresql_protocol_null_fields",
-        "01889_check_row_policy_defined_using_user_function"
+        "01889_check_row_policy_defined_using_user_function",
+        "01921_concurrent_ttl_and_normal_merges_zookeeper_long" // heavy test, better to run sequentially
     ]
 }
