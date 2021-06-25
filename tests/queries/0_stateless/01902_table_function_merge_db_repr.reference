@@ -1,4 +1,4 @@
-CREATE TABLE t_merge as 01902_db.t ENGINE=Merge(^01902_db.*, ^t.*)
+CREATE TABLE t_merge as 01902_db.t ENGINE=Merge(REGEXP(^01902_db), ^t)
 SELECT _database, _table, n FROM 01902_db.t_merge ORDER BY _database, _table, n
 01902_db	t	0
 01902_db	t	1
@@ -40,7 +40,7 @@ SELECT _database, _table, n FROM 01902_db.t_merge ORDER BY _database, _table, n
 01902_db3	t3	7
 01902_db3	t3	8
 01902_db3	t3	9
-SELECT _database, _table, n FROM merge(^db, ^t) ORDER BY _database, _table, n
+SELECT _database, _table, n FROM merge(REGEXP(^01902_db), ^t) ORDER BY _database, _table, n
 01902_db	t	0
 01902_db	t	1
 01902_db	t	2
@@ -143,7 +143,30 @@ SELECT _database, _table, n FROM 01902_db.t_merge WHERE _table = t1 ORDER BY _da
 01902_db1	t1	7
 01902_db1	t1	8
 01902_db1	t1	9
-CREATE TABLE t_merge_1 as 01902_db.t ENGINE=Merge(currentDatabase(), ^t.*)
+CREATE TABLE t_merge1 as 01902_db.t ENGINE=Merge(01902_db, ^t$)
+SELECT _database, _table, n FROM 01902_db.t_merge1 ORDER BY _database, _table, n
+01902_db	t	0
+01902_db	t	1
+01902_db	t	2
+01902_db	t	3
+01902_db	t	4
+01902_db	t	5
+01902_db	t	6
+01902_db	t	7
+01902_db	t	8
+01902_db	t	9
+SELECT _database, _table, n FROM merge(01902_db, ^t$) ORDER BY _database, _table, n
+01902_db	t	0
+01902_db	t	1
+01902_db	t	2
+01902_db	t	3
+01902_db	t	4
+01902_db	t	5
+01902_db	t	6
+01902_db	t	7
+01902_db	t	8
+01902_db	t	9
+CREATE TABLE t_merge_1 as 01902_db.t ENGINE=Merge(currentDatabase(), ^t)
 SELECT _database, _table, n FROM 01902_db.t_merge_1 ORDER BY _database, _table, n
 01902_db1	t1	0
 01902_db1	t1	1
@@ -155,7 +178,7 @@ SELECT _database, _table, n FROM 01902_db.t_merge_1 ORDER BY _database, _table, 
 01902_db1	t1	7
 01902_db1	t1	8
 01902_db1	t1	9
-SELECT _database, _table, n FROM merge(currentDatabase(), ^t.*) ORDER BY _database, _table, n
+SELECT _database, _table, n FROM merge(currentDatabase(), ^t) ORDER BY _database, _table, n
 01902_db1	t1	0
 01902_db1	t1	1
 01902_db1	t1	2
