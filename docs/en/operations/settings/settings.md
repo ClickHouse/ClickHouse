@@ -1201,6 +1201,17 @@ Enable compilation of queries. By default, 0 (disabled).
 The compilation is only used for part of the query-processing pipeline: for the first stage of aggregation (GROUP BY).
 If this portion of the pipeline was compiled, the query may run faster due to the deployment of short cycles and inlining aggregate function calls. The maximum performance improvement (up to four times faster in rare cases) is seen for queries with multiple simple aggregate functions. Typically, the performance gain is insignificant. In very rare cases, it may slow down query execution.
 
+## compile_expressions {#compile_expressions}
+
+Enables or disables compilation of frequently used simple functions and operators to native code with LLVM at runtime.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `1`.
+
 ## min_count_to_compile {#min-count-to-compile}
 
 How many times to potentially use a compiled chunk of code before running compilation. By default, 3.
@@ -1558,7 +1569,7 @@ Possible values:
 
 -   0 — Disabled (final query processing is done on the initiator node).
 -   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
--   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possilbe when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+-   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
 
 **Example**
 
@@ -1622,7 +1633,7 @@ Possible values:
 
 Default value: 0
 
-## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shardslrewrite-in}
+## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shards-rewrite-in}
 
 Rewrite IN in query for remote shards to exclude values that does not belong to the shard (requires optimize_skip_unused_shards).
 
@@ -2085,7 +2096,7 @@ Default value: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recomended to use default value.
+Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recommended to use default value.
 
 Possible values:
 
