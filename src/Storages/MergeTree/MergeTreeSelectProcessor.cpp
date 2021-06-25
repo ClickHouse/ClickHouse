@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
