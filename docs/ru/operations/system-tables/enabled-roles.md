@@ -9,3 +9,4 @@
 - `is_current` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Флаг, который показывает, является ли `enabled_role` текущей ролью текущего пользователя. 
 - `is_default` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Флаг, который показывает, является ли `enabled_role` ролью по умолчанию.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/enabled-roles) <!--hide-->

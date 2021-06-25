@@ -26,8 +26,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
@@ -119,9 +117,9 @@ class GroupArrayNumericImpl final
 
 public:
     explicit GroupArrayNumericImpl(
-        const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
+        const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
         : IAggregateFunctionDataHelper<GroupArrayNumericData<T, Trait::sampler != Sampler::NONE>, GroupArrayNumericImpl<T, Trait>>(
-            {data_type_}, parameters_)
+            {data_type_}, {})
         , max_elems(max_elems_)
         , seed(seed_)
     {
@@ -298,7 +296,12 @@ public:
         if (size)
         {
             typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+            if constexpr (is_big_int_v<T>)
+                // is data_to empty? we should probably use std::vector::insert then
+                for (auto it = this->data(place).value.begin(); it != this->data(place).value.end(); it++)
+                    data_to.push_back(*it);
+            else
+                data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
         }
     }
 
@@ -421,9 +424,9 @@ class GroupArrayGeneralImpl final
     UInt64 seed;
 
 public:
-    GroupArrayGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
+    GroupArrayGeneralImpl(const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
         : IAggregateFunctionDataHelper<GroupArrayGeneralData<Node, Trait::sampler != Sampler::NONE>, GroupArrayGeneralImpl<Node, Trait>>(
-            {data_type_}, parameters_)
+            {data_type_}, {})
         , data_type(this->argument_types[0])
         , max_elems(max_elems_)
         , seed(seed_)
@@ -696,8 +699,8 @@ class GroupArrayGeneralListImpl final
     UInt64 max_elems;
 
 public:
-    GroupArrayGeneralListImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, Trait>>({data_type_}, parameters_)
+    GroupArrayGeneralListImpl(const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, Trait>>({data_type_}, {})
         , data_type(this->argument_types[0])
         , max_elems(max_elems_)
     {

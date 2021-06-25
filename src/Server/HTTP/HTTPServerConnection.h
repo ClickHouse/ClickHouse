@@ -14,7 +14,7 @@ class HTTPServerConnection : public Poco::Net::TCPServerConnection
 {
 public:
     HTTPServerConnection(
-        ContextPtr context,
+        const Context & context,
         const Poco::Net::StreamSocket & socket,
         Poco::Net::HTTPServerParams::Ptr params,
         HTTPRequestHandlerFactoryPtr factory);
@@ -23,9 +23,10 @@ public:
 
 protected:
     static void sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status);
+    void onServerStopped(const bool & abortCurrent);
 
 private:
-    ContextPtr context;
+    Context context;
     Poco::Net::HTTPServerParams::Ptr params;
     HTTPRequestHandlerFactoryPtr factory;
     bool stopped;
