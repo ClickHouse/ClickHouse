@@ -282,7 +282,7 @@ GRANT INSERT(x,y) ON db.table TO john
             - `ALTER MATERIALIZE TTL`. Уровень: `TABLE`. Алиасы: `MATERIALIZE TTL`
         - `ALTER SETTINGS`. Уровень: `TABLE`. Алиасы: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
         - `ALTER MOVE PARTITION`. Уровень: `TABLE`. Алиасы: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
-        - `ALTER FETCH PARTITION`. Уровень: `TABLE`. Алиасы: `FETCH PARTITION`
+        - `ALTER FETCH PARTITION`. Уровень: `TABLE`. Алиасы: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
         - `ALTER FREEZE PARTITION`. Уровень: `TABLE`. Алиасы: `FREEZE PARTITION`
     - `ALTER VIEW` Уровень: `GROUP`
         - `ALTER VIEW REFRESH `. Уровень: `VIEW`. Алиасы: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
