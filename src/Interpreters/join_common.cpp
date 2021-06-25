@@ -15,7 +15,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 
-#include <common/logger_useful.h>
 namespace DB
 {
 
@@ -192,6 +191,22 @@ void convertColumnsToNullable(Block & block, size_t starting_pos)
 {
     for (size_t i = starting_pos; i < block.columns(); ++i)
         convertColumnToNullable(block.getByPosition(i));
+}
+
+void convertColumnsToNullable(MutableColumns & mutable_columns, size_t starting_pos)
+{
+    for (size_t i = starting_pos; i < mutable_columns.size(); ++i)
+    {
+        ColumnPtr column = std::move(mutable_columns[i]);
+        column = makeNullable(column);
+        mutable_columns[i] = IColumn::mutate(std::move(column));
+
+        // changeNullability(mutable_columns[i]);
+        // mutable_columns[i]->type = convertTypeToNullable(mutable_columns[i]->type);
+
+        // convertColumnToNullable(*mutable_columns[i]);
+    }
+
 }
 
 /// @warning It assumes that every NULL has default value in nested column (or it does not matter)
@@ -502,18 +517,21 @@ ColumnPtr getColumnAsMask(const Block & block, const String & column_name)
 }
 
 
-void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others)
+void splitAdditionalColumns(const NamesVector & key_names, const Block & sample_block, Block & block_keys, Block & block_others)
 {
     block_others = materializeBlock(sample_block);
 
-    for (const String & column_name : key_names)
+    for (const auto & key_names_part : key_names)
     {
-        /// Extract right keys with correct keys order. There could be the same key names.
-        if (!block_keys.has(column_name))
+        for (const String & column_name : key_names_part)
         {
-            auto & col = block_others.getByName(column_name);
-            block_keys.insert(col);
-            block_others.erase(column_name);
+            /// Extract right keys with correct keys order. There could be the same key names.
+            if (!block_keys.has(column_name))
+            {
+                auto & col = block_others.getByName(column_name);
+                block_keys.insert(col);
+                block_others.erase(column_name);
+            }
         }
     }
 }
@@ -528,7 +546,6 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
     , saved_block_sample(filler->getEmptyBlock())
     , result_sample_block(materializeBlock(result_sample_block_))
 {
-
     for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
     {
         /// We need right 'x' for 'RIGHT JOIN ... USING(x)'

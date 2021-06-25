@@ -178,8 +178,14 @@ void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr 
 void RequiredSourceColumnsMatcher::visit(const ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
     for (const auto & child : node.children)
-        if (child->as<ASTTableJoin>())
+    {
+        const auto * join_node = child->as<ASTTableJoin>();
+        if (join_node)
+        {
             data.has_table_join = true;
+            data.converted_to_dnf = join_node->converted_to_dnf;
+        }
+    }
 }
 
 /// ASTIdentifiers here are tables. Do not visit them as generic ones.
