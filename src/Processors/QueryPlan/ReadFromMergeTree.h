@@ -111,7 +111,7 @@ private:
     Pipe readInOrder(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, bool use_uncompressed_cache);
 
     template<typename TSource>
-    ProcessorPtr createSource(const RangesInDataPart & part, const Names & required_columns, bool use_uncompressed_cache);
+    ProcessorPtr createSource(const RangesInDataPart & part, const Names & required_columns, bool use_uncompressed_cache, bool one_range_per_task);
 
     Pipe spreadMarkRangesAmongStreams(
         RangesInDataParts && parts_with_ranges,

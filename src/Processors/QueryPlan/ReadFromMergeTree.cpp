@@ -13,7 +13,7 @@
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeInOrderSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -175,12 +175,13 @@ template<typename TSource>
 ProcessorPtr ReadFromMergeTree::createSource(
     const RangesInDataPart & part,
     const Names & required_columns,
-    bool use_uncompressed_cache)
+    bool use_uncompressed_cache,
+    bool one_range_per_task)
 {
     return std::make_shared<TSource>(
             data, metadata_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache,
-            prewhere_info, true, reader_settings, virt_column_names, part.part_index_in_query);
+            prewhere_info, true, reader_settings, virt_column_names, part.part_index_in_query, one_range_per_task);
 }
 
 Pipe ReadFromMergeTree::readInOrder(
@@ -190,11 +191,15 @@ Pipe ReadFromMergeTree::readInOrder(
     bool use_uncompressed_cache)
 {
     Pipes pipes;
+    /// For reading in order it makes sense to read only
+    /// one range per task to reduce number of read rows.
+    bool one_range_per_task = read_type != ReadType::Default;
+
     for (const auto & part : parts_with_range)
     {
         auto source = read_type == ReadType::InReverseOrder
-                    ? createSource<MergeTreeReverseSelectProcessor>(part, required_columns, use_uncompressed_cache)
-                    : createSource<MergeTreeSelectProcessor>(part, required_columns, use_uncompressed_cache);
+                    ? createSource<MergeTreeReverseSelectProcessor>(part, required_columns, use_uncompressed_cache, one_range_per_task)
+                    : createSource<MergeTreeInOrderSelectProcessor>(part, required_columns, use_uncompressed_cache, one_range_per_task);
 
         pipes.emplace_back(std::move(source));
     }
@@ -445,6 +450,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 }
                 parts_with_ranges.emplace_back(part);
             }
+
             ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
             new_parts.emplace_back(part.data_part, part.part_index_in_query, std::move(ranges_to_get_from_part));
         }
@@ -482,7 +488,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                         pipe.getHeader(),
                         pipe.numOutputPorts(),
                         sort_description,
-                        max_block_size);
+                        max_block_size,
+                        0, true);
 
                 pipe.addTransform(std::move(transform));
             }
