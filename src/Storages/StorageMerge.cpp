@@ -104,7 +104,7 @@ StorageMerge::StorageMerge(
     const ColumnsDescription & columns_,
     const String & comment,
     const String & source_database_regexp_,
-    const std::unordered_map<String, std::unordered_set<String>> & source_databases_and_tables_,
+    const DbToTableSetMap & source_databases_and_tables_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -146,7 +146,7 @@ StoragePtr StorageMerge::getFirstTable(F && predicate) const
         {
             const auto & table = iterator->table();
             if (table.get() != this && predicate(table))
-			  return table;
+                return table;
 
             iterator->next();
         }
@@ -267,7 +267,8 @@ Pipe StorageMerge::read(
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
-    StorageListWithLocks selected_tables = getSelectedTables(local_context, query_info.query, has_table_virtual_column);
+    StorageListWithLocks selected_tables
+        = getSelectedTables(local_context, query_info.query, has_database_virtual_column, has_table_virtual_column);
 
     if (selected_tables.empty())
         /// FIXME: do we support sampling in this case?
@@ -483,22 +484,33 @@ Pipe StorageMerge::createSources(
 }
 
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
-        ContextPtr query_context,
-        const ASTPtr & query /* = nullptr */,
-        bool filter_by_virtual_column /* = false */) const
+    ContextPtr query_context,
+    const ASTPtr & query /* = nullptr */,
+    bool filter_by_database_virtual_column /* = false */,
+    bool filter_by_table_virtual_column /* = false */) const
 {
-    assert(!filter_by_virtual_column || query);
+    assert(!filter_by_database_virtual_column || !filter_by_table_virtual_column || query);
 
     const Settings & settings = query_context->getSettingsRef();
     StorageListWithLocks selected_tables;
     DatabaseTablesIterators database_table_iterators = getDatabaseIterators(getContext());
 
+    MutableColumnPtr database_name_virtual_column;
     MutableColumnPtr table_name_virtual_column;
-    if (filter_by_virtual_column)
+    if (filter_by_database_virtual_column)
+    {
+        database_name_virtual_column = ColumnString::create();
+    }
+
+    if (filter_by_table_virtual_column)
+    {
         table_name_virtual_column = ColumnString::create();
+    }
 
     for (const auto & iterator : database_table_iterators)
     {
+        if (filter_by_database_virtual_column)
+            database_name_virtual_column->insert(iterator->databaseName());
         while (iterator->isValid())
         {
             StoragePtr storage = iterator->table();
@@ -512,7 +524,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
             {
                 auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings.lock_acquire_timeout);
                 selected_tables.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name());
-                if (filter_by_virtual_column)
+                if (filter_by_table_virtual_column)
                     table_name_virtual_column->insert(iterator->name());
             }
 
@@ -520,7 +532,19 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
         }
     }
 
-    if (filter_by_virtual_column)
+    if (filter_by_database_virtual_column)
+    {
+        /// Filter names of selected tables if there is a condition on "_database" virtual column in WHERE clause
+        Block virtual_columns_block
+            = Block{ColumnWithTypeAndName(std::move(database_name_virtual_column), std::make_shared<DataTypeString>(), "_database")};
+        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, query_context);
+        auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_database");
+
+        /// Remove unused databases from the list
+        selected_tables.remove_if([&](const auto & elem) { return values.find(std::get<0>(elem)) == values.end(); });
+    }
+
+    if (filter_by_table_virtual_column)
     {
         /// Filter names of selected tables if there is a condition on "_table" virtual column in WHERE clause
         Block virtual_columns_block = Block{ColumnWithTypeAndName(std::move(table_name_virtual_column), std::make_shared<DataTypeString>(), "_table")};

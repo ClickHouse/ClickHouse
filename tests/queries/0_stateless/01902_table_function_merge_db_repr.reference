@@ -121,6 +121,28 @@ SELECT _database, _table, n FROM merge(^db, ^t) ORDER BY _database, _table, n
 01902_db3	t3	7
 01902_db3	t3	8
 01902_db3	t3	9
+SELECT _database, _table, n FROM 01902_db.t_merge WHERE _database = 01902_db1 ORDER BY _database, _table, n
+01902_db1	t1	0
+01902_db1	t1	1
+01902_db1	t1	2
+01902_db1	t1	3
+01902_db1	t1	4
+01902_db1	t1	5
+01902_db1	t1	6
+01902_db1	t1	7
+01902_db1	t1	8
+01902_db1	t1	9
+SELECT _database, _table, n FROM 01902_db.t_merge WHERE _table = t1 ORDER BY _database, _table, n
+01902_db1	t1	0
+01902_db1	t1	1
+01902_db1	t1	2
+01902_db1	t1	3
+01902_db1	t1	4
+01902_db1	t1	5
+01902_db1	t1	6
+01902_db1	t1	7
+01902_db1	t1	8
+01902_db1	t1	9
 CREATE TABLE t_merge_1 as 01902_db.t ENGINE=Merge(currentDatabase(), ^t.*)
 SELECT _database, _table, n FROM 01902_db.t_merge_1 ORDER BY _database, _table, n
 01902_db1	t1	0

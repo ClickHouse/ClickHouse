@@ -27,6 +27,12 @@ SELECT _database, _table, n FROM 01902_db.t_merge ORDER BY _database, _table, n;
 SELECT 'SELECT _database, _table, n FROM merge(^db, ^t) ORDER BY _database, _table, n';
 SELECT _database, _table, n FROM merge('^01902_db.*', '^t.*') ORDER BY _database, _table, n;
 
+SELECT 'SELECT _database, _table, n FROM 01902_db.t_merge WHERE _database = 01902_db1 ORDER BY _database, _table, n';
+SELECT _database, _table, n FROM 01902_db.t_merge WHERE _database = '01902_db1' ORDER BY _database, _table, n;
+
+SELECT 'SELECT _database, _table, n FROM 01902_db.t_merge WHERE _table = t1 ORDER BY _database, _table, n';
+SELECT _database, _table, n FROM 01902_db.t_merge WHERE _table = 't1' ORDER BY _database, _table, n;
+
 USE 01902_db1;
 
 SELECT 'CREATE TABLE t_merge_1 as 01902_db.t ENGINE=Merge(currentDatabase(), ^t.*)';

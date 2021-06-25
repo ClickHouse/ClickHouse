@@ -49,9 +49,10 @@ public:
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
 private:
+    using DbToTableSetMap = std::unordered_map<String, std::unordered_set<String>>;
     std::optional<OptimizedRegularExpression> source_database_regexp;
     std::optional<OptimizedRegularExpression> source_table_regexp;
-    std::optional<std::unordered_map<String, std::unordered_set<String>>> source_databases_and_tables;
+    std::optional<DbToTableSetMap> source_databases_and_tables;
 
     /// (Database, Table, Lock, TableName)
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
@@ -59,7 +60,10 @@ private:
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
 
     StorageMerge::StorageListWithLocks getSelectedTables(
-            ContextPtr query_context, const ASTPtr & query = nullptr, bool filter_by_virtual_column = false) const;
+        ContextPtr query_context,
+        const ASTPtr & query = nullptr,
+        bool filter_by_database_virtual_column = false,
+        bool filter_by_table_virtual_column = false) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
@@ -75,7 +79,7 @@ protected:
         const ColumnsDescription & columns_,
         const String & comment,
         const String & source_database_regexp_,
-        const std::unordered_map<String, std::unordered_set<String>> & source_databases_and_tables_,
+        const DbToTableSetMap & source_databases_and_tables_,
         ContextPtr context_);
 
     StorageMerge(
