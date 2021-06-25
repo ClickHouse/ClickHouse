@@ -115,14 +115,14 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                 UInt16 i = 0;
                 for (ASTPtr & child : data_type_function->arguments->children)
                 {
-                    auto newChild = std::make_shared<ASTFunction>();
-                    newChild->name = "equals";
+                    auto new_child = std::make_shared<ASTFunction>();
+                    new_child->name = "equals";
                     auto * literal = child->as<ASTLiteral>();
 
-                    newChild->arguments = std::make_shared<ASTExpressionList>();
-                    newChild->arguments->children.push_back(std::make_shared<ASTLiteral>(literal->value.get<String>()));
-                    newChild->arguments->children.push_back(std::make_shared<ASTLiteral>(Int16(++i)));
-                    child = newChild;
+                    new_child->arguments = std::make_shared<ASTExpressionList>();
+                    new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(literal->value.get<String>()));
+                    new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(Int16(++i)));
+                    child = new_child;
                 }
             }
         }
