@@ -86,7 +86,8 @@ public:
  
 	    H3Index hindex;
 	    H3Error err = latLngToCell(&coord, res, &hindex);
-	    if (err) {
+	    if (err) 
+	    {
                 throw Exception(
                     "Incorrect coordinates lat:" + std::to_string(coord.lat) + " lng:" + std::to_string(coord.lng) + " err:" + std::to_string(err),
                     ErrorCodes::INCORRECT_DATA);
