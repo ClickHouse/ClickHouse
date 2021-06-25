@@ -3,7 +3,7 @@ import time
 import helpers.client as client
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=True)
@@ -227,8 +227,8 @@ def optimize_with_retry(node, table_name, retry=20):
             time.sleep(0.5)
 
 @pytest.mark.parametrize("name,engine", [
-    ("test_ttl_alter_delete", "MergeTree()"),
-    ("test_replicated_ttl_alter_delete", "ReplicatedMergeTree('/clickhouse/test_replicated_ttl_alter_delete', '1')"),
+    pytest.param("test_ttl_alter_delete", "MergeTree()", id="test_ttl_alter_delete"),
+    pytest.param("test_replicated_ttl_alter_delete", "ReplicatedMergeTree('/clickhouse/test_replicated_ttl_alter_delete', '1')", id="test_ttl_alter_delete_replicated"),
 ])
 def test_ttl_alter_delete(started_cluster, name, engine):
     """Copyright 2019, Altinity LTD
@@ -392,13 +392,27 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     
     time.sleep(5) # Wait for TTL
 
-    node_right.query("OPTIMIZE TABLE test_ttl_delete FINAL")
+    # after restart table can be in readonly mode
+    exec_query_with_retry(node_right, "OPTIMIZE TABLE test_ttl_delete FINAL")
     node_right.query("OPTIMIZE TABLE test_ttl_group_by FINAL")
     node_right.query("OPTIMIZE TABLE test_ttl_where FINAL")
 
-    node_left.query("SYSTEM SYNC REPLICA test_ttl_delete", timeout=20)
+    exec_query_with_retry(node_left, "SYSTEM SYNC REPLICA test_ttl_delete")
     node_left.query("SYSTEM SYNC REPLICA test_ttl_group_by", timeout=20)
     node_left.query("SYSTEM SYNC REPLICA test_ttl_where", timeout=20)
+
+    # After OPTIMIZE TABLE, it is not guaranteed that everything is merged.
+    # Possible scenario (for test_ttl_group_by):
+    # 1. Two independent merges assigned: [0_0, 1_1] -> 0_1 and [2_2, 3_3] -> 2_3
+    # 2. Another one merge assigned: [0_1, 2_3] -> 0_3
+    # 3. Merge to 0_3 is delayed:
+    #    `Not executing log entry for part 0_3 because 2 merges with TTL already executing, maximum 2
+    # 4. OPTIMIZE FINAL does nothing, cause there is an entry for 0_3
+    #
+    # So, let's also sync replicas for node_right (for now).
+    exec_query_with_retry(node_right, "SYSTEM SYNC REPLICA test_ttl_delete")
+    node_right.query("SYSTEM SYNC REPLICA test_ttl_group_by", timeout=20)
+    node_right.query("SYSTEM SYNC REPLICA test_ttl_where", timeout=20)
 
     assert node_left.query("SELECT id FROM test_ttl_delete ORDER BY id") == "2\n4\n"
     assert node_right.query("SELECT id FROM test_ttl_delete ORDER BY id") == "2\n4\n"

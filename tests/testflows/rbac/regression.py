@@ -30,6 +30,7 @@ issue_18110 = "https://github.com/ClickHouse/ClickHouse/issues/18110"
 issue_18206 = "https://github.com/ClickHouse/ClickHouse/issues/18206"
 issue_21083 = "https://github.com/ClickHouse/ClickHouse/issues/21083"
 issue_21084 = "https://github.com/ClickHouse/ClickHouse/issues/21084"
+issue_25413 = "https://github.com/ClickHouse/ClickHouse/issues/25413"
 
 xfails = {
     "syntax/show create quota/I show create quota current":
@@ -144,6 +145,12 @@ xfails = {
         [(Fail, "new bug")],
     "privileges/show dictionaries/:/check privilege/check privilege=DROP DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
         [(Fail, "new bug")],
+    "privileges/kill mutation/:/:/KILL ALTER : without privilege":
+        [(Fail, issue_25413)],
+    "privileges/kill mutation/:/:/KILL ALTER : with revoked privilege":
+        [(Fail, issue_25413)],
+    "privileges/kill mutation/:/:/KILL ALTER : with revoked ALL privilege":
+        [(Fail, issue_25413)]
 }
 
 xflags = {

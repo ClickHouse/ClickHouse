@@ -2,7 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionTopK.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 
@@ -12,6 +12,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -58,7 +59,7 @@ static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_ty
 
 
 template <bool is_weighted>
-AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const DataTypes & argument_types, const Array & params)
+AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     if (!is_weighted)
     {

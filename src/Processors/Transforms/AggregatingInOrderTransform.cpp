@@ -1,7 +1,7 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/SortCursor.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 namespace DB
 {
@@ -99,7 +99,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     while (key_end != rows)
     {
         /// Find the first position of new (not current) key in current chunk
-        auto indices = ext::range(key_begin, rows);
+        auto indices = collections::range(key_begin, rows);
         auto it = std::upper_bound(indices.begin(), indices.end(), cur_block_size - 1,
             [&](size_t lhs_row, size_t rhs_row)
             {

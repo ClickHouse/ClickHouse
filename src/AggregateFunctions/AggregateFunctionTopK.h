@@ -17,6 +17,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 template <typename T>
@@ -117,7 +118,8 @@ struct AggregateFunctionTopKGenericData
  *  For such columns topK() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column, bool is_weighted>
-class AggregateFunctionTopKGeneric : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>
+class AggregateFunctionTopKGeneric
+    : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>
 {
 private:
     using State = AggregateFunctionTopKGenericData;
