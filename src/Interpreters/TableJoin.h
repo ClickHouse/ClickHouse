@@ -73,10 +73,13 @@ private:
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
 
-    Names key_names_left;
-    Names key_names_right; /// Duplicating names are qualified.
-    ASTs on_filter_condition_asts_left;
-    ASTs on_filter_condition_asts_right;
+    NamesVector key_names_left;
+    NamesVector key_names_right; /// Duplicating names are qualified.
+    ASTsVector on_filter_condition_asts_left;
+    ASTsVector on_filter_condition_asts_right;
+private:
+    size_t disjunct_num = 0;
+    std::vector<const IAST*> disjuncts;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -112,7 +115,7 @@ private:
 
     /// Create converting actions and change key column names if required
     ActionsDAGPtr applyKeyConvertToTable(
-        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const;
+        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NamesVector & names_vector_to_rename) const;
 
     /// Calculates common supertypes for corresponding join key columns.
     template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
@@ -121,17 +124,27 @@ private:
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 
 public:
-    TableJoin() = default;
-    TableJoin(const Settings &, VolumePtr tmp_volume);
+    TableJoin()
+        : key_names_left(1)
+        , key_names_right(1)
+        , on_filter_condition_asts_left(1)
+        , on_filter_condition_asts_right(1)
+    {
+    }
+
+    TableJoin(const Settings & settings, VolumePtr tmp_volume_);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
-              const Names & key_names_right_)
+              const NamesVector & key_names_right_)
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
         , join_algorithm(JoinAlgorithm::HASH)
+        , key_names_left(1)
         , key_names_right(key_names_right_)
+        , on_filter_condition_asts_left(1)
+        , on_filter_condition_asts_right(1)
     {
         table_join.kind = kind;
         table_join.strictness = strictness;
@@ -164,6 +177,8 @@ public:
 
     void resetCollected();
     void addUsingKey(const ASTPtr & ast);
+    void addDisjunct(const IAST*);
+    void setDisjuncts(std::vector<const IAST*>&&);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
     /* Conditions for left/right table from JOIN ON section.
@@ -180,8 +195,8 @@ public:
      *     doesn't supported yet, it can be added later.
      */
     void addJoinCondition(const ASTPtr & ast, bool is_left);
-    ASTPtr joinConditionColumn(JoinTableSide side) const;
-    std::pair<String, String> joinConditionColumnNames() const;
+    ASTPtr joinConditionColumn(JoinTableSide side, size_t disjunct_num) const;
+    std::pair<String, String> joinConditionColumnNames(size_t disjunct_num) const;
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
@@ -211,8 +226,8 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
-    const Names & keyNamesLeft() const { return key_names_left; }
-    const Names & keyNamesRight() const { return key_names_right; }
+    const NamesVector & keyNamesLeft() const { return key_names_left; }
+    const NamesVector & keyNamesRight() const { return key_names_right; }
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
 
     Names columnsAddedByJoin() const
@@ -224,7 +239,7 @@ public:
     }
 
     /// StorageJoin overrides key names (cause of different names qualification)
-    void setRightKeys(const Names & keys) { key_names_right = keys; }
+    void setRightKeys(const Names & keys) { key_names_right.clear(); key_names_right.push_back(keys); }
 
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 

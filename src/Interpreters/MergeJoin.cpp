@@ -507,7 +507,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
                             ErrorCodes::PARAMETER_OUT_OF_BOUND);
     }
 
-    std::tie(mask_column_name_left, mask_column_name_right) = table_join->joinConditionColumnNames();
+    std::tie(mask_column_name_left, mask_column_name_right) = table_join->joinConditionColumnNames(0);
 
     /// Add auxiliary joining keys to join only rows where conditions from JOIN ON sections holds
     /// Input boolean column converted to nullable and only rows with non NULLS value will be joined
@@ -519,11 +519,11 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         key_names_right.push_back(deriveTempName(mask_column_name_right));
     }
 
-    key_names_left.insert(key_names_left.end(), table_join->keyNamesLeft().begin(), table_join->keyNamesLeft().end());
-    key_names_right.insert(key_names_right.end(), table_join->keyNamesRight().begin(), table_join->keyNamesRight().end());
+    key_names_left.insert(key_names_left.end(), table_join->keyNamesLeft().front().begin(), table_join->keyNamesLeft().front().end());
+    key_names_right.insert(key_names_right.end(), table_join->keyNamesRight().front().begin(), table_join->keyNamesRight().front().end());
 
     addConditionJoinColumn(right_sample_block, JoinTableSide::Right);
-    JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, right_columns_to_add);
+    JoinCommon::splitAdditionalColumns(NamesVector{key_names_right}, right_sample_block, right_table_keys, right_columns_to_add);
 
     for (const auto & right_key : key_names_right)
     {
@@ -654,7 +654,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 Block MergeJoin::modifyRightBlock(const Block & src_block) const
 {
     Block block = materializeBlock(src_block);
-    JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesRight());
+    JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesRight().front());
     return block;
 }
 
