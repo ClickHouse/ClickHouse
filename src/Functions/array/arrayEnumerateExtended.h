@@ -1,5 +1,4 @@
-#pragma once
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -30,7 +29,7 @@ template <typename Derived>
 class FunctionArrayEnumerateExtended : public IFunction
 {
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 
@@ -56,7 +55,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -121,7 +120,7 @@ private:
 
 
 template <typename Derived>
-ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
+void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
     const ColumnArray::Offsets * offsets = nullptr;
     size_t num_arguments = arguments.size();
@@ -131,14 +130,14 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
     ColumnPtr offsets_column;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const ColumnPtr & array_ptr = arguments[i].column;
+        const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
-                arguments[i].column.get());
+                block.getByPosition(arguments[i]).column.get());
             if (!const_array)
-                throw Exception("Illegal column " + arguments[i].column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
             array_holders.emplace_back(const_array->convertToFullColumn());
@@ -155,7 +154,7 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
             throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
-        const auto * array_data = &array->getData();
+        auto * array_data = &array->getData();
         data_columns[i] = array_data;
     }
 
@@ -163,7 +162,7 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
+        if (auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
         {
             if (num_arguments == 1)
                 data_columns[i] = &nullable_col->getNestedColumn();
@@ -201,7 +200,7 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
             executeHashed(*offsets, data_columns, res_values);
     }
 
-    return ColumnArray::create(std::move(res_nested), offsets_column);
+    block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_column);
 }
 
 template <typename Derived>

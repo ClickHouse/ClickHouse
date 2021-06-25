@@ -6,15 +6,14 @@ CURDIR = os.path.dirname(os.path.realpath(__file__))
 
 sys.path.insert(0, os.path.join(CURDIR))
 
-from . import uexpect
+import uexpect
 
 prompt = ':\) '
 end_of_block = r'.*\r\n.*\r\n'
 
-
 class client(object):
     def __init__(self, command=None, name='', log=None):
-        self.client = uexpect.spawn(['/bin/bash', '--noediting'])
+        self.client = uexpect.spawn(['/bin/bash','--noediting'])
         if command is None:
             command = '/usr/bin/clickhouse-client'
         self.client.command = command

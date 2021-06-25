@@ -7,8 +7,6 @@
 #include <Core/Defines.h>
 #include <Core/Field.h>
 
-#include <Common/LRUCache.h>
-
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/HTTPCommon.h>
@@ -162,8 +160,7 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
 
 static std::string nodeToJson(avro::NodePtr root_node)
 {
-    std::ostringstream ss;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ss.exceptions(std::ios::failbit);
+    std::ostringstream ss;
     root_node->printJson(ss, 0);
     return ss.str();
 }
@@ -190,7 +187,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 {
                     decoder.decodeString(tmp);
                     if (tmp.length() != 36)
-                        throw ParsingException(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
+                        throw Exception(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
 
                     UUID uuid;
                     parseUUID(reinterpret_cast<const UInt8 *>(tmp.data()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
@@ -344,7 +341,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             if (target.isEnum())
             {
                 const auto & enum_type = dynamic_cast<const IDataTypeEnum &>(*target_type);
-                Row symbol_mapping;
+                std::vector<Field> symbol_mapping;
                 for (size_t i = 0; i < root_node->names(); i++)
                 {
                     symbol_mapping.push_back(enum_type.castToValue(root_node->nameAt(i)));

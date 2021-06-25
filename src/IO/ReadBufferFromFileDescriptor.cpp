@@ -6,12 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <sys/stat.h>
-#include <Common/UnicodeBar.h>
-#include <Common/TerminalSize.h>
-#include <IO/Operators.h>
 
 
 namespace ProfileEvents
@@ -37,7 +32,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_SELECT;
-    extern const int CANNOT_FSTAT;
 }
 
 
@@ -96,7 +90,6 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     if (bytes_read)
     {
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
-        working_buffer = internal_buffer;
         working_buffer.resize(bytes_read);
     }
     else
@@ -174,30 +167,6 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
         throwFromErrno("Cannot select", ErrorCodes::CANNOT_SELECT);
 
     return res > 0;
-}
-
-
-off_t ReadBufferFromFileDescriptor::size()
-{
-    struct stat buf;
-    int res = fstat(fd, &buf);
-    if (-1 == res)
-        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
-    return buf.st_size;
-}
-
-
-void ReadBufferFromFileDescriptor::setProgressCallback(ContextPtr context)
-{
-    auto file_progress_callback = context->getFileProgressCallback();
-
-    if (!file_progress_callback)
-        return;
-
-    setProfileCallback([file_progress_callback](const ProfileInfo & progress)
-    {
-        file_progress_callback(FileProgress(progress.bytes_read, 0));
-    });
 }
 
 }

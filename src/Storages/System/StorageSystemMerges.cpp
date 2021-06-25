@@ -30,18 +30,16 @@ NamesAndTypesList StorageSystemMerges::getNamesAndTypes()
         {"columns_written", std::make_shared<DataTypeUInt64>()},
         {"memory_usage", std::make_shared<DataTypeUInt64>()},
         {"thread_id", std::make_shared<DataTypeUInt64>()},
-        {"merge_type", std::make_shared<DataTypeString>()},
-        {"merge_algorithm", std::make_shared<DataTypeString>()},
     };
 }
 
 
-void StorageSystemMerges::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    const auto access = context->getAccess();
+    const auto access = context.getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
-    for (const auto & merge : context->getMergeList().get())
+    for (const auto & merge : context.getMergeList().get())
     {
         if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, merge.database, merge.table))
             continue;
@@ -67,16 +65,6 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, ContextPtr cont
         res_columns[i++]->insert(merge.columns_written);
         res_columns[i++]->insert(merge.memory_usage);
         res_columns[i++]->insert(merge.thread_id);
-        if (!merge.is_mutation)
-        {
-            res_columns[i++]->insert(merge.merge_type);
-            res_columns[i++]->insert(merge.merge_algorithm);
-        }
-        else
-        {
-            res_columns[i++]->insertDefault();
-            res_columns[i++]->insertDefault();
-        }
     }
 }
 

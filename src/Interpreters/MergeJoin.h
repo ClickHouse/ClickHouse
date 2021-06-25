@@ -23,7 +23,6 @@ class MergeJoin : public IJoin
 public:
     MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
 
-    const TableJoin & getTableJoin() const override { return *table_join; }
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
     void joinTotals(Block &) const override;
@@ -102,8 +101,6 @@ private:
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
     const size_t max_files_to_merge;
-
-    Names lowcard_right_keys;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

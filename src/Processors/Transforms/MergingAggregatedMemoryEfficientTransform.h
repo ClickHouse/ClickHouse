@@ -1,4 +1,3 @@
-#pragma once
 #include <Processors/IProcessor.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>

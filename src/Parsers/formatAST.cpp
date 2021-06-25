@@ -1,12 +1,13 @@
 #include <Parsers/formatAST.h>
 
+#include <sstream>
 
 namespace DB
 {
 
-void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line)
+void formatAST(const IAST & ast, std::ostream & s, bool hilite, bool one_line)
 {
-    IAST::FormatSettings settings(buf, one_line);
+    IAST::FormatSettings settings(s, one_line);
     settings.hilite = hilite;
 
     ast.format(settings);
@@ -14,9 +15,9 @@ void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line)
 
 String serializeAST(const IAST & ast, bool one_line)
 {
-    WriteBufferFromOwnString buf;
-    formatAST(ast, buf, false, one_line);
-    return buf.str();
+    std::stringstream ss;
+    formatAST(ast, ss, false, one_line);
+    return ss.str();
 }
 
 }

@@ -25,6 +25,7 @@ public:
     Block getHeader() const override;
 
 protected:
+    bool initialized = false;
     ExpressionActionsPtr expression;
 
     Block readImpl() override;

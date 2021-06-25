@@ -4,11 +4,17 @@
 namespace DB
 {
 
+struct TransformFromMicro
+{
+    static constexpr auto name = "fromUnixTimestamp64Micro";
+    static constexpr auto target_scale = 6;
+    using SourceDataType = DataTypeInt64;
+    using ResultDataType = DataTypeDateTime64;
+};
+
 void registerFromUnixTimestamp64Micro(FunctionFactory & factory)
 {
-    factory.registerFunction("fromUnixTimestamp64Micro",
-        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionFromUnixTimestamp64>(6, "fromUnixTimestamp64Micro")); });
+    factory.registerFunction<FunctionUnixTimestamp64<TransformFromMicro>>();
 }
 
 }

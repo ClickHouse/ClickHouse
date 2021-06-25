@@ -26,10 +26,8 @@ public:
     ~UsersConfigAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
-    String getStorageParamsJSON() const override;
-
-    String getPath() const;
-    bool isPathEqual(const String & path_) const;
+    String getStoragePath() const override;
+    bool isStorageReadOnly() const override { return true; }
 
     void setConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -52,8 +50,8 @@ private:
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
-    scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
+    ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
+    ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
     bool hasSubscriptionImpl(EntityType type) const override;
 

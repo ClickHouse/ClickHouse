@@ -15,8 +15,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
 #include <Common/COW.h>
-#include <Common/FieldVisitorDump.h>
-
+#include <Common/FieldVisitors.h>
 
 namespace DB
 {
@@ -104,6 +103,12 @@ std::ostream & operator<<(std::ostream & stream, const Packet & what)
         stream << "exception = " << what.exception.get();
     // TODO: profile_info
     stream << ") {" << what.block << "}";
+    return stream;
+}
+
+std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what)
+{
+    stream << "ExpressionAction(" << what.toString() << ")";
     return stream;
 }
 

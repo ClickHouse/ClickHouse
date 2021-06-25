@@ -1,13 +1,12 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
-
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Common/typeid_cast.h>
+#include <Core/Defines.h>
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -26,13 +25,6 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
     for (size_t i = 0; i < parameters.size(); ++i)
     {
         const auto * literal = parameters[i]->as<ASTLiteral>();
-
-        ASTPtr func_literal;
-        if (!literal)
-            if (const auto * func = parameters[i]->as<ASTFunction>())
-                if ((func_literal = func->toLiteral()))
-                    literal = func_literal->as<ASTLiteral>();
-
         if (!literal)
         {
             throw Exception(

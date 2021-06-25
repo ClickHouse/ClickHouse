@@ -1,8 +1,6 @@
 #pragma once
 #include <Databases/IDatabase.h>
 
-#include <Interpreters/DatabaseCatalog.h>
-
 namespace DB
 {
 

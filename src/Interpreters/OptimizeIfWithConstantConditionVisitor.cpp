@@ -33,9 +33,6 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
         {
             if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {
-                if (expr_list->children.size() != 2)
-                    throw Exception("Function CAST must have exactly two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
                 const ASTPtr & type_ast = expr_list->children.at(1);
                 if (const auto * type_literal = type_ast->as<ASTLiteral>())
                 {
@@ -64,16 +61,12 @@ void OptimizeIfWithConstantConditionVisitor::visit(ASTPtr & current_ast)
             continue;
         }
 
-        if (!function_node->arguments)
-            throw Exception("Wrong number of arguments for function 'if' (0 instead of 3)", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (function_node->arguments->children.size() != 3)
-            throw Exception(
-                "Wrong number of arguments for function 'if' (" + toString(function_node->arguments->children.size()) + " instead of 3)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         visit(function_node->arguments);
         const auto * args = function_node->arguments->as<ASTExpressionList>();
+
+        if (args->children.size() != 3)
+            throw Exception("Wrong number of arguments for function 'if' (" + toString(args->children.size()) + " instead of 3)",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         ASTPtr condition_expr = args->children[0];
         ASTPtr then_expr = args->children[1];
