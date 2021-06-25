@@ -153,5 +153,6 @@ toc_title: Adopters
 | <a href="https://gigapipe.com/" class="favicon">Gigapipe</a> | Managed ClickHouse | Main product | — | — | [Official website](https://gigapipe.com/) |
 | <a href="https://www.hydrolix.io/" class="favicon">Hydrolix</a> | Cloud data platform | Main product | — | — | [Documentation](https://docs.hydrolix.io/guide/query) |
 | <a href="https://www.argedor.com/en/clickhouse/" class="favicon">Argedor</a> | ClickHouse support | — | — | — | [Official website](https://www.argedor.com/en/clickhouse/) |
+| <a href="https://signoz.io/" class="favicon">SigNoz</a> | Observability Platform | Main Product | — | — | [Source code](https://github.com/SigNoz/signoz) |
 
 [Original article](https://clickhouse.tech/docs/en/introduction/adopters/) <!--hide-->
