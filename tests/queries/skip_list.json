@@ -18,7 +18,6 @@
         "functions_bad_arguments", /// Too long for TSan
         "01603_read_with_backoff_bug", /// Too long for TSan
         "01646_system_restart_replicas_smoke", /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
-        "01641_memory_tracking_insert_optimize", /// INSERT lots of rows is too heavy for TSan
         "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
     "address-sanitizer": [
@@ -71,8 +70,7 @@
         "hyperscan",
         "01193_metadata_loading",
         "01473_event_time_microseconds",
-        "01396_inactive_replica_cleanup_nodes",
-        "01641_memory_tracking_insert_optimize" /// INSERT lots of rows is too heavy in debug build
+        "01396_inactive_replica_cleanup_nodes"
     ],
     "unbundled-build": [
         "00429",
