@@ -2,7 +2,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/TypeList.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include "DictionaryFactory.h"
 #include "RangeDictionaryBlockInputStream.h"
 #include <Interpreters/castColumn.h>
@@ -254,7 +254,7 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
 
     keys_found = 0;
 
-    for (const auto row : ext::range(0, ids.size()))
+    for (const auto row : collections::range(0, ids.size()))
     {
         const auto it = attr.find(ids[row]);
 
@@ -313,12 +313,12 @@ void RangeHashedDictionary::loadData()
 
         element_count += id_column.size();
 
-        for (const auto attribute_idx : ext::range(0, attributes.size()))
+        for (const auto attribute_idx : collections::range(0, attributes.size()))
         {
             const auto & attribute_column = *block.safeGetByPosition(attribute_idx + 3).column;
             auto & attribute = attributes[attribute_idx];
 
-            for (const auto row_idx : ext::range(0, id_column.size()))
+            for (const auto row_idx : collections::range(0, id_column.size()))
             {
                 RangeStorageType lower_bound;
                 RangeStorageType upper_bound;
@@ -416,7 +416,7 @@ void RangeHashedDictionary::getItemsImpl(
 
     size_t keys_found = 0;
 
-    for (const auto row : ext::range(0, ids.size()))
+    for (const auto row : collections::range(0, ids.size()))
     {
         const auto it = attr.find(ids[row]);
         if (it)

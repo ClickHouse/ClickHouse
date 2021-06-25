@@ -38,7 +38,6 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_
 Chunk ParquetBlockInputFormat::generate()
 {
     Chunk res;
-    const Block & header = getPort().getHeader();
 
     if (!file_reader)
         prepareReader();
@@ -54,7 +53,7 @@ Chunk ParquetBlockInputFormat::generate()
 
     ++row_group_current;
 
-    ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, header, "Parquet");
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
     return res;
 }
 
@@ -67,6 +66,29 @@ void ParquetBlockInputFormat::resetParser()
     row_group_current = 0;
 }
 
+static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
+{
+    if (type->id() == arrow::Type::LIST)
+        return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type());
+
+    if (type->id() == arrow::Type::STRUCT)
+    {
+        int indices = 0;
+        auto * struct_type = static_cast<arrow::StructType *>(type.get());
+        for (int i = 0; i != struct_type->num_fields(); ++i)
+            indices += countIndicesForType(struct_type->field(i)->type());
+        return indices;
+    }
+
+    if (type->id() == arrow::Type::MAP)
+    {
+        auto * map_type = static_cast<arrow::MapType *>(type.get());
+        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
+    }
+
+    return 1;
+}
+
 void ParquetBlockInputFormat::prepareReader()
 {
     THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(in), arrow::default_memory_pool(), &file_reader));
@@ -76,12 +98,21 @@ void ParquetBlockInputFormat::prepareReader()
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
 
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), schema, "Parquet");
+
+    int index = 0;
     for (int i = 0; i < schema->num_fields(); ++i)
     {
+        /// STRUCT type require the number of indexes equal to the number of
+        /// nested elements, so we should recursively
+        /// count the number of indices we need for this type.
+        int indexes_count = countIndicesForType(schema->field(i)->type());
         if (getPort().getHeader().has(schema->field(i)->name()))
         {
-            column_indices.push_back(i);
+            for (int j = 0; j != indexes_count; ++j)
+                column_indices.push_back(index + j);
         }
+        index += indexes_count;
     }
 }
 
