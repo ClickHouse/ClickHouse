@@ -360,7 +360,7 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
 
 
 /// Performance optimisation for IN() if storage supports it.
-void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
+void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node, bool is_explain)
 {
     if (!node || !storage() || !storage()->supportsIndexForIn())
         return;
@@ -376,7 +376,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
         if (func && func->name == "lambda")
             continue;
 
-        makeSetsForIndex(child);
+        makeSetsForIndex(child, is_explain);
     }
 
     const auto * func = node->as<ASTFunction>();
@@ -390,7 +390,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
             const ASTPtr & arg = args.children.at(1);
             if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
             {
-                if (settings.use_index_for_in_with_subqueries)
+                if (settings.use_index_for_in_with_subqueries && !is_explain)
                     tryMakeSetForIndexFromSubquery(arg, query_options);
             }
             else
@@ -1447,7 +1447,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         bool second_stage_,
         bool only_types,
         const FilterDAGInfoPtr & filter_info_,
-        const Block & source_header)
+        const Block & source_header,
+        bool is_explain_)
+
     : first_stage(first_stage_)
     , second_stage(second_stage_)
     , need_aggregate(query_analyzer.hasAggregation())
@@ -1484,8 +1486,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
     if (storage)
     {
-        query_analyzer.makeSetsForIndex(query.where());
-        query_analyzer.makeSetsForIndex(query.prewhere());
+        query_analyzer.makeSetsForIndex(query.where(), is_explain_);
+        query_analyzer.makeSetsForIndex(query.prewhere(), is_explain_);
     }
 
     {

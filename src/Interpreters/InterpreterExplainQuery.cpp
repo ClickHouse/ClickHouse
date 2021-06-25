@@ -256,7 +256,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
         QueryPlan plan;
 
-        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions(), {}, true);
         interpreter.buildQueryPlan(plan);
 
         if (settings.optimize)
@@ -291,7 +291,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
         QueryPlan plan;
 
-        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions(), {}, true);
         interpreter.buildQueryPlan(plan);
         auto pipeline = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(getContext()),

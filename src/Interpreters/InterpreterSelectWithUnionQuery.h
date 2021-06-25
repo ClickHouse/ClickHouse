@@ -20,7 +20,8 @@ public:
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         const SelectQueryOptions &,
-        const Names & required_result_column_names = {});
+        const Names & required_result_column_names = {},
+        bool is_explain_ = false);
 
     ~InterpreterSelectWithUnionQuery() override;
 

@@ -256,7 +256,8 @@ struct ExpressionAnalysisResult
         bool second_stage,
         bool only_types,
         const FilterDAGInfoPtr & filter_info,
-        const Block & source_header);
+        const Block & source_header,
+        bool is_explain);
 
     /// Filter for row-level security.
     bool hasFilter() const { return filter_info.get(); }
@@ -331,7 +332,7 @@ private:
     SelectQueryOptions query_options;
 
     /// Create Set-s that we make from IN section to use index on them.
-    void makeSetsForIndex(const ASTPtr & node);
+    void makeSetsForIndex(const ASTPtr & node, bool is_explain_);
 
     JoinPtr makeTableJoin(
         const ASTTablesInSelectQueryElement & join_element,

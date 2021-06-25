@@ -50,21 +50,25 @@ public:
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         const SelectQueryOptions &,
-        const Names & required_result_column_names_ = Names{});
+        const Names & required_result_column_names_ = Names{},
+        bool is_explain_ = false);
+
 
     /// Read data not from the table specified in the query, but from the prepared source `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         const BlockInputStreamPtr & input_,
-        const SelectQueryOptions & = {});
+        const SelectQueryOptions & = {},
+        bool is_explain_ = false);
 
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         Pipe input_pipe_,
-        const SelectQueryOptions & = {});
+        const SelectQueryOptions & = {},
+        bool is_explain_ = false);
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
@@ -72,7 +76,8 @@ public:
         ContextPtr context_,
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
-        const SelectQueryOptions & = {});
+        const SelectQueryOptions & = {},
+        bool is_explain_ = false);
 
     ~InterpreterSelectQuery() override;
 
@@ -113,7 +118,8 @@ private:
         const StoragePtr & storage_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {},
-        const StorageMetadataPtr & metadata_snapshot_ = nullptr);
+        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
+        bool is_explain_ = false);
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 

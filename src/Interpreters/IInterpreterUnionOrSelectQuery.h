@@ -10,11 +10,12 @@ namespace DB
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, bool is_explain_ = false)
         : query_ptr(query_ptr_)
         , context(Context::createCopy(context_))
         , options(options_)
         , max_streams(context->getSettingsRef().max_threads)
+        , is_explain(is_explain_)
     {
     }
 
@@ -38,6 +39,7 @@ protected:
     size_t max_streams = 1;
     bool settings_limit_offset_needed = false;
     bool settings_limit_offset_done = false;
+    bool is_explain;
 };
 }
 
