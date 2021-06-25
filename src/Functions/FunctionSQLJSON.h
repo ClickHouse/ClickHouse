@@ -8,8 +8,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 #include <Functions/DummyJSONParser.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
@@ -30,10 +28,10 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+extern const int BAD_ARGUMENTS;
 }
 
 class FunctionSQLJSONHelpers
@@ -281,11 +279,11 @@ public:
             return false;
         }
 
-        String result;
-        WriteBufferFromString out(result);
-        out << current_element.getUnderlyingElement();
+        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        out << current_element.getElement();
+        auto output_str = out.str();
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        col_str.insertData(result.data(), result.size());
+        col_str.insertData(output_str.data(), output_str.size());
         return true;
     }
 };
@@ -309,9 +307,7 @@ public:
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
-        String result;
-        WriteBufferFromString out(result);
-
+        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         /// Create json array of results: [res1, res2, ...]
         out << "[";
         bool success = false;
@@ -324,7 +320,7 @@ public:
                     out << ", ";
                 }
                 success = true;
-                out << current_element.getUnderlyingElement();
+                out << current_element.getElement();
             }
             else if (status == VisitorStatus::Error)
             {
@@ -338,7 +334,8 @@ public:
             return false;
         }
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        col_str.insertData(reinterpret_cast<const char *>(result.data()), result.size());
+        auto output_str = out.str();
+        col_str.insertData(output_str.data(), output_str.size());
         return true;
     }
 };
