@@ -23,6 +23,7 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionUnhex>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionChar>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionBitmaskToArray>();
+    factory.registerFunction<FunctionBitPositionsToArray>();
     factory.registerFunction<FunctionToIPv4>();
     factory.registerFunction<FunctionToIPv6>();
     factory.registerFunction<FunctionIPv6CIDRToRange>();

@@ -19,6 +19,8 @@ struct MergeTreePartInfo
     UInt32 level = 0;
     Int64 mutation = 0;   /// If the part has been mutated or contains mutated parts, is equal to mutation version number.
 
+    bool use_leagcy_max_level = false;  /// For compatibility. TODO remove it
+
     MergeTreePartInfo() = default;
 
     MergeTreePartInfo(String partition_id_, Int64 min_block_, Int64 max_block_, UInt32 level_)
@@ -69,6 +71,13 @@ struct MergeTreePartInfo
             || max_block < rhs.min_block;
     }
 
+    bool isFakeDropRangePart() const
+    {
+        /// Another max level was previously used for REPLACE/MOVE PARTITION
+        auto another_max_level = std::numeric_limits<decltype(level)>::max();
+        return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
+    }
+
     String getPartName() const;
     String getPartNameV0(DayNum left_date, DayNum right_date) const;
     UInt64 getBlocksCount() const
@@ -76,7 +85,7 @@ struct MergeTreePartInfo
         return static_cast<UInt64>(max_block - min_block + 1);
     }
 
-    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
+    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
 
     static bool tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
 
@@ -86,6 +95,8 @@ struct MergeTreePartInfo
 
     static constexpr UInt32 MAX_LEVEL = 999999999;
     static constexpr UInt32 MAX_BLOCK_NUMBER = 999999999;
+
+    static constexpr UInt32 LEGACY_MAX_LEVEL = std::numeric_limits<decltype(level)>::max();
 };
 
 /// Information about detached part, which includes its prefix in

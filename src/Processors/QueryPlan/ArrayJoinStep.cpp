@@ -60,6 +60,7 @@ void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQuery
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 res_header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
+
         auto actions = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const Block & header)

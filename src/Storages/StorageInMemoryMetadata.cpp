@@ -36,6 +36,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
+    , comment(other.comment)
 {
 }
 
@@ -59,9 +60,14 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     else
         settings_changes.reset();
     select = other.select;
+    comment = other.comment;
     return *this;
 }
 
+void StorageInMemoryMetadata::setComment(const String & comment_)
+{
+    comment = comment_;
+}
 
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
 {

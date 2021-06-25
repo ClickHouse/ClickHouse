@@ -5,7 +5,7 @@
 #include <Processors/QueryPipeline.h>
 
 #include <Common/setThreadName.h>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 namespace DB
 {

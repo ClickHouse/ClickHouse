@@ -1,3 +1,4 @@
+#include <common/map.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
@@ -18,9 +19,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
-
-#include <ext/map.h>
-#include <ext/enumerate.h>
 
 
 namespace DB

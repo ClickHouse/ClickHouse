@@ -51,7 +51,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     actions_dag = actions_dag_->clone();
 
 #if USE_EMBEDDED_COMPILER
-    if (settings.compile_expressions)
+    if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
         actions_dag->compileExpressions(settings.min_count_to_compile_expression);
 #endif
 
