@@ -1,0 +1,54 @@
+---
+toc_priority: 12
+toc_title: ExternalDistributed
+---
+
+# ExternalDistributed {#externaldistributed}
+
+Движок `ExternalDistributed` позволяет выполнять запросы `SELECT` и `INSERT` для таблиц на удаленном сервере MySQL или PostgreSQL. Принимает в качестве аргумента табличные движки [MySQL](../../../engines/table-engines/integrations/mysql.md) или [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md), поэтому возможно шардирование.
+
+## Создание таблицы {#creating-a-table}
+
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    ...
+) ENGINE = ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password');
+```
+
+Смотрите подробное описание запроса [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query).
+
+Структура таблицы может отличаться от исходной структуры таблицы:
+
+-   Имена столбцов должны быть такими же, как в исходной таблице, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
+-   Типы столбцов могут отличаться от типов в исходной таблице. ClickHouse пытается [привести](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Настройка `external_table_functions_use_nulls` определяет как обрабатывать Nullable столбцы. Значение по умолчанию: 1. Если значение 0, то табличная функция не будет делать nullable столбцы и будет вместо null выставлять значения по умолчанию для скалярного типа. Это также применимо для null значений внутри массивов.
+
+**Параметры движка**
+
+-   `engine` — табличный движок `MySQL` или `PostgreSQL`.
+-   `host:port` — адрес сервера MySQL или PostgreSQL.
+-   `database` — имя базы данных на сервере.
+-   `table` — имя таблицы.
+-   `user` — имя пользователя.
+-   `password` — пароль пользователя.
+
+## Особенности реализации {#implementation-details}
+	
+Поддерживает несколько реплик, которые должны быть перечислены через `|`, а шарды — через `,`. Например:
+
+```sql
+CREATE TABLE test_shards (id UInt32, name String, age UInt32, money UInt32) ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
+
+При указании реплик для каждого из шардов при чтении будет выбрана одна из доступных реплик. Если соединиться не удалось, то будет выбрана следующая реплика, и так для всех реплик. Если попытка соединения для всех реплик не удалась, то будут снова произведены попытки соединения по кругу и так несколько раз.
+
+Вы можете указать любое количество шардов и любое количество реплик для каждого шарда.
+
+**Смотрите также**
+
+-   [Табличный движок MySQL](../../../engines/table-engines/integrations/mysql.md)
+-   [Табличный движок PostgreSQL](../../../engines/table-engines/integrations/postgresql.md)
+-   [Табличный движок Distributed](../../../engines/table-engines/special/distributed.md)
