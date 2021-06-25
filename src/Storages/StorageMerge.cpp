@@ -11,6 +11,8 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -255,51 +257,39 @@ Pipe StorageMerge::read(
 
         if (processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty())
         {
-            NameSet required_columns_set;
-            std::function<void(ASTPtr)> extract_columns_from_alias_expression = [&](ASTPtr expr)
+            auto syntax_result = TreeRewriter(local_context).analyzeSelect(query_info.query, TreeRewriterResult({}, storage, storage_metadata_snapshot));
+            ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
+
+            ASTPtr column_expr;
+            for (const auto & column : real_column_names)
             {
-                if (!expr)
-                    return;
+                const auto column_default = storage_columns.getDefault(column);
+                bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
 
-                if (typeid_cast<const ASTLiteral *>(expr.get()))
-                    return;
-
-                if (const auto * ast_function = typeid_cast<const ASTFunction *>(expr.get()))
+                if (is_alias)
                 {
-                    if (!ast_function->arguments)
-                        return;
+                    column_expr = column_default->expression->clone();
+                    replaceAliasColumnsInQuery(column_expr, storage_metadata_snapshot->getColumns(),
+                                               syntax_result->array_join_result_to_source, local_context);
 
-                    for (const auto & arg : ast_function->arguments->children)
-                        extract_columns_from_alias_expression(arg);
-                }
-                else if (const auto * ast_identifier = typeid_cast<const ASTIdentifier *>(expr.get()))
-                {
-                    auto column = ast_identifier->name();
-                    const auto column_default = storage_columns.getDefault(column);
-                    bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
+                    auto column_description = storage_columns.get(column);
+                    column_expr = addTypeConversionToAST(std::move(column_expr), column_description.type->getName(),
+                                                         storage_metadata_snapshot->getColumns().getAll(), local_context);
+                    column_expr = setAlias(column_expr, column);
 
-                    if (is_alias)
-                    {
-                        auto alias_expression = column_default->expression;
-                        auto type = sample_block.getByName(column).type;
-                        aliases.push_back({ .name = column, .type = type, .expression = alias_expression });
-                        extract_columns_from_alias_expression(alias_expression);
-                    }
-                    else
-                    {
-                        required_columns_set.insert(column);
-                    }
+                    auto type = sample_block.getByName(column).type;
+                    aliases.push_back({ .name = column, .type = type, .expression = column_expr->clone() });
                 }
                 else
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected expression: {}", expr->getID());
-                }
-            };
+                    column_expr = std::make_shared<ASTIdentifier>(column);
 
-            for (const auto & column : real_column_names)
-                extract_columns_from_alias_expression(std::make_shared<ASTIdentifier>(column));
+                required_columns_expr_list->children.emplace_back(std::move(column_expr));
+            }
 
-            required_columns = std::vector(required_columns_set.begin(), required_columns_set.end());
+            syntax_result = TreeRewriter(local_context).analyze(required_columns_expr_list, storage_columns.getAllPhysical(),
+                                                                storage, storage_metadata_snapshot);
+            auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, local_context).getActionsDAG(true);
+            required_columns = alias_actions->getRequiredColumns().getNames();
         }
 
         auto source_pipe = createSources(
@@ -562,8 +552,6 @@ void StorageMerge::convertingSourceStream(
     {
         pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
         ASTPtr expr = std::move(alias.expression);
-        expr->setAlias(alias.name);
-
         auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
         auto expression_analyzer = ExpressionAnalyzer{alias.expression, syntax_result, local_context};
 
