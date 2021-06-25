@@ -5,14 +5,13 @@ namespace DB
 {
 
 
-/// Used to read data from single part with select query
-/// in reverse order of primary key.
+/// Used to read data from single part with select query in order of primary key.
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeReverseSelectProcessor : public MergeTreeSelectProcessor
+class MergeTreeInOrderSelectProcessor : public MergeTreeSelectProcessor
 {
 public:
-    MergeTreeReverseSelectProcessor(
+    MergeTreeInOrderSelectProcessor(
         const MergeTreeData & storage,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData::DataPartPtr & owned_data_part,
@@ -29,14 +28,12 @@ public:
         bool one_range_per_task_ = false,
         bool quiet = false);
 
-    String getName() const override { return "MergeTreeReverse"; }
+        String getName() const override { return "MergeTreeInOrder"; }
 
 private:
     bool getNewTask() override;
-    Chunk readFromPart() override;
 
-    Chunks chunks;
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeReverseSelectProcessor");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeInOrderSelectProcessor");
 };
 
 }

@@ -19,7 +19,7 @@ public:
         SortDescription description,
         size_t max_block_size)
         : IMergingTransform(
-            num_inputs, header, header, true,
+            num_inputs, header, header, true, false,
             header,
             num_inputs,
             params,

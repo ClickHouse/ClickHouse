@@ -19,7 +19,7 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
         : IMergingTransform(
-            num_inputs, header, header, true,
+            num_inputs, header, header, true, false,
             header,
             num_inputs,
             std::move(description_),

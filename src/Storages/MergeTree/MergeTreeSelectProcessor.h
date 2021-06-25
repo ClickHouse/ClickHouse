@@ -1,6 +1,6 @@
 #pragma once
 #include <DataStreams/IBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
@@ -30,21 +30,18 @@ public:
         bool check_columns,
         const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},
-        size_t part_index_in_query = 0,
-        bool quiet = false);
+        bool one_range_per_task_ = false);
 
     ~MergeTreeSelectProcessor() override;
 
-    String getName() const override { return "MergeTree"; }
+    String getName() const override = 0;
 
     /// Closes readers and unlock part locks
     void finish();
 
 protected:
 
-    bool getNewTask() override;
-
-private:
+    bool getNewTask() override = 0;
 
     /// Used by Task
     Names required_columns;
@@ -59,15 +56,14 @@ private:
 
     /// Mark ranges we should read (in ascending order)
     MarkRanges all_mark_ranges;
-    /// Total number of marks we should read
-    size_t total_marks_count = 0;
     /// Value of _part_index virtual column (used only in SelectExecutor)
     size_t part_index_in_query = 0;
+    /// If true, every task will be created only with one range.
+    /// It reduces amount of read data for queries with small LIMIT.
+    bool one_range_per_task = false;
 
     bool check_columns;
-    bool is_first_task = true;
-
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeSelectProcessor");
+    size_t total_rows;
 };
 
 }
