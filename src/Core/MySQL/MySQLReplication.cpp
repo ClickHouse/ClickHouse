@@ -563,7 +563,7 @@ namespace MySQLReplication
                     }
                     case MYSQL_TYPE_ENUM:
                     {
-                        if((meta & 0xFF) == 1)
+                        if ((meta & 0xFF) == 1)
                         {
                             UInt8 val = 0;
                             payload.readStrict(reinterpret_cast<char *>(&val), 1);
