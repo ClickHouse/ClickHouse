@@ -806,7 +806,8 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain
     }
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
-    chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(syntax->analyzed_join, table_join, step.getResultColumns()));
+    chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(
+        syntax->analyzed_join, table_join, step.getResultColumns()));
     chain.addStep();
     return table_join;
 }

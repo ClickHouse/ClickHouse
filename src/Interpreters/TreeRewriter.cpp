@@ -508,14 +508,10 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 }
 
 /// Find the columns that are obtained by JOIN.
-void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & select_query,
+void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_join,
                           const TablesWithColumns & tables, const Aliases & aliases)
 {
-    const ASTTablesInSelectQueryElement * node = select_query.join();
-    if (!node || tables.size() < 2)
-        return;
-
-    const auto & table_join = node->table_join->as<ASTTableJoin &>();
+    assert(tables.size() >= 2);
 
     if (table_join.using_expression_list)
     {
@@ -936,7 +932,16 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     setJoinStrictness(
         *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join->table_join);
 
-    collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
+    if (const auto * join_ast = select_query->join(); join_ast && tables_with_columns.size() >= 2)
+    {
+        auto & table_join_ast = join_ast->table_join->as<ASTTableJoin &>();
+        if (table_join_ast.using_expression_list && result.metadata_snapshot)
+            replaceAliasColumnsInQuery(table_join_ast.using_expression_list, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
+        if (table_join_ast.on_expression && result.metadata_snapshot)
+            replaceAliasColumnsInQuery(table_join_ast.on_expression, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
+
+        collectJoinedColumns(*result.analyzed_join, table_join_ast, tables_with_columns, result.aliases);
+    }
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);
