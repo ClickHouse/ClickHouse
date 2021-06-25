@@ -33,6 +33,5 @@ SELECT '-';
 SELECT * FROM t1 JOIN t2 ON t1.foo = t2.bar WHERE t2.aliascol2 == 'fact2t1_val2';
 SELECT '-';
 SELECT t1.aliascol1, t2.aliascol2 FROM t1 JOIN t2 ON t1.foo = t2.bar ORDER BY t1.time, t2.time;
--- SELECT '-';
--- SELECT * FROM t1 JOIN t2 ON t1.aliascol1 = t2.aliascol2 ORDER BY t1.time, t2.time;
-
+SELECT '-';
+SELECT t1.time, t2.time FROM t1 JOIN t2 ON t1.aliascol1 = t2.aliascol2 ORDER BY t1.time, t2.time;
