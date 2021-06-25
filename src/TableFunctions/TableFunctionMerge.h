@@ -22,9 +22,11 @@ private:
     const std::unordered_map<String, std::unordered_set<String>> & getSourceDatabasesAndTables(ContextPtr context) const;
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    static NameSet getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context);
 
-    String source_database_regexp;
+    String source_database_name_or_regexp;
     String source_table_regexp;
+    bool database_is_regexp = false;
     mutable std::optional<std::unordered_map<String, std::unordered_set<String>>> source_databases_and_tables;
 };
 

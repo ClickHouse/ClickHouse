@@ -50,9 +50,13 @@ public:
 
 private:
     using DbToTableSetMap = std::unordered_map<String, std::unordered_set<String>>;
+
     std::optional<OptimizedRegularExpression> source_database_regexp;
     std::optional<OptimizedRegularExpression> source_table_regexp;
     std::optional<DbToTableSetMap> source_databases_and_tables;
+
+    String source_database_name_or_regexp;
+    bool database_is_regexp = false;
 
     /// (Database, Table, Lock, TableName)
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
@@ -68,6 +72,8 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
+    DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
+
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
 
     NamesAndTypesList getVirtuals() const override;
@@ -78,7 +84,8 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & comment,
-        const String & source_database_regexp_,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_,
         const DbToTableSetMap & source_databases_and_tables_,
         ContextPtr context_);
 
@@ -86,7 +93,8 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & comment,
-        const String & source_database_regexp_,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_,
         const String & source_table_regexp_,
         ContextPtr context_);
 

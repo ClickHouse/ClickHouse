@@ -100,6 +100,24 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr
     return res;
 }
 
+std::tuple<bool, String> evaluateDatabaseNameForMergeEngine(const ASTPtr & node, ContextPtr context)
+{
+    if (const auto * func = node->as<ASTFunction>(); func->name == "REGEXP")
+    {
+        if (func->children.size() != 1)
+            throw Exception("Arguments for REGEXP in Merge ENGINE should be 1", ErrorCodes::BAD_ARGUMENTS);
+
+        auto * literal = func->children[0]->as<ASTLiteral>();
+        if (!literal || literal->value.safeGet<String>().empty())
+            throw Exception("Argument for REGEXP in Merge ENGINE should be a non empty String Literal", ErrorCodes::BAD_ARGUMENTS);
+
+        return std::tuple{true, literal->value.safeGet<String>()};
+    }
+
+    auto ast = evaluateConstantExpressionForDatabaseName(node, context);
+    return std::tuple{false, ast->as<ASTLiteral>()->value.safeGet<String>()};
+}
+
 namespace
 {
     using Conjunction = ColumnsWithTypeAndName;

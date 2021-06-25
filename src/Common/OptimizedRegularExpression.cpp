@@ -2,8 +2,6 @@
 #include <Common/PODArray.h>
 #include <Common/OptimizedRegularExpression.h>
 
-#include <Poco/String.h>
-
 #define MIN_LENGTH_FOR_STRSTR 3
 #define MAX_SUBPATTERNS 1024
 
@@ -344,22 +342,6 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
     }
 }
 
-template <bool thread_safe>
-bool OptimizedRegularExpressionImpl<thread_safe>::fullMatch(const std::string & subject) const
-{
-    if (is_trivial)
-    {
-        if (required_substring.empty())
-			return subject.empty();
-
-        if (is_case_insensitive)
-            return Poco::toLower(subject) == Poco::toLower(required_substring);
-        else
-            return subject == required_substring;
-    }
-
-    return RegexType::FullMatch(StringPieceType(subject.data(), subject.size()), *re2);
-}
 
 template <bool thread_safe>
 bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size) const

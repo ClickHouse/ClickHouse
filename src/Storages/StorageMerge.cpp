@@ -45,13 +45,16 @@ StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & comment,
-    const String & source_database_regexp_,
+    const String & source_database_name_or_regexp_,
+    bool database_is_regexp_,
     const DbToTableSetMap & source_databases_and_tables_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , source_database_regexp(source_database_regexp_)
+    , source_database_regexp(source_database_name_or_regexp_)
     , source_databases_and_tables(source_databases_and_tables_)
+    , source_database_name_or_regexp(source_database_name_or_regexp_)
+    , database_is_regexp(database_is_regexp_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -63,13 +66,16 @@ StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & comment,
-    const String & source_database_regexp_,
+    const String & source_database_name_or_regexp_,
+    bool database_is_regexp_,
     const String & source_table_regexp_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , source_database_regexp(source_database_regexp_)
+    , source_database_regexp(source_database_name_or_regexp_)
     , source_table_regexp(source_table_regexp_)
+    , source_database_name_or_regexp(source_database_name_or_regexp_)
+    , database_is_regexp(database_is_regexp_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -502,6 +508,23 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
     return selected_tables;
 }
 
+DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const String & database_name, ContextPtr local_context) const
+{
+    auto database = DatabaseCatalog::instance().getDatabase(database_name);
+
+    auto table_name_match = [this, &database_name](const String & table_name_) -> bool {
+        if (source_databases_and_tables)
+        {
+            const auto & source_tables = (*source_databases_and_tables).at(database_name);
+            return source_tables.count(table_name_);
+        }
+        else
+            return source_table_regexp->match(table_name_);
+    };
+
+    return database->getTablesIterator(local_context, table_name_match);
+}
+
 StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(ContextPtr local_context) const
 {
     try
@@ -516,22 +539,19 @@ StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(Context
 
     DatabaseTablesIterators database_table_iterators;
 
-    auto databases = DatabaseCatalog::instance().getDatabases();
+    /// database_name argument is not a regexp
+    if (!database_is_regexp)
+        database_table_iterators.emplace_back(getDatabaseIterator(source_database_name_or_regexp, local_context));
 
-    for (const auto & db : databases)
+    /// database_name argument is a regexp
+    else
     {
-        if (source_database_regexp->fullMatch(db.first))
+        auto databases = DatabaseCatalog::instance().getDatabases();
+
+        for (const auto & db : databases)
         {
-            auto table_name_match = [this, &db](const String & table_name_) -> bool {
-                if (source_databases_and_tables)
-                {
-                    const auto & source_tables = (*source_databases_and_tables).at(db.first);
-                    return source_tables.count(table_name_);
-                }
-                else
-                    return source_table_regexp->fullMatch(table_name_);
-            };
-            database_table_iterators.emplace_back(db.second->getTablesIterator(local_context, table_name_match));
+            if (source_database_regexp->match(db.first))
+                database_table_iterators.emplace_back(getDatabaseIterator(db.first, local_context));
         }
     }
 
