@@ -189,12 +189,11 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & union_modes = select_query.list_of_modes;
 
                 /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
-                is_trivial_insert_select
-                    = std::all_of(
-                          union_modes.begin(),
-                          union_modes.end(),
-                          [](const ASTSelectWithUnionQuery::Mode & mode) { return mode == ASTSelectWithUnionQuery::Mode::ALL; })
-                    && std::all_of(selects.begin(), selects.end(), [](const ASTPtr & select) { return isTrivialSelect(select); });
+                const auto mode_is_all = [](const auto & mode) { return mode == ASTSelectWithUnionQuery::Mode::ALL; };
+
+                is_trivial_insert_select =
+                    std::all_of(union_modes.begin(), union_modes.end(), std::move(mode_is_all))
+                    && std::all_of(selects.begin(), selects.end(), isTrivialSelect);
             }
 
             if (is_trivial_insert_select)
@@ -309,8 +308,7 @@ BlockIO InterpreterInsertQuery::execute()
 
             auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
             out_wrapper->setProcessListElement(getContext()->getProcessListElement());
-            out = std::move(out_wrapper);
-            out_streams.emplace_back(std::move(out));
+            out_streams.emplace_back(std::move(out_wrapper));
         }
     }
 
@@ -326,7 +324,7 @@ BlockIO InterpreterInsertQuery::execute()
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
                 header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Position);
-        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext()));
+        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
 
         res.pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {

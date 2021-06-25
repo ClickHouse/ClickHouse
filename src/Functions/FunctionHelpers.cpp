@@ -1,5 +1,5 @@
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -229,6 +229,77 @@ bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
     const auto & rhs_name = rhs->getName();
 
     return lhs_name == rhs_name;
+}
+
+ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
+{
+    ColumnPtr result_null_map_column;
+
+    /// If result is already nullable.
+    ColumnPtr src_not_nullable = src;
+
+    if (src->onlyNull())
+        return src;
+    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
+    {
+        src_not_nullable = nullable->getNestedColumnPtr();
+        result_null_map_column = nullable->getNullMapColumnPtr();
+    }
+
+    for (const auto & elem : args)
+    {
+        if (!elem.type->isNullable())
+            continue;
+
+        /// Const Nullable that are NULL.
+        if (elem.column->onlyNull())
+        {
+            assert(result_type->isNullable());
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        }
+
+        if (isColumnConst(*elem.column))
+            continue;
+
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        {
+            const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
+            if (!result_null_map_column) //-V1051
+            {
+                result_null_map_column = null_map_column;
+            }
+            else
+            {
+                MutableColumnPtr mutable_result_null_map_column = IColumn::mutate(std::move(result_null_map_column));
+
+                NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
+                const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+
+                for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
+                    result_null_map[i] |= src_null_map[i];
+
+                result_null_map_column = std::move(mutable_result_null_map_column);
+            }
+        }
+    }
+
+    if (!result_null_map_column)
+        return makeNullable(src);
+
+    return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
+}
+
+NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
+{
+    NullPresence res;
+
+    for (const auto & elem : args)
+    {
+        res.has_nullable |= elem.type->isNullable();
+        res.has_null_constant |= elem.type->onlyNull();
+    }
+
+    return res;
 }
 
 }

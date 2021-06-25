@@ -1,11 +1,11 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 
 namespace DB

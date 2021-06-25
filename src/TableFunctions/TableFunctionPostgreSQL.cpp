@@ -30,8 +30,14 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 {
     auto columns = getActualTableStructure(context);
     auto result = std::make_shared<StoragePostgreSQL>(
-            StorageID(getDatabaseName(), table_name), connection_pool, remote_table_name,
-            columns, ConstraintsDescription{}, context, remote_table_schema);
+        StorageID(getDatabaseName(), table_name),
+        connection_pool,
+        remote_table_name,
+        columns,
+        ConstraintsDescription{},
+        String{},
+        context,
+        remote_table_schema);
 
     result->startup();
     return result;

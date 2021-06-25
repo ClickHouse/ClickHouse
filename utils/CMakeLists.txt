@@ -39,7 +39,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     endif ()
 
     # memcpy_jart.S contains position dependent code
-    if (NOT CMAKE_POSITION_INDEPENDENT_CODE AND NOT OS_DARWIN AND NOT OS_SUNOS)
+    if (NOT CMAKE_POSITION_INDEPENDENT_CODE AND NOT OS_DARWIN AND NOT OS_SUNOS AND NOT ARCH_AARCH64)
         add_subdirectory (memcpy-bench)
     endif ()
 endif ()

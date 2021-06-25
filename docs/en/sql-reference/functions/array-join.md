@@ -7,7 +7,7 @@ toc_title: arrayJoin
 
 This is a very unusual function.
 
-Normal functions don’t change a set of rows, but just change the values in each row (map).
+Normal functions do not change a set of rows, but just change the values in each row (map).
 Aggregate functions compress a set of rows (fold or reduce).
 The ‘arrayJoin’ function takes each row and generates a set of rows (unfold).
 

@@ -12,18 +12,19 @@
 namespace DB
 {
 
-class ClusterCopier : WithContext
+class ClusterCopier : WithMutableContext
 {
 public:
     ClusterCopier(const String & task_path_,
                   const String & host_id_,
                   const String & proxy_database_name_,
-                  ContextPtr context_)
-            : WithContext(context_),
+                  ContextMutablePtr context_,
+                  Poco::Logger * log_)
+            : WithMutableContext(context_),
             task_zookeeper_path(task_path_),
             host_id(host_id_),
             working_database_name(proxy_database_name_),
-            log(&Poco::Logger::get("ClusterCopier")) {}
+            log(log_) {}
 
     void init();
 
@@ -117,14 +118,14 @@ protected:
     TaskStatus tryMoveAllPiecesToDestinationTable(const TaskTable & task_table, const String & partition_name);
 
     /// Removes MATERIALIZED and ALIAS columns from create table query
-    static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
+    static ASTPtr removeAliasMaterializedAndTTLColumnsFromCreateQuery(const ASTPtr & query_ast, bool allow_to_copy_alias_and_materialized_columns);
 
     bool tryDropPartitionPiece(ShardPartition & task_partition, size_t current_piece_number,
             const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);
 
     static constexpr UInt64 max_table_tries = 3;
     static constexpr UInt64 max_shard_partition_tries = 3;
-    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 3;
+    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 10;
 
     bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
 
@@ -189,9 +190,7 @@ protected:
             const ClusterPtr & cluster,
             const String & query,
             const Settings & current_settings,
-            PoolMode pool_mode = PoolMode::GET_ALL,
-            ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD,
-            UInt64 max_successful_executions_per_shard = 0) const;
+            ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD) const;
 
 private:
     String task_zookeeper_path;
@@ -208,7 +207,6 @@ private:
 
     ConfigurationPtr task_cluster_initial_config;
     ConfigurationPtr task_cluster_current_config;
-    Coordination::Stat task_description_current_stat{};
 
     std::unique_ptr<TaskCluster> task_cluster;
 

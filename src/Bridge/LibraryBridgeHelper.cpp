@@ -8,11 +8,10 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatFactory.h>
-#include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <Core/Field.h>
 #include <Common/escapeForFileName.h>
 

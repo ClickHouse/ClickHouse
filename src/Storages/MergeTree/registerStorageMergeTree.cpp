@@ -257,7 +257,7 @@ If you use the Replicated version of engines, see https://clickhouse.tech/docs/e
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
-    /** [Replicated][|Summing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
+    /** [Replicated][|Summing|VersionedCollapsing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
         * The argument for the engine should be:
         *  - (for Replicated) The path to the table in ZooKeeper
         *  - (for Replicated) Replica name in ZooKeeper
@@ -625,7 +625,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     String date_column_name;
 
     StorageInMemoryMetadata metadata;
-    metadata.columns = args.columns;
+    metadata.setColumns(args.columns);
+    metadata.setComment(args.comment);
 
     std::unique_ptr<MergeTreeSettings> storage_settings;
     if (replicated)

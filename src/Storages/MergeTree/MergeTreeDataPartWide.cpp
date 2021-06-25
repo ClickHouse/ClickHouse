@@ -1,5 +1,4 @@
 #include "MergeTreeDataPartWide.h"
-#include <Poco/File.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
