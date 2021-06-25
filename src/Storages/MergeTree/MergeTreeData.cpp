@@ -2331,7 +2331,14 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         if (part->info.partition_id != drop_range.partition_id)
             throw Exception("Unexpected partition_id of part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (part->info.min_block < drop_range.min_block)    /// NOTE Always false, because drop_range.min_block == 0
+        /// It's a DROP PART and it's already executed by fetching some covering part
+        if (part->info != drop_range && part->info.contains(drop_range))
+        {
+            LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
+            return {};
+        }
+
+        if (part->info.min_block < drop_range.min_block)
         {
             if (drop_range.min_block <= part->info.max_block)
             {
@@ -2658,7 +2665,6 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
-
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/) const
 {
@@ -2759,7 +2765,6 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(Merg
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
 }
-
 
 MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
 {

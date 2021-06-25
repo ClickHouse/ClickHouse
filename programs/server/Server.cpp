@@ -324,6 +324,13 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
 #endif
 
+    /// If caller requests any available port from the OS, discover it after binding.
+    if (port == 0)
+    {
+        address = socket.address();
+        LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
+    }
+
     socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
 
     return address;
@@ -390,7 +397,7 @@ void Server::initialize(Poco::Util::Application & self)
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
-    LOG_INFO(&logger(), "OS Name = {}, OS Version = {}, OS Architecture = {}",
+    LOG_INFO(&logger(), "OS name: {}, version: {}, architecture: {}",
         Poco::Environment::osName(),
         Poco::Environment::osVersion(),
         Poco::Environment::osArchitecture());
