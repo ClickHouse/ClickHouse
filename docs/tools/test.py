@@ -3,33 +3,8 @@
 import logging
 import os
 import sys
-
 import bs4
-
-import logging
-import os
 import subprocess
-
-import bs4
-
-
-def test_amp(paths, lang):
-    try:
-        # Get latest amp validator version
-        subprocess.check_call('amphtml-validator --help',
-                              stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL,
-                              shell=True)
-    except subprocess.CalledProcessError:
-        subprocess.check_call('npm i -g amphtml-validator', stderr=subprocess.DEVNULL, shell=True)
-
-    paths = ' '.join(paths)
-    command = f'amphtml-validator {paths}'
-    try:
-        subprocess.check_output(command, shell=True).decode('utf-8')
-    except subprocess.CalledProcessError:
-        logging.error(f'Invalid AMP for {lang}')
-        raise
 
 
 def test_template(template_path):

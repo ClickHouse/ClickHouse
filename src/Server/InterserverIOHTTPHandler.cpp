@@ -50,7 +50,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
 
 void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 {
-    HTMLForm params(request);
+    HTMLForm params(server.context()->getSettingsRef(), request);
 
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 

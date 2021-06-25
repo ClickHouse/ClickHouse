@@ -36,7 +36,7 @@ option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
 else()
-    set(RECONFIGURE_MESSAGE_LEVEL STATUS)
+    set(RECONFIGURE_MESSAGE_LEVEL WARNING)
 endif()
 
 enable_language(C CXX ASM)
@@ -183,24 +183,20 @@ endif ()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
-if (OS_LINUX)
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-    if (OBJCOPY_PATH)
-        message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
-
-        if (ARCH_AMD64)
-            set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
-        elseif (ARCH_AARCH64)
-            set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
-        endif ()
-    else ()
-        message(FATAL_ERROR "Cannot find objcopy.")
-    endif ()
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+if (OBJCOPY_PATH)
+   message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
+else ()
+  message(FATAL_ERROR "Cannot find objcopy.")
 endif ()
 
 if (OS_DARWIN)
-    set(WHOLE_ARCHIVE -all_load)
-    set(NO_WHOLE_ARCHIVE -noall_load)
+    # The `-all_load` flag forces loading of all symbols from all libraries,
+    # and leads to multiply-defined symbols. This flag allows force loading
+    # from a _specific_ library, which is what we need.
+    set(WHOLE_ARCHIVE -force_load)
+    # The `-noall_load` flag is the default and now obsolete.
+    set(NO_WHOLE_ARCHIVE "")
 else ()
     set(WHOLE_ARCHIVE --whole-archive)
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
@@ -504,7 +500,6 @@ include (cmake/find/libuv.cmake) # for amqpcpp and cassandra
 include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
-include (cmake/find/termcap.cmake) # for external static llvm
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
@@ -527,7 +522,7 @@ include (cmake/find/nanodbc.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
 include (cmake/find/nuraft.cmake)
-
+include (cmake/find/yaml-cpp.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")

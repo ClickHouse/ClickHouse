@@ -52,20 +52,23 @@ public:
     {
         const ColumnsDescription & columns;
 
-        /// forbidden_columns are from array join, we can't rewrite alias columns involved in array join.
-        /// Do not analyze joined columns.
-        /// They may have aliases and come to description as is.
-        const NameSet & forbidden_columns;
+        /// columns from array_join_result_to_source cannot be expanded.
+        NameSet array_join_result_columns;
+        NameSet array_join_source_columns;
         ContextPtr context;
 
         /// private_aliases are from lambda, so these are local names.
         NameSet private_aliases;
 
-        Data(const ColumnsDescription & columns_, const NameSet & forbidden_columns_, ContextPtr context_)
-        : columns(columns_)
-        , forbidden_columns(forbidden_columns_)
-        , context(context_)
-        {}
+        Data(const ColumnsDescription & columns_, const NameToNameMap & array_join_result_columns_, ContextPtr context_)
+            : columns(columns_), context(context_)
+        {
+            for (const auto & [result, source] : array_join_result_columns_)
+            {
+                array_join_result_columns.insert(result);
+                array_join_source_columns.insert(source);
+            }
+        }
     };
 
     static void visit(ASTPtr & ast, Data & data);

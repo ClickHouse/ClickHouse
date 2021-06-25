@@ -1,5 +1,5 @@
 0	0
-WITH it AS 
+WITH it AS
     (
         SELECT *
         FROM numbers(1)
@@ -7,4 +7,5 @@ WITH it AS
 SELECT
     number,
     number
-FROM it AS i
+FROM
+it AS i

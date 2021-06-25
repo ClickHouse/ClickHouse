@@ -116,8 +116,8 @@ try
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
                         CurrentMetrics::values[pool_config.tasks_metric]--;
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
                         scheduleTask(/* with_backoff = */ true);
                     }
                 });
@@ -128,8 +128,8 @@ try
             catch (...)
             {
                 /// With our Pool settings scheduleOrThrowOnError shouldn't throw exceptions, but for safety catch added here
-                tryLogCurrentException(__PRETTY_FUNCTION__);
                 CurrentMetrics::values[pool_config.tasks_metric]--;
+                tryLogCurrentException(__PRETTY_FUNCTION__);
                 scheduleTask(/* with_backoff = */ true);
             }
         }

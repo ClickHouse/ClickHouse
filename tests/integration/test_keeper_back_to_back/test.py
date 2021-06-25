@@ -7,7 +7,7 @@ import time
 from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/enable_keeper.xml', 'configs/logs_conf.xml'], with_zookeeper=True)
+node = cluster.add_instance('node', main_configs=['configs/enable_keeper.xml', 'configs/logs_conf.xml'], with_zookeeper=True, use_keeper=False)
 from kazoo.client import KazooClient, KazooState, KeeperState
 
 def get_genuine_zk():

@@ -26,7 +26,7 @@ void ParserErrorListener::syntaxError(
     auto * parser = dynamic_cast<ClickHouseParser *>(recognizer);
     assert(parser);
 
-    LOG_ERROR(&Poco::Logger::get("ClickHouseParser"),
+    LOG_ERROR(&Poco::Logger::get("ClickHouseParser"), //-V522
               "Last element parsed so far:\n"
               "{}\n"
               "Parser error: (pos {}) {}", parser->getRuleContext()->toStringTree(parser, true), token->getStartIndex(), message);
