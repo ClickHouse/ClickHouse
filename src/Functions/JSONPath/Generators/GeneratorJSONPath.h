@@ -73,7 +73,8 @@ public:
     {
         while (true)
         {
-            auto root = element;
+            /// element passed to us actually is root, so here we assign current to root
+            auto current = element;
             if (current_visitor < 0)
             {
                 return VisitorStatus::Exhausted;
@@ -81,13 +82,13 @@ public:
 
             for (int i = 0; i < current_visitor; ++i)
             {
-                visitors[i]->apply(root);
+                visitors[i]->apply(current);
             }
 
             VisitorStatus status = VisitorStatus::Error;
             for (size_t i = current_visitor; i < visitors.size(); ++i)
             {
-                status = visitors[i]->visit(root);
+                status = visitors[i]->visit(current);
                 current_visitor = i;
                 if (status == VisitorStatus::Error || status == VisitorStatus::Ignore)
                 {
@@ -98,7 +99,7 @@ public:
 
             if (status != VisitorStatus::Ignore)
             {
-                element = root;
+                element = current;
                 return status;
             }
         }
