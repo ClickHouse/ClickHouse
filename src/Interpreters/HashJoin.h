@@ -48,17 +48,21 @@ public:
 
     bool getUsedSafe(size_t i) const;
 
-    template <bool use_flags>
-    void setUsed(size_t i);
+    template <bool use_flags, bool multiple_disjuncts, typename T>
+    void setUsed(const T & f);
 
-    template <bool use_flags>
-    bool getUsed(size_t i);
+    template <bool use_flags, bool multiple_disjuncts, typename T>
+    bool getUsed(const T & f);
 
-    template <bool use_flags>
-    bool setUsedOnce(size_t i);
+    template <bool use_flags, bool multiple_disjuncts, typename T>
+    bool setUsedOnce(const T & f);
 };
 
 }
+
+using SizesVector = std::vector<Sizes>;
+
+class AddedColumns;
 
 /** Data structure for implementation of JOIN.
   * It is just a hash table: keys -> rows of joined ("right") table.
@@ -183,7 +187,7 @@ public:
     const ColumnWithTypeAndName & rightAsofKeyColumn() const
     {
         /// It should be nullable if nullable_right_side is true
-        return savedBlockSample().getByName(key_names_right.back());
+        return savedBlockSample().getByName(key_names_right.front().back());
     }
 
     /// Different types of keys for maps.
@@ -306,20 +310,32 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
     using BlockNullmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
+    using BlockUsedmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
+
+    struct BlockWithFlags : public ExtraBlock
+    {
+        mutable std::vector<std::atomic_bool> flags;
+    };
+
+    using BlocksWithFlagsList = std::list<BlockWithFlags>;
+
 
     struct RightTableData
     {
         Type type = Type::EMPTY;
         bool empty = true;
 
-        MapsVariant maps;
+        std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        BlocksList blocks; /// Blocks of "right" table.
+        // BlocksList blocks; /// Blocks of "right" table.
+        BlocksWithFlagsList blocks;
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
     };
+
+    using RightTableDataPtr       = std::shared_ptr<RightTableData>;
 
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
@@ -338,7 +354,8 @@ public:
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
 
 private:
-    friend class NotJoinedHash;
+    template<bool> friend class NotJoinedHash;
+
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;
@@ -349,7 +366,8 @@ private:
     bool from_storage_join = false;
 
     /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
-    const Names & key_names_right;
+    const NamesVector key_names_right;
+    const NamesVector key_names_left;
 
     bool nullable_right_side; /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
     bool nullable_left_side; /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
@@ -358,14 +376,14 @@ private:
     ASOF::Inequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.
-    std::shared_ptr<RightTableData> data;
     /// Flags that indicate that particular row already used in join.
     /// Flag is stored for every record in hash map.
     /// Number of this flags equals to hashtable buffer size (plus one for zero value).
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable JoinStuff::JoinUsedFlags used_flags;
-    Sizes key_sizes;
+    RightTableDataPtr data;
+    SizesVector key_sizes;
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -379,8 +397,8 @@ private:
     std::vector<String> required_right_keys_sources;
 
     /// Additional conditions for rows to join from JOIN ON section
-    String condition_mask_column_name_left;
-    String condition_mask_column_name_right;
+    std::vector<String> condition_mask_column_name_left;
+    std::vector<String> condition_mask_column_name_right;
 
     Poco::Logger * log;
 
@@ -390,28 +408,50 @@ private:
     /// If set HashJoin instance is not available for modification (addJoinedBlock)
     std::shared_lock<std::shared_mutex> storage_join_lock;
 
-    void init(Type type_);
+    // void init(Type type_);
+    void init(Type type_, RightTableDataPtr);
+    void data_map_init(MapsVariant &);
 
     const Block & savedBlockSample() const { return data->sample_block; }
 
     /// Modify (structure) right block to save it in block list
-    Block structureRightBlock(const Block & stored_block) const;
+    BlockWithFlags structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure(Block & saved_block_sample);
 
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
     void joinBlockImpl(
+        Block & block,
+        std::unique_ptr<AddedColumns>,
+        size_t existing_columns) const;
+
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
+    std::unique_ptr<AddedColumns> makeAddedColumns(
+        Block & block,
+        const NamesVector & key_names_left,
+        const Block & block_with_columns_to_add,
+        const std::vector<const Maps*> & maps,
+        bool is_join_get = false) const;
+
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
+    std::unique_ptr<AddedColumns> makeAddedColumnsV(
         Block & block,
         const Names & key_names_left,
         const Block & block_with_columns_to_add,
         const Maps & maps,
+        const Sizes & key_sizes_,
+        HashJoin::Type,
         bool is_join_get = false) const;
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
+
+    // template <typename Maps>
+    // ColumnWithTypeAndName joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_, HashJoin::Type) const;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
     bool overDictionary() const;
 };
+
 
 }
