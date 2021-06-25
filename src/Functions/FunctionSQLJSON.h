@@ -41,7 +41,7 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
@@ -76,22 +76,9 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
-            /// If argument is successfully cast to (ColumnConst *) then it is quoted string
-            /// Example:
-            ///     SomeFunction('some string argument')
-            ///
-            /// Otherwise it is a column
-            /// Example:
-            ///     SomeFunction(database.table.column)
-
             const ColumnPtr & arg_jsonpath = first_column.column;
             const auto * arg_jsonpath_const = typeid_cast<const ColumnConst *>(arg_jsonpath.get());
             const auto * arg_jsonpath_string = typeid_cast<const ColumnString *>(arg_jsonpath_const->getDataColumnPtr().get());
-
-            if (!arg_jsonpath_string)
-            {
-                throw Exception{"Illegal column " + arg_jsonpath->getName(), ErrorCodes::ILLEGAL_COLUMN};
-            }
 
             const ColumnPtr & arg_json = second_column.column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
@@ -102,14 +89,14 @@ public:
             const ColumnString::Chars & chars_path = arg_jsonpath_string->getChars();
             const ColumnString::Offsets & offsets_path = arg_jsonpath_string->getOffsets();
 
-            /// Get data and offsets for 1 argument (JSON)
+            /// Prepare to parse 1 argument (JSONPath)
             const char * query_begin = reinterpret_cast<const char *>(&chars_path[0]);
             const char * query_end = query_begin + offsets_path[0] - 1;
 
             /// Tokenize query
             Tokens tokens(query_begin, query_end);
             /// Max depth 0 indicates that depth is not limited
-            IParser::Pos token_iterator(tokens, 0);
+            IParser::Pos token_iterator(tokens, parse_depth);
 
             /// Parse query and create AST tree
             Expected expected;
@@ -121,7 +108,7 @@ public:
                 throw Exception{"Unable to parse JSONPath", ErrorCodes::BAD_ARGUMENTS};
             }
 
-            /// Get data and offsets for 1 argument (JSON)
+            /// Get data and offsets for 2 argument (JSON)
             const ColumnString::Chars & chars_json = col_json_string->getChars();
             const ColumnString::Offsets & offsets_json = col_json_string->getOffsets();
 
@@ -179,12 +166,13 @@ public:
         /// 1. Lexer(path) -> Tokens
         /// 2. Create ASTPtr
         /// 3. Parser(Tokens, ASTPtr) -> complete AST
-        /// 4. Execute functions, call interpreter for each json (in function)
+        /// 4. Execute functions: call getNextItem on generator and handle each item
+        uint32_t parse_depth = getContext()->getSettingsRef().max_parser_depth;
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
-            return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
+            return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth);
 #endif
-        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
+        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth);
     }
 };
 
@@ -325,6 +313,8 @@ public:
             else if (status == VisitorStatus::Error)
             {
                 /// ON ERROR
+                /// Here it is possible to handle errors with ON ERROR (as described in ISO/IEC TR 19075-6),
+                ///  however this functionality is not implemented yet
             }
             current_element = root;
         }

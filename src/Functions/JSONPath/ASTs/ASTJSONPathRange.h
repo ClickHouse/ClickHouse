@@ -14,8 +14,8 @@ public:
 
 public:
     /// Ranges to lookup in json array ($[0, 1, 2, 4 to 9])
-    /// Range is represented as <start, end>
-    /// Single index is represented as <start, start>
+    /// Range is represented as <start, end (non-inclusive)>
+    /// Single index is represented as <start, start + 1>
     std::vector<std::pair<UInt32, UInt32>> ranges;
     bool is_star = false;
 };
