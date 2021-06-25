@@ -59,7 +59,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
 {
     if (table.database_and_table_name)
     {
-        auto table_id = IdentifierSemantic::extractDatabaseAndTable(table.database_and_table_name->as<ASTIdentifier &>());
+        auto table_id = table.database_and_table_name->as<ASTTableIdentifier>()->getTableId();
         if (table_id.database_name.empty())
         {
             auto subquery_it = data.subqueries.find(table_id.table_name);
@@ -80,20 +80,23 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
 
 void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
 {
+    /// Special CTE case, where the right argument of IN is alias (ASTIdentifier) from WITH clause.
+
     if (checkFunctionIsInOrGlobalInOperator(func))
     {
         auto & ast = func.arguments->children.at(1);
-        if (const auto * ident = ast->as<ASTIdentifier>())
+        if (const auto * identifier = ast->as<ASTIdentifier>())
         {
-            auto table_id = IdentifierSemantic::extractDatabaseAndTable(*ident);
-            if (table_id.database_name.empty())
+            if (identifier->isShort())
             {
-                auto subquery_it = data.subqueries.find(table_id.table_name);
+                /// Clang-tidy is wrong on this line, because `func.arguments->children.at(1)` gets replaced before last use of `name`.
+                auto name = identifier->shortName();  // NOLINT
+                auto subquery_it = data.subqueries.find(name);
                 if (subquery_it != data.subqueries.end())
                 {
                     auto old_alias = func.arguments->children[1]->tryGetAlias();
                     func.arguments->children[1] = subquery_it->second->clone();
-                    func.arguments->children[1]->as<ASTSubquery &>().cte_name = table_id.table_name;
+                    func.arguments->children[1]->as<ASTSubquery &>().cte_name = name;
                     if (!old_alias.empty())
                         func.arguments->children[1]->setAlias(old_alias);
                 }

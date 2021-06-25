@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -98,7 +98,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
         throw Exception("Illegal type " + cond_arg->getName() + " of third argument of aggregate function "
                 + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    for (const auto i : ext::range(min_required_args, argument_types.size()))
+    for (const auto i : collections::range(min_required_args, argument_types.size()))
     {
         const auto * cond_arg = argument_types[i].get();
         if (!isUInt8(cond_arg))
