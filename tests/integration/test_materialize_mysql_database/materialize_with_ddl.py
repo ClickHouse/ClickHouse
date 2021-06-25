@@ -850,6 +850,10 @@ def materialize_with_column_comments_test(clickhouse_node, mysql_node, service_n
     mysql_node.query("CREATE TABLE materialize_with_column_comments_test.test (id int NOT NULL PRIMARY KEY, value VARCHAR(255) COMMENT 'test comment') ENGINE=InnoDB")
     clickhouse_node.query("CREATE DATABASE materialize_with_column_comments_test ENGINE = MaterializeMySQL('{}:3306', 'materialize_with_column_comments_test', 'root', 'clickhouse')".format(service_name))
     check_query(clickhouse_node, "DESCRIBE TABLE materialize_with_column_comments_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(String)\t\t\ttest comment\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
+    mysql_node.query("ALTER TABLE materialize_with_column_comments_test.test MODIFY value VARCHAR(255) COMMENT 'comment test'")
+    check_query(clickhouse_node, "DESCRIBE TABLE materialize_with_column_comments_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(String)\t\t\tcomment test\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
+    mysql_node.query("ALTER TABLE materialize_with_column_comments_test.test ADD value2 int COMMENT 'test comment 2'")
+    check_query(clickhouse_node, "DESCRIBE TABLE materialize_with_column_comments_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(String)\t\t\tcomment test\t\t\nvalue2\tNullable(Int32)\t\t\ttest comment 2\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     clickhouse_node.query("DROP DATABASE materialize_with_column_comments_test")
     mysql_node.query("DROP DATABASE materialize_with_column_comments_test")
 
