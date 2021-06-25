@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Core/UUID.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>

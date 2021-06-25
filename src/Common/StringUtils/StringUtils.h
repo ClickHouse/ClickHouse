@@ -283,3 +283,4 @@ inline void trim(std::string_view & str, char c = ' ')
     trimLeft(str, c);
     trimRight(str, c);
 }
+}

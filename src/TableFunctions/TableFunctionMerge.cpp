@@ -49,10 +49,12 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
-    args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
+    auto [is_regexp, source_database_name_or_regexp_] = evaluateDatabaseNameForMergeEngine(args[0], context);
 
-    source_database_regexp = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    database_is_regexp = is_regexp;
+    source_database_name_or_regexp = source_database_name_or_regexp_;
+
+    args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
     source_table_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
@@ -62,45 +64,40 @@ const std::unordered_map<String, std::unordered_set<String>> & TableFunctionMerg
     if (source_databases_and_tables)
         return *source_databases_and_tables;
 
-    OptimizedRegularExpression database_re(source_database_regexp);
-    OptimizedRegularExpression table_re(source_table_regexp);
+    source_databases_and_tables.emplace();
 
-    auto table_name_match = [&](const String & table_name_) { return table_re.fullMatch(table_name_); };
-
-    auto access = context->getAccess();
-
-    auto databases = DatabaseCatalog::instance().getDatabases();
-
-    for (const auto & db : databases)
+    /// database_name is not a regexp
+    if (!database_is_regexp)
     {
-        if (database_re.fullMatch(db.first))
-        {
-            bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, db.first);
-            bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, db.first);
-            std::unordered_set<String> source_tables;
-            for (auto it = db.second->getTablesIterator(context, table_name_match); it->isValid(); it->next())
-            {
-                if (!it->table())
-                    continue;
-                bool granted_show = granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, db.first, it->name());
-                if (!granted_show)
-                    continue;
-                if (!granted_select_on_all_tables)
-                    access->checkAccess(AccessType::SELECT, db.first, it->name());
-                source_tables.insert(it->name());
-            }
-
-            if (!source_tables.empty())
-              (*source_databases_and_tables)[db.first] = source_tables;
-        }
+        auto source_tables = getMatchedTablesWithAccess(source_database_name_or_regexp, source_table_regexp, context);
+        if (source_tables.empty())
+            throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
+        (*source_databases_and_tables)[source_database_name_or_regexp] = source_tables;
     }
 
-    if ((*source_databases_and_tables).empty())
-        throwNoTablesMatchRegexp(source_database_regexp, source_table_regexp);
+    /// database_name is a regexp
+    else
+    {
+        OptimizedRegularExpression database_re(source_database_name_or_regexp);
+        auto databases = DatabaseCatalog::instance().getDatabases();
+
+        for (const auto & db : databases)
+        {
+            if (database_re.match(db.first))
+            {
+                auto source_tables = getMatchedTablesWithAccess(db.first, source_table_regexp, context);
+
+                if (!source_tables.empty())
+                    (*source_databases_and_tables)[db.first] = source_tables;
+            }
+        }
+
+        if ((*source_databases_and_tables).empty())
+            throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
+    }
 
     return *source_databases_and_tables;
 }
-
 
 ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context) const
 {
@@ -111,7 +108,7 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
             return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
     }
 
-    throwNoTablesMatchRegexp(source_database_regexp, source_table_regexp);
+    throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
 }
 
 
@@ -121,7 +118,8 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
         StorageID(getDatabaseName(), table_name),
         getActualTableStructure(context),
         String{},
-        source_database_regexp,
+        source_database_name_or_regexp,
+        database_is_regexp,
         getSourceDatabasesAndTables(context),
         context);
 
@@ -129,6 +127,35 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
     return res;
 }
 
+NameSet
+TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context)
+{
+    OptimizedRegularExpression table_re(table_regexp);
+
+    auto table_name_match = [&](const String & table_name) { return table_re.match(table_name); };
+
+    auto access = context->getAccess();
+
+    auto database = DatabaseCatalog::instance().getDatabase(database_name);
+
+    bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, database_name);
+    bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, database_name);
+
+    NameSet tables;
+
+    for (auto it = database->getTablesIterator(context, table_name_match); it->isValid(); it->next())
+    {
+        if (!it->table())
+            continue;
+        bool granted_show = granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, database_name, it->name());
+        if (!granted_show)
+            continue;
+        if (!granted_select_on_all_tables)
+            access->checkAccess(AccessType::SELECT, database_name, it->name());
+        tables.insert(it->name());
+    }
+    return tables;
+}
 
 void registerTableFunctionMerge(TableFunctionFactory & factory)
 {
