@@ -11,7 +11,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -267,6 +266,9 @@ Pipe StorageMerge::read(
 
                 if (const auto * ast_function = typeid_cast<const ASTFunction *>(expr.get()))
                 {
+                    if (!ast_function->arguments)
+                        return;
+
                     for (const auto & arg : ast_function->arguments->children)
                         extract_columns_from_alias_expression(arg);
                 }
