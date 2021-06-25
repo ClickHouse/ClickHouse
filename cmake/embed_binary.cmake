@@ -33,10 +33,16 @@ macro(clickhouse_embed_binaries)
         message(FATAL_ERROR "The list of binary resources to embed may not be empty")
     endif()
 
-    # If cross-compiling, ensure we use the toolchain file and target the
-    # actual target architecture
+    # If cross-compiling, ensure we use the toolchain file and target the actual target architecture
     if (CMAKE_CROSSCOMPILING)
-        set(CROSS_COMPILE_FLAGS "--target=${CMAKE_C_COMPILER_TARGET} --gcc-toolchain=${TOOLCHAIN_FILE}")
+        set(CROSS_COMPILE_FLAGS --target=${CMAKE_C_COMPILER_TARGET})
+
+        # FIXME: find a way to properly pass all cross-compile flags to custom command in CMake
+        if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+            list(APPEND CROSS_COMPILE_FLAGS -isysroot ${CMAKE_OSX_SYSROOT} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET})
+        else ()
+            list(APPEND CROSS_COMPILE_FLAGS -isysroot ${CMAKE_SYSROOT})
+        endif ()
     else()
         set(CROSS_COMPILE_FLAGS "")
     endif()
@@ -67,6 +73,7 @@ macro(clickhouse_embed_binaries)
                  ${CMAKE_C_COMPILER} "${CROSS_COMPILE_FLAGS}" -c -o
                     "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}"
                     "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}"
+            COMMAND_EXPAND_LISTS
         )
         set_source_files_properties("${RESOURCE_OBJ}" PROPERTIES EXTERNAL_OBJECT true GENERATED true)
     endforeach()

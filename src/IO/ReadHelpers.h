@@ -184,7 +184,7 @@ inline bool checkString(const String & s, ReadBuffer & buf)
     return checkString(s.c_str(), buf);
 }
 
-inline bool checkChar(char c, ReadBuffer & buf)
+inline bool checkChar(char c, ReadBuffer & buf)  // -V1071
 {
     if (buf.eof() || *buf.position() != c)
         return false;
@@ -393,7 +393,7 @@ void readIntText(T & x, ReadBuffer & buf)
 }
 
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
-bool tryReadIntText(T & x, ReadBuffer & buf)
+bool tryReadIntText(T & x, ReadBuffer & buf)  // -V1071
 {
     return readIntTextImpl<T, bool, check_overflow>(x, buf);
 }
