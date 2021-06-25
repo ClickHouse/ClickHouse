@@ -99,6 +99,8 @@ struct ASTTableJoin : public IAST
     Strictness strictness = Strictness::Unspecified;
     Kind kind = Kind::Inner;
 
+    bool converted_to_dnf = false;
+
     /// Condition. One of fields is non-nullptr.
     ASTPtr using_expression_list;
     ASTPtr on_expression;

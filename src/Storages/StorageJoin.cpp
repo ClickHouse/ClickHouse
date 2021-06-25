@@ -62,7 +62,7 @@ StorageJoin::StorageJoin(
         if (!metadata_snapshot->getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-    table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
+    table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, NamesVector{key_names});
     join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
     restore();
 }
@@ -410,7 +410,7 @@ protected:
             return {};
 
         Chunk chunk;
-        if (!joinDispatch(join->kind, join->strictness, join->data->maps,
+        if (!joinDispatch(join->kind, join->strictness, join->data->maps.front(),
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
             throw Exception("Logical error: unknown JOIN strictness", ErrorCodes::LOGICAL_ERROR);
         return chunk;

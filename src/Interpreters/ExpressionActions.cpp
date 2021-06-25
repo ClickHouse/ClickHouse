@@ -1056,11 +1056,15 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     /// That's an input columns we need.
     NameSet required_names = required_output_;
-    for (const auto & name : analyzed_join->keyNamesLeft())
-        required_names.emplace(name);
+    if (!analyzed_join->keyNamesLeft().empty()) // why do we need this condition ?
+        for (const auto & name_part : analyzed_join->keyNamesLeft())
+            for (const auto & name : name_part)
+                required_names.emplace(name);
 
-    if (ASTPtr extra_condition_column = analyzed_join->joinConditionColumn(JoinTableSide::Left))
-        required_names.emplace(extra_condition_column->getColumnName());
+    const size_t disjuncts = analyzed_join->keyNamesLeft().size();
+    for (size_t d = 0; d < disjuncts; ++d)
+        if (ASTPtr extra_condition_column = analyzed_join->joinConditionColumn(JoinTableSide::Left, d))
+            required_names.emplace(extra_condition_column->getColumnName());
 
     for (const auto & column : required_columns)
     {

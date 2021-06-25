@@ -36,6 +36,7 @@ struct RequiredSourceColumnsData
 
     bool has_table_join = false;
     bool has_array_join = false;
+    bool converted_to_dnf = false;
 
     bool addColumnAliasIfAny(const IAST & ast);
     void addColumnIdentifier(const ASTIdentifier & node);
