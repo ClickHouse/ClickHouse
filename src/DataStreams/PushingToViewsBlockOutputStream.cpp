@@ -148,7 +148,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, std::move(runtime_stats)});
         current_thread = running_thread;
 
-        /// Add the view to the query_log
+        /// Add the view to the query access info so it can appear in system.query_log
         if (!no_destination)
         {
             getContext()->getQueryContext()->addQueryAccessInfo(

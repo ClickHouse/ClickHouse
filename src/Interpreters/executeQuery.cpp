@@ -672,7 +672,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             /// Common code for finish and exception callbacks
-            auto status_info_to_query_log = [](QueryLogElement &element, const QueryStatusInfo &info, const ASTPtr query_ast) mutable
+            auto status_info_to_query_log = [](QueryLogElement &element, const QueryStatusInfo &info, const ASTPtr query_ast, ContextMutablePtr context_ptr) mutable
             {
                 DB::UInt64 query_time = info.elapsed_seconds * 1000000;
                 ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, query_time);
@@ -697,6 +697,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 element.thread_ids = std::move(info.thread_ids);
                 element.profile_counters = std::move(info.profile_counters);
+
+                /// We need to refresh the access info since dependent views might have added extra information, either during
+                /// creation of the view (PushingToViewsBlockOutputStream) or while executing its internal SELECT
+                const auto & access_info = context_ptr->getQueryAccessInfo();
+                element.query_databases = access_info.databases;
+                element.query_tables = access_info.tables;
+                element.query_columns = access_info.columns;
+                element.query_projections = access_info.projections;
+                element.query_views = access_info.views;
             };
 
             /// Also make possible for caller to log successful query finish and exception during execution.
@@ -727,7 +736,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 const auto finish_time = std::chrono::system_clock::now();
                 elem.event_time = time_in_seconds(finish_time);
                 elem.event_time_microseconds = time_in_microseconds(finish_time);
-                status_info_to_query_log(elem, info, ast);
+                status_info_to_query_log(elem, info, ast, context);
 
                 auto progress_callback = context->getProgressCallback();
 
@@ -850,7 +859,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (process_list_elem)
                 {
                     QueryStatusInfo info = process_list_elem->getInfo(true, current_settings.log_profile_events, false);
-                    status_info_to_query_log(elem, info, ast);
+                    status_info_to_query_log(elem, info, ast, context);
                 }
 
                 if (current_settings.calculate_text_stack_trace)
