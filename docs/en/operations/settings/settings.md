@@ -379,7 +379,7 @@ Default value: `1`.
 
 ## insert_null_as_default {#insert_null_as_default}
 
-Enables or disables the insertion of [default values](../../sql-reference/statements/create/table.md#create-default-values) instead of [NULL](../../sql-reference/syntax.md#null-literal) into columns with not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) data type. 
+Enables or disables the insertion of [default values](../../sql-reference/statements/create/table.md#create-default-values) instead of [NULL](../../sql-reference/syntax.md#null-literal) into columns with not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) data type.
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
 This setting is applicable to [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select) queries. Note that `SELECT` subqueries may be concatenated with `UNION ALL` clause.
@@ -1182,7 +1182,7 @@ Possible values:
 
 Default value: `1`.
 
-**Additional Info** 
+**Additional Info**
 
 This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
 
@@ -1194,14 +1194,7 @@ This setting is useful for replicated tables with a sampling key. A query may be
 !!! warning "Warning"
     This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
 
-## compile {#compile}
-
-Enable compilation of queries. By default, 0 (disabled).
-
-The compilation is only used for part of the query-processing pipeline: for the first stage of aggregation (GROUP BY).
-If this portion of the pipeline was compiled, the query may run faster due to the deployment of short cycles and inlining aggregate function calls. The maximum performance improvement (up to four times faster in rare cases) is seen for queries with multiple simple aggregate functions. Typically, the performance gain is insignificant. In very rare cases, it may slow down query execution.
-
-## compile_expressions {#compile_expressions}
+## compile_expressions {#compile-expressions}
 
 Enables or disables compilation of frequently used simple functions and operators to native code with LLVM at runtime.
 
@@ -1212,14 +1205,11 @@ Possible values:
 
 Default value: `1`.
 
-## min_count_to_compile {#min-count-to-compile}
+## min_count_to_compile_expression {#min-count-to-compile-expression}
 
-How many times to potentially use a compiled chunk of code before running compilation. By default, 3.
-For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
-If the value is 1 or more, compilation occurs asynchronously in a separate thread. The result will be used as soon as it is ready, including queries that are currently running.
+Minimum count of executing same expression before it is get compiled.
 
-Compiled code is required for each different combination of aggregate functions used in the query and the type of keys in the GROUP BY clause.
-The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they do not use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
+Default value: `3`.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
@@ -2683,7 +2673,7 @@ Default value: `0`.
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
-It is implemented via query rewrite (similar to [count_distinct_implementation](#settings-count_distinct_implementation) setting) to get consistent results for distributed queries. 
+It is implemented via query rewrite (similar to [count_distinct_implementation](#settings-count_distinct_implementation) setting) to get consistent results for distributed queries.
 
 Possible values:
 
@@ -2867,7 +2857,7 @@ Default value: `0`.
 
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
-Adds a modifier `SYNC` to all `DROP` and `DETACH` queries. 
+Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
 
 Possible values:
 
@@ -2973,7 +2963,7 @@ Enables or disables using the original column names instead of aliases in query 
 Possible values:
 
 - 0 — The column name is substituted with the alias.
-- 1 — The column name is not substituted with the alias. 
+- 1 — The column name is not substituted with the alias.
 
 Default value: `0`.
 
@@ -3086,7 +3076,7 @@ SELECT
     sum(a),
     sumCount(b).1,
     sumCount(b).2,
-    (sumCount(b).1) / (sumCount(b).2)    
+    (sumCount(b).1) / (sumCount(b).2)
 FROM fuse_tbl
 ```
 
