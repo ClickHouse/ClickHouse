@@ -239,7 +239,7 @@ struct ExpressionAnalysisResult
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;
 
-    PrewhereDAGInfoPtr prewhere_info;
+    PrewhereInfoPtr prewhere_info;
     FilterDAGInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
