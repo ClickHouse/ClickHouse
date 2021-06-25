@@ -5,8 +5,6 @@ set (CMAKE_CXX_COMPILER_TARGET "aarch64-linux-gnu")
 set (CMAKE_ASM_COMPILER_TARGET "aarch64-linux-gnu")
 set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../toolchain/linux-aarch64/aarch64-linux-gnu/libc")
 
-get_filename_component (TOOLCHAIN_FILE "${CMAKE_TOOLCHAIN_FILE}" REALPATH)
-
 set (CMAKE_AR "${CMAKE_CURRENT_LIST_DIR}/../toolchain/linux-aarch64/bin/aarch64-linux-gnu-ar" CACHE FILEPATH "" FORCE)
 set (CMAKE_RANLIB "${CMAKE_CURRENT_LIST_DIR}/../toolchain/linux-aarch64/bin/aarch64-linux-gnu-ranlib" CACHE FILEPATH "" FORCE)
 
