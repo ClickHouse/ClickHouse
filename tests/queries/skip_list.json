@@ -516,7 +516,10 @@
         "01913_if_int_decimal",
         "01913_join_push_down_bug",
         "01921_with_fill_with_totals",
-        "01924_argmax_bitmap_state"
+        "01924_argmax_bitmap_state",
+        "01913_replace_dictionary",
+        "01914_exchange_dictionaries",
+        "01915_create_or_replace_dictionary"
     ],
     "parallel":
     [
