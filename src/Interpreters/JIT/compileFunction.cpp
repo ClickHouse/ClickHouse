@@ -528,7 +528,6 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
         auto * aggregate_data_place = b.CreateLoad(b.getInt8Ty()->getPointerTo(), aggregate_data_place_phi);
         auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place, aggregate_function_offset);
 
-        auto column_type = functions[i].function->getArgumentTypes()[0];
         auto * final_value = aggregate_function_ptr->compileGetResult(b, aggregation_place_with_offset);
 
         if (columns[i].null_init)
