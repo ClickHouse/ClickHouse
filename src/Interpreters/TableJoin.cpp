@@ -7,12 +7,13 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getMostSubtype.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
 #include <common/logger_useful.h>
-
 
 namespace DB
 {
@@ -20,6 +21,23 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+}
+
+namespace
+{
+
+std::string formatTypeMap(const TableJoin::NameToTypeMap & target, const TableJoin::NameToTypeMap & source)
+{
+    std::vector<std::string> text;
+    for (const auto & [k, v] : target)
+    {
+        auto src_type_it = source.find(k);
+        std::string src_type_name = src_type_it != source.end() ? src_type_it->second->getName() : "";
+        text.push_back(fmt::format("{} : {} -> {}", k, src_type_name, v->getName()));
+    }
+    return fmt::format("{}", fmt::join(text, ", "));
+}
+
 }
 
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
@@ -319,18 +337,22 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
 
 bool TableJoin::applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
 {
-    bool need_convert = needConvert();
-    if (!need_convert && !hasUsing())
-    {
-        /// For `USING` we already inferred common type an syntax analyzer stage
-        NamesAndTypesList left_list;
-        NamesAndTypesList right_list;
-        for (const auto & col : left_sample_columns)
-            left_list.emplace_back(col.name, col.type);
-        for (const auto & col : right_sample_columns)
-            right_list.emplace_back(col.name, col.type);
 
-        need_convert = inferJoinKeyCommonType(left_list, right_list);
+    auto to_name_type_list = [](const ColumnsWithTypeAndName & columns)
+    {
+        NamesAndTypesList name_type_list;
+        for (const auto & col : columns)
+            name_type_list.emplace_back(col.name, col.type);
+        return name_type_list;
+    };
+
+    bool need_convert = needConvert();
+    if (!need_convert)
+    {
+        need_convert = inferJoinKeyCommonType(
+            to_name_type_list(left_sample_columns),
+            to_name_type_list(right_sample_columns),
+            true);
     }
 
     if (need_convert)
@@ -344,13 +366,13 @@ bool TableJoin::applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_c
 
 bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right)
 {
-    std::unordered_map<String, DataTypePtr> left_types;
+    NameToTypeMap left_types;
     for (const auto & col : left)
     {
         left_types[col.name] = col.type;
     }
 
-    std::unordered_map<String, DataTypePtr> right_types;
+    NameToTypeMap right_types;
     for (const auto & col : right)
     {
         if (auto it = renames.find(col.name); it != renames.end())
@@ -374,37 +396,27 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
         if (JoinCommon::typesEqualUpToNullability(ltype->second, rtype->second))
             continue;
 
-        DataTypePtr supertype;
-        try
+        auto common_type = to_supertype ? DB::getLeastSupertype({ltype->second, rtype->second}, false)
+                                        : DB::getMostSubtype({ltype->second, rtype->second}, false);
+        if (common_type == nullptr || isNothing(common_type))
         {
-            supertype = DB::getLeastSupertype({ltype->second, rtype->second});
+            LOG_DEBUG(&Poco::Logger::get("TableJoin"),
+                      "Can't infer supertype for joined columns: {}: {} at left, {}: {} at right.",
+                      key_names_left[i], ltype->second->getName(),
+                      key_names_right[i], rtype->second->getName());
+            continue;
         }
-        catch (DB::Exception & ex)
-        {
-            throw Exception(
-                "Type mismatch of columns to JOIN by: " +
-                    key_names_left[i] + ": " + ltype->second->getName() + " at left, " +
-                    key_names_right[i] + ": " + rtype->second->getName() + " at right. " +
-                    "Can't get supertype: " + ex.message(),
-                ErrorCodes::TYPE_MISMATCH);
-        }
-        left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = supertype;
+
+        left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = common_type;
     }
 
     if (!left_type_map.empty() || !right_type_map.empty())
     {
-        auto format_type_map = [](NameToTypeMap mapping) -> std::string
-        {
-            std::vector<std::string> text;
-            for (const auto & [k, v] : mapping)
-                text.push_back(k + ": " + v->getName());
-            return fmt::format("{}", fmt::join(text, ", "));
-        };
         LOG_TRACE(
             &Poco::Logger::get("TableJoin"),
             "Infer supertype for joined columns. Left: [{}], Right: [{}]",
-            format_type_map(left_type_map),
-            format_type_map(right_type_map));
+            formatTypeMap(left_type_map, left_types),
+            formatTypeMap(right_type_map, right_types));
     }
 
     return !left_type_map.empty();
