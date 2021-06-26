@@ -180,10 +180,7 @@ public:
           context(context_),
           variants(*(storage.many_data)->variants[0]),
           key_columns(storage.aggregator_transform->params.keys_size),
-          aggregate_columns(storage.aggregator_transform->params.aggregates_size)
-    {
-        expression_actions = std::make_shared<ExpressionActions>(storage.analysis_result.before_aggregation);
-    }
+          aggregate_columns(storage.aggregator_transform->params.aggregates_size) {}
 
     // OutputStream structure is same as source (before aggregation).
     Block getHeader() const override { return storage.src_block_header; }
@@ -228,8 +225,6 @@ private:
     AggregatedDataVariants & variants;
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
-
-    ExpressionActionsPtr expression_actions;
 };
 
 class StorageSource final : public shared_ptr_helper<StorageSource>, public IStorage
@@ -490,7 +485,8 @@ std::optional<UInt64> StorageAggregatingMemory::totalBytes(const Settings &) con
     if (!is_initialized)
         return 0;
 
-    // Not possible to determine.
+    // Not possible to determine precisely.
+    // TODO: can implement estimation from hash table size and size of arenas. 
     return {};
 }
 
