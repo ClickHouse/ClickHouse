@@ -31,7 +31,7 @@ ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this const
 
 The `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It chooses a small column from the table and counts the number of values in it.
 
-Can be optimized by the setting [optimize_functions_to_subcolumns](../../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads subcolumn [null](../../../sql-reference/data-types/nullable.md#finding-null).
+The `SELECT count() FROM table` query can be optimized by enabling the [optimize_functions_to_subcolumns](../../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole table data.
 
 **Examples**
 
