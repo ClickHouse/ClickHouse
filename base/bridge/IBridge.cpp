@@ -1,14 +1,22 @@
 #include "IBridge.h"
 
-#include <IO/ReadHelpers.h>
 #include <boost/program_options.hpp>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Formats/registerFormats.h>
+
 #include <common/logger_useful.h>
+#include <common/range.h>
+
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/SensitiveDataMasker.h>
+#include <common/errnoToString.h>
+#include <IO/ReadHelpers.h>
+#include <Formats/registerFormats.h>
 #include <Server/HTTP/HTTPServer.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 #if USE_ODBC
 #    include <Poco/Data/ODBC/Connector.h>
@@ -163,6 +171,31 @@ void IBridge::initialize(Application & self)
     max_server_connections = config().getUInt("max-server-connections", 1024);
     keep_alive_timeout = config().getUInt64("keep-alive-timeout", 10);
 
+    struct rlimit limit;
+    const UInt64 gb = 1024 * 1024 * 1024;
+
+    /// Set maximum RSS to 1 GiB.
+    limit.rlim_max = limit.rlim_cur = gb;
+    if (setrlimit(RLIMIT_RSS, &limit))
+        LOG_WARNING(log, "Unable to set maximum RSS to 1GB: {} (current rlim_cur={}, rlim_max={})",
+                    errnoToString(errno), limit.rlim_cur, limit.rlim_max);
+
+    if (!getrlimit(RLIMIT_RSS, &limit))
+        LOG_INFO(log, "RSS limit: cur={}, max={}", limit.rlim_cur, limit.rlim_max);
+
+    try
+    {
+        const auto oom_score = toString(config().getUInt64("bridge_oom_score", 500));
+        WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(oom_score.data(), oom_score.size());
+        buf.close();
+        LOG_INFO(log, "OOM score is set to {}", oom_score);
+    }
+    catch (const Exception & e)
+    {
+        LOG_WARNING(log, "Failed to set OOM score, error: {}", e.what());
+    }
+
     initializeTerminationAndSignalProcessing();
 
     ServerApplication::initialize(self); // NOLINT
@@ -214,7 +247,7 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
 
         server.stop();
 
-        for (size_t count : ext::range(1, 6))
+        for (size_t count : collections::range(1, 6))
         {
             if (server.currentConnections() == 0)
                 break;

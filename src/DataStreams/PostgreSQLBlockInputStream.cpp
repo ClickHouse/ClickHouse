@@ -15,7 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <common/logger_useful.h>
 
 
@@ -37,7 +37,7 @@ PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
     , connection_holder(std::move(connection_holder_))
 {
     description.init(sample_block);
-    for (const auto idx : ext::range(0, description.sample_block.columns()))
+    for (const auto idx : collections::range(0, description.sample_block.columns()))
         if (description.types[idx].first == ValueType::vtArray)
             prepareArrayInfo(idx, description.sample_block.getByPosition(idx).type);
     /// pqxx::stream_from uses COPY command, will get error if ';' is present
@@ -70,7 +70,7 @@ Block PostgreSQLBlockInputStream::readImpl()
         if (!row)
             break;
 
-        for (const auto idx : ext::range(0, row->size()))
+        for (const auto idx : collections::range(0, row->size()))
         {
             const auto & sample = description.sample_block.getByPosition(idx);
 
@@ -170,7 +170,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
         {
             ReadBufferFromString in(value);
             time_t time = 0;
-            readDateTimeText(time, in);
+            readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
             if (time < 0)
                 time = 0;
             assert_cast<ColumnUInt32 &>(column).insertValue(time);
@@ -272,11 +272,11 @@ void PostgreSQLBlockInputStream::prepareArrayInfo(size_t column_idx, const DataT
     else if (which.isDate())
         parser = [](std::string & field) -> Field { return UInt16{LocalDate{field}.getDayNum()}; };
     else if (which.isDateTime())
-        parser = [](std::string & field) -> Field
+        parser = [nested](std::string & field) -> Field
         {
             ReadBufferFromString in(field);
             time_t time = 0;
-            readDateTimeText(time, in);
+            readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(nested.get())->getTimeZone());
             return time;
         };
     else if (which.isDecimal32())

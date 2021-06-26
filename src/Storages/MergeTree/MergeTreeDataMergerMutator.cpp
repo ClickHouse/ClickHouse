@@ -264,6 +264,10 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             if (!can_merge_callback(nullptr, part, nullptr))
                 continue;
 
+            /// This part can be merged only with next parts (no prev part exists), so start
+            /// new interval if previous was not empty.
+            if (!parts_ranges.back().empty())
+                parts_ranges.emplace_back();
         }
         else
         {
@@ -271,12 +275,21 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             /// interval (in the same partition)
             if (!can_merge_callback(*prev_part, part, nullptr))
             {
-                /// Starting new interval in the same partition
-                assert(!parts_ranges.back().empty());
-                parts_ranges.emplace_back();
-
-                /// Now we have no previous part, but it affects only logging
+                /// Now we have no previous part
                 prev_part = nullptr;
+
+                /// Mustn't be empty
+                assert(!parts_ranges.back().empty());
+
+                /// Some parts cannot be merged with previous parts and also cannot be merged with themselves,
+                /// for example, merge is already assigned for such parts, or they participate in quorum inserts
+                /// and so on.
+                /// Also we don't start new interval here (maybe all next parts cannot be merged and we don't want to have empty interval)
+                if (!can_merge_callback(nullptr, part, nullptr))
+                    continue;
+
+                /// Starting new interval in the same partition
+                parts_ranges.emplace_back();
             }
         }
 
@@ -2268,7 +2281,7 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     if (need_remove_expired_values)
     {
         /// Write a file with ttl infos in json format.
-        auto out_ttl = disk->writeFile(new_data_part->getFullRelativePath() + "ttl.txt", 4096);
+        auto out_ttl = disk->writeFile(fs::path(new_data_part->getFullRelativePath()) / "ttl.txt", 4096);
         HashingWriteBuffer out_hashing(*out_ttl);
         new_data_part->ttl_infos.write(out_hashing);
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -2277,7 +2290,7 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
 
     {
         /// Write file with checksums.
-        auto out_checksums = disk->writeFile(new_data_part->getFullRelativePath() + "checksums.txt", 4096);
+        auto out_checksums = disk->writeFile(fs::path(new_data_part->getFullRelativePath()) / "checksums.txt", 4096);
         new_data_part->checksums.write(*out_checksums);
     } /// close fd
 
@@ -2288,7 +2301,7 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
 
     {
         /// Write a file with a description of columns.
-        auto out_columns = disk->writeFile(new_data_part->getFullRelativePath() + "columns.txt", 4096);
+        auto out_columns = disk->writeFile(fs::path(new_data_part->getFullRelativePath()) / "columns.txt", 4096);
         new_data_part->getColumns().writeText(*out_columns);
     } /// close fd
 

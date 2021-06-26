@@ -12,7 +12,7 @@ public:
     explicit KafkaBlockOutputStream(
         StorageKafka & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const std::shared_ptr<Context> & context_);
+        const std::shared_ptr<const Context> & context_);
 
     Block getHeader() const override;
 
@@ -25,7 +25,7 @@ public:
 private:
     StorageKafka & storage;
     StorageMetadataPtr metadata_snapshot;
-    const std::shared_ptr<Context> context;
+    const std::shared_ptr<const Context> context;
     ProducerBufferPtr buffer;
     BlockOutputStreamPtr child;
 };

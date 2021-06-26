@@ -378,6 +378,9 @@ function run_tests
         01852_jit_if
         01865_jit_comparison_constant_result
         01871_merge_tree_compile_expressions
+
+        # needs psql
+        01889_postgresql_protocol_null_fields
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
