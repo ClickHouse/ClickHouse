@@ -364,7 +364,7 @@ bool TableJoin::applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_c
     return need_convert;
 }
 
-bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right)
+bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right, bool to_supertype)
 {
     NameToTypeMap left_types;
     for (const auto & col : left)
