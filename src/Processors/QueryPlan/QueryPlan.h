@@ -103,6 +103,8 @@ public:
     using Nodes = std::list<Node>;
 
 private:
+    friend class StorageAggregatingMemory;
+
     Nodes nodes;
     Node * root = nullptr;
 

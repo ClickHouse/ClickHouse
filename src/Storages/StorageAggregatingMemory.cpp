@@ -22,6 +22,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -183,7 +184,7 @@ public:
           aggregate_columns(storage.aggregator_transform->params.aggregates_size) {}
 
     // OutputStream structure is same as source (before aggregation).
-    Block getHeader() const override { return storage.src_block_header; }
+    Block getHeader() const override { return storage.src_metadata_snapshot->getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -288,6 +289,42 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     constructor_constraints = constraints_;
 }
 
+static ColumnsDescription blockToColumnsDescription(Block header)
+{
+    ColumnsDescription columns;
+    for (const auto & column : header)
+    {
+        ColumnDescription column_description(column.name, column.type);
+        columns.add(column_description);
+    }
+
+    return columns;
+}
+
+static ColumnsDescription nameTypeListToColumnsDescription(NamesAndTypesList list)
+{
+    ColumnsDescription columns;
+    for (const auto & column : list)
+    {
+        ColumnDescription column_description(column.name, column.type);
+        columns.add(column_description);
+    }
+
+    return columns;
+}
+
+static const AggregatingStep * extractAggregatingStepFromPlan(const QueryPlan::Nodes & nodes)
+{
+    for (auto && node : nodes)
+    {
+        AggregatingStep * step_ptr = dynamic_cast<AggregatingStep *>(node.step.get());
+        if (step_ptr)
+            return step_ptr;
+    }
+
+    throw Exception("AggregatingStep is not found for query", ErrorCodes::INCORRECT_QUERY);
+}
+
 void StorageAggregatingMemory::lazyInit()
 {
     if (is_initialized)
@@ -307,71 +344,31 @@ void StorageAggregatingMemory::lazyInit()
     source_storage = joined_tables.getLeftTableStorage();
     NamesAndTypesList source_columns = source_storage->getInMemoryMetadata().getColumns().getAll();
 
-    ColumnsDescription columns_before_aggr;
-    for (const auto & column : source_columns)
-    {
-        ColumnDescription column_description(column.name, column.type);
-        columns_before_aggr.add(column_description);
-    }
-
     /// Get list of columns we get from select query.
     Block header = InterpreterSelectQuery(select_ptr, select_context, SelectQueryOptions().analyze()).getSampleBlock();
 
-    ColumnsDescription columns_after_aggr;
-
-    /// Insert only columns returned by select.
-    for (const auto & column : header)
-    {
-        ColumnDescription column_description(column.name, column.type);
-        columns_after_aggr.add(column_description);
-    }
-
+    /// Init metadata for reads from this storage.
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(std::move(columns_after_aggr));
+    storage_metadata.setColumns(blockToColumnsDescription(header));
     storage_metadata.setConstraints(constructor_constraints);
     storage_metadata.setSelectQuery(select_query);
     setInMemoryMetadata(storage_metadata);
 
+    /// Init metadata for writes.
     StorageInMemoryMetadata src_metadata;
-    src_metadata.setColumns(std::move(columns_before_aggr));
-    src_block_header = src_metadata.getSampleBlock();
-
+    src_metadata.setColumns(nameTypeListToColumnsDescription(source_columns));
     src_metadata_snapshot = std::make_shared<StorageInMemoryMetadata>(src_metadata);
 
-    Names required_result_column_names;
+    /// Create AggregatingStep to extract params from it.
+    InterpreterSelectQuery select_interpreter(select_ptr, select_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState).analyze());
+    QueryPlan query_plan;
+    select_interpreter.buildQueryPlan(query_plan);
 
-    auto syntax_analyzer_result
-        = TreeRewriter(select_context)
-              .analyzeSelect(
-                  select_ptr, TreeRewriterResult(src_block_header.getNamesAndTypesList()), {}, {}, required_result_column_names, {});
-
-    query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
-        select_ptr,
-        syntax_analyzer_result,
-        select_context,
-        src_metadata_snapshot,
-        NameSet(required_result_column_names.begin(), required_result_column_names.end()));
+    const AggregatingStep * aggregating_step = extractAggregatingStepFromPlan(query_plan.nodes);
+    Aggregator::Params aggr_params = aggregating_step->getParams();
 
     const Settings & settings = select_context->getSettingsRef();
-
-    analysis_result = ExpressionAnalysisResult(*query_analyzer, src_metadata_snapshot, false, false, false, nullptr, src_block_header);
-
-    Block header_before_aggregation = src_block_header;
-    auto expression = analysis_result.before_aggregation;
-    auto expression_actions = std::make_shared<ExpressionActions>(expression);
-    expression_actions->execute(header_before_aggregation);
-
-    ColumnNumbers keys;
-    for (const auto & key : query_analyzer->aggregationKeys())
-        keys.push_back(header_before_aggregation.getPositionByName(key.name));
-
-    AggregateDescriptions aggregates = query_analyzer->aggregates();
-    for (auto & descr : aggregates)
-        if (descr.arguments.empty())
-            for (const auto & name : descr.argument_names)
-                descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
-
-    Aggregator::Params params(header_before_aggregation, keys, aggregates,
+    Aggregator::Params params(aggr_params.src_header, aggr_params.keys, aggr_params.aggregates,
                               false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
                               settings.group_by_two_level_threshold,
                               settings.group_by_two_level_threshold_bytes,
@@ -383,9 +380,7 @@ void StorageAggregatingMemory::lazyInit()
                               true);
 
     aggregator_transform = std::make_shared<AggregatingTransformParams>(params, false);
-
     initState(constructor_context);
-
     is_initialized = true;
 }
 
@@ -398,7 +393,7 @@ void StorageAggregatingMemory::initState(ContextPtr context)
     if (aggregator_transform->params.keys_size == 0 && !aggregator_transform->params.empty_result_for_aggregation_by_empty_set)
     {
         AggregatingOutputStream os(*this, getInMemoryMetadataPtr(), context);
-        os.write(src_block_header);
+        os.write(src_metadata_snapshot->getSampleBlock());
     }
 }
 

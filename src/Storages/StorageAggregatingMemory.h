@@ -76,14 +76,9 @@ private:
     ConstraintsDescription constructor_constraints;
 
     StoragePtr source_storage;
-    Block src_block_header;
     StorageMetadataPtr src_metadata_snapshot;
 
     AggregatingTransformParamsPtr aggregator_transform;
-
-    std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
-    ExpressionAnalysisResult analysis_result;
-
     std::shared_ptr<ManyAggregatedData> many_data;
 
 protected:
