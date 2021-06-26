@@ -637,93 +637,93 @@ def test_virtual_columns(started_cluster):
     drop_materialized_db()
 
 
-#def test_multiple_databases(started_cluster):
-#    instance.query("DROP DATABASE IF EXISTS test_database_1")
-#    instance.query("DROP DATABASE IF EXISTS test_database_2")
-#    NUM_TABLES = 5
-#
-#    conn = get_postgres_conn()
-#    cursor = conn.cursor()
-#    create_postgres_db(cursor, 'postgres_database_1')
-#    create_postgres_db(cursor, 'postgres_database_2')
-#
-#    conn1 = get_postgres_conn(True, True, 'postgres_database_1')
-#    conn2 = get_postgres_conn(True, True, 'postgres_database_2')
-#
-#    cursor1 = conn1.cursor()
-#    cursor2 = conn2.cursor()
-#
-#    create_clickhouse_postgres_db('postgres_database_1')
-#    create_clickhouse_postgres_db('postgres_database_2')
-#
-#    cursors = [cursor1, cursor2]
-#    for cursor_id in range(len(cursors)):
-#        for i in range(NUM_TABLES):
-#            table_name = 'postgresql_replica_{}'.format(i)
-#            create_postgres_table(cursors[cursor_id], table_name);
-#            instance.query("INSERT INTO postgres_database_{}.{} SELECT number, number from numbers(50)".format(cursor_id + 1, table_name))
-#    print('database 1 tables: ', instance.query('''SELECT name FROM system.tables WHERE database = 'postgres_database_1';'''))
-#    print('database 2 tables: ', instance.query('''SELECT name FROM system.tables WHERE database = 'postgres_database_2';'''))
-#
-#    create_materialized_db('test_database_1', 'postgres_database_1')
-#    create_materialized_db('test_database_2', 'postgres_database_2')
-#
-#    cursors = [cursor1, cursor2]
-#    for cursor_id in range(len(cursors)):
-#        for i in range(NUM_TABLES):
-#            table_name = 'postgresql_replica_{}'.format(i)
-#            instance.query("INSERT INTO postgres_database_{}.{} SELECT 50 + number, number from numbers(50)".format(cursor_id + 1, table_name))
-#
-#    for cursor_id in range(len(cursors)):
-#        for i in range(NUM_TABLES):
-#            table_name = 'postgresql_replica_{}'.format(i)
-#            check_tables_are_synchronized(
-#                    table_name, 'key', 'postgres_database_{}'.format(cursor_id + 1), 'test_database_{}'.format(cursor_id + 1));
-#
-#    drop_clickhouse_postgres_db('postgres_database_1')
-#    drop_clickhouse_postgres_db('postgres_database_2')
-#    drop_materialized_db('test_database_1')
-#    drop_materialized_db('test_database_2')
-#
-#
-#@pytest.mark.timeout(320)
-#def test_concurrent_transactions(started_cluster):
-#    instance.query("DROP DATABASE IF EXISTS test_database")
-#    conn = get_postgres_conn(True)
-#    cursor = conn.cursor()
-#    NUM_TABLES = 6
-#
-#    for i in range(NUM_TABLES):
-#        create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
-#
-#    def transaction(thread_id):
-#        conn_ = get_postgres_conn(True, auto_commit=False)
-#        cursor_ = conn.cursor()
-#        for query in queries:
-#            cursor_.execute(query.format(thread_id))
-#            print('thread {}, query {}'.format(thread_id, query))
-#        conn_.commit()
-#
-#    threads = []
-#    threads_num = 6
-#    for i in range(threads_num):
-#        threads.append(threading.Thread(target=transaction, args=(i,)))
-#
-#    create_materialized_db()
-#
-#    for thread in threads:
-#        time.sleep(random.uniform(0, 0.5))
-#        thread.start()
-#    for thread in threads:
-#        thread.join()
-#
-#    for i in range(NUM_TABLES):
-#        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
-#        count1 = instance.query('SELECT count() FROM postgres_database.postgresql_replica_{}'.format(i))
-#        count2 = instance.query('SELECT count() FROM (SELECT * FROM test_database.postgresql_replica_{})'.format(i))
-#        print(int(count1), int(count2), sep=' ')
-#        assert(int(count1) == int(count2))
-#    drop_materialized_db()
+def test_multiple_databases(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database_1")
+    instance.query("DROP DATABASE IF EXISTS test_database_2")
+    NUM_TABLES = 5
+
+    conn = get_postgres_conn()
+    cursor = conn.cursor()
+    create_postgres_db(cursor, 'postgres_database_1')
+    create_postgres_db(cursor, 'postgres_database_2')
+
+    conn1 = get_postgres_conn(True, True, 'postgres_database_1')
+    conn2 = get_postgres_conn(True, True, 'postgres_database_2')
+
+    cursor1 = conn1.cursor()
+    cursor2 = conn2.cursor()
+
+    create_clickhouse_postgres_db('postgres_database_1')
+    create_clickhouse_postgres_db('postgres_database_2')
+
+    cursors = [cursor1, cursor2]
+    for cursor_id in range(len(cursors)):
+        for i in range(NUM_TABLES):
+            table_name = 'postgresql_replica_{}'.format(i)
+            create_postgres_table(cursors[cursor_id], table_name);
+            instance.query("INSERT INTO postgres_database_{}.{} SELECT number, number from numbers(50)".format(cursor_id + 1, table_name))
+    print('database 1 tables: ', instance.query('''SELECT name FROM system.tables WHERE database = 'postgres_database_1';'''))
+    print('database 2 tables: ', instance.query('''SELECT name FROM system.tables WHERE database = 'postgres_database_2';'''))
+
+    create_materialized_db('test_database_1', 'postgres_database_1')
+    create_materialized_db('test_database_2', 'postgres_database_2')
+
+    cursors = [cursor1, cursor2]
+    for cursor_id in range(len(cursors)):
+        for i in range(NUM_TABLES):
+            table_name = 'postgresql_replica_{}'.format(i)
+            instance.query("INSERT INTO postgres_database_{}.{} SELECT 50 + number, number from numbers(50)".format(cursor_id + 1, table_name))
+
+    for cursor_id in range(len(cursors)):
+        for i in range(NUM_TABLES):
+            table_name = 'postgresql_replica_{}'.format(i)
+            check_tables_are_synchronized(
+                    table_name, 'key', 'postgres_database_{}'.format(cursor_id + 1), 'test_database_{}'.format(cursor_id + 1));
+
+    drop_clickhouse_postgres_db('postgres_database_1')
+    drop_clickhouse_postgres_db('postgres_database_2')
+    drop_materialized_db('test_database_1')
+    drop_materialized_db('test_database_2')
+
+
+@pytest.mark.timeout(320)
+def test_concurrent_transactions(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    NUM_TABLES = 6
+
+    for i in range(NUM_TABLES):
+        create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
+
+    def transaction(thread_id):
+        conn_ = get_postgres_conn(True, auto_commit=False)
+        cursor_ = conn.cursor()
+        for query in queries:
+            cursor_.execute(query.format(thread_id))
+            print('thread {}, query {}'.format(thread_id, query))
+        conn_.commit()
+
+    threads = []
+    threads_num = 6
+    for i in range(threads_num):
+        threads.append(threading.Thread(target=transaction, args=(i,)))
+
+    create_materialized_db()
+
+    for thread in threads:
+        time.sleep(random.uniform(0, 0.5))
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    for i in range(NUM_TABLES):
+        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
+        count1 = instance.query('SELECT count() FROM postgres_database.postgresql_replica_{}'.format(i))
+        count2 = instance.query('SELECT count() FROM (SELECT * FROM test_database.postgresql_replica_{})'.format(i))
+        print(int(count1), int(count2), sep=' ')
+        assert(int(count1) == int(count2))
+    drop_materialized_db()
 
 
 if __name__ == '__main__':
