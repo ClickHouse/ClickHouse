@@ -99,7 +99,7 @@ protected:
         const QueryProcessingStage::Enum & processed_stage,
         UInt64 max_block_size,
         const Block & header,
-        const Aliases & aliaes,
+        const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
         Names & real_column_names,
         ContextMutablePtr modified_context,
