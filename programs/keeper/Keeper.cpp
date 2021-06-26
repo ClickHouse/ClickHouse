@@ -12,7 +12,7 @@
 #include <common/defines.h>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Version.h>
 #include <Poco/Environment.h>

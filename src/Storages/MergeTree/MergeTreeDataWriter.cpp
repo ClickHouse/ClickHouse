@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <IO/WriteHelpers.h>
-#include <Poco/File.h>
 #include <Common/typeid_cast.h>
 #include <DataStreams/ITTLAlgorithm.h>
 #include <DataStreams/OneBlockInputStream.h>

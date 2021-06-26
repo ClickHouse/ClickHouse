@@ -347,7 +347,31 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
-Включает или отключает использование значений по умолчанию в случаях, когда во входных данных содержится `NULL`, но тип соответствующего столбца не `Nullable(T)` (для текстовых форматов).
+Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](../../sql-reference/syntax.md#null-literal), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
+
+Эта настройка используется для запросов [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) для текстовых входных форматов.
+
+Возможные значения:
+
+-   0 — вставка `NULL` в столбец, не позволяющий хранить `NULL`, приведет к возникновению исключения.
+-   1 — ячейки с `NULL` инициализируются значением столбца по умолчанию.
+
+Значение по умолчанию: `1`.
+
+## insert_null_as_default {#insert_null_as_default}
+
+Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
+
+Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
+
+Возможные значения:
+
+-   0 — вставка `NULL` в столбец, не позволяющий хранить `NULL`, приведет к возникновению исключения.
+-   1 — вместо `NULL` вставляется значение столбца по умолчанию.
+
+Значение по умолчанию: `1`.
 
 ## input_format_skip_unknown_fields {#settings-input-format-skip-unknown-fields}
 
@@ -952,6 +976,19 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: 1024.
 
+## max_distributed_depth {#max-distributed-depth}
+
+Ограничивает максимальную глубину рекурсивных запросов для [Distributed](../../engines/table-engines/special/distributed.md) таблиц.
+
+Если значение превышено, сервер генерирует исключение.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — глубина не ограничена.
+
+Значение по умолчанию: `5`.
+
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 Таймаут в миллисекундах на соединение с удалённым сервером, для движка таблиц Distributed, если используются секции shard и replica в описании кластера.
@@ -1144,22 +1181,22 @@ load_balancing = round_robin
 !!! warning "Предупреждение"
     Параллельное выполнение запроса может привести к неверному результату, если в запросе есть объединение или подзапросы и при этом таблицы не удовлетворяют определенным требованиям. Подробности смотрите в разделе [Распределенные подзапросы и max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries).
 
+## compile_expressions {#compile-expressions}
 
-## compile {#compile}
+Включает или выключает компиляцию часто используемых функций и операторов. Компиляция производится в нативный код платформы с помощью LLVM во время выполнения.
 
-Включить компиляцию запросов. По умолчанию - 0 (выключено).
+Возможные значения:
 
-Компиляция предусмотрена только для части конвейера обработки запроса - для первой стадии агрегации (GROUP BY).
-В случае, если эта часть конвейера была скомпилирована, запрос может работать быстрее, за счёт разворачивания коротких циклов и инлайнинга вызовов агрегатных функций. Максимальный прирост производительности (до четырёх раз в редких случаях) достигается на запросах с несколькими простыми агрегатными функциями. Как правило, прирост производительности незначителен. В очень редких случаях возможно замедление выполнения запроса.
+- 0 — компиляция выключена.
+- 1 — компиляция включена.
 
-## min_count_to_compile {#min-count-to-compile}
+Значение по умолчанию: `1`.
 
-После скольких раз, когда скомпилированный кусок кода мог пригодиться, выполнить его компиляцию. По умолчанию - 3.
-Для тестирования можно установить значение 0: компиляция выполняется синхронно, и запрос ожидает окончания процесса компиляции перед продолжением выполнения. Во всех остальных случаях используйте значения, начинающиеся с 1. Как правило, компиляция занимает по времени около 5-10 секунд.
-В случае, если значение равно 1 или больше, компиляция выполняется асинхронно, в отдельном потоке. При готовности результата, он сразу же будет использован, в том числе, уже выполняющимися в данный момент запросами.
+## min_count_to_compile_expression {#min-count-to-compile-expression}
 
-Скомпилированный код требуется для каждого разного сочетания используемых в запросе агрегатных функций и вида ключей в GROUP BY.
-Результаты компиляции сохраняются в директории build в виде .so файлов. Количество результатов компиляции не ограничено, так как они не занимают много места. При перезапуске сервера, старые результаты будут использованы, за исключением случая обновления сервера - тогда старые результаты удаляются.
+Минимальное количество выполнений одного и того же выражения до его компиляции.
+
+Значение по умолчанию: `3`.
 
 ## input_format_skip_unknown_fields {#input-format-skip-unknown-fields}
 
@@ -2041,7 +2078,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   Положительное целое число.
 
-Значение по умолчанию: 16.
+Значение по умолчанию: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
@@ -2338,18 +2375,6 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
-
-## allow_experimental_bigint_types {#allow_experimental_bigint_types}
-
-Включает или отключает поддержку целочисленных значений, превышающих максимальное значение, допустимое для типа `int`.
-
-Возможные значения:
-
--   1 — большие целочисленные значения поддерживаются.
--   0 — большие целочисленные значения не поддерживаются.
-
-Значение по умолчанию: `0`.
-
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
@@ -2696,7 +2721,7 @@ SELECT * FROM test2;
 - 0 — запрос `INSERT` добавляет данные в конец файла после существующих.
 - 1 — `INSERT` удаляет имеющиеся в файле данные и замещает их новыми.
 
-Значение по умолчанию: `0`. 
+Значение по умолчанию: `0`.
 
 ## allow_experimental_geo_types {#allow-experimental-geo-types}
 
@@ -2710,7 +2735,7 @@ SELECT * FROM test2;
 
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
-Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`. 
+Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`.
 
 Возможные значения:
 
@@ -2788,7 +2813,7 @@ SELECT * FROM test2;
 
 **Пример**
 
-Какие изменения привносит включение и выключение настройки: 
+Какие изменения привносит включение и выключение настройки:
 
 Запрос:
 
@@ -2899,5 +2924,103 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 -   Любое положительное целое число.
 
 Значение по умолчанию: `1800`.
+
+## optimize_fuse_sum_count_avg {#optimize_fuse_sum_count_avg}
+
+Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
+
+Возможные значения:
+
+-   0 — функции с одинаковым аргументом не объединяются.
+-   1 — функции с одинаковым аргументом объединяются.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
+SET optimize_fuse_sum_count_avg = 1;
+EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
+```
+
+Результат:
+
+``` text
+SELECT
+    sum(a),
+    sumCount(b).1,
+    sumCount(b).2,
+    (sumCount(b).1) / (sumCount(b).2)
+FROM fuse_tbl
+```
+
+## flatten_nested {#flatten-nested}
+
+Устанавливает формат данных у [вложенных](../../sql-reference/data-types/nested-data-structures/nested.md) столбцов.
+
+Возможные значения:
+
+-   1 — вложенный столбец преобразуется к отдельным массивам.
+-   0 — вложенный столбец преобразуется к массиву кортежей.
+
+Значение по умолчанию: `1`.
+
+**Использование**
+
+Если установлено значение `0`, можно использовать любой уровень вложенности.
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SET flatten_nested = 1;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Результат:
+
+``` text
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n.a` Array(UInt32),
+    `n.b` Array(UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SET flatten_nested = 0;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Результат:
+
+``` text
+┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n` Nested(a UInt32, b UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
