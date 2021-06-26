@@ -137,14 +137,21 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
     {
         virtual_parts.add(virtual_part_name, nullptr, log);
-        addPartToMutations(virtual_part_name);
+        /// Don't add drop range parts to mutations
+        /// they don't produce any useful parts
+        if (entry->type != LogEntry::DROP_RANGE)
+            addPartToMutations(virtual_part_name);
     }
 
     /// Put 'DROP PARTITION' entries at the beginning of the queue not to make superfluous fetches of parts that will be eventually deleted
     if (entry->type != LogEntry::DROP_RANGE)
+    {
         queue.push_back(entry);
+    }
     else
+    {
         queue.push_front(entry);
+    }
 
     if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
     {
@@ -891,6 +898,10 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
     if (entry_ptr->replace_range_entry == current.replace_range_entry) /// same partition, don't want to drop ourselves
         return false;
 
+
+    if (!part_info.contains(MergeTreePartInfo::fromPartName(entry_ptr->replace_range_entry->drop_range_part_name, format_version)))
+        return false;
+
     size_t number_of_covered_parts = 0;
     for (const String & new_part_name : entry_ptr->replace_range_entry->new_part_names)
     {
@@ -1024,16 +1035,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 {
     /// If our entry produce part which is already covered by
     /// some other entry which is currently executing, then we can postpone this entry.
-    if (entry.type == LogEntry::MERGE_PARTS
-        || entry.type == LogEntry::GET_PART
-        || entry.type == LogEntry::ATTACH_PART
-        || entry.type == LogEntry::MUTATE_PART)
+    for (const String & new_part_name : entry.getVirtualPartNames(format_version))
     {
-        for (const String & new_part_name : entry.getBlockingPartNames(format_version))
-        {
-            if (!isNotCoveredByFuturePartsImpl(entry.znode_name, new_part_name, out_postpone_reason, state_lock))
-                return false;
-        }
+        if (!isNotCoveredByFuturePartsImpl(entry.znode_name, new_part_name, out_postpone_reason, state_lock))
+            return false;
     }
 
     /// Check that fetches pool is not overloaded
@@ -1247,7 +1252,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(const Replicate
     ++entry->num_tries;
     entry->last_attempt_time = time(nullptr);
 
-    for (const String & new_part_name : entry->getBlockingPartNames(queue.format_version))
+    for (const String & new_part_name : entry->getVirtualPartNames(queue.format_version))
     {
         if (!queue.future_parts.emplace(new_part_name, entry).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged future part {}. This is a bug. "
@@ -1288,7 +1293,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
     entry->currently_executing = false;
     entry->execution_complete.notify_all();
 
-    for (const String & new_part_name : entry->getBlockingPartNames(queue.format_version))
+    for (const String & new_part_name : entry->getVirtualPartNames(queue.format_version))
     {
         if (!queue.future_parts.erase(new_part_name))
         {

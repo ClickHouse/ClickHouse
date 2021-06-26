@@ -1,6 +1,8 @@
 #pragma once
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -11,7 +13,7 @@ class FunctionMaterialize : public IFunction
 {
 public:
     static constexpr auto name = "materialize";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionMaterialize>();
     }

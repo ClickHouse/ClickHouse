@@ -6,7 +6,6 @@
 #include <DataStreams/copyData.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <ext/range.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
@@ -585,7 +584,7 @@ bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
                 "'{}', NULL, {}, 'publication_names', '{}', 'proto_version', '1')",
                 replication_slot_name, max_block_size, publication_name);
 
-        pqxx::stream_from stream(*tx, pqxx::from_query, std::string_view(query_str));
+        auto stream{pqxx::stream_from::query(*tx, query_str)};
 
         while (true)
         {
