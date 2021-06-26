@@ -49,19 +49,6 @@ macro(clickhouse_embed_binaries)
         # Generate the configured assembly file in the output directory.
         configure_file("${EMBED_TEMPLATE_FILE}" "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}" @ONLY)
 
-        # If cross-compiling, ensure we use the toolchain file and target the actual target architecture.
-        if(CMAKE_CROSSCOMPILING)
-            set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}" APPEND PROPERTY COMPILE_FLAGS "--target=${CMAKE_C_COMPILER_TARGET}")
-
-            # FIXME: find a way to properly pass all cross-compile flags.
-            if(OS_DARWIN)
-                set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}" APPEND PROPERTY COMPILE_FLAGS "-isysroot ${CMAKE_OSX_SYSROOT}")
-                set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}" APPEND PROPERTY COMPILE_FLAGS "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
-            else()
-                set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}" APPEND PROPERTY COMPILE_FLAGS "-isysroot ${CMAKE_SYSROOT}")
-            endif()
-        endif()
-
         # Set the include directory for relative paths specified for `.incbin` directive.
         set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}" APPEND PROPERTY INCLUDE_DIRECTORIES "${EMBED_RESOURCE_DIR}")
 
