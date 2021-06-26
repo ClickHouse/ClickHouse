@@ -1132,8 +1132,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
 
             /// Optional step to convert key columns to common supertype.
-            /// Columns with changed types will be returned to user,
-            ///  so its only suitable for `USING` join.
             if (expressions.converting_join_columns)
             {
                 QueryPlanStepPtr convert_join_step = std::make_unique<ExpressionStep>(
