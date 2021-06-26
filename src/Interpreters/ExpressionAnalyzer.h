@@ -92,7 +92,7 @@ private:
         const SizeLimits size_limits_for_set;
         const UInt64 distributed_group_by_no_merge;
 
-        ExtractedSettings(const Settings & settings_);
+        explicit ExtractedSettings(const Settings & settings_);
     };
 
 public:

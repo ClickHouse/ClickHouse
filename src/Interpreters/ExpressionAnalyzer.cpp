@@ -43,7 +43,6 @@
 #include <Common/StringUtils/StringUtils.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <Parsers/parseQuery.h>
 
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
@@ -910,25 +909,18 @@ static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join,
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
-    const ASTTablesInSelectQueryElement & join_element, const ColumnsWithTypeAndName & left_sample_columns)
+std::unique_ptr<QueryPlan> buildJoinedPlan(
+    ContextPtr context,
+    const ASTTablesInSelectQueryElement & join_element,
+    const ColumnsWithTypeAndName & left_sample_columns,
+    TableJoin & analyzed_join,
+    SelectQueryOptions query_options)
 {
-    /// Two JOINs are not supported with the same subquery, but different USINGs.
-
-    if (joined_plan)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join was already created for query");
-
-    /// Use StorageJoin if any.
-    JoinPtr join = tryGetStorageJoin(syntax->analyzed_join);
-
-    if (join)
-        return join;
-
     /// Actions which need to be calculated on joined block.
-    auto joined_block_actions = createJoinedBlockActions(getContext(), analyzedJoin());
+    auto joined_block_actions = createJoinedBlockActions(context, analyzed_join);
     Names original_right_columns;
 
-    NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
+    NamesWithAliases required_columns_with_aliases = analyzed_join.getRequiredColumns(
         Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
     for (auto & pr : required_columns_with_aliases)
         original_right_columns.push_back(pr.first);
@@ -940,10 +932,9 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         */
     auto interpreter = interpretSubquery(
         join_element.table_expression, getContext(), original_right_columns, query_options.copy().setWithAllColumns());
+    auto joined_plan = std::make_unique<QueryPlan>();
+    interpreter->buildQueryPlan(*joined_plan);
     {
-        joined_plan = std::make_unique<QueryPlan>();
-        interpreter->buildQueryPlan(*joined_plan);
-
         auto sample_block = interpreter->getSampleBlock();
         auto rename_dag = std::make_unique<ActionsDAG>(sample_block.getColumnsWithTypeAndName());
         for (const auto & name_with_alias : required_columns_with_aliases)
@@ -966,13 +957,32 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     joined_plan->addStep(std::move(joined_actions_step));
 
     const ColumnsWithTypeAndName & right_sample_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
-    bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
+    bool need_convert = analyzed_join.applyJoinKeyConvert(left_sample_columns, right_sample_columns);
     if (need_convert)
     {
-        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), syntax->analyzed_join->rightConvertingActions());
+        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), analyzed_join.rightConvertingActions());
         converting_step->setStepDescription("Convert joined columns");
         joined_plan->addStep(std::move(converting_step));
     }
+
+    return joined_plan;
+}
+
+JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
+    const ASTTablesInSelectQueryElement & join_element, const ColumnsWithTypeAndName & left_sample_columns)
+{
+    /// Two JOINs are not supported with the same subquery, but different USINGs.
+
+    if (joined_plan)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join was already created for query");
+
+    /// Use StorageJoin if any.
+    JoinPtr join = tryGetStorageJoin(syntax->analyzed_join);
+
+    if (join)
+        return join;
+
+    joined_plan = buildJoinedPlan(getContext(), join_element, left_sample_columns, *syntax->analyzed_join, query_options);
 
     join = makeJoin(syntax->analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
 
