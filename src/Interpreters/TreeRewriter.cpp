@@ -422,46 +422,44 @@ void executeScalarSubqueries(ASTPtr & query, ContextPtr context, size_t subquery
 void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
-    if (ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList())
+    if (!select_query->arrayJoinExpressionList())
+        return;
+
+    ArrayJoinedColumnsVisitor::Data visitor_data{
+        result.aliases, result.array_join_name_to_alias, result.array_join_alias_to_name, result.array_join_result_to_source};
+    ArrayJoinedColumnsVisitor(visitor_data).visit(query);
+
+    /// If the result of ARRAY JOIN is not used, it is necessary to ARRAY-JOIN any column,
+    /// to get the correct number of rows.
+    if (result.array_join_result_to_source.empty())
     {
-        ArrayJoinedColumnsVisitor::Data visitor_data{result.aliases,
-                                                    result.array_join_name_to_alias,
-                                                    result.array_join_alias_to_name,
-                                                    result.array_join_result_to_source};
-        ArrayJoinedColumnsVisitor(visitor_data).visit(query);
+        if (select_query->arrayJoinExpressionList()->children.empty())
+            throw DB::Exception("ARRAY JOIN requires an argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        /// If the result of ARRAY JOIN is not used, it is necessary to ARRAY-JOIN any column,
-        /// to get the correct number of rows.
-        if (result.array_join_result_to_source.empty())
+        ASTPtr expr = select_query->arrayJoinExpressionList()->children.at(0);
+        String source_name = expr->getColumnName();
+        String result_name = expr->getAliasOrColumnName();
+
+        /// This is an array.
+        if (!expr->as<ASTIdentifier>() || source_columns_set.count(source_name))
         {
-            if (select_query->arrayJoinExpressionList()->children.empty())
-                throw DB::Exception("ARRAY JOIN requires an argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-            ASTPtr expr = select_query->arrayJoinExpressionList()->children.at(0);
-            String source_name = expr->getColumnName();
-            String result_name = expr->getAliasOrColumnName();
-
-            /// This is an array.
-            if (!expr->as<ASTIdentifier>() || source_columns_set.count(source_name))
+            result.array_join_result_to_source[result_name] = source_name;
+        }
+        else /// This is a nested table.
+        {
+            bool found = false;
+            for (const auto & column : source_columns)
             {
-                result.array_join_result_to_source[result_name] = source_name;
-            }
-            else /// This is a nested table.
-            {
-                bool found = false;
-                for (const auto & column : source_columns)
+                auto split = Nested::splitName(column.name);
+                if (split.first == source_name && !split.second.empty())
                 {
-                    auto split = Nested::splitName(column.name);
-                    if (split.first == source_name && !split.second.empty())
-                    {
-                        result.array_join_result_to_source[Nested::concatenateName(result_name, split.second)] = column.name;
-                        found = true;
-                        break;
-                    }
+                    result.array_join_result_to_source[Nested::concatenateName(result_name, split.second)] = column.name;
+                    found = true;
+                    break;
                 }
-                if (!found)
-                    throw Exception("No columns in nested table " + source_name, ErrorCodes::EMPTY_NESTED_TABLE);
             }
+            if (!found)
+                throw Exception("No columns in nested table " + source_name, ErrorCodes::EMPTY_NESTED_TABLE);
         }
     }
 }
@@ -523,7 +521,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
         /// `USING` semantic allows to have columns with changed types in result table.
         /// `JOIN ON` should preserve types from original table
         /// We can infer common type on syntax stage for `USING` because join is performed only by columns (not expressions)
-        /// We need to know  changed types in result tables because some analysis (e.g. analyzeAggregation) performed before join
+        /// We need to know changed types in result tables because some analysis (e.g. analyzeAggregation) performed before join
         /// For `JOIN ON expr1 == expr2` we will infer common type later in ExpressionAnalyzer, when types of expression will be known
         if (analyzed_join.joined_storage == nullptr)
             analyzed_join.inferJoinKeyCommonType(tables[0].columns, tables[1].columns, true);
