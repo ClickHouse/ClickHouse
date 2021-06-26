@@ -4,8 +4,8 @@ toc_priority: 209
 
 # quantileBFloat16 {#quantilebfloat16}
 
-Calculates a [quantile](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers. 
-bfloat16 is a floating point data type with 1 sign bit, 8 exponent bits and 7 fraction bits. The function converts input values to 32-bit floats and then take the most significant 16 bits. Then it calculates the histogram of these values. Calculated bfloat16 value is converted to 64-bit float data type by appending zero bits.
+Calculates a [quantile](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers. bfloat16 is a floating-point data type with 1 sign bit, 8 exponent bits and 7 fraction bits. 
+The function converts input values to 32-bit floats and takes the most significant 16 bits. Then it calculates the histogram of these values. Resulting value is converted to 64-bit float by appending zero bits.
 The function is a fast quantile estimator with a relative error no more than 0.390625%.
 
 **Syntax**
@@ -18,11 +18,11 @@ Alias: `medianBFloat16`
 
 **Arguments**
 
--   `expr` — sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md). 
+-   `expr` — Column with numeric data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md). 
 
 **Parameters**
 
--   `level` — Level of quantile. Optional. Possible values are in a range from 0 to 1. Default value: 0.5. [Float](../../../sql-reference/data-types/float.md).
+-   `level` — Level of quantile. Optional. Possible values are in the range from 0 to 1. Default value: 0.5. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
@@ -55,4 +55,9 @@ Result:
 │ [3]                        │ [1]                        │
 └────────────────────────────┴────────────────────────────┘
 ```
-Note that all floating point values were truncated to 1.0 when converting to bfloat16.
+Note that all floating point values in the example are truncated to 1.0 when converting to bfloat16.
+
+**See Also**
+
+-   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+-   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
