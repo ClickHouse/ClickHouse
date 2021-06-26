@@ -12,6 +12,7 @@ Functions:
 -   `medianTimingWeighted` — Alias for [quantileTimingWeighted](#quantiletimingweighted).
 -   `medianTDigest` — Alias for [quantileTDigest](#quantiletdigest).
 -   `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](#quantiletdigestweighted).
+-   `medianBFloat16` — Alias for [quantileBFloat16](#quantilebfloat16).
 
 **Example**
 
