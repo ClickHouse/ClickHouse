@@ -519,7 +519,8 @@
         "01924_argmax_bitmap_state",
         "01913_replace_dictionary",
         "01914_exchange_dictionaries",
-        "01915_create_or_replace_dictionary"
+        "01915_create_or_replace_dictionary",
+        "01913_names_of_tuple_literal"
     ],
     "parallel":
     [
