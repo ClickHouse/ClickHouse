@@ -525,7 +525,8 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
         /// We can infer common type on syntax stage for `USING` because join is performed only by columns (not expressions)
         /// We need to know  changed types in result tables because some analysis (e.g. analyzeAggregation) performed before join
         /// For `JOIN ON expr1 == expr2` we will infer common type later in ExpressionAnalyzer, when types of expression will be known
-        analyzed_join.inferJoinKeyCommonType(tables[0].columns, tables[1].columns);
+        if (analyzed_join.joined_storage == nullptr)
+            analyzed_join.inferJoinKeyCommonType(tables[0].columns, tables[1].columns, true);
     }
     else if (table_join.on_expression)
     {

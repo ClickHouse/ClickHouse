@@ -347,7 +347,7 @@ bool TableJoin::applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_c
     };
 
     bool need_convert = needConvert();
-    if (!need_convert)
+    if (!need_convert && joined_storage == nullptr)
     {
         need_convert = inferJoinKeyCommonType(
             to_name_type_list(left_sample_columns),
