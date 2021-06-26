@@ -220,7 +220,7 @@ Result:
 
 Returns all keys from the `map` parameter.
 
-Can be optimized by setting the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads subcolumn [keys](../../sql-reference/data-types/map.md#subcolumn-keys).
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [keys](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn instead of reading and processing the whole column data.
 
 **Syntax**
 
@@ -263,7 +263,7 @@ Result:
 
 Returns all values from the `map` parameter.
 
-Can be optimized by the setting [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads subcolumn [values](../../sql-reference/data-types/map.md#subcolumn-values).
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [values](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn instead of reading and processing the whole column data.
 
 **Syntax**
 

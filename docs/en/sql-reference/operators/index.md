@@ -283,7 +283,7 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
     -   `0` otherwise.
 -   For other values, the `IS NULL` operator always returns `0`.
 
-Can be optimized by the setting [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads subcolumn [null](../../sql-reference/data-types/nullable.md#finding-null).
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data.
 
 <!-- -->
 
@@ -316,4 +316,4 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-Can be optimized by the setting [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads subcolumn [null](../../sql-reference/data-types/nullable.md#finding-null).
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data.

@@ -11,7 +11,7 @@ Returns 1 for an empty array, or 0 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-Can be optimized by the setting [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads subcolumn [size0](../../sql-reference/data-types/array.md#array-size).
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column.
 
 ## notEmpty {#function-notempty}
 
@@ -19,7 +19,7 @@ Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-Can be optimized by the setting [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads subcolumn [size0](../../sql-reference/data-types/array.md#array-size).
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column.
 
 ## length {#array_functions-length}
 
@@ -27,7 +27,7 @@ Returns the number of items in the array.
 The result type is UInt64.
 The function also works for strings.
 
-Can be optimized by the setting [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads subcolumn [size0](../../sql-reference/data-types/array.md#array-size).
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
