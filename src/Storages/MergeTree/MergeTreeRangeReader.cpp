@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <DataTypes/DataTypeNothing.h>
 
 #ifdef __SSE2__
@@ -117,7 +117,7 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Columns & columns)
     /// We need to skip some rows before reading
     if (current_offset && !continue_reading)
     {
-        for (size_t mark_num : ext::range(current_mark, index_granularity->getMarksCount()))
+        for (size_t mark_num : collections::range(current_mark, index_granularity->getMarksCount()))
         {
             size_t mark_index_granularity = index_granularity->getMarkRows(mark_num);
             if (current_offset >= mark_index_granularity)
@@ -355,7 +355,7 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
     /// Just a guess. If only a few rows may be skipped, it's better not to skip at all.
     else if (2 * total_zero_rows_in_tails > filter->size())
     {
-        for (auto i : ext::range(0, rows_per_granule.size()))
+        for (auto i : collections::range(0, rows_per_granule.size()))
         {
             rows_per_granule_original.push_back(rows_per_granule[i]);
             rows_per_granule[i] -= zero_tails[i];
@@ -419,7 +419,7 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
     const auto * filter_data = filter_vec.data();
     auto * new_filter_data = new_filter_vec.data();
 
-    for (auto i : ext::range(0, rows_per_granule.size()))
+    for (auto i : collections::range(0, rows_per_granule.size()))
     {
         memcpySmallAllowReadWriteOverflow15(new_filter_data, filter_data, rows_per_granule[i]);
         filter_data += rows_per_granule_original[i];
@@ -809,7 +809,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     size_t next_range_to_start = 0;
 
     auto size = rows_per_granule.size();
-    for (auto i : ext::range(0, size))
+    for (auto i : collections::range(0, size))
     {
         if (next_range_to_start < started_ranges.size()
             && i == started_ranges[next_range_to_start].num_granules_read_before_start)

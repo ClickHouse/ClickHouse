@@ -453,6 +453,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
 
     bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
+    bool allow_experimental_codecs = attach || context_->getSettingsRef().allow_experimental_codecs;
+
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
     for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
@@ -487,7 +489,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
         }
 
         if (col_decl.ttl)
@@ -835,14 +837,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach && !create.storage && !create.columns_list)
     {
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
+
         if (database->getEngineName() == "Replicated")
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.table);
-            if (typeid_cast<DatabaseReplicated *>(database.get()) && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+
+            if (auto* ptr = typeid_cast<DatabaseReplicated *>(database.get());
+                ptr && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
             {
                 create.database = database_name;
                 guard->releaseTableLock();
-                return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
+                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
             }
         }
 
@@ -930,11 +935,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && database->getEngineName() == "Replicated")
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
-        if (typeid_cast<DatabaseReplicated *>(database.get()) && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+
+        if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
+            ptr && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();
-            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
+            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
         }
     }
 
@@ -996,8 +1003,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
 
         data_path = database->getTableDataPath(create);
+
         if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
-            throw Exception(storage_already_exists_error_code, "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+            throw Exception(storage_already_exists_error_code,
+                "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
     }
     else
     {
@@ -1098,6 +1107,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         [[maybe_unused]] bool done = doCreateTable(create, properties);
         assert(done);
         ast_drop->table = create.table;
+        ast_drop->is_dictionary = create.is_dictionary;
         ast_drop->database = create.database;
         ast_drop->kind = ASTDropQuery::Drop;
         created = true;
@@ -1110,14 +1120,18 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ASTRenameQuery::Table{create.database, create.table},
             ASTRenameQuery::Table{create.database, table_to_replace_name}
         };
+
         ast_rename->elements.push_back(std::move(elem));
         ast_rename->exchange = true;
+        ast_rename->dictionary = create.is_dictionary;
+
         InterpreterRenameQuery(ast_rename, getContext()).execute();
         replaced = true;
 
         InterpreterDropQuery(ast_drop, getContext()).execute();
 
         create.table = table_to_replace_name;
+
         return fillTableIfNeeded(create);
     }
     catch (...)

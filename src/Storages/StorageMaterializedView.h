@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -12,9 +12,9 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage, WithMutableContext
+class StorageMaterializedView final : public shared_ptr_helper<StorageMaterializedView>, public IStorage, WithMutableContext
 {
-    friend struct ext::shared_ptr_helper<StorageMaterializedView>;
+    friend struct shared_ptr_helper<StorageMaterializedView>;
 public:
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }

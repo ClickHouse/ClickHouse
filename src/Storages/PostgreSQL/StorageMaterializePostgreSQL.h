@@ -17,7 +17,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <memory>
 
 
@@ -62,9 +62,9 @@ namespace DB
  *
 **/
 
-class StorageMaterializePostgreSQL final : public ext::shared_ptr_helper<StorageMaterializePostgreSQL>, public IStorage, WithContext
+class StorageMaterializePostgreSQL final : public shared_ptr_helper<StorageMaterializePostgreSQL>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageMaterializePostgreSQL>;
+    friend struct shared_ptr_helper<StorageMaterializePostgreSQL>;
 
 public:
     StorageMaterializePostgreSQL(const StorageID & table_id_, ContextPtr context_);

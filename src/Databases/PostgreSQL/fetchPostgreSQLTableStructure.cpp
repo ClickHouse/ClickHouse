@@ -118,7 +118,7 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
 
     try
     {
-        pqxx::stream_from stream(tx, pqxx::from_query, std::string_view(query));
+        auto stream{pqxx::stream_from::query(tx, query)};
 
         if (only_names_and_types)
         {
