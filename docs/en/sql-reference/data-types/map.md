@@ -78,7 +78,7 @@ SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map
 
 ## Map.keys and Map.values Subcolumns {#map-subcolumns}
 
-To optimize `Map` column processing, in some cases you can use the `keys` and 'values' subcolumns instead of reading the whole column.
+To optimize `Map` column processing, in some cases you can use the `keys` and `values` subcolumns instead of reading the whole column.
 
 **Example**
 

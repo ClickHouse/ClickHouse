@@ -283,6 +283,8 @@ ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL
     -   `0` в обратном случае.
 -   Для прочих значений оператор `IS NULL` всегда возвращает `0`.
 
+Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [keys](../../sql-reference/data-types/map.md#map-subcolumns) вместо чтения и обработки данных всего столбца.
+
 <!-- -->
 
 ``` sql
@@ -301,6 +303,8 @@ SELECT x+100 FROM t_null WHERE y IS NULL
     -   `0`, если значение — `NULL`.
     -   `1`, в обратном случае.
 -   Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
+
+Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [keys](../../sql-reference/data-types/map.md#map-subcolumns) вместо чтения и обработки данных всего столбца.
 
 <!-- -->
 
