@@ -504,6 +504,19 @@ inline void writeBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
     writeChar('`', buf);
 }
 
+template <char quote_character>
+inline bool isQuoted(const std::string_view & s)
+{
+    return (s.size() > 1) && s.starts_with(quote_character) && s.ends_with(quote_character);
+}
+
+template <char quote_character = '`'>
+inline StringRef unquoteString(const StringRef & s)
+{
+    if (isQuoted<quote_character>(std::string_view(s)))
+        return StringRef(s.data + 1, s.size - 2);
+    return s;
+}
 
 /// Write quoted if the string doesn't look like and identifier.
 void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf);

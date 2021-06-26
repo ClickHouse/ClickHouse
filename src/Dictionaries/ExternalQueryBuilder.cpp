@@ -4,7 +4,6 @@
 #include <IO/WriteHelpers.h>
 #include <boost/range/join.hpp>
 #include "DictionaryStructure.h"
-#include "writeParenthesisedString.h"
 
 
 namespace DB
@@ -27,7 +26,7 @@ ExternalQueryBuilder::ExternalQueryBuilder(
 {}
 
 
-void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out) const
+void ExternalQueryBuilder::writeQuoted(const String & s, WriteBuffer & out) const
 {
     switch (quoting_style)
     {
@@ -49,6 +48,13 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
     }
 }
 
+void ExternalQueryBuilder::writeParenthesisedString(const String & s, WriteBuffer & buf) const
+{
+    writeChar('(', buf);
+    /// Unquote string if it is not an expression but a single name with quotes (in case it contains unusual symbols).
+    writeString(unquoteString(s), buf);
+    writeChar(')', buf);
+}
 
 std::string ExternalQueryBuilder::composeLoadAllQuery() const
 {

@@ -188,6 +188,35 @@ def test_postgres_scema(started_cluster):
     node1.query("DROP DICTIONARY IF EXISTS postgres_dict")
 
 
+def test_quotes(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
+    cursor = conn.cursor()
+
+    cursor.execute("CREATE TABLE test_quotes (id Integer, r$code Integer, unit_name Text)")
+    cursor.execute("insert into test_quotes select 1, 2, 'text'")
+
+    node1.query('''
+    CREATE DICTIONARY postgres_dict
+    (
+        id UInt64,
+        up UInt64 EXPRESSION r$code HIERARCHICAL,
+        name String EXPRESSION unit_name DEFAULT 'N/A'
+    )
+    PRIMARY KEY id
+    SOURCE(POSTGRESQL(
+        port 5432
+        host 'postgres1'
+        user  'postgres'
+        password 'mysecretpassword'
+        db 'clickhouse'
+        table 'test_quotes'))
+        LIFETIME(MIN 1 MAX 2)
+        LAYOUT(HASHED());
+    ''')
+    result = node1.query("SELECT dictGetUInt64(postgres_dict, 'up', toUInt64(1))")
+    assert(int(result) == 2)
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

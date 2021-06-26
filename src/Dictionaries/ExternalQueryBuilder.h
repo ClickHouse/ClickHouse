@@ -79,7 +79,9 @@ private:
     void composeKeyTuple(const Columns & key_columns, const size_t row, WriteBuffer & out, size_t beg, size_t end) const;
 
     /// Write string with specified quoting style.
-    void writeQuoted(const std::string & s, WriteBuffer & out) const;
+    void writeQuoted(const String & s, WriteBuffer & out) const;
+
+    void writeParenthesisedString(const String & s, WriteBuffer & buf) const;
 };
 
 }
