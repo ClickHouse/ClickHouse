@@ -63,6 +63,7 @@
                 <value>avg</value>
                 <value>any</value>
                 <value>anyLast</value>
+                <value>count</value>
             </values>
         </substitution>
 
