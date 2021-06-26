@@ -921,66 +921,64 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     /// Use StorageJoin if any.
     JoinPtr join = tryGetStorageJoin(syntax->analyzed_join);
 
-    if (!join)
+    if (join)
+        return join;
+
+    /// Actions which need to be calculated on joined block.
+    auto joined_block_actions = createJoinedBlockActions(getContext(), analyzedJoin());
+    Names original_right_columns;
+
+    NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
+        Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
+    for (auto & pr : required_columns_with_aliases)
+        original_right_columns.push_back(pr.first);
+
+    /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
+        * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
+        *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
+        * - this function shows the expression JOIN _data1.
+        */
+    auto interpreter = interpretSubquery(
+        join_element.table_expression, getContext(), original_right_columns, query_options.copy().setWithAllColumns());
     {
-        /// Actions which need to be calculated on joined block.
-        auto joined_block_actions = createJoinedBlockActions(getContext(), analyzedJoin());
+        joined_plan = std::make_unique<QueryPlan>();
+        interpreter->buildQueryPlan(*joined_plan);
 
-        Names original_right_columns;
-
-        NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
-            Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
-        for (auto & pr : required_columns_with_aliases)
-            original_right_columns.push_back(pr.first);
-
-        /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
-            * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
-            *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
-            * - this function shows the expression JOIN _data1.
-            */
-        auto interpreter = interpretSubquery(
-            join_element.table_expression, getContext(), original_right_columns, query_options.copy().setWithAllColumns());
+        auto sample_block = interpreter->getSampleBlock();
+        auto rename_dag = std::make_unique<ActionsDAG>(sample_block.getColumnsWithTypeAndName());
+        for (const auto & name_with_alias : required_columns_with_aliases)
         {
-            joined_plan = std::make_unique<QueryPlan>();
-            interpreter->buildQueryPlan(*joined_plan);
-
-            auto sample_block = interpreter->getSampleBlock();
-
-            auto rename_dag = std::make_unique<ActionsDAG>(sample_block.getColumnsWithTypeAndName());
-            for (const auto & name_with_alias : required_columns_with_aliases)
+            if (sample_block.has(name_with_alias.first))
             {
-                if (sample_block.has(name_with_alias.first))
-                {
-                    auto pos = sample_block.getPositionByName(name_with_alias.first);
-                    const auto & alias = rename_dag->addAlias(*rename_dag->getInputs()[pos], name_with_alias.second);
-                    rename_dag->getIndex()[pos] = &alias;
-                }
+                auto pos = sample_block.getPositionByName(name_with_alias.first);
+                const auto & alias = rename_dag->addAlias(*rename_dag->getInputs()[pos], name_with_alias.second);
+                rename_dag->getIndex()[pos] = &alias;
             }
-
-            auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
-            rename_step->setStepDescription("Rename joined columns");
-            joined_plan->addStep(std::move(rename_step));
         }
 
-        auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(joined_block_actions));
-        joined_actions_step->setStepDescription("Joined actions");
-        joined_plan->addStep(std::move(joined_actions_step));
-
-        const ColumnsWithTypeAndName & right_sample_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
-        bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
-        if (need_convert)
-        {
-            auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), syntax->analyzed_join->rightConvertingActions());
-            converting_step->setStepDescription("Convert joined columns");
-            joined_plan->addStep(std::move(converting_step));
-        }
-
-        join = makeJoin(syntax->analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
-
-        /// Do not make subquery for join over dictionary.
-        if (syntax->analyzed_join->dictionary_reader)
-            joined_plan.reset();
+        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
+        rename_step->setStepDescription("Rename joined columns");
+        joined_plan->addStep(std::move(rename_step));
     }
+
+    auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(joined_block_actions));
+    joined_actions_step->setStepDescription("Joined actions");
+    joined_plan->addStep(std::move(joined_actions_step));
+
+    const ColumnsWithTypeAndName & right_sample_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
+    bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
+    if (need_convert)
+    {
+        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), syntax->analyzed_join->rightConvertingActions());
+        converting_step->setStepDescription("Convert joined columns");
+        joined_plan->addStep(std::move(converting_step));
+    }
+
+    join = makeJoin(syntax->analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
+
+    /// Do not make subquery for join over dictionary.
+    if (syntax->analyzed_join->dictionary_reader)
+        joined_plan.reset();
 
     return join;
 }
