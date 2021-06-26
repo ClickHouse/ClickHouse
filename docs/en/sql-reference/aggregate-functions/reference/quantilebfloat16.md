@@ -4,16 +4,6 @@ toc_priority: 209
 
 # quantileBFloat16 {#quantilebfloat16}
 
-
-
-# Is there a BFloat16 data type in ClickHouse?
-    # How conversion to BFloat16 is made?
-# Does quantile calculations have general implementation? And some methods are implemented to support BFloat16?
-# Is quantile calculation is really table based as stated somewhere in PR
-
-# Perhaps add quantilesBFloat16 to page quantiles.md
-# Add alias to page median.md
-
 Calculates a [quantile](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers. 
 bfloat16 is a floating point data type with 1 sign bit, 8 exponent bits and 7 fraction bits. The function converts input values to 32-bit floats and then take the most significant 16 bits. Then it calculates the histogram of these values. Calculated bfloat16 value is converted to 64-bit float data type by appending zero bits.
 The function is a fast quantile estimator with a relative error no more than 0.390625%.
