@@ -48,44 +48,40 @@ public:
 
     bool isCompilable() const override
     {
-        /// TODO: FIX
-        // bool can_be_compiled = Base::isCompilable();
-        // can_be_compiled &= canBeNativeType<Weight>();
+        bool can_be_compiled = Base::isCompilable();
+        can_be_compiled &= canBeNativeType<Weight>();
 
-        return false;
+        return can_be_compiled;
     }
 
-    // void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
-    // {
-        /// TODO: FIX
-        // llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        // auto * numerator_type = toNativeType<Numerator>(b);
+        auto * numerator_type = toNativeType<Numerator>(b);
 
-        // auto * numerator_ptr = b.CreatePointerCast(aggregate_data_ptr, numerator_type->getPointerTo());
-        // auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
+        auto * numerator_ptr = b.CreatePointerCast(aggregate_data_ptr, numerator_type->getPointerTo());
+        auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
 
-        // const auto & argument = nativeCast(b, arguments_types[0], argument_values[0], numerator_type);
-        // const auto & weight = nativeCast(b, arguments_types[1], argument_values[1], numerator_type);
+        auto * argument = nativeCast(b, arguments_types[0], argument_values[0], numerator_type);
+        auto * weight = nativeCast(b, arguments_types[1], argument_values[1], numerator_type);
 
-        // llvm::Value * value_weight_multiplication = argument->getType()->isIntegerTy() ? b.CreateMul(argument, weight) : b.CreateFMul(argument, weight);
+        llvm::Value * value_weight_multiplication = argument->getType()->isIntegerTy() ? b.CreateMul(argument, weight) : b.CreateFMul(argument, weight);
+        auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_weight_multiplication) : b.CreateFAdd(numerator_value, value_weight_multiplication);
+        b.CreateStore(numerator_result_value, numerator_ptr);
 
-        // /// TODO: Fix accuracy
-        // auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_weight_multiplication) : b.CreateFAdd(numerator_value, value_weight_multiplication);
-        // b.CreateStore(numerator_result_value, numerator_ptr);
+        auto * denominator_type = toNativeType<Denominator>(b);
 
-        // auto * denominator_type = toNativeType<Denominator>(b);
+        auto * denominator_offset_ptr = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, sizeof(Numerator));
+        auto * denominator_ptr = b.CreatePointerCast(denominator_offset_ptr, denominator_type->getPointerTo());
 
-        // auto * denominator_offset_ptr = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, sizeof(Numerator));
-        // auto * denominator_ptr = b.CreatePointerCast(denominator_offset_ptr, denominator_type->getPointerTo());
+        auto * weight_cast_to_denominator = nativeCast(b, arguments_types[1], argument_values[1], numerator_type);
 
-        // auto * weight_cast_to_denominator = nativeCast(b, arguments_types[1], argument_values[1], numerator_type);
+        auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
+        auto * denominator_value_updated = denominator_type->isIntegerTy() ? b.CreateAdd(denominator_value, weight_cast_to_denominator) : b.CreateFAdd(denominator_value, weight_cast_to_denominator);
 
-        // auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
-        // auto * denominator_value_updated = denominator_type->isIntegerTy() ? b.CreateAdd(denominator_value, weight_cast_to_denominator) : b.CreateFAdd(denominator_value, weight_cast_to_denominator);
-
-        // b.CreateStore(denominator_value_updated, denominator_ptr);
-    // }
+        b.CreateStore(denominator_value_updated, denominator_ptr);
+    }
 
 #endif
 
