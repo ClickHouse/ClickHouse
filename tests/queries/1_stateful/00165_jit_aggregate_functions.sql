@@ -4,13 +4,13 @@ SET min_count_to_compile_aggregate_expression = 0;
 SELECT 'Aggregation using JIT compilation';
 SELECT 'Simple functions';
 
-SELECT CounterID, min(WatchID), max(WatchID), sum(WatchID), avg(WatchID), count(WatchID) FROM test.hits
+SELECT CounterID, min(WatchID), max(WatchID), sum(WatchID), avg(WatchID), avgWeighted(WatchID, if(WatchID % 2 == 0, 0, 1)), count(WatchID) FROM test.hits
 GROUP BY CounterID ORDER BY count() DESC LIMIT 20;
 
 SELECT 'Simple functions if combinator';
 
 WITH (WatchID % 2 == 0) AS predicate
-SELECT CounterID, minIf(WatchID,predicate), maxIf(WatchID, predicate), sumIf(WatchID, predicate), avgIf(WatchID, predicate), countIf(WatchID, predicate) FROM test.hits
+SELECT CounterID, minIf(WatchID,predicate), maxIf(WatchID, predicate), sumIf(WatchID, predicate), avgIf(WatchID, predicate), avgWeightedIf(WatchID, if(WatchID % 2 == 0, 0, 1), predicate), countIf(WatchID, predicate) FROM test.hits
 GROUP BY CounterID ORDER BY count() DESC LIMIT 20;
 
 SET compile_aggregate_expressions = 0;
@@ -19,11 +19,11 @@ SELECT 'Aggregation without JIT compilation';
 
 SELECT 'Simple functions';
 
-SELECT CounterID, min(WatchID), max(WatchID), sum(WatchID), avg(WatchID), count(WatchID) FROM test.hits
+SELECT CounterID, min(WatchID), max(WatchID), sum(WatchID), avg(WatchID), avgWeighted(WatchID, if(WatchID % 2 == 0, 0, 1)), count(WatchID) FROM test.hits
 GROUP BY CounterID ORDER BY count() DESC LIMIT 20;
 
 SELECT 'Simple functions if combinator';
 
 WITH (WatchID % 2 == 0) AS predicate
-SELECT CounterID, minIf(WatchID,predicate), maxIf(WatchID, predicate), sumIf(WatchID, predicate), avgIf(WatchID, predicate), countIf(WatchID, predicate) FROM test.hits
+SELECT CounterID, minIf(WatchID,predicate), maxIf(WatchID, predicate), sumIf(WatchID, predicate), avgWeightedIf(WatchID, if(WatchID % 2 == 0, 0, 1), predicate), countIf(WatchID, predicate) FROM test.hits
 GROUP BY CounterID ORDER BY count() DESC LIMIT 20;
