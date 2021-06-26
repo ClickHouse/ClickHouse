@@ -14,4 +14,5 @@ All the quantile functions also have corresponding quantiles functions. They cal
 -  `quantilesTimingWeighted`;
 -  `quantilesExact`;
 -  `quantilesExactWeighted`;
--  `quantilesTDigest`.
+-  `quantilesTDigest`;
+-  `quantilesBFloat16`;
