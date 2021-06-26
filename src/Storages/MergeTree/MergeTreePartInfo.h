@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <tuple>
 #include <common/types.h>
 #include <common/DayNum.h>
