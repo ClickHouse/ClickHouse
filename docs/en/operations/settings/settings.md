@@ -1739,8 +1739,8 @@ These functions can be transformed:
 -   [isNull](../../sql-reference/operators/index.md#operator-is-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
 -   [isNotNull](../../sql-reference/operators/index.md#is-not-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
 -   [count](../../sql-reference/aggregate-functions/reference/count.md) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
--   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) to read the [keys](../../sql-reference/data-types/map.md#subcolumn-keys) subcolumn.
--   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) to read the [values](../../sql-reference/data-types/map.md#subcolumn-values) subcolumn.
+-   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) to read the [keys](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
+-   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) to read the [values](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
 
 Possible values:
 
