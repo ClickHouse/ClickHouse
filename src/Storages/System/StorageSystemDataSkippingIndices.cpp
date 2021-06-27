@@ -87,15 +87,15 @@ protected:
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                auto const table = tables_it->table();
+                const auto table = tables_it->table();
                 if (!table)
                     continue;
                 StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
                 if (!metadata_snapshot)
                     continue;
-                auto const indices = metadata_snapshot->getSecondaryIndices();
+                const auto indices = metadata_snapshot->getSecondaryIndices();
 
-                for (auto const& index : indices)
+                for (const auto & index : indices)
                 {
                     ++rows_count;
 
@@ -175,14 +175,19 @@ Pipe StorageSystemDataSkippingIndices::read(
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue;
+
+        /// Lazy database can contain only very primitive tables,
+        /// it cannot contain tables with data skipping indices.
+        /// Skip it to avoid unnecessary tables loading in the Lazy database.
         if (database->getEngineName() != "Lazy")
             column->insert(database_name);
     }
 
+    /// Condition on "database" in a query acts like an index.
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
 
-    ColumnPtr& filtered_databases = block.getByPosition(0).column;
+    ColumnPtr & filtered_databases = block.getByPosition(0).column;
     return Pipe(std::make_shared<DataSkippingIndicesSource>(
         std::move(columns_mask), std::move(header), max_block_size, std::move(filtered_databases), context));
 }
