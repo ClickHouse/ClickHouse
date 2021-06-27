@@ -1101,6 +1101,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         [[maybe_unused]] bool done = doCreateTable(create, properties);
         assert(done);
         ast_drop->table = create.table;
+        ast_drop->is_dictionary = create.is_dictionary;
         ast_drop->database = create.database;
         ast_drop->kind = ASTDropQuery::Drop;
         created = true;
@@ -1113,14 +1114,18 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ASTRenameQuery::Table{create.database, create.table},
             ASTRenameQuery::Table{create.database, table_to_replace_name}
         };
+
         ast_rename->elements.push_back(std::move(elem));
         ast_rename->exchange = true;
+        ast_rename->dictionary = create.is_dictionary;
+
         InterpreterRenameQuery(ast_rename, getContext()).execute();
         replaced = true;
 
         InterpreterDropQuery(ast_drop, getContext()).execute();
 
         create.table = table_to_replace_name;
+
         return fillTableIfNeeded(create);
     }
     catch (...)
