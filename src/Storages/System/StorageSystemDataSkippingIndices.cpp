@@ -8,6 +8,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/queryToString.h>
+#include <Processors/Sources/SourceWithProgress.h>
+
 
 namespace DB
 {
