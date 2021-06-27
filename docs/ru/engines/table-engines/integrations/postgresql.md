@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Структура таблицы может отличаться от исходной структуры таблицы PostgreSQL:
 
 -   Имена столбцов должны быть такими же, как в исходной таблице PostgreSQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
--   Типы столбцов могут отличаться от типов в исходной таблице PostgreSQL. ClickHouse пытается [привести](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Типы столбцов могут отличаться от типов в исходной таблице PostgreSQL. ClickHouse пытается [привести](../../../engines/database-engines/postgresql.md#data_types-support) значения к типам данных ClickHouse.
 -   Настройка `external_table_functions_use_nulls` определяет как обрабатывать Nullable столбцы. Значение по умолчанию: 1. Если значение 0, то табличная функция не будет делать nullable столбцы и будет вместо null выставлять значения по умолчанию для скалярного типа. Это также применимо для null значений внутри массивов.
 
 **Параметры движка**
