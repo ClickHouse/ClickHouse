@@ -5,7 +5,7 @@ toc_title: ExternalDistributed
 
 # ExternalDistributed {#externaldistributed}
 
-Движок `ExternalDistributed` позволяет выполнять запросы `SELECT` и `INSERT` для таблиц на удаленном сервере MySQL или PostgreSQL. Принимает в качестве аргумента табличные движки [MySQL](../../../engines/table-engines/integrations/mysql.md) или [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md), поэтому возможно шардирование.
+Движок `ExternalDistributed` позволяет выполнять запросы `SELECT` для таблиц на удаленном сервере MySQL или PostgreSQL. Принимает в качестве аргумента табличные движки [MySQL](../../../engines/table-engines/integrations/mysql.md) или [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md), поэтому возможно шардирование.
 
 ## Создание таблицы {#creating-a-table}
 
