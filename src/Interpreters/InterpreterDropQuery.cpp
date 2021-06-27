@@ -21,7 +21,7 @@
 #endif
 
 #if USE_LIBPQXX
-#   include <Databases/PostgreSQL/DatabaseMaterializePostgreSQL.h>
+#   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
 
 namespace DB
@@ -321,7 +321,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
                 replicated->stopReplication();
 #if USE_LIBPQXX
-            if (auto * materialize_postgresql = typeid_cast<DatabaseMaterializePostgreSQL *>(database.get()))
+            if (auto * materialize_postgresql = typeid_cast<DatabaseMaterializedPostgreSQL *>(database.get()))
                 materialize_postgresql->stopReplication();
 #endif
 

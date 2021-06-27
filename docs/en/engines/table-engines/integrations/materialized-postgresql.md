@@ -3,13 +3,13 @@ toc_priority: 12
 toc_title: MateriaziePostgreSQL
 ---
 
-# MaterializePostgreSQL {#materialize-postgresql}
+# MaterializedPostgreSQL {#materialize-postgresql}
 
 ## Creating a Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;
 ```
 
@@ -18,7 +18,7 @@ PRIMARY KEY key;
 
 - Setting `wal_level`to `logical` and `max_replication_slots` to at least `2` in the postgresql config file.
 
-- A table with engine `MaterializePostgreSQL` must have a primary key - the same as a replica identity index (default: primary key) of a postgres table (See [details on replica identity index](../../database-engines/materialize-postgresql.md#requirements)).
+- A table with engine `MaterializedPostgreSQL` must have a primary key - the same as a replica identity index (default: primary key) of a postgres table (See [details on replica identity index](../../database-engines/materialize-postgresql.md#requirements)).
 
 - Only database `Atomic` is allowed.
 
@@ -34,8 +34,13 @@ These columns do not need to be added, when table is created. They are always ac
 
 ``` sql
 CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;
 
 SELECT key, value, _version FROM test.postgresql_replica;
 ```
+
+
+## WARNINGS {#warnings}
+
+1. **TOAST** values convertions is not supported. Default value for the data type will be used.

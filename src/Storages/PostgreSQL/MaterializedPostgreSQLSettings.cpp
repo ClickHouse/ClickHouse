@@ -1,4 +1,4 @@
-#include "MaterializePostgreSQLSettings.h"
+#include "MaterializedPostgreSQLSettings.h"
 
 #if USE_LIBPQXX
 #include <Parsers/ASTCreateQuery.h>
@@ -15,9 +15,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_TRAITS(MaterializePostgreSQLSettingsTraits, LIST_OF_MATERIALIZE_POSTGRESQL_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS)
 
-void MaterializePostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
+void MaterializedPostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {

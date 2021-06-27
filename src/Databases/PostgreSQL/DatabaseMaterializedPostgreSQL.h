@@ -7,7 +7,7 @@
 #if USE_LIBPQXX
 
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
-#include <Storages/PostgreSQL/MaterializePostgreSQLSettings.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -24,11 +24,11 @@ class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 
-class DatabaseMaterializePostgreSQL : public DatabaseAtomic
+class DatabaseMaterializedPostgreSQL : public DatabaseAtomic
 {
 
 public:
-    DatabaseMaterializePostgreSQL(
+    DatabaseMaterializedPostgreSQL(
         ContextPtr context_,
         const String & metadata_path_,
         UUID uuid_,
@@ -36,9 +36,9 @@ public:
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info,
-        std::unique_ptr<MaterializePostgreSQLSettings> settings_);
+        std::unique_ptr<MaterializedPostgreSQLSettings> settings_);
 
-    String getEngineName() const override { return "MaterializePostgreSQL"; }
+    String getEngineName() const override { return "MaterializedPostgreSQL"; }
 
     String getMetadataPath() const override { return metadata_path; }
 
@@ -63,7 +63,7 @@ private:
     ASTPtr database_engine_define;
     String remote_database_name;
     postgres::ConnectionInfo connection_info;
-    std::unique_ptr<MaterializePostgreSQLSettings> settings;
+    std::unique_ptr<MaterializedPostgreSQLSettings> settings;
 
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
     std::map<std::string, StoragePtr> materialized_tables;

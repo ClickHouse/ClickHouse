@@ -1,15 +1,15 @@
 ---
 toc_priority: 30
-toc_title: MaterializePostgreSQL
+toc_title: MaterializedPostgreSQL
 ---
 
-# MaterializePostgreSQL {#materialize-postgresql}
+# MaterializedPostgreSQL {#materialize-postgresql}
 
 ## Creating a Database {#creating-a-database}
 
 ``` sql
 CREATE DATABASE test_database
-ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
 
 SELECT * FROM test_database.postgres_table;
 ```
@@ -17,17 +17,17 @@ SELECT * FROM test_database.postgres_table;
 
 ## Settings {#settings}
 
-1. `materialize_postgresql_max_block_size` - Number of rows collected before flushing data into table. Default: `65536`.
+1. `materialized_postgresql_max_block_size` - Number of rows collected before flushing data into table. Default: `65536`.
 
-2. `materialize_postgresql_tables_list` - List of tables for MaterializePostgreSQL database engine. Default: `whole database`.
+2. `materialized_postgresql_tables_list` - List of tables for MaterializedPostgreSQL database engine. Default: `whole database`.
 
-3. `materialize_postgresql_allow_automatic_update` - Allow to reload table in the background, when schema changes are detected. Default: `0` (`false`).
+3. `materialized_postgresql_allow_automatic_update` - Allow to reload table in the background, when schema changes are detected. Default: `0` (`false`).
 
 ``` sql
 CREATE DATABASE test_database
-ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
-SETTINGS materialize_postgresql_max_block_size = 65536,
-         materialize_postgresql_tables_list = 'table1,table2,table3';
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+SETTINGS materialized_postgresql_max_block_size = 65536,
+         materialized_postgresql_tables_list = 'table1,table2,table3';
 
 SELECT * FROM test_database.table1;
 ```
@@ -64,3 +64,8 @@ postgres# SELECT CASE relreplident
 FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
+
+
+## WARNINGS {#warnings}
+
+1. **TOAST** values convertions is not supported. Default value for the data type will be used.
