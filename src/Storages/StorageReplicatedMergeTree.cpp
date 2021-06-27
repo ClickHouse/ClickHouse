@@ -551,6 +551,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
                 break;
         }
 
+        /// This replica inactive, don't check anything
+        if (!inactive_replicas.empty() && inactive_replicas.count(replica))
+            break;
+
         /// It maybe already removed from zk, but local in-memory mutations
         /// state was not updated.
         if (!getZooKeeper()->exists(fs::path(zookeeper_path) / "mutations" / mutation_id))

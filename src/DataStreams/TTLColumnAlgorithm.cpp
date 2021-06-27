@@ -21,6 +21,8 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
         new_ttl_info = old_ttl_info;
         is_fully_empty = false;
     }
+    else
+        new_ttl_info.finished = true;
 }
 
 void TTLColumnAlgorithm::execute(Block & block)

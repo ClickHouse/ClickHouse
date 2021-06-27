@@ -9,6 +9,8 @@ TTLDeleteAlgorithm::TTLDeleteAlgorithm(
 {
     if (!isMinTTLExpired())
         new_ttl_info = old_ttl_info;
+    else
+        new_ttl_info.finished = true;
 }
 
 void TTLDeleteAlgorithm::execute(Block & block)
