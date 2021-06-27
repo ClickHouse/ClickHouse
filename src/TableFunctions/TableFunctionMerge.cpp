@@ -49,10 +49,13 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    auto [is_regexp, source_database_name_or_regexp_] = evaluateDatabaseNameForMergeEngine(args[0], context);
+    auto [is_regexp, database_ast] = evaluateDatabaseNameForMergeEngine(args[0], context);
 
     database_is_regexp = is_regexp;
-    source_database_name_or_regexp = source_database_name_or_regexp_;
+
+    if (!is_regexp)
+        args[0] = database_ast;
+    source_database_name_or_regexp = database_ast->as<ASTLiteral &>().value.safeGet<String>();
 
     args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
     source_table_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();

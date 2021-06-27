@@ -100,7 +100,7 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr
     return res;
 }
 
-std::tuple<bool, String> evaluateDatabaseNameForMergeEngine(const ASTPtr & node, ContextPtr context)
+std::tuple<bool, ASTPtr> evaluateDatabaseNameForMergeEngine(const ASTPtr & node, ContextPtr context)
 {
     if (const auto * func = node->as<ASTFunction>(); func && func->name == "REGEXP")
     {
@@ -111,11 +111,11 @@ std::tuple<bool, String> evaluateDatabaseNameForMergeEngine(const ASTPtr & node,
         if (!literal || literal->value.safeGet<String>().empty())
             throw Exception("Argument for REGEXP in Merge ENGINE should be a non empty String Literal", ErrorCodes::BAD_ARGUMENTS);
 
-        return std::tuple{true, literal->value.safeGet<String>()};
+        return std::tuple{true, func->arguments->children[0]};
     }
 
     auto ast = evaluateConstantExpressionForDatabaseName(node, context);
-    return std::tuple{false, ast->as<ASTLiteral>()->value.safeGet<String>()};
+    return std::tuple{false, ast};
 }
 
 namespace
