@@ -9,7 +9,7 @@ PEERDIR(
 
 
 SRCS(
-<? find . -name '*.cpp' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

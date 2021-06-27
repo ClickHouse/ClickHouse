@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <common/logger_useful.h>
 #include "DiskDecorator.h"
 #include "DiskLocal.h"
 
@@ -32,14 +33,23 @@ public:
     void moveDirectory(const String & from_path, const String & to_path) override;
     void moveFile(const String & from_path, const String & to_path) override;
     void replaceFile(const String & from_path, const String & to_path) override;
-    std::unique_ptr<ReadBufferFromFileBase>
-    readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const override;
-    std::unique_ptr<WriteBufferFromFileBase>
-    writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
+    void removeSharedFile(const String & path, bool keep_s3) override;
+    void removeSharedRecursive(const String & path, bool keep_s3) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -54,6 +64,8 @@ private:
     mutable std::unordered_map<String, std::weak_ptr<FileDownloadMetadata>> file_downloads;
     /// Protects concurrent downloading files to cache.
     mutable std::mutex mutex;
+
+    Poco::Logger * log = &Poco::Logger::get("DiskCache");
 };
 
 }

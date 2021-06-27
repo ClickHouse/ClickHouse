@@ -7,3 +7,4 @@ select deltaSumMerge(rows) from (select deltaSumState(arrayJoin([0, 1])) as rows
 select deltaSumMerge(rows) from (select deltaSumState(arrayJoin([4, 5])) as rows union all select deltaSumState(arrayJoin([0, 1])) as rows);
 select deltaSum(arrayJoin([2.25, 3, 4.5]));
 select deltaSumMerge(rows) from (select deltaSumState(arrayJoin([0.1, 0.3, 0.5])) as rows union all select deltaSumState(arrayJoin([4.1, 5.1, 6.6])) as rows);
+select deltaSumMerge(rows) from (select deltaSumState(arrayJoin([3, 5])) as rows union all select deltaSumState(arrayJoin([1, 2])) as rows union all select deltaSumState(arrayJoin([4, 6])) as rows);

@@ -98,6 +98,11 @@ public:
         throw Exception("Cannot deserialize to " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    const char * skipSerializedInArena(const char*) const override
+    {
+        throw Exception("Cannot skip serialized " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void updateHashWithValue(size_t, SipHash &) const override
     {
         throw Exception("updateHashWithValue is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);

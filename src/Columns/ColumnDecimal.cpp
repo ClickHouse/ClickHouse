@@ -7,7 +7,7 @@
 
 #include <common/unaligned.h>
 #include <common/sort.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 
 #include <IO/WriteHelpers.h>
@@ -76,6 +76,12 @@ template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.push_back(unalignedLoad<T>(pos));
+    return pos + sizeof(T);
+}
+
+template <typename T>
+const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
+{
     return pos + sizeof(T);
 }
 

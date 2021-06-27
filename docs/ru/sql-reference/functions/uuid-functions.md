@@ -1,6 +1,6 @@
 ---
 toc_priority: 53
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0055\u0055\u0049\u0044"
+toc_title: "Функции для работы с UUID"
 ---
 
 # Функции для работы с UUID {#funktsii-dlia-raboty-s-uuid}

@@ -17,6 +17,8 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -31,15 +33,16 @@ namespace ErrorCodes
 StorageView::StorageView(
     const StorageID & table_id_,
     const ASTCreateQuery & query,
-    const ColumnsDescription & columns_)
+    const ColumnsDescription & columns_,
+    const String & comment)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
-
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
@@ -52,14 +55,16 @@ Pipe StorageView::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 void StorageView::read(
@@ -67,7 +72,7 @@ void StorageView::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         const size_t /*max_block_size*/,
         const unsigned /*num_streams*/)
@@ -81,7 +86,12 @@ void StorageView::read(
         current_inner_query = query_info.view_query->clone();
     }
 
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
+    auto modified_context = Context::createCopy(context);
+    /// Use settings from global context,
+    /// because difference between settings set on VIEW creation and query execution can break queries
+    modified_context->setSettings(context->getGlobalContext()->getSettingsRef());
+
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, modified_context, {}, column_names);
     interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.
@@ -126,7 +136,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
     {
         // If it's a view table function, add a fake db.table name.
         if (table_expression->table_function && table_expression->table_function->as<ASTFunction>()->name == "view")
-            table_expression->database_and_table_name = std::make_shared<ASTIdentifier>("__view");
+            table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__view");
         else
             throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
     }
@@ -169,7 +179,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_id, args.query, args.columns);
+        return StorageView::create(args.table_id, args.query, args.columns, args.comment);
     });
 }
 

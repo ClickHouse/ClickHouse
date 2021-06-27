@@ -8,6 +8,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -159,6 +160,36 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 common_tuple_types[elem_idx] = getLeastSupertype(nested_types[elem_idx]);
 
             return std::make_shared<DataTypeTuple>(common_tuple_types);
+        }
+    }
+
+    /// For maps
+    {
+        bool have_maps = false;
+        bool all_maps = true;
+        DataTypes key_types;
+        DataTypes value_types;
+        key_types.reserve(types.size());
+        value_types.reserve(types.size());
+
+        for (const auto & type : types)
+        {
+            if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+            {
+                have_maps = true;
+                key_types.emplace_back(type_map->getKeyType());
+                value_types.emplace_back(type_map->getValueType());
+            }
+            else
+                all_maps = false;
+        }
+
+        if (have_maps)
+        {
+            if (!all_maps)
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+
+            return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
         }
     }
 
@@ -359,6 +390,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 maximize(max_bits_of_unsigned_integer, 32);
             else if (typeid_cast<const DataTypeUInt64 *>(type.get()))
                 maximize(max_bits_of_unsigned_integer, 64);
+            else if (typeid_cast<const DataTypeUInt128 *>(type.get()))
+                maximize(max_bits_of_unsigned_integer, 128);
             else if (typeid_cast<const DataTypeUInt256 *>(type.get()))
                 maximize(max_bits_of_unsigned_integer, 256);
             else if (typeid_cast<const DataTypeInt8 *>(type.get()) || typeid_cast<const DataTypeEnum8 *>(type.get()))
@@ -392,7 +425,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             size_t min_bit_width_of_integer = std::max(max_bits_of_signed_integer, max_bits_of_unsigned_integer);
 
             /// If unsigned is not covered by signed.
-            if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer)
+            if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer) //-V1051
             {
                 // Because 128 and 256 bit integers are significantly slower, we should not promote to them.
                 // But if we already have wide numbers, promotion is necessary.
@@ -451,6 +484,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     return std::make_shared<DataTypeUInt32>();
                 else if (min_bit_width_of_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
+                else if (min_bit_width_of_integer <= 128)
+                    return std::make_shared<DataTypeUInt128>();
                 else if (min_bit_width_of_integer <= 256)
                     return std::make_shared<DataTypeUInt256>();
                 else

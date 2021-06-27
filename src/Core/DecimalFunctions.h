@@ -50,9 +50,10 @@ inline auto scaleMultiplier(UInt32 scale)
  * whole - represents whole part of decimal, can be negative or positive.
  * fractional - for fractional part of decimal, always positive.
  */
-template <typename T>
+template <typename DecimalType>
 struct DecimalComponents
 {
+    using T = typename DecimalType::NativeType;
     T whole;
     T fractional;
 };
@@ -102,9 +103,21 @@ inline DecimalType decimalFromComponentsWithMultiplier(
     if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
-    const T value = whole_scaled + fractional_sign * (fractional % scale_multiplier);
+    T value;
+    if (common::addOverflow(whole_scaled, fractional_sign * (fractional % scale_multiplier), value))
+        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+
     return DecimalType(value);
 }
+
+template <typename DecimalType>
+inline DecimalType decimalFromComponentsWithMultiplier(
+        const DecimalComponents<DecimalType> & components,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    return decimalFromComponentsWithMultiplier<DecimalType>(components.whole, components.fractional, scale_multiplier);
+}
+
 
 /** Make a decimal value from whole and fractional components with given scale.
  *
@@ -126,7 +139,7 @@ inline DecimalType decimalFromComponents(
  */
 template <typename DecimalType>
 inline DecimalType decimalFromComponents(
-        const DecimalComponents<typename DecimalType::NativeType> & components,
+        const DecimalComponents<DecimalType> & components,
         UInt32 scale)
 {
     return decimalFromComponents<DecimalType>(components.whole, components.fractional, scale);
@@ -136,7 +149,7 @@ inline DecimalType decimalFromComponents(
  * This is an optimization to reduce number of calls to scaleMultiplier on known scale.
  */
 template <typename DecimalType>
-inline DecimalComponents<typename DecimalType::NativeType> splitWithScaleMultiplier(
+inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
         const DecimalType & decimal,
         typename DecimalType::NativeType scale_multiplier)
 {
@@ -151,7 +164,7 @@ inline DecimalComponents<typename DecimalType::NativeType> splitWithScaleMultipl
 
 /// Split decimal into components: whole and fractional part, @see `DecimalComponents` for details.
 template <typename DecimalType>
-inline DecimalComponents<typename DecimalType::NativeType> split(const DecimalType & decimal, UInt32 scale)
+inline DecimalComponents<DecimalType> split(const DecimalType & decimal, UInt32 scale)
 {
     if (scale == 0)
     {
@@ -263,9 +276,7 @@ template <typename To, typename DecimalType>
 To convertTo(const DecimalType & decimal, size_t scale)
 {
     To result;
-
     convertToImpl<To, DecimalType, void>(decimal, scale, result);
-
     return result;
 }
 

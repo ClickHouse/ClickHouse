@@ -9,7 +9,7 @@ namespace DB
 KafkaBlockOutputStream::KafkaBlockOutputStream(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const std::shared_ptr<Context> & context_)
+    const ContextPtr & context_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
@@ -25,11 +25,11 @@ void KafkaBlockOutputStream::writePrefix()
 {
     buffer = storage.createWriteBuffer(getHeader());
 
-    auto format_settings = getFormatSettings(*context);
+    auto format_settings = getFormatSettings(context);
     format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
     child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
-        getHeader(), *context,
+        getHeader(), context,
         [this](const Columns & columns, size_t row)
         {
             buffer->countRow(columns, row);

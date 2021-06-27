@@ -114,7 +114,6 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     while (timeout_in_seconds != 0)
     {
         int waitpid_res = waitpid(pid, &status, WNOHANG);
-
         bool process_terminated_normally = (waitpid_res == pid);
 
         if (process_terminated_normally)
@@ -271,8 +270,11 @@ int ShellCommand::tryWait()
     LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 
     int status = 0;
-    if (-1 == waitpid(pid, &status, 0))
-        throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
+    while (waitpid(pid, &status, 0) < 0)
+    {
+        if (errno != EINTR)
+            throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
+    }
 
     LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
 

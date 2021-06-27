@@ -109,12 +109,12 @@ public:
     bool isSettingNameAllowed(const std::string_view & name) const;
     void checkSettingNameIsAllowed(const std::string_view & name) const;
 
-    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const;
+    UUID login(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
-        const boost::container::flat_set<UUID> & current_roles,
+        const std::vector<UUID> & current_roles,
         bool use_default_roles,
         const Settings & settings,
         const String & current_database,
@@ -123,8 +123,8 @@ public:
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
-        const boost::container::flat_set<UUID> & current_roles,
-        const boost::container::flat_set<UUID> & current_roles_with_admin_option) const;
+        const std::vector<UUID> & current_roles,
+        const std::vector<UUID> & current_roles_with_admin_option) const;
 
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(
         const UUID & user_id,

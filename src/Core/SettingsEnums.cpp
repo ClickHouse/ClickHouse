@@ -102,4 +102,13 @@ IMPLEMENT_SETTING_ENUM(UnionMode, ErrorCodes::UNKNOWN_UNION,
      {"ALL",      UnionMode::ALL},
      {"DISTINCT", UnionMode::DISTINCT}})
 
+IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"none",         DistributedDDLOutputMode::NONE},
+     {"throw",    DistributedDDLOutputMode::THROW},
+     {"null_status_on_timeout", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT},
+     {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
+
+IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default",      HandleKafkaErrorMode::DEFAULT},
+     {"stream",       HandleKafkaErrorMode::STREAM}})
 }

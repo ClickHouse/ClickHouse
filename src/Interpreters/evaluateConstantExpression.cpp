@@ -19,7 +19,6 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-
 namespace DB
 {
 
@@ -30,17 +29,17 @@ namespace ErrorCodes
 }
 
 
-std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context)
+std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context)
 {
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();
-    ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
+    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(ast);
 
-    if (context.getSettingsRef().normalize_function_names)
+    if (context->getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
-    String name = ast->getColumnName();
+    String name = ast->getColumnName(context->getSettingsRef());
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
@@ -66,7 +65,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 }
 
 
-ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & context)
+ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextPtr context)
 {
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
@@ -74,7 +73,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
-ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
+ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, ContextPtr context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
         return std::make_shared<ASTLiteral>(id->name());
@@ -82,18 +81,18 @@ ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, cons
     return evaluateConstantExpressionAsLiteral(node, context);
 }
 
-ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Context & context)
+ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr context)
 {
     ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(node, context);
     auto & literal = res->as<ASTLiteral &>();
     if (literal.value.safeGet<String>().empty())
     {
-        String current_database = context.getCurrentDatabase();
+        String current_database = context->getCurrentDatabase();
         if (current_database.empty())
         {
             /// Table was created on older version of ClickHouse and CREATE contains not folded expression.
             /// Current database is not set yet during server startup, so we cannot evaluate it correctly.
-            literal.value = context.getConfigRef().getString("default_database", "default");
+            literal.value = context->getConfigRef().getString("default_database", "default");
         }
         else
             literal.value = current_database;
@@ -166,9 +165,9 @@ namespace
         return result;
     }
 
-    Disjunction analyzeFunction(const ASTFunction * fn, const ExpressionActionsPtr & expr)
+    Disjunction analyzeFunction(const ASTFunction * fn, const ExpressionActionsPtr & expr, size_t & limit)
     {
-        if (!fn)
+        if (!fn || !limit)
         {
             return {};
         }
@@ -182,6 +181,7 @@ namespace
             const auto * identifier = left->as<ASTIdentifier>() ? left->as<ASTIdentifier>() : right->as<ASTIdentifier>();
             const auto * literal = left->as<ASTLiteral>() ? left->as<ASTLiteral>() : right->as<ASTLiteral>();
 
+            --limit;
             return analyzeEquals(identifier, literal, expr);
         }
         else if (fn->name == "in")
@@ -191,6 +191,19 @@ namespace
             const auto * identifier = left->as<ASTIdentifier>();
 
             Disjunction result;
+
+            auto add_dnf = [&](const auto &dnf)
+            {
+                if (dnf.size() > limit)
+                {
+                    result.clear();
+                    return false;
+                }
+
+                result.insert(result.end(), dnf.begin(), dnf.end());
+                limit -= dnf.size();
+                return true;
+            };
 
             if (const auto * tuple_func = right->as<ASTFunction>(); tuple_func && tuple_func->name == "tuple")
             {
@@ -205,24 +218,34 @@ namespace
                         return {};
                     }
 
-                    result.insert(result.end(), dnf.begin(), dnf.end());
-                }
-            }
-            else if (const auto * tuple_literal = right->as<ASTLiteral>();
-                tuple_literal && tuple_literal->value.getType() == Field::Types::Tuple)
-            {
-                const auto & tuple = tuple_literal->value.get<const Tuple &>();
-                for (const auto & child : tuple)
-                {
-                    const auto dnf = analyzeEquals(identifier, child, expr);
-
-                    if (dnf.empty())
+                    if (!add_dnf(dnf))
                     {
                         return {};
                     }
-
-                    result.insert(result.end(), dnf.begin(), dnf.end());
                 }
+            }
+            else if (const auto * tuple_literal = right->as<ASTLiteral>(); tuple_literal)
+            {
+                if (tuple_literal->value.getType() == Field::Types::Tuple)
+                {
+                    const auto & tuple = tuple_literal->value.get<const Tuple &>();
+                    for (const auto & child : tuple)
+                    {
+                        const auto dnf = analyzeEquals(identifier, child, expr);
+
+                        if (dnf.empty())
+                        {
+                            return {};
+                        }
+
+                        if (!add_dnf(dnf))
+                        {
+                            return {};
+                        }
+                    }
+                }
+                else
+                    return analyzeEquals(identifier, tuple_literal, expr);
             }
             else
             {
@@ -244,13 +267,14 @@ namespace
 
             for (const auto & arg : args->children)
             {
-                const auto dnf = analyzeFunction(arg->as<ASTFunction>(), expr);
+                const auto dnf = analyzeFunction(arg->as<ASTFunction>(), expr, limit);
 
                 if (dnf.empty())
                 {
                     return {};
                 }
 
+                /// limit accounted in analyzeFunction()
                 result.insert(result.end(), dnf.begin(), dnf.end());
             }
 
@@ -269,13 +293,14 @@ namespace
 
             for (const auto & arg : args->children)
             {
-                const auto dnf = analyzeFunction(arg->as<ASTFunction>(), expr);
+                const auto dnf = analyzeFunction(arg->as<ASTFunction>(), expr, limit);
 
                 if (dnf.empty())
                 {
                     continue;
                 }
 
+                /// limit accounted in analyzeFunction()
                 result = andDNF(result, dnf);
             }
 
@@ -286,17 +311,15 @@ namespace
     }
 }
 
-std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr)
+std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr, size_t & limit)
 {
     Blocks result;
 
-    // TODO: `node` may be always-false literal.
-
     if (const auto * fn = node->as<ASTFunction>())
     {
-        const auto dnf = analyzeFunction(fn, target_expr);
+        const auto dnf = analyzeFunction(fn, target_expr, limit);
 
-        if (dnf.empty())
+        if (dnf.empty() || !limit)
         {
             return {};
         }
@@ -349,6 +372,14 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
                 return {};
             }
         }
+    }
+    else if (const auto * literal = node->as<ASTLiteral>())
+    {
+        // Check if it's always true or false.
+        if (literal->value.getType() == Field::Types::UInt64 && literal->value.get<UInt64>() == 0)
+            return {result};
+        else
+            return {};
     }
 
     return {result};

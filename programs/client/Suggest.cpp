@@ -3,6 +3,9 @@
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+
 
 namespace DB
 {
@@ -90,7 +93,7 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
 
-    std::stringstream query;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    WriteBufferFromOwnString query;
     query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
         "SELECT name FROM system.functions"
         " UNION ALL "
@@ -107,14 +110,6 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
         "SELECT name FROM system.settings"
         " UNION ALL "
         "SELECT cluster FROM system.clusters"
-        " UNION ALL "
-        "SELECT name FROM system.errors"
-        " UNION ALL "
-        "SELECT event FROM system.events"
-        " UNION ALL "
-        "SELECT metric FROM system.asynchronous_metrics"
-        " UNION ALL "
-        "SELECT metric FROM system.metrics"
         " UNION ALL "
         "SELECT macro FROM system.macros"
         " UNION ALL "
@@ -139,17 +134,12 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
 
     query << ") WHERE notEmpty(res)";
 
-    Settings settings;
-    /// To show all rows from:
-    /// - system.errors
-    /// - system.events
-    settings.system_events_show_zero_values = true;
-    fetch(connection, timeouts, query.str(), settings);
+    fetch(connection, timeouts, query.str());
 }
 
-void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query, Settings & settings)
+void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
 {
-    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, &settings);
+    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete);
 
     while (true)
     {

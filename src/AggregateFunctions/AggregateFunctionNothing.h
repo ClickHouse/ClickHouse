@@ -8,6 +8,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 /** Aggregate function that takes arbitrary number of arbitrary arguments and does nothing.
@@ -27,6 +28,8 @@ public:
     {
         return argument_types.front();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void create(AggregateDataPtr) const override
     {

@@ -1,11 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2 1
-#endif
-
-#include <libdivide.h>
+#include "divide/divide.h"
 
 
 namespace DB
@@ -43,17 +39,16 @@ struct DivideIntegralByConstantImpl
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
 
-    static NO_INLINE void vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
+    static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
         /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
-        /// And signed integer overflow is well defined in C++20.
         if (unlikely(is_signed_v<B> && b == -1))
         {
             for (size_t i = 0; i < size; ++i)
-                c_pos[i] = -a_pos[i];
+                c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
             return;
         }
 
@@ -71,34 +66,11 @@ struct DivideIntegralByConstantImpl
         if (unlikely(static_cast<A>(b) == 0))
             throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
-        libdivide::divider<A> divider(b);
-
-        const A * a_end = a_pos + size;
-
-#if defined(__SSE2__)
-        static constexpr size_t values_per_sse_register = 16 / sizeof(A);
-        const A * a_end_sse = a_pos + size / values_per_sse_register * values_per_sse_register;
-
-        while (a_pos < a_end_sse)
-        {
-            _mm_storeu_si128(reinterpret_cast<__m128i *>(c_pos),
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(a_pos)) / divider);
-
-            a_pos += values_per_sse_register;
-            c_pos += values_per_sse_register;
-        }
-#endif
-
-        while (a_pos < a_end)
-        {
-            *c_pos = *a_pos / divider;
-            ++a_pos;
-            ++c_pos;
-        }
+        divideImpl(a_pos, b, c_pos, size);
     }
 };
 
-/** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
+/** Specializations are specified for dividing numbers of the type UInt64, UInt32, Int64, Int32 by the numbers of the same sign.
   * Can be expanded to all possible combinations, but more code is needed.
   */
 

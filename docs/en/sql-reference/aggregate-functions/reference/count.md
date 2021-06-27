@@ -7,8 +7,9 @@ toc_priority: 1
 Counts the number of rows or not-NULL values.
 
 ClickHouse supports the following syntaxes for `count`:
-- `count(expr)` or `COUNT(DISTINCT expr)`.
-- `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
+
+-   `count(expr)` or `COUNT(DISTINCT expr)`.
+-   `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
 
 **Arguments**
 

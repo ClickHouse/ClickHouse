@@ -58,12 +58,8 @@ void TableIdentifier::makeCompound() const
 
 ASTPtr TableIdentifier::convertToOld() const
 {
-    std::vector<String> parts;
-
-    if (db && !db->getName().empty()) parts.push_back(db->getName());
-    parts.push_back(getName());
-
-    return std::make_shared<ASTIdentifier>(std::move(parts));
+    if (db) return std::make_shared<ASTTableIdentifier>(db->getName(), getName());
+    else    return std::make_shared<ASTTableIdentifier>(getName());
 }
 
 ColumnIdentifier::ColumnIdentifier(PtrTo<TableIdentifier> table_, PtrTo<Identifier> name) : Identifier(name->getName()), table(table_)
@@ -142,16 +138,19 @@ antlrcpp::Any ParseTreeVisitor::visitIdentifierOrNull(ClickHouseParser::Identifi
 
 antlrcpp::Any ParseTreeVisitor::visitInterval(ClickHouseParser::IntervalContext *)
 {
+    asm (""); // prevent symbol removal
     __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitKeyword(ClickHouseParser::KeywordContext *)
 {
+    asm (""); // prevent symbol removal
     __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitKeywordForAlias(ClickHouseParser::KeywordForAliasContext *)
 {
+    asm (""); // prevent symbol removal
     __builtin_unreachable();
 }
 

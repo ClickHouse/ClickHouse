@@ -31,7 +31,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else if (s_pipeline.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::QueryPipeline;
         else if (s_plan.ignore(pos, expected))
-            kind = ASTExplainQuery::ExplainKind::QueryPlan;
+            kind = ASTExplainQuery::ExplainKind::QueryPlan; //-V1048
     }
     else
         return false;
@@ -57,6 +57,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         ParserQuery p(end);
         if (p.parse(pos, query, expected))
             explain_query->setExplainedQuery(std::move(query));
+        else
+            return false;
     }
     else if (select_p.parse(pos, query, expected) ||
         create_p.parse(pos, query, expected))

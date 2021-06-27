@@ -1,7 +1,5 @@
 version: '2.3'
 services:
     cassandra1:
-        image: cassandra
+        image: cassandra:4.0
         restart: always
-        ports:
-            - 9043:9042

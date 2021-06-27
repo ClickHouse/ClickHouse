@@ -113,9 +113,6 @@ override_dh_install:
 	ln -sf clickhouse-server.docs debian/clickhouse-client.docs
 	ln -sf clickhouse-server.docs debian/clickhouse-common-static.docs
 
-	mkdir -p $(DESTDIR)/etc/security/limits.d
-	cp debian/clickhouse.limits $(DESTDIR)/etc/security/limits.d/clickhouse.conf
-
 	# systemd compatibility
 	mkdir -p $(DESTDIR)/etc/systemd/system/
 	cp debian/clickhouse-server.service $(DESTDIR)/etc/systemd/system/

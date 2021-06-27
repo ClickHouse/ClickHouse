@@ -9,18 +9,17 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
-#include <pqxx/pqxx>
+#include <Storages/PostgreSQL/ConnectionHolder.h>
 
 
 namespace DB
 {
-using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 class PostgreSQLBlockInputStream : public IBlockInputStream
 {
 public:
     PostgreSQLBlockInputStream(
-        ConnectionPtr connection_,
+        postgres::ConnectionHolderPtr connection_holder_,
         const std::string & query_str,
         const Block & sample_block,
         const UInt64 max_block_size_);
@@ -47,7 +46,7 @@ private:
     const UInt64 max_block_size;
     ExternalResultDescription description;
 
-    ConnectionPtr connection;
+    postgres::ConnectionHolderPtr connection_holder;
     std::unique_ptr<pqxx::read_transaction> tx;
     std::unique_ptr<pqxx::stream_from> stream;
 

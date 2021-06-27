@@ -17,6 +17,7 @@ class Context;
   * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)
   * 2. Columns, that are missed inside request, but present in table with defaults (columns with default values)
   * 3. Columns that materialized from other columns (materialized columns)
+  * Also the stream can substitute NULL into DEFAULT value in case of INSERT SELECT query (null_as_default) if according setting is 1.
   * All three types of columns are materialized (not constants).
   */
 class AddingDefaultBlockOutputStream : public IBlockOutputStream
@@ -26,7 +27,8 @@ public:
         const BlockOutputStreamPtr & output_,
         const Block & header_,
         const ColumnsDescription & columns_,
-        const Context & context_);
+        ContextPtr context_,
+        bool null_as_default_ = false);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;

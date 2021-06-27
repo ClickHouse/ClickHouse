@@ -48,7 +48,7 @@ public:
 
     String getName() const override { return "AvroRowOutputFormat"; }
     void write(const Columns & columns, size_t row_num) override;
-    void writeField(const IColumn &, const IDataType &, size_t) override {}
+    void writeField(const IColumn &, const ISerialization &, size_t) override {}
     virtual void writePrefix() override;
     virtual void writeSuffix() override;
 

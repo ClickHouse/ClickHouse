@@ -1,5 +1,5 @@
 ---
-toc_priority: 7
+toc_priority: 5
 toc_title: MongoDB
 ---
 
@@ -54,4 +54,4 @@ SELECT COUNT() FROM mongo_table;
 └─────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/integrations/mongodb/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/mongodb/) <!--hide-->

@@ -6,12 +6,12 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Common/FieldVisitors.h>
 #include <Core/Block.h>
 #include <common/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Parsers/ASTLiteral.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -40,6 +40,9 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
           attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
           rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
 {
+    serializations.resize(types.size());
+    for (size_t i = 0; i < types.size(); ++i)
+        serializations[i] = types[i]->getDefaultSerialization();
 }
 
 Chunk ValuesBlockInputFormat::generate()
@@ -164,10 +167,12 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         bool read = true;
         const auto & type = types[column_idx];
+        const auto & serialization = serializations[column_idx];
         if (format_settings.null_as_default && !type->isNullable())
-            read = DataTypeNullable::deserializeTextQuoted(column, buf, format_settings, type);
+            read = SerializationNullable::deserializeTextQuotedImpl(column, buf, format_settings, serialization);
         else
-            type->deserializeAsTextQuoted(column, buf, format_settings);
+            serialization->deserializeTextQuoted(column, buf, format_settings);
+
         rollback_on_exception = true;
 
         skipWhitespaceIfAny(buf);
@@ -310,7 +315,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         bool ok = false;
         try
         {
-            header.getByPosition(column_idx).type->deserializeAsTextQuoted(column, buf, format_settings);
+            const auto & serialization = serializations[column_idx];
+            serialization->deserializeTextQuoted(column, buf, format_settings);
             rollback_on_exception = true;
             skipWhitespaceIfAny(buf);
             if (checkDelimiterAfterValue(column_idx))
@@ -351,7 +357,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 TokenIterator(tokens),
                 token_iterator,
                 ast,
-                *context,
+                context,
                 &found_in_cache,
                 delimiter);
             templates[column_idx].emplace(structure);
@@ -393,7 +399,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf.position() = const_cast<char *>(token_iterator->begin);
 
-    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
+    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
 
     Field & expression_value = value_raw.first;
 

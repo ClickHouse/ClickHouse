@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_renamed.mt"
 # 5. check moving tables from Ordinary to Atomic (can be used to "alter" database engine)
 $CLICKHOUSE_CLIENT --default_database_engine=Ordinary -q "CREATE DATABASE test_01192"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01192.mt AS test_01192_renamed.mt ENGINE=MergeTree ORDER BY n"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test_01192.rmt AS test_01192_renamed.mt ENGINE=ReplicatedMergeTree('/test/01192/', '1') ORDER BY n"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE test_01192.rmt AS test_01192_renamed.mt ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/', '1') ORDER BY n"
 $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW test_01192.mv TO test_01192.rmt AS SELECT * FROM test_01192.mt"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO test_01192.mt SELECT number FROM numbers(10)" && echo "inserted"

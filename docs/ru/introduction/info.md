@@ -9,4 +9,3 @@ toc_priority: 100
 -   Адрес электронной почты: <a class="feedback-email"></a>
 -   Телефон: <a href="tel:+74957806510">+7-495-780-6510</a>
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/info/) <!--hide-->

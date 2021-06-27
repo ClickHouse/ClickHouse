@@ -7,6 +7,7 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
@@ -94,6 +95,12 @@ void QueryPipeline::addTransform(ProcessorPtr transform)
 {
     checkInitializedAndNotCompleted();
     pipe.addTransform(std::move(transform));
+}
+
+void QueryPipeline::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes)
+{
+    checkInitializedAndNotCompleted();
+    pipe.addTransform(std::move(transform), totals, extremes);
 }
 
 void QueryPipeline::transform(const Transformer & transformer)
@@ -211,10 +218,14 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
 
 QueryPipeline QueryPipeline::unitePipelines(
     std::vector<std::unique_ptr<QueryPipeline>> pipelines,
-    const Block & common_header,
     size_t max_threads_limit,
     Processors * collected_processors)
 {
+    if (pipelines.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite an empty set of pipelines");
+
+    Block common_header = pipelines.front()->getHeader();
+
     /// Should we limit the number of threads for united pipeline. True if all pipelines have max_threads != 0.
     /// If true, result max_threads will be sum(max_threads).
     /// Note: it may be > than settings.max_threads, so we should apply this limit again.
@@ -228,20 +239,6 @@ QueryPipeline QueryPipeline::unitePipelines(
         pipeline.checkInitialized();
         pipeline.pipe.collected_processors = collected_processors;
 
-        if (!pipeline.isCompleted())
-        {
-            auto actions_dag = ActionsDAG::makeConvertingActions(
-                    pipeline.getHeader().getColumnsWithTypeAndName(),
-                    common_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Position);
-            auto actions = std::make_shared<ExpressionActions>(actions_dag);
-
-            pipeline.addSimpleTransform([&](const Block & header)
-            {
-               return std::make_shared<ExpressionTransform>(header, actions);
-            });
-        }
-
         pipes.emplace_back(std::move(pipeline.pipe));
 
         max_threads += pipeline.max_threads;
@@ -254,7 +251,7 @@ QueryPipeline QueryPipeline::unitePipelines(
     }
 
     QueryPipeline pipeline;
-    pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors));
+    pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors, false));
 
     if (will_limit_max_threads)
     {
@@ -265,8 +262,98 @@ QueryPipeline QueryPipeline::unitePipelines(
     return pipeline;
 }
 
+std::unique_ptr<QueryPipeline> QueryPipeline::joinPipelines(
+    std::unique_ptr<QueryPipeline> left,
+    std::unique_ptr<QueryPipeline> right,
+    JoinPtr join,
+    size_t max_block_size,
+    Processors * collected_processors)
+{
+    left->checkInitializedAndNotCompleted();
+    right->checkInitializedAndNotCompleted();
 
-void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context)
+    /// Extremes before join are useless. They will be calculated after if needed.
+    left->pipe.dropExtremes();
+    right->pipe.dropExtremes();
+
+    left->pipe.collected_processors = collected_processors;
+    right->pipe.collected_processors = collected_processors;
+
+    /// In case joined subquery has totals, and we don't, add default chunk to totals.
+    bool default_totals = false;
+    if (!left->hasTotals() && right->hasTotals())
+    {
+        left->addDefaultTotals();
+        default_totals = true;
+    }
+
+    ///                                     (left) ──────┐
+    ///                                                  ╞> Joining ─> (joined)
+    ///                                     (left) ─┐┌───┘
+    ///                                             └┼───┐
+    /// (right) ┐                         (totals) ──┼─┐ ╞> Joining ─> (joined)
+    ///         ╞> Resize ┐                        ╓─┘┌┼─┘
+    /// (right) ┘         │                        ╟──┘└─┐
+    ///                   ╞> FillingJoin ─> Resize ╣     ╞> Joining ─> (totals)
+    /// (totals) ─────────┘                        ╙─────┘
+
+    size_t num_streams = left->getNumStreams();
+    right->resize(1);
+
+    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+    InputPort * totals_port = nullptr;
+    if (right->hasTotals())
+        totals_port = adding_joined->addTotalsPort();
+
+    right->addTransform(std::move(adding_joined), totals_port, nullptr);
+
+    size_t num_streams_including_totals = num_streams + (left->hasTotals() ? 1 : 0);
+    right->resize(num_streams_including_totals);
+
+    /// This counter is needed for every Joining except totals, to decide which Joining will generate non joined rows.
+    auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(num_streams);
+
+    auto lit = left->pipe.output_ports.begin();
+    auto rit = right->pipe.output_ports.begin();
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto joining = std::make_shared<JoiningTransform>(left->getHeader(), join, max_block_size, false, default_totals, finish_counter);
+        connect(**lit, joining->getInputs().front());
+        connect(**rit, joining->getInputs().back());
+        *lit = &joining->getOutputs().front();
+
+        ++lit;
+        ++rit;
+
+        if (collected_processors)
+            collected_processors->emplace_back(joining);
+
+        left->pipe.processors.emplace_back(std::move(joining));
+    }
+
+    if (left->hasTotals())
+    {
+        auto joining = std::make_shared<JoiningTransform>(left->getHeader(), join, max_block_size, true, default_totals);
+        connect(*left->pipe.totals_port, joining->getInputs().front());
+        connect(**rit, joining->getInputs().back());
+        left->pipe.totals_port = &joining->getOutputs().front();
+
+        ++rit;
+
+        if (collected_processors)
+            collected_processors->emplace_back(joining);
+
+        left->pipe.processors.emplace_back(std::move(joining));
+    }
+
+    left->pipe.processors.insert(left->pipe.processors.end(), right->pipe.processors.begin(), right->pipe.processors.end());
+    left->pipe.holder = std::move(right->pipe.holder);
+    left->pipe.header = left->pipe.output_ports.front()->getHeader();
+    return left;
+}
+
+void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context)
 {
     resize(1);
 
@@ -288,7 +375,9 @@ void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryF
 void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
 {
     checkInitializedAndNotCompleted();
-    assertBlocksHaveEqualStructure(getHeader(), pipeline.getHeader(), "QueryPipeline");
+    if (pipeline.getHeader())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CreatingSets should have empty header. Got: {}",
+                        pipeline.getHeader().dumpStructure());
 
     IProcessor::PortNumbers delayed_streams(pipe.numOutputPorts());
     for (size_t i = 0; i < delayed_streams.size(); ++i)
@@ -299,7 +388,7 @@ void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
     Pipes pipes;
     pipes.emplace_back(std::move(pipe));
     pipes.emplace_back(QueryPipeline::getPipe(std::move(pipeline)));
-    pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
+    pipe = Pipe::unitePipes(std::move(pipes), collected_processors, true);
 
     auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams, true);
     addTransform(std::move(processor));

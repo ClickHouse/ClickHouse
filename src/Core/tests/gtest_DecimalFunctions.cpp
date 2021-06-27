@@ -14,7 +14,7 @@ struct DecimalUtilsSplitAndCombineTestParam
     Decimal64 decimal_value;
     uint8_t scale;
 
-    DecimalUtils::DecimalComponents<typename Decimal64::NativeType> components;
+    DecimalUtils::DecimalComponents<Decimal64> components;
 };
 
 std::ostream & operator << (std::ostream & ostr, const DecimalUtilsSplitAndCombineTestParam & param)

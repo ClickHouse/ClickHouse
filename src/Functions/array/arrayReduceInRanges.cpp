@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -13,7 +13,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <ext/scope_guard.h>
+#include <common/scope_guard_safe.h>
 
 
 namespace DB
@@ -40,7 +40,7 @@ class FunctionArrayReduceInRanges : public IFunction
 public:
     static const size_t minimum_step = 64;
     static constexpr auto name = "arrayReduceInRanges";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayReduceInRanges>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReduceInRanges>(); }
 
     String getName() const override { return name; }
 
@@ -123,9 +123,10 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
 }
 
 
-ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+ColumnPtr FunctionArrayReduceInRanges::executeImpl(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    IAggregateFunction & agg_func = *aggregate_function;
+    const IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
     /// Aggregate functions do not support constant columns. Therefore, we materialize them.
@@ -252,14 +253,14 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName 
             }
         }
 
-        SCOPE_EXIT({
+        SCOPE_EXIT_MEMORY_SAFE({
             for (size_t j = 0; j < place_total; ++j)
                 agg_func.destroy(places[j]);
         });
 
-        auto * true_func = &agg_func;
+        const auto * true_func = &agg_func;
         /// Unnest consecutive trailing -State combinators
-        while (auto * func = typeid_cast<AggregateFunctionState *>(true_func))
+        while (const auto * func = typeid_cast<const AggregateFunctionState *>(true_func))
             true_func = func->getNestedFunction().get();
 
         /// Pre-aggregate to the initial level
@@ -331,7 +332,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName 
             AggregateDataPtr place = arena->alignedAlloc(agg_func.sizeOfData(), agg_func.alignOfData());
             agg_func.create(place);
 
-            SCOPE_EXIT({
+            SCOPE_EXIT_MEMORY_SAFE({
                 agg_func.destroy(place);
             });
 

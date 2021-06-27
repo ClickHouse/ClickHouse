@@ -14,3 +14,4 @@
 #cmakedefine01 USE_ROCKSDB
 #cmakedefine01 USE_LIBPQXX
 #cmakedefine01 USE_NURAFT
+#cmakedefine01 USE_KRB5

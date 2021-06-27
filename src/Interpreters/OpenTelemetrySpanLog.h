@@ -7,7 +7,7 @@ namespace DB
 
 struct OpenTelemetrySpan
 {
-    __uint128_t trace_id;
+    UUID trace_id;
     UInt64 span_id;
     UInt64 parent_span_id;
     std::string operation_name;

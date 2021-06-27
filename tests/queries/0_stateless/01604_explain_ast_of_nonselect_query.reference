@@ -1,6 +1,6 @@
 AlterQuery  t1 (children 1)
  ExpressionList (children 1)
-  AlterCommand 25 (children 1)
+  AlterCommand 30 (children 1)
    Function equals (children 1)
     ExpressionList (children 2)
      Identifier date

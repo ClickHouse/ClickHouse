@@ -16,7 +16,7 @@ welchTTest(sample_data, sample_index)
 Значения выборок берутся из столбца `sample_data`. Если  `sample_index` равно 0, то значение из этой строки принадлежит первой выборке. Во всех остальных случаях значение принадлежит второй выборке.
 Проверяется нулевая гипотеза, что средние значения генеральных совокупностей совпадают. Для применения t-критерия Уэлча распределение в генеральных совокупностях должно быть нормальным. Дисперсии могут не совпадать.
 
-**Параметры**
+**Аргументы**
 
 -   `sample_data` — данные выборок. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
 -   `sample_index` — индексы выборок. [Integer](../../../sql-reference/data-types/int-uint.md).
@@ -63,4 +63,3 @@ SELECT welchTTest(sample_data, sample_index) FROM welch_ttest;
 -   [t-критерий Уэлча](https://ru.wikipedia.org/wiki/T-%D0%BA%D1%80%D0%B8%D1%82%D0%B5%D1%80%D0%B8%D0%B9_%D0%A3%D1%8D%D0%BB%D1%87%D0%B0)
 -   [studentTTest](studentttest.md#studentttest)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/welchTTest/) <!--hide-->

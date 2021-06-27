@@ -1,179 +1,57 @@
-
-
 import time
-from os import path as p, unlink
-from tempfile import NamedTemporaryFile
-
-import helpers
 import pytest
+import logging
 from helpers.cluster import ClickHouseCluster
 
+cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
 
-def test_chroot_with_same_root():
-    cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
-    cluster_2 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
+node1 = cluster.add_instance('node1', with_zookeeper=True,
+                                main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"])
+node2 = cluster.add_instance('node2', with_zookeeper=True,
+                                main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"])
+node3 = cluster.add_instance('node3', with_zookeeper=True,
+                                main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_b.xml"])
 
-    node1 = cluster_1.add_instance('node1',
-                                   main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
-    node2 = cluster_2.add_instance('node2',
-                                   main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
-    nodes = [node1, node2]
+def create_zk_roots(zk):
+    zk.ensure_path('/root_a')
+    zk.ensure_path('/root_b')
+    logging.debug(f"Create ZK roots:{zk.get_children('/')}")
 
-    def create_zk_root(zk):
-        zk.ensure_path('/root_a')
-        print(zk.get_children('/'))
-
-    cluster_1.add_zookeeper_startup_command(create_zk_root)
-
+@pytest.fixture(scope="module", autouse=True)
+def started_cluster():
     try:
-        cluster_1.start()
-
-        try:
-            cluster_2.start(destroy_dirs=False)
-            for i, node in enumerate(nodes):
-                node.query('''
-                CREATE TABLE simple (date Date, id UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
-                '''.format(replica=node.name))
-                for j in range(2):  # Second insert to test deduplication
-                    node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
-
-            time.sleep(1)
-
-            assert node1.query('select count() from simple').strip() == '2'
-            assert node2.query('select count() from simple').strip() == '2'
-
-        finally:
-            cluster_2.shutdown()
-
-    finally:
-        cluster_1.shutdown()
-
-
-def test_chroot_with_different_root():
-    cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
-    cluster_2 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_b.xml')
-
-    node1 = cluster_1.add_instance('node1',
-                                   main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
-    node2 = cluster_2.add_instance('node2',
-                                   main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_b.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
-    nodes = [node1, node2]
-
-    def create_zk_roots(zk):
-        zk.ensure_path('/root_a')
-        zk.ensure_path('/root_b')
-        print(zk.get_children('/'))
-
-    cluster_1.add_zookeeper_startup_command(create_zk_roots)
-
-    try:
-        cluster_1.start()
-
-        try:
-            cluster_2.start(destroy_dirs=False)
-
-            for i, node in enumerate(nodes):
-                node.query('''
-                CREATE TABLE simple (date Date, id UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
-                '''.format(replica=node.name))
-                for j in range(2):  # Second insert to test deduplication
-                    node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
-
-            assert node1.query('select count() from simple').strip() == '1'
-            assert node2.query('select count() from simple').strip() == '1'
-
-        finally:
-            cluster_2.shutdown()
-
-    finally:
-        cluster_1.shutdown()
-
-
-def test_identity():
-    cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_with_password.xml')
-    cluster_2 = ClickHouseCluster(__file__)
-
-    node1 = cluster_1.add_instance('node1', main_configs=["configs/remote_servers.xml",
-                                                          "configs/zookeeper_config_with_password.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
-    node2 = cluster_2.add_instance('node2', main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
-                                   zookeeper_use_tmpfs=False)
-
-    try:
-        cluster_1.start()
-
-        node1.query('''
-        CREATE TABLE simple (date Date, id UInt32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
-        '''.format(replica=node1.name))
-
-        with pytest.raises(Exception):
-            cluster_2.start(destroy_dirs=False)
-            node2.query('''
-            CREATE TABLE simple (date Date, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '1', date, id, 8192);
-            ''')
-
-    finally:
-        cluster_1.shutdown()
-        cluster_2.shutdown()
-
-
-def test_secure_connection():
-    # We need absolute path in zookeeper volumes. Generate it dynamically.
-    TEMPLATE = '''
-    zoo{zoo_id}:
-        image: zookeeper:3.6.2
-        restart: always
-        environment:
-            ZOO_TICK_TIME: 500
-            ZOO_MY_ID: {zoo_id}
-            ZOO_SERVERS: server.1=zoo1:2888:3888;2181 server.2=zoo2:2888:3888;2181 server.3=zoo3:2888:3888;2181
-            ZOO_SECURE_CLIENT_PORT: 2281
-        volumes:
-           - {helpers_dir}/zookeeper-ssl-entrypoint.sh:/zookeeper-ssl-entrypoint.sh
-           - {configs_dir}:/clickhouse-config
-        command: ["zkServer.sh", "start-foreground"]
-        entrypoint: /zookeeper-ssl-entrypoint.sh
-    '''
-    configs_dir = p.abspath(p.join(p.dirname(__file__), 'configs_secure'))
-    helpers_dir = p.abspath(p.dirname(helpers.__file__))
-
-    cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_with_ssl.xml')
-
-    docker_compose = NamedTemporaryFile(mode='w+', delete=False)
-
-    docker_compose.write(
-        "version: '2.3'\nservices:\n" +
-        TEMPLATE.format(zoo_id=1, configs_dir=configs_dir, helpers_dir=helpers_dir) +
-        TEMPLATE.format(zoo_id=2, configs_dir=configs_dir, helpers_dir=helpers_dir) +
-        TEMPLATE.format(zoo_id=3, configs_dir=configs_dir, helpers_dir=helpers_dir)
-    )
-    docker_compose.close()
-
-    node1 = cluster.add_instance('node1', main_configs=["configs_secure/client.crt", "configs_secure/client.key",
-                                                        "configs_secure/conf.d/remote_servers.xml",
-                                                        "configs_secure/conf.d/ssl_conf.xml"],
-                                 with_zookeeper=True, zookeeper_docker_compose_path=docker_compose.name,
-                                 zookeeper_use_tmpfs=False)
-    node2 = cluster.add_instance('node2', main_configs=["configs_secure/client.crt", "configs_secure/client.key",
-                                                        "configs_secure/conf.d/remote_servers.xml",
-                                                        "configs_secure/conf.d/ssl_conf.xml"],
-                                 with_zookeeper=True, zookeeper_docker_compose_path=docker_compose.name,
-                                 zookeeper_use_tmpfs=False)
-
-    try:
+        cluster.add_zookeeper_startup_command(create_zk_roots)
         cluster.start()
 
-        assert node1.query("SELECT count() FROM system.zookeeper WHERE path = '/'") == '2\n'
-        assert node2.query("SELECT count() FROM system.zookeeper WHERE path = '/'") == '2\n'
+        yield cluster
 
     finally:
         cluster.shutdown()
-        unlink(docker_compose.name)
+
+def test_chroot_with_same_root(started_cluster):
+    for i, node in enumerate([node1, node2]):
+        node.query('DROP TABLE IF EXISTS simple SYNC')
+        node.query('''
+        CREATE TABLE simple (date Date, id UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
+        '''.format(replica=node.name))
+        for j in range(2):  # Second insert to test deduplication
+            node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
+
+    time.sleep(1)
+
+    assert node1.query('select count() from simple').strip() == '2'
+    assert node2.query('select count() from simple').strip() == '2'
+
+def test_chroot_with_different_root(started_cluster):
+    for i, node in [(1, node1), (3, node3)]:
+        node.query('DROP TABLE IF EXISTS simple_different SYNC')
+        node.query('''
+        CREATE TABLE simple_different (date Date, id UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple_different', '{replica}', date, id, 8192);
+        '''.format(replica=node.name))
+        for j in range(2):  # Second insert to test deduplication
+            node.query("INSERT INTO simple_different VALUES ({0}, {0})".format(i))
+
+    assert node1.query('select count() from simple_different').strip() == '1'
+    assert node3.query('select count() from simple_different').strip() == '1'

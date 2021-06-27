@@ -76,7 +76,7 @@ protected:
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    ResultSetRow(const DataTypes & data_types, const Columns & columns_, int row_num_);
+    ResultSetRow(const Serializations & serializations, const Columns & columns_, int row_num_);
 };
 
 class ComFieldList : public LimitedReadPacket
