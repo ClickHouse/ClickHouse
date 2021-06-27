@@ -39,7 +39,7 @@ Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on t
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
-Supports multiple replicas that must be listed by a character `|`. For example:
+Supports multiple replicas that must be listed by `|`. For example:
 
 ```sql
 SELECT DISTINCT(name) FROM mysql(`mysql{1|2|3}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
