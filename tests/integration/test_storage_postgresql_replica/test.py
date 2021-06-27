@@ -40,7 +40,7 @@ def create_clickhouse_postgres_db(ip, port, name='postgres_database'):
 def create_materialized_table(ip, port):
     instance.query('''
         CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
+            ENGINE = MaterializedPostgreSQL(
             '{}:{}', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key; '''.format(ip, port))
 

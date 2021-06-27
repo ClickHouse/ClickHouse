@@ -62,7 +62,7 @@ def create_materialized_db(ip, port,
                            materialized_database='test_database',
                            postgres_database='postgres_database',
                            settings=[]):
-    create_query = "CREATE DATABASE {} ENGINE = MaterializePostgreSQL('{}:{}', '{}', 'postgres', 'mysecretpassword')".format(materialized_database, ip, port, postgres_database)
+    create_query = "CREATE DATABASE {} ENGINE = MaterializedPostgreSQL('{}:{}', '{}', 'postgres', 'mysecretpassword')".format(materialized_database, ip, port, postgres_database)
     if len(settings) > 0:
         create_query += " SETTINGS "
         for i in range(len(settings)):
@@ -115,16 +115,16 @@ def assert_nested_table_is_created(table_name, materialized_database='test_datab
 
 @pytest.mark.timeout(30)
 def check_tables_are_synchronized(table_name, order_by='key', postgres_database='postgres_database', materialized_database='test_database'):
-        assert_nested_table_is_created(table_name, materialized_database)
+    assert_nested_table_is_created(table_name, materialized_database)
 
-        expected = instance.query('select * from {}.{} order by {};'.format(postgres_database, table_name, order_by))
+    expected = instance.query('select * from {}.{} order by {};'.format(postgres_database, table_name, order_by))
+    result = instance.query('select * from {}.{} order by {};'.format(materialized_database, table_name, order_by))
+
+    while result != expected:
+        time.sleep(0.5)
         result = instance.query('select * from {}.{} order by {};'.format(materialized_database, table_name, order_by))
 
-        while result != expected:
-            time.sleep(0.5)
-            result = instance.query('select * from {}.{} order by {};'.format(materialized_database, table_name, order_by))
-
-        assert(result == expected)
+    assert(result == expected)
 
 
 @pytest.fixture(scope="module")
@@ -328,7 +328,7 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
 
     create_materialized_db(ip=started_cluster.postgres_ip,
                            port=started_cluster.postgres_port,
-                           settings=["materialize_postgresql_tables_list = '{}'".format(publication_tables)])
+                           settings=["materialized_postgresql_tables_list = '{}'".format(publication_tables)])
     assert 'test_database' in instance.query('SHOW DATABASES')
 
     time.sleep(1)
@@ -391,7 +391,7 @@ def test_clickhouse_restart(started_cluster):
         create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
         instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, {} from numbers(50)".format(i, i))
 
-    instance.query("CREATE DATABASE test_database ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+    instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
 
     for i in range(NUM_TABLES):
         table_name = 'postgresql_replica_{}'.format(i)
@@ -449,7 +449,7 @@ def test_table_schema_changes(started_cluster):
 
     create_materialized_db(ip=started_cluster.postgres_ip,
                            port=started_cluster.postgres_port,
-                           settings=["materialize_postgresql_allow_automatic_update = 1"])
+                           settings=["materialized_postgresql_allow_automatic_update = 1"])
 
     for i in range(NUM_TABLES):
         instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT 25 + number, {}, {}, {} from numbers(25)".format(i, i, i, i))
@@ -608,7 +608,7 @@ def test_virtual_columns(started_cluster):
 
     create_materialized_db(ip=started_cluster.postgres_ip,
                            port=started_cluster.postgres_port,
-                           settings=["materialize_postgresql_allow_automatic_update = 1"])
+                           settings=["materialized_postgresql_allow_automatic_update = 1"])
     assert_nested_table_is_created('postgresql_replica_0')
     instance.query("INSERT INTO postgres_database.postgresql_replica_0 SELECT number, number from numbers(10)")
     check_tables_are_synchronized('postgresql_replica_0');

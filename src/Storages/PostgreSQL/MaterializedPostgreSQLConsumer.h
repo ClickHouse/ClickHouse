@@ -14,12 +14,12 @@
 namespace DB
 {
 
-class MaterializePostgreSQLConsumer
+class MaterializedPostgreSQLConsumer
 {
 public:
     using Storages = std::unordered_map<String, StoragePtr>;
 
-    MaterializePostgreSQLConsumer(
+    MaterializedPostgreSQLConsumer(
             ContextPtr context_,
             std::shared_ptr<postgres::Connection> connection_,
             const String & replication_slot_name_,

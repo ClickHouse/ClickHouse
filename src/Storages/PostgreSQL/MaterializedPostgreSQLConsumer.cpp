@@ -1,6 +1,6 @@
-#include "MaterializePostgreSQLConsumer.h"
+#include "MaterializedPostgreSQLConsumer.h"
 
-#include "StorageMaterializePostgreSQL.h"
+#include "StorageMaterializedPostgreSQL.h"
 #include <Columns/ColumnNullable.h>
 #include <Common/hex.h>
 #include <DataStreams/copyData.h>
@@ -16,10 +16,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TABLE;
 }
 
-MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
+MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     ContextPtr context_,
     std::shared_ptr<postgres::Connection> connection_,
     const std::string & replication_slot_name_,
@@ -46,7 +45,7 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
 }
 
 
-void MaterializePostgreSQLConsumer::Buffer::createEmptyBuffer(StoragePtr storage)
+void MaterializedPostgreSQLConsumer::Buffer::createEmptyBuffer(StoragePtr storage)
 {
     const auto storage_metadata = storage->getInMemoryMetadataPtr();
     const Block sample_block = storage_metadata->getSampleBlock();
@@ -60,7 +59,7 @@ void MaterializePostgreSQLConsumer::Buffer::createEmptyBuffer(StoragePtr storage
     auto insert_columns = std::make_shared<ASTExpressionList>();
 
     auto table_id = storage->getStorageID();
-    LOG_TRACE(&Poco::Logger::get("MaterializePostgreSQLBuffer"), "New buffer for table {}.{} ({}), structure: {}",
+    LOG_TRACE(&Poco::Logger::get("MaterializedPostgreSQLBuffer"), "New buffer for table {}.{} ({}), structure: {}",
               table_id.database_name, table_id.table_name, toString(table_id.uuid), sample_block.dumpStructure());
 
     assert(description.sample_block.columns() == storage_columns.size());
@@ -79,7 +78,7 @@ void MaterializePostgreSQLConsumer::Buffer::createEmptyBuffer(StoragePtr storage
 }
 
 
-void MaterializePostgreSQLConsumer::insertValue(Buffer & buffer, const std::string & value, size_t column_idx)
+void MaterializedPostgreSQLConsumer::insertValue(Buffer & buffer, const std::string & value, size_t column_idx)
 {
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     bool is_nullable = buffer.description.types[column_idx].second;
@@ -105,14 +104,14 @@ void MaterializePostgreSQLConsumer::insertValue(Buffer & buffer, const std::stri
 }
 
 
-void MaterializePostgreSQLConsumer::insertDefaultValue(Buffer & buffer, size_t column_idx)
+void MaterializedPostgreSQLConsumer::insertDefaultValue(Buffer & buffer, size_t column_idx)
 {
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     insertDefaultPostgreSQLValue(*buffer.columns[column_idx], *sample.column);
 }
 
 
-void MaterializePostgreSQLConsumer::readString(const char * message, size_t & pos, size_t size, String & result)
+void MaterializedPostgreSQLConsumer::readString(const char * message, size_t & pos, size_t size, String & result)
 {
     assert(size > pos + 2);
     char current = unhex2(message + pos);
@@ -127,7 +126,7 @@ void MaterializePostgreSQLConsumer::readString(const char * message, size_t & po
 
 
 template<typename T>
-T MaterializePostgreSQLConsumer::unhexN(const char * message, size_t pos, size_t n)
+T MaterializedPostgreSQLConsumer::unhexN(const char * message, size_t pos, size_t n)
 {
     T result = 0;
     for (size_t i = 0; i < n; ++i)
@@ -139,7 +138,7 @@ T MaterializePostgreSQLConsumer::unhexN(const char * message, size_t pos, size_t
 }
 
 
-Int64 MaterializePostgreSQLConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int64 MaterializedPostgreSQLConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size >= pos + 16);
     Int64 result = unhexN<Int64>(message, pos, 8);
@@ -148,7 +147,7 @@ Int64 MaterializePostgreSQLConsumer::readInt64(const char * message, size_t & po
 }
 
 
-Int32 MaterializePostgreSQLConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int32 MaterializedPostgreSQLConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size >= pos + 8);
     Int32 result = unhexN<Int32>(message, pos, 4);
@@ -157,7 +156,7 @@ Int32 MaterializePostgreSQLConsumer::readInt32(const char * message, size_t & po
 }
 
 
-Int16 MaterializePostgreSQLConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int16 MaterializedPostgreSQLConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size >= pos + 4);
     Int16 result = unhexN<Int16>(message, pos, 2);
@@ -166,7 +165,7 @@ Int16 MaterializePostgreSQLConsumer::readInt16(const char * message, size_t & po
 }
 
 
-Int8 MaterializePostgreSQLConsumer::readInt8(const char * message, size_t & pos, [[maybe_unused]] size_t size)
+Int8 MaterializedPostgreSQLConsumer::readInt8(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
     assert(size >= pos + 2);
     Int8 result = unhex2(message + pos);
@@ -175,7 +174,7 @@ Int8 MaterializePostgreSQLConsumer::readInt8(const char * message, size_t & pos,
 }
 
 
-void MaterializePostgreSQLConsumer::readTupleData(
+void MaterializedPostgreSQLConsumer::readTupleData(
         Buffer & buffer, const char * message, size_t & pos, [[maybe_unused]] size_t size, PostgreSQLQuery type, bool old_value)
 {
     Int16 num_columns = readInt16(message, pos, size);
@@ -247,7 +246,7 @@ void MaterializePostgreSQLConsumer::readTupleData(
 
 
 /// https://www.postgresql.org/docs/13/protocol-logicalrep-message-formats.html
-void MaterializePostgreSQLConsumer::processReplicationMessage(const char * replication_message, size_t size)
+void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * replication_message, size_t size)
 {
     /// Skip '\x'
     size_t pos = 2;
@@ -456,7 +455,7 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
 }
 
 
-void MaterializePostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransaction> tx)
+void MaterializedPostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransaction> tx)
 {
     try
     {
@@ -500,7 +499,7 @@ void MaterializePostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransact
 }
 
 
-String MaterializePostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx)
+String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx)
 {
     std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn);
     pqxx::result result{tx->exec(query_str)};
@@ -516,7 +515,7 @@ String MaterializePostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransa
 /// Sync for some table might not be allowed if:
 /// 1. Table schema changed and might break synchronization.
 /// 2. There is no storage for this table. (As a result of some exception or incorrect pg_publication)
-bool MaterializePostgreSQLConsumer::isSyncAllowed(Int32 relation_id)
+bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id)
 {
     auto table_with_lsn = skip_list.find(relation_id);
 
@@ -547,7 +546,7 @@ bool MaterializePostgreSQLConsumer::isSyncAllowed(Int32 relation_id)
 }
 
 
-void MaterializePostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
+void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
 {
     /// Empty lsn string means - continue waiting for valid lsn.
     skip_list.insert({relation_id, ""});
@@ -568,7 +567,7 @@ void MaterializePostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const 
 
 
 /// Read binary changes from replication slot via COPY command (starting from current lsn in a slot).
-bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
+bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
 {
     std::shared_ptr<pqxx::nontransaction> tx;
     bool slot_empty = true;
@@ -626,7 +625,7 @@ bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
     }
     catch (const pqxx::conversion_error & e)
     {
-        LOG_ERROR(log, "Convertion error: {}", e.what());
+        LOG_ERROR(log, "Conversion error: {}", e.what());
         return false;
     }
     catch (const pqxx::broken_connection & e)
@@ -662,7 +661,7 @@ bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
 }
 
 
-bool MaterializePostgreSQLConsumer::consume(std::vector<std::pair<Int32, String>> & skipped_tables)
+bool MaterializedPostgreSQLConsumer::consume(std::vector<std::pair<Int32, String>> & skipped_tables)
 {
     /// Check if there are tables, which are skipped from being updated by changes from replication stream,
     /// because schema changes were detected. Update them, if it is allowed.
@@ -687,7 +686,7 @@ bool MaterializePostgreSQLConsumer::consume(std::vector<std::pair<Int32, String>
 }
 
 
-void MaterializePostgreSQLConsumer::updateNested(const String & table_name, StoragePtr nested_storage, Int32 table_id, const String & table_start_lsn)
+void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StoragePtr nested_storage, Int32 table_id, const String & table_start_lsn)
 {
     /// Cache new pointer to replacingMergeTree table.
     storages[table_name] = nested_storage;

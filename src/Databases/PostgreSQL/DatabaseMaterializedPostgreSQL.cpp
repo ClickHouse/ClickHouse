@@ -1,8 +1,8 @@
-#include <Databases/PostgreSQL/DatabaseMaterializePostgreSQL.h>
+#include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 
 #if USE_LIBPQXX
 
-#include <Storages/PostgreSQL/StorageMaterializePostgreSQL.h>
+#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #include <DataTypes/DataTypeNullable.h>
@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
+DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
         ContextPtr context_,
         const String & metadata_path_,
         UUID uuid_,
@@ -39,8 +39,8 @@ DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info_,
-        std::unique_ptr<MaterializePostgreSQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializePostgreSQL (" + database_name_ + ")", context_)
+        std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
+    : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
     , database_engine_define(database_engine_define_->clone())
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
@@ -49,7 +49,7 @@ DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
 }
 
 
-void DatabaseMaterializePostgreSQL::startSynchronization()
+void DatabaseMaterializedPostgreSQL::startSynchronization()
 {
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             /* replication_identifier */database_name,
@@ -57,10 +57,10 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
             database_name,
             connection_info,
             getContext(),
-            settings->materialize_postgresql_max_block_size.value,
-            settings->materialize_postgresql_allow_automatic_update,
-            /* is_materialize_postgresql_database = */ true,
-            settings->materialize_postgresql_tables_list.value);
+            settings->materialized_postgresql_max_block_size.value,
+            settings->materialized_postgresql_allow_automatic_update,
+            /* is_materialized_postgresql_database = */ true,
+            settings->materialized_postgresql_tables_list.value);
 
     postgres::Connection connection(connection_info);
     std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection.getRef());
@@ -73,19 +73,19 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
         if (storage)
         {
             /// Nested table was already created and synchronized.
-            storage = StorageMaterializePostgreSQL::create(storage, getContext());
+            storage = StorageMaterializedPostgreSQL::create(storage, getContext());
         }
         else
         {
             /// Nested table does not exist and will be created by replication thread.
-            storage = StorageMaterializePostgreSQL::create(StorageID(database_name, table_name), getContext());
+            storage = StorageMaterializedPostgreSQL::create(StorageID(database_name, table_name), getContext());
         }
 
-        /// Cache MaterializePostgreSQL wrapper over nested table.
+        /// Cache MaterializedPostgreSQL wrapper over nested table.
         materialized_tables[table_name] = storage;
 
-        /// Let replication thread now, which tables it needs to keep in sync.
-        replication_handler->addStorage(table_name, storage->as<StorageMaterializePostgreSQL>());
+        /// Let replication thread know, which tables it needs to keep in sync.
+        replication_handler->addStorage(table_name, storage->as<StorageMaterializedPostgreSQL>());
     }
 
     LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
@@ -93,7 +93,7 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
 }
 
 
-void DatabaseMaterializePostgreSQL::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseMaterializedPostgreSQL::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
 {
     DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
 
@@ -112,9 +112,9 @@ void DatabaseMaterializePostgreSQL::loadStoredObjects(ContextMutablePtr local_co
 }
 
 
-StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, ContextPtr local_context) const
+StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, ContextPtr local_context) const
 {
-    /// In otder to define which table access is needed - to MaterializePostgreSQL table (only in case of SELECT queries) or
+    /// In otder to define which table access is needed - to MaterializedPostgreSQL table (only in case of SELECT queries) or
     /// to its nested ReplacingMergeTree table (in all other cases), the context of a query os modified.
     /// Also if materialzied_tables set is empty - it means all access is done to ReplacingMergeTree tables - it is a case after
     /// replication_handler was shutdown.
@@ -123,14 +123,14 @@ StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, Conte
         return DatabaseAtomic::tryGetTable(name, local_context);
     }
 
-    /// Note: In select query we call MaterializePostgreSQL table and it calls tryGetTable from its nested.
-    /// So the only point, where synchronization is needed - access to MaterializePostgreSQL table wrapper over nested table.
+    /// Note: In select query we call MaterializedPostgreSQL table and it calls tryGetTable from its nested.
+    /// So the only point, where synchronization is needed - access to MaterializedPostgreSQL table wrapper over nested table.
     std::lock_guard lock(tables_mutex);
     auto table = materialized_tables.find(name);
 
     /// Return wrapper over ReplacingMergeTree table. If table synchronization just started, table will not
     /// be accessible immediately. Table is considered to exist once its nested table was created.
-    if (table != materialized_tables.end() && table->second->as <StorageMaterializePostgreSQL>()->hasNested())
+    if (table != materialized_tables.end() && table->second->as <StorageMaterializedPostgreSQL>()->hasNested())
     {
         return table->second;
     }
@@ -139,7 +139,7 @@ StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, Conte
 }
 
 
-void DatabaseMaterializePostgreSQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & table, const ASTPtr & query)
+void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
     /// Create table query can only be called from replication thread.
     if (local_context->isInternalQuery())
@@ -153,7 +153,7 @@ void DatabaseMaterializePostgreSQL::createTable(ContextPtr local_context, const 
 }
 
 
-void DatabaseMaterializePostgreSQL::stopReplication()
+void DatabaseMaterializedPostgreSQL::stopReplication()
 {
     if (replication_handler)
         replication_handler->shutdown();
@@ -163,27 +163,27 @@ void DatabaseMaterializePostgreSQL::stopReplication()
 }
 
 
-void DatabaseMaterializePostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
+void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
     /// Modify context into nested_context and pass query to Atomic database.
-    DatabaseAtomic::dropTable(StorageMaterializePostgreSQL::makeNestedTableContext(local_context), table_name, no_delay);
+    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, no_delay);
 }
 
 
-void DatabaseMaterializePostgreSQL::drop(ContextPtr local_context)
+void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 {
     if (replication_handler)
         replication_handler->shutdownFinal();
 
-    DatabaseAtomic::drop(StorageMaterializePostgreSQL::makeNestedTableContext(local_context));
+    DatabaseAtomic::drop(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
 }
 
 
-DatabaseTablesIteratorPtr DatabaseMaterializePostgreSQL::getTablesIterator(
+DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
         ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
 {
     /// Modify context into nested_context and pass query to Atomic database.
-    return DatabaseAtomic::getTablesIterator(StorageMaterializePostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
+    return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
 }
 
 

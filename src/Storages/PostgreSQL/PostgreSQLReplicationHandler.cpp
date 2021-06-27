@@ -2,7 +2,7 @@
 
 #include <DataStreams/PostgreSQLBlockInputStream.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
-#include <Storages/PostgreSQL/StorageMaterializePostgreSQL.h>
+#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -15,7 +15,7 @@ namespace DB
 {
 
 static const auto RESCHEDULE_MS = 500;
-static const auto BACKOFF_TRESHOLD = 5000;
+static const auto BACKOFF_TRESHOLD_MS = 10000;
 
 namespace ErrorCodes
 {
@@ -30,7 +30,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     ContextPtr context_,
     const size_t max_block_size_,
     bool allow_automatic_update_,
-    bool is_materialize_postgresql_database_,
+    bool is_materialized_postgresql_database_,
     const String tables_list_)
     : log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
     , context(context_)
@@ -39,7 +39,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , connection_info(connection_info_)
     , max_block_size(max_block_size_)
     , allow_automatic_update(allow_automatic_update_)
-    , is_materialize_postgresql_database(is_materialize_postgresql_database_)
+    , is_materialized_postgresql_database(is_materialized_postgresql_database_)
     , tables_list(tables_list_)
     , connection(std::make_shared<postgres::Connection>(connection_info_))
     , milliseconds_to_wait(RESCHEDULE_MS)
@@ -52,7 +52,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 }
 
 
-void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, StorageMaterializePostgreSQL * storage)
+void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage)
 {
     materialized_storages[table_name] = storage;
 }
@@ -122,14 +122,14 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         {
             try
             {
-                nested_storages[table_name] = loadFromSnapshot(snapshot_name, table_name, storage->as <StorageMaterializePostgreSQL>());
+                nested_storages[table_name] = loadFromSnapshot(snapshot_name, table_name, storage->as <StorageMaterializedPostgreSQL>());
             }
             catch (Exception & e)
             {
                 e.addMessage("while loading table {}.{}", remote_database_name, table_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
-                /// Throw in case of single MaterializePostgreSQL storage, because initial setup is done immediately
+                /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
                 /// (unlike database engine where it is done in a separate thread).
                 if (throw_on_error)
                     throw;
@@ -137,7 +137,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         }
     };
 
-    /// There is one replication slot for each replication handler. In case of MaterializePostgreSQL database engine,
+    /// There is one replication slot for each replication handler. In case of MaterializedPostgreSQL database engine,
     /// there is one replication slot per database. Its lifetime must be equal to the lifetime of replication handler.
     /// Recreation of a replication slot imposes reloading of all tables.
     if (!isReplicationSlotExist(tx, start_lsn, /* temporary */false))
@@ -159,7 +159,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         LOG_TRACE(log, "Loading {} tables...", materialized_storages.size());
         for (const auto & [table_name, storage] : materialized_storages)
         {
-            auto * materialized_storage = storage->as <StorageMaterializePostgreSQL>();
+            auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
             try
             {
                 /// Try load nested table, set materialized table metadata.
@@ -181,7 +181,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// Pass current connection to consumer. It is not std::moved implicitly, but a shared_ptr is passed.
     /// Consumer and replication handler are always executed one after another (not concurrently) and share the same connection.
     /// Handler uses it only for loadFromSnapshot and shutdown methods.
-    consumer = std::make_shared<MaterializePostgreSQLConsumer>(
+    consumer = std::make_shared<MaterializedPostgreSQLConsumer>(
             context,
             connection,
             replication_slot,
@@ -199,7 +199,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
 
 StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(String & snapshot_name, const String & table_name,
-                                                          StorageMaterializePostgreSQL * materialized_storage)
+                                                          StorageMaterializedPostgreSQL * materialized_storage)
 {
     auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection->getRef());
 
@@ -270,7 +270,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
     else
     {
         consumer_task->scheduleAfter(milliseconds_to_wait);
-        if (milliseconds_to_wait < BACKOFF_TRESHOLD)
+        if (milliseconds_to_wait < BACKOFF_TRESHOLD_MS)
             milliseconds_to_wait *= 2;
 
         LOG_TRACE(log, "Scheduling replication thread: after {} ms", milliseconds_to_wait);
@@ -432,7 +432,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 }
 
 
-/// Used by MaterializePostgreSQL database engine.
+/// Used by MaterializedPostgreSQL database engine.
 NameSet PostgreSQLReplicationHandler::fetchRequiredTables(pqxx::connection & connection_)
 {
     pqxx::work tx(connection_);
@@ -474,7 +474,7 @@ NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         pqxx::ReplicationTransaction & tx, const std::string & table_name) const
 {
-    if (!is_materialize_postgresql_database)
+    if (!is_materialized_postgresql_database)
         return nullptr;
 
     return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, true, true, true));
@@ -486,81 +486,92 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
     /// If table schema has changed, the table stops consuming changes from replication stream.
     /// If `allow_automatic_update` is true, create a new table in the background, load new table schema
     /// and all data from scratch. Then execute REPLACE query.
-    /// This is only allowed for MaterializePostgreSQL database engine.
-    postgres::Connection replication_connection(connection_info, /* replication */true);
-    pqxx::nontransaction tx(replication_connection.getRef());
-
-    String snapshot_name, start_lsn;
-    if (isReplicationSlotExist(tx, start_lsn, /* temporary */true))
-        dropReplicationSlot(tx, /* temporary */true);
-    createReplicationSlot(tx, start_lsn, snapshot_name, /* temporary */true);
-
-    for (const auto & [relation_id, table_name] : relation_data)
+    /// This is only allowed for MaterializedPostgreSQL database engine.
+    try
     {
-        auto storage = DatabaseCatalog::instance().getTable(StorageID(current_database_name, table_name), context);
-        auto * materialized_storage = storage->as <StorageMaterializePostgreSQL>();
+        postgres::Connection replication_connection(connection_info, /* replication */true);
+        pqxx::nontransaction tx(replication_connection.getRef());
 
-        auto temp_materialized_storage = materialized_storage->createTemporary();
+        String snapshot_name, start_lsn;
 
-        /// This snapshot is valid up to the end of the transaction, which exported it.
-        StoragePtr temp_nested_storage = loadFromSnapshot(snapshot_name, table_name, temp_materialized_storage->as <StorageMaterializePostgreSQL>());
+        if (isReplicationSlotExist(tx, start_lsn, /* temporary */true))
+            dropReplicationSlot(tx, /* temporary */true);
 
-        auto table_id = materialized_storage->getNestedStorageID();
-        auto temp_table_id = temp_nested_storage->getStorageID();
+        createReplicationSlot(tx, start_lsn, snapshot_name, /* temporary */true);
 
-        LOG_TRACE(log, "Starting background update of table {}.{} ({}) with table {}.{} ({})",
-                    table_id.database_name, table_id.table_name, toString(table_id.uuid),
-                    temp_table_id.database_name, temp_table_id.table_name, toString(temp_table_id.uuid));
-
-        auto ast_rename = std::make_shared<ASTRenameQuery>();
-        ASTRenameQuery::Element elem
+        for (const auto & [relation_id, table_name] : relation_data)
         {
-            ASTRenameQuery::Table{table_id.database_name, table_id.table_name},
-            ASTRenameQuery::Table{temp_table_id.database_name, temp_table_id.table_name}
-        };
-        ast_rename->elements.push_back(std::move(elem));
-        ast_rename->exchange = true;
+            auto storage = DatabaseCatalog::instance().getTable(StorageID(current_database_name, table_name), context);
+            auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
 
-        auto nested_context = materialized_storage->getNestedTableContext();
+            /// If for some reason this temporary table already exists - also drop it.
+            auto temp_materialized_storage = materialized_storage->createTemporary();
 
-        try
-        {
-            auto materialized_table_lock = materialized_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
-            InterpreterRenameQuery(ast_rename, nested_context).execute();
+            /// This snapshot is valid up to the end of the transaction, which exported it.
+            StoragePtr temp_nested_storage = loadFromSnapshot(snapshot_name, table_name,
+                                                              temp_materialized_storage->as <StorageMaterializedPostgreSQL>());
 
+            auto table_id = materialized_storage->getNestedStorageID();
+            auto temp_table_id = temp_nested_storage->getStorageID();
+
+            LOG_TRACE(log, "Starting background update of table {} with table {}",
+                      table_id.getNameForLogs(), temp_table_id.getNameForLogs());
+
+            auto ast_rename = std::make_shared<ASTRenameQuery>();
+            ASTRenameQuery::Element elem
             {
-                auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, table_id.table_name), nested_context);
-                auto nested_table_lock = nested_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
-                auto nested_table_id = nested_storage->getStorageID();
+                ASTRenameQuery::Table{table_id.database_name, table_id.table_name},
+                ASTRenameQuery::Table{temp_table_id.database_name, temp_table_id.table_name}
+            };
+            ast_rename->elements.push_back(std::move(elem));
+            ast_rename->exchange = true;
 
-                materialized_storage->setNestedStorageID(nested_table_id);
-                nested_storage = materialized_storage->prepare();
+            auto nested_context = materialized_storage->getNestedTableContext();
 
-                auto nested_storage_metadata = nested_storage->getInMemoryMetadataPtr();
-                auto nested_sample_block = nested_storage_metadata->getSampleBlock();
-                LOG_TRACE(log, "Updated table {}.{} ({}). New structure: {}",
-                          nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid), nested_sample_block.dumpStructure());
+            try
+            {
+                auto materialized_table_lock = materialized_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
+                InterpreterRenameQuery(ast_rename, nested_context).execute();
 
-                auto materialized_storage_metadata = nested_storage->getInMemoryMetadataPtr();
-                auto materialized_sample_block = materialized_storage_metadata->getSampleBlock();
+                {
+                    auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, table_id.table_name),
+                                                                               nested_context);
+                    auto nested_table_lock = nested_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
+                    auto nested_table_id = nested_storage->getStorageID();
 
-                assertBlocksHaveEqualStructure(nested_sample_block, materialized_sample_block, "while reloading table in the background");
+                    materialized_storage->setNestedStorageID(nested_table_id);
+                    nested_storage = materialized_storage->prepare();
 
-                /// Pass pointer to new nested table into replication consumer, remove current table from skip list and set start lsn position.
-                consumer->updateNested(table_name, nested_storage, relation_id, start_lsn);
+                    auto nested_storage_metadata = nested_storage->getInMemoryMetadataPtr();
+                    auto nested_sample_block = nested_storage_metadata->getSampleBlock();
+                    LOG_TRACE(log, "Updated table {}. New structure: {}",
+                              nested_table_id.getNameForLogs(), nested_sample_block.dumpStructure());
+
+                    auto materialized_storage_metadata = nested_storage->getInMemoryMetadataPtr();
+                    auto materialized_sample_block = materialized_storage_metadata->getSampleBlock();
+
+                    assertBlocksHaveEqualStructure(nested_sample_block, materialized_sample_block, "while reloading table in the background");
+
+                    /// Pass pointer to new nested table into replication consumer, remove current table from skip list and set start lsn position.
+                    consumer->updateNested(table_name, nested_storage, relation_id, start_lsn);
+                }
+
+                LOG_DEBUG(log, "Dropping table {}", temp_table_id.getNameForLogs());
+                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, nested_context, nested_context, temp_table_id, true);
             }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
 
-            LOG_DEBUG(log, "Dropping table {}.{} ({})", temp_table_id.database_name, temp_table_id.table_name, toString(temp_table_id.uuid));
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, nested_context, nested_context, temp_table_id, true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        dropReplicationSlot(tx, /* temporary */true);
+        tx.commit();
     }
-
-    dropReplicationSlot(tx, /* temporary */true);
-    tx.commit();
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

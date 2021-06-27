@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MaterializePostgreSQLConsumer.h"
+#include "MaterializedPostgreSQLConsumer.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Core/PostgreSQL/Utils.h>
 
@@ -13,7 +13,7 @@ namespace DB
 ///       exist in CH, it can be loaded via snapshot while stream is stopped and then comparing wal positions with
 ///       current lsn and table start lsn.
 
-class StorageMaterializePostgreSQL;
+class StorageMaterializedPostgreSQL;
 
 class PostgreSQLReplicationHandler
 {
@@ -26,7 +26,7 @@ public:
             ContextPtr context_,
             const size_t max_block_size_,
             bool allow_automatic_update_,
-            bool is_materialize_postgresql_database_,
+            bool is_materialized_postgresql_database_,
             const String tables_list = "");
 
     /// Activate task to be run from a separate thread: wait until connection is available and call startReplication().
@@ -39,7 +39,7 @@ public:
     void shutdownFinal();
 
     /// Add storage pointer to let handler know which tables it needs to keep in sync.
-    void addStorage(const std::string & table_name, StorageMaterializePostgreSQL * storage);
+    void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
     NameSet fetchRequiredTables(pqxx::connection & connection_);
@@ -48,7 +48,7 @@ public:
     void startSynchronization(bool throw_on_error);
 
 private:
-    using MaterializedStorages = std::unordered_map<String, StorageMaterializePostgreSQL *>;
+    using MaterializedStorages = std::unordered_map<String, StorageMaterializedPostgreSQL *>;
 
     /// Methods to manage Publication.
 
@@ -74,7 +74,7 @@ private:
 
     void consumerFunc();
 
-    StoragePtr loadFromSnapshot(std::string & snapshot_name, const String & table_name, StorageMaterializePostgreSQL * materialized_storage);
+    StoragePtr loadFromSnapshot(std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
 
     void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
@@ -95,8 +95,8 @@ private:
     /// This setting allows to reloas table in the background.
     bool allow_automatic_update = false;
 
-    /// To distinguish whether current replication handler belongs to a MaterializePostgreSQL database engine or single storage.
-    bool is_materialize_postgresql_database;
+    /// To distinguish whether current replication handler belongs to a MaterializedPostgreSQL database engine or single storage.
+    bool is_materialized_postgresql_database;
 
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;
@@ -107,7 +107,7 @@ private:
     std::shared_ptr<postgres::Connection> connection;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
-    std::shared_ptr<MaterializePostgreSQLConsumer> consumer;
+    std::shared_ptr<MaterializedPostgreSQLConsumer> consumer;
 
     BackgroundSchedulePool::TaskHolder startup_task, consumer_task;
 
@@ -118,7 +118,7 @@ private:
     /// 2. at replication startup
     bool new_publication_created = false;
 
-    /// MaterializePostgreSQL tables. Used for managing all operations with its internal nested tables.
+    /// MaterializedPostgreSQL tables. Used for managing all operations with its internal nested tables.
     MaterializedStorages materialized_storages;
 
     UInt64 milliseconds_to_wait;
