@@ -121,7 +121,11 @@ public:
 
     bool isCompilable() const override
     {
-        return true;
+        bool is_compilable = true;
+        for (const auto & argument_type : argument_types)
+            is_compilable &= canBeNativeType(*argument_type);
+
+        return is_compilable;
     }
 
     void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
@@ -226,7 +230,12 @@ public:
 
     bool isCompilable() const override
     {
-        return true;
+        bool is_compilable = true;
+        for (const auto & argument_type : argument_types)
+            is_compilable &= canBeNativeType(*argument_type);
+
+
+        return is_compilable;
     }
 
     void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
