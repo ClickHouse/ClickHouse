@@ -249,3 +249,5 @@
 01824_prefer_global_in_and_join
 01576_alias_column_rewrite
 01924_argmax_bitmap_state
+01914_exchange_dictionaries
+01923_different_expression_name_alias
