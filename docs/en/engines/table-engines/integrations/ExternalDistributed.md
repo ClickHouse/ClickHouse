@@ -43,7 +43,7 @@ Supports multiple replicas that must be listed by `|` and shards must be listed 
 CREATE TABLE test_shards (id UInt32, name String, age UInt32, money UInt32) ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-When specifying replicas, one of the available replicas will be selected for each of the shards when reading. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way several times.
+When specifying replicas, one of the available replicas is selected for each of the shards when reading. If the connection fails, the next replica is selected, and so on for all the replicas. If the connection attempt fails for all the replicas, the attempt is repeated the same way several times.
 
 You can specify up to any number of shards and to any number of replicas for each shard.
 
