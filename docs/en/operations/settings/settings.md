@@ -1803,6 +1803,27 @@ Possible values:
 
 Default value: 0.
 
+## distributed_directory_monitor_split_batch_on_failure {#distributed_directory_monitor_split_batch_on_failure}
+
+Enables/disables splitting batches on failures.
+
+Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
+
+So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_directory_monitor_batch_inserts` for failed batches).
+
+Possible values:
+
+-   1 — Enabled.
+-   0 — Disabled.
+
+Default value: 0.
+
+!!! note "Note"
+    This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+
+!!! warning "Warning"
+    You should not rely on automatic batch splitting, since this may hurt performance.
+
 ## os_thread_priority {#setting-os-thread-priority}
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
