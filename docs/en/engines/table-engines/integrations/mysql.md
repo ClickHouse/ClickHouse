@@ -28,7 +28,7 @@ See a detailed description of the [CREATE TABLE](../../../sql-reference/statemen
 The table structure can differ from the original MySQL table structure:
 
 -   Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
--   Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
 -   Setting `external_table_functions_use_nulls` defines how to handle Nullable columns. Default value: 1. If 0, the table function will not make nullable columns and will insert default values instead of nulls. This is also applicable for null values inside array data types.
 
 **Engine Parameters**
