@@ -44,6 +44,7 @@ LIFETIME(0);
 SELECT * FROM 01915_db.test_dictionary;
 
 DROP DICTIONARY 01915_db.test_dictionary;
+
 DROP TABLE 01915_db.test_source_table_1;
 DROP TABLE 01915_db.test_source_table_2;
 
