@@ -60,7 +60,7 @@ public:
 class FunctionGenerateUUIDv4 : public TargetSpecific::Default::FunctionGenerateUUIDv4
 {
 public:
-    explicit FunctionGenerateUUIDv4(ContextConstPtr context) : selector(context)
+    explicit FunctionGenerateUUIDv4(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGenerateUUIDv4>();
@@ -76,7 +76,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionGenerateUUIDv4>(context);
     }

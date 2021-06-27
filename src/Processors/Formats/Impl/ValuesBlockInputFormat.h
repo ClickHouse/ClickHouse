@@ -34,7 +34,7 @@ public:
     void resetParser() override;
 
     /// TODO: remove context somehow.
-    void setContext(ContextConstPtr context_) { context = Context::createCopy(context_); }
+    void setContext(ContextPtr context_) { context = Context::createCopy(context_); }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 

@@ -79,10 +79,11 @@
 #include <common/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <ext/map.h>
-#include <ext/scope_guard_safe.h>
+#include <common/map.h>
+#include <common/scope_guard_safe.h>
 #include <memory>
 
 
@@ -134,7 +135,7 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     tables->children.push_back(tables_elem);
     tables_elem->table_expression = table_expr;
     tables_elem->children.push_back(table_expr);
-    table_expr->database_and_table_name = createTableIdentifier(db_name, table_name);
+    table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(db_name, table_name);
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
@@ -142,7 +143,7 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
 
-    auto column_name = expr_list->children.at(0)->getColumnName();
+    auto column_name = expr_list->children.at(0)->getColumnName(context->getSettingsRef());
     actions->removeUnusedActions(NameSet{column_name});
     actions->projectInput(false);
 
@@ -226,7 +227,6 @@ static void checkAccessRightsForSelect(
     ContextPtr context,
     const StorageID & table_id,
     const StorageMetadataPtr & table_metadata,
-    const Strings & required_columns,
     const TreeRewriterResult & syntax_analyzer_result)
 {
     if (!syntax_analyzer_result.has_explicit_columns && table_metadata && !table_metadata->getColumns().empty())
@@ -250,7 +250,7 @@ static void checkAccessRightsForSelect(
     }
 
     /// General check.
-    context->checkAccess(AccessType::SELECT, table_id, required_columns);
+    context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
@@ -545,9 +545,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
     {
-        /// The current user should have the SELECT privilege.
-        /// If this table_id is for a table function we don't check access rights here because in this case they have been already checked in ITableFunction::execute().
-        checkAccessRightsForSelect(context, table_id, metadata_snapshot, required_columns, *syntax_analyzer_result);
+        /// The current user should have the SELECT privilege. If this table_id is for a table
+        /// function we don't check access rights here because in this case they have been already
+        /// checked in ITableFunction::execute().
+        checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_analyzer_result);
 
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
@@ -632,7 +633,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     /// Running on the initiating server during distributed processing or if query is not distributed.
     ///
     /// Also note that with distributed_group_by_no_merge=2 (i.e. when optimize_distributed_group_by_sharding_key takes place)
-    /// the query on the remote server will be processed up to WithMergeableStateAfterAggregation,
+    /// the query on the remote server will be processed up to WithMergeableStateAfterAggregationAndLimit,
     /// So it will do partial second stage (second_stage=true), and initiator will do the final part.
     bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
         && options.to_stage > QueryProcessingStage::WithMergeableState;
@@ -704,7 +705,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         return res;
     }
 
-    if (options.to_stage == QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
+    if (options.to_stage >= QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
     {
         // It's different from selected_columns, see the comment above for
         // WithMergeableState stage.
@@ -778,7 +779,7 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
     order_descr.reserve(query.orderBy()->children.size());
     for (const auto & elem : query.orderBy()->children)
     {
-        String name = elem->children.front()->getColumnName();
+        String name = elem->children.front()->getColumnName(context->getSettingsRef());
         const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
         std::shared_ptr<Collator> collator;
@@ -797,14 +798,14 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
     return order_descr;
 }
 
-static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
+static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query, ContextPtr context)
 {
     SortDescription order_descr;
     order_descr.reserve(query.groupBy()->children.size());
 
     for (const auto & elem : query.groupBy()->children)
     {
-        String name = elem->getColumnName();
+        String name = elem->getColumnName(context->getSettingsRef());
         order_descr.emplace_back(name, 1, 1);
     }
 
@@ -1011,10 +1012,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
         /// Support optimize_distributed_group_by_sharding_key
         /// Is running on the initiating server during distributed processing?
-        if (from_stage == QueryProcessingStage::WithMergeableStateAfterAggregation)
+        if (from_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation)
             from_aggregation_stage = true;
         /// Is running on remote servers during distributed processing?
-        if (options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregation)
+        if (options.to_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation)
             to_aggregation_stage = true;
 
         /// Read the data from Storage. from_stage - to what stage the request was completed in Storage.
@@ -1300,7 +1301,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                   *  but there is no aggregation, then on the remote servers ORDER BY was made
                   *  - therefore, we merge the sorted streams from remote servers.
                   *
-                  * Also in case of remote servers was process the query up to WithMergeableStateAfterAggregation
+                  * Also in case of remote servers was process the query up to WithMergeableStateAfterAggregationAndLimit
                   * (distributed_group_by_no_merge=2 or optimize_distributed_group_by_sharding_key=1 takes place),
                   * then merge the sorted streams is enough, since remote servers already did full ORDER BY.
                   */
@@ -1334,13 +1335,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                     }
             }
 
+            bool apply_limit = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregation;
+            bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
             bool has_prelimit = false;
-            if (!to_aggregation_stage &&
+            if (apply_limit &&
                 query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
                 !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes &&
                 !has_withfill)
             {
-                executePreLimit(query_plan, false);
+                executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
                 has_prelimit = true;
             }
 
@@ -1367,7 +1370,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
 
             /// Projection not be done on the shards, since then initiator will not find column in blocks.
-            /// (significant only for WithMergeableStateAfterAggregation).
+            /// (significant only for WithMergeableStateAfterAggregation/WithMergeableStateAfterAggregationAndLimit).
             if (!to_aggregation_stage)
             {
                 /// We must do projection after DISTINCT because projection may remove some columns.
@@ -1378,10 +1381,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             executeExtremes(query_plan);
 
             /// Limit is no longer needed if there is prelimit.
-            if (!to_aggregation_stage && !has_prelimit)
+            if (apply_limit && !has_prelimit)
                 executeLimit(query_plan);
 
-            if (!to_aggregation_stage)
+            if (apply_offset)
                 executeOffset(query_plan);
         }
     }
@@ -1636,7 +1639,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 column_expr = column_default->expression->clone();
                 // recursive visit for alias to alias
                 replaceAliasColumnsInQuery(
-                    column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), context);
+                    column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->array_join_result_to_source, context);
 
                 column_expr = addTypeConversionToAST(
                     std::move(column_expr), column_decl.type->getName(), metadata_snapshot->getColumns().getAll(), context);
@@ -1681,7 +1684,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             }
 
             required_columns_after_prewhere_set
-                = ext::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
+                = collections::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
         }
 
         auto syntax_result
@@ -1742,7 +1745,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
-        && typeid_cast<AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
+        && typeid_cast<const AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
 
     if (optimize_trivial_count)
     {
@@ -1766,7 +1769,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         if (num_rows)
         {
-            AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);
+            const AggregateFunctionCount & agg_count = static_cast<const AggregateFunctionCount &>(*func);
 
             /// We will process it up to "WithMergeableState".
             std::vector<char> state(agg_count.sizeOfData());
@@ -1945,13 +1948,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 {
                     query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query_info.projection->group_by_elements_actions,
-                        getSortDescriptionFromGroupBy(query),
+                        getSortDescriptionFromGroupBy(query, context),
                         query_info.syntax_analyzer_result);
                 }
                 else
                 {
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                        analysis_result.group_by_elements_actions, getSortDescriptionFromGroupBy(query), query_info.syntax_analyzer_result);
+                        analysis_result.group_by_elements_actions, getSortDescriptionFromGroupBy(query, context), query_info.syntax_analyzer_result);
                 }
             }
 
@@ -2030,7 +2033,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
 {
     auto where_step = std::make_unique<FilterStep>(
-        query_plan.getCurrentDataStream(), expression, getSelectQuery().where()->getColumnName(), remove_filter);
+        query_plan.getCurrentDataStream(), expression, getSelectQuery().where()->getColumnName(context->getSettingsRef()), remove_filter);
 
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
@@ -2077,7 +2080,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     SortDescription group_by_sort_description;
 
     if (group_by_info && settings.optimize_aggregation_in_order)
-        group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
+        group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery(), context);
     else
         group_by_info = nullptr;
 
@@ -2125,7 +2128,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression)
 {
     auto having_step
-        = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), expression, getSelectQuery().having()->getColumnName(), false);
+        = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), expression, getSelectQuery().having()->getColumnName(context->getSettingsRef()), false);
 
     having_step->setStepDescription("HAVING");
     query_plan.addStep(std::move(having_step));
@@ -2141,7 +2144,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
         query_plan.getCurrentDataStream(),
         overflow_row,
         expression,
-        has_having ? getSelectQuery().having()->getColumnName() : "",
+        has_having ? getSelectQuery().having()->getColumnName(context->getSettingsRef()) : "",
         settings.totals_mode,
         settings.totals_auto_threshold,
         final);
@@ -2458,7 +2461,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
 
     Names columns;
     for (const auto & elem : query.limitBy()->children)
-        columns.emplace_back(elem->getColumnName());
+        columns.emplace_back(elem->getColumnName(context->getSettingsRef()));
 
     UInt64 length = getLimitUIntValue(query.limitByLength(), context, "LIMIT");
     UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), context, "OFFSET") : 0);
