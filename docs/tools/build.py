@@ -87,6 +87,7 @@ def build_for_lang(lang, args):
         website_url = 'https://clickhouse.tech'
         site_name = site_names.get(lang, site_names['en']) % ''
         site_name = site_name.replace('  ', ' ')
+
         raw_config = dict(
             site_name=site_name,
             site_url=f'{website_url}/docs/{lang}/',

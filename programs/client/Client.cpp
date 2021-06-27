@@ -577,7 +577,18 @@ private:
             }
 
             if (!history_file.empty() && !fs::exists(history_file))
-                FS::createFile(history_file);
+            {
+                /// Avoid TOCTOU issue.
+                try
+                {
+                    FS::createFile(history_file);
+                }
+                catch (const ErrnoException & e)
+                {
+                    if (e.getErrno() != EEXIST)
+                        throw;
+                }
+            }
 
             LineReader::Patterns query_extenders = {"\\"};
             LineReader::Patterns query_delimiters = {";", "\\G"};
@@ -2435,6 +2446,8 @@ public:
                     {
                         /// param_name value
                         ++arg_num;
+                        if (arg_num >= argc)
+                            throw Exception("Parameter requires value", ErrorCodes::BAD_ARGUMENTS);
                         arg = argv[arg_num];
                         query_parameters.emplace(String(param_continuation), String(arg));
                     }
