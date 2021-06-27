@@ -41,13 +41,13 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
 
 ```sql
-SELECT DISTINCT(name) FROM mysql(`mysql{1|2|3}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
 или
 
 ```sql
-SELECT DISTINCT(name) FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
 **Возвращаемое значение**
