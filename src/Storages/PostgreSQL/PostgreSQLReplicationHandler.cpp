@@ -15,7 +15,7 @@ namespace DB
 {
 
 static const auto RESCHEDULE_MS = 500;
-static const auto BACKOFF_TRESHOLD = 32000;
+static const auto BACKOFF_TRESHOLD = 5000;
 
 namespace ErrorCodes
 {
@@ -255,18 +255,25 @@ void PostgreSQLReplicationHandler::consumerFunc()
     }
 
     if (stop_synchronization)
+    {
+        LOG_TRACE(log, "Replication thread is stopped");
         return;
+    }
 
     if (schedule_now)
     {
-        consumer_task->schedule();
         milliseconds_to_wait = RESCHEDULE_MS;
+        consumer_task->schedule();
+
+        LOG_DEBUG(log, "Scheduling replication thread: now");
     }
     else
     {
         consumer_task->scheduleAfter(milliseconds_to_wait);
         if (milliseconds_to_wait < BACKOFF_TRESHOLD)
             milliseconds_to_wait *= 2;
+
+        LOG_TRACE(log, "Scheduling replication thread: after {} ms", milliseconds_to_wait);
     }
 }
 
@@ -397,16 +404,24 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::shutdownFinal()
 {
-    pqxx::nontransaction tx(connection->getRef());
-    dropPublication(tx);
-    String last_committed_lsn;
     try
     {
-        if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
-            dropReplicationSlot(tx, /* temporary */false);
-        if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
-            dropReplicationSlot(tx, /* temporary */true);
-        tx.commit();
+        shutdown();
+
+        connection->execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        String last_committed_lsn;
+
+        connection->execWithRetry([&](pqxx::nontransaction & tx)
+        {
+            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
+                dropReplicationSlot(tx, /* temporary */false);
+        });
+
+        connection->execWithRetry([&](pqxx::nontransaction & tx)
+        {
+            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
+                dropReplicationSlot(tx, /* temporary */true);
+        });
     }
     catch (Exception & e)
     {

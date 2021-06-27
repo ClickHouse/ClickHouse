@@ -13,7 +13,9 @@ using ConnectionPtr = std::unique_ptr<pqxx::connection>;
 class Connection : private boost::noncopyable
 {
 public:
-    Connection(const ConnectionInfo & connection_info_, bool replication_ = false);
+    Connection(const ConnectionInfo & connection_info_, bool replication_ = false, size_t num_tries = 3);
+
+    void execWithRetry(const std::function<void(pqxx::nontransaction &)> & exec);
 
     pqxx::connection & getRef();
 
@@ -24,6 +26,8 @@ public:
 private:
     ConnectionPtr connection;
     ConnectionInfo connection_info;
+
     bool replication;
+    size_t num_tries;
 };
 }

@@ -145,11 +145,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(autouse=True)
-def postgresql_setup_teardown():
-    yield  # run test
-
-
 @pytest.mark.timeout(120)
 def test_load_and_sync_all_database_tables(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
@@ -642,19 +637,25 @@ def test_multiple_databases(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database_2")
     NUM_TABLES = 5
 
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=False)
     cursor = conn.cursor()
     create_postgres_db(cursor, 'postgres_database_1')
     create_postgres_db(cursor, 'postgres_database_2')
 
-    conn1 = get_postgres_conn(True, True, 'postgres_database_1')
-    conn2 = get_postgres_conn(True, True, 'postgres_database_2')
+    conn1 = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True, database_name='postgres_database_1')
+    conn2 = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True, database_name='postgres_database_2')
 
     cursor1 = conn1.cursor()
     cursor2 = conn2.cursor()
 
-    create_clickhouse_postgres_db('postgres_database_1')
-    create_clickhouse_postgres_db('postgres_database_2')
+    create_clickhouse_postgres_db(cluster.postgres_ip, cluster.postgres_port, 'postgres_database_1')
+    create_clickhouse_postgres_db(cluster.postgres_ip, cluster.postgres_port, 'postgres_database_2')
 
     cursors = [cursor1, cursor2]
     for cursor_id in range(len(cursors)):
@@ -665,8 +666,10 @@ def test_multiple_databases(started_cluster):
     print('database 1 tables: ', instance.query('''SELECT name FROM system.tables WHERE database = 'postgres_database_1';'''))
     print('database 2 tables: ', instance.query('''SELECT name FROM system.tables WHERE database = 'postgres_database_2';'''))
 
-    create_materialized_db('test_database_1', 'postgres_database_1')
-    create_materialized_db('test_database_2', 'postgres_database_2')
+    create_materialized_db(started_cluster.postgres_ip, started_cluster.postgres_port,
+            'test_database_1', 'postgres_database_1')
+    create_materialized_db(started_cluster.postgres_ip, started_cluster.postgres_port,
+            'test_database_2', 'postgres_database_2')
 
     cursors = [cursor1, cursor2]
     for cursor_id in range(len(cursors)):
@@ -689,7 +692,9 @@ def test_multiple_databases(started_cluster):
 @pytest.mark.timeout(320)
 def test_concurrent_transactions(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     NUM_TABLES = 6
 
@@ -697,19 +702,22 @@ def test_concurrent_transactions(started_cluster):
         create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
 
     def transaction(thread_id):
-        conn_ = get_postgres_conn(True, auto_commit=False)
+        conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                                 port=started_cluster.postgres_port,
+                                 database=True, auto_commit=False)
         cursor_ = conn.cursor()
         for query in queries:
             cursor_.execute(query.format(thread_id))
             print('thread {}, query {}'.format(thread_id, query))
-        conn_.commit()
+        conn.commit()
 
     threads = []
     threads_num = 6
     for i in range(threads_num):
         threads.append(threading.Thread(target=transaction, args=(i,)))
 
-    create_materialized_db()
+    create_materialized_db(ip=started_cluster.postgres_ip,
+                           port=started_cluster.postgres_port)
 
     for thread in threads:
         time.sleep(random.uniform(0, 0.5))
