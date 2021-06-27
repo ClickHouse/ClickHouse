@@ -1089,6 +1089,8 @@ private:
     std::shared_ptr<CompiledAggregateFunctionsHolder> compiled_aggregate_functions_holder;
 #endif
 
+    std::vector<bool> is_aggregate_function_compiled;
+
     /** Try to compile aggregate functions.
       */
     void compileAggregateFunctions();
@@ -1098,8 +1100,7 @@ private:
 
     /** Create states of aggregate functions for one key.
       */
-    void createAggregateStates(size_t aggregate_function_start_index, AggregateDataPtr & aggregate_data) const;
-
+    template <bool skip_compiled_aggregate_functions = false>
     void createAggregateStates(AggregateDataPtr & aggregate_data) const;
 
     /** Call `destroy` methods for states of aggregate functions.
