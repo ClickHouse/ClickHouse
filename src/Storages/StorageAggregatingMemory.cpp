@@ -186,6 +186,10 @@ public:
     // OutputStream structure is same as source (before aggregation).
     Block getHeader() const override { return storage.src_metadata_snapshot->getSampleBlock(); }
 
+    void writePrefix() override
+    {
+    }
+
     void write(const Block & block) override
     {
         storage.src_metadata_snapshot->check(block, true);
@@ -196,10 +200,7 @@ public:
         StoragePtr block_storage
             = StorageValues::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), block, source_storage->getVirtuals());
 
-        ContextMutablePtr local_context = Context::createCopy(context);
-        local_context->addViewSource(block_storage);
-
-        InterpreterSelectQuery select(query.inner_query, local_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState));
+        InterpreterSelectQuery select(query.inner_query, context, block_storage, nullptr, SelectQueryOptions(QueryProcessingStage::WithMergeableState));
         auto select_result = select.execute();
 
         BlockInputStreamPtr in;
@@ -216,6 +217,10 @@ public:
         }
 
         in->readSuffix();
+    }
+
+    void writeSuffix() override
+    {
     }
 
 private:
@@ -433,10 +438,7 @@ Pipe StorageAggregatingMemory::read(
 
     StoragePtr mergable_storage = StorageSource::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), source);
 
-    ContextMutablePtr local_context = Context::createCopy(context);
-    local_context->addViewSource(mergable_storage);
-
-    InterpreterSelectQuery select(metadata_snapshot->getSelectQuery().inner_query, local_context, SelectQueryOptions());
+    InterpreterSelectQuery select(metadata_snapshot->getSelectQuery().inner_query, context, mergable_storage);
     BlockIO select_result = select.execute();
 
     return QueryPipeline::getPipe(std::move(select_result.pipeline));
@@ -481,7 +483,7 @@ std::optional<UInt64> StorageAggregatingMemory::totalBytes(const Settings &) con
         return 0;
 
     // Not possible to determine precisely.
-    // TODO: can implement estimation from hash table size and size of arenas. 
+    // TODO: can implement estimation from hash table size and size of arenas.
     return {};
 }
 
