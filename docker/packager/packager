@@ -58,6 +58,7 @@ def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache
 def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, unbundled, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage, with_binaries):
     CLANG_PREFIX = "clang"
     DARWIN_SUFFIX = "-darwin"
+    DARWIN_ARM_SUFFIX = "-darwin-aarch64"
     ARM_SUFFIX = "-aarch64"
     FREEBSD_SUFFIX = "-freebsd"
 
@@ -66,9 +67,10 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
 
     is_clang = compiler.startswith(CLANG_PREFIX)
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
+    is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
-    is_cross_compile = is_cross_darwin or is_cross_arm or is_cross_freebsd
+    is_cross_compile = is_cross_darwin or is_cross_darwin_arm or is_cross_arm or is_cross_freebsd
 
     # Explicitly use LLD with Clang by default.
     # Don't force linker for cross-compilation.
@@ -82,6 +84,13 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib")
         cmake_flags.append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake")
+    elif is_cross_darwin_arm:
+        cc = compiler[:-len(DARWIN_ARM_SUFFIX)]
+        cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar")
+        cmake_flags.append("-DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/aarch64-apple-darwin-install_name_tool")
+        cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/aarch64-apple-darwin-ranlib")
+        cmake_flags.append("-DLINKER_NAME=/cctools/bin/aarch64-apple-darwin-ld")
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-aarch64.cmake")
     elif is_cross_arm:
         cc = compiler[:-len(ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
@@ -185,8 +194,8 @@ if __name__ == "__main__":
     parser.add_argument("--clickhouse-repo-path", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir))
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-    parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-aarch64", "clang-11-freebsd",
-                                               "gcc-10"), default="clang-11")
+    parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-darwin-aarch64", "clang-11-aarch64",
+                                               "clang-11-freebsd", "gcc-10"), default="clang-11")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")
