@@ -40,14 +40,19 @@ std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx)
 }
 
 
-static DataTypePtr convertPostgreSQLDataType(String & type, bool is_nullable = false, uint16_t dimensions = 0)
+static DataTypePtr convertPostgreSQLDataType(String & type, const std::function<void()> & recheck_array, bool is_nullable = false, uint16_t dimensions = 0)
 {
     DataTypePtr res;
+    bool is_array = false;
 
     /// Get rid of trailing '[]' for arrays
-    if (dimensions)
+    if (type.ends_with("[]"))
+    {
+        is_array = true;
+
         while (type.ends_with("[]"))
             type.resize(type.size() - 2);
+    }
 
     if (type == "smallint")
         res = std::make_shared<DataTypeInt16>();
@@ -103,8 +108,24 @@ static DataTypePtr convertPostgreSQLDataType(String & type, bool is_nullable = f
         res = std::make_shared<DataTypeString>();
     if (is_nullable)
         res = std::make_shared<DataTypeNullable>(res);
-    while (dimensions--)
-        res = std::make_shared<DataTypeArray>(res);
+
+    if (is_array)
+    {
+        /// In some cases att_ndims does not return correct number of dimensions
+        /// (it might return incorrect 0 number, for example, when a postgres table is created via 'as select * from table_with_arrays').
+        /// So recheck all arrays separately afterwards. (Cannot check here on the same connection because another query is in execution).
+        if (!dimensions)
+        {
+            /// Return 1d array type and recheck all arrays dims with array_ndims
+            res = std::make_shared<DataTypeArray>(res);
+            recheck_array();
+        }
+        else
+        {
+            while (dimensions--)
+                res = std::make_shared<DataTypeArray>(res);
+        }
+    }
 
     return res;
 }
@@ -114,34 +135,61 @@ template<typename T>
 std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
         T & tx, const String & postgres_table_name, const String & query, bool use_nulls, bool only_names_and_types)
 {
-    auto columns = NamesAndTypesList();
+    auto columns = NamesAndTypes();
 
     try
     {
-        auto stream{pqxx::stream_from::query(tx, query)};
+        std::set<size_t> recheck_arrays_indexes;
+        {
+            auto stream{pqxx::stream_from::query(tx, query)};
 
-        if (only_names_and_types)
-        {
-            std::tuple<std::string, std::string> row;
-            while (stream >> row)
-                columns.push_back(NameAndTypePair(std::get<0>(row), convertPostgreSQLDataType(std::get<1>(row))));
-        }
-        else
-        {
-            std::tuple<std::string, std::string, std::string, uint16_t> row;
-            while (stream >> row)
+            size_t i = 0;
+            auto recheck_array = [&]() { recheck_arrays_indexes.insert(i); };
+
+            if (only_names_and_types)
             {
-                columns.push_back(NameAndTypePair(
-                        std::get<0>(row),                           /// column name
-                        convertPostgreSQLDataType(
-                            std::get<1>(row),                       /// data type
-                            use_nulls && (std::get<2>(row) == "f"), /// 'f' means that postgres `not_null` is false == nullable
-                            std::get<3>(row))));                    /// number of dimensions if data type is array
+                std::tuple<std::string, std::string> row;
+                while (stream >> row)
+                {
+                    columns.push_back(NameAndTypePair(std::get<0>(row), convertPostgreSQLDataType(std::get<1>(row), recheck_array)));
+                    ++i;
+                }
             }
+            else
+            {
+                std::tuple<std::string, std::string, std::string, uint16_t> row;
+                while (stream >> row)
+                {
+                    auto data_type = convertPostgreSQLDataType(std::get<1>(row),
+                                                               recheck_array,
+                                                               use_nulls && (std::get<2>(row) == "f"), /// 'f' means that postgres `not_null` is false, i.e. value is nullable
+                                                               std::get<3>(row));
+                    columns.push_back(NameAndTypePair(std::get<0>(row), data_type));
+                    ++i;
+                }
+            }
+
+            stream.complete();
         }
 
-        stream.complete();
+        for (const auto & i : recheck_arrays_indexes)
+        {
+            const auto & name_and_type = columns[i];
+
+            /// All rows must contain the same number of dimensions, so limit 1 is ok. If number of dimensions in all rows is not the same -
+            /// such arrays are not able to be used as ClickHouse Array at all.
+            pqxx::result result{tx.exec(fmt::format("SELECT array_ndims({}) FROM {} LIMIT 1", name_and_type.name, postgres_table_name))};
+            auto dimensions = result[0][0].as<int>();
+
+            /// It is always 1d array if it is in recheck.
+            DataTypePtr type = assert_cast<const DataTypeArray *>(name_and_type.type.get())->getNestedType();
+            while (dimensions--)
+                type = std::make_shared<DataTypeArray>(type);
+
+            columns[i] = NameAndTypePair(name_and_type.name, type);
+        }
     }
+
     catch (const pqxx::undefined_table &)
     {
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_name);
@@ -152,7 +200,7 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
         throw;
     }
 
-    return !columns.empty() ? std::make_shared<NamesAndTypesList>(columns) : nullptr;
+    return !columns.empty() ? std::make_shared<NamesAndTypesList>(columns.begin(), columns.end()) : nullptr;
 }
 
 

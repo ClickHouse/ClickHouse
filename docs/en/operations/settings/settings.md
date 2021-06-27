@@ -1803,6 +1803,27 @@ Possible values:
 
 Default value: 0.
 
+## distributed_directory_monitor_split_batch_on_failure {#distributed_directory_monitor_split_batch_on_failure}
+
+Enables/disables splitting batches on failures.
+
+Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
+
+So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_directory_monitor_batch_inserts` for failed batches).
+
+Possible values:
+
+-   1 — Enabled.
+-   0 — Disabled.
+
+Default value: 0.
+
+!!! note "Note"
+    This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+
+!!! warning "Warning"
+    You should not rely on automatic batch splitting, since this may hurt performance.
+
 ## os_thread_priority {#setting-os-thread-priority}
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
@@ -3145,4 +3166,17 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+## external_table_functions_use_nulls {#external-table-functions-use-nulls}
+
+Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md)] table functions use Nullable columns.
+
+Possible values:
+
+-   0 — The table function explicitly uses Nullable columns.
+-   1 — The table function implicitly uses Nullable columns.
+
+Default value: `1`.
+
+**Usage**
+
+If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
