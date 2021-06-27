@@ -29,7 +29,7 @@ ClickHouse поддерживает следующие виды синтакси
 
 ClickHouse поддерживает синтаксис `COUNT(DISTINCT ...)`. Поведение этой конструкции зависит от настройки [count_distinct_implementation](../../../operations/settings/settings.md#settings-count_distinct_implementation). Она определяет, какая из функций [uniq\*](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) используется для выполнения операции. По умолчанию — функция [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact).
 
-Запрос `SELECT count() FROM table` может быть оптимизирован включением настройки optimize_functions_to_subcolumns](../../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [null](../../../sql-reference/data-types/nullable.md#finding-null) вместо чтения всех данных таблицы.
+Запрос `SELECT count() FROM table` может быть оптимизирован включением настройки [optimize_functions_to_subcolumns](../../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [null](../../../sql-reference/data-types/nullable.md#finding-null) вместо чтения всех данных таблицы.
 
 **Примеры**
 
@@ -68,4 +68,3 @@ SELECT count(DISTINCT num) FROM t
 ```
 
 Этот пример показывает, что `count(DISTINCT num)` выполняется с помощью функции `uniqExact` в соответствии со значением настройки `count_distinct_implementation`.
-
