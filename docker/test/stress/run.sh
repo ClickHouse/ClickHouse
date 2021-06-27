@@ -153,7 +153,7 @@ zgrep -Fa "########################################" /test_output/* > /dev/null 
 # Put logs into /test_output/
 for log_file in /var/log/clickhouse-server/clickhouse-server.log*
 do
-    pigz < $log_file > /test_output/$(basename $log_file).gz
+    pigz < "${log_file}" > /test_output/$(basename "${log_file}").gz
 done
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
