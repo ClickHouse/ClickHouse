@@ -1,10 +1,13 @@
 #pragma once
 
 #include <common/shared_ptr_helper.h>
-#include <Storages/System/IStorageSystemOneBlock.h>
+#include <Storages/IStorage.h>
+
 
 namespace DB
 {
+
+/// For system.data_skipping_indices table - describes the data skipping indices in tables, similar to system.columns.
 class StorageSystemDataSkippingIndices : public shared_ptr_helper<StorageSystemDataSkippingIndices>, public IStorage
 {
     friend struct shared_ptr_helper<StorageSystemDataSkippingIndices>;
@@ -21,6 +24,7 @@ public:
         unsigned num_streams) override;
 
 protected:
-    StorageSystemDataSkippingIndices(const StorageID& table_id_);
+    StorageSystemDataSkippingIndices(const StorageID & table_id_);
 };
+
 }
