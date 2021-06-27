@@ -213,6 +213,7 @@ public:
         bool no_more_keys = false;
         while (Block result_block = in->read())
         {
+            std::unique_lock lock(storage.rwlock);
             storage.aggregator_transform->aggregator.mergeBlock(result_block, variants, no_more_keys);
         }
 
@@ -426,15 +427,16 @@ Pipe StorageAggregatingMemory::read(
 {
     lazyInit();
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+
     // TODO implement O(1) read by aggregation key
+    auto filter_key = getFilterKeys(aggregator_transform->params, query_info);
+
+    std::shared_lock locK(rwlock);
 
     auto prepared_data = aggregator_transform->aggregator.prepareVariantsToMerge(many_data->variants);
     auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
 
-    ProcessorPtr source;
-
-    auto filter_key = getFilterKeys(aggregator_transform->params, query_info);
-    source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
+    ProcessorPtr source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
 
     StoragePtr mergable_storage = StorageSource::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), source);
 

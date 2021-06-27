@@ -3,6 +3,7 @@
 #include <atomic>
 #include <optional>
 #include <mutex>
+#include <shared_mutex>
 
 #include <common/shared_ptr_helper.h>
 
@@ -80,6 +81,9 @@ private:
 
     AggregatingTransformParamsPtr aggregator_transform;
     std::shared_ptr<ManyAggregatedData> many_data;
+
+    /// Reads can be done in parallel, while new blocks must be merged sequentially.
+    mutable std::shared_mutex rwlock;
 
 protected:
     StorageAggregatingMemory(const StorageID & table_id_, ConstraintsDescription constraints_, const ASTCreateQuery & query, ContextPtr context_);
