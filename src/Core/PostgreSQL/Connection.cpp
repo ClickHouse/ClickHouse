@@ -4,8 +4,8 @@
 namespace postgres
 {
 
-Connection::Connection(const ConnectionInfo & connection_info_, bool replication_)
-    : connection_info(connection_info_), replication(replication_)
+Connection::Connection(const ConnectionInfo & connection_info_, bool replication_, size_t num_tries_)
+    : connection_info(connection_info_), replication(replication_), num_tries(num_tries_)
 {
     if (replication)
     {
@@ -14,10 +14,30 @@ Connection::Connection(const ConnectionInfo & connection_info_, bool replication
     }
 }
 
+void Connection::execWithRetry(const std::function<void(pqxx::nontransaction &)> & exec)
+{
+    for (size_t try_no = 0; try_no < num_tries; ++try_no)
+    {
+        try
+        {
+            pqxx::nontransaction tx(getRef());
+            exec(tx);
+        }
+        catch (const pqxx::broken_connection & e)
+        {
+            LOG_DEBUG(&Poco::Logger::get("PostgreSQLReplicaConnection"),
+                      "Cannot execute query due to connection failure, attempt: {}/{}. (Message: {})",
+                      try_no, num_tries, e.what());
+
+            if (try_no == num_tries)
+                throw;
+        }
+    }
+}
+
 pqxx::connection & Connection::getRef()
 {
     connect();
-    assert(connection != nullptr);
     return *connection;
 }
 

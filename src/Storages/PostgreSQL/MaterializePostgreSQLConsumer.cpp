@@ -252,7 +252,7 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
     /// Skip '\x'
     size_t pos = 2;
     char type = readInt8(replication_message, pos, size);
-    //LOG_DEBUG(log, "Message type: {}, lsn string: {}, lsn value {}", type, current_lsn, lsn_value);
+    // LOG_DEBUG(log, "Message type: {}, lsn string: {}, lsn value {}", type, current_lsn, lsn_value);
 
     switch (type)
     {
@@ -352,9 +352,9 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
             constexpr size_t transaction_commit_timestamp_len = 8;
             pos += unused_flags_len + commit_lsn_len + transaction_end_lsn_len + transaction_commit_timestamp_len;
 
-            final_lsn = current_lsn;
-            LOG_DEBUG(log, "Commit lsn: {}", getLSNValue(current_lsn)); /// Will be removed
+            LOG_DEBUG(log, "Current lsn: {} = {}", current_lsn, getLSNValue(current_lsn)); /// Will be removed
 
+            final_lsn = current_lsn;
             break;
         }
         case 'R': // Relation
@@ -458,9 +458,9 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
 
 void MaterializePostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransaction> tx)
 {
-    for (const auto & table_name : tables_to_sync)
+    try
     {
-        try
+        for (const auto & table_name : tables_to_sync)
         {
             auto & buffer = buffers.find(table_name)->second;
             Block result_rows = buffer.description.sample_block.cloneWithColumns(std::move(buffer.columns));
@@ -483,19 +483,20 @@ void MaterializePostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransact
                 assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica table sync");
                 copyData(input, *block_io.out);
 
-                current_lsn = advanceLSN(tx);
                 buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
             }
         }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
 
-    LOG_DEBUG(log, "Table sync end for {} tables", tables_to_sync.size());
-    tables_to_sync.clear();
-    tx->commit();
+        LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
+
+        current_lsn = advanceLSN(tx);
+        tables_to_sync.clear();
+        tx->commit();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -507,6 +508,7 @@ String MaterializePostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransa
     if (!result.empty())
         return result[0][0].as<std::string>();
 
+    LOG_TRACE(log, "Advanced LSN up to: {}", final_lsn);
     return final_lsn;
 }
 
@@ -622,13 +624,33 @@ bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
 
         return false;
     }
-    catch (const Exception & e)
+    catch (const pqxx::conversion_error & e)
     {
-        if (e.code() == ErrorCodes::UNKNOWN_TABLE)
-            throw;
-
+        LOG_ERROR(log, "Convertion error: {}", e.what());
+        return false;
+    }
+    catch (const pqxx::broken_connection & e)
+    {
+        LOG_ERROR(log, "Connection error: {}", e.what());
+        return false;
+    }
+    catch (const Exception &)
+    {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
+    }
+    catch (...)
+    {
+        /// Since reading is done from a background task, it is important to catch any possible error
+        /// in order to understand why something does not work.
+        try
+        {
+            std::rethrow_exception(std::current_exception());
+        }
+        catch (const std::exception& e)
+        {
+            LOG_ERROR(log, "Unexpected error: {}", e.what());
+        }
     }
 
     if (!tables_to_sync.empty())
