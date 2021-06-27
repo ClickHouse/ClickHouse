@@ -3158,4 +3158,4 @@ Default value: `1`.
 
 **Usage**
 
-If the setting is set to `0`, the table function does not make Nullable columns and insert default values instead of NULL. This is also applicable for NULL values inside arrays.
+If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
