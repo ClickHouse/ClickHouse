@@ -45,7 +45,7 @@ CREATE TABLE test_shards (id UInt32, name String, age UInt32, money UInt32) ENGI
 
 When specifying replicas, one of the available replicas is selected for each of the shards when reading. If the connection fails, the next replica is selected, and so on for all the replicas. If the connection attempt fails for all the replicas, the attempt is repeated the same way several times.
 
-You can specify up to any number of shards and to any number of replicas for each shard.
+You can specify any number of shards and any number of replicas for each shard.
 
 **See Also**
 
