@@ -20,7 +20,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Смотрите подробное описание запроса [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query).
 
-Структура таблицы может отличаться от исходной структуры таблицы:
+Структура таблицы может отличаться от структуры исходной таблицы:
 
 -   Имена столбцов должны быть такими же, как в исходной таблице, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
 -   Типы столбцов могут отличаться от типов в исходной таблице. ClickHouse пытается [привести](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
