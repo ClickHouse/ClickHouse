@@ -3145,4 +3145,19 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## external_table_functions_use_nulls {#external-table-functions-use-nulls}
+
+Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md)] table functions use Nullable columns.
+
+Possible values:
+
+-   0 — The table function explicitly uses Nullable columns.
+-   1 — The table function implicitly uses Nullable columns.
+
+Default value: `1`.
+
+**Usage**
+
+If the setting is set to `0`, the table function does not make Nullable columns and insert default values instead of NULL. This is also applicable for NULL values inside arrays.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
