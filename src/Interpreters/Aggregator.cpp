@@ -719,12 +719,14 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
 
 #if defined(MEMORY_SANITIZER)
-                    for (size_t i = 0; i < aggregate_functions.size(); ++i)
+                    for (size_t aggregate_function_index = 0; aggregate_function_index < aggregate_functions.size(); ++aggregate_function_index)
                     {
-                        if (!is_aggregate_function_compiled[i])
+                        if (!is_aggregate_function_compiled[aggregate_function_index])
                             continue;
 
-                        __msan_unpoison(aggregate_data + offsets_of_aggregate_states[i], params.aggregates[i].function->sizeOfData());
+                        auto aggregate_data_with_offset = aggregate_data + offsets_of_aggregate_states[aggregate_function_index];
+                        auto data_size = params.aggregates[aggregate_function_index].function->sizeOfData();
+                        __msan_unpoison(aggregate_data_with_offset, data_size);
                     }
 #endif
                 }
