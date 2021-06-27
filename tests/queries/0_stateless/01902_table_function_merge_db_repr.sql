@@ -24,6 +24,9 @@ CREATE TABLE 01902_db.t_merge as 01902_db.t ENGINE=Merge(REGEXP('^01902_db'), '^
 SELECT 'SELECT _database, _table, n FROM 01902_db.t_merge ORDER BY _database, _table, n';
 SELECT _database, _table, n FROM 01902_db.t_merge ORDER BY _database, _table, n;
 
+SELECT 'SHOW CREATE TABLE 01902_db.t_merge';
+SHOW CREATE  TABLE 01902_db.t_merge;
+
 SELECT 'SELECT _database, _table, n FROM merge(REGEXP(^01902_db), ^t) ORDER BY _database, _table, n';
 SELECT _database, _table, n FROM merge(REGEXP('^01902_db'), '^t') ORDER BY _database, _table, n;
 
@@ -51,10 +54,13 @@ CREATE TABLE 01902_db.t_merge_1 as 01902_db.t ENGINE=Merge(currentDatabase(), '^
 SELECT 'SELECT _database, _table, n FROM 01902_db.t_merge_1 ORDER BY _database, _table, n';
 SELECT _database, _table, n FROM 01902_db.t_merge_1 ORDER BY _database, _table, n;
 
+SELECT 'SHOW CREATE TABLE 01902_db.t_merge_1';
+SHOW CREATE TABLE 01902_db.t_merge_1;
+
 SELECT 'SELECT _database, _table, n FROM merge(currentDatabase(), ^t) ORDER BY _database, _table, n';
 SELECT _database, _table, n FROM merge(currentDatabase(), '^t') ORDER BY _database, _table, n;
 
--- DROP DATABASE 01902_db;
--- DROP DATABASE 01902_db1;
--- DROP DATABASE 01902_db2;
--- DROP DATABASE 01902_db3;
+DROP DATABASE 01902_db;
+DROP DATABASE 01902_db1;
+DROP DATABASE 01902_db2;
+DROP DATABASE 01902_db3;
