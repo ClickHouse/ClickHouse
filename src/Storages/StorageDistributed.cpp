@@ -801,6 +801,8 @@ void StorageDistributed::startup()
         return;
 
     const auto & disks = data_volume->getDisks();
+
+    /// Make initialization for large number of disks parallel.
     ThreadPool pool(disks.size());
 
     for (const DiskPtr & disk : disks)
