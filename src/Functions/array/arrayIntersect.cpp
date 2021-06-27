@@ -21,7 +21,7 @@
 #include <Common/assert_cast.h>
 #include <Core/TypeListNumber.h>
 #include <Interpreters/castColumn.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -38,8 +38,8 @@ class FunctionArrayIntersect : public IFunction
 {
 public:
     static constexpr auto name = "arrayIntersect";
-    static FunctionPtr create(ContextConstPtr context) { return std::make_shared<FunctionArrayIntersect>(context); }
-    explicit FunctionArrayIntersect(ContextConstPtr context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayIntersect>(context); }
+    explicit FunctionArrayIntersect(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -53,7 +53,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
 
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 6;
@@ -133,7 +133,7 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
     if (arguments.empty())
         throw Exception{"Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-    for (auto i : ext::range(0, arguments.size()))
+    for (auto i : collections::range(0, arguments.size()))
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
         if (!array_type)
@@ -195,7 +195,7 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
 
         const auto & types = tuple_type->getElements();
 
-        for (auto i : ext::range(0, columns_number))
+        for (auto i : collections::range(0, columns_number))
         {
             columns[i] = castRemoveNullable(column_tuple->getColumnPtr(i), types[i]);
         }
@@ -283,7 +283,7 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
     return {.initial = initial_columns, .casted = casted_columns};
 }
 
-static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, ContextConstPtr context)
+static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, ContextPtr context)
 {
     ColumnsWithTypeAndName args{first, second};
     auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
@@ -300,7 +300,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
 
     bool all_const = true;
 
-    for (auto i : ext::range(0, columns_number))
+    for (auto i : collections::range(0, columns_number))
     {
         auto & arg = arrays.args[i];
         const auto * argument_column = columns[i].column.get();
@@ -359,7 +359,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     }
     else
     {
-        for (auto i : ext::range(0, columns_number))
+        for (auto i : collections::range(0, columns_number))
         {
             if (arrays.args[i].is_const)
                 continue;
@@ -493,13 +493,13 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     Map map;
     std::vector<size_t> prev_off(args, 0);
     size_t result_offset = 0;
-    for (auto row : ext::range(0, rows))
+    for (auto row : collections::range(0, rows))
     {
         map.clear();
 
         bool all_has_nullable = all_nullable;
 
-        for (auto arg_num : ext::range(0, args))
+        for (auto arg_num : collections::range(0, args))
         {
             const auto & arg = arrays.args[arg_num];
             bool current_has_nullable = false;
@@ -511,7 +511,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             else
                 off = (*arg.offsets)[row];
 
-            for (auto i : ext::range(prev_off[arg_num], off))
+            for (auto i : collections::range(prev_off[arg_num], off))
             {
                 if (arg.null_map && (*arg.null_map)[i])
                     current_has_nullable = true;

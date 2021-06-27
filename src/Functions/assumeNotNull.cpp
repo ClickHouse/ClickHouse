@@ -19,7 +19,7 @@ class FunctionAssumeNotNull : public IFunction
 public:
     static constexpr auto name = "assumeNotNull";
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionAssumeNotNull>();
     }

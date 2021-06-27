@@ -1,7 +1,7 @@
 #include "MySQLHandler.h"
 
 #include <limits>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Columns/ColumnVector.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
@@ -129,6 +129,8 @@ void MySQLHandler::run()
             throw Exception("Required capability: CLIENT_PROTOCOL_41.", ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
+
+        connection_context->getClientInfo().initial_user = handshake_response.username;
 
         try
         {
