@@ -262,8 +262,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             {
                 log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
 
-                /// We don't need to involve ZooKeeper to obtain the checksums as by the time we get
-                /// the MutableDataPartPtr here, we already have the data thus being able to
+                /// We don't need to involve ZooKeeper to obtain checksums as by the time we get
+                /// MutableDataPartPtr here, we already have the data thus being able to
                 /// calculate the checksums.
                 log_entry.part_checksum = part->checksums.getTotalChecksumHex();
             }
@@ -384,6 +384,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
         MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
+
         try
         {
             renamed = storage.renameTempPartAndAdd(part, nullptr, &transaction);
@@ -394,6 +395,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 && e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
                 throw;
         }
+
         if (!renamed)
         {
             if (is_already_existing_part)
