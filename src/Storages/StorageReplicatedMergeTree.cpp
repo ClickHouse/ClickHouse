@@ -558,6 +558,14 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
         }
 
+        if (partial_shutdown_called)
+            throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
+                ErrorCodes::UNFINISHED);
+
+        /// Replica inactive, don't check mutation status
+        if (!inactive_replicas.empty() && inactive_replicas.count(replica))
+            continue;
+
         /// At least we have our current mutation
         std::set<String> mutation_ids;
         mutation_ids.insert(mutation_id);
@@ -566,10 +574,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         /// they will happen on each replica, so we can check only in-memory info.
         auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
         checkMutationStatus(mutation_status, mutation_ids);
-
-        if (partial_shutdown_called)
-            throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
-                ErrorCodes::UNFINISHED);
     }
 
     if (!inactive_replicas.empty())
@@ -3157,30 +3161,35 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     });
 }
 
-std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
+bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & executor)
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
-        return {};
+        return false;
 
     /// This object will mark the element of the queue as running.
     ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry = selectQueueEntry();
 
     if (!selected_entry)
-        return {};
-
-    PoolType pool_type;
+        return false;
 
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
     if (selected_entry->log_entry->type == LogEntry::GET_PART)
-        pool_type = PoolType::FETCH;
-    else
-        pool_type = PoolType::MERGE_MUTATE;
-
-    return JobAndPool{[this, selected_entry] () mutable
     {
-        return processQueueEntry(selected_entry);
-    }, pool_type};
+        executor.execute({[this, selected_entry] () mutable
+        {
+            return processQueueEntry(selected_entry);
+        }, PoolType::FETCH});
+        return true;
+    }
+    else
+    {
+        executor.execute({[this, selected_entry] () mutable
+        {
+            return processQueueEntry(selected_entry);
+        }, PoolType::MERGE_MUTATE});
+        return true;
+    }
 }
 
 

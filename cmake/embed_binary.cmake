@@ -33,44 +33,25 @@ macro(clickhouse_embed_binaries)
         message(FATAL_ERROR "The list of binary resources to embed may not be empty")
     endif()
 
-    # If cross-compiling, ensure we use the toolchain file and target the
-    # actual target architecture
-    if (CMAKE_CROSSCOMPILING)
-        set(CROSS_COMPILE_FLAGS "--target=${CMAKE_C_COMPILER_TARGET} --gcc-toolchain=${TOOLCHAIN_FILE}")
-    else()
-        set(CROSS_COMPILE_FLAGS "")
-    endif()
+    add_library("${EMBED_TARGET}" STATIC)
+    set_target_properties("${EMBED_TARGET}" PROPERTIES LINKER_LANGUAGE C)
 
     set(EMBED_TEMPLATE_FILE "${PROJECT_SOURCE_DIR}/programs/embed_binary.S.in")
-    set(RESOURCE_OBJS)
-    foreach(RESOURCE_FILE ${EMBED_RESOURCES})
-        set(RESOURCE_OBJ "${RESOURCE_FILE}.o")
-        list(APPEND RESOURCE_OBJS "${RESOURCE_OBJ}")
 
-        # Normalize the name of the resource
+    foreach(RESOURCE_FILE ${EMBED_RESOURCES})
+        set(ASSEMBLY_FILE_NAME "${RESOURCE_FILE}.S")
         set(BINARY_FILE_NAME "${RESOURCE_FILE}")
+
+        # Normalize the name of the resource.
         string(REGEX REPLACE "[\./-]" "_" SYMBOL_NAME "${RESOURCE_FILE}") # - must be last in regex
         string(REPLACE "+" "_PLUS_" SYMBOL_NAME "${SYMBOL_NAME}")
-        set(ASSEMBLY_FILE_NAME "${RESOURCE_FILE}.S")
 
-        # Put the configured assembly file in the output directory.
-        # This is so we can clean it up as usual, and we CD to the
-        # source directory before compiling, so that the assembly
-        # `.incbin` directive can find the file.
+        # Generate the configured assembly file in the output directory.
         configure_file("${EMBED_TEMPLATE_FILE}" "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}" @ONLY)
 
-        # Generate the output object file by compiling the assembly, in the directory of
-        # the sources so that the resource file may also be found
-        add_custom_command(
-            OUTPUT ${RESOURCE_OBJ}
-            COMMAND cd "${EMBED_RESOURCE_DIR}" &&
-                 ${CMAKE_C_COMPILER} "${CROSS_COMPILE_FLAGS}" -c -o
-                    "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}"
-                    "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}"
-        )
-        set_source_files_properties("${RESOURCE_OBJ}" PROPERTIES EXTERNAL_OBJECT true GENERATED true)
-    endforeach()
+        # Set the include directory for relative paths specified for `.incbin` directive.
+        set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}" APPEND PROPERTY INCLUDE_DIRECTORIES "${EMBED_RESOURCE_DIR}")
 
-    add_library("${EMBED_TARGET}" STATIC ${RESOURCE_OBJS})
-    set_target_properties("${EMBED_TARGET}" PROPERTIES LINKER_LANGUAGE C)
+        target_sources("${EMBED_TARGET}" PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}")
+    endforeach()
 endmacro()
