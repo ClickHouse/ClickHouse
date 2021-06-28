@@ -1,15 +1,14 @@
 #pragma once
 
-#include <Parsers/IAST.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
 
 class ReadBuffer;
 
-/** INSERT query
-  */
+/// INSERT query
 class ASTInsertQuery : public IAST
 {
 public:
@@ -23,12 +22,17 @@ public:
     ASTPtr select;
     ASTPtr watch;
 
-    /// Data to insert
+    /// Data inlined into query
     const char * data = nullptr;
     const char * end = nullptr;
 
-    /// Query may have additional data if buffer is not nullptr
-    ReadBuffer * tail;
+    /// Data from buffer to insert after inlined one - may be nullptr.
+    ReadBuffer * tail = nullptr;
+
+    bool expectNativeData() const
+    {
+        return !data && !tail;
+    }
 
     /// Try to find table function input() in SELECT part
     void tryFindInputFunction(ASTPtr & input_function) const;
