@@ -852,6 +852,7 @@
         "01921_concurrent_ttl_and_normal_merges_zookeeper_long", // heavy test, better to run sequentially
         "01913_replace_dictionary",
         "01914_exchange_dictionaries",
-        "01915_create_or_replace_dictionary"
+        "01915_create_or_replace_dictionary",
+        "01925_test_storage_merge_aliases"
     ]
 }
