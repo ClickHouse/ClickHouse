@@ -521,7 +521,8 @@
         "01913_replace_dictionary",
         "01914_exchange_dictionaries",
         "01915_create_or_replace_dictionary",
-        "01913_names_of_tuple_literal"
+        "01913_names_of_tuple_literal",
+        "01925_merge_prewhere_table"
     ],
     "parallel":
     [
@@ -848,6 +849,10 @@
         "01870_buffer_flush", // creates database
         "01889_postgresql_protocol_null_fields",
         "01889_check_row_policy_defined_using_user_function",
-        "01921_concurrent_ttl_and_normal_merges_zookeeper_long" // heavy test, better to run sequentially
+        "01921_concurrent_ttl_and_normal_merges_zookeeper_long", // heavy test, better to run sequentially
+        "01913_replace_dictionary",
+        "01914_exchange_dictionaries",
+        "01915_create_or_replace_dictionary",
+        "01925_test_storage_merge_aliases"
     ]
 }
