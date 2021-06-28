@@ -719,7 +719,12 @@ struct DateTimeTransformImpl
             }
             else
             {
-                Op::vector(sources->getData(), col_to->getData(), DateLUT::instance(), transform);
+                size_t time_zone_argument_position = 1;
+                if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    time_zone_argument_position = 2;
+
+                const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
             }
 
             return mutable_result_col;
