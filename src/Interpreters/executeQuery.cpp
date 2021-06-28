@@ -981,11 +981,11 @@ BlockIO executeQuery(
 }
 
 BlockIO executeQuery(
+    bool allow_processors,
     const String & query,
     ContextMutablePtr context,
     bool internal,
-    QueryProcessingStage::Enum stage,
-    bool allow_processors)
+    QueryProcessingStage::Enum stage)
 {
     BlockIO res = executeQuery(query, context, internal, stage);
 
