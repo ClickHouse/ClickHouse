@@ -863,6 +863,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
     {
         const String path(disk->getPath());
         auto new_path = path + new_path_to_table_data;
+        Poco::File(new_path).createDirectories();
         Poco::File(path + relative_data_path).renameTo(new_path);
 
         LOG_DEBUG(log, "Updating path to {}", new_path);
