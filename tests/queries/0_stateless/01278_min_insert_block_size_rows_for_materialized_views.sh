@@ -64,8 +64,7 @@ echo "create table out_01278 as data_01278 Engine=Merge('$CLICKHOUSE_DATABASE', 
 #
 function execute_insert()
 {
-    {
-    cat <<EOL
+    ${CLICKHOUSE_CLIENT} --max_memory_usage=$TEST_01278_MEMORY --optimize_trivial_insert_select='false' "$@" -q "
 insert into data_01278 select
     number,
     reinterpretAsString(number), // s1
@@ -76,18 +75,24 @@ insert into data_01278 select
     reinterpretAsString(number), // s6
     reinterpretAsString(number), // s7
     reinterpretAsString(number)  // s8
-from numbers(100000); -- { serverError 241; }
-EOL
-    } | {
-        execute --max_memory_usage=$TEST_01278_MEMORY --optimize_trivial_insert_select='false' "$@"
-    }
-    echo 'select count() from out_01278' | execute
+from numbers(100000); -- { serverError 241; }" > /dev/null 2>&1
+    local ret_code=$?
+    if [[ $ret_code -eq 0 ]];
+    then
+      echo "    OK"
+    else
+      echo "    KO($ret_code)"
+    fi
 }
 
 # fails
+echo "Should throw 1"
 execute_insert --testmode
+echo "Should throw 2"
 execute_insert --testmode --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_materialized_views=$((1<<20))
 
 # passes
+echo "Should pass 1"
 execute_insert --min_insert_block_size_rows=1
+echo "Should pass 2"
 execute_insert --min_insert_block_size_rows_for_materialized_views=1
