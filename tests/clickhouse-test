@@ -44,7 +44,7 @@ MESSAGES_TO_RETRY = [
     DISTRIBUTED_DDL_TIMEOUT_MSG # FIXME
 ]
 
-MAX_RETRIES = 5
+MAX_RETRIES = 3
 
 class Terminated(KeyboardInterrupt):
     pass
@@ -823,12 +823,18 @@ def main(args):
         else:
             args.shard = False
 
-    if args.database and args.database != "test":
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
-        clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args, args.database)))
+    def create_common_database(args, db_name):
+        create_database_retries = 0
+        while create_database_retries < MAX_RETRIES:
+            clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+            (_, stderr) = clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + db_name + get_db_engine(args, db_name)))
+            if not need_retry(stderr):
+                break
+            create_database_retries += 1
 
-    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
-    clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args, 'test')))
+    if args.database and args.database != "test":
+        create_common_database(args, args.database)
+    create_common_database(args, "test")
 
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)

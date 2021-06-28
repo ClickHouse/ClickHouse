@@ -17,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
 }
 
@@ -430,8 +431,14 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
             block.erase(prewhere_info->prewhere_column_name);
         else
         {
-            auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
-            ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+            WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
+            if (which.isInt() || which.isUInt())
+                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+            else if (which.isFloat())
+                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
+            else
+                throw Exception("Illegal type " + prewhere_column.type->getName() + " of column for filter.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
         }
     }
 }

@@ -1,3 +1,4 @@
+//-----------------------------------------------------------------------------
 // MurmurHash3 was written by Austin Appleby, and is placed in the public
 // domain. The author hereby disclaims copyright to this source code.
 
@@ -6,8 +7,8 @@
 // compile and run any of them on any platform, but your performance with the
 // non-native version will be less than optimal.
 
-#include "murmurhash3.h"
-#include <cstring>
+#include "MurmurHash3.h"
+#include <string.h>
 
 //-----------------------------------------------------------------------------
 // Platform-specific functions and macros
@@ -93,7 +94,7 @@ FORCE_INLINE uint64_t fmix64 ( uint64_t k )
 
 //-----------------------------------------------------------------------------
 
-void MurmurHash3_x86_32 ( const void * key, int len,
+void MurmurHash3_x86_32 ( const void * key, size_t len,
                           uint32_t seed, void * out )
 {
   const uint8_t * data = (const uint8_t*)key;
@@ -149,7 +150,7 @@ void MurmurHash3_x86_32 ( const void * key, int len,
 
 //-----------------------------------------------------------------------------
 
-void MurmurHash3_x86_128 ( const void * key, const int len,
+void MurmurHash3_x86_128 ( const void * key, const size_t len,
                            uint32_t seed, void * out )
 {
   const uint8_t * data = (const uint8_t*)key;
@@ -254,7 +255,7 @@ void MurmurHash3_x86_128 ( const void * key, const int len,
 
 //-----------------------------------------------------------------------------
 
-void MurmurHash3_x64_128 ( const void * key, const int len,
+void MurmurHash3_x64_128 ( const void * key, const size_t len,
                            const uint32_t seed, void * out )
 {
   const uint8_t * data = (const uint8_t*)key;
@@ -332,3 +333,6 @@ void MurmurHash3_x64_128 ( const void * key, const int len,
   ((uint64_t*)out)[0] = h1;
   ((uint64_t*)out)[1] = h2;
 }
+
+//-----------------------------------------------------------------------------
+
