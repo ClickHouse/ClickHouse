@@ -163,7 +163,7 @@ void assertEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
-inline bool checkChar(char c, ReadBuffer & buf)
+inline bool checkChar(char c, ReadBuffer & buf)  // -V1071
 {
     char a;
     if (!buf.peek(a) || a != c)
@@ -393,7 +393,7 @@ void readIntText(T & x, ReadBuffer & buf)
 }
 
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
-bool tryReadIntText(T & x, ReadBuffer & buf)
+bool tryReadIntText(T & x, ReadBuffer & buf)  // -V1071
 {
     return readIntTextImpl<T, bool, check_overflow>(x, buf);
 }
@@ -1248,7 +1248,7 @@ bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
 
 struct PcgDeserializer
 {
-    static void deserializePcg32(const pcg32_fast & rng, ReadBuffer & buf)
+    static void deserializePcg32(pcg32_fast & rng, ReadBuffer & buf)
     {
         decltype(rng.state_) multiplier, increment, state;
         readText(multiplier, buf);
@@ -1261,6 +1261,8 @@ struct PcgDeserializer
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", rng.multiplier(), multiplier);
         if (increment != rng.increment())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", rng.increment(), increment);
+
+        rng.state_ = state;
     }
 };
 
