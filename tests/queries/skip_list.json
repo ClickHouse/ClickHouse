@@ -521,7 +521,8 @@
         "01913_replace_dictionary",
         "01914_exchange_dictionaries",
         "01915_create_or_replace_dictionary",
-        "01913_names_of_tuple_literal"
+        "01913_names_of_tuple_literal",
+        "01925_merge_prewhere_table"
     ],
     "parallel":
     [
