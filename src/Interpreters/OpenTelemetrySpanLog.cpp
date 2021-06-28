@@ -15,13 +15,13 @@
 namespace DB
 {
 
-Block OpenTelemetrySpanLogElement::createBlock()
+NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
 {
     return {
-        {std::make_shared<DataTypeUUID>(), "trace_id"},
-        {std::make_shared<DataTypeUInt64>(), "span_id"},
-        {std::make_shared<DataTypeUInt64>(), "parent_span_id"},
-        {std::make_shared<DataTypeString>(), "operation_name"},
+        {"trace_id", std::make_shared<DataTypeUUID>()},
+        {"span_id", std::make_shared<DataTypeUInt64>()},
+        {"parent_span_id", std::make_shared<DataTypeUInt64>()},
+        {"operation_name", std::make_shared<DataTypeString>()},
         // DateTime64 is really unwieldy -- there is no "normal" way to convert
         // it to an UInt64 count of microseconds, except:
         // 1) reinterpretAsUInt64(reinterpretAsFixedString(date)), which just
@@ -32,14 +32,21 @@ Block OpenTelemetrySpanLogElement::createBlock()
         // Also subtraction of two DateTime64 points doesn't work, so you can't
         // get duration.
         // It is much less hassle to just use UInt64 of microseconds.
-        {std::make_shared<DataTypeUInt64>(), "start_time_us"},
-        {std::make_shared<DataTypeUInt64>(), "finish_time_us"},
-        {std::make_shared<DataTypeDate>(), "finish_date"},
-        {std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
-            "attribute"},
+        {"start_time_us", std::make_shared<DataTypeUInt64>()},
+        {"finish_time_us", std::make_shared<DataTypeUInt64>()},
+        {"finish_date", std::make_shared<DataTypeDate>()},
+        {"attribute", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
     };
 }
 
+NamesAndAliases OpenTelemetrySpanLogElement::getNamesAndAliases()
+{
+    return
+    {
+        {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapKeys(attribute)"},
+        {"attribute.values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapKeys(attribute)"}
+    };
+}
 
 void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 {
