@@ -137,8 +137,13 @@ void TTLAggregationAlgorithm::execute(Block & block)
     if (some_rows_were_aggregated)
     {
         auto ttl_column_after_aggregation = executeExpressionAndGetColumn(description.expression, block, description.result_column);
+        auto where_column_after_aggregation = executeExpressionAndGetColumn(description.where_expression, block, description.where_result_column);
         for (size_t i = 0; i < block.rows(); ++i)
-            new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
+        {
+            bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);
+            if (where_filter_passed)
+                new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
+        }
     }
 }
 
