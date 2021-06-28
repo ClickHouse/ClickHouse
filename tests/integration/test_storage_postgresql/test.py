@@ -307,7 +307,7 @@ def test_postgres_distributed(started_cluster):
     started_cluster.unpause_container('postgres1')
     assert(result == 'host2\nhost4\n' or result == 'host3\nhost4\n')
 
-
+    
 def test_datetime_with_timezone(started_cluster):
     conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
     cursor = conn.cursor()
@@ -321,6 +321,22 @@ def test_datetime_with_timezone(started_cluster):
     # [:-6] because 2014-04-04 16:00:00+00:00 -> 2014-04-04 16:00:00
     assert(node1.query("select ts_z from test_timezone").strip() == str(result[1])[:-6])
     assert(node1.query("select * from test_timezone") == "2014-04-04 20:00:00\t2014-04-04 16:00:00\n")
+
+
+def test_postgres_ndim(started_cluster):
+    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
+    cursor = conn.cursor()
+    cursor.execute('CREATE TABLE arr1 (a Integer[])')
+    cursor.execute("INSERT INTO arr1 SELECT '{{1}, {2}}'")
+
+    # The point is in creating a table via 'as select *', in postgres att_ndim will not be correct in this case.
+    cursor.execute('CREATE TABLE arr2 AS SELECT * FROM arr1')
+    cursor.execute("SELECT attndims AS dims FROM pg_attribute WHERE attrelid = 'arr2'::regclass; ")
+    result = cursor.fetchall()[0]
+    assert(int(result[0]) == 0)
+
+    result = node1.query('''SELECT toTypeName(a) FROM postgresql('postgres1:5432', 'clickhouse', 'arr2', 'postgres', 'mysecretpassword')''')
+    assert(result.strip() == "Array(Array(Nullable(Int32)))")
 
 
 if __name__ == '__main__':
