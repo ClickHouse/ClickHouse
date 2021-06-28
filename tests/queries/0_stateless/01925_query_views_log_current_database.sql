@@ -14,11 +14,8 @@ CREATE TABLE table_f (a Float64, count Int64) ENGINE MergeTree ORDER BY a;
 -- SETUP MATERIALIZED VIEWS
 CREATE MATERIALIZED VIEW matview_a_to_b TO table_b AS SELECT toFloat64(a) AS a, b AS count FROM table_a;
 CREATE MATERIALIZED VIEW matview_b_to_c TO table_c AS SELECT SUM(a) as a FROM table_b;
-
+CREATE MATERIALIZED VIEW matview_b_to_c_inner UUID '12312312-1234-8765-8420-000000000001' ENGINE TinyLog AS SELECT SUM(a) as a FROM table_b;
 CREATE MATERIALIZED VIEW matview_join_d_e TO table_f AS SELECT table_d.a as a, table_e.count as count FROM table_d LEFT JOIN table_e ON table_d.a = table_e.a;
-
--- We don't include test materialized views here since the name is based on the uuid on atomic databases
--- and that makes the test harder to read
 
 -- SETUP LIVE VIEW
 ---- table_b_live_view (Int64)
@@ -56,6 +53,7 @@ FORMAT JSONEachRow;
 SELECT
     'Depending views' as stage,
     view_name,
+    status,
     view_target,
     view_query
 FROM system.query_views_log
@@ -88,6 +86,7 @@ FORMAT JSONEachRow;
 SELECT
     'Depending views 2' as stage,
     view_name,
+    status,
     view_target,
     view_query
 FROM system.query_views_log
@@ -107,6 +106,8 @@ ORDER BY view_name
 DROP TABLE table_b_live_view;
 DROP TABLE matview_a_to_b;
 DROP TABLE matview_b_to_c;
+DROP TABLE matview_b_to_c_inner SYNC;
+DROP TABLE matview_join_d_e;
 DROP TABLE table_f;
 DROP TABLE table_e;
 DROP TABLE table_d;

@@ -23,14 +23,7 @@ class ThreadStatus;
 
 struct QueryViewsLogElement
 {
-    enum class ViewStatus : int8_t
-    {
-        INIT = 1,
-        WRITTEN_PREFIX = 2,
-        WRITTEN_BLOCK = 3,
-        WRITTEN_SUFFIX = 4
-    };
-
+    using ViewStatus = QueryLogElementType;
 
     enum class ViewType : int8_t
     {
@@ -46,7 +39,7 @@ struct QueryViewsLogElement
         std::shared_ptr<ThreadStatus> thread_status = nullptr;
         UInt64 elapsed_ms = 0;
         std::chrono::time_point<std::chrono::system_clock> event_time;
-        ViewStatus event_status = ViewStatus::INIT;
+        ViewStatus event_status = ViewStatus::QUERY_START;
 
         void setStatus(ViewStatus s)
         {
