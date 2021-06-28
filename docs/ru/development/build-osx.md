@@ -14,7 +14,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 Установите последнюю версию [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12) с App Store.
 
-Откройте ее хотя бы один разЮ чтобы принять лицензионное соглашение конечного пользователя и автоматически установить необходимые компоненты.
+Откройте ее хотя бы один раз, чтобы принять лицензионное соглашение конечного пользователя и автоматически установить необходимые компоненты.
 
 Дальше убедитесь, что в системе выбрана последняя версия Инструментов Командной Строки:
 
@@ -32,7 +32,7 @@ $ brew update
 $ brew install cmake ninja libtool gettext llvm gcc
 ```
 
-## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
+## Посмотреть исходники ClickHouse {#checkout-clickhouse-sources}
 
 ``` bash
 $ git clone --recursive git@github.com:ClickHouse/ClickHouse.git # or https://github.com/ClickHouse/ClickHouse.git
@@ -40,7 +40,7 @@ $ git clone --recursive git@github.com:ClickHouse/ClickHouse.git # or https://gi
 
 ## Сборка ClickHouse {#build-clickhouse}
 
-To build using Xcode's native AppleClang compiler:
+Для сборка в компиляторе Xcode's native AppleClang:
 
 ``` bash
 $ cd ClickHouse
@@ -52,7 +52,7 @@ $ cmake --build . --config RelWithDebInfo
 $ cd ..
 ```
 
-To build using Homebrew's vanilla Clang compiler:
+Сборка с помощью компилятора Homebrew's vanilla Clang:
 
 ``` bash
 $ cd ClickHouse
@@ -64,7 +64,9 @@ $ cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=
 $ cmake --build . --config RelWithDebInfo
 $ cd ..
 ```
-To build using Homebrew's vanilla GCC compiler:
+
+Чтобы собрать с помощью компилятора Homebrew's vanilla GCC:
+
 ``` bash
 $ cd ClickHouse
 $ rm -rf build
@@ -76,12 +78,12 @@ $ cd ..
 ```
 ## Caveats {#caveats}
 
-If you intend to run `clickhouse-server`, make sure to increase the system’s maxfiles variable.
+Если вы планируете запускать `clickhouse-server`, убедитесь, что увеличили системную переменную maxfiles.
 
 !!! info "Note"
-    You’ll need to use sudo.
+    Вам понадобится sudo.
 
-To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the following content:
+Чтобы так сделать, создайте файл `/Library/LaunchDaemons/limit.maxfiles.plist` и поместите в него следующее:
 
 ``` xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -107,13 +109,13 @@ To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the
 </plist>
 ```
 
-Execute the following command:
+Выполните следующую команду:
 
 ``` bash
 $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
-Reboot.
+Перезагрузитесь.
 
-To check if it’s working, you can use `ulimit -n` command.
+Чтобы проверить, как это работает, пользуйтесь командой `ulimit -n`.
 [Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->
