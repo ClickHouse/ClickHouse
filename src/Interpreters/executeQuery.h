@@ -44,11 +44,11 @@ BlockIO executeQuery(
 
 /// Old interface with allow_processors flag. For compatibility.
 BlockIO executeQuery(
+    bool allow_processors,  /// If can use processors pipeline
     const String & query,
     ContextMutablePtr context,
-    bool internal,
-    QueryProcessingStage::Enum stage,
-    bool allow_processors /// If can use processors pipeline
+    bool internal = false,
+    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete
 );
 
 }

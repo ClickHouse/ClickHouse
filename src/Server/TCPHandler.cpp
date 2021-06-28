@@ -315,7 +315,9 @@ void TCPHandler::runImpl()
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            if (state.io.out)
+            /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
+            ///        and don't check implicitly via existance of |state.io.in|.
+            if (state.io.out && !state.io.in)
             {
                 state.need_receive_data_for_insert = true;
                 processInsertQuery(connection_settings);
@@ -329,6 +331,7 @@ void TCPHandler::runImpl()
             else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors();
             else if (state.io.in)
+                /// TODO: check that this branch works well for insert query with embedded data.
                 processOrdinaryQuery();
 
             state.io.onFinish();

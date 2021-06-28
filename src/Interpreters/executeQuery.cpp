@@ -579,7 +579,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         auto * queue = context->getAsynchronousInsertQueue();
         const bool async_insert
-            = queue && insert_query && !insert_query->select && (insert_query->data || insert_query->tail) && settings.async_insert_mode;
+            = queue && insert_query && !insert_query->select && !insert_query->expectNativeData() && settings.async_insert_mode;
 
         if (async_insert && queue->push(insert_query, settings))
         {
@@ -1020,6 +1020,8 @@ void executeQuery(
     }
     else
     {
+        /// FIXME: this is an extra copy not required for async insertion.
+
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
         LimitReadBuffer limit(istr, max_query_size + 1, false);
@@ -1028,7 +1030,6 @@ void executeQuery(
 
         begin = parse_buf.data();
         end = begin + parse_buf.size();
-        /// Can check stream for eof, because we have copied data
     }
 
     ASTPtr ast;
@@ -1041,7 +1042,7 @@ void executeQuery(
     {
         if (streams.out)
         {
-            assert(streams.in);
+            assert(streams.in);  /// otherwise it's an empty insert query, which is illegal and should be checked earlier
             copyData(*streams.in, *streams.out);
         }
         else if (streams.in)
