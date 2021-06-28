@@ -68,7 +68,7 @@ private:
 
         if (which_ch_val.isFloat() != which_val.isFloat())
             throw Exception(
-                "All value types in " + getName() + " should be ether or float or integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                "All value types in " + getName() + " should be either or float or integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!(check_val_type->equals(*promoted_val_type)))
         {
@@ -386,9 +386,9 @@ private:
                 }
             }
             else
-                throw Exception{
+                throw Exception(
                     "Illegal column type " + arguments[0].type->getName() + " in arguments of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         // we can check const columns before any processing
@@ -439,9 +439,9 @@ private:
             case TypeIndex::String:
                 return execute1<String>(row_count, res_type, res_value_type, args);
             default:
-                throw Exception{
+                throw Exception(
                     "Illegal column type " + key_type->getName() + " for keys in arguments of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 };
