@@ -243,12 +243,12 @@ NamesAndTypesList ExpressionAnalyzer::analyzeJoin(ActionsDAGPtr & actions, const
     {
         getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, actions, false);
         auto sample_columns = actions->getNamesAndTypesList();
-        analyzedJoin().addJoinedColumnsAndCorrectTypes(sample_columns);
+        syntax->analyzed_join->addJoinedColumnsAndCorrectTypes(sample_columns, true);
         actions = std::make_shared<ActionsDAG>(sample_columns);
     }
 
     NamesAndTypesList result_columns = src_columns;
-    analyzedJoin().addJoinedColumnsAndCorrectTypes(result_columns, false);
+    syntax->analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns,false);
     return result_columns;
 }
 
@@ -837,9 +837,9 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
     JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns);
 
-    if (syntax->analyzed_join->needConvert())
+    if (auto left_actions = syntax->analyzed_join->leftConvertingActions())
     {
-        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(syntax->analyzed_join->leftConvertingActions()));
+        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(left_actions));
         chain.addStep();
     }
 
@@ -958,8 +958,10 @@ std::unique_ptr<QueryPlan> buildJoinedPlan(
     joined_plan->addStep(std::move(joined_actions_step));
 
     const ColumnsWithTypeAndName & right_sample_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
-    bool need_convert = analyzed_join.applyJoinKeyConvert(left_sample_columns, right_sample_columns);
-    if (need_convert)
+
+    analyzed_join.createConvertingActions(left_sample_columns, right_sample_columns);
+
+    if (auto right_actions = analyzed_join.rightConvertingActions())
     {
         auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), analyzed_join.rightConvertingActions());
         converting_step->setStepDescription("Convert joined columns");
@@ -981,7 +983,10 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     JoinPtr join = tryGetStorageJoin(syntax->analyzed_join);
 
     if (join)
+    {
+        syntax->analyzed_join->createConvertingActions(left_sample_columns, {});
         return join;
+    }
 
     joined_plan = buildJoinedPlan(getContext(), join_element, left_sample_columns, *syntax->analyzed_join, query_options);
 
