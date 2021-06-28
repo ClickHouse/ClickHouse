@@ -400,9 +400,15 @@ public:
         if constexpr (Type == AggregateFunctionTypeSumKahan)
             return false;
 
-        auto return_type = getReturnType();
+        bool can_be_compiled = true;
 
-        return canBeNativeType(*return_type);
+        for (const auto & argument_type : this->argument_types)
+            can_be_compiled &= canBeNativeType(*argument_type);
+
+        auto return_type = getReturnType();
+        can_be_compiled &= canBeNativeType(*return_type);
+
+        return can_be_compiled;
     }
 
     void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
