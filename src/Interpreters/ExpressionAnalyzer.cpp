@@ -803,8 +803,7 @@ ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActi
 {
     const auto * select_query = getSelectQuery();
 
-    bool is_array_join_left;
-    ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList(is_array_join_left);
+    auto [array_join_expression_list, is_array_join_left] = select_query->arrayJoinExpressionList();
     if (!array_join_expression_list)
         return nullptr;
 
