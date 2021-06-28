@@ -25,7 +25,7 @@ namespace Coordination
 struct ZooKeeperResponse : virtual Response
 {
     XID xid = 0;
-    int64_t zxid;
+    int64_t zxid = 0;
 
     virtual ~ZooKeeperResponse() override = default;
     virtual void readImpl(ReadBuffer &) = 0;
@@ -227,7 +227,7 @@ struct ZooKeeperExistsRequest final : ExistsRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return !has_watch; }
+    bool isReadRequest() const override { return true; }
 
     size_t bytesSize() const override { return ExistsRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
@@ -248,7 +248,7 @@ struct ZooKeeperGetRequest final : GetRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return !has_watch; }
+    bool isReadRequest() const override { return true; }
 
     size_t bytesSize() const override { return GetRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
@@ -291,7 +291,7 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
     ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return !has_watch; }
+    bool isReadRequest() const override { return true; }
 
     size_t bytesSize() const override { return ListRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
@@ -325,7 +325,7 @@ struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return !has_watch; }
+    bool isReadRequest() const override { return true; }
 
     size_t bytesSize() const override { return CheckRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };

@@ -39,6 +39,7 @@ SRCS(
     CollectJoinOnKeysVisitor.cpp
     ColumnAliasesVisitor.cpp
     Context.cpp
+    ConvertStringsToEnumVisitor.cpp
     CrashLog.cpp
     CrossToInnerJoinVisitor.cpp
     DDLTask.cpp
@@ -136,6 +137,7 @@ SRCS(
     RequiredSourceColumnsVisitor.cpp
     RewriteAnyFunctionVisitor.cpp
     RewriteCountVariantsVisitor.cpp
+    RewriteFunctionToSubcolumnVisitor.cpp
     RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp

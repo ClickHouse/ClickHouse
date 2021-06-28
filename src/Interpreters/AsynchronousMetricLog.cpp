@@ -1,9 +1,10 @@
-#include <Interpreters/AsynchronousMetricLog.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/AsynchronousMetrics.h>
 
 
@@ -17,7 +18,7 @@ Block AsynchronousMetricLogElement::createBlock()
     columns.emplace_back(std::make_shared<DataTypeDate>(),          "event_date");
     columns.emplace_back(std::make_shared<DataTypeDateTime>(),      "event_time");
     columns.emplace_back(std::make_shared<DataTypeDateTime64>(6),   "event_time_microseconds");
-    columns.emplace_back(std::make_shared<DataTypeString>(),        "name");
+    columns.emplace_back(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "name");
     columns.emplace_back(std::make_shared<DataTypeFloat64>(),       "value");
 
     return Block(columns);

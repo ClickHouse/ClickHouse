@@ -13,7 +13,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <ext/range.h>
 
 #include "DictionaryStructure.h"
 
@@ -109,7 +108,7 @@ namespace DB
                     break;
                 }
                 case ValueType::vtUUID:
-                    assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(string_value));
+                    assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(string_value));
                     break;
                 default:
                     throw Exception(ErrorCodes::UNKNOWN_TYPE,
@@ -131,7 +130,7 @@ namespace DB
         const size_t size = description.sample_block.columns();
         MutableColumns columns(size);
 
-        for (const auto i : ext::range(0, size))
+        for (size_t i = 0; i < size; ++i)
             columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
         const auto insert_value_by_idx = [this, &columns](size_t idx, const auto & value)

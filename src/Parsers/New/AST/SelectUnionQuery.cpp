@@ -1,7 +1,9 @@
 #include <Parsers/New/AST/SelectUnionQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -100,6 +102,59 @@ ASTPtr SettingsClause::convertToOld() const
     }
 
     return expr;
+}
+
+// PROJECTION SELECT Caluse
+
+ProjectionSelectStmt::ProjectionSelectStmt(PtrTo<ColumnExprList> expr_list)
+    : INode(MAX_INDEX)
+{
+    set(COLUMNS, expr_list);
+}
+
+void ProjectionSelectStmt::setWithClause(PtrTo<WithClause> clause)
+{
+    set(WITH, clause);
+}
+
+void ProjectionSelectStmt::setGroupByClause(PtrTo<GroupByClause> clause)
+{
+    set(GROUP_BY, clause);
+}
+
+void ProjectionSelectStmt::setOrderByClause(PtrTo<ProjectionOrderByClause> clause)
+{
+    set(ORDER_BY, clause);
+}
+
+ASTPtr ProjectionSelectStmt::convertToOld() const
+{
+    auto old_select = std::make_shared<ASTProjectionSelectQuery>();
+
+    old_select->setExpression(ASTProjectionSelectQuery::Expression::SELECT, get(COLUMNS)->convertToOld());
+
+    if (has(WITH)) old_select->setExpression(ASTProjectionSelectQuery::Expression::WITH, get(WITH)->convertToOld());
+    if (has(GROUP_BY)) old_select->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, get(GROUP_BY)->convertToOld());
+    if (has(ORDER_BY))
+    {
+        ASTPtr order_expression;
+        auto expr_list = get(ORDER_BY)->convertToOld();
+        if (expr_list->children.size() == 1)
+        {
+            order_expression = expr_list->children.front();
+        }
+        else
+        {
+            auto function_node = std::make_shared<ASTFunction>();
+            function_node->name = "tuple";
+            function_node->arguments = expr_list;
+            function_node->children.push_back(expr_list);
+            order_expression = function_node;
+        }
+        old_select->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, std::move(order_expression));
+    }
+
+    return old_select;
 }
 
 // SELECT Statement
@@ -302,6 +357,11 @@ antlrcpp::Any ParseTreeVisitor::visitOrderByClause(ClickHouseParser::OrderByClau
     return std::make_shared<OrderByClause>(visit(ctx->orderExprList()).as<PtrTo<OrderExprList>>());
 }
 
+antlrcpp::Any ParseTreeVisitor::visitProjectionOrderByClause(ClickHouseParser::ProjectionOrderByClauseContext *ctx)
+{
+    return std::make_shared<ProjectionOrderByClause>(visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>());
+}
+
 antlrcpp::Any ParseTreeVisitor::visitLimitByClause(ClickHouseParser::LimitByClauseContext *ctx)
 {
     return std::make_shared<LimitByClause>(visit(ctx->limitExpr()), visit(ctx->columnExprList()));
@@ -315,6 +375,18 @@ antlrcpp::Any ParseTreeVisitor::visitLimitClause(ClickHouseParser::LimitClauseCo
 antlrcpp::Any ParseTreeVisitor::visitSettingsClause(ClickHouseParser::SettingsClauseContext *ctx)
 {
     return std::make_shared<SettingsClause>(visit(ctx->settingExprList()).as<PtrTo<SettingExprList>>());
+}
+
+antlrcpp::Any ParseTreeVisitor::visitProjectionSelectStmt(ClickHouseParser::ProjectionSelectStmtContext *ctx)
+{
+    PtrTo<ColumnExprList> column_list = visit(ctx->columnExprList());
+    auto select_stmt = std::make_shared<ProjectionSelectStmt>(column_list);
+
+    if (ctx->withClause()) select_stmt->setWithClause(visit(ctx->withClause()));
+    if (ctx->groupByClause()) select_stmt->setGroupByClause(visit(ctx->groupByClause()));
+    if (ctx->projectionOrderByClause()) select_stmt->setOrderByClause(visit(ctx->projectionOrderByClause()));
+
+    return select_stmt;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)

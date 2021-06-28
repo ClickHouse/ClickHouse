@@ -166,8 +166,7 @@ public:
         size_t operator()(const DictionaryKey & key) const
         {
             SipHash hash;
-            hash.update(key.hash.low);
-            hash.update(key.hash.high);
+            hash.update(key.hash);
             hash.update(key.size);
             return hash.get64();
         }

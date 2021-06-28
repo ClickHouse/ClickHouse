@@ -14,7 +14,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 含`INSERT INTO t VALUES` 的部分由完整SQL解析器处理，包含数据的部分 `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` 交给快速流式解析器解析。通过设置参数 [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions)，你也可以对数据部分开启完整SQL解析器。当 `input_format_values_interpret_expressions = 1` 时，CH优先采用快速流式解析器来解析数据。如果失败，CH再尝试用完整SQL解析器来处理，就像处理SQL [expression](#syntax-expressions) 一样。
 
-数据可以采用任何格式。当CH接受到请求时，服务端先在内存中计算不超过 [max_query_size](../operations/settings/settings.md#settings-max_query_size) 字节的请求数据（默认1 mb），然后剩下部分交给快速流式解析器。
+数据可以采用任何格式。当CH接收到请求时，服务端先在内存中计算不超过 [max_query_size](../operations/settings/settings.md#settings-max_query_size) 字节的请求数据（默认1 mb），然后剩下部分交给快速流式解析器。
 
 这将避免在处理大型的 `INSERT`语句时出现问题。
 

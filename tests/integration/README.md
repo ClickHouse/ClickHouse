@@ -146,3 +146,11 @@ sudo service docker stop
 sudo bash -c 'rm -rf /var/lib/docker/*'
 sudo service docker start
 ```
+
+#### `iptables-nft`
+
+On Ubuntu 20.10 and later in host network mode (default) one may encounter problem with nested containers not seeing each other. It happens because legacy and nftables rules are out of sync. Problem can be solved by:
+
+```
+sudo iptables -P FORWARD ACCEPT
+```
