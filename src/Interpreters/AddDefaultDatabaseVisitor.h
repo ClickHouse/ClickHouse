@@ -107,7 +107,7 @@ private:
         if (!identifier.compound())
         {
             ast = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
-            ast->setAlias(identifier.alias);
+            ast->setAlias(const_cast<String &>(identifier.alias));
         }
     }
 
