@@ -276,7 +276,7 @@ protected:
 
     /// List of queries
     Container processes;
-    size_t max_size;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+    size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
     /// Stores per-user info: queries, statistics and limits
     UserToQueries user_to_queries;

@@ -49,7 +49,7 @@ It means that `john` has the permission to execute:
 -   `SELECT x FROM db.table`.
 -   `SELECT y FROM db.table`.
 
-`john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse doesn’t return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
+`john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
 
 Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or smaller scope.
 
@@ -230,7 +230,7 @@ Consider the following privilege:
 GRANT SELECT(x,y) ON db.table TO john
 ```
 
-This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse doesn’t return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
+This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
 
 ### INSERT {#grant-insert}
 
@@ -240,7 +240,7 @@ Privilege level: `COLUMN`.
 
 **Description**
 
-User granted with this privilege can execute `INSERT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query doesn’t insert any data.
+User granted with this privilege can execute `INSERT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query does not insert any data.
 
 **Example**
 
@@ -292,7 +292,7 @@ Examples of how this hierarchy is treated:
 
 **Notes**
 
--   The `MODIFY SETTING` privilege allows modifying table engine settings. It doesn’t affect settings or server configuration parameters.
+-   The `MODIFY SETTING` privilege allows modifying table engine settings. It does not affect settings or server configuration parameters.
 -   The `ATTACH` operation needs the [CREATE](#grant-create) privilege.
 -   The `DETACH` operation needs the [DROP](#grant-drop) privilege.
 -   To stop mutation by the [KILL MUTATION](../../sql-reference/statements/misc.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
@@ -316,7 +316,7 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 
 Allows executing [DROP](../../sql-reference/statements/misc.md#drop) and [DETACH](../../sql-reference/statements/misc.md#detach) queries according to the following hierarchy of privileges:
 
--   `DROP`. Level:
+-   `DROP`. Level: `GROUP`
     -   `DROP DATABASE`. Level: `DATABASE`
     -   `DROP TABLE`. Level: `TABLE`
     -   `DROP VIEW`. Level: `VIEW`

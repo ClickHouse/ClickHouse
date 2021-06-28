@@ -19,7 +19,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
                                    [[maybe_unused]] Block & sample_block,
                                                     ContextPtr /* context */,
                                                     const std::string & /* default_database */,
-                                                    bool /*check_config*/) -> DictionarySourcePtr
+                                                    bool /*created_from_ddl*/) -> DictionarySourcePtr
     {
 #if USE_CASSANDRA
     setupCassandraDriverLibraryLogging(CASS_LOG_INFO);

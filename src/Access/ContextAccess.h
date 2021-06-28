@@ -4,8 +4,8 @@
 #include <Access/RowPolicy.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
-#include <ext/scope_guard.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/scope_guard.h>
+#include <common/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
 
@@ -214,9 +214,9 @@ private:
     mutable Poco::Logger * trace_log = nullptr;
     mutable UserPtr user;
     mutable String user_name;
-    mutable ext::scope_guard subscription_for_user_change;
+    mutable scope_guard subscription_for_user_change;
     mutable std::shared_ptr<const EnabledRoles> enabled_roles;
-    mutable ext::scope_guard subscription_for_roles_changes;
+    mutable scope_guard subscription_for_roles_changes;
     mutable std::shared_ptr<const EnabledRolesInfo> roles_info;
     mutable std::shared_ptr<const AccessRights> access;
     mutable std::shared_ptr<const AccessRights> access_with_implicit;

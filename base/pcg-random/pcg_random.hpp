@@ -928,7 +928,7 @@ struct rxs_m_xs_mixin {
         constexpr bitcount_t shift = bits - xtypebits;
         constexpr bitcount_t mask = (1 << opbits) - 1;
         bitcount_t rshift =
-            opbits ? bitcount_t(internal >> (bits - opbits)) & mask : 0;
+            opbits ? bitcount_t(internal >> (bits - opbits)) & mask : 0; //-V547
         internal ^= internal >> (opbits + rshift);
         internal *= mcg_multiplier<itype>::multiplier();
         xtype result = internal >> shift;
@@ -950,7 +950,7 @@ struct rxs_m_xs_mixin {
 
         internal *= mcg_unmultiplier<itype>::unmultiplier();
 
-        bitcount_t rshift = opbits ? (internal >> (bits - opbits)) & mask : 0;
+        bitcount_t rshift = opbits ? (internal >> (bits - opbits)) & mask : 0; //-V547
         internal = unxorshift(internal, bits, opbits + rshift);
 
         return internal;
@@ -975,7 +975,7 @@ struct rxs_m_mixin {
                                  :                    2;
         constexpr bitcount_t shift = bits - xtypebits;
         constexpr bitcount_t mask = (1 << opbits) - 1;
-        bitcount_t rshift = opbits ? (internal >> (bits - opbits)) & mask : 0;
+        bitcount_t rshift = opbits ? (internal >> (bits - opbits)) & mask : 0; //-V547
         internal ^= internal >> (opbits + rshift);
         internal *= mcg_multiplier<itype>::multiplier();
         xtype result = internal >> shift;
@@ -1366,7 +1366,7 @@ void extended<table_pow2,advance_pow2,baseclass,extvalclass,kdd>::selfinit()
     //      - any strange correlations would only be apparent if we
     //        were to backstep the generator so that the base generator
     //        was generating the same values again
-    result_type xdiff = baseclass::operator()() - baseclass::operator()();
+    result_type xdiff = baseclass::operator()() - baseclass::operator()(); //-V501
     for (size_t i = 0; i < table_size; ++i) {
         data_[i] = baseclass::operator()() ^ xdiff;
     }

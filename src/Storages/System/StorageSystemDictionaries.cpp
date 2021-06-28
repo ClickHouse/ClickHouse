@@ -15,7 +15,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/Names.h>
 
-#include <ext/map.h>
+#include <common/map.h>
 #include <mutex>
 
 namespace DB
@@ -37,6 +37,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
         {"bytes_allocated", std::make_shared<DataTypeUInt64>()},
         {"query_count", std::make_shared<DataTypeUInt64>()},
         {"hit_rate", std::make_shared<DataTypeFloat64>()},
+        {"found_rate", std::make_shared<DataTypeFloat64>()},
         {"element_count", std::make_shared<DataTypeUInt64>()},
         {"load_factor", std::make_shared<DataTypeFloat64>()},
         {"source", std::make_shared<DataTypeString>()},
@@ -98,21 +99,22 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         else
             res_columns[i++]->insertDefault();
 
-        res_columns[i++]->insert(ext::map<Array>(dictionary_structure.getKeysNames(), [] (auto & name) { return name; }));
+        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.getKeysNames(), [] (auto & name) { return name; }));
 
         if (dictionary_structure.id)
             res_columns[i++]->insert(Array({"UInt64"}));
         else
-            res_columns[i++]->insert(ext::map<Array>(*dictionary_structure.key, [] (auto & attr) { return attr.type->getName(); }));
+            res_columns[i++]->insert(collections::map<Array>(*dictionary_structure.key, [] (auto & attr) { return attr.type->getName(); }));
 
-        res_columns[i++]->insert(ext::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.name; }));
-        res_columns[i++]->insert(ext::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.type->getName(); }));
+        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.name; }));
+        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.type->getName(); }));
 
         if (dict_ptr)
         {
             res_columns[i++]->insert(dict_ptr->getBytesAllocated());
             res_columns[i++]->insert(dict_ptr->getQueryCount());
             res_columns[i++]->insert(dict_ptr->getHitRate());
+            res_columns[i++]->insert(dict_ptr->getFoundRate());
             res_columns[i++]->insert(dict_ptr->getElementCount());
             res_columns[i++]->insert(dict_ptr->getLoadFactor());
             res_columns[i++]->insert(dict_ptr->getSource()->toString());
@@ -125,7 +127,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         }
         else
         {
-            for (size_t j = 0; j != 8; ++j) // Number of empty fields if dict_ptr is null
+            for (size_t j = 0; j != 9; ++j) // Number of empty fields if dict_ptr is null
                 res_columns[i++]->insertDefault();
         }
 

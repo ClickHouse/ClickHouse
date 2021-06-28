@@ -20,6 +20,70 @@ CLICKHOUSE_QueryProcessingStage=(
     fetch_columns
     with_mergeable_state
     with_mergeable_state_after_aggregation
+    with_mergeable_state_after_aggregation_and_limit
+)
+
+CLICKHOUSE_Format=(
+    CapnProto
+    PostgreSQLWire
+    MySQLWire
+    JSONStringsEachRowWithProgress
+    JSONEachRowWithProgress
+    JSONCompact
+    JSON
+    CSV
+    Vertical
+    ODBCDriver2
+    PrettySpaceNoEscapes
+    Pretty
+    JSONCompactStrings
+    PrettyNoEscapes
+    ArrowStream
+    TabSeparatedWithNames
+    Parquet
+    Arrow
+    PrettyCompact
+    AvroConfluent
+    ORC
+    PrettyCompactNoEscapes
+    RawBLOB
+    Template
+    MsgPack
+    JSONCompactEachRow
+    CustomSeparated
+    TemplateIgnoreSpaces
+    Markdown
+    XML
+    ProtobufSingle
+    JSONCompactStringsEachRowWithNamesAndTypes
+    TSKV
+    TabSeparated
+    JSONStringEachRow
+    JSONStringsEachRow
+    TSVRaw
+    Values
+    TabSeparatedWithNamesAndTypes
+    PrettyCompactMonoBlock
+    TSVWithNamesAndTypes
+    Avro
+    RowBinaryWithNamesAndTypes
+    LineAsString
+    Native
+    JSONCompactEachRowWithNamesAndTypes
+    PrettySpace
+    Regexp
+    TSV
+    JSONEachRow
+    CustomSeparatedIgnoreSpaces
+    CSVWithNames
+    JSONStrings
+    Null
+    TabSeparatedRaw
+    TSVWithNames
+    Protobuf
+    RowBinary
+    JSONAsString
+    JSONCompactStringsEachRow
 )
 
 function _clickhouse_bin_exist()
@@ -47,6 +111,10 @@ function _complete_for_clickhouse_generic_bin_impl()
             ;;
         --stage)
             COMPREPLY=( $(compgen -W "${CLICKHOUSE_QueryProcessingStage[*]}" -- "$cur") )
+            return 1
+            ;;
+        --format|--input-format|--output-format)
+            COMPREPLY=( $(compgen -W "${CLICKHOUSE_Format[*]}" -- "$cur") )
             return 1
             ;;
         --host)

@@ -16,7 +16,10 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
-    KeeperStateMachine(ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_);
+    KeeperStateMachine(
+        ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_,
+        const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_,
+        const std::string & superdigest_ = "");
 
     void init();
 
@@ -84,6 +87,8 @@ private:
     /// Last committed Raft log number.
     std::atomic<uint64_t> last_committed_idx;
     Poco::Logger * log;
+
+    const std::string superdigest;
 };
 
 }
