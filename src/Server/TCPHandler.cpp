@@ -316,7 +316,7 @@ void TCPHandler::runImpl()
             after_send_progress.restart();
 
             /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
-            ///        and don't check implicitly via existance of |state.io.in|.
+            ///        and don't check implicitly via existence of |state.io.in|.
             if (state.io.out && !state.io.in)
             {
                 state.need_receive_data_for_insert = true;
