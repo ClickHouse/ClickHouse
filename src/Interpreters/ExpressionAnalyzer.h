@@ -357,8 +357,6 @@ private:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     JoinPtr appendJoin(ExpressionActionsChain & chain);
-    /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
-    void appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions_dag, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
