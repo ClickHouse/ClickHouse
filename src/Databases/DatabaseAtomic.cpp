@@ -109,7 +109,7 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
-    auto * storage = tryGetTable(table_name, local_context).get();
+    auto storage = tryGetTable(table_name, local_context).get();
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
     if (storage)
