@@ -5,7 +5,7 @@ toc_title: MySQL
 
 # MySQL {#mysql}
 
-The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
+The MySQL engine allows you to perform `SELECT` queries on data that is stored on a remote MySQL server.
 
 ## Creating a Table {#creating-a-table}
 
@@ -15,12 +15,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
-SETTINGS
-    [connection_pool_size=16, ]
-    [connection_max_tries=3, ]
-    [connection_auto_close=true ]
-;
+) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
 See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.

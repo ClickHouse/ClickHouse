@@ -13,7 +13,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <common/scope_guard_safe.h>
+#include <ext/scope_guard_safe.h>
 
 
 namespace DB
@@ -123,10 +123,9 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
 }
 
 
-ColumnPtr FunctionArrayReduceInRanges::executeImpl(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    const IAggregateFunction & agg_func = *aggregate_function;
+    IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
     /// Aggregate functions do not support constant columns. Therefore, we materialize them.
@@ -258,9 +257,9 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 agg_func.destroy(places[j]);
         });
 
-        const auto * true_func = &agg_func;
+        auto * true_func = &agg_func;
         /// Unnest consecutive trailing -State combinators
-        while (const auto * func = typeid_cast<const AggregateFunctionState *>(true_func))
+        while (auto * func = typeid_cast<AggregateFunctionState *>(true_func))
             true_func = func->getNestedFunction().get();
 
         /// Pre-aggregate to the initial level

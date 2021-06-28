@@ -11,8 +11,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;

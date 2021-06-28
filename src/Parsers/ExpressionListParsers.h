@@ -245,14 +245,14 @@ protected:
 };
 
 
-class ParserUnaryExpression : public IParserBase
+class ParserUnaryMinusExpression : public IParserBase
 {
 private:
     static const char * operators[];
     ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserTupleElementExpression>()};
 
 protected:
-    const char * getName() const override { return "unary expression"; }
+    const char * getName() const override { return "unary minus expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -262,7 +262,7 @@ class ParserMultiplicativeExpression : public IParserBase
 {
 private:
     static const char * operators[];
-    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserUnaryExpression>()};
+    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserUnaryMinusExpression>()};
 
 protected:
     const char * getName() const  override { return "multiplicative expression"; }

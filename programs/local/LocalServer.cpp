@@ -42,9 +42,9 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/randomSeed.h>
+
 #include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -72,11 +72,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
     Poco::Util::Application::initialize(self);
 
     /// Load config files if exists
-    if (config().has("config-file") || fs::exists("config.xml"))
+    if (config().has("config-file") || Poco::File("config.xml").exists())
     {
         const auto config_path = config().getString("config-file", "config.xml");
         ConfigProcessor config_processor(config_path, false, true);
-        config_processor.setConfigPath(fs::path(config_path).parent_path());
+        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
         auto loaded_config = config_processor.loadConfig();
         config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", "."));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
@@ -100,7 +100,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 }
 
-void LocalServer::applyCmdSettings(ContextMutablePtr context)
+void LocalServer::applyCmdSettings(ContextPtr context)
 {
     context->applySettingsChanges(cmd_settings.changes());
 }
@@ -287,8 +287,8 @@ try
         status.emplace(path + "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        fs::create_directories(fs::path(path) / "data/");
-        fs::create_directories(fs::path(path) / "metadata/");
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
         loadMetadataSystem(global_context);
         attachSystemTables(global_context);
         loadMetadata(global_context);
@@ -389,29 +389,32 @@ void LocalServer::processQueries()
     CurrentThread::QueryScope query_scope_holder(context);
 
     ///Set progress show
-    need_render_progress = config().getBool("progress", false);
+    progress_bar.need_render_progress = config().getBool("progress", false);
 
-    if (need_render_progress)
+    if (progress_bar.need_render_progress)
     {
         context->setProgressCallback([&](const Progress & value)
-        {
-            /// Write progress only if progress was updated
-            if (progress_indication.updateProgress(value))
-                progress_indication.writeProgress();
-        });
+                                     {
+                                         if (!progress_bar.updateProgress(progress, value))
+                                         {
+                                             // Just a keep-alive update.
+                                              return;
+                                         }
+                                         progress_bar.writeProgress(progress, watch.elapsed());
+                                     });
     }
 
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
-
-    if (need_render_progress)
-        progress_indication.setFileProgressCallback(context);
-
     std::exception_ptr exception;
 
     for (const auto & query : queries)
     {
-        written_first_block = false;
-        progress_indication.resetProgress();
+        watch.restart();
+        progress.reset();
+        progress_bar.show_progress_bar = false;
+        progress_bar.written_progress_chars = 0;
+        progress_bar.written_first_block = false;
+
 
         ReadBufferFromString read_buf(query);
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
@@ -476,7 +479,7 @@ void LocalServer::setupUsers()
 {
     ConfigurationPtr users_config;
 
-    if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
+    if (config().has("users_config") || config().has("config-file") || Poco::File("config.xml").exists())
     {
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
         ConfigProcessor config_processor(users_config_path);
@@ -642,7 +645,7 @@ void LocalServer::init(int argc, char ** argv)
     argsToConfig(arguments, config(), 100);
 }
 
-void LocalServer::applyCmdOptions(ContextMutablePtr context)
+void LocalServer::applyCmdOptions(ContextPtr context)
 {
     context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
     applyCmdSettings(context);

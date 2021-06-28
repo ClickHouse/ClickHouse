@@ -1,8 +1,11 @@
 <test>
+
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
         <ram_size>30000000000</ram_size>
     </preconditions>
+
+
 
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
@@ -33,7 +36,7 @@
                <value>SearchPhrase</value>
                <value>ClientIP</value>
            </values>
-        </substitution>
+       </substitution>
         <substitution>
            <name>func</name>
            <values>

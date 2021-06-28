@@ -20,7 +20,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <algorithm>
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -274,7 +274,7 @@ Pipe StorageMerge::createSources(
     const Block & header,
     const StorageWithLockAndName & storage_with_lock,
     Names & real_column_names,
-    ContextMutablePtr modified_context,
+    ContextPtr modified_context,
     size_t streams_num,
     bool has_table_virtual_column,
     bool concat_streams)
@@ -515,7 +515,7 @@ void StorageMerge::convertingSourceStream(
     if (!where_expression)
         return;
 
-    for (size_t column_index : collections::range(0, header.columns()))
+    for (size_t column_index : ext::range(0, header.columns()))
     {
         ColumnWithTypeAndName header_column = header.getByPosition(column_index);
         ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);

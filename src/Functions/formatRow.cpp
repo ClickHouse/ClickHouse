@@ -9,7 +9,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <common/map.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -102,7 +102,7 @@ public:
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), context),
-                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         else
             throw Exception("First argument to " + getName() + " must be a format name", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

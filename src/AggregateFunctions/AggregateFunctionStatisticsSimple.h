@@ -30,7 +30,6 @@
 
 namespace DB
 {
-struct Settings;
 
 enum class StatisticsFunctionKind
 {
