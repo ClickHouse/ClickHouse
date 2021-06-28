@@ -291,7 +291,11 @@ StorageAggregatingMemory::StorageAggregatingMemory(
 
     // TODO check validity of aggregation query inside this func
     select_query = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
-    constructor_context = Context::createCopy(context_);
+
+    ContextMutablePtr context_copy = Context::createCopy(context_);
+    context_copy->makeQueryContext();
+    query_context = context_copy;
+
     constructor_constraints = constraints_;
 }
 
@@ -343,15 +347,13 @@ void StorageAggregatingMemory::lazyInit()
 
     ASTPtr select_ptr = select_query.inner_query;
 
-    auto select_context = constructor_context;
-
     /// Get info about source table.
-    JoinedTables joined_tables(constructor_context, select_ptr->as<ASTSelectQuery &>());
+    JoinedTables joined_tables(query_context, select_ptr->as<ASTSelectQuery &>());
     source_storage = joined_tables.getLeftTableStorage();
     NamesAndTypesList source_columns = source_storage->getInMemoryMetadata().getColumns().getAll();
 
     /// Get list of columns we get from select query.
-    Block header = InterpreterSelectQuery(select_ptr, select_context, SelectQueryOptions().analyze()).getSampleBlock();
+    Block header = InterpreterSelectQuery(select_ptr, query_context, SelectQueryOptions().analyze()).getSampleBlock();
 
     /// Init metadata for reads from this storage.
     StorageInMemoryMetadata storage_metadata;
@@ -366,27 +368,27 @@ void StorageAggregatingMemory::lazyInit()
     src_metadata_snapshot = std::make_shared<StorageInMemoryMetadata>(src_metadata);
 
     /// Create AggregatingStep to extract params from it.
-    InterpreterSelectQuery select_interpreter(select_ptr, select_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState).analyze());
+    InterpreterSelectQuery select_interpreter(select_ptr, query_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState).analyze());
     QueryPlan query_plan;
     select_interpreter.buildQueryPlan(query_plan);
 
     const AggregatingStep * aggregating_step = extractAggregatingStepFromPlan(query_plan.nodes);
     Aggregator::Params aggr_params = aggregating_step->getParams();
 
-    const Settings & settings = select_context->getSettingsRef();
+    const Settings & settings = query_context->getSettingsRef();
     Aggregator::Params params(aggr_params.src_header, aggr_params.keys, aggr_params.aggregates,
                               false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
                               settings.group_by_two_level_threshold,
                               settings.group_by_two_level_threshold_bytes,
                               settings.max_bytes_before_external_group_by,
                               settings.empty_result_for_aggregation_by_empty_set,
-                              select_context->getTemporaryVolume(),
+                              query_context->getTemporaryVolume(),
                               settings.max_threads,
                               settings.min_free_disk_space_for_temporary_data,
                               true);
 
     aggregator_transform = std::make_shared<AggregatingTransformParams>(params, false);
-    initState(constructor_context);
+    initState(query_context);
     is_initialized = true;
 }
 

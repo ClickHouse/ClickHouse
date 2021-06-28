@@ -73,7 +73,7 @@ private:
     std::atomic<bool> is_initialized{false};
 
     SelectQueryDescription select_query;
-    ContextPtr constructor_context;
+    ContextPtr query_context;
     ConstraintsDescription constructor_constraints;
 
     StoragePtr source_storage;
