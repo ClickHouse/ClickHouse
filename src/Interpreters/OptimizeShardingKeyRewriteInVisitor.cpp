@@ -3,7 +3,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
-#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 
@@ -13,12 +12,12 @@ namespace
 using namespace DB;
 
 Field executeFunctionOnField(
-    const Field & field, const std::string & name,
+    const Field & field,
+    const std::string & name,
     const ExpressionActionsPtr & sharding_expr,
+    const DataTypePtr & type,
     const std::string & sharding_key_column_name)
 {
-    DataTypePtr type = applyVisitor(FieldToDataType{}, field);
-
     ColumnWithTypeAndName column;
     column.column = type->createColumnConst(1, field);
     column.name = name;
@@ -45,7 +44,10 @@ bool shardContains(
     if (sharding_column_value.isNull())
         return false;
 
-    Field sharding_value = executeFunctionOnField(sharding_column_value, sharding_column_name, data.sharding_key_expr, data.sharding_key_column_name);
+    Field sharding_value = executeFunctionOnField(
+        sharding_column_value, sharding_column_name,
+        data.sharding_key_expr, data.sharding_key_type,
+        data.sharding_key_column_name);
     /// The value from IN can be non-numeric,
     /// but in this case it should be convertible to numeric type, let's try.
     sharding_value = convertFieldToType(sharding_value, DataTypeUInt64());
