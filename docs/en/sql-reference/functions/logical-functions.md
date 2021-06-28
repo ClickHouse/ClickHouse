@@ -11,7 +11,7 @@ Zero as an argument is considered “false,” while any non-zero value is consi
 
 ## and {#and-and-operator}
 
-Calculates the result of logical conjunction between two or more values. Corresponds to [Logical AND Operator](../../sql-reference/operators/index.md#logical-and-operator).
+Calculates the result of the logical conjunction between two or more values. Corresponds to [Logical AND Operator](../../sql-reference/operators/index.md#logical-and-operator).
 
 **Syntax**
 
@@ -21,7 +21,7 @@ and(val1, val2...)
 
 **Arguments**
 
--   `val` — list of at least two values. Any [Int-UInt]](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val` — list of at least two values. Any [Int-UInt](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
 
 **Returned value**
 
@@ -29,7 +29,7 @@ and(val1, val2...)
 -   `NULL`, if there are no zero values arguments and there is at least one `NULL` argument.
 -   `1`, otherwise.
 
-Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([[UInt8](../../sql-reference/data-types/int-uint.md)]).
+Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -63,7 +63,7 @@ Result:
 
 ## or {#or-or-operator}
 
-Calculates the result of logical disjunction between two or more values. Corresponds to [Logical OR Operator](../../sql-reference/operators/index.md#logical-or-operator).
+Calculates the result of the logical disjunction between two or more values. Corresponds to [Logical OR Operator](../../sql-reference/operators/index.md#logical-or-operator).
 
 **Syntax**
 
@@ -73,7 +73,7 @@ and(val1, val2...)
 
 **Arguments**
 
--   `val` — list of at least two values. Any [Int-UInt]](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val` — list of at least two values. Any [Int-UInt](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
 
 **Returned value**
 
@@ -81,7 +81,7 @@ and(val1, val2...)
 -   `0`, if there are only zero values.
 -   `NULL`, if there is at least one `NULL` values.
 
-Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([[UInt8](../../sql-reference/data-types/int-uint.md)]).
+Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -115,7 +115,7 @@ Result:
 
 ## not {#not-not-operator}
 
-Calculates the result of logical negation of a value. Corresponds to [Logical Negation Operator](../../sql-reference/operators/index.md#logical-negation-operator).
+Calculates the result of the logical negation of a value. Corresponds to [Logical Negation Operator](../../sql-reference/operators/index.md#logical-negation-operator).
 
 **Syntax**
 
@@ -125,7 +125,7 @@ not(val);
 
 **Arguments**
 
--   `val` — value. Any [Int-UInt]](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val` — value. Any [Int-UInt](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
 
 **Returned value**
 
@@ -133,7 +133,7 @@ not(val);
 -   `0`, if the `val` is a non-zero value.
 -   `NULL`, if the `val` is a `NULL` value.
 
-Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([[UInt8](../../sql-reference/data-types/int-uint.md)]).
+Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -153,7 +153,7 @@ Result:
 
 ## xor {#xor}
 
-Calculates the result of logical exclusive disjunction between two or more values. For more than two values the function calculates `XOR` of the first two values and then uses the result with the next value to calculate `XOR` and so on. Corresponds to [Logical XOR Operator](../../sql-reference/operators/index.md#logical-xor-operator).
+Calculates the result of the logical exclusive disjunction between two or more values. For more than two values the function calculates `XOR` of the first two values and then uses the result with the next value to calculate `XOR` and so on. Corresponds to [Logical XOR Operator](../../sql-reference/operators/index.md#logical-xor-operator).
 
 **Syntax**
 
@@ -163,7 +163,7 @@ xor(val1, val2...)
 
 **Arguments**
 
--   `val` — list of at least two values. Any [Int-UInt]](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val` — list of at least two values. Any [Int-UInt](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
 
 **Returned value**
 
@@ -171,7 +171,7 @@ xor(val1, val2...)
 -   `0`, for two values: if both values are zero or non-zero at the same.
 -   `NULL`, if there is at least one `NULL` values.
 
-Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([[UInt8](../../sql-reference/data-types/int-uint.md)]).
+Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 
