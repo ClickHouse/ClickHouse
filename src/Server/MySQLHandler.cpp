@@ -130,6 +130,8 @@ void MySQLHandler::run()
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
+        connection_context->getClientInfo().initial_user = handshake_response.username;
+
         try
         {
             if (!handshake_response.database.empty())
