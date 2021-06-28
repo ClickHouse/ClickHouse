@@ -3023,4 +3023,17 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
+## external_table_functions_use_nulls {#external-table-functions-use-nulls}
+
+Определяет, как табличные функции [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) и [odbc](../../sql-reference/table-functions/odbc.md)] используют Nullable столбцы.
+
+Возможные значения:
+
+-   0 — табличная функция явно использует Nullable столбцы.
+-   1 — табличная функция неявно использует Nullable столбцы.
+
+Значение по умолчанию: `1`.
+
+**Использование**
+
+Если установлено значение `0`, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
