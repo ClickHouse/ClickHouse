@@ -35,10 +35,15 @@ Field executeFunctionOnField(
 /// @param sharding_column_name - name of that column
 /// @return true if shard may contain such value (or it is unknown), otherwise false.
 bool shardContains(
-    const Field & sharding_column_value,
+    Field sharding_column_value,
     const std::string & sharding_column_name,
     const OptimizeShardingKeyRewriteInMatcher::Data & data)
 {
+    UInt64 field_value;
+    /// Convert value to numeric (if required).
+    if (!sharding_column_value.tryGet<UInt64>(field_value))
+        sharding_column_value = convertFieldToType(sharding_column_value, *data.sharding_key_type);
+
     /// NULL is not allowed in sharding key,
     /// so it should be safe to assume that shard cannot contain it.
     if (sharding_column_value.isNull())
