@@ -647,7 +647,8 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         }
     }
 
-    if (!create.attach && !settings.allow_experimental_map_type)
+    // enable allow_experimental_map_type for system tables
+    if (create.database != "system" && !create.attach && !settings.allow_experimental_map_type)
     {
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
         {

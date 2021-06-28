@@ -380,7 +380,7 @@ do
 done
 
 # for each query run, prepare array of metrics from query log
-clickhouse-local --query "
+clickhouse-local --allow_experimental_map_type 1 --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
@@ -409,10 +409,10 @@ create view right_query_log as select *
         '$(cat "right-query-log.tsv.columns")');
 
 create view query_logs as
-    select 0 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
+    select 0 version, query_id, ProfileEvents.keys, ProfileEvents.values,
         query_duration_ms, memory_usage from left_query_log
     union all
-    select 1 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
+    select 1 version, query_id, ProfileEvents.keys, ProfileEvents.values,
         query_duration_ms, memory_usage from right_query_log
     ;
 
@@ -424,7 +424,7 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
     with (
         -- sumMapState with the list of all keys with '-0.' values. Negative zero is because
         -- sumMap removes keys with positive zeros.
-        with (select groupUniqArrayArray(ProfileEvents.Names) from query_logs) as all_names
+        with (select groupUniqArrayArray(ProfileEvents.keys) from query_logs) as all_names
             select arrayReduce('sumMapState', [(all_names, arrayMap(x->-0., all_names))])
         ) as all_metrics
     select test, query_index, version, query_id,
@@ -433,8 +433,8 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
                 [
                     all_metrics,
                     arrayReduce('sumMapState',
-                        [(ProfileEvents.Names,
-                            arrayMap(x->toFloat64(x), ProfileEvents.Values))]
+                        [(ProfileEvents.keys,
+                            arrayMap(x->toFloat64(x), ProfileEvents.values))]
                     ),
                     arrayReduce('sumMapState', [(
                         ['client_time', 'server_time', 'memory_usage'],
@@ -507,7 +507,7 @@ do
     file="analyze/tmp/${prefix//	/_}.tsv"
     grep "^$prefix	" "analyze/query-run-metrics-for-stats.tsv" > "$file" &
     printf "%s\0\n" \
-        "clickhouse-local \
+        "clickhouse-local --allow_experimental_map_type 1 \
             --file \"$file\" \
             --structure 'test text, query text, run int, version UInt8, metrics Array(float)' \
             --query \"$(cat "$script_dir/eqmed.sql")\" \
@@ -526,7 +526,7 @@ numactl --show
 numactl --cpunodebind=all --membind=all numactl --show
 numactl --cpunodebind=all --membind=all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
-clickhouse-local --query "
+clickhouse-local --allow_experimental_map_type 1 --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
 -- a denormalized table of them -- statistics for all metrics for all queries.
 -- The WITH, ARRAY JOIN and CROSS JOIN do not like each other:
@@ -627,7 +627,7 @@ build_log_column_definitions
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
-clickhouse-local --query "
+clickhouse-local --allow_experimental_map_type 1 --query "
 create view query_display_names as select * from
     file('analyze/query-display-names.tsv', TSV,
         'test text, query_index int, query_display_name text')
@@ -974,7 +974,7 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
 for version in {right,left}
 do
     rm -rf data
-    clickhouse-local --query "
+    clickhouse-local --allow_experimental_map_type 1 --query "
 create view query_profiles as
     with 0 as left, 1 as right
     select * from file('analyze/query-profiles.tsv', TSV,
@@ -1005,7 +1005,7 @@ create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
         'unstable-run-metrics.$version.rep') as
     select
         test, query_index, query_id,
-        ProfileEvents.Values value, ProfileEvents.Names metric
+        ProfileEvents.values value, ProfileEvents.keys metric
     from query_log array join ProfileEvents
     join unstable_query_runs using (query_id)
     ;
@@ -1168,7 +1168,7 @@ build_log_column_definitions
 rm -rf metrics ||:
 mkdir metrics
 
-clickhouse-local --query "
+clickhouse-local --allow_experimental_map_type 1 --query "
 create view right_async_metric_log as
     select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
         '$(cat right-async-metric-log.tsv.columns)')
@@ -1280,15 +1280,15 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     then
         echo Database for test results is not specified, will not upload them.
         return 0
-    fi 
+    fi
 
     set +x # Don't show password in the log
     client=(clickhouse-client
         # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
-        # so I have to extract host and port with clickhouse-local. I tried to use
+        # so I have to extract host and port with clickhouse-local --allow_experimental_map_type 1. I tried to use
         # Poco URI parser to support this in the client, but it's broken and can't
         # parse host:port.
-        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        $(clickhouse-local --allow_experimental_map_type 1 --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
         --secure
         --user "${CHPC_DATABASE_USER}"
         --password "${CHPC_DATABASE_PASSWORD}"
@@ -1352,7 +1352,7 @@ EOF
 }
 
 # Check that local and client are in PATH
-clickhouse-local --version > /dev/null
+clickhouse-local --allow_experimental_map_type 1 --version > /dev/null
 clickhouse-client --version > /dev/null
 
 case "$stage" in

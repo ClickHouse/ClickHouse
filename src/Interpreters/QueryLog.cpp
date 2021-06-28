@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -19,6 +20,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/ProfileEvents.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -37,25 +39,25 @@ Block QueryLogElement::createBlock()
 
     return
     {
-        {std::move(query_status_datatype),                                    "type"},
-        {std::make_shared<DataTypeDate>(),                                    "event_date"},
-        {std::make_shared<DataTypeDateTime>(),                                "event_time"},
-        {std::make_shared<DataTypeDateTime64>(6),                             "event_time_microseconds"},
-        {std::make_shared<DataTypeDateTime>(),                                "query_start_time"},
-        {std::make_shared<DataTypeDateTime64>(6),                             "query_start_time_microseconds"},
-        {std::make_shared<DataTypeUInt64>(),                                  "query_duration_ms"},
+        {std::move(query_status_datatype), "type"},
+        {std::make_shared<DataTypeDate>(), "event_date"},
+        {std::make_shared<DataTypeDateTime>(), "event_time"},
+        {std::make_shared<DataTypeDateTime64>(6), "event_time_microseconds"},
+        {std::make_shared<DataTypeDateTime>(), "query_start_time"},
+        {std::make_shared<DataTypeDateTime64>(6), "query_start_time_microseconds"},
+        {std::make_shared<DataTypeUInt64>(), "query_duration_ms"},
 
-        {std::make_shared<DataTypeUInt64>(),                                  "read_rows"},
-        {std::make_shared<DataTypeUInt64>(),                                  "read_bytes"},
-        {std::make_shared<DataTypeUInt64>(),                                  "written_rows"},
-        {std::make_shared<DataTypeUInt64>(),                                  "written_bytes"},
-        {std::make_shared<DataTypeUInt64>(),                                  "result_rows"},
-        {std::make_shared<DataTypeUInt64>(),                                  "result_bytes"},
-        {std::make_shared<DataTypeUInt64>(),                                  "memory_usage"},
+        {std::make_shared<DataTypeUInt64>(), "read_rows"},
+        {std::make_shared<DataTypeUInt64>(), "read_bytes"},
+        {std::make_shared<DataTypeUInt64>(), "written_rows"},
+        {std::make_shared<DataTypeUInt64>(), "written_bytes"},
+        {std::make_shared<DataTypeUInt64>(), "result_rows"},
+        {std::make_shared<DataTypeUInt64>(), "result_bytes"},
+        {std::make_shared<DataTypeUInt64>(), "memory_usage"},
 
-        {std::make_shared<DataTypeString>(),                                  "current_database"},
-        {std::make_shared<DataTypeString>(),                                  "query"},
-        {std::make_shared<DataTypeUInt64>(),                                  "normalized_query_hash"},
+        {std::make_shared<DataTypeString>(), "current_database"},
+        {std::make_shared<DataTypeString>(), "query"},
+        {std::make_shared<DataTypeUInt64>(), "normalized_query_hash"},
         {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "query_kind"},
         {std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "databases"},
@@ -99,10 +101,8 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeString>(),                                  "log_comment"},
 
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "thread_ids"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values"},
+        {std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "ProfileEvents"},
+        {std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Settings"},
 
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_aggregate_functions"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_aggregate_function_combinators"},
@@ -188,25 +188,21 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     if (profile_counters)
     {
-        auto * column_names = columns[i++].get();
-        auto * column_values = columns[i++].get();
-        ProfileEvents::dumpToArrayColumns(*profile_counters, column_names, column_values, true);
+        auto * column = columns[i++].get();
+        ProfileEvents::dumpToMapColumn(*profile_counters, column, true);
     }
     else
     {
-        columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
 
     if (query_settings)
     {
-        auto * column_names = columns[i++].get();
-        auto * column_values = columns[i++].get();
-        query_settings->dumpToArrayColumns(column_names, column_values, true);
+        auto * column = columns[i++].get();
+        query_settings->dumpToMapColumn(column, true);
     }
     else
     {
-        columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
 
