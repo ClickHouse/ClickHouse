@@ -7,13 +7,13 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/getMostSubtype.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
 #include <common/logger_useful.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -356,7 +356,7 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
 bool TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
 {
     bool need_convert = false;
-    need_convert = inferJoinKeyCommonType(left_sample_columns, right_sample_columns, joined_storage != nullptr);
+    need_convert = inferJoinKeyCommonType(left_sample_columns, right_sample_columns, joined_storage == nullptr);
 
     left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, key_names_left);
     right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, key_names_right);
