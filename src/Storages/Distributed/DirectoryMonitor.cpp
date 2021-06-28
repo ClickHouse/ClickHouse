@@ -335,13 +335,13 @@ namespace
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     StorageDistributed & storage_,
+    const std::string & name_,
     const DiskPtr & disk_,
     const std::string & relative_path_,
-    ConnectionPoolPtr pool_,
     ActionBlocker & monitor_blocker_,
     BackgroundSchedulePool & bg_pool)
     : storage(storage_)
-    , pool(std::move(pool_))
+    , name(name_)
     , disk(disk_)
     , relative_path(relative_path_)
     , path(fs::path(disk->getPath()) / relative_path / "")
@@ -359,6 +359,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
     , metric_broken_files(CurrentMetrics::BrokenDistributedFilesToInsert, 0)
 {
+
     task_handle = bg_pool.createTask(getLoggerName() + "/Bg", [this]{ run(); });
     task_handle->activateAndSchedule();
 }
@@ -371,6 +372,12 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
         quit = true;
         task_handle->deactivate();
     }
+}
+
+void StorageDistributedDirectoryMonitor::requestUpdatePool()
+{
+    if (name.find("all_replicas") != std::string::npos)
+        need_update_pool = true;
 }
 
 void StorageDistributedDirectoryMonitor::flushAllData()
@@ -420,6 +427,18 @@ void StorageDistributedDirectoryMonitor::run()
         {
             try
             {
+                if (!pool)
+                {
+                    pool = StorageDistributedDirectoryMonitor::createPool(name, storage);
+                }
+                else
+                {
+                    if (need_update_pool)
+                    {
+                        need_update_pool = false;
+                        pool = StorageDistributedDirectoryMonitor::createPool(name, storage);
+                    }
+                }
                 do_sleep = !processFiles(files);
 
                 std::lock_guard status_lock(status_mutex);

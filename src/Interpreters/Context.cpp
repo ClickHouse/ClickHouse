@@ -1958,6 +1958,11 @@ void Context::setClustersConfig(const ConfigurationPtr & config, const String & 
         shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
 }
 
+ConfigurationPtr Context::getClustersConfig() const
+{
+    std::lock_guard lock(shared->clusters_mutex);
+    return shared->clusters_config;
+}
 
 void Context::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
 {
@@ -1968,7 +1973,6 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 
     shared->clusters->setCluster(cluster_name, cluster);
 }
-
 
 void Context::initializeSystemLogs()
 {

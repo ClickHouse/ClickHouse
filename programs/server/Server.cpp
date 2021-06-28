@@ -75,7 +75,8 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <filesystem>
-
+#include <Storages/StorageDistributed.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -814,6 +815,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
             //buildLoggers(*config, logger());
+            bool clusters_config_has_changed = false;
+            auto old_clusters_config = global_context->getClustersConfig();
+            if (!old_clusters_config || !isSameConfiguration(*old_clusters_config, *config, "remote_servers"))
+                clusters_config_has_changed = true;
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
@@ -838,6 +843,25 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
+            if (clusters_config_has_changed)
+            {
+                LOG_DEBUG(log, "Reload the connection pool of distributed tables.");
+                for (const auto & db : DatabaseCatalog::instance().getDatabases())
+                {
+                    if (!db.second->canContainDistributedTables())
+                        continue;
+                    for (auto iterator = db.second->getTablesIterator(context()); iterator->isValid(); iterator->next())
+                    {
+                        StoragePtr table = iterator->table();
+                        if (!table)
+                            continue;
+                        auto distributed_table = dynamic_cast<StorageDistributed *>(table.get());
+                        if (!distributed_table)
+                            continue;
+                        distributed_table->updateConnectionPool();
+                    }
+                }
+            }
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 

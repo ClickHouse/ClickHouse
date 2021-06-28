@@ -29,9 +29,9 @@ class StorageDistributedDirectoryMonitor
 public:
     StorageDistributedDirectoryMonitor(
         StorageDistributed & storage_,
+        const std::string & name,
         const DiskPtr & disk_,
         const std::string & relative_path_,
-        ConnectionPoolPtr pool_,
         ActionBlocker & monitor_blocker_,
         BackgroundSchedulePool & bg_pool);
 
@@ -40,6 +40,8 @@ public:
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
     void updatePath(const std::string & new_relative_path);
+
+    void requestUpdatePool();
 
     void flushAllData();
 
@@ -85,7 +87,8 @@ private:
     std::string getLoggerName() const;
 
     StorageDistributed & storage;
-    const ConnectionPoolPtr pool;
+    std::string name;
+    ConnectionPoolPtr pool;
 
     DiskPtr disk;
     std::string relative_path;
@@ -94,6 +97,7 @@ private:
     const bool should_batch_inserts = false;
     const bool split_batch_on_failure = true;
     const bool dir_fsync = false;
+    std::atomic<bool> need_update_pool = false;
     const size_t min_batched_block_size_rows = 0;
     const size_t min_batched_block_size_bytes = 0;
     String current_batch_file_path;

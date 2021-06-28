@@ -934,6 +934,12 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
     }
 }
 
+void StorageDistributed::updateConnectionPool()
+{
+    std::lock_guard lock(cluster_nodes_mutex);
+    for (auto & node : cluster_nodes_data)
+        node.second.directory_monitor->requestUpdatePool();
+}
 
 StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const DiskPtr & disk, const std::string & name, bool startup)
 {
@@ -943,10 +949,8 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     auto create_node_data = [&]()
     {
         ClusterNodeData data;
-        data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
         data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
-            *this, disk, relative_data_path + name,
-            data.connection_pool,
+            *this, name, disk, relative_data_path + name,
             monitors_blocker,
             getContext()->getDistributedSchedulePool());
         return data;

@@ -120,6 +120,8 @@ public:
     /// Used by ClusterCopier
     size_t getShardCount() const;
 
+    void updateConnectionPool();
+
 private:
     StorageDistributed(
         const StorageID & id_,
