@@ -752,12 +752,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     bool force_ttl = false;
     for (const auto & part : parts)
     {
-        new_data_part->ttl_infos.update(part->ttl_infos);
         if (metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(metadata_snapshot))
         {
             LOG_INFO(log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
             need_remove_expired_values = true;
             force_ttl = true;
+        }
+        else
+        {
+            new_data_part->ttl_infos.update(part->ttl_infos);
         }
     }
 
@@ -939,7 +942,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, deduplicate_by_columns);
 
     if (need_remove_expired_values)
+    {
+        LOG_DEBUG(log, "Outdated rows found in source parts, TTLs processing enabled for merge");
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, force_ttl);
+    }
 
     if (metadata_snapshot->hasSecondaryIndices())
     {
