@@ -213,19 +213,19 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 6
 
 ## Logical Negation Operator {#logical-negation-operator}
 
-Syntax `NOT a` — calculates logical negation of `a` with the function [not](../../sql-reference/functions/logical-functions.md#not-not-operator).
+Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](../../sql-reference/functions/logical-functions.md#not-not-operator).
 
 ## Logical AND Operator {#logical-and-operator}
 
-Syntax `a AND b` — calculates logical conjunction of `a` and `b` with the function [and](../../sql-reference/functions/logical-functions.md#and-and-operator).
+Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](../../sql-reference/functions/logical-functions.md#and-and-operator).
 
 ## Logical OR Operator {#logical-or-operator}
 
-Syntax `a OR b` — calculates logical disjunction of `a` and `b` with the function [or](../../sql-reference/functions/logical-functions.md#or-or-operator).
+Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with the function [or](../../sql-reference/functions/logical-functions.md#or-or-operator).
 
-## Logical XOR operator (#logical-xor-operator)
+## Logical XOR operator {#logical-xor-operator}
 
-Syntax `a XOR b` — calculates logical exclusive disjunction of `a` and `b` with the function [xor](../../sql-reference/functions/logical-functions.md#xor).
+Syntax `SELECT a XOR b` — calculates logical exclusive disjunction of `a` and `b` with the function [xor](../../sql-reference/functions/logical-functions.md#xor).
 
 ## Conditional Operator {#conditional-operator}
 
