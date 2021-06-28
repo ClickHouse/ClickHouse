@@ -159,7 +159,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names_,
     bool is_explain_)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, nullptr, options_, required_result_column_names_,  nullptr, is_explain_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, nullptr, options_, required_result_column_names_, nullptr, is_explain_)
 {
 }
 
