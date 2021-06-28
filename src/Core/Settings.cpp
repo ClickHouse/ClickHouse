@@ -77,6 +77,7 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only)
         value_column.insert(setting.getValueString());
         size++;
     }
+
     offsets.push_back(offsets.back() + size);
 }
 

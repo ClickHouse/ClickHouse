@@ -36,6 +36,7 @@ void dumpToMapColumn(const Counters & counters, DB::IColumn * column, bool nonze
         value_column.insert(value);
         size++;
     }
+
     offsets.push_back(offsets.back() + size);
 }
 

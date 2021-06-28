@@ -9,8 +9,6 @@ SELECT 1;
 SYSTEM FLUSH LOGS;
 
 
-SET allow_experimental_map_type = 1;
-
 -- NOTE: can be rewritten using log_queries_min_query_duration_ms
 
 CREATE MATERIALIZED VIEW slow_log Engine=Memory AS
