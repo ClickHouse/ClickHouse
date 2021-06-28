@@ -7,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # just in case
 set -o pipefail
 
+# shellcheck disable=SC2120
 function execute()
 {
     ${CLICKHOUSE_CLIENT} -n "$@"
