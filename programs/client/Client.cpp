@@ -1380,9 +1380,19 @@ private:
                 have_error = true;
             }
 
+            const auto * exception = server_exception ? server_exception.get() : client_exception.get();
+            // Sometimes you may get TOO_DEEP_RECURSION from the server,
+            // and TOO_DEEP_RECURSION should not fail the fuzzer check.
+            if (have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
+            {
+                have_error = false;
+                server_exception.reset();
+                client_exception.reset();
+                return true;
+            }
+
             if (have_error)
             {
-                const auto * exception = server_exception ? server_exception.get() : client_exception.get();
                 fmt::print(stderr, "Error on processing query '{}': {}\n", ast_to_process->formatForErrorMessage(), exception->message());
 
                 // Try to reconnect after errors, for two reasons:
