@@ -39,21 +39,22 @@ Input table has an integer and a float columns:
 │ 1 │ 1.001 │
 │ 2 │ 1.002 │
 │ 3 │ 1.003 │
+│ 4 │ 1.004 │
 └───┴───────┘
 ```
 
 Query:
 
 ``` sql
-SELECT  quantilesBFloat16(0.75)(a), quantilesBFloat16(0.75)(b) FROM example_table;
+SELECT  quantileBFloat16(0.75)(a), quantileBFloat16(0.75)(b) FROM example_table;
 ```
 
 Result:
 
 ``` text
-┌─quantilesBFloat16(0.75)(a)─┬─quantilesBFloat16(0.75)(b)─┐
-│ [3]                        │ [1]                        │
-└────────────────────────────┴────────────────────────────┘
+┌─quantileBFloat16(0.75)(a)─┬─quantileBFloat16(0.75)(b)─┐
+│                         3 │                         1 │
+└───────────────────────────┴───────────────────────────┘
 ```
 Note that all floating point values in the example are truncated to 1.0 when converting to bfloat16.
 
