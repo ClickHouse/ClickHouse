@@ -217,8 +217,12 @@ public:
 
         if constexpr (result_is_nullable)
         {
-            auto align_of_data = llvm::assumeAligned(this->alignOfData());
-            b.CreateMemCpy(aggregate_data_dst_ptr, align_of_data, aggregate_data_src_ptr, align_of_data, this->prefix_size);
+            auto * aggregate_data_is_null_dst_value = b.CreateLoad(aggregate_data_dst_ptr);
+            auto * aggregate_data_is_null_src_value = b.CreateLoad(aggregate_data_src_ptr);
+
+            auto * is_src_null = nativeBoolCast(b, std::make_shared<DataTypeUInt8>(), aggregate_data_is_null_src_value);
+            auto * is_null_result_value = b.CreateSelect(is_src_null, llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_is_null_dst_value);
+            b.CreateStore(is_null_result_value, aggregate_data_dst_ptr);
         }
 
         auto * aggregate_data_dst_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_dst_ptr, this->prefix_size);
@@ -343,13 +347,15 @@ public:
         b.CreateBr(join_block);
 
         b.SetInsertPoint(if_not_null);
-        b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+
+        if constexpr (result_is_nullable)
+            b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+
         auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, this->prefix_size);
         this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, { removeNullable(nullable_type) }, { wrapped_value });
         b.CreateBr(join_block);
 
         b.SetInsertPoint(join_block);
-
     }
 
 #endif
@@ -469,7 +475,10 @@ public:
             b.CreateBr(join_block);
 
             b.SetInsertPoint(if_not_null);
-            b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+
+            if constexpr (result_is_nullable)
+                b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+
             auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, this->prefix_size);
             this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, arguments_types, wrapped_values);
             b.CreateBr(join_block);

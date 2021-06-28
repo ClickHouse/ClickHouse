@@ -135,7 +135,10 @@ public:
         b.CreateBr(join_block);
 
         b.SetInsertPoint(if_not_null);
-        b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+
+        if constexpr (result_is_nullable)
+            b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+
         auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, this->prefix_size);
         this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, { removeNullable(nullable_type) }, { wrapped_value });
         b.CreateBr(join_block);
@@ -283,7 +286,9 @@ public:
 
         b.SetInsertPoint(if_true);
 
-        b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+        if constexpr (result_is_nullable)
+            b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+
         auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, this->prefix_size);
         this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, non_nullable_types, wrapped_values);
         b.CreateBr(join_block);
