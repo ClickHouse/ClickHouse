@@ -5,7 +5,7 @@ toc_priority: 209
 # quantileBFloat16 {#quantilebfloat16}
 
 Calculates a [quantile](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers. bfloat16 is a floating-point data type with 1 sign bit, 8 exponent bits and 7 fraction bits. 
-The function converts input values to 32-bit floats and takes the most significant 16 bits. Then it calculates the histogram of these values. Resulting value is converted to 64-bit float by appending zero bits.
+The function converts input values to 32-bit floats and takes the most significant 16 bits. Then it calculates bfloat16 quantile value and converts the result to a 64-bit float by appending zero bits.
 The function is a fast quantile estimator with a relative error no more than 0.390625%.
 
 **Syntax**
