@@ -422,7 +422,7 @@ void executeScalarSubqueries(ASTPtr & query, ContextPtr context, size_t subquery
 void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
-    if (!select_query->arrayJoinExpressionList())
+    if (!select_query->arrayJoinExpressionList().first)
         return;
 
     ArrayJoinedColumnsVisitor::Data visitor_data{
@@ -433,10 +433,10 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
     /// to get the correct number of rows.
     if (result.array_join_result_to_source.empty())
     {
-        if (select_query->arrayJoinExpressionList()->children.empty())
+        if (select_query->arrayJoinExpressionList().first->children.empty())
             throw DB::Exception("ARRAY JOIN requires an argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        ASTPtr expr = select_query->arrayJoinExpressionList()->children.at(0);
+        ASTPtr expr = select_query->arrayJoinExpressionList().first->children.at(0);
         String source_name = expr->getColumnName();
         String result_name = expr->getAliasOrColumnName();
 
