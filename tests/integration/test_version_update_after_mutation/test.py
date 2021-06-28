@@ -79,7 +79,6 @@ def test_upgrade_while_mutation(start_cluster):
 
     node3.restart_with_latest_version(signal=9)
 
-    # wait replica became active
     exec_query_with_retry(node3, "SYSTEM RESTART REPLICA mt1")
 
     node3.query("ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})

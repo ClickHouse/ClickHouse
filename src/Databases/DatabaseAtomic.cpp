@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int FILE_ALREADY_EXISTS;
     extern const int INCORRECT_QUERY;
+    extern const int ABORTED;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -420,7 +421,18 @@ void DatabaseAtomic::loadStoredObjects(ContextMutablePtr local_context, bool has
 {
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
     if (has_force_restore_data_flag)
-        fs::remove_all(path_to_table_symlinks);
+    {
+        for (const auto & table_path : fs::directory_iterator(path_to_table_symlinks))
+        {
+            if (!fs::is_symlink(table_path))
+            {
+                throw Exception(ErrorCodes::ABORTED,
+                    "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
+            }
+
+            fs::remove(table_path);
+        }
+    }
 
     DatabaseOrdinary::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
 
