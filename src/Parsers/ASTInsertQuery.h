@@ -8,7 +8,8 @@ namespace DB
 
 class ReadBuffer;
 
-/// Insert Query
+/** INSERT query
+  */
 class ASTInsertQuery : public IAST
 {
 public:
@@ -23,14 +24,11 @@ public:
     ASTPtr watch;
 
     /// Data to insert
-    /// FIXME: maybe merge this with 'tail' buffer and make unified 'data' buffer for non-Native data?
     const char * data = nullptr;
     const char * end = nullptr;
 
     /// Query may have additional data if buffer is not nullptr
     ReadBuffer * tail;
-
-    bool expectsNativeData() const { return !data && !tail; }
 
     /// Try to find table function input() in SELECT part
     void tryFindInputFunction(ASTPtr & input_function) const;
