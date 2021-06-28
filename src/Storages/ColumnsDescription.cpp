@@ -43,8 +43,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
-    : name(std::move(name_)), type(std::move(type_))
+ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, String comment_)
+    : name(std::move(name_)), type(std::move(type_)), comment(std::move(comment_))
 {
 }
 
