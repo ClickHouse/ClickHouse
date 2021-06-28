@@ -233,36 +233,54 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
 
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
-    DataTypePtr type = joined_column.type;
-
-    if (hasUsing())
-    {
-        if (auto it = right_type_map.find(joined_column.name); it != right_type_map.end())
-            type = it->second;
-    }
-
-    if (rightBecomeNullable(type))
-        type = JoinCommon::convertTypeToNullable(type);
-
-    columns_added_by_join.emplace_back(joined_column.name, type);
+    columns_added_by_join.emplace_back(joined_column);
 }
 
-void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability) const
+NamesAndTypesList TableJoin::correctedColumnsAddedByJoin() const
 {
-    for (auto & col : names_and_types)
+    NamesAndTypesList result;
+    for (const auto & col : columns_added_by_join)
+    {
+        DataTypePtr type = col.type;
+        if (hasUsing())
+        {
+            if (auto it = right_type_map.find(col.name); it != right_type_map.end())
+                type = it->second;
+        }
+
+        if (rightBecomeNullable(type))
+            type = JoinCommon::convertTypeToNullable(type);
+        result.emplace_back(col.name, type);
+    }
+
+    return result;
+}
+
+void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & left_columns, bool correct_nullability)
+{
+    for (auto & col : left_columns)
     {
         if (hasUsing())
         {
+            /*
+             * Join with `USING` semantic allows to have columns with changed types in result table.
+             * But `JOIN ON` should preserve types from original table.
+             * So we need to know changed types in result tables before further analysis (e.g. analyzeAggregation)
+             * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
+             *   when part of plan built and types of expression will be known.
+             */
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, joined_storage != nullptr);
+
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
                 col.type = it->second;
         }
+
         if (correct_nullability && leftBecomeNullable(col.type))
             col.type = JoinCommon::convertTypeToNullable(col.type);
     }
 
-    /// Types in columns_added_by_join already converted and set nullable if needed
-    for (const auto & col : columns_added_by_join)
-        names_and_types.emplace_back(col.name, col.type);
+    for (const auto & col : correctedColumnsAddedByJoin())
+        left_columns.emplace_back(col.name, col.type);
 }
 
 bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
@@ -335,51 +353,30 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     return true;
 }
 
-bool TableJoin::applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
+bool TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
 {
+    bool need_convert = false;
+    need_convert = inferJoinKeyCommonType(left_sample_columns, right_sample_columns, joined_storage != nullptr);
 
-    auto to_name_type_list = [](const ColumnsWithTypeAndName & columns)
-    {
-        NamesAndTypesList name_type_list;
-        for (const auto & col : columns)
-            name_type_list.emplace_back(col.name, col.type);
-        return name_type_list;
-    };
-
-    bool need_convert = needConvert();
-    if (!need_convert && joined_storage == nullptr)
-    {
-        need_convert = inferJoinKeyCommonType(
-            to_name_type_list(left_sample_columns),
-            to_name_type_list(right_sample_columns),
-            true);
-    }
-
-    if (need_convert)
-    {
-        left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, key_names_left);
-        right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, key_names_right);
-    }
+    left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, key_names_left);
+    right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, key_names_right);
 
     return need_convert;
 }
 
-bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right, bool to_supertype)
+template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
+bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
 {
+    if (!left_type_map.empty() || !right_type_map.empty())
+        return true;
+
     NameToTypeMap left_types;
     for (const auto & col : left)
-    {
         left_types[col.name] = col.type;
-    }
 
     NameToTypeMap right_types;
     for (const auto & col : right)
-    {
-        if (auto it = renames.find(col.name); it != renames.end())
-            right_types[it->second] = col.type;
-        else
-            right_types[col.name] = col.type;
-    }
+        right_types[renamedRightColumnName(col.name)] = col.type;
 
     for (size_t i = 0; i < key_names_left.size(); ++i)
     {
@@ -396,8 +393,8 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
         if (JoinCommon::typesEqualUpToNullability(ltype->second, rtype->second))
             continue;
 
-        auto common_type = to_supertype ? DB::getLeastSupertype({ltype->second, rtype->second}, false)
-                                        : DB::getMostSubtype({ltype->second, rtype->second}, false);
+        /// TODO(vdimir): use getMostSubtype if possible
+        auto common_type = DB::getLeastSupertype({ltype->second, rtype->second}, false);
         if (common_type == nullptr || isNothing(common_type))
         {
             LOG_DEBUG(&Poco::Logger::get("TableJoin"),
@@ -407,6 +404,13 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
             continue;
         }
 
+        if (!allow_right && !common_type->equals(*rtype->second))
+        {
+            LOG_DEBUG(&Poco::Logger::get("TableJoin"),
+                      "Can't change type for right table: {}: {} -> {}.",
+                      key_names_right[i], rtype->second->getName(), common_type->getName());
+            continue;
+        }
         left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = common_type;
     }
 
@@ -425,15 +429,20 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
 ActionsDAGPtr TableJoin::applyKeyConvertToTable(
     const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const
 {
+    bool has_some_to_do = false;
+
     ColumnsWithTypeAndName cols_dst = cols_src;
     for (auto & col : cols_dst)
     {
         if (auto it = type_mapping.find(col.name); it != type_mapping.end())
         {
+            has_some_to_do = true;
             col.type = it->second;
             col.column = nullptr;
         }
     }
+    if (!has_some_to_do)
+        return nullptr;
 
     NameToNameMap key_column_rename;
     /// Returns converting actions for tables that need to be performed before join

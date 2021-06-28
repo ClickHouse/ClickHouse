@@ -30,6 +30,22 @@ SELECT did, id, name FROM f LEFT ARRAY JOIN d_ids as did LEFT JOIN d ON d.id = d
 -- name clash, doesn't work yet
 SELECT id, name FROM f LEFT ARRAY JOIN d_ids as id LEFT JOIN d ON d.id = id ORDER BY id; -- { serverError 403 }
 
+SELECT * FROM ( SELECT [dummy, dummy] AS dummy FROM system.one ) AS x ARRAY JOIN dummy
+JOIN system.one AS y ON x.dummy == y.dummy;
+
+SELECT * FROM ( SELECT [dummy, dummy] AS dummy FROM system.one ) AS x ARRAY JOIN dummy
+JOIN system.one AS y ON x.dummy + 1 == y.dummy + 1;
+
+SELECT * FROM ( SELECT [dummy, dummy] AS dummy FROM system.one ) AS x ARRAY JOIN dummy
+JOIN system.one AS y USING dummy;
+
+SELECT * FROM ( SELECT [toUInt32(dummy), toUInt32(dummy)] AS dummy FROM system.one ) AS x ARRAY JOIN dummy
+JOIN (select toInt32(dummy) as dummy from system.one ) AS y USING dummy;
+
+SELECT dummy > 0, toTypeName(any(dummy)), any(toTypeName(dummy)) 
+FROM ( SELECT [toUInt32(dummy), toUInt32(dummy)] AS dummy FROM system.one ) AS x ARRAY JOIN dummy
+JOIN ( SELECT toInt32(dummy) AS dummy FROM system.one ) AS y USING dummy GROUP BY (dummy > 0);
+
 DROP TABLE IF EXISTS f;
 DROP TABLE IF EXISTS d;
 

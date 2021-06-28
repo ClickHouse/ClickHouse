@@ -86,7 +86,8 @@ private:
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
     /// Columns will be added to block by JOIN.
-    /// It's a subset of columns_from_joined_table with corrected Nullability and type (if inplace type conversion is required)
+    /// It's a subset of columns_from_joined_table
+    /// Note: without corrected Nullability or type, see correctedColumnsAddedByJoin
     NamesAndTypesList columns_added_by_join;
 
     /// Target type to convert key columns before join
@@ -108,6 +109,12 @@ private:
     /// Create converting actions and change key column names if required
     ActionsDAGPtr applyKeyConvertToTable(
         const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const;
+
+    /// Calculates common supertypes for corresponding join key columns.
+    template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
+    bool inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool to_supertype);
+
+    NamesAndTypesList correctedColumnsAddedByJoin() const;
 
 public:
     TableJoin() = default;
@@ -190,17 +197,12 @@ public:
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
 
-    void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability = true) const;
-
-    /// Calculates common supertypes for corresponding join key columns.
-    bool inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right, bool to_supertype);
+    void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & left_columns, bool correct_nullability);
 
     /// Calculate converting actions, rename key columns in required
     /// For `USING` join we will convert key columns inplace and affect into types in the result table
     /// For `JOIN ON` we will create new columns with converted keys to join by.
-    bool applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
-
-    bool needConvert() const { return !left_type_map.empty(); }
+    bool createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
 
     /// Key columns should be converted before join.
     ActionsDAGPtr leftConvertingActions() const { return left_converting_actions; }
@@ -215,6 +217,7 @@ public:
     const Names & keyNamesLeft() const { return key_names_left; }
     const Names & keyNamesRight() const { return key_names_right; }
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
+
     Names columnsAddedByJoin() const
     {
         Names res;
