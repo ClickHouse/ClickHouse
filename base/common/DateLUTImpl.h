@@ -119,6 +119,9 @@ private:
     }
 
 public:
+    /// We use Int64 instead of time_t because time_t is mapped to the different types (long or long long)
+    /// on Linux and Darwin (on both of them, long and long long are 64 bit and behaves identically,
+    /// but they are different types in C++ and this affects function overload resolution).
     using Time = Int64;
 
     /// The order of fields matters for alignment and sizeof.
