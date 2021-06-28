@@ -140,8 +140,13 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         /// Later on, before doing any task related to a view, we'll switch to its ThreadStatus, do the work,
         /// and switch back to the original thread_status.
         auto * running_thread = current_thread;
+        auto * running_memory_tracker = DB::CurrentThread::getMemoryTracker();
+        if (!running_memory_tracker)
+            running_memory_tracker = &total_memory_tracker;
+
         auto thread_status = std::make_shared<ThreadStatus>();
         thread_status->attachQueryContext(getContext());
+        thread_status->memory_tracker.setParent(running_memory_tracker);
 
         QueryViewsLogElement::ViewRuntimeStats runtime_stats{
             target_name, type, thread_status, 0, std::chrono::system_clock::now(), QueryViewsLogElement::ViewStatus::INIT};
