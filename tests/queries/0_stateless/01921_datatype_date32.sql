@@ -67,11 +67,11 @@ select toRelativeWeekNum(x1) from t1;
 select '-------toRelativeDayNum---------';
 select toRelativeDayNum(x1) from t1;
 select '-------toRelativeHourNum---------';
-select toRelativeHourNum(x1) from t1; -- { serverError 43 }
+select toRelativeHourNum(x1) from t1;
 select '-------toRelativeMinuteNum---------';
-select toRelativeMinuteNum(x1) from t1; -- { serverError 43 }
+select toRelativeMinuteNum(x1) from t1;
 select '-------toRelativeSecondNum---------';
-select toRelativeSecondNum(x1) from t1; -- { serverError 43 }
+select toRelativeSecondNum(x1) from t1;
 select '-------toTime---------';
 select toTime(x1) from t1; -- { serverError 43 }
 select '-------toYYYYMM---------';
