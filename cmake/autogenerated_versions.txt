@@ -1,4 +1,7 @@
-# This strings autochanged from release_lib.sh:
+# This variables autochanged by release_lib.sh:
+
+# NOTE: has nothing common with DBMS_TCP_PROTOCOL_VERSION,
+# only DBMS_TCP_PROTOCOL_VERSION should be incremented on protocol changes.
 SET(VERSION_REVISION 54453)
 SET(VERSION_MAJOR 21)
 SET(VERSION_MINOR 8)
