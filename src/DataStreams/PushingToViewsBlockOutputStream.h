@@ -23,6 +23,12 @@ struct ViewInfo
     BlockOutputStreamPtr out;
     std::exception_ptr exception;
     QueryViewsLogElement::ViewRuntimeStats runtime_stats;
+
+    void set_exception(std::exception_ptr e)
+    {
+        exception = e;
+        runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::EXCEPTION_WHILE_PROCESSING);
+    }
 };
 
 /** Writes data to the specified table and to all dependent materialized views.

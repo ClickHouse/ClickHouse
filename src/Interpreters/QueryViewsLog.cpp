@@ -19,10 +19,10 @@ namespace DB
 Block QueryViewsLogElement::createBlock()
 {
     auto view_status_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-        {"Init", static_cast<Int8>(ViewStatus::INIT)},
-        {"WrittenPrefix", static_cast<Int8>(ViewStatus::WRITTEN_PREFIX)},
-        {"WrittenBlock", static_cast<Int8>(ViewStatus::WRITTEN_BLOCK)},
-        {"WrittenSuffix", static_cast<Int8>(ViewStatus::WRITTEN_SUFFIX)}});
+        {"QueryStart", static_cast<Int8>(QUERY_START)},
+        {"QueryFinish", static_cast<Int8>(QUERY_FINISH)},
+        {"ExceptionBeforeStart", static_cast<Int8>(EXCEPTION_BEFORE_START)},
+        {"ExceptionWhileProcessing", static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}});
 
     auto view_type_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
         {"Default", static_cast<Int8>(ViewType::DEFAULT)},

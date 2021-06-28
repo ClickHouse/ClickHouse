@@ -34,10 +34,10 @@ Columns:
 -   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics for this view. The description of them could be found in the table [system.events](#system_tables-events). It does not include events of views dependent on this one.
 -   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics for this view that are listed in the `ProfileEvents.Names` column.
 -   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the view. Values:
-    -   `'Init' = 1` — The view was cancelled before writing anything to storage.
-    -   `'WrittenPrefix' = 2` — The view was cancelled after writing its prefix to storage.
-    -   `'WrittenBlock' = 3` — The view was cancelled after writing its blocks to storage. It might have materialized the input wholly, partially or none at all.
-    -   `'WrittenSuffix' = 4` — The view wrote its suffix to storage. It completed successfully.
+    -   `'QueryStart' = 1` — Successful start the view execution. Should not appear.
+    -   `'QueryFinish' = 2` — Successful end of the view execution.
+    -   `'ExceptionBeforeStart' = 3` — Exception before the start of the view execution.
+    -   `'ExceptionWhileProcessing' = 4` — Exception during the view execution.
 -   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
 -   `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
 -   `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
