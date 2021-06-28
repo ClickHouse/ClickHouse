@@ -8,15 +8,15 @@ The `median*` functions are the aliases for the corresponding `quantile*` functi
 
 Functions:
 
--   `median` — Alias for [quantile](#quantile).
--   `medianDeterministic` — Alias for [quantileDeterministic](#quantiledeterministic).
--   `medianExact` — Alias for [quantileExact](#quantileexact).
--   `medianExactWeighted` — Alias for [quantileExactWeighted](#quantileexactweighted).
--   `medianTiming` — Alias for [quantileTiming](#quantiletiming).
--   `medianTimingWeighted` — Alias for [quantileTimingWeighted](#quantiletimingweighted).
--   `medianTDigest` — Alias for [quantileTDigest](#quantiletdigest).
--   `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](#quantiletdigestweighted).
--   `medianBFloat16` — Alias for [quantileBFloat16](#quantilebfloat16).
+-   `median` — Alias for [quantile](quantile.md).
+-   `medianDeterministic` — Alias for [quantileDeterministic](quantiledeterministic.md).
+-   `medianExact` — Alias for [quantileExact](quantileexact.md).
+-   `medianExactWeighted` — Alias for [quantileExactWeighted](quantileexactweighted.md).
+-   `medianTiming` — Alias for [quantileTiming](quantiletiming.md).
+-   `medianTimingWeighted` — Alias for [quantileTimingWeighted](quantiletimingweighted.md).
+-   `medianTDigest` — Alias for [quantileTDigest](quantiletdigest.md).
+-   `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](quantiletdigestweighted.md).
+-   `medianBFloat16` — Alias for [quantileBFloat16](quantilebfloat16.md).
 
 **Example**
 
