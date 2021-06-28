@@ -701,11 +701,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 /// We need to refresh the access info since dependent views might have added extra information, either during
                 /// creation of the view (PushingToViewsBlockOutputStream) or while executing its internal SELECT
                 const auto & access_info = context_ptr->getQueryAccessInfo();
-                element.query_databases = access_info.databases;
-                element.query_tables = access_info.tables;
-                element.query_columns = access_info.columns;
-                element.query_projections = access_info.projections;
-                element.query_views = access_info.views;
+                element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
+                element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
+                element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
+                element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
+                element.query_views.insert(access_info.views.begin(), access_info.views.end());
             };
 
             /// Also make possible for caller to log successful query finish and exception during execution.
