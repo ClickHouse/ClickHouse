@@ -79,7 +79,7 @@ and(val1, val2...)
 
 -   `1`, if there is at least one non-zero value.
 -   `0`, if there are only zero values.
--   `NULL`, if there aren't any non-zero values besides `NULL`.
+-   `NULL`, if there are only zero values and `NULL`.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 

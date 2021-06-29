@@ -211,11 +211,11 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 6
 -   Тип данных [Interval](../../sql-reference/operators/index.md)
 -   Функции преобразования типов [toInterval](../../sql-reference/operators/index.md#function-tointerval)
 
-## Оператор логического ‘И’ {#logical-and-operator}
+## Оператор логического "И" {#logical-and-operator}
 
 Синтаксис `SELECT a AND b` — вычисляет логическую конъюнкцию между `a` и `b` функцией [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
 
-## Оператор логического ‘ИЛИ’ {#logical-or-operator}
+## Оператор логического "ИЛИ" {#logical-or-operator}
 
 Синтаксис `SELECT a OR b` — вычисляет логическую дизъюнкцию между `a` и `b` функцией [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
 
@@ -223,7 +223,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 6
 
 Синтаксис `SELECT NOT a` — вычисляет логическое отрицание `a` функцией [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
 
-## Оператор логического исключающего ‘ИЛИ’ {#logical-xor-operator}
+## Оператор логического исключающего "ИЛИ" {#logical-xor-operator}
 
 Синтаксис `SELECT a XOR b` — вычисляет логическую исключающую дизъюнкцию между `a` и `b` функцией [xor](../../sql-reference/functions/logical-functions.md#logical-xor-function).
 
