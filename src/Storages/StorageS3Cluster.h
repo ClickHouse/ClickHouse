@@ -21,13 +21,6 @@ namespace DB
 
 class Context;
 
-struct ClientAuthentificationBuilder
-{
-    String access_key_id;
-    String secret_access_key;
-    UInt64 max_connections;
-};
-
 class StorageS3Cluster : public shared_ptr_helper<StorageS3Cluster>, public IStorage
 {
     friend struct shared_ptr_helper<StorageS3Cluster>;
@@ -59,7 +52,7 @@ protected:
 private:
     /// Connections from initiator to other nodes
     std::vector<std::shared_ptr<Connection>> connections;
-    StorageS3::ClientAuthentificaiton client_auth;
+    StorageS3::ClientAuthentication client_auth;
 
     String filename;
     String cluster_name;
