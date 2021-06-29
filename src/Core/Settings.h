@@ -441,7 +441,7 @@ class IColumn;
     M(Bool, asterisk_include_alias_columns, false, "Include ALIAS columns for wildcard query", 0) \
     M(Bool, optimize_skip_merged_partitions, false, "Skip partitions with one part with level > 0 in optimize final", 0) \
     M(Bool, optimize_on_insert, true, "Do the same transformation for inserted block of data as if merge was done on this block.", 0) \
-    M(Bool, allow_experimental_map_type, false, "Allow data type Map", 0) \
+    M(Bool, allow_experimental_map_type, true, "Obsolete setting, does nothing.", 0) \
     M(Bool, allow_experimental_window_functions, false, "Allow experimental window functions", 0) \
     M(Bool, allow_experimental_projection_optimization, false, "Enable projection optimization when processing SELECT queries", 0) \
     M(Bool, force_optimize_projection, false, "If projection optimization is enabled, SELECT queries need to use projection", 0) \
@@ -596,8 +596,8 @@ struct Settings : public BaseSettings<SettingsTraits>
     /// Load settings from configuration file, at "path" prefix in configuration.
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
-    /// Dumps profile events to two columns of type Array(String)
-    void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
+    /// Dumps profile events to column of type Map(String, String)
+    void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
     /// Adds program options to set the settings from a command line.
     /// (Don't forget to call notify() on the `variables_map` after parsing it!)
