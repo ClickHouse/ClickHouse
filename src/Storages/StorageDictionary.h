@@ -45,7 +45,7 @@ public:
     Poco::Timestamp getUpdateTime() const;
     LoadablesConfigurationPtr getConfiguration() const;
 
-    const String & getDictionaryName() const { return dictionary_name; }
+    String getDictionaryName() const { return dictionary_name; }
 
     /// Specifies where the table is located relative to the dictionary.
     enum class Location
@@ -66,7 +66,7 @@ public:
     };
 
 private:
-    const String dictionary_name;
+    String dictionary_name;
     const Location location;
 
     mutable std::mutex dictionary_config_mutex;
