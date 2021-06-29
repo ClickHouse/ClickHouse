@@ -180,6 +180,8 @@ def test_column_comments_for_mysql_database_engine(started_cluster):
             "CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`), `test` int COMMENT 'test comment') ENGINE=InnoDB;")
         assert 'test comment' in clickhouse_node.query('DESCRIBE TABLE `test_database`.`test_table`')
 
+        time.sleep(
+            3)  # Because the unit of MySQL modification time is seconds, modifications made in the same second cannot be obtained
         mysql_node.query("ALTER TABLE `test_database`.`test_table` ADD COLUMN `add_column` int(11) COMMENT 'add_column comment'")
         assert 'add_column comment' in clickhouse_node.query(
             "SELECT comment FROM system.columns WHERE table = 'test_table' AND database = 'test_database'")
