@@ -428,19 +428,17 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         auto common_type = DB::getLeastSupertype({ltype->second, rtype->second}, false);
         if (common_type == nullptr || isNothing(common_type))
         {
-            LOG_DEBUG(&Poco::Logger::get("TableJoin"),
-                      "Can't infer supertype for joined columns: {}: {} at left, {}: {} at right.",
-                      key_names_left[i], ltype->second->getName(),
-                      key_names_right[i], rtype->second->getName());
-            continue;
+            throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
+                "Can't infer supertype for joined columns: {}: {} at left, {}: {} at right.",
+                key_names_left[i], ltype->second->getName(),
+                key_names_right[i], rtype->second->getName());
         }
 
         if (!allow_right && !common_type->equals(*rtype->second))
         {
-            LOG_DEBUG(&Poco::Logger::get("TableJoin"),
-                      "Can't change type for right table: {}: {} -> {}.",
-                      key_names_right[i], rtype->second->getName(), common_type->getName());
-            continue;
+            throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
+                "Can't change type for right table: {}: {} -> {}.",
+                key_names_right[i], rtype->second->getName(), common_type->getName());
         }
         left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = common_type;
     }
