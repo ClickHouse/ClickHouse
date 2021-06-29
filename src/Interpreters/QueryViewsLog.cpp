@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -16,7 +17,7 @@
 
 namespace DB
 {
-Block QueryViewsLogElement::createBlock()
+NamesAndTypesList QueryViewsLogElement::getNamesAndTypes()
 {
     auto view_status_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
         {"QueryStart", static_cast<Int8>(QUERY_START)},
@@ -30,30 +31,36 @@ Block QueryViewsLogElement::createBlock()
         {"Live", static_cast<Int8>(ViewType::LIVE)}});
 
     return {
-        {std::make_shared<DataTypeDate>(), "event_date"},
-        {std::make_shared<DataTypeDateTime>(), "event_time"},
-        {std::make_shared<DataTypeDateTime64>(6), "event_time_microseconds"},
-        {std::make_shared<DataTypeUInt64>(), "view_duration_ms"},
+        {"event_date", std::make_shared<DataTypeDate>()},
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+        {"view_duration_ms", std::make_shared<DataTypeUInt64>()},
 
-        {std::make_shared<DataTypeString>(), "initial_query_id"},
-        {std::make_shared<DataTypeString>(), "view_name"},
-        {std::make_shared<DataTypeUUID>(), "view_uuid"},
-        {std::move(view_type_datatype), "view_type"},
-        {std::make_shared<DataTypeString>(), "view_query"},
-        {std::make_shared<DataTypeString>(), "view_target"},
+        {"initial_query_id", std::make_shared<DataTypeString>()},
+        {"view_name", std::make_shared<DataTypeString>()},
+        {"view_uuid", std::make_shared<DataTypeUUID>()},
+        {"view_type", std::move(view_type_datatype)},
+        {"view_query", std::make_shared<DataTypeString>()},
+        {"view_target", std::make_shared<DataTypeString>()},
 
-        {std::make_shared<DataTypeUInt64>(), "read_rows"},
-        {std::make_shared<DataTypeUInt64>(), "read_bytes"},
-        {std::make_shared<DataTypeUInt64>(), "written_rows"},
-        {std::make_shared<DataTypeUInt64>(), "written_bytes"},
-        {std::make_shared<DataTypeInt64>(), "peak_memory_usage"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
+        {"read_rows", std::make_shared<DataTypeUInt64>()},
+        {"read_bytes", std::make_shared<DataTypeUInt64>()},
+        {"written_rows", std::make_shared<DataTypeUInt64>()},
+        {"written_bytes", std::make_shared<DataTypeUInt64>()},
+        {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
 
-        {std::move(view_status_datatype), "status"},
-        {std::make_shared<DataTypeInt32>(), "exception_code"},
-        {std::make_shared<DataTypeString>(), "exception"},
-        {std::make_shared<DataTypeString>(), "stack_trace"}};
+        {"status", std::move(view_status_datatype)},
+        {"exception_code", std::make_shared<DataTypeInt32>()},
+        {"exception", std::make_shared<DataTypeString>()},
+        {"stack_trace", std::make_shared<DataTypeString>()}};
+}
+
+NamesAndAliases QueryViewsLogElement::getNamesAndAliases()
+{
+    return {
+        {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
+        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}};
 }
 
 void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
@@ -80,13 +87,11 @@ void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
 
     if (profile_counters)
     {
-        auto * column_names = columns[i++].get();
-        auto * column_values = columns[i++].get();
-        ProfileEvents::dumpToArrayColumns(*profile_counters, column_names, column_values, true);
+        auto * column = columns[i++].get();
+        ProfileEvents::dumpToMapColumn(*profile_counters, column, true);
     }
     else
     {
-        columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
 

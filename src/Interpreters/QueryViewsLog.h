@@ -71,9 +71,10 @@ struct QueryViewsLogElement
     String exception;
     String stack_trace;
 
-    static std::string name() { return "QueryViewsLog"; }
+    static std::string name() { return "QueryLog"; }
 
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
 };
 
