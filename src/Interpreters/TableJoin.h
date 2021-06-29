@@ -96,9 +96,6 @@ private:
     NameToTypeMap left_type_map;
     NameToTypeMap right_type_map;
 
-    ActionsDAGPtr left_converting_actions;
-    ActionsDAGPtr right_converting_actions;
-
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
     /// Original name -> name. Only renamed columns.
@@ -205,11 +202,8 @@ public:
     /// Calculate converting actions, rename key columns in required
     /// For `USING` join we will convert key columns inplace and affect into types in the result table
     /// For `JOIN ON` we will create new columns with converted keys to join by.
-    bool createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
-
-    /// Key columns should be converted before join.
-    ActionsDAGPtr leftConvertingActions() const { return left_converting_actions; }
-    ActionsDAGPtr rightConvertingActions() const { return right_converting_actions; }
+    std::pair<ActionsDAGPtr, ActionsDAGPtr>
+    createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }
@@ -240,12 +234,12 @@ public:
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
     void setStorageJoin(std::shared_ptr<StorageDictionary> storage);
 
-    std::shared_ptr<StorageJoin> getStorageJoin();
+    std::shared_ptr<StorageJoin> getStorageJoin() { return right_storage_join; }
 
     bool tryInitDictJoin(const Block & sample_block, ContextPtr context);
 
-    bool isSpecialStorage() const;
-    const DictionaryReader * getDictionaryReader() const;
+    bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join; }
+    const DictionaryReader * getDictionaryReader() const { return dictionary_reader.get(); }
 };
 
 }
