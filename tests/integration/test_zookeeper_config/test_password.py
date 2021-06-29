@@ -22,6 +22,8 @@ def started_cluster():
         cluster.shutdown()
 
 def test_identity(started_cluster):
+    node1.query('DROP TABLE IF EXISTS simple SYNC')
+
     node1.query('''
     CREATE TABLE simple (date Date, id UInt32)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);

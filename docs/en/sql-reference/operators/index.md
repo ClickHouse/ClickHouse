@@ -188,6 +188,24 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 └─────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
+You can work with dates without using `INTERVAL`, just by adding or subtracting seconds, minutes, and hours. For example, an interval of one day can be set by adding `60*60*24`.
+
+!!! note "Note"
+    The `INTERVAL` syntax or `addDays` function are always preferred. Simple addition or subtraction (syntax like `now() + ...`) doesn't consider time settings. For example, daylight saving time.
+
+
+Examples:
+
+``` sql
+SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
+```
+
+``` text
+┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
+│ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
+└─────────────────────┴─────────────────────┴─────────────────────┘
+```
+
 **See Also**
 
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
@@ -295,4 +313,3 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 │ 2 │ 3 │
 └───┴───┘
 ```
-
