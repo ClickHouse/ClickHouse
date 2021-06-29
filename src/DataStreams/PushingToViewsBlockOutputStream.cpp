@@ -248,10 +248,10 @@ void PushingToViewsBlockOutputStream::writePrefix()
 
     for (auto & view : views)
     {
-        process_prefix(view);
+        processPrefix(view);
         if (view.exception)
         {
-            log_query_views();
+            logQueryViews();
             std::rethrow_exception(view.exception);
         }
     }
@@ -285,7 +285,7 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             pool.scheduleOrThrowOnError([&] {
                 setThreadName("PushingToViews");
 
-                process_suffix(view);
+                processSuffix(view);
                 if (view.exception)
                     exception_count.fetch_add(1, std::memory_order_relaxed);
             });
@@ -302,20 +302,20 @@ void PushingToViewsBlockOutputStream::writeSuffix()
                 exception_happened = true;
                 continue;
             }
-            process_suffix(view);
+            processSuffix(view);
             if (view.exception)
                 exception_happened = true;
         }
     }
     if (exception_happened)
-        check_exceptions_in_views();
+        checkExceptionsInViews();
 
     if (views.size() > 1)
     {
         UInt64 milliseconds = main_watch.elapsedMilliseconds();
         LOG_DEBUG(log, "Pushing from {} to {} views took {} ms.", storage->getStorageID().getNameForLogs(), views.size(), milliseconds);
     }
-    log_query_views();
+    logQueryViews();
 }
 
 void PushingToViewsBlockOutputStream::flush()
@@ -391,17 +391,17 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
     catch (Exception & ex)
     {
         ex.addMessage("while pushing to view " + view.table_id.getNameForLogs());
-        view.set_exception(std::current_exception());
+        view.setException(std::current_exception());
     }
     catch (...)
     {
-        view.set_exception(std::current_exception());
+        view.setException(std::current_exception());
     }
 
     view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
 }
 
-void PushingToViewsBlockOutputStream::process_prefix(ViewInfo & view)
+void PushingToViewsBlockOutputStream::processPrefix(ViewInfo & view)
 {
     Stopwatch watch;
     /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
@@ -420,17 +420,17 @@ void PushingToViewsBlockOutputStream::process_prefix(ViewInfo & view)
     catch (Exception & ex)
     {
         ex.addMessage("while writing prefix to view " + view.table_id.getNameForLogs());
-        view.set_exception(std::current_exception());
+        view.setException(std::current_exception());
     }
     catch (...)
     {
-        view.set_exception(std::current_exception());
+        view.setException(std::current_exception());
     }
     view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
 }
 
 
-void PushingToViewsBlockOutputStream::process_suffix(ViewInfo & view)
+void PushingToViewsBlockOutputStream::processSuffix(ViewInfo & view)
 {
     Stopwatch watch;
     /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
@@ -450,11 +450,11 @@ void PushingToViewsBlockOutputStream::process_suffix(ViewInfo & view)
     catch (Exception & ex)
     {
         ex.addMessage("while writing suffix to view " + view.table_id.getNameForLogs());
-        view.set_exception(std::current_exception());
+        view.setException(std::current_exception());
     }
     catch (...)
     {
-        view.set_exception(std::current_exception());
+        view.setException(std::current_exception());
     }
     view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
     if (!view.exception)
@@ -468,19 +468,19 @@ void PushingToViewsBlockOutputStream::process_suffix(ViewInfo & view)
     }
 }
 
-void PushingToViewsBlockOutputStream::check_exceptions_in_views()
+void PushingToViewsBlockOutputStream::checkExceptionsInViews()
 {
     for (auto & view : views)
     {
         if (view.exception)
         {
-            log_query_views();
+            logQueryViews();
             std::rethrow_exception(view.exception);
         }
     }
 }
 
-void PushingToViewsBlockOutputStream::log_query_views()
+void PushingToViewsBlockOutputStream::logQueryViews()
 {
     const auto & settings = getContext()->getSettingsRef();
     const UInt64 min_query_duration = settings.log_queries_min_query_duration_ms.totalMilliseconds();
