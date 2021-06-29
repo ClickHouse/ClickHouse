@@ -376,7 +376,8 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 
 void StorageDistributedDirectoryMonitor::requestUpdatePool()
 {
-    if (name.find("all_replicas") != std::string::npos)
+    const char * user_pw_end = strchr(name.data(), '@');
+    if (!user_pw_end && startsWith(name, "shard"))
         need_update_pool = true;
 }
 
