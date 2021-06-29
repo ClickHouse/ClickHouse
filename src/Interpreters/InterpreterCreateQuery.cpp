@@ -302,6 +302,35 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
     return columns_list;
 }
 
+ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns)
+{
+    std::shared_ptr<ASTExpressionList> columns_list = std::static_pointer_cast<ASTExpressionList>(formatColumns(columns));
+
+    for (const auto & alias_column : alias_columns)
+    {
+        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        column_declaration->name = alias_column.name;
+
+        ParserDataType type_parser;
+        String type_name = alias_column.type->getName();
+        const char * type_pos = type_name.data();
+        const char * type_end = type_pos + type_name.size();
+        column_declaration->type = parseQuery(type_parser, type_pos, type_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+        column_declaration->default_specifier = "ALIAS";
+
+        const auto & alias = alias_column.expression;
+        const char * alias_pos = alias.data();
+        const char * alias_end = alias_pos + alias.size();
+        ParserExpression expression_parser;
+        column_declaration->default_expression = parseQuery(expression_parser, alias_pos, alias_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+        columns_list->children.emplace_back(column_declaration);
+    }
+
+    return columns_list;
+}
+
 ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 {
     auto columns_list = std::make_shared<ASTExpressionList>();
@@ -645,23 +674,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
         }
-    }
-
-    if (!create.attach && !settings.allow_experimental_map_type)
-    {
-        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
-        {
-            WhichDataType which(*name_and_type_pair.type);
-            if (which.isMap())
-            {
-                const auto & type_name = name_and_type_pair.type->getName();
-                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
-                                 + type_name + "' because experimental Map type is not allowed. "
-                                 + "Set 'allow_experimental_map_type = 1' setting to enable";
-                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
-            }
-        }
-
     }
 }
 
