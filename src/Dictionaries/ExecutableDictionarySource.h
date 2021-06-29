@@ -18,11 +18,13 @@ public:
 
     struct Configuration
     {
-        bool implicit_key;
         const std::string command;
         const std::string format;
         const std::string update_field;
         const UInt64 update_lag;
+        /// Implicit key means that the source script will return only values,
+        /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
+        const bool implicit_key;
     };
 
     ExecutableDictionarySource(

@@ -13,6 +13,7 @@
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
+#include <Common/FieldVisitorToString.h>
 #include <Coordination/KeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -343,9 +344,9 @@ struct ContextSharedPart
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     ConfigurationPtr external_models_config;
-    ext::scope_guard models_repository_guard;
+    scope_guard models_repository_guard;
 
-    ext::scope_guard dictionaries_xmls;
+    scope_guard dictionaries_xmls;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -393,7 +394,7 @@ struct ContextSharedPart
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
-    std::unique_ptr<Clusters> clusters;
+    std::shared_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
@@ -1881,7 +1882,7 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
-    auto res = getClusters().getCluster(cluster_name);
+    auto res = getClusters()->getCluster(cluster_name);
     if (res)
         return res;
 
@@ -1895,7 +1896,7 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
-    return getClusters().getCluster(cluster_name);
+    return getClusters()->getCluster(cluster_name);
 }
 
 
@@ -1910,7 +1911,7 @@ void Context::reloadClusterConfig() const
         }
 
         const auto & config = cluster_config ? *cluster_config : getConfigRef();
-        auto new_clusters = std::make_unique<Clusters>(config, settings);
+        auto new_clusters = std::make_shared<Clusters>(config, settings);
 
         {
             std::lock_guard lock(shared->clusters_mutex);
@@ -1926,16 +1927,16 @@ void Context::reloadClusterConfig() const
 }
 
 
-Clusters & Context::getClusters() const
+std::shared_ptr<Clusters> Context::getClusters() const
 {
     std::lock_guard lock(shared->clusters_mutex);
     if (!shared->clusters)
     {
         const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-        shared->clusters = std::make_unique<Clusters>(config, settings);
+        shared->clusters = std::make_shared<Clusters>(config, settings);
     }
 
-    return *shared->clusters;
+    return shared->clusters;
 }
 
 
