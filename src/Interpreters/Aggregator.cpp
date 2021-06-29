@@ -313,7 +313,7 @@ void Aggregator::compileAggregateFunctions()
     static std::unordered_map<UInt128, UInt64, UInt128Hash> aggregate_functions_description_to_count;
     static std::mutex mtx;
 
-    if (!params.compile_aggregate_expressions || params.overflow_row)
+    if (!params.compile_aggregate_expressions)
         return;
 
     std::vector<AggregateFunctionWithOffset> functions_to_compile;
@@ -618,16 +618,7 @@ void NO_INLINE Aggregator::executeImpl(
     }
     else
     {
-#if USE_EMBEDDED_COMPILER
-        if (compiled_aggregate_functions_holder)
-        {
-            executeImplBatch<false, true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
-        }
-        else
-#endif
-        {
-            executeImplBatch<true, false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
-        }
+        executeImplBatch<true, false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
     }
 }
 
@@ -1239,7 +1230,8 @@ void Aggregator::convertToBlockImpl(
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
-            convertToBlockImplFinal<Method, true>(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
+            static constexpr bool use_compiled_functions = !Method::low_cardinality_optimization;
+            convertToBlockImplFinal<Method, use_compiled_functions>(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
         }
         else
 #endif
