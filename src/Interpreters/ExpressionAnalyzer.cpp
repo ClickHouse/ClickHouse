@@ -850,14 +850,6 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain
     return table_join;
 }
 
-static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
-{
-    if (auto * table = analyzed_join->joined_storage.get())
-        if (auto * storage_join = dynamic_cast<StorageJoin *>(table))
-            return storage_join->getJoinLocked(analyzed_join);
-    return {};
-}
-
 static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
 {
     ASTPtr expression_list = analyzed_join.rightKeysList();
@@ -865,44 +857,13 @@ static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoi
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
-static bool allowDictJoin(StoragePtr joined_storage, ContextPtr context, String & dict_name, String & key_name)
+static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, ContextPtr context)
 {
-    if (!joined_storage->isDictionary())
-        return false;
-
-    StorageDictionary & storage_dictionary = static_cast<StorageDictionary &>(*joined_storage);
-    dict_name = storage_dictionary.getDictionaryName();
-    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
-    if (!dictionary)
-        return false;
-
-    const DictionaryStructure & structure = dictionary->getStructure();
-    if (structure.id)
-    {
-        key_name = structure.id->name;
-        return true;
-    }
-    return false;
-}
-
-static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, ContextPtr context)
-{
-    bool allow_merge_join = analyzed_join->allowMergeJoin();
-
     /// HashJoin with Dictionary optimisation
-    String dict_name;
-    String key_name;
-    if (analyzed_join->joined_storage && allowDictJoin(analyzed_join->joined_storage, context, dict_name, key_name))
-    {
-        Names original_names;
-        NamesAndTypesList result_columns;
-        if (analyzed_join->allowDictJoin(key_name, sample_block, original_names, result_columns))
-        {
-            analyzed_join->dictionary_reader = std::make_shared<DictionaryReader>(dict_name, original_names, result_columns, context);
-            return std::make_shared<HashJoin>(analyzed_join, sample_block);
-        }
-    }
+    if (analyzed_join->tryInitDictJoin(sample_block, context))
+        return std::make_shared<HashJoin>(analyzed_join, sample_block);
 
+    bool allow_merge_join = analyzed_join->allowMergeJoin();
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
@@ -963,7 +924,7 @@ std::unique_ptr<QueryPlan> buildJoinedPlan(
 
     if (auto right_actions = analyzed_join.rightConvertingActions())
     {
-        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), analyzed_join.rightConvertingActions());
+        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), right_actions);
         converting_step->setStepDescription("Convert joined columns");
         joined_plan->addStep(std::move(converting_step));
     }
@@ -979,21 +940,18 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     if (joined_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join was already created for query");
 
-    /// Use StorageJoin if any.
-    JoinPtr join = tryGetStorageJoin(syntax->analyzed_join);
-
-    if (join)
+    if (auto storage = syntax->analyzed_join->getStorageJoin())
     {
         syntax->analyzed_join->createConvertingActions(left_sample_columns, {});
-        return join;
+        return storage->getJoinLocked(syntax->analyzed_join);
     }
 
     joined_plan = buildJoinedPlan(getContext(), join_element, left_sample_columns, *syntax->analyzed_join, query_options);
 
-    join = makeJoin(syntax->analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
+    JoinPtr join = chooseJoinAlgorithm(syntax->analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
 
     /// Do not make subquery for join over dictionary.
-    if (syntax->analyzed_join->dictionary_reader)
+    if (syntax->analyzed_join->getDictionaryReader())
         joined_plan.reset();
 
     return join;
