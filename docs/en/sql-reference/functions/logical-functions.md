@@ -9,7 +9,7 @@ Performs logical operations on arguments of any numeric types, but returns a [UI
 
 Zero as an argument is considered `false`, while any non-zero value is considered `true`.
 
-## and {#and-and-operator}
+## and {#logical-and-function}
 
 Calculates the result of the logical conjunction between two or more values. Corresponds to [Logical AND Operator](../../sql-reference/operators/index.md#logical-and-operator).
 
@@ -61,7 +61,7 @@ Result:
 └──────────────────────┘
 ```
 
-## or {#or-or-operator}
+## or {#logical-or-function}
 
 Calculates the result of the logical disjunction between two or more values. Corresponds to [Logical OR Operator](../../sql-reference/operators/index.md#logical-or-operator).
 
@@ -79,7 +79,7 @@ and(val1, val2...)
 
 -   `1`, if there is at least one non-zero value.
 -   `0`, if there are only zero values.
--   `NULL`, if there is at least one `NULL` values.
+-   `NULL`, if there aren't any non-zero values besides `NULL`.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
@@ -113,7 +113,7 @@ Result:
 └─────────────┘
 ```
 
-## not {#not-not-operator}
+## not {#logical-not-function}
 
 Calculates the result of the logical negation of the value. Corresponds to [Logical Negation Operator](../../sql-reference/operators/index.md#logical-negation-operator).
 
@@ -151,7 +151,7 @@ Result:
 └────────┘
 ```
 
-## xor {#xor}
+## xor {#logical-xor-function}
 
 Calculates the result of the logical exclusive disjunction between two or more values. For more than two values the function works as if it calculates `XOR` of the first two values and then uses the result with the next value to calculate `XOR` and so on. Corresponds to [Logical XOR Operator](../../sql-reference/operators/index.md#logical-xor-operator).
 
@@ -169,7 +169,7 @@ xor(val1, val2...)
 
 -   `1`, for two values: if one of the values is zero and other is not. 
 -   `0`, for two values: if both values are zero or non-zero at the same.
--   `NULL`, if there is at least one `NULL` values.
+-   `NULL`, if there is at least one `NULL` value.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
