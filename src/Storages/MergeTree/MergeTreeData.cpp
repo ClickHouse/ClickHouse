@@ -2334,7 +2334,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         /// It's a DROP PART and it's already executed by fetching some covering part
         bool is_drop_part = !drop_range.isFakeDropRangePart();
 
-        if (is_drop_part && part->info != drop_range)
+        if (is_drop_part && part->info.min_block != drop_range.min_block && part->info.max_block != drop_range.max_block)
         {
             /// Why we check only min and max blocks here without checking merge
             /// level? It's a tricky situation which can happen on a stale
