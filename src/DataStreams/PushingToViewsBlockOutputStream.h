@@ -43,6 +43,8 @@ public:
         const ASTPtr & query_ptr_,
         bool no_destination = false);
 
+    ~PushingToViewsBlockOutputStream() override;
+
     Block getHeader() const override;
     void write(const Block & block) override;
 

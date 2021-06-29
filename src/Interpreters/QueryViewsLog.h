@@ -36,7 +36,7 @@ struct QueryViewsLogElement
     {
         String target_name;
         ViewType type = ViewType::DEFAULT;
-        std::shared_ptr<ThreadStatus> thread_status = nullptr;
+        std::unique_ptr<ThreadStatus> thread_status = nullptr;
         UInt64 elapsed_ms = 0;
         std::chrono::time_point<std::chrono::system_clock> event_time;
         ViewStatus event_status = ViewStatus::QUERY_START;

@@ -144,14 +144,14 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         if (!running_memory_tracker)
             running_memory_tracker = &total_memory_tracker;
 
-        auto thread_status = std::make_shared<ThreadStatus>();
+        auto thread_status = std::make_unique<ThreadStatus>();
         thread_status->attachQueryContext(getContext());
         thread_status->memory_tracker.setParent(running_memory_tracker);
 
         QueryViewsLogElement::ViewRuntimeStats runtime_stats{
             target_name,
             type,
-            thread_status,
+            std::move(thread_status),
             0,
             std::chrono::system_clock::now(),
             QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START};
@@ -178,6 +178,23 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     }
 }
 
+PushingToViewsBlockOutputStream::~PushingToViewsBlockOutputStream()
+{
+    for (auto & view : views)
+    {
+        if (view.runtime_stats.thread_status)
+        {
+            try
+            {
+                view.runtime_stats.thread_status->detachQuery(true, true);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+}
 
 Block PushingToViewsBlockOutputStream::getHeader() const
 {
