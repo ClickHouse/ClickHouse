@@ -219,9 +219,6 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
             column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
         }
 
-        if (all_const && column && !isColumnConst(*column) && column->size() == 1)
-            column = ColumnConst::create(std::move(column), 1);
-
         /// If the result is not a constant, just in case, we will consider the result as unknown.
         if (column && isColumnConst(*column))
         {
