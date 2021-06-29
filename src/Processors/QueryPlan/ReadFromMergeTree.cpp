@@ -796,7 +796,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         ActionDAGNodes nodes;
         if (prewhere_info)
         {
-            const auto & node = prewhere_info->prewhere_actions->getActionsDAG().findInIndex(prewhere_info->prewhere_column_name);
+            const auto & node = prewhere_info->prewhere_actions->findInIndex(prewhere_info->prewhere_column_name);
             nodes.nodes.push_back(&node);
         }
 
