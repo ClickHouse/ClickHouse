@@ -358,7 +358,7 @@ bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
     if (!right_storage_dictionary)
         return false;
 
-    auto dict_name = right_storage_dictionary->getName();
+    auto dict_name = right_storage_dictionary->getDictionaryName();
 
     auto dict_key = getDictKeyName(dict_name, context);
     if (!dict_key.has_value() || *dict_key != it_key->second)
