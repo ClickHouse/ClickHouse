@@ -1,5 +1,6 @@
 #include <Interpreters/TableJoin.h>
 
+
 #include <Common/StringUtils/StringUtils.h>
 
 #include <Core/Block.h>
@@ -8,12 +9,23 @@
 
 #include <DataTypes/DataTypeNullable.h>
 
+#include <Dictionaries/DictionaryStructure.h>
+
+#include <Interpreters/DictionaryReader.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/TableJoin.h>
+
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
-#include <common/logger_useful.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDictionary.h>
+#include <Storages/StorageJoin.h>
+
+#include <common/logger_useful.h>
+
 
 namespace DB
 {
@@ -21,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -269,7 +282,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & left_columns
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, joined_storage != nullptr);
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage());
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
                 col.type = it->second;
@@ -318,7 +331,18 @@ bool TableJoin::needStreamWithNonJoinedRows() const
     return isRightOrFull(kind());
 }
 
-bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_block, Names & src_names, NamesAndTypesList & dst_columns) const
+static std::optional<String> getDictKeyName(const String & dict_name , ContextPtr context)
+{
+    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
+    if (!dictionary)
+        return {};
+
+    if (const auto & structure = dictionary->getStructure(); structure.id)
+        return structure.id->name;
+    return {};
+}
+
+bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
 {
     /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
     if (!isLeft(kind()) && !(isInner(kind()) && strictness() == ASTTableJoin::Strictness::All))
@@ -333,9 +357,17 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     if (it_key == original_names.end())
         return false;
 
-    if (dict_key != it_key->second)
+    if (!right_storage_dictionary)
+        return false;
+
+    auto dict_name = right_storage_dictionary->getName();
+
+    auto dict_key = getDictKeyName(dict_name, context);
+    if (!dict_key.has_value() || *dict_key != it_key->second)
         return false; /// JOIN key != Dictionary key
 
+    Names src_names;
+    NamesAndTypesList dst_columns;
     for (const auto & col : sample_block)
     {
         if (col.name == right_keys[0])
@@ -349,6 +381,7 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
             dst_columns.push_back({col.name, col.type});
         }
     }
+    dictionary_reader = std::make_shared<DictionaryReader>(dict_name, src_names, dst_columns, context);
 
     return true;
 }
@@ -356,7 +389,7 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
 bool TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
 {
     bool need_convert = false;
-    need_convert = inferJoinKeyCommonType(left_sample_columns, right_sample_columns, joined_storage == nullptr);
+    need_convert = inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage());
 
     left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, key_names_left);
     right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, key_names_right);
@@ -458,6 +491,26 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
     return dag;
 }
 
+
+void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
+{
+    if (right_storage_dictionary)
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin and Dictionary join are mutually exclusive");
+    right_storage_join = storage;
+}
+
+void TableJoin::setStorageJoin(std::shared_ptr<StorageDictionary> storage)
+{
+    if (right_storage_join)
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin and Dictionary join are mutually exclusive");
+    right_storage_dictionary = storage;
+}
+
+std::shared_ptr<StorageJoin> TableJoin::getStorageJoin()
+{
+    return right_storage_join;
+}
+
 String TableJoin::renamedRightColumnName(const String & name) const
 {
     if (const auto it = renames.find(name); it != renames.end())
@@ -525,6 +578,16 @@ std::pair<String, String> TableJoin::joinConditionColumnNames() const
     if (auto cond_ast = joinConditionColumn(JoinTableSide::Right))
         res.second = cond_ast->getColumnName();
     return res;
+}
+
+bool TableJoin::isSpecialStorage() const
+{
+    return right_storage_dictionary || right_storage_join;
+}
+
+const DictionaryReader * TableJoin::getDictionaryReader() const
+{
+    return dictionary_reader.get();
 }
 
 }
