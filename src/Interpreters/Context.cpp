@@ -457,6 +457,11 @@ struct ContextSharedPart
         {
             auto lock = std::lock_guard(mutex);
 
+#if USE_EMBEDDED_COMPILER
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
+#endif
+
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
             /// TODO: Get rid of this.
 
