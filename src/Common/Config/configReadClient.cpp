@@ -10,7 +10,7 @@ namespace DB
 {
 bool configReadClient(Poco::Util::LayeredConfiguration & config, const std::string & home_path)
 {
-    auto safe_exists = [](const auto & path)->bool
+    auto safe_exists = [](const auto & path)
     {
         std::error_code ec;
         bool res = fs::exists(path, ec);
