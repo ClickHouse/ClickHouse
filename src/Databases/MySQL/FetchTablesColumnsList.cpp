@@ -114,7 +114,7 @@ std::map<String, ColumnsDescription> fetchTablesColumnsList(
                                 scale_col[i].safeGet<UInt64>())
             );
             column_description.comment = column_comment_col[i].safeGet<String>();
-            
+
             tables_and_columns[table_name].add(column_description);
         }
     }

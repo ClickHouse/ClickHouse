@@ -137,11 +137,11 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
                 if (options->changes.count("comment"))
                     comment = options->changes.at("comment")->as<ASTLiteral>()->value.safeGet<String>();
-        
+
         ColumnDescription column_description(column_name_and_type->name, column_name_and_type->type);
-        if(!comment.empty())
+        if (!comment.empty())
             column_description.comment = std::move(comment);
-        
+
         columns_description.add(column_description);
     }
 
