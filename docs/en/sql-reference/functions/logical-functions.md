@@ -5,9 +5,9 @@ toc_title: Logical
 
 # Logical Functions {#logical-functions}
 
-Logical functions accept any numeric types, but return a [UInt8](../../sql-reference/data-types/int-uint.md) number equal to 0, 1 or in some cases `NULL`.
+Performs logical operations on arguments of any numeric types, but returns a [UInt8](../../sql-reference/data-types/int-uint.md) number equal to 0, 1 or `NULL` in some cases.
 
-Zero as an argument is considered “false,” while any non-zero value is considered “true”.
+Zero as an argument is considered `false`, while any non-zero value is considered `true`.
 
 ## and {#and-and-operator}
 
@@ -21,7 +21,7 @@ and(val1, val2...)
 
 **Arguments**
 
--   `val` — list of at least two values. Any [Int-UInt](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md) type. 
 
 **Returned value**
 
@@ -73,7 +73,7 @@ and(val1, val2...)
 
 **Arguments**
 
--   `val` — list of at least two values. Any [Int-UInt](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md) type. 
 
 **Returned value**
 
@@ -115,7 +115,7 @@ Result:
 
 ## not {#not-not-operator}
 
-Calculates the result of the logical negation of a value. Corresponds to [Logical Negation Operator](../../sql-reference/operators/index.md#logical-negation-operator).
+Calculates the result of the logical negation of the value. Corresponds to [Logical Negation Operator](../../sql-reference/operators/index.md#logical-negation-operator).
 
 **Syntax**
 
@@ -125,11 +125,11 @@ not(val);
 
 **Arguments**
 
--   `val` — value. Any [Int-UInt](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val` — The value. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md) type. 
 
 **Returned value**
 
--   `1`, if the `val` is a `0`.
+-   `1`, if the `val` is `0`.
 -   `0`, if the `val` is a non-zero value.
 -   `NULL`, if the `val` is a `NULL` value.
 
@@ -163,7 +163,7 @@ xor(val1, val2...)
 
 **Arguments**
 
--   `val` — list of at least two values. Any [Int-UInt](../../sql-reference/data-types/int-uint.md) type, [float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md) type. 
 
 **Returned value**
 
@@ -181,7 +181,7 @@ Query:
 SELECT xor(0, 1, 1);
 ```
 
-Result
+Result:
 
 ``` text
 ┌─xor(0, 1, 1)─┐
