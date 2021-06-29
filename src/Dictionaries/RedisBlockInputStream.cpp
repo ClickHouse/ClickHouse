@@ -91,6 +91,8 @@ namespace DB
                 case ValueType::vtFloat64:
                     insert<Float64>(column, string_value);
                     break;
+                case ValueType::vtEnum8:
+                case ValueType::vtEnum16:
                 case ValueType::vtString:
                     assert_cast<ColumnString &>(column).insert(parse<String>(string_value));
                     break;

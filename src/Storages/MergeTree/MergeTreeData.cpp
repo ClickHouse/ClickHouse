@@ -4624,19 +4624,20 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     }
 }
 
-std::optional<JobAndPool> MergeTreeData::getDataMovingJob()
+bool MergeTreeData::scheduleDataMovingJob(IBackgroundJobExecutor & executor)
 {
     if (parts_mover.moves_blocker.isCancelled())
-        return {};
+        return false;
 
     auto moving_tagger = selectPartsForMove();
     if (moving_tagger->parts_to_move.empty())
-        return {};
+        return false;
 
-    return JobAndPool{[this, moving_tagger] () mutable
+    executor.execute({[this, moving_tagger] () mutable
     {
         return moveParts(moving_tagger);
-    }, PoolType::MOVE};
+    }, PoolType::MOVE});
+    return true;
 }
 
 bool MergeTreeData::areBackgroundMovesNeeded() const
