@@ -402,9 +402,9 @@ int getExceptionErrorCode(std::exception_ptr e)
     {
         std::rethrow_exception(e);
     }
-    catch (const Exception & e)
+    catch (const Exception & exception)
     {
-        return e.code();
+        return exception.code();
     }
     catch (const Poco::Exception &)
     {

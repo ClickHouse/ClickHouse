@@ -9,7 +9,7 @@
 namespace Poco
 {
 class Logger;
-};
+}
 
 namespace DB
 {
@@ -24,7 +24,7 @@ struct ViewInfo
     std::exception_ptr exception;
     QueryViewsLogElement::ViewRuntimeStats runtime_stats;
 
-    void set_exception(std::exception_ptr e)
+    void setException(std::exception_ptr e)
     {
         exception = e;
         runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::EXCEPTION_WHILE_PROCESSING);
@@ -65,10 +65,10 @@ private:
     ContextMutablePtr insert_context;
 
     void process(const Block & block, ViewInfo & view);
-    void process_prefix(ViewInfo & view);
-    void process_suffix(ViewInfo & view);
-    void check_exceptions_in_views();
-    void log_query_views();
+    static void processPrefix(ViewInfo & view);
+    void processSuffix(ViewInfo & view);
+    void checkExceptionsInViews();
+    void logQueryViews();
 };
 
 
