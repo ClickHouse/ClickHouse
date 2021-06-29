@@ -18,7 +18,8 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-struct PrewhereActions
+/// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
+struct PrewhereExprInfo
 {
     /// Actions which are executed in order to alias columns are used for prewhere actions.
     ExpressionActionsPtr alias_actions;
@@ -42,7 +43,7 @@ public:
     MergeTreeRangeReader(
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
-        const PrewhereActions * prewhere_info_,
+        const PrewhereExprInfo * prewhere_info_,
         bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
@@ -235,7 +236,7 @@ private:
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
-    const PrewhereActions * prewhere_info;
+    const PrewhereExprInfo * prewhere_info;
 
     Stream stream;
 
