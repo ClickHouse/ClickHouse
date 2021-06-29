@@ -457,6 +457,9 @@ struct ContextSharedPart
         {
             auto lock = std::lock_guard(mutex);
 
+        /** Compiled expressions stored in cache need to be destroyed before destruction of static objects.
+          * Because CHJIT instance can be static object.
+          */
 #if USE_EMBEDDED_COMPILER
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
                 cache->reset();
