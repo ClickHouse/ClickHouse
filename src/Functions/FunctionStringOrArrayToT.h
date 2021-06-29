@@ -1,7 +1,7 @@
 #pragma once
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>

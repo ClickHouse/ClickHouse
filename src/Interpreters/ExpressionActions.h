@@ -30,7 +30,6 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
 ///
@@ -254,7 +253,7 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ActionsDAGPtr getLastActions(bool allow_empty = false)
+    ActionsDAGPtr getLastActions(bool allow_empty = false)  // -V1071
     {
         if (steps.empty())
         {

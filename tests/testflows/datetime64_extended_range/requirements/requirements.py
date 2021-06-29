@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.210312.1172513.
+# document by TestFlows v1.6.210505.1133630.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Specification
@@ -1628,8 +1628,8 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64N
     level=5,
     num='4.2.1.4.16')
 
-QA_SRS010_ClickHouse_DateTime64_Extended_Range = Specification(
-    name='QA-SRS010 ClickHouse DateTime64 Extended Range', 
+SRS_010_ClickHouse_DateTime64_Extended_Range = Specification(
+    name='SRS-010 ClickHouse DateTime64 Extended Range', 
     description=None,
     author=None,
     date=None, 
@@ -1860,7 +1860,7 @@ QA_SRS010_ClickHouse_DateTime64_Extended_Range = Specification(
         RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64Nano,
         ),
     content='''
-# QA-SRS010 ClickHouse DateTime64 Extended Range
+# SRS-010 ClickHouse DateTime64 Extended Range
 # Software Requirements Specification
 
 ## Table of Contents

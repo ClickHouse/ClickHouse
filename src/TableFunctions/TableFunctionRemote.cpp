@@ -14,7 +14,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include "registerTableFunctions.h"
 
 
@@ -240,6 +240,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
+            String{},
             remote_table_id.database_name,
             remote_table_id.table_name,
             String{},

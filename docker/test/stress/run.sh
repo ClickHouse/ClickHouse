@@ -55,6 +55,7 @@ function start()
     done
 
     echo "
+set follow-fork-mode child
 handle all noprint
 handle SIGSEGV stop print
 handle SIGBUS stop print
@@ -90,7 +91,7 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-./stress --hung-check --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
+./stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
     && echo -e 'Test script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 

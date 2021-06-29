@@ -190,9 +190,10 @@ protected:
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
-
 private:
+
     StorageID storage_id;
+
     mutable std::mutex id_mutex;
 
     /// Multiversion storage metadata. Allows to read/write storage metadata
@@ -444,12 +445,31 @@ public:
       */
     virtual void startup() {}
 
+    /**
+      * If the storage requires some complicated work on destroying,
+      * then you have two virtual methods:
+      * - flush()
+      * - shutdown()
+      *
+      * @see shutdown()
+      * @see flush()
+      */
+    void flushAndShutdown()
+    {
+        flush();
+        shutdown();
+    }
+
     /** If the table have to do some complicated work when destroying an object - do it in advance.
       * For example, if the table contains any threads for background work - ask them to complete and wait for completion.
       * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
     virtual void shutdown() {}
+
+    /// Called before shutdown() to flush data to underlying storage
+    /// (for Buffer)
+    virtual void flush() {}
 
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned
@@ -496,7 +516,7 @@ public:
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
-    /// - Simple count() opimization
+    /// - Simple count() optimization
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.

@@ -9,14 +9,14 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
-#include "IFunctionImpl.h"
+#include "IFunction.h"
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
-#include <ext/bit_cast.h>
+#include <common/bit_cast.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
