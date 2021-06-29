@@ -2332,7 +2332,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             throw Exception("Unexpected partition_id of part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         /// It's a DROP PART and it's already executed by fetching some covering part
-        bool is_drop_part = !drop_range.isFakeDropRangePart();
+        bool is_drop_part = !drop_range.isFakeDropRangePart() && drop_range.min_block;
 
         if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block))
         {
