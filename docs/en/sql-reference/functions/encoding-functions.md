@@ -234,7 +234,7 @@ bitPositionsToArray(arg)
 
 **Arguments**
 
--   `arg` — Integer value. Type: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+-   `arg` — Integer value. [Int/UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
