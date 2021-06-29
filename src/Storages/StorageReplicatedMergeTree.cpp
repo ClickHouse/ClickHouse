@@ -1216,29 +1216,37 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (size_t i = 0; i < parts_to_fetch.size(); ++i)
     {
         const String & part_name = parts_to_fetch[i];
-        LOG_ERROR(log, "Removing locally missing part from ZooKeeper and queueing a fetch: {}", part_name);
 
         Coordination::Requests ops;
 
-        time_t part_create_time = 0;
-        Coordination::ExistsResponse exists_resp = exists_futures[i].get();
-        if (exists_resp.error == Coordination::Error::ZOK)
+        String has_replica = findReplicaHavingPart(part_name, true);
+        if (!has_replica.empty())
         {
-            part_create_time = exists_resp.stat.ctime / 1000;
-            removePartFromZooKeeper(part_name, ops, exists_resp.stat.numChildren > 0);
+            LOG_ERROR(log, "Removing locally missing part from ZooKeeper and queueing a fetch: {}", part_name);
+            time_t part_create_time = 0;
+            Coordination::ExistsResponse exists_resp = exists_futures[i].get();
+            if (exists_resp.error == Coordination::Error::ZOK)
+            {
+                part_create_time = exists_resp.stat.ctime / 1000;
+                removePartFromZooKeeper(part_name, ops, exists_resp.stat.numChildren > 0);
+            }
+            LogEntry log_entry;
+            log_entry.type = LogEntry::GET_PART;
+            log_entry.source_replica = "";
+            log_entry.new_part_name = part_name;
+            log_entry.create_time = part_create_time;
+
+            /// We assume that this occurs before the queue is loaded (queue.initialize).
+            ops.emplace_back(zkutil::makeCreateRequest(
+                fs::path(replica_path) / "queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+            enqueue_futures.emplace_back(zookeeper->asyncMulti(ops));
+        }
+        else
+        {
+            LOG_ERROR(log, "Not found active replica having part {}", part_name);
+            enqueuePartForCheck(part_name);
         }
 
-        LogEntry log_entry;
-        log_entry.type = LogEntry::GET_PART;
-        log_entry.source_replica = "";
-        log_entry.new_part_name = part_name;
-        log_entry.create_time = part_create_time;
-
-        /// We assume that this occurs before the queue is loaded (queue.initialize).
-        ops.emplace_back(zkutil::makeCreateRequest(
-            fs::path(replica_path) / "queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
-
-        enqueue_futures.emplace_back(zookeeper->asyncMulti(ops));
     }
 
     for (auto & future : enqueue_futures)
@@ -7392,7 +7400,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(const String & los
 {
     LOG_INFO(log, "Going to replace lost part {} with empty part", lost_part_name);
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto storage_settings = getSettings();
+    auto settings = getSettings();
 
     constexpr static auto TMP_PREFIX = "tmp_empty_";
 
@@ -7415,7 +7423,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(const String & los
         createVolumeFromReservation(reservation, volume),
         TMP_PREFIX + lost_part_name);
 
-    if (storage_settings->assign_part_uuids)
+    if (settings->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
     new_data_part->setColumns(columns);
@@ -7424,7 +7432,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(const String & los
     auto parts_in_partition = getDataPartsPartitionRange(new_part_info.partition_id);
     if (parts_in_partition.empty())
     {
-        LOG_WARNING(log, "Empty part {} is not created instead of lost part because there is no parts in partition {}, just DROP this partition.", lost_part_name, new_part_info.partition_id);
+        LOG_WARNING(log, "Empty part {} is not created instead of lost part because there are no parts in partition {} (it's empty), resolve this manually using DROP PARTITION.", lost_part_name, new_part_info.partition_id);
         return false;
     }
 
@@ -7458,7 +7466,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(const String & los
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
-    bool sync_on_insert = storage_settings->fsync_after_insert;
+    bool sync_on_insert = settings->fsync_after_insert;
 
     out.writePrefix();
     out.write(block);
