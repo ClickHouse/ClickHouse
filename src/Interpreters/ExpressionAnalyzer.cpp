@@ -832,14 +832,14 @@ bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & 
     return true;
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain)
+JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & converting_join_columns)
 {
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
-    JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns);
+    JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns, converting_join_columns);
 
-    if (auto left_actions = syntax->analyzed_join->leftConvertingActions())
+    if (converting_join_columns)
     {
-        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(left_actions));
+        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(converting_join_columns));
         chain.addStep();
     }
 
@@ -871,10 +871,9 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
 }
 
-std::unique_ptr<QueryPlan> buildJoinedPlan(
+static std::unique_ptr<QueryPlan> buildJoinedPlan(
     ContextPtr context,
     const ASTTablesInSelectQueryElement & join_element,
-    const ColumnsWithTypeAndName & left_sample_columns,
     TableJoin & analyzed_join,
     SelectQueryOptions query_options)
 {
@@ -918,40 +917,44 @@ std::unique_ptr<QueryPlan> buildJoinedPlan(
     joined_actions_step->setStepDescription("Joined actions");
     joined_plan->addStep(std::move(joined_actions_step));
 
-    const ColumnsWithTypeAndName & right_sample_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
-
-    analyzed_join.createConvertingActions(left_sample_columns, right_sample_columns);
-
-    if (auto right_actions = analyzed_join.rightConvertingActions())
-    {
-        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), right_actions);
-        converting_step->setStepDescription("Convert joined columns");
-        joined_plan->addStep(std::move(converting_step));
-    }
-
     return joined_plan;
 }
 
 JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
-    const ASTTablesInSelectQueryElement & join_element, const ColumnsWithTypeAndName & left_sample_columns)
+    const ASTTablesInSelectQueryElement & join_element,
+    const ColumnsWithTypeAndName & left_columns,
+    ActionsDAGPtr & left_convert_actions)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
 
     if (joined_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join was already created for query");
 
-    if (auto storage = syntax->analyzed_join->getStorageJoin())
+    ActionsDAGPtr right_convert_actions = nullptr;
+
+    const auto & analyzed_join = syntax->analyzed_join;
+
+    if (auto storage = analyzed_join->getStorageJoin())
     {
-        syntax->analyzed_join->createConvertingActions(left_sample_columns, {});
-        return storage->getJoinLocked(syntax->analyzed_join);
+        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, {});
+        return storage->getJoinLocked(analyzed_join);
     }
 
-    joined_plan = buildJoinedPlan(getContext(), join_element, left_sample_columns, *syntax->analyzed_join, query_options);
+    joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
 
-    JoinPtr join = chooseJoinAlgorithm(syntax->analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
+    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
+    std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
+    if (right_convert_actions)
+    {
+        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), right_convert_actions);
+        converting_step->setStepDescription("Convert joined columns");
+        joined_plan->addStep(std::move(converting_step));
+    }
+
+    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
 
     /// Do not make subquery for join over dictionary.
-    if (syntax->analyzed_join->getDictionaryReader())
+    if (analyzed_join->getDictionaryReader())
         joined_plan.reset();
 
     return join;
@@ -1544,8 +1547,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage);
             before_join = chain.getLastActions();
-            join = query_analyzer.appendJoin(chain);
-            converting_join_columns = query_analyzer.analyzedJoin().leftConvertingActions();
+            join = query_analyzer.appendJoin(chain, converting_join_columns);
             chain.addStep();
         }
 
