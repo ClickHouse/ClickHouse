@@ -831,7 +831,7 @@ Returns 0 for the first row and the difference from the previous row for each su
 
 !!! warning "Warning"
     It can reach the previous row only inside the currently processed data block.
-    
+
 The result of the function depends on the affected data blocks and the order of data in the block.
 
 The rows order used during the calculation of `runningDifference` can differ from the order of rows returned to the user.
@@ -908,7 +908,7 @@ Same as for [runningDifference](./other-functions.md#other_functions-runningdiff
 ## runningConcurrency {#runningconcurrency}
 
 Calculates the number of concurrent events.
-Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type. 
+Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type.
 The function calculates the total number of active (concurrent) events for each event start time.
 
 
@@ -1424,11 +1424,83 @@ Result:
 └───────────┴────────┘
 ```
 
+## initializeAggregation {#initializeaggregation}
+
+Calculates result of aggregate function based on single value. It is intended to use this function to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction) or use initialized aggregates as default values.
+
+**Syntax**
+
+``` sql
+initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
+```
+
+**Arguments**
+
+-   `aggregate_function` — Name of the aggregation function to initialize. [String](../../sql-reference/data-types/string.md).
+-   `arg` — Arguments of aggregate function.
+
+**Returned value(s)**
+
+- Result of aggregation for every row passed to the function.
+
+The return type is the same as the return type of function, that `initializeAgregation` takes as first argument.
+
+**Example**
+
+Query:
+
+```sql
+SELECT uniqMerge(state) FROM (SELECT initializeAggregation('uniqState', number % 3) AS state FROM numbers(10000));
+```
+Result:
+
+```text
+┌─uniqMerge(state)─┐
+│                3 │
+└──────────────────┘
+```
+
+Query:
+
+```sql
+SELECT finalizeAggregation(state), toTypeName(state) FROM (SELECT initializeAggregation('sumState', number % 3) AS state FROM numbers(5));
+```
+Result:
+
+```text
+┌─finalizeAggregation(state)─┬─toTypeName(state)─────────────┐
+│                          0 │ AggregateFunction(sum, UInt8) │
+│                          1 │ AggregateFunction(sum, UInt8) │
+│                          2 │ AggregateFunction(sum, UInt8) │
+│                          0 │ AggregateFunction(sum, UInt8) │
+│                          1 │ AggregateFunction(sum, UInt8) │
+└────────────────────────────┴───────────────────────────────┘
+```
+
+Example with `AggregatingMergeTree` table engine and `AggregateFunction` column:
+
+```sql
+CREATE TABLE metrics
+(
+    key UInt64,
+    value AggregateFunction(sum, UInt64) DEFAULT initializeAggregation('sumState', toUInt64(0))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY key
+```
+
+```sql
+INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
+```
+
+**See Also**
+-   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+
 ## finalizeAggregation {#function-finalizeaggregation}
 
 Takes state of aggregate function. Returns result of aggregation (or finalized state when using[-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 finalizeAggregation(state)
@@ -1442,7 +1514,7 @@ finalizeAggregation(state)
 
 -   Value/values that was aggregated.
 
-Type: Value of any types that was aggregated. 
+Type: Value of any types that was aggregated.
 
 **Examples**
 
@@ -1474,7 +1546,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-Note that `NULL` values are ignored. 
+Note that `NULL` values are ignored.
 
 Query:
 
@@ -1520,10 +1592,9 @@ Result:
 └────────┴─────────────┴────────────────┘
 ```
 
-**See Also** 
-
+**See Also**
 -   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
--   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
+-   [initializeAggregation](#initializeaggregation)
 
 ## runningAccumulate {#runningaccumulate}
 

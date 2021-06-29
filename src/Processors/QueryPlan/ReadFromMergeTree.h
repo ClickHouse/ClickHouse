@@ -96,6 +96,7 @@ private:
     const MergeTreeData & data;
     SelectQueryInfo query_info;
     PrewhereInfoPtr prewhere_info;
+    ExpressionActionsSettings actions_settings;
 
     ActionsDAGPtr added_filter;
     std::string added_filter_column_name;
