@@ -74,7 +74,7 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
-#include <IO/AsynchronousInsertionQueue.h>
+#include <Interpreters/AsynchronousInsertionQueue.h>
 
 
 #if !defined(ARCADIA_BUILD)

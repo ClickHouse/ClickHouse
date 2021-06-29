@@ -73,10 +73,10 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
+#include <Interpreters/AsynchronousInsertionQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <IO/AsynchronousInsertionQueue.h>
 #include <filesystem>
 
 
