@@ -190,11 +190,9 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
 
     if (missing_part_search_result == MissingPartSearchResult::LostForever)
     {
-        /// Is it in the replication queue? If there is - delete, because the task can not be processed.
-        if (!storage.queue.remove(zookeeper, part_name))
+        if (!storage.createEmptyPartInsteadOfLost(part_name))
         {
-            /// The part was not in our queue.
-            LOG_WARNING(log, "Missing part {} is not in our queue, this can happen rarely.", part_name);
+            LOG_WARNING(log, "Cannot create empty part {} instead of lost. Will retry later", part_name);
         }
 
         /** This situation is possible if on all the replicas where the part was, it deteriorated.
