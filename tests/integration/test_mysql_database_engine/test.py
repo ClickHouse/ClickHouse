@@ -183,9 +183,9 @@ def test_column_comments_for_mysql_database_engine(started_cluster):
         mysql_node.query("ALTER TABLE `test_database`.`test_table` ADD COLUMN `add_column` int(11) COMMENT 'add_column comment'")
         assert 'add_column comment' in clickhouse_node.query(
             "SELECT comment FROM system.columns WHERE table = 'test_table' AND database = 'test_database'")
-        
+
         mysql_node.query("DROP DATABASE test_database")
-        
+
 
 def test_data_types_support_level_for_mysql_database_engine(started_cluster):
     with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
