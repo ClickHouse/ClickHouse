@@ -43,7 +43,7 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }
 
-FormatSettings getFormatSettings(ContextConstPtr context)
+FormatSettings getFormatSettings(ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -51,7 +51,7 @@ FormatSettings getFormatSettings(ContextConstPtr context)
 }
 
 template <typename Settings>
-FormatSettings getFormatSettings(ContextConstPtr context, const Settings & settings)
+FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
 {
     FormatSettings format_settings;
 
@@ -112,6 +112,7 @@ FormatSettings getFormatSettings(ContextConstPtr context, const Settings & setti
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
+    format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -124,16 +125,16 @@ FormatSettings getFormatSettings(ContextConstPtr context, const Settings & setti
     return format_settings;
 }
 
-template FormatSettings getFormatSettings<FormatFactorySettings>(ContextConstPtr context, const FormatFactorySettings & settings);
+template FormatSettings getFormatSettings<FormatFactorySettings>(ContextPtr context, const FormatFactorySettings & settings);
 
-template FormatSettings getFormatSettings<Settings>(ContextConstPtr context, const Settings & settings);
+template FormatSettings getFormatSettings<Settings>(ContextPtr context, const Settings & settings);
 
 
 InputFormatPtr FormatFactory::getInput(
     const String & name,
     ReadBuffer & buf,
     const Block & sample,
-    ContextConstPtr context,
+    ContextPtr context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -202,7 +203,7 @@ BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(
     const String & name,
     WriteBuffer & buf,
     const Block & sample,
-    ContextConstPtr context,
+    ContextPtr context,
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -239,7 +240,7 @@ BlockOutputStreamPtr FormatFactory::getOutputStream(
     const String & name,
     WriteBuffer & buf,
     const Block & sample,
-    ContextConstPtr context,
+    ContextPtr context,
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -268,7 +269,7 @@ InputFormatPtr FormatFactory::getInputFormat(
     const String & name,
     ReadBuffer & buf,
     const Block & sample,
-    ContextConstPtr context,
+    ContextPtr context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -302,7 +303,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     const String & name,
     WriteBuffer & buf,
     const Block & sample,
-    ContextConstPtr context,
+    ContextPtr context,
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -337,7 +338,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     const String & name,
     WriteBuffer & buf,
     const Block & sample,
-    ContextConstPtr context,
+    ContextPtr context,
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {

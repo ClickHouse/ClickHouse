@@ -14,7 +14,7 @@ namespace DB
 
 /// Common base class for XDBC and Library bridge helpers.
 /// Contains helper methods to check/start bridge sync.
-class IBridgeHelper: protected WithConstContext
+class IBridgeHelper: protected WithContext
 {
 
 public:
@@ -27,7 +27,7 @@ public:
     static const inline std::string PING_METHOD = Poco::Net::HTTPRequest::HTTP_GET;
     static const inline std::string MAIN_METHOD = Poco::Net::HTTPRequest::HTTP_POST;
 
-    explicit IBridgeHelper(ContextConstPtr context_) : WithConstContext(context_) {}
+    explicit IBridgeHelper(ContextPtr context_) : WithContext(context_) {}
     virtual ~IBridgeHelper() = default;
 
     void startBridgeSync() const;
