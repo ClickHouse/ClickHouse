@@ -272,8 +272,6 @@ StorageLiveView::StorageLiveView(
     auto inner_query_tmp = inner_query->clone();
     select_table_id = extractDependentTable(inner_query_tmp, getContext(), table_id_.table_name, inner_subquery);
 
-    DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
-
     if (query.live_view_timeout)
     {
         is_temporary = true;
@@ -412,6 +410,8 @@ void StorageLiveView::checkTableCanBeDropped() const
 
 void StorageLiveView::startup()
 {
+    DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
+
     if (is_temporary)
         TemporaryLiveViewCleaner::instance().addView(std::static_pointer_cast<StorageLiveView>(shared_from_this()));
 
