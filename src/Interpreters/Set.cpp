@@ -26,7 +26,7 @@
 
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <ext/range.h>
+#include <common/range.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
@@ -539,7 +539,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
      * if and only if either bound coincides with an element or at least one element
      * is between the lower bounds
      */
-    auto indices = ext::range(0, size());
+    auto indices = collections::range(0, size());
     auto left_lower = std::lower_bound(indices.begin(), indices.end(), left_point, less);
     auto right_lower = std::lower_bound(indices.begin(), indices.end(), right_point, less);
 

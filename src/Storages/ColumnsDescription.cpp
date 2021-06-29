@@ -145,6 +145,25 @@ ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
         add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
 }
 
+ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases)
+{
+    for (auto & elem : ordinary)
+        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+
+    for (auto & alias : aliases)
+    {
+        ColumnDescription description(std::move(alias.name), std::move(alias.type));
+        description.default_desc.kind = ColumnDefaultKind::Alias;
+
+        const char * alias_expression_pos = alias.expression.data();
+        const char * alias_expression_end = alias_expression_pos + alias.expression.size();
+        ParserExpression expression_parser;
+        description.default_desc.expression = parseQuery(expression_parser, alias_expression_pos, alias_expression_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+        add(std::move(description));
+    }
+}
+
 
 /// We are trying to find first column from end with name `column_name` or with a name beginning with `column_name` and ".".
 /// For example "fruits.bananas"
