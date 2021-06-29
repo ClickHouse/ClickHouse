@@ -1,4 +1,4 @@
-#include <IO/AsynchronousInsertionQueue.h>
+#include <Interpreters/AsynchronousInsertionQueue.h>
 
 #include <Core/Settings.h>
 #include <DataStreams/BlockIO.h>
