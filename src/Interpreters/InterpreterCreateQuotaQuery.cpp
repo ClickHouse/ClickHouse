@@ -5,7 +5,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/range/algorithm/find_if.hpp>
 #include <boost/range/algorithm/upper_bound.hpp>
 #include <boost/range/algorithm/sort.hpp>
@@ -58,7 +58,7 @@ namespace
 
             auto & quota_limits = *it;
             quota_limits.randomize_interval = query_limits.randomize_interval;
-            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
                 quota_limits.max[resource_type] = query_limits.max[resource_type];
         }
 

@@ -137,10 +137,6 @@ def timezones_support(self):
                         exec_query(request=query, expected=f"{dt_str}")
 
 
-
-
-
-
 @TestFeature
 def generic(self, node="clickhouse1"):
     """Check the basic operations with DateTime64
@@ -148,4 +144,4 @@ def generic(self, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
     for scenario in loads(current_module(), Scenario, Suite):
-        Scenario(run=scenario, flags=TE)
+        Scenario(run=scenario)

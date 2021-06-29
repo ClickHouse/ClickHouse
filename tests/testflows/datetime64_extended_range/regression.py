@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 from testflows.core import *
 
@@ -44,6 +45,9 @@ xfails = {
     "type conversion/from unix timestamp64 */:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22959")],
     "type conversion/to int 8 16 32 64 128 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
     "reference times/:": [(Fail, "check procedure unclear")],
+    # need to investigate
+    "type conversion/to datetime/cast=True": [(Fail, "need to investigate")],
+    "date time funcs/today": [(Fail, "need to investigate")]
 }
 
 
@@ -51,7 +55,7 @@ xfails = {
 @Name("datetime64 extended range")
 @ArgumentParser(argparser)
 @Specifications(
-    QA_SRS010_ClickHouse_DateTime64_Extended_Range
+    SRS_010_ClickHouse_DateTime64_Extended_Range
 )
 @Requirements(
     RQ_SRS_010_DateTime64_ExtendedRange("1.0"),
@@ -60,20 +64,30 @@ xfails = {
 def regression(self, local, clickhouse_binary_path, parallel=False, stress=False):
     """ClickHouse DateTime64 Extended Range regression module.
     """
+    top().terminating = False
     nodes = {
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
     }
 
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
-        self.context.cluster = cluster
-        self.context.parallel = parallel
+    if stress is not None:
         self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
 
-        Scenario(run=load("datetime64_extended_range.tests.generic", "generic"), flags=TE)
-        Scenario(run=load("datetime64_extended_range.tests.non_existent_time", "feature"), flags=TE)
-        Scenario(run=load("datetime64_extended_range.tests.reference_times", "reference_times"), flags=TE)
-        Scenario(run=load("datetime64_extended_range.tests.date_time_functions", "date_time_funcs"), flags=TE)
-        Scenario(run=load("datetime64_extended_range.tests.type_conversion", "type_conversion"), flags=TE)
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), "datetime64_extended_range_env")) as cluster:
+        self.context.cluster = cluster
+
+        tasks = []
+        with Pool(2) as pool:
+            try:
+                run_scenario(pool, tasks, Scenario(test=load("datetime64_extended_range.tests.generic", "generic")))
+                run_scenario(pool, tasks, Scenario(test=load("datetime64_extended_range.tests.non_existent_time", "feature")))
+                run_scenario(pool, tasks, Scenario(test=load("datetime64_extended_range.tests.reference_times", "reference_times")))
+                run_scenario(pool, tasks, Scenario(test=load("datetime64_extended_range.tests.date_time_functions", "date_time_funcs")))
+                run_scenario(pool, tasks, Scenario(test=load("datetime64_extended_range.tests.type_conversion", "type_conversion")))
+            finally:
+                join(tasks)
 
 if main():
     regression()

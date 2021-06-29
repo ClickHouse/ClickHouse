@@ -51,8 +51,6 @@
 
 namespace DB
 {
-
-
 StorageS3Cluster::StorageS3Cluster(
     const String & filename_,
     const String & access_key_id_,

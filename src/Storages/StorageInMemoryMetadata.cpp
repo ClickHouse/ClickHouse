@@ -36,6 +36,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
+    , comment(other.comment)
 {
 }
 
@@ -59,9 +60,14 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     else
         settings_changes.reset();
     select = other.select;
+    comment = other.comment;
     return *this;
 }
 
+void StorageInMemoryMetadata::setComment(const String & comment_)
+{
+    comment = comment_;
+}
 
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
 {
@@ -222,12 +228,12 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
     {
-        auto requiered_columns = expression->getRequiredColumns();
-        for (const auto & dependency : requiered_columns)
+        auto required_columns = expression->getRequiredColumns();
+        for (const auto & dependency : required_columns)
         {
             if (updated_columns.count(dependency))
             {
-                to_set.insert(requiered_columns.begin(), requiered_columns.end());
+                to_set.insert(required_columns.begin(), required_columns.end());
                 return true;
             }
         }

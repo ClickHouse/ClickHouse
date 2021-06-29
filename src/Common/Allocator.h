@@ -99,9 +99,17 @@ public:
     /// Free memory range.
     void free(void * buf, size_t size)
     {
-        checkSize(size);
-        freeNoTrack(buf, size);
-        CurrentMemoryTracker::free(size);
+        try
+        {
+            checkSize(size);
+            freeNoTrack(buf, size);
+            CurrentMemoryTracker::free(size);
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException("Allocator::free");
+            throw;
+        }
     }
 
     /** Enlarge memory range.

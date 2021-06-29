@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 
 from testflows.core import *
@@ -59,6 +60,18 @@ xfails = {
     "tests/distributed/frame clause/range datetime/:":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
     "tests/distributed/frame clause/range frame/between expr preceding and expr following with partition by same column twice":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/:/funcs/leadInFrame/explicit default value":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
+    "tests/:/funcs/leadInFrame/with nulls":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
+    "tests/:/funcs/leadInFrame/default offset":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/:/funcs/lagInFrame/explicit default value":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
+    "tests/:/funcs/lagInFrame/with nulls":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
+    "tests/:/funcs/lagInFrame/default offset":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")]
 }
 
@@ -79,16 +92,20 @@ xflags = {
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """Window functions regression.
     """
+    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
     }
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
-        self.context.cluster = cluster
-        self.context.stress = stress
 
-        if parallel is not None:
-            self.context.parallel = parallel
+    if stress is not None:
+        self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
+
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), "window_functions_env")) as cluster:
+        self.context.cluster = cluster
 
         Feature(run=load("window_functions.tests.feature", "feature"), flags=TE)
 

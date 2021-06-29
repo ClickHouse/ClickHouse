@@ -184,7 +184,7 @@ inline bool checkString(const String & s, ReadBuffer & buf)
     return checkString(s.c_str(), buf);
 }
 
-inline bool checkChar(char c, ReadBuffer & buf)
+inline bool checkChar(char c, ReadBuffer & buf)  // -V1071
 {
     if (buf.eof() || *buf.position() != c)
         return false;
@@ -270,16 +270,37 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
     const size_t initial_pos = buf.count();
+    bool has_sign = false;
+    bool has_number = false;
     while (!buf.eof())
     {
         switch (*buf.position())
         {
             case '+':
             {
+                if (has_sign || has_number)
+                {
+                    if constexpr (throw_exception)
+                        throw ParsingException(
+                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
+                            ErrorCodes::CANNOT_PARSE_NUMBER);
+                    else
+                        return ReturnType(false);
+                }
+                has_sign = true;
                 break;
             }
             case '-':
             {
+                if (has_sign || has_number)
+                {
+                    if constexpr (throw_exception)
+                        throw ParsingException(
+                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
+                            ErrorCodes::CANNOT_PARSE_NUMBER);
+                    else
+                        return ReturnType(false);
+                }
                 if constexpr (is_signed_v<T>)
                     negative = true;
                 else
@@ -289,6 +310,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                     else
                         return ReturnType(false);
                 }
+                has_sign = true;
                 break;
             }
             case '0': [[fallthrough]];
@@ -302,6 +324,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '8': [[fallthrough]];
             case '9':
             {
+                has_number = true;
                 if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW && !is_big_int_v<T>)
                 {
                     /// Perform relativelly slow overflow check only when
@@ -330,6 +353,14 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
 end:
+    if (has_sign && !has_number)
+    {
+        if constexpr (throw_exception)
+            throw ParsingException(
+                "Cannot parse number with a sign character but without any numeric character", ErrorCodes::CANNOT_PARSE_NUMBER);
+        else
+            return ReturnType(false);
+    }
     x = res;
     if constexpr (is_signed_v<T>)
     {
@@ -362,7 +393,7 @@ void readIntText(T & x, ReadBuffer & buf)
 }
 
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
-bool tryReadIntText(T & x, ReadBuffer & buf)
+bool tryReadIntText(T & x, ReadBuffer & buf)  // -V1071
 {
     return readIntTextImpl<T, bool, check_overflow>(x, buf);
 }
@@ -1217,7 +1248,7 @@ bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
 
 struct PcgDeserializer
 {
-    static void deserializePcg32(const pcg32_fast & rng, ReadBuffer & buf)
+    static void deserializePcg32(pcg32_fast & rng, ReadBuffer & buf)
     {
         decltype(rng.state_) multiplier, increment, state;
         readText(multiplier, buf);
@@ -1230,6 +1261,8 @@ struct PcgDeserializer
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", rng.multiplier(), multiplier);
         if (increment != rng.increment())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", rng.increment(), increment);
+
+        rng.state_ = state;
     }
 };
 

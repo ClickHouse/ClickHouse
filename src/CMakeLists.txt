@@ -101,15 +101,17 @@ endif()
 
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
+    add_headers_and_sources(dbms Disks/HDFS)
 endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
 list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/replicate.cpp Functions/FunctionsLogical.cpp)
-list (APPEND dbms_headers Functions/IFunctionImpl.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/replicate.h Functions/FunctionsLogical.h)
+list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/replicate.h Functions/FunctionsLogical.h)
 
 list (APPEND dbms_sources
+    AggregateFunctions/IAggregateFunction.cpp
     AggregateFunctions/AggregateFunctionFactory.cpp
     AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     AggregateFunctions/AggregateFunctionState.cpp
@@ -187,6 +189,7 @@ add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProx
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
+add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
@@ -252,27 +255,6 @@ target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR
 if (USE_EMBEDDED_COMPILER)
     dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
-endif ()
-
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
-    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
-    set_source_files_properties(
-        Dictionaries/FlatDictionary.cpp
-        Dictionaries/HashedDictionary.cpp
-        Dictionaries/CacheDictionary.cpp
-        Dictionaries/IPAddressDictionary.cpp
-        Dictionaries/RangeHashedDictionary.cpp
-        Dictionaries/ComplexKeyHashedDictionary.cpp
-        Dictionaries/ComplexKeyCacheDictionary.cpp
-        Dictionaries/ComplexKeyCacheDictionary_generate1.cpp
-        Dictionaries/ComplexKeyCacheDictionary_generate2.cpp
-        Dictionaries/ComplexKeyCacheDictionary_generate3.cpp
-        Dictionaries/ODBCBlockInputStream.cpp
-        Dictionaries/HTTPDictionarySource.cpp
-        Dictionaries/LibraryDictionarySource.cpp
-        Dictionaries/ExecutableDictionarySource.cpp
-        Dictionaries/ClickHouseDictionarySource.cpp
-        PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
 # Otherwise it will slow down stack traces printing too much.
@@ -493,6 +475,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
         -Wno-zero-as-null-pointer-constant
+        -Wno-covered-switch-default
         -Wno-undef
         -Wno-sign-compare
         -Wno-used-but-marked-unused

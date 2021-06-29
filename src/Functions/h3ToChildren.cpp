@@ -12,7 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -75,7 +75,7 @@ public:
 
         std::vector<H3Index> hindex_vec;
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 parent_hindex = col_hindex->getUInt(row);
             const UInt8 child_resolution = col_resolution->getUInt(row);

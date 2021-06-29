@@ -1,6 +1,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
@@ -22,14 +22,14 @@ namespace
 {
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow : public IExecutableFunctionImpl
+class ExecutableFunctionNow : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow(time_t time_) : time_value(time_) {}
 
     String getName() const override { return "now"; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeDateTime().createColumnConst(
                 input_rows_count,
@@ -40,7 +40,7 @@ private:
     time_t time_value;
 };
 
-class FunctionBaseNow : public IFunctionBaseImpl
+class FunctionBaseNow : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow(time_t time_, DataTypePtr return_type_) : time_value(time_), return_type(return_type_) {}
@@ -58,7 +58,7 @@ public:
         return return_type;
     }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionNow>(time_value);
     }
@@ -71,7 +71,7 @@ private:
     DataTypePtr return_type;
 };
 
-class NowOverloadResolver : public IFunctionOverloadResolverImpl
+class NowOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now";
@@ -83,9 +83,9 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverImplPtr create(ContextPtr) { return std::make_unique<NowOverloadResolver>(); }
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<NowOverloadResolver>(); }
 
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() > 1)
         {
@@ -103,7 +103,7 @@ public:
         return std::make_shared<DataTypeDateTime>();
     }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
         if (arguments.size() > 1)
         {

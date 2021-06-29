@@ -21,7 +21,7 @@ def to_time_zone(self):
     timezones = timezones_range(stress)
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
         for dt in datetimes:
@@ -49,7 +49,7 @@ def to_date_part(self, py_func, ch_func):
             datetimes = select_dates_in_year(year=year, stress=stress)
             timezones = timezones_range(stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     with Step(f"{dt} {tz1}, {tz2}"):
@@ -115,7 +115,7 @@ def to_day_of(self, py_func, ch_func):
             datetimes = select_dates_in_year(year=year, stress=stress)
             timezones = timezones_range(stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     with When(f"{dt} {tz1} -> {tz2}"):
@@ -174,7 +174,7 @@ def to_time_part(self, py_func, ch_func):
             datetimes = select_dates_in_year(year=year, stress=stress)
             timezones = timezones_range(stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     with Step(f"{dt} {tz1} -> {tz2}"):
@@ -234,7 +234,7 @@ def to_unix_timestamp(self):
             datetimes = select_dates_in_year(year=year, stress=stress)
             timezones = timezones_range(stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -260,7 +260,7 @@ def to_start_of_year(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     with Step(f"{dt} {tz1} -> {tz2}"):
@@ -296,7 +296,7 @@ def to_start_of_iso_year(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -323,7 +323,8 @@ def to_start_of_quarter(self):
     for year in years_range(stress):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
-        with When("I check each of the datetimes"):
+
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     with Step(f"{dt} {tz1} -> {tz2}"):
@@ -352,7 +353,8 @@ def to_start_of_month(self):
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
-        with When("I check each of the datetimes"):
+
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     with Step(f"{dt} {tz1} -> {tz2}"):
@@ -381,7 +383,8 @@ def to_monday(self):
     for year in years_range(stress):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
-        with When("I check each of the datetimes"):
+
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     with Step(f"{dt} {tz1} -> {tz2}"):
@@ -409,7 +412,8 @@ def to_start_of_week(self):
     for year in years_range(stress):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
-        with When("I check each of the datetimes"):
+
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     for mode in (0, 1):   # mode - week beginning, either 0 (Sunday) or 1 (Monday)
@@ -439,7 +443,8 @@ def to_start_of_day(self):
     for year in years_range(stress):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
-        with When("I check each of the datetimes"):
+
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -465,7 +470,7 @@ def to_start_of_hour(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -491,7 +496,7 @@ def to_start_of_minute(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -517,7 +522,7 @@ def to_start_of_second(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -540,7 +545,7 @@ def to_start_of_minutes_interval(self, interval, func):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -640,7 +645,7 @@ def to_start_of_interval(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     for interval in intervals_testing_ranges.keys():
@@ -665,7 +670,7 @@ def to_iso(self, func, isocalendar_pos):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -709,7 +714,7 @@ def to_time(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with When(f"{dt} {tz}"):
@@ -735,7 +740,7 @@ def to_relative_quarter_num(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with When(f"{dt} {tz}"):
@@ -760,7 +765,8 @@ def to_relative_week_num(self):
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
-        with When("I check each of the datetimes"):
+
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with When(f"{dt} {tz}"):
@@ -787,7 +793,7 @@ def to_relative_month_num(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with When(f"{dt} {tz}"):
@@ -814,7 +820,7 @@ def to_relative_day_num(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with When(f"{dt} {tz}"):
@@ -840,7 +846,7 @@ def to_relative_time(self, divisor, func):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with When(f"{dt} {tz}"):
@@ -984,7 +990,7 @@ def to_week_year_week(self, clh_func, ret_year):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     for mode in range(0, 10):
@@ -1031,7 +1037,7 @@ def to_yyyymm(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -1059,7 +1065,7 @@ def to_yyyymmdd(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -1087,7 +1093,7 @@ def to_yyyymmddhhmmss(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with Step(f"{dt} {tz}"):
@@ -1113,11 +1119,11 @@ def now(self):
     timezones = timezones_range(stress)
 
     for tz in timezones:
-        with Given("I record current time and localize it"):
+        with Given(f"I record current time and localize it for {tz}"):
             dt = datetime.datetime.now()
             dt = dt.astimezone(pytz.timezone(tz))
 
-        with Step(f"{dt} {tz}"):
+        with Step(f"{dt} in {tz}"):
             with When("I execute query and format its result to string"):
                 r = self.context.node.query(f"SELECT toDateTime64(now(), 0, '{tz}')")
                 query_result = r.output
@@ -1145,7 +1151,7 @@ def today(self):
     timezones = timezones_range(stress)
 
     for tz in timezones:
-        with Given("I record current time and localize it"):
+        with Given(f"I record current time and localize it for {tz}"):
             dt = datetime.datetime.now()
             dt = dt.astimezone(pytz.timezone(tz))
 
@@ -1178,7 +1184,7 @@ def yesterday(self):
     timezones = timezones_range(stress)
 
     for tz in timezones:
-        with Given("I record current time and localize it"):
+        with Given(f"I record current time and localize it for {tz}"):
             dt = datetime.datetime.now()
             dt = dt.astimezone(pytz.timezone(tz))
 
@@ -1219,7 +1225,7 @@ def add_subtract_functions(self, clh_func, py_key, test_range, years_padding=(1,
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I check each of the datetimes"):
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     for incr in test_range:
@@ -1454,7 +1460,7 @@ def format_date_time(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with And("I format the datetimes in every possible way"):
+        with When(f"I format the datetimes in {year} in every possible way"):
             for dt in datetimes:
                 for tz in timezones:
                     for mode in modes:
@@ -1503,7 +1509,8 @@ def time_slots(self):
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
-        with When("I check each of the datetimes"):
+
+        with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for duration in range(1, 100, 9):
                     for size in range(1, 50, 3):
@@ -1529,5 +1536,10 @@ def date_time_funcs(self, node="clickhouse1"):
     """
     self.context.node = self.context.cluster.node(node)
 
-    for scenario in loads(current_module(), Scenario):
-        Scenario(run=scenario, flags=TE)
+    tasks = []
+    with Pool(4) as pool:
+        try:
+            for scenario in loads(current_module(), Scenario):
+                run_scenario(pool, tasks, Scenario(test=scenario))
+        finally:
+            join(tasks)
