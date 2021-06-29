@@ -16,7 +16,7 @@ s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, stru
 **Аргументы**
 
 -   `cluster_name` — имя кластера, используемое для создания набора адресов и параметров подключения к удаленным и локальным серверам.
--   `source` — URL-адрес бакета с указанием пути к файлу. Поддерживает следующие подстановочные символы в режиме "только чтение": `*`, `?`, `{'abc','def'}` и `{N..M}`, где `N`, `M` — числа, `abc`, `def` — строки. Подробнее смотрите в разделе [Символы подстановки](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
+-   `source` — URL файла или нескольких файлов. Поддерживает следующие символы подстановки: `*`, `?`, `{'abc','def'}` и `{N..M}`, где `N`, `M` — числа, `abc`, `def` — строки. Подробнее смотрите в разделе [Символы подстановки](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
 -   `access_key_id` и `secret_access_key` — ключи, указывающие на учетные данные для использования с точкой приема запроса. Необязательные параметры.
 -   `format` — [формат](../../interfaces/formats.md#formats) файла.
 -   `structure` — структура таблицы. Формат `'column1_name column1_type, column2_name column2_type, ...'`.
