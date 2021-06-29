@@ -39,7 +39,7 @@ struct ColumnDescription
     ColumnDescription() = default;
     ColumnDescription(ColumnDescription &&) = default;
     ColumnDescription(const ColumnDescription &) = default;
-    ColumnDescription(String name_, DataTypePtr type_, String comment_ = "");
+    ColumnDescription(String name_, DataTypePtr type_);
 
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }

@@ -102,8 +102,7 @@ std::map<String, ColumnsDescription> fetchTablesColumnsList(
         for (size_t i = 0; i < rows; ++i)
         {
             String table_name = table_name_col[i].safeGet<String>();
-            tables_and_columns[table_name].add(
-                    ColumnDescription(
+            ColumnDescription column_description(
                         column_name_col[i].safeGet<String>(),
                         convertMySQLDataType(
                                 type_support,
@@ -112,8 +111,11 @@ std::map<String, ColumnsDescription> fetchTablesColumnsList(
                                 is_unsigned_col[i].safeGet<UInt64>(),
                                 char_max_length_col[i].safeGet<UInt64>(),
                                 precision_col[i].safeGet<UInt64>(),
-                                scale_col[i].safeGet<UInt64>()),
-                        column_comment_col[i].safeGet<String>()));
+                                scale_col[i].safeGet<UInt64>())
+            );
+            column_description.comment = column_comment_col[i].safeGet<String>();
+            
+            tables_and_columns[table_name].add(column_description);
         }
     }
     return tables_and_columns;
