@@ -13,7 +13,7 @@ namespace DB
 class IMergeTreeReader;
 class UncompressedCache;
 class MarkCache;
-struct PrewhereActions;
+struct PrewhereExprInfo;
 
 /// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
 class MergeTreeBaseSelectProcessor : public SourceWithProgress
@@ -60,7 +60,7 @@ protected:
     StorageMetadataPtr metadata_snapshot;
 
     PrewhereInfoPtr prewhere_info;
-    std::unique_ptr<PrewhereActions> prewhere_actions;
+    std::unique_ptr<PrewhereExprInfo> prewhere_actions;
 
     UInt64 max_block_size_rows;
     UInt64 preferred_block_size_bytes;
