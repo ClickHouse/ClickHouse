@@ -17,6 +17,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
@@ -7385,4 +7386,100 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
     }
     return false;
 }
+
+
+bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(const String & lost_part_name)
+{
+    LOG_INFO(log, "Going to replace lost part {} with empty part", lost_part_name);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage_settings = getSettings();
+
+    constexpr static auto TMP_PREFIX = "tmp_empty_";
+
+    auto new_part_info = MergeTreePartInfo::fromPartName(lost_part_name, format_version);
+    auto block = metadata_snapshot->getSampleBlock();
+
+    DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
+
+    NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    ReservationPtr reservation = reserveSpacePreferringTTLRules(metadata_snapshot, 0, move_ttl_infos, time(nullptr), 0, true);
+    VolumePtr volume = getStoragePolicy()->getVolume(0);
+
+    IMergeTreeDataPart::MinMaxIndex minmax_idx;
+    minmax_idx.update(block, getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+
+    auto new_data_part = createPart(
+        lost_part_name,
+        choosePartType(0, block.rows()),
+        new_part_info,
+        createVolumeFromReservation(reservation, volume),
+        TMP_PREFIX + lost_part_name);
+
+    if (storage_settings->assign_part_uuids)
+        new_data_part->uuid = UUIDHelpers::generateV4();
+
+    new_data_part->setColumns(columns);
+    new_data_part->rows_count = block.rows();
+
+    auto parts_in_partition = getDataPartsPartitionRange(new_part_info.partition_id);
+    if (parts_in_partition.empty())
+    {
+        LOG_WARNING(log, "Empty part {} is not created instead of lost part because there is no parts in partition {}, just DROP this partition.", lost_part_name, new_part_info.partition_id);
+        return false;
+    }
+
+    new_data_part->partition = (*parts_in_partition.begin())->partition;
+    new_data_part->minmax_idx = std::move(minmax_idx);
+    new_data_part->is_temp = true;
+
+
+    SyncGuardPtr sync_guard;
+    if (new_data_part->isStoredOnDisk())
+    {
+        /// The name could be non-unique in case of stale files from previous runs.
+        String full_path = new_data_part->getFullRelativePath();
+
+        if (new_data_part->volume->getDisk()->exists(full_path))
+        {
+            LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
+            new_data_part->volume->getDisk()->removeRecursive(full_path);
+        }
+
+        const auto disk = new_data_part->volume->getDisk();
+        disk->createDirectories(full_path);
+
+        if (getSettings()->fsync_part_directory)
+            sync_guard = disk->getDirectorySyncGuard(full_path);
+    }
+
+    /// This effectively chooses minimal compression method:
+    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
+    auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
+
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+    bool sync_on_insert = storage_settings->fsync_after_insert;
+
+    out.writePrefix();
+    out.write(block);
+    out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
+
+    try
+    {
+        MergeTreeData::Transaction transaction(*this);
+        renameTempPartAndReplace(new_data_part, nullptr, &transaction);
+
+        checkPartChecksumsAndCommit(transaction, new_data_part);
+    }
+    catch (const Exception & ex)
+    {
+        LOG_WARNING(log, "Cannot commit empty part {} with error {}", lost_part_name, ex.displayText());
+        return false;
+    }
+
+    LOG_INFO(log, "Created empty part {} instead of lost part", lost_part_name);
+
+    return true;
+}
+
 }

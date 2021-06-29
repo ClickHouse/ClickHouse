@@ -281,11 +281,6 @@ public:
       */
     void insert(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
-    /** Delete the action with the specified part (as new_part_name) from the queue.
-      * Called for unreachable actions in the queue - old lost parts.
-      */
-    bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
-
     /** Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
       * If queue was not empty load() would not load duplicate records.
       * return true, if we update queue.
