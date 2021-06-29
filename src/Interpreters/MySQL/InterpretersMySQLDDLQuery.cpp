@@ -582,7 +582,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
         if (alter_command->type == MySQLParser::ASTAlterCommand::ADD_COLUMN)
         {
             const auto & additional_columns_name_and_type = getColumnsList(alter_command->additional_columns);
-            const auto & additional_columns = InterpreterCreateQuery::formatColumns(additional_columns_name_and_type);
+            const auto & additional_columns_description = createColumnsDescription(additional_columns_name_and_type, alter_command->additional_columns);
+            const auto & additional_columns = InterpreterCreateQuery::formatColumns(additional_columns_description);
 
             for (size_t index = 0; index < additional_columns_name_and_type.size(); ++index)
             {
@@ -676,7 +677,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 if (!alter_command->old_name.empty())
                     modify_columns.front().name = alter_command->old_name;
 
-                rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns)->children[0];
+                const auto & modify_columns_description = createColumnsDescription(modify_columns, alter_command->additional_columns);
+                rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns_description)->children[0];
 
                 if (!alter_command->column_name.empty())
                 {
