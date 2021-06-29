@@ -77,11 +77,6 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-@pytest.fixture(autouse=True)
-def postgresql_setup_teardown():
-    yield  # run test
-    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-
 
 @pytest.mark.timeout(320)
 def test_initial_load_from_snapshot(started_cluster):

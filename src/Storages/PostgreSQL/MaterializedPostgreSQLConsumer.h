@@ -39,7 +39,7 @@ private:
     /// Read approximarely up to max_block_size changes from WAL.
     bool readFromReplicationSlot();
 
-    void syncTables(std::shared_ptr<pqxx::nontransaction> tx);
+    void syncTables();
 
     String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 

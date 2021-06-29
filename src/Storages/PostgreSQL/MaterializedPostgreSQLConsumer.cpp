@@ -455,7 +455,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 }
 
 
-void MaterializedPostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransaction> tx)
+void MaterializedPostgreSQLConsumer::syncTables()
 {
     try
     {
@@ -488,6 +488,7 @@ void MaterializedPostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransac
 
         LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
 
+        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
         current_lsn = advanceLSN(tx);
         tables_to_sync.clear();
         tx->commit();
@@ -569,12 +570,11 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
 /// Read binary changes from replication slot via COPY command (starting from current lsn in a slot).
 bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
 {
-    std::shared_ptr<pqxx::nontransaction> tx;
     bool slot_empty = true;
 
     try
     {
-        tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
 
         /// Read up to max_block_size rows changes (upto_n_changes parameter). It might return larger number as the limit
         /// is checked only after each transaction block.
@@ -611,6 +611,17 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
             processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
         }
     }
+    catch (const Exception &)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+    catch (const pqxx::broken_connection & e)
+    {
+        LOG_ERROR(log, "Connection error: {}", e.what());
+        connection->tryUpdateConnection();
+        return false;
+    }
     catch (const pqxx::sql_error & e)
     {
         /// For now sql replication interface is used and it has the problem that it registers relcache
@@ -628,14 +639,24 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
         LOG_ERROR(log, "Conversion error: {}", e.what());
         return false;
     }
-    catch (const pqxx::broken_connection & e)
+    catch (const pqxx::statement_completion_unknown & e)
     {
-        LOG_ERROR(log, "Connection error: {}", e.what());
+        LOG_ERROR(log, "Unknown statement completion: {}", e.what());
         return false;
     }
-    catch (const Exception &)
+    catch (const pqxx::in_doubt_error & e)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_ERROR(log, "PostgreSQL library has some doubts: {}", e.what());
+        return false;
+    }
+    catch (const pqxx::internal_error & e)
+    {
+        LOG_ERROR(log, "PostgreSQL library internal error: {}", e.what());
+        return false;
+    }
+    catch (const pqxx::conversion_overrun & e)
+    {
+        LOG_ERROR(log, "PostgreSQL library conversion overflow: {}", e.what());
         return false;
     }
     catch (...)
@@ -653,9 +674,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
     }
 
     if (!tables_to_sync.empty())
-    {
-        syncTables(tx);
-    }
+        syncTables();
 
     return true;
 }
