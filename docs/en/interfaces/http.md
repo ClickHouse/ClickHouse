@@ -498,7 +498,7 @@ Return a message.
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
-<http_handlers>
+</http_handlers>
 ```
 
 ``` bash
