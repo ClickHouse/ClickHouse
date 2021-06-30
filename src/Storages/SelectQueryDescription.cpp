@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
-extern const int LOGICAL_ERROR;
 }
 
 SelectQueryDescription::SelectQueryDescription(const SelectQueryDescription & other)

@@ -11,7 +11,7 @@ ITERATIONS=10
 echo -e "DROP TABLE IF EXISTS mt_${UUID}" | ${CLICKHOUSE_CLIENT} -n > /dev/null
 echo -e "CREATE TABLE mt_${UUID} (i UInt64) ENGINE = MergeTree() PARTITION BY i ORDER BY i" | ${CLICKHOUSE_CLIENT} -n > /dev/null
 
-for i in $(seq 1 $ITERATIONS)
+for _ in $(seq 1 $ITERATIONS)
 do
 	echo -e "INSERT INTO mt_${UUID} VALUES (1),(2),(3),(4)" | ${CLICKHOUSE_CLIENT} -n > /dev/null &
 	echo -e "DROP TABLE IF EXISTS mv_insert_create_race_condition_${UUID}" | ${CLICKHOUSE_CLIENT} -n > /dev/null &
