@@ -1,6 +1,6 @@
 #include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/Serializations/SerializationDate32.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationDate32.h>
 
 namespace DB
 {
@@ -16,7 +16,8 @@ SerializationPtr DataTypeDate32::doGetDefaultSerialization() const
 
 void registerDataTypeDate32(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("Date32", [] { return DataTypePtr(std::make_shared<DataTypeDate32>()); }, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType(
+        "Date32", [] { return DataTypePtr(std::make_shared<DataTypeDate32>()); }, DataTypeFactory::CaseInsensitive);
 }
 
 }

@@ -4,8 +4,6 @@
 
 namespace DB
 {
-
-
 class SerializationDate32 final : public SerializationNumber<Int32>
 {
 public:
@@ -21,5 +19,3 @@ public:
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 };
 }
-
-
