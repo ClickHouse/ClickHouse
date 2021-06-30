@@ -87,6 +87,7 @@
 #include <Common/ProgressIndication.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
+#include <Common/ErrorCodes.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -945,8 +946,12 @@ private:
             {
                 text.resize(embedded_stack_trace_pos);
             }
+            auto exception_code = server_exception->code();
             std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-                      << "Code: " << server_exception->code() << ". " << text << std::endl;
+                      << "Code: " << exception_code;
+            if (auto exception_name = ErrorCodes::getName(exception_code); !exception_name.empty())
+                std::cerr << " (" << exception_name << ")" ;
+            std::cerr << ". " << text << std::endl;
             if (is_interactive)
             {
                 std::cerr << std::endl;
