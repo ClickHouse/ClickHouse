@@ -183,6 +183,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.children = std::move(children);
 
     bool all_const = true;
+    bool is_deterministic = function->isDeterministic();
     ColumnsWithTypeAndName arguments(num_arguments);
 
     for (size_t i = 0; i < num_arguments; ++i)
@@ -205,7 +206,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.function = node.function_base->prepare(arguments);
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-    if (node.function_base->isSuitableForConstantFolding())
+    if (node.function_base->isSuitableForConstantFolding() && is_deterministic)
     {
         ColumnPtr column;
 
