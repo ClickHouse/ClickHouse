@@ -81,6 +81,6 @@ echo '
 ]' | $CLICKHOUSE_CLIENT --query="INSERT INTO json_as_string FORMAT JSONAsString";
 
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM json_as_string";
+$CLICKHOUSE_CLIENT --query="SELECT * FROM json_as_string ORDER BY field";
 $CLICKHOUSE_CLIENT --query="DROP TABLE json_as_string"
 
