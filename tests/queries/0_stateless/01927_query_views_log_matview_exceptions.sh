@@ -47,7 +47,7 @@ function test()
 
     ${CLICKHOUSE_CLIENT} -q "
         SELECT
-            replaceOne(type::String, 'ExceptionWhileProcessing', 'Excep****WhileProcessing')
+            replaceOne(CAST(type AS String), 'ExceptionWhileProcessing', 'Excep****WhileProcessing')
             exception_code
         FROM system.query_log
         WHERE
@@ -62,7 +62,7 @@ function test()
     ${CLICKHOUSE_CLIENT} -q "
         SELECT
             view_name,
-            replaceOne(status::String, 'ExceptionWhileProcessing', 'Excep****WhileProcessing'),
+            replaceOne(CAST(status AS String), 'ExceptionWhileProcessing', 'Excep****WhileProcessing'),
             exception_code,
             view_target,
             view_query
