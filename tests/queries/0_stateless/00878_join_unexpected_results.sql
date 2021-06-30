@@ -33,7 +33,7 @@ select t.*, s.* from t left join s on (s.a=t.a and t.b=s.b and t.a=toInt64(2)) o
 select '-';
 select t.*, s.* from t left join s on (s.a=t.a) order by t.a;
 select '-';
-select t.*, s.* from t left join s on (t.b=toInt64(2) and s.a=t.a) where s.b=2;
+select t.*, s.* from t left join s on (t.b=toInt64(1) and s.a=t.a) where s.b=1;
 select '-';
 select t.*, s.* from t left join s on (t.b=toInt64(2) and s.a=t.a) where t.b=2;
 
@@ -63,7 +63,7 @@ select t.*, s.* from t left join s on (s.a=t.a and t.b=s.b and t.a=toInt64(2)) o
 select '-';
 select t.*, s.* from t left join s on (s.a=t.a) order by t.a;
 select '-';
-select t.*, s.* from t left join s on (t.b=toInt64(2) and s.a=t.a) where s.b=2;
+select t.*, s.* from t left join s on (t.b=toInt64(1) and s.a=t.a) where s.b=1;
 select '-';
 select t.*, s.* from t left join s on (t.b=toInt64(2) and s.a=t.a) where t.b=2;
 
