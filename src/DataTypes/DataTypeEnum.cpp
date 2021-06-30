@@ -262,6 +262,9 @@ void registerDataTypeEnum(DataTypeFactory & factory)
     factory.registerDataType("Enum8", createExact<DataTypeEnum<Int8>>);
     factory.registerDataType("Enum16", createExact<DataTypeEnum<Int16>>);
     factory.registerDataType("Enum", create);
+
+    /// MySQL
+    factory.registerAlias("ENUM", "Enum", DataTypeFactory::CaseInsensitive);
 }
 
 }

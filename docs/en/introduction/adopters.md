@@ -154,5 +154,6 @@ toc_title: Adopters
 | <a href="https://www.hydrolix.io/" class="favicon">Hydrolix</a> | Cloud data platform | Main product | — | — | [Documentation](https://docs.hydrolix.io/guide/query) |
 | <a href="https://www.argedor.com/en/clickhouse/" class="favicon">Argedor</a> | ClickHouse support | — | — | — | [Official website](https://www.argedor.com/en/clickhouse/) |
 | <a href="https://signoz.io/" class="favicon">SigNoz</a> | Observability Platform | Main Product | — | — | [Source code](https://github.com/SigNoz/signoz) |
+| <a href="https://chelpipegroup.com/" class="favicon">ChelPipe Group</a> | Analytics | — | — | — | [Blog post, June 2021](https://vc.ru/trade/253172-tyazhelomu-proizvodstvu-user-friendly-sayt-internet-magazin-trub-dlya-chtpz) |
 
 [Original article](https://clickhouse.tech/docs/en/introduction/adopters/) <!--hide-->
