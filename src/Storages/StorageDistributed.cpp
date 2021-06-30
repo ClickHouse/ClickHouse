@@ -230,7 +230,7 @@ ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, Con
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
-bool isExpressionActionsDeterministics(const ExpressionActionsPtr & actions)
+bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
 {
     for (const auto & action : actions->getActions())
     {
@@ -428,7 +428,7 @@ StorageDistributed::StorageDistributed(
     {
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
-        sharding_key_is_deterministic = isExpressionActionsDeterministics(sharding_key_expr);
+        sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
     }
 
     if (!relative_data_path.empty())
@@ -524,7 +524,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         else
         {
             /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
-            /// (since in this case queries processed separatelly and the initiator is just a proxy in this case).
+            /// (since in this case queries processed separately and the initiator is just a proxy in this case).
             return QueryProcessingStage::Complete;
         }
     }

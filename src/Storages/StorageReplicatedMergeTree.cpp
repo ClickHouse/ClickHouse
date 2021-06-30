@@ -414,7 +414,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                 /// We have to check granularity on other replicas. If it's fixed we
                 /// must create our new replica with fixed granularity and store this
                 /// information in /replica/metadata.
-                other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+                other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
 
                 checkTableStructure(zookeeper_path, metadata_snapshot);
 
@@ -449,7 +449,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         if (!replica_metadata_exists || replica_metadata.empty())
         {
             /// We have to check shared node granularity before we create ours.
-            other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+            other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
 
             ReplicatedMergeTreeTableMetadata current_metadata(*this, metadata_snapshot);
 
@@ -486,7 +486,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 }
 
 
-bool StorageReplicatedMergeTree::checkFixedGranualrityInZookeeper()
+bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper()
 {
     auto zookeeper = getZooKeeper();
     String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
