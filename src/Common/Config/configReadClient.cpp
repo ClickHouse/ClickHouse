@@ -10,7 +10,7 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-/// Checks if file exists without thowing an execption but with message in console.
+/// Checks if file exists without throwing an exception but with message in console.
 bool safeFsExists(const auto & path)
 {
     std::error_code ec;
