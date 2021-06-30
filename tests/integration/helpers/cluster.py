@@ -1489,9 +1489,9 @@ class ClickHouseCluster:
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
 
-                logging.debug("Waiting for ClickHouse start in {instance}, ip: {instance.ip_address}...")
+                logging.debug(f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}...")
                 instance.wait_for_start(start_timeout)
-                logging.debug("ClickHouse {instance} started")
+                logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(instance.ip_address, command=self.client_bin_path)
 

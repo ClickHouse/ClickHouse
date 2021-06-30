@@ -1728,6 +1728,28 @@ Possible values:
 
 Default value: 0.
 
+## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
+
+Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read. 
+
+These functions can be transformed:
+
+-   [length](../../sql-reference/functions/array-functions.md#array_functions-length) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [empty](../../sql-reference/functions/array-functions.md#function-empty) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [isNull](../../sql-reference/operators/index.md#operator-is-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [isNotNull](../../sql-reference/operators/index.md#is-not-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [count](../../sql-reference/aggregate-functions/reference/count.md) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) to read the [keys](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
+-   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) to read the [values](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
+
+Possible values:
+
+-   0 — Optimization disabled.
+-   1 — Optimization enabled.
+
+Default value: `0`.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Type: seconds
