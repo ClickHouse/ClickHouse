@@ -183,6 +183,9 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 
     size_t bytesSize() const override { return CreateRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
+
+    /// During recovery from log we don't rehash ACLs
+    bool need_to_hash_acls = true;
 };
 
 struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
@@ -348,6 +351,48 @@ struct ZooKeeperErrorResponse final : ErrorResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Error; }
 
     size_t bytesSize() const override { return ErrorResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+};
+
+struct ZooKeeperSetACLRequest final : SetACLRequest, ZooKeeperRequest
+{
+    OpNum getOpNum() const override { return OpNum::SetACL; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
+
+    size_t bytesSize() const override { return SetACLRequest::bytesSize() + sizeof(xid); }
+
+    bool need_to_hash_acls = true;
+};
+
+struct ZooKeeperSetACLResponse final : SetACLResponse, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    OpNum getOpNum() const override { return OpNum::SetACL; }
+
+    size_t bytesSize() const override { return SetACLResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+};
+
+struct ZooKeeperGetACLRequest final : GetACLRequest, ZooKeeperRequest
+{
+    OpNum getOpNum() const override { return OpNum::GetACL; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+
+    size_t bytesSize() const override { return GetACLRequest::bytesSize() + sizeof(xid); }
+};
+
+struct ZooKeeperGetACLResponse final : GetACLResponse, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    OpNum getOpNum() const override { return OpNum::GetACL; }
+
+    size_t bytesSize() const override { return GetACLResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
 
 struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest

@@ -9,12 +9,13 @@ import time
 
 import helpers.client
 import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_instances_dir
 
 MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/dummy/configs/config.d/defaultS3.xml')
+
+CONFIG_PATH = os.path.join(SCRIPT_DIR, './{}/dummy/configs/config.d/defaultS3.xml'.format(get_instances_dir()))
 
 
 # Creates S3 bucket for tests and allows anonymous read-write access to it.

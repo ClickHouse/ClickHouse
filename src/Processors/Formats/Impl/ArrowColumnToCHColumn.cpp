@@ -225,18 +225,19 @@ namespace DB
         }
     }
 
+    template <typename DecimalType, typename DecimalArray>
     static void fillColumnWithDecimalData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, IColumn & internal_column)
     {
-        auto & column = assert_cast<ColumnDecimal<Decimal128> &>(internal_column);
+        auto & column = assert_cast<ColumnDecimal<DecimalType> &>(internal_column);
         auto & column_data = column.getData();
         column_data.reserve(arrow_column->length());
 
         for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            auto & chunk = static_cast<arrow::DecimalArray &>(*(arrow_column->chunk(chunk_i)));
+            auto & chunk = static_cast<DecimalArray &>(*(arrow_column->chunk(chunk_i)));
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
-                column_data.emplace_back(chunk.IsNull(value_i) ? Decimal128(0) : *reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
+                column_data.emplace_back(chunk.IsNull(value_i) ? DecimalType(0) : *reinterpret_cast<const DecimalType *>(chunk.Value(value_i))); // TODO: copy column
             }
         }
     }
@@ -335,8 +336,11 @@ namespace DB
             case arrow::Type::TIMESTAMP:
                 fillColumnWithTimestampData(arrow_column, internal_column);
                 break;
-            case arrow::Type::DECIMAL:
-                fillColumnWithDecimalData(arrow_column, internal_column /*, internal_nested_type*/);
+            case arrow::Type::DECIMAL128:
+                fillColumnWithDecimalData<Decimal128, arrow::Decimal128Array>(arrow_column, internal_column /*, internal_nested_type*/);
+                break;
+            case arrow::Type::DECIMAL256:
+                fillColumnWithDecimalData<Decimal256, arrow::Decimal256Array>(arrow_column, internal_column /*, internal_nested_type*/);
                 break;
             case arrow::Type::MAP: [[fallthrough]];
             case arrow::Type::LIST:
@@ -442,10 +446,16 @@ namespace DB
             return makeNullable(getInternalType(arrow_type, nested_type, column_name, format_name));
         }
 
-        if (arrow_type->id() == arrow::Type::DECIMAL)
+        if (arrow_type->id() == arrow::Type::DECIMAL128)
         {
             const auto * decimal_type = static_cast<arrow::DecimalType *>(arrow_type.get());
             return std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->precision(), decimal_type->scale());
+        }
+
+        if (arrow_type->id() == arrow::Type::DECIMAL256)
+        {
+            const auto * decimal_type = static_cast<arrow::DecimalType *>(arrow_type.get());
+            return std::make_shared<DataTypeDecimal<Decimal256>>(decimal_type->precision(), decimal_type->scale());
         }
 
         if (arrow_type->id() == arrow::Type::LIST)

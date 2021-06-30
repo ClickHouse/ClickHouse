@@ -137,14 +137,21 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
     {
         virtual_parts.add(virtual_part_name, nullptr, log);
-        addPartToMutations(virtual_part_name);
+        /// Don't add drop range parts to mutations
+        /// they don't produce any useful parts
+        if (entry->type != LogEntry::DROP_RANGE)
+            addPartToMutations(virtual_part_name);
     }
 
     /// Put 'DROP PARTITION' entries at the beginning of the queue not to make superfluous fetches of parts that will be eventually deleted
     if (entry->type != LogEntry::DROP_RANGE)
+    {
         queue.push_back(entry);
+    }
     else
+    {
         queue.push_front(entry);
+    }
 
     if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
     {
@@ -889,6 +896,10 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
         return false;
 
     if (entry_ptr->replace_range_entry == current.replace_range_entry) /// same partition, don't want to drop ourselves
+        return false;
+
+
+    if (!part_info.contains(MergeTreePartInfo::fromPartName(entry_ptr->replace_range_entry->drop_range_part_name, format_version)))
         return false;
 
     size_t number_of_covered_parts = 0;
