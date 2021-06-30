@@ -115,8 +115,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
                                 ErrorCodes::AMBIGUOUS_COLUMN_NAME);
             data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(table_numbers.first));
             return;
-
         }
+
         if (table_numbers.first != JoinIdentifierPos::NotApplicable && table_numbers.second != JoinIdentifierPos::NotApplicable)
         {
             data.addJoinKeys(left, right, table_numbers);

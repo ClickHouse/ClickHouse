@@ -472,24 +472,21 @@ void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
         on_filter_condition_asts_right.push_back(ast);
 }
 
-ASTPtr TableJoin::buildJoinConditionColumn(const ASTs & on_filter_condition_asts)
+/// Returns all conditions related to one table joined with 'and' function
+static ASTPtr buildJoinConditionColumn(const ASTs & on_filter_condition_asts)
 {
     if (on_filter_condition_asts.empty())
         return nullptr;
 
-    if (on_filter_condition_asts.size() > 1)
-    {
-        auto function = std::make_shared<ASTFunction>();
-        function->name = "and";
-        function->arguments = std::make_shared<ASTExpressionList>();
-        function->children.push_back(function->arguments);
-        function->arguments->children = on_filter_condition_asts;
-
-        return function;
-    }
-    else
+    if (on_filter_condition_asts.size() == 1)
         return on_filter_condition_asts[0];
-
+        
+    auto function = std::make_shared<ASTFunction>();
+    function->name = "and";
+    function->arguments = std::make_shared<ASTExpressionList>();
+    function->children.push_back(function->arguments);
+    function->arguments->children = on_filter_condition_asts;
+    return function;
 }
 
 ASTPtr TableJoin::joinConditionColumn(JoinTableSide side) const
@@ -499,7 +496,6 @@ ASTPtr TableJoin::joinConditionColumn(JoinTableSide side) const
     return buildJoinConditionColumn(on_filter_condition_asts_right);
 }
 
-/// Conditions for left/right table from JOIN ON section, only rows where conditions hold can be joined.
 std::pair<String, String> TableJoin::joinConditionColumnNames() const
 {
     std::pair<String, String> res;

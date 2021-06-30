@@ -82,7 +82,7 @@ private:
     Names key_names_left;
 
     /// Additional conditions for rows to join from JOIN ON section.
-    /// Only rows where condition holds can be joined.
+    /// Only rows where conditions are met can be joined.
     String mask_column_name_left;
     String mask_column_name_right;
 

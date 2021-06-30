@@ -636,7 +636,6 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         /// Save rows with NULL keys
         for (size_t i = 0; !save_nullmap && i < null_map->size(); ++i)
             save_nullmap |= (*null_map)[i];
-
     }
 
     auto join_mask_col = JoinCommon::getColumnAsMask(block, condition_mask_column_name_right);
@@ -937,9 +936,10 @@ NO_INLINE IColumn::Filter joinRightColumns(
         }
 
         bool row_acceptable = !added_columns.isRowFiltered(i);
-        auto find_result = row_acceptable ? key_getter.findKey(map, i, pool) : decltype(key_getter.findKey(map, i, pool))();
+        using FindResult = typename KeyGetter::FindResult;
+        auto find_result = row_acceptable ? key_getter.findKey(map, i, pool) : FindResult();
 
-        if (row_acceptable && find_result.isFound())
+        if (find_result.isFound())
         {
             auto & mapped = find_result.getMapped();
 
