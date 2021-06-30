@@ -1,7 +1,6 @@
 #include <future>
 #include <Poco/Util/Application.h>
 
-#include <common/FunctorToStaticMethodAdaptor.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
@@ -233,13 +232,6 @@ public:
 
     ~CompiledAggregateFunctionsHolder() override
     {
-        std::string symbol_names;
-        for (const auto & [name, _] : compiled_aggregate_functions.compiled_module.function_name_to_symbol)
-        {
-            symbol_names += name;
-            symbol_names += ' ';
-        }
-
         getJITInstance().deleteCompiledModule(compiled_aggregate_functions.compiled_module);
     }
 
@@ -1400,10 +1392,9 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             ++aggregate_functions_destroy_index;
 
             bool is_state = aggregate_functions[destroy_index]->isState();
-            bool destroy_place_after_insert = !is_state;
+            bool destroy_place = !is_state;
 
-            aggregate_functions[destroy_index]->insertResultIntoAndDestroyBatch(
-                places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            aggregate_functions[destroy_index]->insertResultIntoBatch(places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place);
         }
     }
     catch (...)
@@ -1423,7 +1414,10 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         }
 
         size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
-        aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(places.size(), places.data(), offset);
+
+        bool is_state = aggregate_functions[aggregate_functions_destroy_index]->isState();
+        if (!is_state)
+            aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(places.size(), places.data(), offset);
     }
 
     if (exception)

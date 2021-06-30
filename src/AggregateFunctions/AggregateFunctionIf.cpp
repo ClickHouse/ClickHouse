@@ -183,7 +183,6 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        std::cerr << "AggregateFunctionIfNullVariadic::add" << std::endl;
         /// This container stores the columns we really pass to the nested function.
         const IColumn * nested_columns[number_of_arguments];
 
@@ -215,6 +214,8 @@ public:
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
+        /// TODO: Check
+
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         size_t arguments_size = arguments_types.size();
