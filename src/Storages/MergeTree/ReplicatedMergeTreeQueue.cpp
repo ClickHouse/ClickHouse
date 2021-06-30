@@ -52,8 +52,8 @@ void ReplicatedMergeTreeQueue::initialize(const MergeTreeData::DataParts & parts
     std::lock_guard lock(state_mutex);
     for (const auto & part : parts)
     {
-        current_parts.add(part->name, nullptr, log);
-        virtual_parts.add(part->name, nullptr, log);
+        current_parts.add(part->name, nullptr);
+        virtual_parts.add(part->name, nullptr);
     }
 }
 
@@ -136,7 +136,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
 {
     for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
     {
-        virtual_parts.add(virtual_part_name, nullptr, log);
+        virtual_parts.add(virtual_part_name, nullptr);
         /// Don't add drop range parts to mutations
         /// they don't produce any useful parts
         if (entry->type != LogEntry::DROP_RANGE)
@@ -230,7 +230,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
         {
-            current_parts.add(virtual_part_name, nullptr, log);
+            current_parts.add(virtual_part_name, nullptr);
 
             /// These parts are already covered by newer part, we don't have to
             /// mutate it.
@@ -438,7 +438,7 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
                     {
                         auto part_in_current_parts = current_parts.getContainingPart(source_part);
                         if (part_in_current_parts == source_part)
-                            virtual_parts.add(source_part, nullptr, log);
+                            virtual_parts.add(source_part, nullptr);
                     }
                 }
 
