@@ -68,11 +68,11 @@ bool ReplicatedMergeTreeQueue::checkPartInQueueAndGetSourceParts(const String & 
 {
     std::lock_guard lock(state_mutex);
 
-    for (auto it = queue.begin(); it != queue.end(); ++it)
+    for (const auto & entry : queue)
     {
-        if ((*it)->new_part_name == part_name)
+        if (entry->new_part_name == part_name)
         {
-            source_parts.insert(source_parts.end(), (*it)->source_parts.begin(), (*it)->source_parts.end());
+            source_parts.insert(source_parts.end(), entry->source_parts.begin(), entry->source_parts.end());
             return true;
         }
     }
