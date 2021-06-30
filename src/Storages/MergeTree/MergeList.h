@@ -138,6 +138,7 @@ public:
 
     void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
     {
+        std::lock_guard lock{mutex};
         for (auto & merge_element : entries)
         {
             if (merge_element.table_id == table_id
