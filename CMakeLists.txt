@@ -318,7 +318,7 @@ if (WITH_COVERAGE)
         # We use compiler-produced .gcno files which basically contain a list of basic blocks with their bounds.
         # If we track edges coverage, it's harder (and sometimes even impossible) to track basic blocks corresponding
         # to hit/non-hit edges.
-        set(WITH_COVERAGE_FLAGS "-ftest-coverage -fsanitize-coverage=bb,trace-pc-guard,pc-table")
+        set(WITH_COVERAGE_FLAGS "-ftest-coverage -fsanitize-coverage=bb,inline-bool-flag,pc-table")
 
         # Coverage build runs in CI only, so we do not need compatibility
         set(GLIBC_COMPATIBILITY OFF)
@@ -405,7 +405,7 @@ endif ()
 if (WITH_COVERAGE)
     # Release flags, applied to contribs.
     set(WITHOUT_COVERAGE "${CMAKE_CXX_FLAGS} \
-        -fno-test-coverage -O3 -finline-functions -fno-sanitize-coverage=bb,trace-pc-guard,pc-table")
+        -fno-test-coverage -O3 -finline-functions -fno-sanitize-coverage=bb,inline-bool-flag,pc-table")
 endif()
 
 function(build_target_without_coverage target)

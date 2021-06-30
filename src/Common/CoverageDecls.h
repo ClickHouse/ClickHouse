@@ -1,5 +1,5 @@
-#include <queue>
-#include <thread>
+//#include <queue>
+//#include <thread>
 
 /// FreeBSD and Darwin do not have DWARF, so coverage build is explicitly disabled.
 /// Fake classes are introduced to be able to build CH.
@@ -24,17 +24,7 @@ namespace coverage
 
 namespace coverage
 {
-    struct SymbolIndexInstance
-    {
-        struct SymbolPtr { std::string_view name; };
-        static constexpr SymbolPtr sym_ptr;
-
-        struct Ptr { constexpr const SymbolPtr * findSymbol(void*) const { return &sym_ptr; } }; //NOLINT
-        static constexpr Ptr ptr;
-
-        constexpr const Ptr * operator->() const { return &ptr; }
-    };
-
+    struct SymbolIndexInstance {};
     struct SymbolIndex { static constexpr SymbolIndexInstance instance() { return {}; } };
 
     struct Dwarf
@@ -50,9 +40,19 @@ namespace coverage
 
 namespace coverage
 {
+
+enum class Magic : uint32_t
+{
+    ReportHeader = 0xffffffff,
+    TestEntry = 0xcafecafe
+};
+
 class FileWrapper
 {
     FILE * handle {nullptr};
+
+    inline void write(uint32_t s) { fwrite(&s, sizeof(uint32_t), 1, handle); }
+
 public:
     inline FILE * set(const std::string& pathname, const char * mode)
     {
@@ -60,17 +60,21 @@ public:
         return handle;
     }
 
-    inline FILE * file() { return handle; }
+    inline void write(Magic m) { write(static_cast<uint32_t>(m)); }
+    inline void write(size_t s) { write(static_cast<uint32_t>(s)); }
+    inline void write(int s) { write(static_cast<uint32_t>(s)); }
+
+    inline void write(const String& str)
+    {
+        write(str.size());
+        fwrite(str.c_str(), str.size(), 1, handle);
+    }
+
     inline void close() { fclose(handle); handle = nullptr; }
-    inline void write(const fmt::memory_buffer& mb) { fwrite(mb.data(), sizeof(char), mb.size(), handle); }
 };
 
 /**
  * Simplified FreeThreadPool from Common/ThreadPool.h . Uses one external thread.
- * Not intended for general use (some invariants broken).
- *
- * - Does not throw.
- * - Does not use metrics.
  *
  * Own implementation needed as Writer does not use most FreeThreadPool features (and we can save ~20 minutes by
  * using this class instead of the former).
@@ -78,34 +82,34 @@ public:
  * Each test duration is longer than coverage test processing pipeline (converting and dumping to disk), so no
  * more than 1 thread is needed.
  */
-class TaskQueue
-{
-public:
-    template <class J>
-    inline void schedule(J && job)
-    {
-        {
-            std::lock_guard lock(mutex);
-            tasks.emplace(std::forward<J>(job));
-        }
-
-        task_or_shutdown.notify_one();
-    }
-
-    void start();
-    void wait();
-
-    ~TaskQueue() { wait(); }
-
-private:
-    using Task = std::function<void()>;
-
-    std::thread worker;
-    std::queue<Task> tasks;
-
-    std::mutex mutex;
-    std::condition_variable task_or_shutdown;
-
-    bool shutdown {false};
-};
+// class TaskQueue
+// {
+// public:
+//     template <class J>
+//     inline void schedule(J && job)
+//     {
+//         {
+//             std::lock_guard lock(mutex);
+//             tasks.emplace(std::forward<J>(job));
+//         }
+// 
+//         task_or_shutdown.notify_one();
+//     }
+// 
+//     void start();
+//     void wait();
+// 
+//     ~TaskQueue() { wait(); }
+// 
+// private:
+//     using Task = std::function<void()>;
+// 
+//     std::thread worker;
+//     std::queue<Task> tasks;
+// 
+//     std::mutex mutex;
+//     std::condition_variable task_or_shutdown;
+// 
+//     bool shutdown {false};
+// };
 }

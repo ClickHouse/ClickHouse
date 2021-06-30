@@ -2719,7 +2719,7 @@ public:
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
 #if WITH_COVERAGE
-    ::detail::Writer::instance().onClientInitialized();
+    ::coverage::Writer::instance().onClientInitialized();
 #endif
 
     try

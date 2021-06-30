@@ -1425,7 +1425,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_INFO(log, "Ready for connections.");
 
 #if WITH_COVERAGE
-        ::detail::Writer::instance().onServerInitialized();
+        ::coverage::Writer::instance().onServerInitialized();
 #endif
 
         SCOPE_EXIT({

@@ -475,7 +475,6 @@ class IColumn;
     M(Bool, query_plan_filter_push_down, true, "Allow to push down filter by predicate query plan step", 0) \
     \
     M(String, coverage_test_name, "",   "Internal setting, used by coverage runtime", 0) \
-    M(UInt64, coverage_tests_count, 0,  "Internal setting, used by coverage runtime", 0) \
     \
     M(UInt64, limit, 0, "Limit on read rows from the most 'end' result for select query, default 0 means no limit length", 0) \
     M(UInt64, offset, 0, "Offset on read rows from the most 'end' result for select query", 0) \

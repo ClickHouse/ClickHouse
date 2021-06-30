@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <utility>
+#include <thread>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -23,6 +24,9 @@ namespace DB::ErrorCodes
 
 namespace coverage
 {
+static const size_t hardware_concurrency { std::thread::hardware_concurrency() };
+static const String logger_base_name {"Coverage"};
+
 using Exception = DB::Exception;
 
 namespace
@@ -50,49 +54,49 @@ namespace
 }
 }
 
-void TaskQueue::start()
-{
-    worker = std::thread([this]
-    {
-        while (true)
-        {
-            Task task;
-
-            {
-                std::unique_lock lock(mutex);
-
-                task_or_shutdown.wait(lock, [this] { return shutdown || !tasks.empty(); });
-
-                if (tasks.empty())
-                    return;
-
-                task = std::move(tasks.front());
-                tasks.pop();
-            }
-
-            task();
-        }
-    });
-}
-
-void TaskQueue::wait()
-{
-    size_t active_tasks = 0;
-
-    {
-        std::lock_guard lock(mutex);
-        active_tasks = tasks.size();
-        shutdown = true;
-    }
-
-    // If queue has n tasks left, we need to notify it n times
-    // (to process all tasks) and one extra time to shut down.
-    for (size_t i = 0; i < active_tasks + 1; ++i)
-        task_or_shutdown.notify_one();
-
-    if (worker.joinable())
-        worker.join();
-}
+// void TaskQueue::start()
+// {
+//     worker = std::thread([this]
+//     {
+//         while (true)
+//         {
+//             Task task;
+// 
+//             {
+//                 std::unique_lock lock(mutex);
+// 
+//                 task_or_shutdown.wait(lock, [this] { return shutdown || !tasks.empty(); });
+// 
+//                 if (tasks.empty())
+//                     return;
+// 
+//                 task = std::move(tasks.front());
+//                 tasks.pop();
+//             }
+// 
+//             task();
+//         }
+//     });
+// }
+// 
+// void TaskQueue::wait()
+// {
+//     size_t active_tasks = 0;
+// 
+//     {
+//         std::lock_guard lock(mutex);
+//         active_tasks = tasks.size();
+//         shutdown = true;
+//     }
+// 
+//     // If queue has n tasks left, we need to notify it n times
+//     // (to process all tasks) and one extra time to shut down.
+//     for (size_t i = 0; i < active_tasks + 1; ++i)
+//         task_or_shutdown.notify_one();
+// 
+//     if (worker.joinable())
+//         worker.join();
+// }
 
 Writer::Writer()
     :
@@ -111,24 +115,24 @@ Writer& Writer::instance()
     return w;
 }
 
-void Writer::initializeRuntime(const uintptr_t * pc_array, const uintptr_t * pc_array_end)
+void Writer::pcTableCallback(const Addr * start, const Addr * end)
 {
-    const size_t bb_pairs = pc_array_end - pc_array;
+    const size_t bb_pairs = start - end;
     bb_count = bb_pairs / 2;
 
-    bb_cache.resize(bb_count);
+    instrumented_blocks_addrs.resize(bb_count);
+    instrumented_blocks_start_lines.resize(bb_count);
 
     for (size_t i = 0; i < bb_count; i += 2)
         /// Real address is the previous instruction, see implementation in clang:
         /// https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L768
-        bb_cache[i].addr = reinterpret_cast<Addr>(pc_array[i] - 1);
+        instrumented_blocks_addrs[i] = start[i] - 1;
 }
 
-void Writer::hitArray(bool * start, bool * end)
+void Writer::countersCallback(bool * start, bool * end)
 {
     std::fill(start, end, false);
-    test_data = {start, end};
-    bb_count = test_data.size();
+    current = {start, end};
 }
 
 void Writer::deinitRuntime()
@@ -136,17 +140,9 @@ void Writer::deinitRuntime()
     if (is_client)
         return;
 
-    tasks_queue.wait();
-    writeCCRFooter();
     report_file.close();
 
     LOG_INFO(base_log, "Shut down runtime");
-}
-
-void Writer::setTestsCount(size_t tests_count)
-{
-    // This is an upper bound as we don't know which tests will be skipped before running them.
-    tests.resize(tests_count);
 }
 
 void Writer::onClientInitialized()
@@ -167,7 +163,7 @@ void Writer::onServerInitialized()
     if (access(report_path.c_str(), F_OK) == 0)
         throw Exception(DB::ErrorCodes::FILE_ALREADY_EXISTS, "Report file {} already exists", report_path);
 
-    // fwrite also cannot be called before server initialization (some internal state is left uninitialized if we
+    // fwrite also can't be called before server initialization (some internal state is left uninitialized if we
     // try to write file in PC table callback).
     if (report_file.set(report_path, "w") == nullptr)
         throw Exception(DB::ErrorCodes::CANNOT_OPEN_FILE,
@@ -175,7 +171,7 @@ void Writer::onServerInitialized()
     else
         LOG_INFO(base_log, "Opened report file {}", report_path);
 
-    tasks_queue.start();
+    //tasks_queue.start();
 
     symbolizeInstrumentedData();
 }
@@ -189,151 +185,20 @@ void Writer::symbolizeInstrumentedData()
     symbolizeAddrsIntoLocalCaches(caches);
     mergeIntoGlobalCache(caches);
 
-    if (const size_t sf_count = source_files_cache.size(); sf_count < 1000)
+    if (const size_t sf_count = source_files.size(); sf_count < 1000)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR,
             "Not enough source files ({} < 1000), must be a symbolizer bug", sf_count);
     else
         LOG_INFO(base_log, "Found {} source files", sf_count);
 
-    writeCCRHeader();
+    writeReportHeader();
 
     // Testing script in docker (/docker/test/coverage/run.sh) waits for this message and starts tests afterwards.
     // If we place it before function return, concurrent writes to report file will happen and data will corrupt.
     LOG_INFO(base_log, "Symbolized all addresses");
 }
 
-void Writer::onChangedTestName(std::string old_test_name)
-{
-    /// Note: this function slows down setSetting, so it should be as fast as possible.
-
-    if (is_client)
-        return;
-
-    if (test_index == 0) // Processing the first test
-    {
-        tests[0].name = std::move(old_test_name);
-        ++test_index;
-        return;
-    }
-
-    const size_t test_that_will_run_next = test_index;
-    const size_t test_that_finished = test_that_will_run_next - 1;
-    ++test_index;
-
-    EdgesHit edges_hit_swap(edges_count, 0);
-
-    edges_hit.swap(edges_hit_swap);
-
-    tasks_queue.schedule([this, test_that_finished, edges = std::move(edges_hit_swap)]
-    {
-        TestData & data = tests[test_that_finished];
-        data.test_index = test_that_finished;
-        data.log = &Poco::Logger::get(logger_base_name + "." + data.name);
-        prepareDataAndDump(data, edges);
-    });
-
-    if (!old_test_name.empty())
-        tests[test_that_will_run_next].name = std::move(old_test_name);
-    else
-        deinitRuntime();
-}
-
-void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
-{
-    LOG_INFO(test_data.log, "Started processing test entry");
-
-    test_data.data.resize(source_files_cache.size());
-
-    for (size_t bb_index = 0; bb_index < bb_count; ++bb_index)
-        if (hits[bb_index]) //char to bool conversion
-            test_data.data[bb_cache[bb_index].source_index].push_back(bb_index);
-
-    writeCCREntry(test_data);
-}
-
-void Writer::writeCCRHeader()
-{
-    /**
-     * FILES <source files count>
-     * <source file 1 absolute path> <functions> <lines>
-     * <sf 1 function 1 mangled name> <function start line> <function edge index>
-     * <sf 1 function 2 mangled name> <function start line> <function edge index>
-     * <sf 1 instrumented line 1>
-     * <sf 1 instrumented line 2>
-     * <source file 2 path> <functions> <lines>
-     */
-    fmt::print(report_file.file(), "FILES {}\n", source_files_cache.size());
-
-    for (const SourceFileInfo& file : source_files_cache)
-    {
-        fmt::print(report_file.file(), "{} {} {}\n",
-            file.relative_path, file.instrumented_functions.size(), file.instrumented_lines.size());
-
-        for (EdgeIndex index : file.instrumented_functions)
-        {
-            // Note: need of function edge index: multiple functions may be called in single line
-            const EdgeInfo& func_info = edges_cache[index];
-            fmt::print(report_file.file(), "{} {} {}\n", func_info.name, func_info.line, index);
-        }
-
-        if (!file.instrumented_lines.empty())
-            fmt::print(report_file.file(), "{}\n", fmt::join(file.instrumented_lines, "\n"));
-    }
-
-    fflush(report_file.file());
-
-    LOG_INFO(base_log, "Wrote CCR header");
-}
-
-void Writer::writeCCREntry(const Writer::TestData& test_data)
-{
-    /// Frequent writes to file are better than a single huge write, so don't use fmt::memory_buffer here.
-
-    /**
-     * TEST
-     * SOURCE <source file id>
-     * <function 1 edge index> <function 2 edge index>
-     * <line 1 number> <line 2 number>
-     */
-    fmt::print(report_file.file(), "TEST\n");
-
-    for (size_t i = 0; i < test_data.data.size(); ++i)
-    {
-        const TestData::SourceData& source = test_data.data[i];
-        const auto& funcs = source.functions_hit;
-        const auto& lines = source.lines_hit;
-
-        if (funcs.empty() && lines.empty())
-            continue;
-
-        fmt::print(report_file.file(), "SOURCE {}\n{}\n{}\n", i, fmt::join(funcs, " "), fmt::join(lines, " "));
-    }
-
-    LOG_INFO(test_data.log, "Finished processing test entry");
-}
-
-void Writer::writeCCRFooter()
-{
-    fmt::memory_buffer mb;
-
-    /**
-     * TESTS // Note -- no "tests_count", test names are till end of file.
-     * <test 1 name>
-     * <test 2 name>
-     */
-
-    fmt::format_to(mb, "TESTS\n");
-
-    for (const auto& test : tests)
-    {
-        if (test.name.empty()) break;
-        fmt::format_to(mb, "{}\n", test.name);
-    }
-
-    report_file.write(mb);
-}
-
-void symbolizeAddrsIntoLocalCaches(LocalCaches& caches);
+void Writer::symbolizeAddrsIntoLocalCaches(LocalCaches& caches)
 {
     // Each worker symbolizes an address range. Ranges are distributed uniformly.
 
@@ -352,9 +217,9 @@ void symbolizeAddrsIntoLocalCaches(LocalCaches& caches);
 
             for (size_t i = start_index; i < end_index; ++i)
             {
-                const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(uintptr_t(bb_cache[i].addr));
-
-                SourcePath src_path = loc.file.toString();
+                const BBIndex bb_index = static_cast<BBIndex>(i);
+                const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(instrumented_blocks_addrs[i]);
+                const SourcePath src_path = loc.file.toString();
 
                 if (src_path.empty())
                     throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Internal symbolizer error");
@@ -362,12 +227,12 @@ void symbolizeAddrsIntoLocalCaches(LocalCaches& caches);
                 if (i % 4096 == 0)
                     LOG_INFO(log, "{}/{}, file: {}", i - start_index, end_index - start_index, src_path);
 
-                const int line = static_cast<int>(loc.line);
+                const Line line = static_cast<Line>(loc.line);
 
                 if (auto cache_it = cache.find(src_path); cache_it != cache.end())
-                    cache_it->second.emplace(line, edge_index);
+                    cache_it->second.push_back(IndexAndLine{bb_index, line});
                 else
-                    cache[std::move(src_path)] = {{line, edge_index}};
+                    cache[src_path] = {{bb_index, line}};
             }
         });
 
@@ -391,13 +256,61 @@ void Writer::mergeIntoGlobalCache(const LocalCaches& caches)
             {
                 source_index = path_to_index.size();
                 path_to_index.emplace(source_path, source_index);
-                source_files_cache.emplace_back(source_path);
+                source_files.push_back(SourceInfo{source_path});
             }
 
-            auto& instrumented_lines = source_files_cache[source_index].instrumented;
+            Blocks& instrumented = source_files[source_index].instrumented_blocks;
 
             for (const auto [bb_index, start_line] : symbolized_data)
-                bb_cache[bb.index] = { bb_cache[bb.index].addr, start_line, source_index };
+            {
+                instrumented_blocks_start_lines[bb_index] = start_line;
+                instrumented.push_back(bb_index);
+            }
         }
+}
+
+void Writer::onChangedTestName(String old_test_name)
+{
+    // String is passed by value as it's swapped
+    // Note: this function slows down setSetting, so it should be as fast as possible.
+
+    if (is_client)
+        return;
+
+    old_test_name.swap(test_name); // now old_test_name contains finished test name, test_name contains next test name
+
+    if (old_test_name.empty()) // Processing first test
+        return;
+
+    report_file.write(Magic::TestEntry);
+    report_file.write(old_test_name);
+
+    for (size_t i = 0; i < bb_count; ++i)
+        if (current[i])
+        {
+            current[i] = false;
+            report_file.write(i);
+        }
+
+    if (test_name.empty()) // Finished testing
+        deinitRuntime();
+}
+
+void Writer::writeReportHeader()
+{
+    report_file.write(Magic::ReportHeader);
+    report_file.write(source_files.size());
+
+    for (const SourceInfo& file : source_files)
+    {
+        report_file.write(file.path);
+        report_file.write(file.instrumented_blocks.size());
+
+        for (BBIndex index : file.instrumented_blocks)
+        {
+            report_file.write(index);
+            report_file.write(instrumented_blocks_start_lines[index]);
+        }
+    }
 }
 }
