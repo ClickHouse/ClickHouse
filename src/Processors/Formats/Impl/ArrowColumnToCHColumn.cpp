@@ -52,6 +52,7 @@ namespace DB
             {arrow::Type::DOUBLE, "Float64"},
 
             {arrow::Type::BOOL, "UInt8"},
+            {arrow::Type::DATE32, "Date"},
             {arrow::Type::DATE32, "Date32"},
             {arrow::Type::DATE64, "DateTime"},
             {arrow::Type::TIMESTAMP, "DateTime"},
@@ -145,7 +146,34 @@ namespace DB
     }
 
 /// Arrow stores Parquet::DATE in Int32, while ClickHouse stores Date in UInt16. Therefore, it should be checked before saving
-    static void fillColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, IColumn & internal_column)
+static void fillColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, IColumn & internal_column)
+{
+    PaddedPODArray<UInt16> & column_data = assert_cast<ColumnVector<UInt16> &>(internal_column).getData();
+    column_data.reserve(arrow_column->length());
+
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    {
+        arrow::Date32Array & chunk = static_cast<arrow::Date32Array &>(*(arrow_column->chunk(chunk_i)));
+
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+        {
+            UInt32 days_num = static_cast<UInt32>(chunk.Value(value_i));
+            if (days_num > DATE_LUT_MAX_DAY_NUM)
+            {
+                // TODO: will it rollback correctly?
+                throw Exception
+                    {
+                        fmt::format("Input value {} of a column \"{}\" is greater than max allowed Date value, which is {}", days_num, internal_column.getName(), DATE_LUT_MAX_DAY_NUM),
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+                    };
+            }
+
+            column_data.emplace_back(days_num);
+        }
+    }
+}
+
+    static void fillDate32ColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, IColumn & internal_column)
     {
         PaddedPODArray<Int32> & column_data = assert_cast<ColumnVector<Int32> &>(internal_column).getData();
         column_data.reserve(arrow_column->length());
@@ -327,7 +355,14 @@ namespace DB
                 fillColumnWithBooleanData(arrow_column, internal_column);
                 break;
             case arrow::Type::DATE32:
-                fillColumnWithDate32Data(arrow_column, internal_column);
+                if (WhichDataType(internal_column.getDataType()).isDate())
+                {
+                    fillColumnWithDate32Data(arrow_column, internal_column);
+                }
+                else
+                {
+                    fillDate32ColumnWithDate32Data(arrow_column, internal_column);
+                }
                 break;
             case arrow::Type::DATE64:
                 fillColumnWithDate64Data(arrow_column, internal_column);
@@ -511,7 +546,18 @@ namespace DB
         }
 
         if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
-                                                              [=](auto && elem) { return elem.first == arrow_type->id(); });
+                [=](auto && elem) {
+                    auto which = WhichDataType(column_type);
+                    if (!which.isDateOrDate32())
+                    {
+                        return elem.first == arrow_type->id();
+                    }
+                    else
+                    {
+                        return (strcmp(elem.second, "Date") != 0 && which.isDate())
+                            || (strcmp(elem.second, "Date32") != 0 && which.isDate32());
+                    }
+                });
             internal_type_it != arrow_type_to_internal_type.end())
         {
             return DataTypeFactory::instance().get(internal_type_it->second);

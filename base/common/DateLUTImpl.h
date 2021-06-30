@@ -925,7 +925,7 @@ public:
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return LUTIndex(0);
         auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
-        Int32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
+        UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
         return LUTIndex{index < DATE_LUT_SIZE ? index : DATE_LUT_SIZE - 1};
     }
 

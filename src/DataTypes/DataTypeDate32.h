@@ -4,7 +4,6 @@
 
 namespace DB
 {
-
 class DataTypeDate32 final : public DataTypeNumberBase<Int32>
 {
 public:
@@ -22,4 +21,3 @@ protected:
     SerializationPtr doGetDefaultSerialization() const override;
 };
 }
-
