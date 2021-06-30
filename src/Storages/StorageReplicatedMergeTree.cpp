@@ -414,7 +414,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                 /// We have to check granularity on other replicas. If it's fixed we
                 /// must create our new replica with fixed granularity and store this
                 /// information in /replica/metadata.
-                other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+                other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
 
                 checkTableStructure(zookeeper_path, metadata_snapshot);
 
@@ -449,7 +449,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         if (!replica_metadata_exists || replica_metadata.empty())
         {
             /// We have to check shared node granularity before we create ours.
-            other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+            other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
 
             ReplicatedMergeTreeTableMetadata current_metadata(*this, metadata_snapshot);
 
@@ -486,7 +486,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 }
 
 
-bool StorageReplicatedMergeTree::checkFixedGranualrityInZookeeper()
+bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper()
 {
     auto zookeeper = getZooKeeper();
     String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
@@ -558,6 +558,14 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
         }
 
+        if (partial_shutdown_called)
+            throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
+                ErrorCodes::UNFINISHED);
+
+        /// Replica inactive, don't check mutation status
+        if (!inactive_replicas.empty() && inactive_replicas.count(replica))
+            continue;
+
         /// At least we have our current mutation
         std::set<String> mutation_ids;
         mutation_ids.insert(mutation_id);
@@ -566,10 +574,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         /// they will happen on each replica, so we can check only in-memory info.
         auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
         checkMutationStatus(mutation_status, mutation_ids);
-
-        if (partial_shutdown_called)
-            throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
-                ErrorCodes::UNFINISHED);
     }
 
     if (!inactive_replicas.empty())
@@ -2196,11 +2200,6 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
-    if (entry.detach)
-        LOG_DEBUG(log, "Detaching parts.");
-    else
-        LOG_DEBUG(log, "Removing parts.");
-
     /// Delete the parts contained in the range to be deleted.
     /// It's important that no old parts remain (after the merge), because otherwise,
     ///  after adding a new replica, this new replica downloads them, but does not delete them.
@@ -2212,7 +2211,14 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     {
         auto data_parts_lock = lockParts();
         parts_to_remove = removePartsInRangeFromWorkingSet(drop_range_info, true, data_parts_lock);
+        if (parts_to_remove.empty())
+            return;
     }
+
+    if (entry.detach)
+        LOG_DEBUG(log, "Detaching parts.");
+    else
+        LOG_DEBUG(log, "Removing parts.");
 
     if (entry.detach)
     {
@@ -3155,30 +3161,35 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     });
 }
 
-std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
+bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & executor)
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
-        return {};
+        return false;
 
     /// This object will mark the element of the queue as running.
     ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry = selectQueueEntry();
 
     if (!selected_entry)
-        return {};
-
-    PoolType pool_type;
+        return false;
 
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
     if (selected_entry->log_entry->type == LogEntry::GET_PART)
-        pool_type = PoolType::FETCH;
-    else
-        pool_type = PoolType::MERGE_MUTATE;
-
-    return JobAndPool{[this, selected_entry] () mutable
     {
-        return processQueueEntry(selected_entry);
-    }, pool_type};
+        executor.execute({[this, selected_entry] () mutable
+        {
+            return processQueueEntry(selected_entry);
+        }, PoolType::FETCH});
+        return true;
+    }
+    else
+    {
+        executor.execute({[this, selected_entry] () mutable
+        {
+            return processQueueEntry(selected_entry);
+        }, PoolType::MERGE_MUTATE});
+        return true;
+    }
 }
 
 
@@ -6992,15 +7003,16 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         getClearBlocksInPartitionOps(ops, *zookeeper, part_info.partition_id, part_info.min_block, part_info.max_block);
         size_t clear_block_ops_size = ops.size();
 
-        /// Set fake level to treat this part as virtual in queue.
-        auto drop_part_info = part->info;
-        drop_part_info.level = MergeTreePartInfo::MAX_LEVEL;
-
         /// If `part_name` is result of a recent merge and source parts are still available then
         /// DROP_RANGE with detach will move this part together with source parts to `detached/` dir.
         entry.type = LogEntry::DROP_RANGE;
         entry.source_replica = replica_name;
-        entry.new_part_name = getPartNamePossiblyFake(format_version, drop_part_info);
+        /// We don't set fake drop level (999999999) for the single part DROP_RANGE.
+        /// First of all we don't guarantee anything other than the part will not be
+        /// active after DROP PART, but covering part (without data of dropped part) can exist.
+        /// If we add part with 9999999 level than we can break invariant in virtual_parts of
+        /// the queue.
+        entry.new_part_name = getPartNamePossiblyFake(format_version, part->info);
         entry.detach = detach;
         entry.create_time = time(nullptr);
 

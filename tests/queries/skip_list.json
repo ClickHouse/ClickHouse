@@ -18,7 +18,6 @@
         "functions_bad_arguments", /// Too long for TSan
         "01603_read_with_backoff_bug", /// Too long for TSan
         "01646_system_restart_replicas_smoke", /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
-        "01641_memory_tracking_insert_optimize", /// INSERT lots of rows is too heavy for TSan
         "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
     "address-sanitizer": [
@@ -71,8 +70,7 @@
         "hyperscan",
         "01193_metadata_loading",
         "01473_event_time_microseconds",
-        "01396_inactive_replica_cleanup_nodes",
-        "01641_memory_tracking_insert_optimize" /// INSERT lots of rows is too heavy in debug build
+        "01396_inactive_replica_cleanup_nodes"
     ],
     "unbundled-build": [
         "00429",
@@ -112,7 +110,8 @@
         "00738_lock_for_inner_table",
         "01153_attach_mv_uuid",
         /// Sometimes cannot lock file most likely due to concurrent or adjacent tests, but we don't care how it works in Ordinary database.
-        "rocksdb"
+        "rocksdb",
+        "01914_exchange_dictionaries" /// Requires Atomic database
     ],
     "database-replicated": [
         /// Unclassified
@@ -297,6 +296,7 @@
         "01192_rename_database_zookeeper",
         "01213_alter_rename_column",
         "01232_untuple",
+        "01240_join_get_or_null",
         "01244_optimize_distributed_group_by_sharding_key",
         "01254_dict_load_after_detach_attach",
         "01256_misspell_layout_name_podshumok",
@@ -510,7 +510,17 @@
         "01892_setting_limit_offset_distributed",
         "01902_dictionary_array_type",
         "01903_ssd_cache_dictionary_array_type",
-        "01905_to_json_string"
+        "01905_to_json_string",
+        "01913_fix_column_transformer_replace_format",
+        "01913_if_int_decimal",
+        "01913_join_push_down_bug",
+        "01921_with_fill_with_totals",
+        "01924_argmax_bitmap_state",
+        "01913_replace_dictionary",
+        "01914_exchange_dictionaries",
+        "01915_create_or_replace_dictionary",
+        "01913_names_of_tuple_literal",
+        "01925_merge_prewhere_table"
     ],
     "parallel":
     [
@@ -836,6 +846,11 @@
         "01870_modulo_partition_key",
         "01870_buffer_flush", // creates database
         "01889_postgresql_protocol_null_fields",
-        "01889_check_row_policy_defined_using_user_function"
+        "01889_check_row_policy_defined_using_user_function",
+        "01921_concurrent_ttl_and_normal_merges_zookeeper_long", // heavy test, better to run sequentially
+        "01913_replace_dictionary",
+        "01914_exchange_dictionaries",
+        "01915_create_or_replace_dictionary",
+        "01925_test_storage_merge_aliases"
     ]
 }

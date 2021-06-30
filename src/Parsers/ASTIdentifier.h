@@ -70,23 +70,23 @@ private:
 
 class ASTTableIdentifier : public ASTIdentifier
 {
-    public:
-        explicit ASTTableIdentifier(const String & table_name, std::vector<ASTPtr> && name_params = {});
-        explicit ASTTableIdentifier(const StorageID & table_id, std::vector<ASTPtr> && name_params = {});
-        ASTTableIdentifier(const String & database_name, const String & table_name, std::vector<ASTPtr> && name_params = {});
+public:
+    explicit ASTTableIdentifier(const String & table_name, std::vector<ASTPtr> && name_params = {});
+    explicit ASTTableIdentifier(const StorageID & table_id, std::vector<ASTPtr> && name_params = {});
+    ASTTableIdentifier(const String & database_name, const String & table_name, std::vector<ASTPtr> && name_params = {});
 
-        String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
-        ASTPtr clone() const override;
+    String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
+    ASTPtr clone() const override;
 
-        UUID uuid = UUIDHelpers::Nil;  // FIXME(ilezhankin): make private
+    UUID uuid = UUIDHelpers::Nil;  // FIXME(ilezhankin): make private
 
-        StorageID getTableId() const;
-        String getDatabaseName() const;
+    StorageID getTableId() const;
+    String getDatabaseName() const;
 
-        // FIXME: used only when it's needed to rewrite distributed table name to real remote table name.
-        void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this
+    // FIXME: used only when it's needed to rewrite distributed table name to real remote table name.
+    void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this
 
-        void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 
 
