@@ -186,6 +186,7 @@ def test_column_comments_for_mysql_database_engine(started_cluster):
         assert 'add_column comment' in clickhouse_node.query(
             "SELECT comment FROM system.columns WHERE table = 'test_table' AND database = 'test_database'")
 
+        clickhouse_node.query("DROP DATABASE test_database")
         mysql_node.query("DROP DATABASE test_database")
 
 
