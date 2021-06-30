@@ -438,7 +438,7 @@ ASTPtr & ASTSelectQuery::getExpression(Expression expr)
     return children[positions[expr]];
 }
 
-void ASTSelectQuery::setFinal()
+void ASTSelectQuery::setFinal() // NOLINT method can be made const
 {
     auto & tables_in_select_query = tables()->as<ASTTablesInSelectQuery &>();
 
