@@ -829,7 +829,8 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         log,
         requested_num_streams,
         result.index_stats,
-        true);
+        true,
+        false);
 
     size_t sum_marks_pk = total_marks_pk;
     for (const auto & stat : result.index_stats)
