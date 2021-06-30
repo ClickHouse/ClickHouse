@@ -34,13 +34,13 @@ def remove_part_from_disk(node, table, part_name):
 def test_lost_part_same_replica(start_cluster):
     for node in [node1, node2]:
         node.query(
-            "CREATE TABLE mt0 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t', '{}') ORDER BY tuple()".format(node.name))
+            "CREATE TABLE mt0 (id UInt64, date Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/t', '{}') ORDER BY tuple() PARTITION BY date".format(node.name))
 
     node1.query("SYSTEM STOP MERGES mt0")
     node2.query("SYSTEM STOP REPLICATION QUEUES")
 
     for i in range(5):
-        node1.query("INSERT INTO mt0 VALUES ({})".format(i))
+        node1.query("INSERT INTO mt0 VALUES ({}, toDate('2020-10-01'))".format(i))
 
     for i in range(20):
         parts_to_merge = node1.query("SELECT parts_to_merge FROM system.replication_queue")
@@ -73,12 +73,12 @@ def test_lost_part_same_replica(start_cluster):
 
     assert node1.contains_in_log("Created empty part"), "Seems like empty part {} is not created or log message changed".format(victim_part_from_the_middle)
 
-    assert node1.query("SELECT COUNT () FROM mt0") == "4\n"
+    assert node1.query("SELECT COUNT() FROM mt0") == "4\n"
 
     node2.query("SYSTEM START REPLICATION QUEUES")
 
-    assert_eq_with_retry(node2, "SELECT COUNT () FROM mt0", "4")
-    assert_eq_with_retry(node2, "SELECT COUNT () FROM system.replication_queue", "0")
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM mt0", "4")
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM system.replication_queue", "0")
 
 def test_lost_part_other_replica(start_cluster):
     for node in [node1, node2]:
@@ -121,13 +121,13 @@ def test_lost_part_other_replica(start_cluster):
 
     assert node1.contains_in_log("Created empty part"), "Seems like empty part {} is not created or log message changed".format(victim_part_from_the_middle)
 
-    assert_eq_with_retry(node2, "SELECT COUNT () FROM mt1", "4")
-    assert_eq_with_retry(node2, "SELECT COUNT () FROM system.replication_queue", "0")
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM mt1", "4")
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM system.replication_queue", "0")
 
     node1.query("SYSTEM START MERGES mt1")
 
-    assert_eq_with_retry(node1, "SELECT COUNT () FROM mt1", "4")
-    assert_eq_with_retry(node1, "SELECT COUNT () FROM system.replication_queue", "0")
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM mt1", "4")
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM system.replication_queue", "0")
 
 def test_lost_part_mutation(start_cluster):
     for node in [node1, node2]:
@@ -166,13 +166,13 @@ def test_lost_part_mutation(start_cluster):
 
     assert_eq_with_retry(node1, "SELECT COUNT() FROM mt2", "1")
     assert_eq_with_retry(node1, "SELECT SUM(id) FROM mt2", "777")
-    assert_eq_with_retry(node1, "SELECT COUNT () FROM system.replication_queue", "0")
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM system.replication_queue", "0")
 
     node2.query("SYSTEM START REPLICATION QUEUES")
 
     assert_eq_with_retry(node2, "SELECT COUNT() FROM mt2", "1")
     assert_eq_with_retry(node2, "SELECT SUM(id) FROM mt2", "777")
-    assert_eq_with_retry(node2, "SELECT COUNT () FROM system.replication_queue", "0")
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM system.replication_queue", "0")
 
 
 def test_lost_last_part(start_cluster):
@@ -208,4 +208,4 @@ def test_lost_last_part(start_cluster):
     node1.query("ALTER TABLE mt3 DROP PARTITION ID 'all'")
 
     assert_eq_with_retry(node1, "SELECT COUNT() FROM mt3", "0")
-    assert_eq_with_retry(node1, "SELECT COUNT () FROM system.replication_queue", "0")
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM system.replication_queue", "0")
