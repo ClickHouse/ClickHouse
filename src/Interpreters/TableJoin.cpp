@@ -213,7 +213,7 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
 {
     const Names & left_keys = keyNamesLeft();
     const Names & right_keys = keyNamesRight();
-    NameSet required_keys(requiredRightKeys().begin(), requiredRightKeys().end());
+    NameSet required_keys = requiredRightKeys();
     Block required_right_keys;
 
     for (size_t i = 0; i < right_keys.size(); ++i)
@@ -230,7 +230,6 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
 
     return required_right_keys;
 }
-
 
 bool TableJoin::leftBecomeNullable(const DataTypePtr & column_type) const
 {
