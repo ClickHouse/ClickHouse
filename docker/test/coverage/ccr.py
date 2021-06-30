@@ -456,33 +456,37 @@ class CCR:
     def __init__(self, args):
         self.args = args
 
-        self.tests_names = []
         self.files = []
+        self.bb = {}
         self.tests = []
 
         self.gcno = GCNO(args.gcno_dir)
 
         print(len(self.gcno.sf_to_funcs), "source files in gcno files")
 
-        with open(self.args.report_file, "r") as f:
+        with open(self.args.report_file, "rb") as f:
             self.read(f)
             self.generate_html()
+
+    class Magic:
+        ReportHeader = 0xffffffff
+        TestEntry = 0xcafecafe
 
     def read(self, report_file):
         self.read_header(report_file)
         self.read_tests(report_file)
-
-        # remove \n
-        self.tests_names = list(map(lambda x: x[:-1], report_file.readlines()))
-
-        if len(self.tests_names) != len(self.tests):
-            raise Exception("Corrupt report file")
 
         print("{} tests, {} source files".format(
             len(self.tests), len(self.files)))
 
         global tests_count
         tests_count = len(self.tests)
+
+    def read_uint32(self, f):
+        return 0
+
+    def read_string(self, f):
+        return ""
 
     def read_header(self, f):
         """
@@ -493,24 +497,26 @@ class CCR:
         source_files_map = []
         sf_index = 0
 
-        files_count = int(f.readline().split()[1])
+        files_count = self.read_uint32(f)
 
         for _ in range(files_count):
-            file_path, funcs_count, edges_count = f.readline().split()
+            file_path = self.read_string(f)
+            bb_count = self.read_uint32(f)
+
             file_path = os.path.normpath(file_path)
+            file_blocks = []
 
-            funcs = {}
+            for _ in range(bb_count):
+                bb_index = self.read_uint32(f)
+                bb_start_line = self.read_uint32(f)
 
-            for _ in range(int(funcs_count)):
-                mangled_name, start_line, edge_index = f.readline().split()
-                funcs[int(edge_index)] = mangled_name, int(start_line)
-
-            edges = [int(f.readline()) for _ in range(int(edges_count))]
+                self.bb[bb_index] = bb_start_line
+                file_blocks.append(bb_index)
 
             if "contrib/" in file_path:
                 source_files_map.append(-1)
             else:
-                self.files.append((file_path, funcs, edges))
+                self.files.append((file_path, file_blocks))
 
                 source_files_map.append(sf_index)
                 sf_index += 1

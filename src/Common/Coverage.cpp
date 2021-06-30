@@ -27,32 +27,7 @@ namespace coverage
 static const size_t hardware_concurrency { std::thread::hardware_concurrency() };
 static const String logger_base_name {"Coverage"};
 
-using Exception = DB::Exception;
-
-namespace
-{
-// Unused in Darwin and FreeBSD builds.
-[[maybe_unused]] inline SymbolIndexInstance getInstanceAndInitGlobalCounters()
-{
-    /**
-     * Writer is a singleton, so it initializes statically.
-     * SymbolIndex uses a MMapReadBufferFromFile which uses ProfileEvents.
-     * If no thread was found in the events profiler, a global variable global_counters is used.
-     *
-     * This variable may get initialized after Writer (static initialization order fiasco).
-     * In fact, __sanitizer_cov_trace_pc_guard_init is called before global_counters init.
-     *
-     * We can't use constinit on that variable as it has a shared_ptr on it, so we just
-     * ultimately initialize it before getting the instance.
-     *
-     * We can't initialize global_counters in ProfileEvents.cpp to nullptr as in that case it will become nullptr.
-     * So we just initialize it twice (here and in ProfileEvents.cpp).
-     */
-    ProfileEvents::global_counters = ProfileEvents::Counters(ProfileEvents::global_counters_array);
-
-    return SymbolIndex::instance();
-}
-}
+using DB::Exception;
 
 // void TaskQueue::start()
 // {
@@ -98,16 +73,36 @@ namespace
 //         worker.join();
 // }
 
-Writer::Writer()
-    :
 #if NON_ELF_BUILD
-      symbol_index(),
-      dwarf()
+    Writer::Writer() : symbol_index(), dwarf() {}
 #else
+
+inline SymbolIndexInstance getInstanceAndInitGlobalCounters()
+{
+    /**
+     * Writer is a singleton, so it initializes statically.
+     * SymbolIndex uses a MMapReadBufferFromFile which uses ProfileEvents.
+     * If no thread was found in the events profiler, a global variable global_counters is used.
+     *
+     * This variable may get initialized after Writer (static initialization order fiasco).
+     * In fact, sanitizer callback is evaluated before global_counters init.
+     *
+     * We can't use constinit on that variable as it has a shared_ptr on it, so we just
+     * ultimately initialize it before getting the instance.
+     *
+     * We can't initialize global_counters in ProfileEvents.cpp to nullptr as in that case it will become nullptr.
+     * So we just initialize it twice (here and in ProfileEvents.cpp).
+     */
+    ProfileEvents::global_counters = ProfileEvents::Counters(ProfileEvents::global_counters_array);
+
+    return SymbolIndex::instance();
+}
+
+Writer::Writer() :
       symbol_index(getInstanceAndInitGlobalCounters()),
-      dwarf(symbol_index->getSelf()->elf)
+      dwarf(symbol_index->getSelf()->elf) {}
+
 #endif
-    {}
 
 Writer& Writer::instance()
 {
@@ -115,37 +110,27 @@ Writer& Writer::instance()
     return w;
 }
 
-void Writer::pcTableCallback(const Addr * start, const Addr * end)
+void Writer::pcTableCallback(const Addr * start, const Addr * end) noexcept
 {
-    const size_t bb_pairs = start - end;
+    const size_t bb_pairs = end - start;
     bb_count = bb_pairs / 2;
 
     instrumented_blocks_addrs.resize(bb_count);
     instrumented_blocks_start_lines.resize(bb_count);
 
-    for (size_t i = 0; i < bb_count; i += 2)
-        /// Real address is the previous instruction, see implementation in clang:
+    for (size_t i = 0; i < bb_count; ++i)
+        /// Real address for non-function entries is the previous instruction, see implementation in clang:
         /// https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L768
-        instrumented_blocks_addrs[i] = start[i] - 1;
+        instrumented_blocks_addrs[i] = start[2 * i] - ((start[2 * i + 1] & 1) ? 0 : 1);
 }
 
-void Writer::countersCallback(bool * start, bool * end)
+void Writer::countersCallback(bool * start, bool * end) noexcept
 {
     std::fill(start, end, false);
     current = {start, end};
 }
 
-void Writer::deinitRuntime()
-{
-    if (is_client)
-        return;
-
-    report_file.close();
-
-    LOG_INFO(base_log, "Shut down runtime");
-}
-
-void Writer::onClientInitialized()
+void Writer::onClientInitialized() noexcept
 {
     is_client = true;
 }
@@ -168,11 +153,10 @@ void Writer::onServerInitialized()
     if (report_file.set(report_path, "w") == nullptr)
         throw Exception(DB::ErrorCodes::CANNOT_OPEN_FILE,
             "Failed to open {} in write mode: {}", report_path, strerror(errno));
-    else
-        LOG_INFO(base_log, "Opened report file {}", report_path);
+
+    LOG_INFO(base_log, "Opened report file {}", report_path);
 
     //tasks_queue.start();
-
     symbolizeInstrumentedData();
 }
 
@@ -185,11 +169,8 @@ void Writer::symbolizeInstrumentedData()
     symbolizeAddrsIntoLocalCaches(caches);
     mergeIntoGlobalCache(caches);
 
-    if (const size_t sf_count = source_files.size(); sf_count < 1000)
-        throw Exception(DB::ErrorCodes::LOGICAL_ERROR,
-            "Not enough source files ({} < 1000), must be a symbolizer bug", sf_count);
-    else
-        LOG_INFO(base_log, "Found {} source files", sf_count);
+    LOG_INFO(base_log, "Found {} source files", source_files.size());
+    assert(source_files.size() > 500);
 
     writeReportHeader();
 
@@ -200,8 +181,6 @@ void Writer::symbolizeInstrumentedData()
 
 void Writer::symbolizeAddrsIntoLocalCaches(LocalCaches& caches)
 {
-    // Each worker symbolizes an address range. Ranges are distributed uniformly.
-
     std::vector<std::thread> workers;
     workers.reserve(hardware_concurrency);
 
@@ -219,15 +198,14 @@ void Writer::symbolizeAddrsIntoLocalCaches(LocalCaches& caches)
             {
                 const BBIndex bb_index = static_cast<BBIndex>(i);
                 const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(instrumented_blocks_addrs[i]);
-                const SourcePath src_path = loc.file.toString();
 
-                if (src_path.empty())
-                    throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Internal symbolizer error");
+                const SourcePath src_path = loc.file.toString();
+                const Line line = static_cast<Line>(loc.line);
+
+                assert(!src_path.empty());
 
                 if (i % 4096 == 0)
-                    LOG_INFO(log, "{}/{}, file: {}", i - start_index, end_index - start_index, src_path);
-
-                const Line line = static_cast<Line>(loc.line);
+                    LOG_INFO(log, "{}/{}, file: {}:{}", i - start_index, end_index - start_index, src_path, line);
 
                 if (auto cache_it = cache.find(src_path); cache_it != cache.end())
                     cache_it->second.push_back(IndexAndLine{bb_index, line});
@@ -256,10 +234,10 @@ void Writer::mergeIntoGlobalCache(const LocalCaches& caches)
             {
                 source_index = path_to_index.size();
                 path_to_index.emplace(source_path, source_index);
-                source_files.push_back(SourceInfo{source_path});
+                source_files.push_back(std::make_pair(source_path, Blocks{}));
             }
 
-            Blocks& instrumented = source_files[source_index].instrumented_blocks;
+            Blocks& instrumented = source_files[source_index].second;
 
             for (const auto [bb_index, start_line] : symbolized_data)
             {
@@ -269,21 +247,21 @@ void Writer::mergeIntoGlobalCache(const LocalCaches& caches)
         }
 }
 
-void Writer::onChangedTestName(String old_test_name)
+void Writer::onChangedTestName(String name)
 {
-    // String is passed by value as it's swapped
-    // Note: this function slows down setSetting, so it should be as fast as possible.
-
     if (is_client)
         return;
 
-    old_test_name.swap(test_name); // now old_test_name contains finished test name, test_name contains next test name
+    name.swap(test_name);
 
-    if (old_test_name.empty()) // Processing first test
+    const String& finished_test = name;
+    const String& next_test = test_name;
+
+    if (finished_test.empty()) // Processing first test
         return;
 
     report_file.write(Magic::TestEntry);
-    report_file.write(old_test_name);
+    report_file.write(finished_test);
 
     for (size_t i = 0; i < bb_count; ++i)
         if (current[i])
@@ -292,21 +270,24 @@ void Writer::onChangedTestName(String old_test_name)
             report_file.write(i);
         }
 
-    if (test_name.empty()) // Finished testing
-        deinitRuntime();
+    if (next_test.empty()) // Finished testing
+    {
+        report_file.close();
+        LOG_INFO(base_log, "Shut down runtime");
+    }
 }
 
-void Writer::writeReportHeader()
+void Writer::writeReportHeader() noexcept
 {
     report_file.write(Magic::ReportHeader);
     report_file.write(source_files.size());
 
-    for (const SourceInfo& file : source_files)
+    for (const auto& [path, instrumented_blocks] : source_files)
     {
-        report_file.write(file.path);
-        report_file.write(file.instrumented_blocks.size());
+        report_file.write(path);
+        report_file.write(instrumented_blocks.size());
 
-        for (BBIndex index : file.instrumented_blocks)
+        for (BBIndex index : instrumented_blocks)
         {
             report_file.write(index);
             report_file.write(instrumented_blocks_start_lines[index]);

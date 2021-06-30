@@ -275,7 +275,7 @@ if (WITH_COVERAGE)
 
         Functions/URL/tldLookup.generated.cpp
 
-        PROPERTIES COMPILE_FLAGS "${WITHOUT_COVERAGE} -DNDEBUG")
+        PROPERTIES COMPILE_FLAGS "${WITHOUT_COVERAGE}")
 endif()
 
 target_link_libraries (clickhouse_common_io

@@ -30,9 +30,9 @@ namespace coverage
     struct Dwarf
     {
         struct File { std::string toString() const { return {}; } }; //NOLINT
-        struct FileAndLine { size_t line; File file; };
+        struct LocationInfo { size_t line; File file; };
 
-        constexpr FileAndLine findAddressForCoverageRuntime(uintptr_t) const { return {}; } //NOLINT
+        constexpr LocationInfo findAddressForCoverageRuntime(uintptr_t) const { return {}; } //NOLINT
     };
 }
 

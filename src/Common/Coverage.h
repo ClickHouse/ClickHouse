@@ -25,31 +25,26 @@ using TestIndex = int;
 using SourcePath = String;
 
 using Blocks = std::vector<BBIndex>;
-
-struct SourceInfo
-{
-    SourcePath path;
-    Blocks instrumented_blocks = {};
-};
+using SourceInfo = std::pair<SourcePath, Blocks /* instrumented blocks */>;
 
 class Writer
 {
 public:
     static Writer& instance();
 
-    void pcTableCallback(const Addr * start, const Addr * end);
-    void countersCallback(bool * start, bool * end);
+    void pcTableCallback(const Addr * start, const Addr * end) noexcept;
+    void countersCallback(bool * start, bool * end) noexcept;
 
     void onServerInitialized();
-    void onClientInitialized();
-    void onChangedTestName(String old_test_name);
+    void onClientInitialized() noexcept;
+    void onChangedTestName(String name);
 
 private:
     Writer();
 
     const Poco::Logger * base_log {nullptr};
 
-    const SymbolIndexInstance symbol_index;
+    [[maybe_unused]] const SymbolIndexInstance symbol_index; // Unused in Darwin and FreeBSD build
     const Dwarf dwarf;
 
     // CH client is usually located inside main CH binary, but we don't need to instrument client code.
@@ -69,8 +64,7 @@ private:
 
     FileWrapper report_file;
 
-    void deinitRuntime();
-    void writeReportHeader();
+    void writeReportHeader() noexcept;
     void symbolizeInstrumentedData();
 
     struct IndexAndLine { BBIndex bb_index; Line line; };

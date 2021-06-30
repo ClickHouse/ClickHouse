@@ -783,17 +783,6 @@ def open_client_process(
         stderr=stderr_file if stderr_file is not None else PIPE,
         universal_newlines=True if universal_newlines else None)
 
-def coverage_run_header(base_dir: str) -> None:
-    if not args.coverage:
-        return
-
-    subitems = os.walk(base_dir)
-    subdirs_sizes: list[int] = [len(os.listdir(os.path.join(base_dir, subdir))) for subdir in next(subitems)[1]]
-    tests_count: int = sum(subdirs_sizes)
-
-    print("Pre-allocating space for {} tests".format(tests_count))
-    run_query("SET coverage_tests_count={};".format(tests_count), 0)
-
 def coverage_run_item(test_name: str, failures: int = 0) -> Tuple[bool, int]:
     if not args.coverage:
         return True, failures
@@ -970,8 +959,6 @@ def main(args):
         return os.path.isfile(case_file) and (ext in ['.sql', '.sh', '.py', '.expect'])
 
     total_tests_run = 0
-
-    coverage_run_header(base_dir)
 
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if SERVER_DIED:
