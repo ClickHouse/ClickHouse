@@ -308,19 +308,27 @@ if (WITH_COVERAGE)
     if (COMPILER_CLANG)
         message(STATUS "Code coverage runtime: ON")
 
-        # Provide blocklist to all files (so compiler driver could exclude unneeded ones)
+        # Provide blocklist to all files (so compiler driver could exclude unneeded ones).
+        # Caveat: excludes .cpp files only, see
+        # https://clang.llvm.org/docs/SanitizerCoverage.html#disabling-instrumentation-without-source-modification
+        # and blocklist.txt in project root as a solution to exclude unwanted headers.
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -fsanitize-coverage-blocklist=${CMAKE_CURRENT_SOURCE_DIR}/blocklist.txt")
 
-        set(WITH_COVERAGE_FLAGS "-ftest-coverage -fsanitize-coverage=trace-pc-guard,pc-table")
+        # Why basic blocks coverage instead of edges coverage?
+        # We use compiler-produced .gcno files which basically contain a list of basic blocks with their bounds.
+        # If we track edges coverage, it's harder (and sometimes even impossible) to track basic blocks corresponding
+        # to hit/non-hit edges.
+        set(WITH_COVERAGE_FLAGS "-ftest-coverage -fsanitize-coverage=bb,trace-pc-guard,pc-table")
 
         # Coverage build runs in CI only, so we do not need compatibility
         set(GLIBC_COMPATIBILITY OFF)
         set(ARCH_NATIVE ON)
 
         # We can enable LTO without unit tests (coverage is tracked for functional tests only).
+        # TODO Needs changing build options (-DENABLE_TESTS=OFF) in Yandex.Sandbox for coverage build.
         # set(ENABLE_TESTS OFF)
     else()
-        message(FATAL_ERROR "As for now, the code coverage is supported in Clang only")
+        message(FATAL_ERROR "As for now, code coverage is supported in clang only")
     endif()
 else()
     message(STATUS "Code coverage runtime: OFF")
@@ -397,7 +405,7 @@ endif ()
 if (WITH_COVERAGE)
     # Release flags, applied to contribs.
     set(WITHOUT_COVERAGE "${CMAKE_CXX_FLAGS} \
-        -fno-test-coverage -O3 -finline-functions -fno-sanitize-coverage=trace-pc-guard,pc-table")
+        -fno-test-coverage -O3 -finline-functions -fno-sanitize-coverage=bb,trace-pc-guard,pc-table")
 endif()
 
 function(build_target_without_coverage target)

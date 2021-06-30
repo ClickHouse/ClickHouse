@@ -265,6 +265,7 @@ endforeach ()
 if (WITH_COVERAGE)
     set_source_files_properties(
         Common/Coverage.cpp
+        Common/CoverageDecls.cpp
         Common/ThreadPool.cpp # Otherwise tests run about x2 slower.
 
         # Instrumentation slows down stack traces printing too much.
@@ -274,7 +275,7 @@ if (WITH_COVERAGE)
 
         Functions/URL/tldLookup.generated.cpp
 
-        PROPERTIES COMPILE_FLAGS "${WITHOUT_COVERAGE}")
+        PROPERTIES COMPILE_FLAGS "${WITHOUT_COVERAGE} -DNDEBUG")
 endif()
 
 target_link_libraries (clickhouse_common_io
