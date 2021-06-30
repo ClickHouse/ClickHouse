@@ -561,7 +561,7 @@ if args.report == 'main':
     # Don't show mildly unstable queries, only the very unstable ones we
     # treat as errors.
     if very_unstable_queries:
-        if very_unstable_queries > 3:
+        if very_unstable_queries > 5:
             error_tests += very_unstable_queries
             status = 'failure'
         message_array.append(str(very_unstable_queries) + ' unstable')
