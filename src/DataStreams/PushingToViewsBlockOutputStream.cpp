@@ -23,6 +23,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TABLE_IS_DROPPED;
+    extern const int UNKNOWN_TABLE;
+}
+
 PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     const StoragePtr & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -41,8 +47,19 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(
-        storage->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
+    try
+    {
+        addTableLock(
+            storage->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+            /// If table is dropped then there is nothing to do
+            return;
+        else
+            throw;
+    }
 
     /// If the "root" table deduplicates blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -74,54 +91,74 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = DatabaseCatalog::instance().getTable(database_table, getContext());
-        auto dependent_metadata_snapshot = dependent_table->getInMemoryMetadataPtr();
+        StoragePtr dependent_table;
 
-        ASTPtr query;
-        BlockOutputStreamPtr out;
-
-        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
+        try
         {
-            addTableLock(
-                materialized_view->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
+            dependent_table = DatabaseCatalog::instance().getTable(database_table, getContext());
 
-            StoragePtr inner_table = materialized_view->getTargetTable();
-            auto inner_table_id = inner_table->getStorageID();
-            auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-            query = dependent_metadata_snapshot->getSelectQuery().inner_query;
+            auto dependent_metadata_snapshot = dependent_table->getInMemoryMetadataPtr();
 
-            std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-            insert->table_id = inner_table_id;
+            ASTPtr query;
+            BlockOutputStreamPtr out;
 
-            /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
-                .getSampleBlock();
-
-            /// Insert only columns returned by select.
-            auto list = std::make_shared<ASTExpressionList>();
-            const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
-            for (const auto & column : header)
+            if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
             {
-                /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasPhysical(column.name))
-                    list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                addTableLock(
+                    materialized_view->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
+
+                StoragePtr inner_table = materialized_view->getTargetTable();
+
+                addTableLock(
+                    inner_table->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
+
+                auto inner_table_id = inner_table->getStorageID();
+                auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
+                query = dependent_metadata_snapshot->getSelectQuery().inner_query;
+
+                std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+                insert->table_id = inner_table_id;
+
+                /// Get list of columns we get from select query.
+                auto header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
+                    .getSampleBlock();
+
+                /// Insert only columns returned by select.
+                auto list = std::make_shared<ASTExpressionList>();
+                const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
+                for (const auto & column : header)
+                {
+                    /// But skip columns which storage doesn't have.
+                    if (inner_table_columns.hasPhysical(column.name))
+                        list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                }
+
+                insert->columns = std::move(list);
+
+                ASTPtr insert_query_ptr(insert.release());
+                InterpreterInsertQuery interpreter(insert_query_ptr, insert_context);
+                BlockIO io = interpreter.execute();
+                out = io.out;
             }
+            else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+            {
+                out = std::make_shared<PushingToViewsBlockOutputStream>(
+                    dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true);
+            }
+            else
+                out = std::make_shared<PushingToViewsBlockOutputStream>(
+                    dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
 
-            insert->columns = std::move(list);
-
-            ASTPtr insert_query_ptr(insert.release());
-            InterpreterInsertQuery interpreter(insert_query_ptr, insert_context);
-            BlockIO io = interpreter.execute();
-            out = io.out;
+            views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, 0 /* elapsed_ms */});
         }
-        else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
-            out = std::make_shared<PushingToViewsBlockOutputStream>(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true);
-        else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
-
-        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, 0 /* elapsed_ms */});
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                /// If table does not exit then continue
+                continue;
+            else
+                throw;
+        }
     }
 
     /// Do not push to destination table if the flag is set
