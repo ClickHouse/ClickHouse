@@ -1015,7 +1015,7 @@ Result:
 
 ## dateName {#dataname}
 
-Returns specified part of the date.
+Returns specified part of date.
 
 **Syntax**
 
@@ -1025,13 +1025,13 @@ dateName(date_part, date)
 
 **Arguments**
 
--   `date_part` — Date part. Possible values: `year`, `quarter`, `month`, `week`, `dayofyear`, `day`, `weekday`, `hour`, `minute`, `second`. [String](../../sql-reference/data-types/string.md).
+-   `date_part` — Date part. Possible values: 'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'. [String](../../sql-reference/data-types/string.md).
 -   `date` — Date. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 -   `timezone` — Timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Specified part of the date.
+-   The specified part of date.
 
 Type: [String](../../sql-reference/data-types/string.md#string)
 

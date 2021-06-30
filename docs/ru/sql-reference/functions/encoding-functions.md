@@ -236,7 +236,7 @@ bitPositionsToArray(arg)
 
 **Аргументы**
 
--   `arg` — целое значения. [Int/UInt](../../sql-reference/data-types/int-uint.md).
+-   `arg` — целое значение. [Int/UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемое значение**
 
@@ -244,7 +244,7 @@ bitPositionsToArray(arg)
 
 Тип: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
-**Example**
+**Примеры**
 
 Запрос:
 

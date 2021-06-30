@@ -33,7 +33,7 @@ SELECT
 timeZone()
 ```
 
-Псевдоним: `timezone`.
+Синоним: `timezone`.
 
 **Возвращаемое значение**
 
@@ -51,7 +51,7 @@ timeZone()
 toTimezone(value, timezone)
 ```
 
-Псевдоним: `toTimezone`.
+Синоним: `toTimezone`.
 
 **Аргументы**
 
@@ -109,7 +109,7 @@ int32samoa: 1546300800
 timeZoneOf(value)
 ```
 
-Псевдоним: `timezoneOf`.
+Синоним: `timezoneOf`.
 
 **Аргументы**
 
@@ -146,7 +146,7 @@ SELECT timezoneOf(now());
 timeZoneOffset(value)
 ```
 
-Псевдоним: `timezoneOffset`.
+Синоним: `timezoneOffset`.
 
 **Аргументы**
 
@@ -1038,15 +1038,15 @@ dateName(date_part, date)
 
 **Аргументы**
 
--   `date_part` — часть даты. Возможные значения: `year`, `quarter`, `month`, `week`, `dayofyear`, `day`, `weekday`, `hour`, `minute`, `second`. [String](../../sql-reference/data-types/string.md).
+-   `date_part` — часть даты. Возможные значения: 'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'. [String](../../sql-reference/data-types/string.md).
 -   `date` — дата. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — часовой пояс. Необязательный параметр. [String](../../sql-reference/data-types/string.md).
+-   `timezone` — часовой пояс. Необязательный аргумент. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
 -   Указанная часть даты.
 
-Тип: [String](../../sql-reference/data-types/string.md#string)
+Тип: [String](../../sql-reference/data-types/string.md#string).
 
 **Пример**
 

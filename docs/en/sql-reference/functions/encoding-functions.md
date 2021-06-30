@@ -224,7 +224,7 @@ Accepts an integer. Returns an array of UInt64 numbers containing the list of po
 
 ## bitPositionsToArray(num) {#bitpositionstoarraynum}
 
-Accepts an integer and converts it to an unsigned integer. Returns an array of `UInt64` numbers containing the list of positions of bits of `arg` that equals `1` in ascending order.
+Accepts an integer and converts it to an unsigned integer. Returns an array of `UInt64` numbers containing the list of positions of bits of `arg` that equal `1`, in ascending order.
 
 **Syntax**
 
@@ -238,7 +238,7 @@ bitPositionsToArray(arg)
 
 **Returned value**
 
--   An array containing a list of positions of bits that equals `1` in ascending order.
+-   An array containing a list of positions of bits that equal `1`, in ascending order.
 
 Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
