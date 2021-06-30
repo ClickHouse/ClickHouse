@@ -1281,7 +1281,6 @@ void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
     }
 }
 
-
 void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper,
     const DataPartPtr & part, Coordination::Requests & ops, String part_name, NameSet * absent_replicas_paths)
 {
@@ -7396,7 +7395,7 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
 }
 
 
-bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(const String & lost_part_name)
+bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name)
 {
     LOG_INFO(log, "Going to replace lost part {} with empty part", lost_part_name);
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -7477,7 +7476,50 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(const String & los
         MergeTreeData::Transaction transaction(*this);
         renameTempPartAndReplace(new_data_part, nullptr, &transaction);
 
-        checkPartChecksumsAndCommit(transaction, new_data_part);
+        while (true)
+        {
+
+            Coordination::Requests ops;
+            Coordination::Stat replicas_stat;
+            auto replicas_path = fs::path(zookeeper_path) / "replicas";
+            Strings replicas = zookeeper->getChildren(replicas_path, &replicas_stat);
+
+            /// In rare cases new replica can appear during check
+            ops.emplace_back(zkutil::makeCheckRequest(replicas_path, replicas_stat.version));
+
+            for (const String & replica : replicas)
+            {
+                String current_part_path = fs::path(zookeeper_path) / "replicas" / replica / "parts" / lost_part_name;
+
+                /// We must be sure that this part doesn't exist on other replicas
+                if (!zookeeper->exists(current_part_path))
+                {
+                    ops.emplace_back(zkutil::makeCreateRequest(current_part_path, "", zkutil::CreateMode::Persistent));
+                    ops.emplace_back(zkutil::makeRemoveRequest(current_part_path, -1));
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists on replica {} on path {}", lost_part_name, replica, current_part_path);
+                }
+            }
+
+            getCommitPartOps(ops, new_data_part);
+
+            Coordination::Responses responses;
+            if (auto code = zookeeper->tryMulti(ops, responses); code == Coordination::Error::ZOK)
+            {
+                transaction.commit();
+                break;
+            }
+            else if (code == Coordination::Error::ZBADVERSION)
+            {
+                LOG_INFO(log, "Looks like new replica appearead while creating new empty part, will retry");
+            }
+            else
+            {
+                zkutil::KeeperMultiException::check(code, ops, responses);
+            }
+        }
     }
     catch (const Exception & ex)
     {
