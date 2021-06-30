@@ -30,6 +30,7 @@ public:
 
     using Numerator = typename Base::Numerator;
     using Denominator = typename Base::Denominator;
+     using Fraction = typename Base::Fraction;
 
     void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -72,10 +73,11 @@ public:
 
         auto * denominator_type = toNativeType<Denominator>(b);
 
-        auto * denominator_offset_ptr = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, sizeof(Numerator));
+        static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
+        auto * denominator_offset_ptr = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, denominator_offset);
         auto * denominator_ptr = b.CreatePointerCast(denominator_offset_ptr, denominator_type->getPointerTo());
 
-        auto * weight_cast_to_denominator = nativeCast(b, arguments_types[1], argument_values[1], numerator_type);
+        auto * weight_cast_to_denominator = nativeCast(b, arguments_types[1], argument_values[1], denominator_type);
 
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
         auto * denominator_value_updated = denominator_type->isIntegerTy() ? b.CreateAdd(denominator_value, weight_cast_to_denominator) : b.CreateFAdd(denominator_value, weight_cast_to_denominator);

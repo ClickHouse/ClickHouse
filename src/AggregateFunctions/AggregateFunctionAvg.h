@@ -168,25 +168,6 @@ public:
         b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), sizeof(Fraction), llvm::assumeAligned(this->alignOfData()));
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
-    {
-        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
-        auto * numerator_type = toNativeType<Numerator>(b);
-
-        auto * numerator_ptr = b.CreatePointerCast(aggregate_data_ptr, numerator_type->getPointerTo());
-        auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
-        auto * value_cast_to_numerator = nativeCast(b, arguments_types[0], argument_values[0], numerator_type);
-        auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_cast_to_numerator) : b.CreateFAdd(numerator_value, value_cast_to_numerator);
-        b.CreateStore(numerator_result_value, numerator_ptr);
-
-        auto * denominator_type = toNativeType<Denominator>(b);
-        static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, denominator_offset), denominator_type->getPointerTo());
-        auto * denominator_value_updated = b.CreateAdd(b.CreateLoad(denominator_type, denominator_ptr), llvm::ConstantInt::get(denominator_type, 1));
-        b.CreateStore(denominator_value_updated, denominator_ptr);
-    }
-
     void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);

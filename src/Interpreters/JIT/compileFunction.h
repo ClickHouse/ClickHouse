@@ -55,19 +55,26 @@ struct AggregateFunctionWithOffset
 using JITCreateAggregateStatesFunction = void (*)(AggregateDataPtr);
 using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
 using JITMergeAggregateStatesFunction = void (*)(AggregateDataPtr, AggregateDataPtr);
-using JITInsertAggregatesIntoColumnsFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
+using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
 
 struct CompiledAggregateFunctions
 {
     JITCreateAggregateStatesFunction create_aggregate_states_function;
     JITAddIntoAggregateStatesFunction add_into_aggregate_states_function;
     JITMergeAggregateStatesFunction merge_aggregate_states_function;
-    JITInsertAggregatesIntoColumnsFunction insert_aggregates_into_columns_function;
+    JITInsertAggregateStatesIntoColumnsFunction insert_aggregates_into_columns_function;
 
     size_t functions_count;
     CHJIT::CompiledModule compiled_module;
 };
 
+/** Compile aggregate function to native jit code using CHJIT instance.
+  *
+  * JITCreateAggregateStatesFunction will initialize aggregate data ptr with initial aggregate states values.
+  * JITAddIntoAggregateStatesFunction will update aggregate states for aggregate functions with specified ColumnData.
+  * JITMergeAggregateStatesFunction will merge aggregate states for aggregate functions.
+  * JITInsertAggregateStatesIntoColumnsFunction will insert aggregate states for aggregate functions into result columns.
+  */
 CompiledAggregateFunctions compileAggregateFunctons(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name);
 
 }

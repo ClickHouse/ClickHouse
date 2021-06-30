@@ -112,6 +112,17 @@
 
     <query>
         SELECT
+            {function}(value_1),
+            {function}(value_2),
+            groupBitAnd(value_3),
+            {function}(value_3)
+        FROM {table}
+        GROUP BY key
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
             {function}If(value_1, predicate),
             {function}If(value_2, predicate),
             {function}If(value_3, predicate)
@@ -122,8 +133,32 @@
 
     <query>
         SELECT
+            {function}If(value_1, predicate),
+            {function}If(value_2, predicate),
+            groupBitAndIf(value_3, predicate),
+            {function}If(value_3, predicate)
+        FROM {table}
+        GROUP BY key
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
             {function}(value_1),
             {function}(value_2),
+            {function}(value_3),
+            {function}(value_4),
+            {function}(value_5)
+        FROM {table}
+        GROUP BY key
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(value_1),
+            {function}(value_2),
+            groupBitAnd(value_3),
             {function}(value_3),
             {function}(value_4),
             {function}(value_5)
@@ -146,6 +181,20 @@
 
     <query>
         SELECT
+            {function}If(value_1, predicate),
+            {function}If(value_2, predicate),
+            groupBitAndIf(value_3, predicate),
+            {function}If(value_3, predicate),
+            {function}If(value_4, predicate),
+            {function}If(value_5, predicate)
+        FROM {table}
+        GROUP BY key
+        FORMAT Null
+    </query>
+
+
+    <query>
+        SELECT
             {function}(WatchID),
             {function}(CounterID),
             {function}(ClientIP)
@@ -158,6 +207,30 @@
         SELECT
             {function}(WatchID),
             {function}(CounterID),
+            groupBitAnd(ClientIP),
+            {function}(ClientIP)
+        FROM hits_100m_single
+        GROUP BY intHash32(UserID) % {group_scale}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(WatchID),
+            {function}(CounterID),
+            {function}(ClientIP),
+            {function}(GoodEvent),
+            {function}(CounterClass)
+        FROM hits_100m_single
+        GROUP BY intHash32(UserID) % {group_scale}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(WatchID),
+            {function}(CounterID),
+            groupBitAnd(ClientIP),
             {function}(ClientIP),
             {function}(GoodEvent),
             {function}(CounterClass)
@@ -182,6 +255,32 @@
         SELECT
             {function}If(WatchID, predicate),
             {function}If(CounterID, predicate),
+            groupBitAndIf(ClientIP, predicate),
+            {function}If(ClientIP, predicate)
+        FROM hits_100m_single
+        GROUP BY intHash32(UserID) % {group_scale}
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH (WatchID % 2 == 0) AS predicate
+        SELECT
+            {function}If(WatchID, predicate),
+            {function}If(CounterID, predicate),
+            {function}If(ClientIP, predicate),
+            {function}If(GoodEvent, predicate),
+            {function}If(CounterClass, predicate)
+        FROM hits_100m_single
+        GROUP BY intHash32(UserID) % {group_scale}
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH (WatchID % 2 == 0) AS predicate
+        SELECT
+            {function}If(WatchID, predicate),
+            {function}If(CounterID, predicate),
+            groupBitAndIf(ClientIP, predicate),
             {function}If(ClientIP, predicate),
             {function}If(GoodEvent, predicate),
             {function}If(CounterClass, predicate)
