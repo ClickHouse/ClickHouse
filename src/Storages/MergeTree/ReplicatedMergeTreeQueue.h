@@ -373,6 +373,9 @@ public:
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
+    /// Check that part produced by some entry in queue and get source parts for it
+    bool checkPartInQueueAndGetSourceParts(const String & part_name, Strings & source_parts) const;
+
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
     /// Locks queue's mutex.
     bool addFuturePartIfNotCoveredByThem(const String & part_name, LogEntry & entry, String & reject_reason);
