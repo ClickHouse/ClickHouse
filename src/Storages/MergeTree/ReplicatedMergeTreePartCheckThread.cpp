@@ -190,18 +190,18 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
 
     if (missing_part_search_result == MissingPartSearchResult::LostForever)
     {
-        /// Is it in the replication queue? If there is - delete, because the task can not be processed.
-        if (!storage.queue.remove(zookeeper, part_name))
+        if (!storage.createEmptyPartInsteadOfLost(part_name))
         {
-            /// The part was not in our queue.
-            LOG_WARNING(log, "Missing part {} is not in our queue, this can happen rarely.", part_name);
+            LOG_WARNING(log, "Cannot create empty part {} instead of lost. Will retry later", part_name);
         }
-
-        /** This situation is possible if on all the replicas where the part was, it deteriorated.
-            * For example, a replica that has just written it has power turned off and the data has not been written from cache to disk.
-            */
-        LOG_ERROR(log, "Part {} is lost forever.", part_name);
-        ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
+        else
+        {
+            /** This situation is possible if on all the replicas where the part was, it deteriorated.
+                * For example, a replica that has just written it has power turned off and the data has not been written from cache to disk.
+                */
+            LOG_ERROR(log, "Part {} is lost forever.", part_name);
+            ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
+        }
     }
 }
 
@@ -307,11 +307,12 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 String message = "Part " + part_name + " looks broken. Removing it and will try to fetch.";
                 LOG_ERROR(log, message);
 
+                /// Delete part locally.
+                storage.forgetPartAndMoveToDetached(part, "broken");
+
                 /// Part is broken, let's try to find it and fetch.
                 searchForMissingPartAndFetchIfPossible(part_name, exists_in_zookeeper);
 
-                /// Delete part locally.
-                storage.forgetPartAndMoveToDetached(part, "broken");
                 return {part_name, false, message};
             }
         }
