@@ -31,8 +31,7 @@ Columns:
 -   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written rows.
 -   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written bytes.
 -   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this view.
--   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics for this view. The description of them could be found in the table [system.events](#system_tables-events). It does not include events of views dependent on this one.
--   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics for this view that are listed in the `ProfileEvents.Names` column.
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics. The description of them could be found in the table [system.events](../../operations/system-tables/events.md#system_tables-events).
 -   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the view. Values:
     -   `'QueryStart' = 1` — Successful start the view execution. Should not appear.
     -   `'QueryFinish' = 2` — Successful end of the view execution.
@@ -66,9 +65,8 @@ read_bytes:              64
 written_rows:            2
 written_bytes:           32
 peak_memory_usage:       4196188
-ProfileEvents.Names:     ['FileOpen','WriteBufferFromFileDescriptorWrite','WriteBufferFromFileDescriptorWriteBytes','IOBufferAllocs','IOBufferAllocBytes','DiskWriteElapsedMicroseconds','InsertedRows','InsertedBytes','SelectedRows','SelectedBytes','ContextLock','RWLockAcquiredReadLocks','RealTimeMicroseconds','UserTimeMicroseconds','SystemTimeMicroseconds','SoftPageFaults']
-ProfileEvents.Values:    [3,3,154,5,5242955,23,2,32,4,64,11,1,12458571345,1955,5860,110]
-status:                  WrittenSuffix
+ProfileEvents:           {'FileOpen':2,'WriteBufferFromFileDescriptorWrite':2,'WriteBufferFromFileDescriptorWriteBytes':187,'IOBufferAllocs':3,'IOBufferAllocBytes':3145773,'FunctionExecute':3,'DiskWriteElapsedMicroseconds':13,'InsertedRows':2,'InsertedBytes':16,'SelectedRows':4,'SelectedBytes':48,'ContextLock':16,'RWLockAcquiredReadLocks':1,'RealTimeMicroseconds':698,'SoftPageFaults':4,'OSReadChars':463}
+status:                  QueryFinish
 exception_code:          0
 exception:
 stack_trace:
