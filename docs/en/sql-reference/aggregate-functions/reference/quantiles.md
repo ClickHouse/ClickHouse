@@ -18,7 +18,7 @@ To get exact value, all the passed values ​​are combined into an array, whic
 
 This function is equivalent to [PERCENTILE.EXC](https://support.microsoft.com/en-us/office/percentile-exc-function-bbaa7204-e9e1-4010-85bf-c31dc5dce4ba) Excel function, ([type R6](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample)). 
 
-Works more efficiently with sets of levels than [quantilesExactExclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactexclusive).
+Works more efficiently with sets of levels than [quantileExactExclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactexclusive).
 
 **Syntax**
 
@@ -70,7 +70,7 @@ To get exact value, all the passed values ​​are combined into an array, whic
 
 This function is equivalent to [PERCENTILE.INC](https://support.microsoft.com/en-us/office/percentile-inc-function-680f9539-45eb-410b-9a5e-c1355e5fe2ed) Excel function, ([type R7](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample)).
 
-Works more efficiently with sets of levels than [quantilesExactInclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantilesexactinclusive).
+Works more efficiently with sets of levels than [quantileExactInclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactinclusive).
 
 **Syntax**
 
