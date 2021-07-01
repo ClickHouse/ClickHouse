@@ -154,6 +154,9 @@ protected:
     /// Is used to send logs from logs_queue to client in case of fatal errors.
     std::function<void()> fatal_error_callback;
 
+    /// It is used to avoid enabling the query profiler when you have multiple ThreadStatus in the same thread
+    bool query_profiled_enabled = true;
+
 public:
     ThreadStatus();
     ~ThreadStatus();

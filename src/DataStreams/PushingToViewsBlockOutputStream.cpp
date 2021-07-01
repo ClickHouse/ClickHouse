@@ -145,6 +145,10 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             ? current_thread->getThreadGroup()
             : MainThreadStatus::getInstance().thread_group;
         auto thread_status = std::make_unique<ThreadStatus>();
+        /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
+        /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
+        /// N times more interruptions
+        thread_status->query_profiled_enabled = false;
         if (running_group)
             thread_status->setupState(running_group);
 
