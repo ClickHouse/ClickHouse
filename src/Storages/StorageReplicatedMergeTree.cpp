@@ -2198,6 +2198,7 @@ bool StorageReplicatedMergeTree::executeFetchShared(
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.partition_id, drop_range_info.max_block);
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
     /// Delete the parts contained in the range to be deleted.
@@ -2259,9 +2260,14 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     bool replace = !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range);
 
     if (replace)
+    {
+        getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
+    }
     else
+    {
         drop_range = {};
+    }
 
     struct PartDescription
     {
@@ -7105,6 +7111,8 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
 
     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.front()).path_created;
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    getContext()->getMergeList().cancelInPartition(getStorageID(), partition_id, drop_range_info.max_block);
 
     return true;
 }
