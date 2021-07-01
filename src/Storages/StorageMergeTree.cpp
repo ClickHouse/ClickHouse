@@ -1001,13 +1001,13 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
+bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & executor) //-V657
 {
     if (shutdown_called)
-        return {};
+        return false;
 
     if (merger_mutator.merges_blocker.isCancelled())
-        return {};
+        return false;
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     std::shared_ptr<MergeMutateSelectedEntry> merge_entry, mutate_entry;
@@ -1017,21 +1017,25 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
     if (!merge_entry)
         mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
 
-    if (merge_entry || mutate_entry)
+    if (merge_entry)
     {
-        return JobAndPool{[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
+        executor.execute({[this, metadata_snapshot, merge_entry, share_lock] () mutable
         {
-            if (merge_entry)
-                return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
-            else if (mutate_entry)
-                return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-
-            __builtin_unreachable();
-        }, PoolType::MERGE_MUTATE};
+            return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
+        }, PoolType::MERGE_MUTATE});
+        return true;
+    }
+    if (mutate_entry)
+    {
+        executor.execute({[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
+        {
+            return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
+        }, PoolType::MERGE_MUTATE});
+        return true;
     }
     else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
     {
-        return JobAndPool{[this, share_lock] ()
+        executor.execute({[this, share_lock] ()
         {
             /// All use relative_data_path which changes during rename
             /// so execute under share lock.
@@ -1041,9 +1045,10 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
             clearOldMutations();
             clearEmptyParts();
             return true;
-        }, PoolType::MERGE_MUTATE};
+        }, PoolType::MERGE_MUTATE});
+        return true;
     }
-    return {};
+    return false;
 }
 
 Int64 StorageMergeTree::getCurrentMutationVersion(
