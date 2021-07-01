@@ -137,7 +137,7 @@ private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
 
-    struct ClientAuthentificaiton
+    struct ClientAuthentication
     {
         const S3::URI uri;
         const String access_key_id;
@@ -147,7 +147,7 @@ private:
         S3AuthSettings auth_settings;
     };
 
-    ClientAuthentificaiton client_auth;
+    ClientAuthentication client_auth;
 
     String format_name;
     UInt64 max_single_read_retries;
@@ -157,7 +157,7 @@ private:
     String name;
     const bool distributed_processing;
 
-    static void updateClientAndAuthSettings(ContextPtr, ClientAuthentificaiton &);
+    static void updateClientAndAuthSettings(ContextPtr, ClientAuthentication &);
 };
 
 }

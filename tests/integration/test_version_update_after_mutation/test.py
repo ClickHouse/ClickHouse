@@ -39,8 +39,8 @@ def test_mutate_and_upgrade(start_cluster):
     node2.restart_with_latest_version(signal=9)
 
     # After hard restart table can be in readonly mode
-    exec_query_with_retry(node2, "INSERT INTO mt VALUES ('2020-02-13', 3)")
-    exec_query_with_retry(node1, "SYSTEM SYNC REPLICA mt")
+    exec_query_with_retry(node2, "INSERT INTO mt VALUES ('2020-02-13', 3)", retry_count=60)
+    exec_query_with_retry(node1, "SYSTEM SYNC REPLICA mt", retry_count=60)
 
     assert node1.query("SELECT COUNT() FROM mt") == "2\n"
     assert node2.query("SELECT COUNT() FROM mt") == "2\n"
@@ -79,7 +79,10 @@ def test_upgrade_while_mutation(start_cluster):
 
     node3.restart_with_latest_version(signal=9)
 
-    exec_query_with_retry(node3, "ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
+    # checks for readonly
+    exec_query_with_retry(node3, "OPTIMIZE TABLE mt1", retry_count=60)
+
+    node3.query("ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
     # will delete nothing, but previous async mutation will finish with this query
 
     assert_eq_with_retry(node3, "SELECT COUNT() from mt1", "50000\n")
