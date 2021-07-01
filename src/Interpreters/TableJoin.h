@@ -160,15 +160,15 @@ public:
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
     /* Conditions for left/right table from JOIN ON section.
-     * 
+     *
      * Conditions for left and right tables stored separately and united with 'and' function into one column.
      * For example for query:
      * SELECT ... JOIN ... ON t1.id == t2.id AND expr11(t1) AND expr21(t2) AND expr12(t1) AND expr22(t2)
-     * 
+     *
      * We will build two new ASTs: `expr11(t1) AND expr12(t1)`, `expr21(t2) AND expr22(t2)`
      * Such columns will be added and calculated for left and right tables respectively.
-     * Only rows where conditions are met (where new columns have non-zero value) will be joined. 
-     * 
+     * Only rows where conditions are met (where new columns have non-zero value) will be joined.
+     *
      * NOTE: non-equi condition containing columns from different tables (like `... ON t1.id = t2.id AND t1.val > t2.val)
      *     doesn't supported yet, it can be added later.
      */
