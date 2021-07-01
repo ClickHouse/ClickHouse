@@ -92,9 +92,6 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     if (func.name == "and")
         return; /// go into children
 
-    if (func.name == "or")
-        throw Exception("JOIN ON does not support OR. Unexpected '" + queryToString(ast) + "'", ErrorCodes::NOT_IMPLEMENTED);
-
     ASOF::Inequality inequality = ASOF::getInequality(func.name);
     if (func.name == "equals" || inequality != ASOF::Inequality::None)
     {
@@ -144,8 +141,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         return;
     }
 
-    throw Exception("JOIN ON inequalities are not supported. Unexpected '" + queryToString(ast) + "'",
-                    ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("Unsupported JOIN ON conditions. Unexpected '" + queryToString(ast) + "'",
+                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 }
 
 void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out)
