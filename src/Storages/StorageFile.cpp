@@ -509,6 +509,9 @@ Pipe StorageFile::read(
             else
                 return metadata_snapshot->getColumns();
         };
+        if (!fs::is_regular_file(this_ptr->table_fd)) {
+                
+        }
         pipes.emplace_back(std::make_shared<StorageFileSource>(
             this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format()));
     }
