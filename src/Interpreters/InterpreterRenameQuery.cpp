@@ -76,8 +76,20 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
 
     for (const auto & elem : descriptions)
     {
-        if (!rename.exchange)
+        bool exchange_tables = rename.exchange;
+        if (exchange_tables)
+        {
+            bool allow_rename_instead_of_exchange = descriptions.size() == 1 && rename.rename_if_cannot_exchange;
+            if (allow_rename_instead_of_exchange && !database_catalog.isTableExist(StorageID(elem.to_database_name, elem.to_table_name), getContext()))
+            {
+                exchange_tables = false;
+                renamed_instead_of_exchange = true;
+            }
+        }
+        else
+        {
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
+        }
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
         if (typeid_cast<DatabaseReplicated *>(database.get())
@@ -100,7 +112,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 elem.from_table_name,
                 *database_catalog.getDatabase(elem.to_database_name),
                 elem.to_table_name,
-                rename.exchange,
+                exchange_tables,
                 rename.dictionary);
         }
     }

@@ -98,6 +98,7 @@ public:
 
     void startup() override;
     void shutdown() override;
+    void flush() override;
     void drop() override;
 
     bool storesDataOnDisk() const override { return true; }

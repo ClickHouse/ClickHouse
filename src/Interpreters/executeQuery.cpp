@@ -1060,26 +1060,30 @@ void executeQuery(
         }
         else if (pipeline.initialized())
         {
-            const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-
-            WriteBuffer * out_buf = &ostr;
-            std::optional<WriteBufferFromFile> out_file_buf;
-            if (ast_query_with_output && ast_query_with_output->out_file)
+            if (pipeline.isCompleted())
             {
-                if (!allow_into_outfile)
-                    throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
-
-                const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
-                out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                out_buf = &*out_file_buf;
+                pipeline.setProgressCallback(context->getProgressCallback());
             }
-
-            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                                 ? getIdentifierName(ast_query_with_output->format)
-                                 : context->getDefaultFormat();
-
-            if (!pipeline.isCompleted())
+            else
             {
+                const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+
+                WriteBuffer * out_buf = &ostr;
+                std::optional<WriteBufferFromFile> out_file_buf;
+                if (ast_query_with_output && ast_query_with_output->out_file)
+                {
+                    if (!allow_into_outfile)
+                        throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
+
+                    const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+                    out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
+                    out_buf = &*out_file_buf;
+                }
+
+                String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+                                     ? getIdentifierName(ast_query_with_output->format)
+                                     : context->getDefaultFormat();
+
                 pipeline.addSimpleTransform([](const Block & header)
                 {
                     return std::make_shared<MaterializingTransform>(header);
@@ -1105,16 +1109,40 @@ void executeQuery(
 
                 pipeline.setOutputFormat(std::move(out));
             }
-            else
-            {
-                pipeline.setProgressCallback(context->getProgressCallback());
-            }
 
             {
                 auto executor = pipeline.execute();
                 executor->execute(pipeline.getNumThreads());
             }
         }
+    }
+    catch (...)
+    {
+        streams.onException();
+        throw;
+    }
+
+    streams.onFinish();
+}
+
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
+{
+    try
+    {
+        if (streams.out)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires input, but no input buffer provided, it's a bug");
+        if (streams.in)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires output, but no output buffer provided, it's a bug");
+
+        if (!streams.pipeline.initialized())
+            return;
+
+        if (!streams.pipeline.isCompleted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query pipeline requires output, but no output buffer provided, it's a bug");
+
+        streams.pipeline.setProgressCallback(context->getProgressCallback());
+        auto executor = streams.pipeline.execute();
+        executor->execute(streams.pipeline.getNumThreads());
     }
     catch (...)
     {
