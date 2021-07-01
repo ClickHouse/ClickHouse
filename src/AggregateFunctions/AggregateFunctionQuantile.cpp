@@ -4,7 +4,7 @@
 #include <AggregateFunctions/Helpers.h>
 
 #include <Core/Field.h>
-#include "registerAggregateFunctions.h"
+
 
 namespace DB
 {
@@ -80,7 +80,8 @@ static constexpr bool supportBigInt()
 }
 
 template <template <typename, bool> class Function>
-AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params)
+AggregateFunctionPtr createAggregateFunctionQuantile(
+    const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     /// Second argument type check doesn't depend on the type of the first one.
     Function<void, true>::assertSecondArg(argument_types);

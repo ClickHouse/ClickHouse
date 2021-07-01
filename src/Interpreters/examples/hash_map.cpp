@@ -87,9 +87,9 @@ int main(int argc, char ** argv)
     using Key = UInt64;
 
 #if USE_AUTO_ARRAY
-    using Value = AutoArray<IAggregateFunction*>;
+    using Value = AutoArray<const IAggregateFunction*>;
 #else
-    using Value = std::vector<IAggregateFunction*>;
+    using Value = std::vector<const IAggregateFunction*>;
 #endif
 
     size_t n = argc < 2 ? 10000000 : std::stol(argv[1]);
