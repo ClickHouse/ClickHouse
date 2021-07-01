@@ -62,7 +62,7 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
 }
 
 
-const std::unordered_map<String, std::unordered_set<String>> & TableFunctionMerge::getSourceDatabasesAndTables(ContextPtr context) const
+const TableFunctionMerge::DbToTableSetMap & TableFunctionMerge::getSourceDatabasesAndTables(ContextPtr context) const
 {
     if (source_databases_and_tables)
         return *source_databases_and_tables;
@@ -155,7 +155,7 @@ TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, con
             continue;
         if (!granted_select_on_all_tables)
             access->checkAccess(AccessType::SELECT, database_name, it->name());
-        tables.insert(it->name());
+        tables.emplace(it->name());
     }
     return tables;
 }
