@@ -46,11 +46,6 @@ inline void writeBinByte(UInt8 byte, void * out)
     memcpy(out, &bin_byte_to_char_table[static_cast<size_t>(byte) * 8], 8);
 }
 
-inline void writeSingleBinByte(UInt8 byte, void * out)
-{
-    memcpy(out, &hex_digit_to_char_uppercase_table[static_cast<size_t>(byte)], 1);
-}
-
 /// Produces hex representation of an unsigned int with leading zeros (for checksums)
 template <typename TUInt>
 inline void writeHexUIntImpl(TUInt uint_, char * out, const char * const table)
