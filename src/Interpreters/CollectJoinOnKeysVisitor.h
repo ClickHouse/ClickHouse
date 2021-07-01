@@ -47,7 +47,6 @@ public:
         const bool is_asof{false};
         ASTPtr asof_left_key{};
         ASTPtr asof_right_key{};
-        bool has_join_keys{false};
 
         void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos);
         void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos,
