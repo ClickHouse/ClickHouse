@@ -265,6 +265,8 @@ private:
 
     size_t remote_shard_count = 0;
     size_t local_shard_count = 0;
+
+    String name;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;
