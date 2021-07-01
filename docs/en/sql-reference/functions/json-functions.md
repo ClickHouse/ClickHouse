@@ -306,3 +306,38 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## toJSONString {#tojsonstring}
+
+Serializes value to its JSON representation.
+
+**Syntax**
+
+``` sql
+toJSONString(value)
+```
+
+**Arguments**
+
+-   `value` — Value of *any* type to serialize. 
+
+**Returned value**
+
+-   Text representation of a value. 
+
+Type: [String](../../sql-reference/data-types/string.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toJSONString(map('1234', '5678')) AS value;
+```
+
+Result:
+
+``` text
+┌─value───────────┐
+│ {"1234":"5678"} │
+└─────────────────┘
+```
