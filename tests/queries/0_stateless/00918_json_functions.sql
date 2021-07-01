@@ -66,12 +66,20 @@ SELECT JSONExtract('{"a":3,"b":5,"c":7}', 'Tuple(Int, Int)');
 SELECT JSONExtract('{"a":3}', 'Tuple(Int, Int)');
 SELECT JSONExtract('[3,5,7]', 'Tuple(Int, Int)');
 SELECT JSONExtract('[3]', 'Tuple(Int, Int)');
+SELECT JSONExtract('{"a":123456, "b":3.55}', 'Tuple(a LowCardinality(Int32), b Decimal(5, 2))');
+SELECT JSONExtract('{"a":1, "b":"417ddc5d-e556-4d27-95dd-a34d84e46a50"}', 'Tuple(a Int8, b UUID)');
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'a', 'LowCardinality(String)');
+SELECT JSONExtract('{"a":3333.6333333333333333333333, "b":"test"}', 'Tuple(a Decimal(10,1), b LowCardinality(String))');
+SELECT JSONExtract('{"a":3333.6333333333333333333333, "b":"test"}', 'Tuple(a Decimal(20,10), b LowCardinality(String))');
+SELECT JSONExtract('{"a":123456.123456}', 'a', 'Decimal(20, 4)') as a, toTypeName(a);
+SELECT JSONExtract('{"a":123456789012345.12}', 'a', 'Decimal(30, 4)');
 
 SELECT '--JSONExtractKeysAndValues--';
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'String');
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(Float64)');
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": "world"}', 'String');
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8');
+SELECT JSONExtractKeysAndValues('{"a": "hello", "b": "world"}', 'LowCardinality(String)');
 
 SELECT '--JSONExtractRaw--';
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}');
