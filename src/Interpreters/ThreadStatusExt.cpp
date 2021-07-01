@@ -506,8 +506,8 @@ void ThreadStatus::logToQueryViewsLog(const ViewInfo & vinfo)
     element.view_target = vinfo.runtime_stats.target_name;
 
     auto events = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
-    element.read_rows = (*events)[ProfileEvents::SelectedRows];
-    element.read_bytes = (*events)[ProfileEvents::SelectedBytes];
+    element.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
+    element.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
     element.written_rows = (*events)[ProfileEvents::InsertedRows];
     element.written_bytes = (*events)[ProfileEvents::InsertedBytes];
     element.peak_memory_usage = memory_tracker.getPeak() > 0 ? memory_tracker.getPeak() : 0;

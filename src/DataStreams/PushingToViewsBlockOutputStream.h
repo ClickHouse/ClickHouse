@@ -49,6 +49,7 @@ public:
     void flush() override;
     void writePrefix() override;
     void writeSuffix() override;
+    void onProgress(const Progress & progress) override;
 
 private:
     StoragePtr storage;

@@ -36,6 +36,7 @@ SYSTEM FLUSH LOGS;
 
 
 -- CHECK LOGS OF INSERT 1
+-- Note that live views currently don't report written rows
 SELECT
     'Query log rows' as stage,
     read_rows,
@@ -54,7 +55,9 @@ SELECT
     view_name,
     status,
     view_target,
-    view_query
+    view_query,
+    read_rows,
+    written_rows
 FROM system.query_views_log
 WHERE initial_query_id =
       (
@@ -87,7 +90,9 @@ SELECT
     view_name,
     status,
     view_target,
-    view_query
+    view_query,
+    read_rows,
+    written_rows
 FROM system.query_views_log
 WHERE initial_query_id =
       (
