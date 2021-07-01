@@ -536,60 +536,6 @@ public:
 };
 
 
-template <typename JSONParser, typename DecimalType>
-class JSONExtractDecimalImpl
-{
-public:
-    using Element = typename JSONParser::Element;
-
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
-    {
-        return std::make_shared<DataTypeDecimal<DecimalType>>();
-    }
-
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-
-    static bool insertResultToColumn(IColumn & dest, const Element & element, DataTypePtr data_type)
-    {
-        if (!element.isDouble())
-            return false;
-
-        const auto * type = assert_cast<const DataTypeDecimal<DecimalType> *>(data_type.get());
-        std::stringstream ss;
-        ss << std::setprecision(type->getPrecision()) << element.getDouble();
-        auto str = ss.str();
-        ReadBufferFromString res(str);
-        assert_cast<const SerializationDecimal<DecimalType> *>(type->getDefaultSerialization().get())->deserializeText(dest, res, {});
-        return true;
-    }
-};
-
-
-template <typename JSONParser>
-class JSONExtractUUIDImpl
-{
-public:
-    using Element = typename JSONParser::Element;
-
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
-    {
-        return std::make_shared<DataTypeUUID>();
-    }
-
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-
-    static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
-    {
-        if (!element.isString())
-            return false;
-
-        auto uuid = parseFromString<UUID>(element.getString());
-        assert_cast<ColumnUUID &>(dest).insert(uuid);
-        return true;
-    }
-};
-
-
 template <typename JSONParser>
 using JSONExtractInt8Impl = JSONExtractNumericImpl<JSONParser, Int8>;
 template <typename JSONParser>
@@ -687,19 +633,6 @@ struct JSONExtractTree
         }
     };
 
-    template <typename DecimalType>
-    class DecimalNode : public Node
-    {
-    public:
-        DecimalNode(DataTypePtr data_type_) : data_type(data_type_) {}
-        bool insertResultToColumn(IColumn & dest, const Element & element) override
-        {
-            return JSONExtractDecimalImpl<JSONParser, DecimalType>::insertResultToColumn(dest, element, data_type);
-        }
-    private:
-        DataTypePtr data_type;
-    };
-
     class LowCardinalityNode : public Node
     {
     public:
@@ -726,8 +659,35 @@ struct JSONExtractTree
     public:
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            return JSONExtractUUIDImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            if (!element.isString())
+                return false;
+
+            auto uuid = parseFromString<UUID>(element.getString());
+            assert_cast<ColumnUUID &>(dest).insert(uuid);
+            return true;
         }
+    };
+
+    template <typename DecimalType>
+    class DecimalNode : public Node
+    {
+    public:
+        DecimalNode(DataTypePtr data_type_) : data_type(data_type_) {}
+        bool insertResultToColumn(IColumn & dest, const Element & element) override
+        {
+            if (!element.isDouble())
+                return false;
+
+            const auto * type = assert_cast<const DataTypeDecimal<DecimalType> *>(data_type.get());
+            std::stringstream ss;
+            ss << std::setprecision(type->getPrecision()) << element.getDouble();
+            auto str = ss.str();
+            ReadBufferFromString res(str);
+            assert_cast<const SerializationDecimal<DecimalType> *>(type->getDefaultSerialization().get())->deserializeText(dest, res, {});
+            return true;
+        }
+    private:
+        DataTypePtr data_type;
     };
 
     class StringNode : public Node
