@@ -82,7 +82,7 @@ Arguments are [maps](../../sql-reference/data-types/map.md) or [tuples](../../sq
 
 **Returned value**
 
--   Depending on the arguments returns one [map](../../sql-reference/data-types/map.md) o [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
+-   Depending on the arguments returns one [map](../../sql-reference/data-types/map.md) or [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
 
 **Example**
 
