@@ -156,7 +156,6 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// and pass them to replication consumer.
     else
     {
-        LOG_TRACE(log, "Loading {} tables...", materialized_storages.size());
         for (const auto & [table_name, storage] : materialized_storages)
         {
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
@@ -174,12 +173,14 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                     throw;
             }
         }
+        LOG_TRACE(log, "Loaded {} tables", nested_storages.size());
     }
 
     tx.commit();
 
     /// Pass current connection to consumer. It is not std::moved implicitly, but a shared_ptr is passed.
     /// Consumer and replication handler are always executed one after another (not concurrently) and share the same connection.
+    /// (Apart from the case, when shutdownFinal is called).
     /// Handler uses it only for loadFromSnapshot and shutdown methods.
     consumer = std::make_shared<MaterializedPostgreSQLConsumer>(
             context,

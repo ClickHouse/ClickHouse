@@ -38,6 +38,12 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , allow_automatic_update(allow_automatic_update_)
     , storages(storages_)
 {
+    final_lsn = start_lsn;
+    auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+    current_lsn = advanceLSN(tx);
+    LOG_TRACE(log, "Starting replication. LSN: {} (last: {})", getLSNValue(current_lsn), getLSNValue(final_lsn));
+    tx->commit();
+
     for (const auto & [table_name, storage] : storages)
     {
         buffers.emplace(table_name, Buffer(storage));
@@ -298,7 +304,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                     /// In this case, first comes a tuple with old replica identity indexes and all other values will come as
                     /// nulls. Then comes a full new row.
                     case 'K': [[fallthrough]];
-                    /// Old row. Only if replica identity is set to full. Does notreally make sense to use it as
+                    /// Old row. Only if replica identity is set to full. Does not really make sense to use it as
                     /// it is much more efficient to use replica identity index, but support all possible cases.
                     case 'O':
                     {
@@ -371,7 +377,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (storages.find(relation_name) == storages.end())
             {
                 markTableAsSkipped(relation_id, relation_name);
-                LOG_ERROR(log, "Storage for table {} does not exist, but is included in replication stream", relation_name);
+                LOG_ERROR(log,
+                          "Storage for table {} does not exist, but is included in replication stream. (Storages number: {})",
+                          relation_name, storages.size());
                 return;
             }
 
@@ -468,12 +476,12 @@ void MaterializedPostgreSQLConsumer::syncTables()
             {
                 auto storage = storages[table_name];
 
+                auto insert_context = Context::createCopy(context);
+                insert_context->setInternalQuery(true);
+
                 auto insert = std::make_shared<ASTInsertQuery>();
                 insert->table_id = storage->getStorageID();
                 insert->columns = buffer.columnsAST;
-
-                auto insert_context = Context::createCopy(context);
-                insert_context->setInternalQuery(true);
 
                 InterpreterInsertQuery interpreter(insert, insert_context, true);
                 auto block_io = interpreter.execute();
@@ -505,10 +513,8 @@ String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontrans
     std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn);
     pqxx::result result{tx->exec(query_str)};
 
-    if (!result.empty())
-        return result[0][0].as<std::string>();
-
-    LOG_TRACE(log, "Advanced LSN up to: {}", final_lsn);
+    final_lsn = result[0][0].as<std::string>();
+    LOG_TRACE(log, "Advanced LSN up to: {}", getLSNValue(final_lsn));
     return final_lsn;
 }
 
@@ -552,18 +558,21 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
     /// Empty lsn string means - continue waiting for valid lsn.
     skip_list.insert({relation_id, ""});
 
-    /// Erase cached schema identifiers. It will be updated again once table is allowed back into replication stream
-    /// and it receives first data after update.
-    schema_data.erase(relation_id);
+    if (storages.count(relation_name))
+    {
+        /// Erase cached schema identifiers. It will be updated again once table is allowed back into replication stream
+        /// and it receives first data after update.
+        schema_data.erase(relation_id);
 
-    /// Clear table buffer.
-    auto & buffer = buffers.find(relation_name)->second;
-    buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
+        /// Clear table buffer.
+        auto & buffer = buffers.find(relation_name)->second;
+        buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
 
-    if (allow_automatic_update)
-        LOG_TRACE(log, "Table {} (relation_id: {}) is skipped temporarily. It will be reloaded in the background", relation_name, relation_id);
-    else
-        LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name, relation_id);
+        if (allow_automatic_update)
+            LOG_TRACE(log, "Table {} (relation_id: {}) is skipped temporarily. It will be reloaded in the background", relation_name, relation_id);
+        else
+            LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name, relation_id);
+    }
 }
 
 
