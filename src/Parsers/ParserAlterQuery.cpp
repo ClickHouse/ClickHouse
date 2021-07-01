@@ -231,7 +231,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_idx_decl.parse(pos, command->index_decl, expected))
                 return false;
 
-            if (s_after.ignore(pos, expected))
+            if (s_first.ignore(pos, expected))
+                command->first = true;
+            else if (s_after.ignore(pos, expected))
             {
                 if (!parser_name.parse(pos, command->index, expected))
                     return false;
