@@ -77,6 +77,7 @@ namespace ErrorCodes
 {
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -1060,30 +1061,26 @@ void executeQuery(
         }
         else if (pipeline.initialized())
         {
-            if (pipeline.isCompleted())
+            const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+
+            WriteBuffer * out_buf = &ostr;
+            std::optional<WriteBufferFromFile> out_file_buf;
+            if (ast_query_with_output && ast_query_with_output->out_file)
             {
-                pipeline.setProgressCallback(context->getProgressCallback());
+                if (!allow_into_outfile)
+                    throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
+
+                const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+                out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
+                out_buf = &*out_file_buf;
             }
-            else
+
+            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+                                 ? getIdentifierName(ast_query_with_output->format)
+                                 : context->getDefaultFormat();
+
+            if (!pipeline.isCompleted())
             {
-                const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-
-                WriteBuffer * out_buf = &ostr;
-                std::optional<WriteBufferFromFile> out_file_buf;
-                if (ast_query_with_output && ast_query_with_output->out_file)
-                {
-                    if (!allow_into_outfile)
-                        throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
-
-                    const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
-                    out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                    out_buf = &*out_file_buf;
-                }
-
-                String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                                     ? getIdentifierName(ast_query_with_output->format)
-                                     : context->getDefaultFormat();
-
                 pipeline.addSimpleTransform([](const Block & header)
                 {
                     return std::make_shared<MaterializingTransform>(header);
@@ -1108,6 +1105,10 @@ void executeQuery(
                         context->getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
                 pipeline.setOutputFormat(std::move(out));
+            }
+            else
+            {
+                pipeline.setProgressCallback(context->getProgressCallback());
             }
 
             {

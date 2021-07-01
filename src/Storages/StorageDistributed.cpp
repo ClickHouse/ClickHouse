@@ -1139,7 +1139,14 @@ ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
 
 void StorageDistributed::flush()
 {
-    flushClusterNodesAllData(getContext());
+    try
+    {
+        flushClusterNodesAllData(getContext());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot flush");
+    }
 }
 
 void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
