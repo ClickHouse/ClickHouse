@@ -380,7 +380,8 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
         else
             in = std::make_shared<OneBlockInputStream>(block);
 
-        in->setProgressCallback([this](const Progress & progress) {
+        in->setProgressCallback([this](const Progress & progress)
+        {
             CurrentThread::updateProgressIn(progress);
             this->onProgress(progress);
         });
