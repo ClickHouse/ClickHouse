@@ -31,8 +31,10 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
-        : log(&Poco::Logger::get("Set")),
-        limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
+        : log(&Poco::Logger::get("Set"))
+        , limits(limits_)
+        , fill_set_elements(fill_set_elements_)
+        , transform_null_in(transform_null_in_)
     {
     }
 
@@ -43,7 +45,7 @@ public:
       * Call setHeader, then call insertFromBlock for each block.
       */
     /// FIXME: also store elements' names from header.
-    void setHeader(const Block & header);
+    void setHeader(const Block & header, bool sorted);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromBlock(const Block & block);
@@ -51,6 +53,9 @@ public:
     void finishInsert() { is_created = true; }
 
     bool isCreated() const { return is_created; }
+
+    // Indicates that columns inside Set (like StorageSet) are sorted.
+    bool isSorted() const { return sorted; }
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
@@ -113,6 +118,8 @@ private:
 
     /// Check if set contains all the data.
     bool is_created = false;
+
+    bool sorted = false;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(

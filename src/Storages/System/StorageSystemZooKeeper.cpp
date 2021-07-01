@@ -96,7 +96,7 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context)
             auto stream = interpreter_subquery->execute().getInputStream();
             SizeLimits limites(context->getSettingsRef().max_rows_in_set, context->getSettingsRef().max_bytes_in_set, OverflowMode::THROW);
             Set set(limites, true, context->getSettingsRef().transform_null_in);
-            set.setHeader(stream->getHeader());
+            set.setHeader(stream->getHeader(), false);
 
             stream->readPrefix();
             while (Block block = stream->read())

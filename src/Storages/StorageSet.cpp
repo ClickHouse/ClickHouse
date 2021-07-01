@@ -144,7 +144,7 @@ StorageSet::StorageSet(
 
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
     header = header.sortColumns();
-    set->setHeader(header);
+    set->setHeader(header, true);
 
     restore();
 }
@@ -168,7 +168,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
     increment = 0;
     set = std::make_shared<Set>(SizeLimits(), false, true);
-    set->setHeader(header);
+    set->setHeader(header, true);
 }
 
 

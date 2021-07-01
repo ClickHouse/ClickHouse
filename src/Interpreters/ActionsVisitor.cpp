@@ -374,7 +374,7 @@ SetPtr makeExplicitSet(
 
     SetPtr set
         = std::make_shared<Set>(size_limits, create_ordered_set, context->getSettingsRef().transform_null_in);
-    set->setHeader(block.cloneEmpty());
+    set->setHeader(block.cloneEmpty(), false);
     set->insertFromBlock(block);
     set->finishInsert();
 

@@ -101,7 +101,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 }
 
 
-void Set::setHeader(const Block & header)
+void Set::setHeader(const Block & header, bool sorted_)
 {
     std::unique_lock lock(rwlock);
 
@@ -160,6 +160,8 @@ void Set::setHeader(const Block & header)
 
     /// Choose data structure to use for the set.
     data.init(data.chooseMethod(key_columns, key_sizes));
+
+    sorted = sorted_;
 }
 
 

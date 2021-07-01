@@ -147,7 +147,8 @@ public:
             }
         }
 
-        columns_of_key_columns = columns_of_key_columns.sortColumns();
+        if (set->isSorted())
+            columns_of_key_columns = columns_of_key_columns.sortColumns();
         auto res = set->execute(columns_of_key_columns, negative);
 
         if (lc_indexes)

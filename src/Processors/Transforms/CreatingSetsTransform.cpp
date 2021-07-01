@@ -83,7 +83,7 @@ void CreatingSetsTransform::init()
     is_initialized = true;
 
     if (subquery.set)
-        subquery.set->setHeader(getInputPort().getHeader());
+        subquery.set->setHeader(getInputPort().getHeader(), false);
 
     watch.restart();
     startSubquery();
