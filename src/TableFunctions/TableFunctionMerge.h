@@ -15,11 +15,13 @@ class TableFunctionMerge : public ITableFunction
 public:
     static constexpr auto name = "merge";
     std::string getName() const override { return name; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Merge"; }
 
-    const std::unordered_map<String, std::unordered_set<String>> & getSourceDatabasesAndTables(ContextPtr context) const;
+    using DbToTableSetMap = std::unordered_map<String, std::unordered_set<String>>;
+    const DbToTableSetMap & getSourceDatabasesAndTables(ContextPtr context) const;
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     static NameSet getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context);
@@ -27,7 +29,7 @@ private:
     String source_database_name_or_regexp;
     String source_table_regexp;
     bool database_is_regexp = false;
-    mutable std::optional<std::unordered_map<String, std::unordered_set<String>>> source_databases_and_tables;
+    mutable std::optional<DbToTableSetMap> source_databases_and_tables;
 };
 
 
