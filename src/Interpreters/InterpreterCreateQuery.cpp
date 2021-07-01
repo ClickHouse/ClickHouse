@@ -8,6 +8,7 @@
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
 #include <Common/renameat2.h>
+#include <Common/hex.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -31,6 +32,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -796,36 +798,6 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
         create.uuid = UUIDHelpers::Nil;
         create.to_inner_uuid = UUIDHelpers::Nil;
     }
-
-    if (create.replace_table)
-    {
-        if (database->getUUID() == UUIDHelpers::Nil)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "{} query is supported only for Atomic databases",
-                            create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
-
-        UUID uuid_of_table_to_replace;
-        if (create.create_or_replace)
-        {
-            uuid_of_table_to_replace = getContext()->tryResolveStorageID(StorageID(create.database, create.table)).uuid;
-            if (uuid_of_table_to_replace == UUIDHelpers::Nil)
-            {
-                /// Convert to usual CREATE
-                create.replace_table = false;
-                assert(!database->isTableExist(create.table, getContext()));
-            }
-            else
-                create.table = "_tmp_replace_" + toString(uuid_of_table_to_replace);
-        }
-        else
-        {
-            uuid_of_table_to_replace = getContext()->resolveStorageID(StorageID(create.database, create.table)).uuid;
-            if (uuid_of_table_to_replace == UUIDHelpers::Nil)
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
-                                backQuoteIfNeed(create.database), backQuoteIfNeed(create.table));
-            create.table = "_tmp_replace_" + toString(uuid_of_table_to_replace);
-        }
-    }
 }
 
 
@@ -1105,11 +1077,27 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 {
     auto ast_drop = std::make_shared<ASTDropQuery>();
     String table_to_replace_name = create.table;
-    bool created = false;
-    bool replaced = false;
 
+    {
+        auto database = DatabaseCatalog::instance().getDatabase(create.database);
+        if (database->getUUID() == UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "{} query is supported only for Atomic databases",
+                            create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
+
+
+        UInt64 name_hash = sipHash64(create.database + create.table);
+        UInt16 random_suffix = thread_local_rng();
+        create.table = fmt::format("_tmp_replace_{}_{}",
+                                   getHexUIntLowercase(name_hash),
+                                   getHexUIntLowercase(random_suffix));
+    }
+
+    bool created = false;
+    bool renamed = false;
     try
     {
+        /// Create temporary table (random name will be generated)
         [[maybe_unused]] bool done = doCreateTable(create, properties);
         assert(done);
         ast_drop->table = create.table;
@@ -1117,9 +1105,12 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ast_drop->database = create.database;
         ast_drop->kind = ASTDropQuery::Drop;
         created = true;
-        if (!create.replace_table)
-            return fillTableIfNeeded(create);
 
+        /// Try fill temporary table
+        BlockIO fill_io = fillTableIfNeeded(create);
+        executeTrivialBlockIO(fill_io, getContext());
+
+        /// Replace target table with created one
         auto ast_rename = std::make_shared<ASTRenameQuery>();
         ASTRenameQuery::Element elem
         {
@@ -1130,19 +1121,27 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ast_rename->elements.push_back(std::move(elem));
         ast_rename->exchange = true;
         ast_rename->dictionary = create.is_dictionary;
+        /// Will execute ordinary RENAME instead of EXCHANGE if the target table does not exist
+        ast_rename->rename_if_cannot_exchange = create.create_or_replace;
 
-        InterpreterRenameQuery(ast_rename, getContext()).execute();
-        replaced = true;
+        InterpreterRenameQuery interpreter_rename{ast_rename, getContext()};
+        interpreter_rename.execute();
+        renamed = true;
 
-        InterpreterDropQuery(ast_drop, getContext()).execute();
+        if (!interpreter_rename.renamedInsteadOfExchange())
+        {
+            /// Target table was replaced with new one, drop old table
+            InterpreterDropQuery(ast_drop, getContext()).execute();
+        }
 
         create.table = table_to_replace_name;
 
-        return fillTableIfNeeded(create);
+        return {};
     }
     catch (...)
     {
-        if (created && create.replace_table && !replaced)
+        /// Drop temporary table if it was successfully created, but was not renamed to target name
+        if (created && !renamed)
             InterpreterDropQuery(ast_drop, getContext()).execute();
         throw;
     }

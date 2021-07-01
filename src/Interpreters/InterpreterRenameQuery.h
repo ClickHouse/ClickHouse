@@ -55,6 +55,8 @@ public:
     BlockIO execute() override;
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
+    bool renamedInsteadOfExchange() const { return renamed_instead_of_exchange; }
+
 private:
     BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
     static BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
@@ -62,6 +64,7 @@ private:
     AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;
+    bool renamed_instead_of_exchange{false};
 };
 
 }
