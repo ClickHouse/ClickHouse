@@ -414,7 +414,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                 /// We have to check granularity on other replicas. If it's fixed we
                 /// must create our new replica with fixed granularity and store this
                 /// information in /replica/metadata.
-                other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+                other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
 
                 checkTableStructure(zookeeper_path, metadata_snapshot);
 
@@ -449,7 +449,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         if (!replica_metadata_exists || replica_metadata.empty())
         {
             /// We have to check shared node granularity before we create ours.
-            other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+            other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
 
             ReplicatedMergeTreeTableMetadata current_metadata(*this, metadata_snapshot);
 
@@ -486,7 +486,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 }
 
 
-bool StorageReplicatedMergeTree::checkFixedGranualrityInZookeeper()
+bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper()
 {
     auto zookeeper = getZooKeeper();
     String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
@@ -558,6 +558,14 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
         }
 
+        if (partial_shutdown_called)
+            throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
+                ErrorCodes::UNFINISHED);
+
+        /// Replica inactive, don't check mutation status
+        if (!inactive_replicas.empty() && inactive_replicas.count(replica))
+            continue;
+
         /// At least we have our current mutation
         std::set<String> mutation_ids;
         mutation_ids.insert(mutation_id);
@@ -566,10 +574,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         /// they will happen on each replica, so we can check only in-memory info.
         auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
         checkMutationStatus(mutation_status, mutation_ids);
-
-        if (partial_shutdown_called)
-            throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
-                ErrorCodes::UNFINISHED);
     }
 
     if (!inactive_replicas.empty())
@@ -2194,6 +2198,7 @@ bool StorageReplicatedMergeTree::executeFetchShared(
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.partition_id, drop_range_info.max_block);
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
     /// Delete the parts contained in the range to be deleted.
@@ -2255,9 +2260,14 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     bool replace = !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range);
 
     if (replace)
+    {
+        getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
+    }
     else
+    {
         drop_range = {};
+    }
 
     struct PartDescription
     {
@@ -3157,30 +3167,35 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     });
 }
 
-std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
+bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & executor)
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
-        return {};
+        return false;
 
     /// This object will mark the element of the queue as running.
     ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry = selectQueueEntry();
 
     if (!selected_entry)
-        return {};
-
-    PoolType pool_type;
+        return false;
 
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
     if (selected_entry->log_entry->type == LogEntry::GET_PART)
-        pool_type = PoolType::FETCH;
-    else
-        pool_type = PoolType::MERGE_MUTATE;
-
-    return JobAndPool{[this, selected_entry] () mutable
     {
-        return processQueueEntry(selected_entry);
-    }, pool_type};
+        executor.execute({[this, selected_entry] () mutable
+        {
+            return processQueueEntry(selected_entry);
+        }, PoolType::FETCH});
+        return true;
+    }
+    else
+    {
+        executor.execute({[this, selected_entry] () mutable
+        {
+            return processQueueEntry(selected_entry);
+        }, PoolType::MERGE_MUTATE});
+        return true;
+    }
 }
 
 
@@ -7096,6 +7111,8 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
 
     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.front()).path_created;
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    getContext()->getMergeList().cancelInPartition(getStorageID(), partition_id, drop_range_info.max_block);
 
     return true;
 }

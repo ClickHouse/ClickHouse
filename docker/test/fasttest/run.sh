@@ -113,6 +113,7 @@ function start_server
     echo "ClickHouse server pid '$server_pid' started and responded"
 
     echo "
+set follow-fork-mode child
 handle all noprint
 handle SIGSEGV stop print
 handle SIGBUS stop print
