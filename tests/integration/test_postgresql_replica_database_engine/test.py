@@ -844,22 +844,29 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
                              port=started_cluster.postgres_port,
                              database=True)
     cursor = conn.cursor()
-    NUM_TABLES = 2
+    NUM_TABLES = 6
 
     for i in range(NUM_TABLES):
         create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
 
     def transaction(thread_id):
-        conn = get_postgres_conn(ip=started_cluster.postgres_ip,
-                                port=started_cluster.postgres_port,
-                                database=True, auto_commit=True)
+        if thread_id % 2:
+            conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                                    port=started_cluster.postgres_port,
+                                    database=True, auto_commit=True)
+        else:
+            conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                                    port=started_cluster.postgres_port,
+                                    database=True, auto_commit=False)
         cursor_ = conn.cursor()
         for query in queries:
             cursor_.execute(query.format(thread_id))
             print('thread {}, query {}'.format(thread_id, query))
+        if thread_id % 2 == 0:
+            conn.commit()
 
     threads = []
-    threads_num = 2
+    threads_num = 6
     for i in range(threads_num):
         threads.append(threading.Thread(target=transaction, args=(i,)))
 

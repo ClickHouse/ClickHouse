@@ -41,6 +41,6 @@ SELECT key, value, _version FROM test.postgresql_replica;
 ```
 
 
-## WARNINGS {#warnings}
+## Warning {#warning}
 
-1. **TOAST** values convertions is not supported. Default value for the data type will be used.
+1. **TOAST** values convertion is not supported. Default value for the data type will be used.

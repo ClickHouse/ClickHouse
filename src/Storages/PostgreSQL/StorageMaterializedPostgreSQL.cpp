@@ -233,7 +233,7 @@ void StorageMaterializedPostgreSQL::shutdown()
 
 void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
 {
-    /// If it is a table with database engine MaterializedPostgreSQL - return, becuase delition of
+    /// If it is a table with database engine MaterializedPostgreSQL - return, because delition of
     /// internal tables is managed there.
     if (is_materialized_postgresql_database)
         return;
