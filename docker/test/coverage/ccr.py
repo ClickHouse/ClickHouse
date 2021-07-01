@@ -35,6 +35,28 @@ colors = {  # covered, not covered. Colors taken from colorsafe.co
     }
 
 
+class BinaryReader:
+    LE = "<I"
+    BE = ">I"
+
+    def __init__(self):
+        self.is_le = False
+
+    @staticmethod
+    def read_quad_char(f):
+        return f.read(4)
+
+    def read_uint32(self, f):
+        return unpack(self.LE if self.is_le else self.BE, f.read(4))[0]
+
+    def read_string(self, f):
+        return f.read(self.read_string(f)).decode("utf-8")
+
+    def read_padded_string(self, f):
+        word_len = self.read_uint32(f)
+        return f.read(word_len * 4).rstrip(b"\0").decode("utf-8")
+
+
 class GCNO:
     """
     .gcno files parser.
@@ -59,19 +81,11 @@ class GCNO:
                 self.load_file_header(f)
                 self.load_records(f)
 
-    class Magic:
-        BE = b"gcno"
-        LE = b"oncg"
-
     class Tag(IntEnum):
         FUNCTION = 0x01000000
         BLOCKS = 0x01410000
         ARCS = 0x01430000
         LINES = 0x01450000
-
-    class PackUInt32:
-        LE = "<I"
-        BE = ">I"
 
     class GraphArc():
         def __init__(self, dest_block):
@@ -113,9 +127,6 @@ class GCNO:
     def get_name_from_path(self, pathname):
         return os.path.split(pathname)[1]
 
-    def pack_uint(self):
-        return self.PackUInt32.LE if self.is_le else self.PackUInt32.BE
-
     def parse_version(self, version_bin):
         v = (version_bin[::-1] if self.is_le else version_bin).decode('utf-8')
 
@@ -131,16 +142,16 @@ class GCNO:
             raise Exception("Invalid version")
 
     def load_file_header(self, f):
-        magic = self.read_quad_char(f)
+        magic = self.read_quad_char(f).decode("utf-8")
 
-        if magic == self.Magic.BE:
+        if magic == "gcno":
             self.is_le = False
-        elif magic == self.Magic.LE:
+        elif magic == "oncg":
             self.is_le = True
         else:
             raise Exception("Unknown endianess")
 
-        self.parse_version(self.read_quad_char(f))
+        self.parse_version(f.read(4))
         self.read_uint32(f)  # stamp
 
     def get_lines_with_hits(self, file_name, edges):
@@ -216,17 +227,6 @@ class GCNO:
                 break
 
             pos = f.tell()
-
-    @staticmethod
-    def read_quad_char(f):
-        return f.read(4)
-
-    def read_uint32(self, f):
-        return unpack(self.pack_uint(), self.read_quad_char(f))[0]
-
-    def read_string(self, f):
-        word_len = self.read_uint32(f)
-        return f.read(word_len * 4).rstrip(b"\0")
 
     def read_func_record(self, f):
         # ignore function id, line checksum, cfg checksum
@@ -452,8 +452,10 @@ class CodeFormatter(HtmlFormatter):
         yield 0, '</pre></div>'
 
 
-class CCR:
+class CCR(BinaryReader):
     def __init__(self, args):
+        super().__init__()
+
         self.args = args
 
         self.files = []
@@ -469,7 +471,7 @@ class CCR:
             self.generate_html()
 
     class Magic:
-        ReportHeader = 0xffffffff
+        ReportHeader = 0xcafefefe
         TestEntry = 0xcafecafe
 
     def read(self, report_file):
@@ -482,12 +484,6 @@ class CCR:
         global tests_count
         tests_count = len(self.tests)
 
-    def read_uint32(self, f):
-        return 0
-
-    def read_string(self, f):
-        return ""
-
     def read_header(self, f):
         """
         We need to skip instrumented contribs as they are useless for report.
@@ -496,6 +492,9 @@ class CCR:
         """
         source_files_map = []
         sf_index = 0
+
+        if self.read_uint32(f) != self.Magic.ReportHeader:
+            raise Exception("Not a CCR file")
 
         files_count = self.read_uint32(f)
 
@@ -523,30 +522,22 @@ class CCR:
 
         self.source_files_map = source_files_map
 
-    def read_tests(self, report_file):
-        tests_sources = {}
+    def read_tests(self, f):
+        test_entry = self.read_uint32(f)
 
         while True:
-            token = report_file.readline()
+            test_name = self.read_string(f)
+            hit_bb = []
 
-            if token == "TEST\n":
-                if len(tests_sources) > 0:
-                    self.tests.append(tests_sources)
-                    tests_sources = {}
-                token = report_file.readline()
-            elif not token.startswith("SOURCE"):
-                if len(tests_sources) > 0:
-                    self.tests.append(tests_sources)
-                return
+            while True:
+                token = self.read_uint32(f)
 
-            source_id = int(token.split()[1])
-            covered_funcs = list(map(int, report_file.readline().split()))
-            covered_edges = list(map(int, report_file.readline().split()))
+                if token == self.Magic.TestEntry:
+                    break
 
-            real_index = self.source_files_map[source_id]
+                hit_bb.append(token)
 
-            if real_index != -1:
-                tests_sources[real_index] = covered_funcs, covered_edges
+            self.tests.append((test_name, hit_bb))
 
     def generate_html(self):
         entries = self.get_entries()

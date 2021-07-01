@@ -8,13 +8,10 @@
 
 namespace coverage
 {
-/// If you want to test runtime outside of Docker, change this variable.
-static const String report_path { "/report.ccr" };
-
+static const String report_path { "/report.ccr" }; // Change if you want to test runtime outside of Docker
 static constexpr std::string_view setting_test_name = "coverage_test_name";
 
 using Addr = uintptr_t;
-
 using Line = int;
 
 using SourceIndex = int;
@@ -51,8 +48,7 @@ private:
     // This variable is set on client initialization so we can ignore coverage for it.
     bool is_client {false};
 
-    //TaskQueue tasks_queue;
-    size_t bb_count {0}; /// Instrumented blocks count.
+    size_t instrumented_basic_blocks {0};
 
     std::vector<SourceInfo> source_files;
 
@@ -67,8 +63,7 @@ private:
     void writeReportHeader() noexcept;
     void symbolizeInstrumentedData();
 
-    struct IndexAndLine { BBIndex bb_index; Line line; };
-    using SourceSymbolizedData = std::vector<IndexAndLine>;
+    using SourceSymbolizedData = std::vector<std::pair<BBIndex, Line>>;
     using LocalCache = std::unordered_map<SourcePath, SourceSymbolizedData>;
     using LocalCaches = std::vector<LocalCache>;
 

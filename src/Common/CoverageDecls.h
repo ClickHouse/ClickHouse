@@ -43,7 +43,7 @@ namespace coverage
 
 enum class Magic : uint32_t
 {
-    ReportHeader = 0xffffffff,
+    ReportHeader = 0xcafefefe,
     TestEntry = 0xcafecafe
 };
 
