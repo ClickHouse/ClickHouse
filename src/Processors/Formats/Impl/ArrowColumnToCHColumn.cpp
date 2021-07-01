@@ -355,7 +355,7 @@ static void fillColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arro
                 fillColumnWithBooleanData(arrow_column, internal_column);
                 break;
             case arrow::Type::DATE32:
-                if (WhichDataType(internal_column.getDataType()).isDate())
+                if (WhichDataType(internal_column.getDataType()).isUInt16())
                 {
                     fillColumnWithDate32Data(arrow_column, internal_column);
                 }
@@ -554,8 +554,8 @@ static void fillColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arro
                     }
                     else
                     {
-                        return (strcmp(elem.second, "Date") != 0 && which.isDate())
-                            || (strcmp(elem.second, "Date32") != 0 && which.isDate32());
+                        return (elem.second == "Date" && which.isDate())
+                        || (elem.second == "Date32" && which.isDate32());
                     }
                 });
             internal_type_it != arrow_type_to_internal_type.end())

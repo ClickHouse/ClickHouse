@@ -285,10 +285,7 @@ public:
         }
 
         if (result_type_is_date)
-            if (isDate(arguments[0].type))
-                return std::make_shared<DataTypeDate>();
-            else
-                return std::make_shared<DataTypeDate32>();
+            return std::make_shared<DataTypeDate>();
         else
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
     }
