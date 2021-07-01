@@ -57,6 +57,7 @@ SRCS(
     AggregateFunctionUniqUpTo.cpp
     AggregateFunctionWelchTTest.cpp
     AggregateFunctionWindowFunnel.cpp
+    IAggregateFunction.cpp
     UniqCombinedBiasData.cpp
     UniqVariadicHash.cpp
     parseAggregateFunctionParameters.cpp
