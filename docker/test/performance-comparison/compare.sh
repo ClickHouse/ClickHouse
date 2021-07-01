@@ -409,10 +409,10 @@ create view right_query_log as select *
         '$(cat "right-query-log.tsv.columns")');
 
 create view query_logs as
-    select 0 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
+    select 0 version, query_id, ProfileEvents.keys, ProfileEvents.values,
         query_duration_ms, memory_usage from left_query_log
     union all
-    select 1 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
+    select 1 version, query_id, ProfileEvents.keys, ProfileEvents.values,
         query_duration_ms, memory_usage from right_query_log
     ;
 
@@ -424,7 +424,7 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
     with (
         -- sumMapState with the list of all keys with '-0.' values. Negative zero is because
         -- sumMap removes keys with positive zeros.
-        with (select groupUniqArrayArray(ProfileEvents.Names) from query_logs) as all_names
+        with (select groupUniqArrayArray(ProfileEvents.keys) from query_logs) as all_names
             select arrayReduce('sumMapState', [(all_names, arrayMap(x->-0., all_names))])
         ) as all_metrics
     select test, query_index, version, query_id,
@@ -433,8 +433,8 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
                 [
                     all_metrics,
                     arrayReduce('sumMapState',
-                        [(ProfileEvents.Names,
-                            arrayMap(x->toFloat64(x), ProfileEvents.Values))]
+                        [(ProfileEvents.keys,
+                            arrayMap(x->toFloat64(x), ProfileEvents.values))]
                     ),
                     arrayReduce('sumMapState', [(
                         ['client_time', 'server_time', 'memory_usage'],
@@ -1005,7 +1005,7 @@ create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
         'unstable-run-metrics.$version.rep') as
     select
         test, query_index, query_id,
-        ProfileEvents.Values value, ProfileEvents.Names metric
+        ProfileEvents.values value, ProfileEvents.keys metric
     from query_log array join ProfileEvents
     join unstable_query_runs using (query_id)
     ;
@@ -1280,7 +1280,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     then
         echo Database for test results is not specified, will not upload them.
         return 0
-    fi 
+    fi
 
     set +x # Don't show password in the log
     client=(clickhouse-client

@@ -348,7 +348,7 @@ SetPtr makeExplicitSet(
     const ASTPtr & left_arg = args.children.at(0);
     const ASTPtr & right_arg = args.children.at(1);
 
-    auto column_name = left_arg->getColumnName();
+    auto column_name = left_arg->getColumnName(context->getSettingsRef());
     const auto & dag_node = actions.findInIndex(column_name);
     const DataTypePtr & left_arg_type = dag_node.result_type;
 
@@ -641,7 +641,7 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
 {
     // If the argument is a literal, we generated a unique column name for it.
     // Use it instead of a generic display name.
-    auto child_column_name = ast->getColumnName();
+    auto child_column_name = ast->getColumnName(data.getContext()->getSettingsRef());
     const auto * as_literal = ast->as<ASTLiteral>();
     if (as_literal)
     {
@@ -703,7 +703,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
             func->setAlias(data.getUniqueName("_ut_" + name));
 
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
-        data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
+        data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName(data.getContext()->getSettingsRef())}, func->getColumnName(data.getContext()->getSettingsRef()));
 
         columns.push_back(std::move(func));
     }
@@ -740,6 +740,7 @@ void ActionsMatcher::visit(ASTExpressionList & expression_list, const ASTPtr &, 
 
 void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Data & data)
 {
+
     auto column_name = identifier.getColumnName();
     if (data.hasColumn(column_name))
         return;
@@ -766,7 +767,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
-    auto column_name = ast->getColumnName();
+    auto column_name = ast->getColumnName(data.getContext()->getSettingsRef());
     if (data.hasColumn(column_name))
         return;
 
@@ -782,7 +783,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         ASTPtr arg = node.arguments->children.at(0);
         visit(arg, data);
         if (!data.only_consts)
-            data.addArrayJoin(arg->getColumnName(), column_name);
+            data.addArrayJoin(arg->getColumnName(data.getContext()->getSettingsRef()), column_name);
 
         return;
     }
@@ -804,7 +805,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 /// We are in the part of the tree that we are not going to compute. You just need to define types.
                 /// Do not subquery and create sets. We replace "in*" function to "in*IgnoreSet".
 
-                auto argument_name = node.arguments->children.at(0)->getColumnName();
+                auto argument_name = node.arguments->children.at(0)->getColumnName(data.getContext()->getSettingsRef());
 
                 data.addFunction(
                         FunctionFactory::instance().get(node.name + "IgnoreSet", data.getContext()),
@@ -933,7 +934,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 if (!prepared_set->empty())
                     column.name = data.getUniqueName("__set");
                 else
-                    column.name = child->getColumnName();
+                    column.name = child->getColumnName(data.getContext()->getSettingsRef());
 
                 if (!data.hasColumn(column.name))
                 {
@@ -1012,7 +1013,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     visit(lambda->arguments->children.at(1), data);
                     auto lambda_dag = data.actions_stack.popLevel();
 
-                    String result_name = lambda->arguments->children.at(1)->getColumnName();
+                    String result_name = lambda->arguments->children.at(1)->getColumnName(data.getContext()->getSettingsRef());
                     lambda_dag->removeUnusedActions(Names(1, result_name));
 
                     auto lambda_actions = std::make_shared<ExpressionActions>(
@@ -1027,7 +1028,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         if (findColumn(required_arg, lambda_arguments) == lambda_arguments.end())
                             captured.push_back(required_arg);
 
-                    /// We can not name `getColumnName()`,
+                    /// We can not name `getColumnName(data.getContext()->getSettingsRef())`,
                     ///  because it does not uniquely define the expression (the types of arguments can be different).
                     String lambda_name = data.getUniqueName("__lambda");
 
@@ -1057,7 +1058,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (arguments_present)
     {
         /// Calculate column name here again, because AST may be changed here (in case of untuple).
-        data.addFunction(function_builder, argument_names, ast->getColumnName());
+        data.addFunction(function_builder, argument_names, ast->getColumnName(data.getContext()->getSettingsRef()));
     }
 }
 
@@ -1071,7 +1072,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     // AST here? Anyway, do not modify the column name if it is set already.
     if (literal.unique_column_name.empty())
     {
-        const auto default_name = literal.getColumnName();
+        const auto default_name = literal.getColumnName(data.getContext()->getSettingsRef());
         const auto & index = data.actions_stack.getLastActionsIndex();
         const auto * existing_column = index.tryGetNode(default_name);
 
@@ -1151,7 +1152,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         }
 
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
-        String set_id = right_in_operand->getColumnName();
+        String set_id = right_in_operand->getColumnName(data.getContext()->getSettingsRef());
 
         SubqueryForSet & subquery_for_set = data.subqueries_for_sets[set_id];
 
@@ -1187,7 +1188,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
     {
         const auto & last_actions = data.actions_stack.getLastActions();
         const auto & index = data.actions_stack.getLastActionsIndex();
-        if (index.contains(left_in_operand->getColumnName()))
+        if (index.contains(left_in_operand->getColumnName(data.getContext()->getSettingsRef())))
             /// An explicit enumeration of values in parentheses.
             return makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, data.prepared_sets);
         else
