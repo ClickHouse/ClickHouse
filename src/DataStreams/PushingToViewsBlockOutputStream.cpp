@@ -139,12 +139,12 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
         /// Later on, before doing any task related to a view, we'll switch to its ThreadStatus, do the work,
         /// and switch back to the original thread_status.
-        auto * running_thread = current_thread;
+        auto * original_thread = current_thread;
+        SCOPE_EXIT({ current_thread = original_thread; });
         ThreadGroupStatusPtr running_group = current_thread && current_thread->getThreadGroup()
             ? current_thread->getThreadGroup()
             : MainThreadStatus::getInstance().thread_group;
         auto thread_status = std::make_unique<ThreadStatus>();
-        current_thread = running_thread;
         if (running_group)
             thread_status->setupState(running_group);
 
@@ -329,15 +329,13 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
 {
     Stopwatch watch;
     /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
-    auto * running_thread = current_thread;
+    *view.runtime_stats.thread_status->last_rusage = RUsageCounters::current();
+    if (view.runtime_stats.thread_status->taskstats)
+        view.runtime_stats.thread_status->taskstats->reset();
+
+    auto * original_thread = current_thread;
+    SCOPE_EXIT({ current_thread = original_thread; });
     current_thread = view.runtime_stats.thread_status.get();
-    *current_thread->last_rusage = RUsageCounters::current();
-    if (current_thread->taskstats)
-        current_thread->taskstats->reset();
-    SCOPE_EXIT({
-        current_thread->updatePerformanceCounters();
-        current_thread = running_thread;
-    });
 
     try
     {
@@ -398,6 +396,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
         view.setException(std::current_exception());
     }
 
+    view.runtime_stats.thread_status->updatePerformanceCounters();
     view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
 }
 
@@ -405,15 +404,13 @@ void PushingToViewsBlockOutputStream::processPrefix(ViewInfo & view)
 {
     Stopwatch watch;
     /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
-    auto * running_thread = current_thread;
+    *view.runtime_stats.thread_status->last_rusage = RUsageCounters::current();
+    if (view.runtime_stats.thread_status->taskstats)
+        view.runtime_stats.thread_status->taskstats->reset();
+
+    auto * original_thread = current_thread;
+    SCOPE_EXIT({ current_thread = original_thread; });
     current_thread = view.runtime_stats.thread_status.get();
-    *current_thread->last_rusage = RUsageCounters::current();
-    if (current_thread->taskstats)
-        current_thread->taskstats->reset();
-    SCOPE_EXIT({
-        current_thread->updatePerformanceCounters();
-        current_thread = running_thread;
-    });
 
     try
     {
@@ -428,6 +425,7 @@ void PushingToViewsBlockOutputStream::processPrefix(ViewInfo & view)
     {
         view.setException(std::current_exception());
     }
+    view.runtime_stats.thread_status->updatePerformanceCounters();
     view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
 }
 
@@ -436,15 +434,13 @@ void PushingToViewsBlockOutputStream::processSuffix(ViewInfo & view)
 {
     Stopwatch watch;
     /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
-    auto * running_thread = current_thread;
+    *view.runtime_stats.thread_status->last_rusage = RUsageCounters::current();
+    if (view.runtime_stats.thread_status->taskstats)
+        view.runtime_stats.thread_status->taskstats->reset();
+
+    auto * original_thread = current_thread;
+    SCOPE_EXIT({ current_thread = original_thread; });
     current_thread = view.runtime_stats.thread_status.get();
-    *current_thread->last_rusage = RUsageCounters::current();
-    if (current_thread->taskstats)
-        current_thread->taskstats->reset();
-    SCOPE_EXIT({
-        current_thread->updatePerformanceCounters();
-        current_thread = running_thread;
-    });
 
     try
     {
@@ -460,6 +456,7 @@ void PushingToViewsBlockOutputStream::processSuffix(ViewInfo & view)
     {
         view.setException(std::current_exception());
     }
+    view.runtime_stats.thread_status->updatePerformanceCounters();
     view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
     if (!view.exception)
     {
