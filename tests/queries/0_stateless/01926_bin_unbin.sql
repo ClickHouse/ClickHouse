@@ -11,6 +11,8 @@ select bin(toFloat32(1.2));
 select bin(toFloat64(1.2));
 select bin(toDecimal32(1.2, 8));
 select bin(toDecimal64(1.2, 17));
+select bin('12332424');
+select bin(toLowCardinality(materialize('12332424')));
 
 select unbin('00110000'); -- 0
 select unbin('0011000100110000'); -- 10
