@@ -87,7 +87,8 @@ public:
         }
 
         return ColumnArray::create(
-            ColumnTuple::create(tuple_columns), static_cast<const ColumnArray &>(*first_array_column).getOffsetsPtr());
+            ColumnTuple::create(tuple_columns, Names(num_arguments)),
+            static_cast<const ColumnArray &>(*first_array_column).getOffsetsPtr());
     }
 };
 

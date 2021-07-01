@@ -81,6 +81,7 @@ public:
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);
+        Names names(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
         {
             /** If tuple is mixed of constant and not constant columns,
@@ -88,8 +89,9 @@ public:
               *  because many places in code expect all non-constant columns in non-constant tuple.
               */
             tuple_columns[i] = arguments[i].column->convertToFullColumnIfConst();
+            names[i] = arguments[i].name;
         }
-        return ColumnTuple::create(tuple_columns);
+        return ColumnTuple::create(tuple_columns, names);
     }
 };
 

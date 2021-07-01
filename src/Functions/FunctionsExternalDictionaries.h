@@ -513,7 +513,7 @@ private:
                 key_types,
                 default_cols);
 
-            result = ColumnTuple::create(std::move(result_columns));
+            result = ColumnTuple::create(result_columns, attribute_names);
         }
         else
             result = dictionary->getColumn(
@@ -824,7 +824,7 @@ private:
                     new_columns[tuple_column_index] = ColumnNullable::create(std::move(mutable_column), std::move(nullable_column_map));
             }
 
-            result = ColumnTuple::create(std::move(new_columns));
+            result = ColumnTuple::create(std::move(new_columns), column_tuple.getNames());
         }
         else
         {

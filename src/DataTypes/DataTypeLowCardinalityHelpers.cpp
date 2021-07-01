@@ -75,7 +75,7 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
         auto columns = column_tuple->getColumns();
         for (auto & element : columns)
             element = recursiveRemoveLowCardinality(element);
-        return ColumnTuple::create(columns);
+        return ColumnTuple::create(columns, column_tuple->getNames());
     }
 
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
@@ -169,7 +169,7 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
             if (!has_converted)
                 return column;
 
-            return ColumnTuple::create(columns);
+            return ColumnTuple::create(columns, column_tuple->getNames());
         }
     }
 

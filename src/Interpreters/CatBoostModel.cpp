@@ -184,7 +184,7 @@ public:
             }
         }
 
-        return ColumnTuple::create(std::move(mutable_columns));
+        return ColumnTuple::create(std::move(mutable_columns), std::vector<std::string>(tree_count));
     }
 
     size_t getFloatFeaturesCount() const override { return float_features_count; }

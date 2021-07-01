@@ -748,7 +748,7 @@ ColumnPtr FunctionArrayElement::executeTuple(const ColumnsWithTypeAndName & argu
         result_tuple_columns[i] = std::move(col);
     }
 
-    return ColumnTuple::create(result_tuple_columns);
+    return ColumnTuple::create(result_tuple_columns, col_nested->getNames());
 }
 
 namespace

@@ -27,9 +27,10 @@ public:
       */
     using Base = COWHelper<IColumn, ColumnMap>;
 
-    static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets)
+    static Ptr create(
+        const ColumnPtr & keys, const ColumnPtr & values, const String & keys_name, const String & values_name, const ColumnPtr & offsets)
     {
-        auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}), offsets);
+        auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}, {keys_name, values_name}), offsets);
         return ColumnMap::create(nested_column);
     }
 

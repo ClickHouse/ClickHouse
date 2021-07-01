@@ -125,7 +125,7 @@ public:
             const DataTypes & tuple_types = type_tuple->getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
-                columns_of_key_columns.insert({ tuple_columns[i], tuple_types[i], "" });
+                columns_of_key_columns.insert({ tuple_columns[i], tuple_types[i], tuple->getColumnName(i) });
         }
         else
             columns_of_key_columns.insert(left_arg);
@@ -147,6 +147,7 @@ public:
             }
         }
 
+        columns_of_key_columns = columns_of_key_columns.sortColumns();
         auto res = set->execute(columns_of_key_columns, negative);
 
         if (lc_indexes)

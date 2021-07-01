@@ -42,6 +42,7 @@ public:
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
       */
+    /// FIXME: also store elements' names from header.
     void setHeader(const Block & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.

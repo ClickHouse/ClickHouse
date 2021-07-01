@@ -674,7 +674,7 @@ TEST(WeakHash32, ColumnTupleUInt64UInt64)
     Columns columns;
     columns.emplace_back(std::move(col1));
     columns.emplace_back(std::move(col2));
-    auto col_tuple = ColumnTuple::create(std::move(columns));
+    auto col_tuple = ColumnTuple::create(std::move(columns), Names(2));
 
     WeakHash32 hash(col_tuple->size());
     col_tuple->updateWeakHash32(hash);
@@ -712,7 +712,7 @@ TEST(WeakHash32, ColumnTupleUInt64String)
     Columns columns;
     columns.emplace_back(std::move(col1));
     columns.emplace_back(std::move(col2));
-    auto col_tuple = ColumnTuple::create(std::move(columns));
+    auto col_tuple = ColumnTuple::create(std::move(columns), Names(2));
 
     WeakHash32 hash(col_tuple->size());
     col_tuple->updateWeakHash32(hash);
@@ -751,7 +751,7 @@ TEST(WeakHash32, ColumnTupleUInt64FixedString)
     Columns columns;
     columns.emplace_back(std::move(col1));
     columns.emplace_back(std::move(col2));
-    auto col_tuple = ColumnTuple::create(std::move(columns));
+    auto col_tuple = ColumnTuple::create(std::move(columns), Names(2));
 
     WeakHash32 hash(col_tuple->size());
     col_tuple->updateWeakHash32(hash);
@@ -798,7 +798,7 @@ TEST(WeakHash32, ColumnTupleUInt64Array)
     Columns columns;
     columns.emplace_back(std::move(col1));
     columns.emplace_back(ColumnArray::create(std::move(val), std::move(off)));
-    auto col_tuple = ColumnTuple::create(std::move(columns));
+    auto col_tuple = ColumnTuple::create(std::move(columns), Names(2));
 
     WeakHash32 hash(col_tuple->size());
     col_tuple->updateWeakHash32(hash);

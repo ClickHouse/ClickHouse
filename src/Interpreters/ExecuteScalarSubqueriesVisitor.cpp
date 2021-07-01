@@ -146,7 +146,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             ColumnWithTypeAndName ctn;
             ctn.type = std::make_shared<DataTypeTuple>(block.getDataTypes());
-            ctn.column = ColumnTuple::create(block.getColumns());
+            ctn.column = ColumnTuple::create(block.getColumns(), block.getNames());
             scalar.insert(ctn);
         }
     }

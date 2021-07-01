@@ -48,7 +48,11 @@ ColumnWithTypeAndName getPreparedSetInfo(const SetPtr & prepared_set)
     for (auto & set_element : prepared_set->getSetElements())
         set_elements.emplace_back(set_element->convertToFullColumnIfConst());
 
-    return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
+    /// FIXME: get names from Set
+    return {
+        ColumnTuple::create(set_elements, Names(prepared_set->getSetElements().size())),
+        std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()),
+        "dummy"};
 }
 
 bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & bloom_filter, size_t hash_functions)

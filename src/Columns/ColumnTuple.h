@@ -17,13 +17,15 @@ class ColumnTuple final : public COWHelper<IColumn, ColumnTuple>
 private:
     friend class COWHelper<IColumn, ColumnTuple>;
 
+    /// We can't simply use vector of ColumnWithNameAndType because it stores immutable_ptr's implicitly.
     using TupleColumns = std::vector<WrappedPtr>;
     TupleColumns columns;
+    Names names;
 
     template <bool positive>
     struct Less;
 
-    explicit ColumnTuple(MutableColumns && columns);
+    explicit ColumnTuple(MutableColumns && columns, Names names);
     ColumnTuple(const ColumnTuple &) = default;
 
 public:
@@ -31,12 +33,12 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumn, ColumnTuple>;
-    static Ptr create(const Columns & columns);
-    static Ptr create(const TupleColumns & columns);
-    static Ptr create(Columns && arg) { return create(arg); }
+    static Ptr create(const Columns & columns, const Names & names);
+    static Ptr create(const TupleColumns & columns, const Names & names);
+    static Ptr create(Columns && arg, Names && names) { return create(arg, names); }
 
-    template <typename Arg, typename = typename std::enable_if<std::is_rvalue_reference<Arg &&>::value>::type>
-    static MutablePtr create(Arg && arg) { return Base::create(std::forward<Arg>(arg)); }
+    template <typename Arg1, typename Arg2, typename = typename std::enable_if<std::is_rvalue_reference<Arg1 &&>::value>::type>
+    static MutablePtr create(Arg1 && arg, Arg2 && names) { return Base::create(std::forward<Arg1>(arg), std::forward<Arg2>(names)); }
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
@@ -103,6 +105,9 @@ public:
 
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
     ColumnPtr & getColumnPtr(size_t idx) { return columns[idx]; }
+
+    const String & getColumnName(size_t idx) const { return names[idx]; }
+    const Names & getNames() const { return names; }
 
 private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;

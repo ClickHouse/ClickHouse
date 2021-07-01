@@ -199,7 +199,7 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
         {
             columns[i] = castRemoveNullable(column_tuple->getColumnPtr(i), types[i]);
         }
-        return ColumnTuple::create(columns);
+        return ColumnTuple::create(columns, column_tuple->getNames());
     }
 
     return column;

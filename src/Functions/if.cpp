@@ -565,7 +565,8 @@ private:
             tuple_columns[i] = executeImpl(temporary_columns, tuple_result.getElements()[i], input_rows_count);
         }
 
-        return ColumnTuple::create(tuple_columns);
+        /// FIXME: should we preserve names here?
+        return ColumnTuple::create(tuple_columns, Names(tuple_size));
     }
 
     static ColumnPtr executeGeneric(

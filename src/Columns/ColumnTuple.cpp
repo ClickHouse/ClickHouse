@@ -42,38 +42,44 @@ std::string ColumnTuple::getName() const
     return res.str();
 }
 
-ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
+ColumnTuple::ColumnTuple(MutableColumns && mutable_columns, Names column_names)
 {
+    assert(mutable_columns.size() == column_names.size());
+
     columns.reserve(mutable_columns.size());
-    for (auto & column : mutable_columns)
+    names.reserve(mutable_columns.size());
+    for (auto s = mutable_columns.size(), i = 0ul; i < s; ++i)
     {
-        if (isColumnConst(*column))
+        if (isColumnConst(*mutable_columns[i]))
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 
-        columns.push_back(std::move(column));
+        columns.push_back(std::move(mutable_columns[i]));
+        names.push_back(std::move(column_names[i]));
     }
 }
 
-ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
+ColumnTuple::Ptr ColumnTuple::create(const Columns & columns, const Names & names)
 {
     for (const auto & column : columns)
         if (isColumnConst(*column))
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 
-    auto column_tuple = ColumnTuple::create(MutableColumns());
+    auto column_tuple = ColumnTuple::create(MutableColumns(), Names());
     column_tuple->columns.assign(columns.begin(), columns.end());
+    column_tuple->names.assign(names.begin(), names.end());
 
     return column_tuple;
 }
 
-ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
+ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns, const Names & names)
 {
     for (const auto & column : columns)
         if (isColumnConst(*column))
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 
-    auto column_tuple = ColumnTuple::create(MutableColumns());
+    auto column_tuple = ColumnTuple::create(MutableColumns(), Names());
     column_tuple->columns = columns;
+    column_tuple->names = names;
 
     return column_tuple;
 }
@@ -85,7 +91,7 @@ MutableColumnPtr ColumnTuple::cloneEmpty() const
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->cloneEmpty();
 
-    return ColumnTuple::create(std::move(new_columns));
+    return ColumnTuple::create(std::move(new_columns), names);
 }
 
 MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
@@ -95,7 +101,7 @@ MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->cloneResized(new_size);
 
-    return ColumnTuple::create(std::move(new_columns));
+    return ColumnTuple::create(std::move(new_columns), names);
 }
 
 Field ColumnTuple::operator[](size_t n) const
@@ -229,7 +235,7 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->filter(filt, result_size_hint);
 
-    return ColumnTuple::create(new_columns);
+    return ColumnTuple::create(new_columns, names);
 }
 
 ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
@@ -240,7 +246,7 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->permute(perm, limit);
 
-    return ColumnTuple::create(new_columns);
+    return ColumnTuple::create(new_columns, names);
 }
 
 ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
@@ -251,7 +257,7 @@ ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->index(indexes, limit);
 
-    return ColumnTuple::create(new_columns);
+    return ColumnTuple::create(new_columns, names);
 }
 
 ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
@@ -262,7 +268,7 @@ ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->replicate(offsets);
 
-    return ColumnTuple::create(new_columns);
+    return ColumnTuple::create(new_columns, names);
 }
 
 MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
@@ -280,7 +286,8 @@ MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & se
         MutableColumns new_columns(tuple_size);
         for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
             new_columns[tuple_element_idx] = std::move(scattered_tuple_elements[tuple_element_idx][scattered_idx]);
-        res[scattered_idx] = ColumnTuple::create(std::move(new_columns));
+        /// FIXME: names also should be scattered?
+        res[scattered_idx] = ColumnTuple::create(std::move(new_columns), names);
     }
 
     return res;
@@ -522,11 +529,11 @@ ColumnPtr ColumnTuple::compress() const
     }
 
     return ColumnCompressed::create(size(), byte_size,
-        [compressed = std::move(compressed)]() mutable
+        [compressed = std::move(compressed), this]() mutable
         {
             for (auto & column : compressed)
                 column = column->decompress();
-            return ColumnTuple::create(compressed);
+            return ColumnTuple::create(compressed, names);
         });
 }
 

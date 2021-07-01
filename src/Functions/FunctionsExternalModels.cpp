@@ -124,7 +124,7 @@ ColumnPtr FunctionModelEvaluate::executeImpl(const ColumnsWithTypeAndName & argu
             for (auto & col : nested)
                 col = ColumnNullable::create(col, null_map);
 
-            res = ColumnTuple::create(nested);
+            res = ColumnTuple::create(nested, tuple->getNames());
         }
         else
             res = ColumnNullable::create(res, null_map);

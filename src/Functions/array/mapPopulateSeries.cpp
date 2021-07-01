@@ -76,6 +76,7 @@ private:
     {
         MutableColumnPtr res_tuple = res_type.createColumn();
 
+        /// FIXME: set names to nested columns.
         auto * to_tuple = assert_cast<ColumnTuple *>(res_tuple.get());
         auto & to_keys_arr = assert_cast<ColumnArray &>(to_tuple->getColumn(0));
         auto & to_keys_data = to_keys_arr.getData();

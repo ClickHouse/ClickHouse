@@ -390,10 +390,14 @@ static MutableColumns getMergedDataColumns(
         {
             size_t tuple_size = desc.column_numbers.size();
             MutableColumns tuple_columns(tuple_size);
+            std::vector<std::string> names(tuple_size);
             for (size_t i = 0; i < tuple_size; ++i)
+            {
                 tuple_columns[i] = header.safeGetByPosition(desc.column_numbers[i]).column->cloneEmpty();
+                names[i] = header.safeGetByPosition(desc.column_numbers[i]).name;
+            }
 
-            columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
+            columns.emplace_back(ColumnTuple::create(std::move(tuple_columns), std::move(names)));
         }
         else if (desc.is_simple_agg_func_type)
         {

@@ -726,7 +726,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
         tuple_columns[i] = assert_cast<const ColumnArray &>(*temporary_arrays[i]).getDataPtr();
 
     return ColumnArray::create(
-        ColumnTuple::create(tuple_columns),
+        ColumnTuple::create(tuple_columns, tuple.getNames()),
         assert_cast<const ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
 
@@ -1207,7 +1207,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
         tuple_columns[i] = assert_cast<const ColumnArray &>(*temporary_arrays[i]).getDataPtr();
 
     return ColumnArray::create(
-        ColumnTuple::create(tuple_columns),
+        ColumnTuple::create(tuple_columns, tuple.getNames()),
         assert_cast<const ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
 
