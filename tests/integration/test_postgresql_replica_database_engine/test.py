@@ -101,7 +101,8 @@ queries = [
     'DELETE FROM postgresql_replica_{} WHERE value % 9 = 2;',
     "UPDATE postgresql_replica_{} SET key=key+10000000",
     'UPDATE postgresql_replica_{} SET value = value + 2  WHERE key % 3 = 1;',
-    'DELETE FROM postgresql_replica_{} WHERE value%5 = 0;']
+    'DELETE FROM postgresql_replica_{} WHERE value%5 = 0;'
+    ]
 
 
 @pytest.mark.timeout(30)
@@ -836,66 +837,56 @@ def test_restart_server_while_replication_startup_not_finished(started_cluster):
     drop_materialized_db()
 
 
-# Something not ok with this test, need to investigate.
 @pytest.mark.timeout(320)
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
-    return
-#    instance.query("DROP DATABASE IF EXISTS test_database")
-#    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
-#                             port=started_cluster.postgres_port,
-#                             database=True)
-#    cursor = conn.cursor()
-#    NUM_TABLES = 6
-#
-#    for i in range(NUM_TABLES):
-#        create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
-#
-#    def transaction(thread_id):
-#        if thread_id % 2:
-#            conn = get_postgres_conn(ip=started_cluster.postgres_ip,
-#                                    port=started_cluster.postgres_port,
-#                                    database=True, auto_commit=True)
-#        else:
-#            conn = get_postgres_conn(ip=started_cluster.postgres_ip,
-#                                    port=started_cluster.postgres_port,
-#                                    database=True, auto_commit=False)
-#        cursor_ = conn.cursor()
-#        for query in queries:
-#            cursor_.execute(query.format(thread_id))
-#            print('thread {}, query {}'.format(thread_id, query))
-#        if thread_id % 2 == 0:
-#            conn.commit()
-#
-#    threads = []
-#    threads_num = 6
-#    for i in range(threads_num):
-#        threads.append(threading.Thread(target=transaction, args=(i,)))
-#
-#    create_materialized_db(ip=started_cluster.postgres_ip,
-#                           port=started_cluster.postgres_port)
-#
-#    for thread in threads:
-#        time.sleep(random.uniform(0, 0.5))
-#        thread.start()
-#
-#    # Join here because it takes time for data to reach wal
-#    for thread in threads:
-#        thread.join()
-#    time.sleep(1)
-#    instance.restart_clickhouse()
-#
-#    for i in range(NUM_TABLES):
-#        result = instance.query("SELECT count() FROM test_database.postgresql_replica_{}".format(i))
-#        print(result) # Just debug
-#
-#    for i in range(NUM_TABLES):
-#        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
-#
-#    for i in range(NUM_TABLES):
-#        result = instance.query("SELECT count() FROM test_database.postgresql_replica_{}".format(i))
-#        print(result) # Just debug
-#
-#    drop_materialized_db()
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
+    cursor = conn.cursor()
+    NUM_TABLES = 2
+
+    for i in range(NUM_TABLES):
+        create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
+
+    def transaction(thread_id):
+        conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                                port=started_cluster.postgres_port,
+                                database=True, auto_commit=True)
+        cursor_ = conn.cursor()
+        for query in queries:
+            cursor_.execute(query.format(thread_id))
+            print('thread {}, query {}'.format(thread_id, query))
+
+    threads = []
+    threads_num = 2
+    for i in range(threads_num):
+        threads.append(threading.Thread(target=transaction, args=(i,)))
+
+    create_materialized_db(ip=started_cluster.postgres_ip,
+                           port=started_cluster.postgres_port)
+
+    for thread in threads:
+        time.sleep(random.uniform(0, 0.5))
+        thread.start()
+
+    # Join here because it takes time for data to reach wal
+    for thread in threads:
+        thread.join()
+    instance.restart_clickhouse()
+
+    for i in range(NUM_TABLES):
+        result = instance.query("SELECT count() FROM test_database.postgresql_replica_{}".format(i))
+        print(result) # Just debug
+
+    for i in range(NUM_TABLES):
+        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
+
+    for i in range(NUM_TABLES):
+        result = instance.query("SELECT count() FROM test_database.postgresql_replica_{}".format(i))
+        print(result) # Just debug
+
+    drop_materialized_db()
 
 
 if __name__ == '__main__':

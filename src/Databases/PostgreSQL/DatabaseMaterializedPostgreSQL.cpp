@@ -153,6 +153,12 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
 }
 
 
+void DatabaseMaterializedPostgreSQL::shutdown()
+{
+    stopReplication();
+}
+
+
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
     if (replication_handler)
