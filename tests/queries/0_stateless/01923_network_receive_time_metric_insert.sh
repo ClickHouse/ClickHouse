@@ -11,7 +11,7 @@ seq 1 1000 | pv --quiet --rate-limit 1000 | ${CLICKHOUSE_CLIENT} --query "INSERT
 
 # We check that the value of NetworkReceiveElapsedMicroseconds correctly includes the time spent waiting data from the client.
 ${CLICKHOUSE_CLIENT} --multiquery --query "SYSTEM FLUSH LOGS;
-    WITH ProfileEvents.Values[indexOf(ProfileEvents.Names, 'NetworkReceiveElapsedMicroseconds')] AS time
+    WITH ProfileEvents['NetworkReceiveElapsedMicroseconds'] AS time
     SELECT time >= 1000000 ? 1 : time FROM system.query_log
         WHERE current_database = currentDatabase() AND query_kind = 'Insert' AND event_date >= yesterday() AND type = 2 ORDER BY event_time DESC LIMIT 1;"
 
