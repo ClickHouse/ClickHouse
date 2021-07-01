@@ -88,13 +88,13 @@ void Block::insert(ColumnWithTypeAndName && elem)
 
 void Block::insertUnique(const ColumnWithTypeAndName & elem)
 {
-    if (index_by_name.end() == index_by_name.find(elem.name))
+    if (!index_by_name.contains(elem.name))
         insert(elem);
 }
 
 void Block::insertUnique(ColumnWithTypeAndName && elem)
 {
-    if (index_by_name.end() == index_by_name.find(elem.name))
+    if (!index_by_name.contains(elem.name))
         insert(std::move(elem));
 }
 
@@ -139,10 +139,11 @@ void Block::eraseImpl(size_t position)
 
 void Block::erase(const String & name)
 {
+    assert(index_by_name.count(name) < 2);
+
     auto index_it = index_by_name.find(name);
     if (index_it == index_by_name.end())
-        throw Exception("No such name in Block::erase(): '"
-            + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        throw Exception("No such name in Block::erase(): '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
     eraseImpl(index_it->second);
 }
@@ -180,6 +181,8 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 
 const ColumnWithTypeAndName * Block::findByName(const std::string & name) const
 {
+    assert(index_by_name.count(name) < 2);
+
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
     {
@@ -208,6 +211,8 @@ bool Block::has(const std::string & name) const
 
 size_t Block::getPositionByName(const std::string & name) const
 {
+    assert(index_by_name.count(name) < 2);
+
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
         throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()

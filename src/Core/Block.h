@@ -26,7 +26,7 @@ class Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
-    using IndexByName = std::unordered_map<String, size_t>;
+    using IndexByName = std::unordered_multimap<String, size_t>;
 
     Container data;
     IndexByName index_by_name;
