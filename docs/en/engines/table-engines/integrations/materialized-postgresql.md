@@ -18,7 +18,7 @@ PRIMARY KEY key;
 
 - Setting `wal_level`to `logical` and `max_replication_slots` to at least `2` in the postgresql config file.
 
-- A table with engine `MaterializedPostgreSQL` must have a primary key - the same as a replica identity index (default: primary key) of a postgres table (See [details on replica identity index](../../database-engines/materialize-postgresql.md#requirements)).
+- A table with engine `MaterializedPostgreSQL` must have a primary key - the same as a replica identity index (default: primary key) of a postgres table (See [details on replica identity index](../../database-engines/materialized-postgresql.md#requirements)).
 
 - Only database `Atomic` is allowed.
 

@@ -38,7 +38,7 @@ void Connection::execWithRetry(const std::function<void(pqxx::nontransaction &)>
 pqxx::connection & Connection::getRef()
 {
     connect();
-    assert(connection != nulptr);
+    assert(connection != nullptr);
     return *connection;
 }
 
