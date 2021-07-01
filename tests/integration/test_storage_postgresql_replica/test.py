@@ -8,6 +8,8 @@ from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from helpers.test_tools import TSV
 
+import threading
+
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance', main_configs=['configs/log_conf.xml'], with_postgres=True, stay_alive=True)
 
@@ -15,6 +17,40 @@ postgres_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
     key Integer NOT NULL, value Integer, PRIMARY KEY(key))
     """
+
+queries = [
+    'INSERT INTO postgresql_replica select i, i from generate_series(0, 10000) as t(i);',
+    'DELETE FROM postgresql_replica WHERE (value*value) % 3 = 0;',
+    'UPDATE postgresql_replica SET value = value + 125 WHERE key % 2 = 0;',
+    "UPDATE postgresql_replica SET key=key+20000 WHERE key%2=0",
+    'INSERT INTO postgresql_replica select i, i from generate_series(40000, 50000) as t(i);',
+    'DELETE FROM postgresql_replica WHERE key % 10 = 0;',
+    'UPDATE postgresql_replica SET value = value + 101 WHERE key % 2 = 1;',
+    "UPDATE postgresql_replica SET key=key+80000 WHERE key%2=1",
+    'DELETE FROM postgresql_replica WHERE value % 2 = 0;',
+    'UPDATE postgresql_replica SET value = value + 2000 WHERE key % 5 = 0;',
+    'INSERT INTO postgresql_replica select i, i from generate_series(200000, 250000) as t(i);',
+    'DELETE FROM postgresql_replica WHERE value % 3 = 0;',
+    'UPDATE postgresql_replica SET value = value * 2 WHERE key % 3 = 0;',
+    "UPDATE postgresql_replica SET key=key+500000 WHERE key%2=1",
+    'INSERT INTO postgresql_replica select i, i from generate_series(1000000, 1050000) as t(i);',
+    'DELETE FROM postgresql_replica WHERE value % 9 = 2;',
+    "UPDATE postgresql_replica SET key=key+10000000",
+    'UPDATE postgresql_replica SET value = value + 2  WHERE key % 3 = 1;',
+    'DELETE FROM postgresql_replica WHERE value%5 = 0;'
+    ]
+
+
+@pytest.mark.timeout(30)
+def check_tables_are_synchronized(table_name, order_by='key', postgres_database='postgres_database'):
+    expected = instance.query('select * from {}.{} order by {};'.format(postgres_database, table_name, order_by))
+    result = instance.query('select * from test.{} order by {};'.format(table_name, order_by))
+
+    while result != expected:
+        time.sleep(0.5)
+        result = instance.query('select * from test.{} order by {};'.format(table_name, order_by))
+
+    assert(result == expected)
 
 def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name='postgres_database'):
     if database == True:
@@ -27,7 +63,6 @@ def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name=
         conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
         conn.autocommit = True
     return conn
-
 
 def create_postgres_db(cursor, name):
     cursor.execute("CREATE DATABASE {}".format(name))
@@ -485,6 +520,78 @@ def test_virtual_columns(started_cluster):
     result = instance.query('SELECT key, value, _sign, _version FROM test.postgresql_replica;')
     print(result)
     cursor.execute('DROP TABLE postgresql_replica;')
+
+
+def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica');
+
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
+
+    for i in range(len(queries)):
+        query = queries[i]
+        cursor.execute(query)
+        print('query {}'.format(query))
+
+    started_cluster.pause_container('postgres1')
+
+    result = instance.query("SELECT count() FROM test.postgresql_replica")
+    print(result) # Just debug
+
+    started_cluster.unpause_container('postgres1')
+
+    check_tables_are_synchronized('postgresql_replica');
+
+    result = instance.query("SELECT count() FROM test.postgresql_replica")
+    print(result) # Just debug
+
+
+def test_abrupt_server_restart_while_heavy_replication(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica');
+
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
+
+    for query in queries:
+        cursor.execute(query)
+        print('query {}'.format(query))
+
+    instance.restart_clickhouse()
+
+    result = instance.query("SELECT count() FROM test.postgresql_replica")
+    print(result) # Just debug
+
+    check_tables_are_synchronized('postgresql_replica');
+
+    result = instance.query("SELECT count() FROM test.postgresql_replica")
+    print(result) # Just debug
+
+
+def test_drop_table_immediately(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica');
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(100000)")
+
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
+    create_materialized_table(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port)
+    instance.query('DROP TABLE test.postgresql_replica')
+    create_materialized_table(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port)
+    check_tables_are_synchronized('postgresql_replica');
+    instance.query('DROP TABLE test.postgresql_replica')
 
 
 if __name__ == '__main__':

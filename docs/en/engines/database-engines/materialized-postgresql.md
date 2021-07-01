@@ -66,6 +66,6 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 
-## WARNINGS {#warnings}
+## Warning {#warning}
 
-1. **TOAST** values convertions is not supported. Default value for the data type will be used.
+1. **TOAST** values convertion is not supported. Default value for the data type will be used.
