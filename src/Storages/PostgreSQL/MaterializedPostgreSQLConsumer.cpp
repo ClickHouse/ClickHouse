@@ -648,11 +648,6 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
         LOG_ERROR(log, "Conversion error: {}", e.what());
         return false;
     }
-    catch (const pqxx::statement_completion_unknown & e)
-    {
-        LOG_ERROR(log, "Unknown statement completion: {}", e.what());
-        return false;
-    }
     catch (const pqxx::in_doubt_error & e)
     {
         LOG_ERROR(log, "PostgreSQL library has some doubts: {}", e.what());
@@ -661,11 +656,6 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
     catch (const pqxx::internal_error & e)
     {
         LOG_ERROR(log, "PostgreSQL library internal error: {}", e.what());
-        return false;
-    }
-    catch (const pqxx::conversion_overrun & e)
-    {
-        LOG_ERROR(log, "PostgreSQL library conversion overflow: {}", e.what());
         return false;
     }
     catch (...)
