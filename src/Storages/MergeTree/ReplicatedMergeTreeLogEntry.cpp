@@ -446,7 +446,7 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
         /// because it can lead to intersecting parts on stale replicas and this
         /// problem is fundamental. So we have very weak guarantees for DROP
         /// PART. If any concurrent merge will be assigned then DROP PART will
-        /// delete nothing and part will be successfuly merged into bigger part.
+        /// delete nothing and part will be successfully merged into bigger part.
         ///
         /// dropPart used in the following cases:
         /// 1) Remove empty parts after TTL.
