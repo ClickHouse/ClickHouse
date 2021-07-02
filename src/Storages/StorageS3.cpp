@@ -436,7 +436,7 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         max_single_part_upload_size);
 }
 
-  
+
 void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
     updateClientAndAuthSettings(local_context, client_auth);
