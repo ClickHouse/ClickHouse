@@ -1,8 +1,3 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
-
 # system.clusters{#system-clusters}
 
 包含有关配置文件中可用的集群及其中的服务器的信息。
