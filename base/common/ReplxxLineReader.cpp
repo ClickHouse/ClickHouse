@@ -29,7 +29,7 @@ void trim(String & s)
 /// Copyright (c) 2017-2018, Marcin Konarski (amok at codestation.org)
 /// Copyright (c) 2010, Salvatore Sanfilippo (antirez at gmail dot com)
 /// Copyright (c) 2010, Pieter Noordhuis (pcnoordhuis at gmail dot com)
-static std::string replxx_now_ms_str()
+std::string replxx_now_ms_str()
 {
     std::chrono::milliseconds ms(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()));
     time_t t = ms.count() / 1000;
