@@ -468,7 +468,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
         }
 
         AggregateFunctionProperties properties;
-        aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
+        aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters, "", getContext()) : Array();
         aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters, properties);
 
         aggregate_descriptions.push_back(aggregate);
@@ -651,7 +651,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         window_function.function_parameters
             = window_function.function_node->parameters
                 ? getAggregateFunctionParametersArray(
-                    window_function.function_node->parameters)
+                    window_function.function_node->parameters, "", getContext())
                 : Array();
 
         // Requiring a constant reference to a shared pointer to non-const AST

@@ -520,8 +520,9 @@
         "01914_exchange_dictionaries",
         "01915_create_or_replace_dictionary",
         "01913_names_of_tuple_literal",
-        "01925_merge_prewhere_table",
-        "01932_null_valid_identifier"
+        "01925_merge_prewhere_table"
+        "01932_null_valid_identifier",
+        "01934_constexpr_aggregate_function_parameters"
     ],
     "parallel":
     [
@@ -852,6 +853,7 @@
         "01913_replace_dictionary",
         "01914_exchange_dictionaries",
         "01915_create_or_replace_dictionary",
-        "01925_test_storage_merge_aliases"
+        "01925_test_storage_merge_aliases",
+        "01933_client_replxx_convert_history" /// Uses non unique history file
     ]
 }
