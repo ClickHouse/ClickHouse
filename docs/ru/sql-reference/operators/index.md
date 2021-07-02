@@ -223,10 +223,6 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 6
 
 Синтаксис `SELECT NOT a` — вычисляет логическое отрицание `a` функцией [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
 
-## Оператор логического исключающего "ИЛИ" {#logical-xor-operator}
-
-Синтаксис `SELECT a XOR b` — вычисляет логическую исключающую дизъюнкцию между `a` и `b` функцией [xor](../../sql-reference/functions/logical-functions.md#logical-xor-function).
-
 ## Условный оператор {#uslovnyi-operator}
 
 `a ? b : c` - функция `if(a, b, c)`

@@ -223,10 +223,6 @@ Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with th
 
 Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
 
-## Logical XOR operator {#logical-xor-operator}
-
-Syntax `SELECT a XOR b` — calculates logical exclusive disjunction of `a` and `b` with the function [xor](../../sql-reference/functions/logical-functions.md#logical-xor-function).
-
 ## Conditional Operator {#conditional-operator}
 
 `a ? b : c` – The `if(a, b, c)` function.
