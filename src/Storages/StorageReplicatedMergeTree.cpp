@@ -7494,7 +7494,15 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             for (const auto & part : replaced_parts)
                 part_names.emplace_back(part->name);
 
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to create empty part {}, but it replaces existing parts {}.", lost_part_name, fmt::join(part_names, ", "));
+            /// Why this exception is not a LOGICAL_ERROR? Because it's possible
+            /// to have some source parts for the lost part if replica currently
+            /// cloning from another replica, but source replica lost covering
+            /// part and finished MERGE_PARTS before clone. It's an extremely
+            /// rare case and it's unclear how to resolve it better. Eventually
+            /// source replica will replace lost part with empty part and we
+            /// will fetch this empty part instead of our source parts. This
+            /// will make replicas consistent, but some data will be lost.
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Tried to create empty part {}, but it replaces existing parts {}.", lost_part_name, fmt::join(part_names, ", "));
         }
 
         while (true)
