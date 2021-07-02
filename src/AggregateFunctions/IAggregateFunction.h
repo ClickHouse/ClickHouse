@@ -533,9 +533,9 @@ public:
         }
         catch (...)
         {
-            for (size_t destroy_index = 0; destroy_index < batch_index; ++destroy_index)
+            for (size_t destroy_index = batch_index; destroy_index < batch_size; ++destroy_index)
                 if (destroy_place)
-                    static_cast<const Derived *>(this)->destroy(places[batch_index] + place_offset);
+                    static_cast<const Derived *>(this)->destroy(places[destroy_index] + place_offset);
 
             throw;
         }
