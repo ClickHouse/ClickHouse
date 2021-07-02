@@ -113,6 +113,7 @@ function start_server
     echo "ClickHouse server pid '$server_pid' started and responded"
 
     echo "
+set follow-fork-mode child
 handle all noprint
 handle SIGSEGV stop print
 handle SIGBUS stop print
@@ -381,6 +382,9 @@ function run_tests
 
         # needs psql
         01889_postgresql_protocol_null_fields
+
+        # needs pv
+        01923_network_receive_time_metric_insert
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
