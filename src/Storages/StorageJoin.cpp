@@ -97,8 +97,8 @@ void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, con
 
 void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 {
-    /// Firstly accuire lock for mutation, that locks changes of data.
-    /// We cannot accuire rwlock here, because read lock is needed
+    /// Firstly acquire lock for mutation, that locks changes of data.
+    /// We cannot acquire rwlock here, because read lock is needed
     /// for execution of mutation interpreter.
     std::lock_guard mutate_lock(mutate_mutex);
 
@@ -128,7 +128,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         in->readSuffix();
     }
 
-    /// Now accuire exclusive lock and modify storage.
+    /// Now acquire exclusive lock and modify storage.
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     join = std::move(new_data);

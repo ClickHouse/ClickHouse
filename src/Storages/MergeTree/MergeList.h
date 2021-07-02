@@ -7,6 +7,7 @@
 #include <Common/MemoryTracker.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/BackgroundProcessList.h>
 #include <Interpreters/StorageID.h>
 #include <boost/noncopyable.hpp>
@@ -60,7 +61,7 @@ struct MergeListElement : boost::noncopyable
 
     const std::string result_part_name;
     const std::string result_part_path;
-    Int64 result_data_version{};
+    MergeTreePartInfo result_part_info;
     bool is_mutation{};
 
     UInt64 num_parts{};
@@ -130,7 +131,19 @@ public:
             if ((partition_id.empty() || merge_element.partition_id == partition_id)
                 && merge_element.table_id == table_id
                 && merge_element.source_data_version < mutation_version
-                && merge_element.result_data_version >= mutation_version)
+                && merge_element.result_part_info.getDataVersion() >= mutation_version)
+                merge_element.is_cancelled = true;
+        }
+    }
+
+    void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
+    {
+        std::lock_guard lock{mutex};
+        for (auto & merge_element : entries)
+        {
+            if (merge_element.table_id == table_id
+                && merge_element.partition_id == partition_id
+                && merge_element.result_part_info.min_block < delimiting_block_number)
                 merge_element.is_cancelled = true;
         }
     }
