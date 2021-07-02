@@ -43,10 +43,10 @@ Input table has an integer and a float columns:
 └───┴───────┘
 ```
 
-Query:
+Query to calculate 0.75-quantile (third quartile):
 
 ``` sql
-SELECT  quantileBFloat16(0.75)(a), quantileBFloat16(0.75)(b) FROM example_table;
+SELECT quantileBFloat16(0.75)(a), quantileBFloat16(0.75)(b) FROM example_table;
 ```
 
 Result:
