@@ -464,6 +464,12 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
                             ErrorCodes::PARAMETER_OUT_OF_BOUND);
     }
 
+    for (const auto & right_key : table_join->keyNamesRight())
+    {
+        if (right_sample_block.getByName(right_key).type->lowCardinality())
+            lowcard_right_keys.push_back(right_key);
+    }
+
     table_join->splitAdditionalColumns(right_sample_block, right_table_keys, right_columns_to_add);
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
     JoinCommon::removeLowCardinalityInplace(right_sample_block, table_join->keyNamesRight());
@@ -607,10 +613,18 @@ bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
 
 void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
+    Names lowcard_keys = lowcard_right_keys;
     if (block)
     {
         JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
         materializeBlockInplace(block);
+
+        for (const auto & column_name : table_join->keyNamesLeft())
+        {
+            if (block.getByName(column_name).type->lowCardinality())
+                lowcard_keys.push_back(column_name);
+        }
+
         JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft(), false);
 
         sortBlock(block, left_sort_description);
@@ -646,14 +660,20 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     if (!not_processed && left_blocks_buffer)
         not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
 
+    for (const auto & column_name : lowcard_keys)
+    {
+        if (!block.has(column_name))
+            continue;
+        if (auto & col = block.getByName(column_name); !col.type->lowCardinality())
+            JoinCommon::changeLowCardinalityInplace(col);
+    }
+
     JoinCommon::restoreLowCardinalityInplace(block);
 }
 
 template <bool in_memory, bool is_all>
 void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    //std::shared_lock lock(rwlock);
-
     size_t rows_to_reserve = is_left ? block.rows() : 0;
     MutableColumns left_columns = makeMutableColumns(block, (is_all ? rows_to_reserve : 0));
     MutableColumns right_columns = makeMutableColumns(right_columns_to_add, rows_to_reserve);
@@ -702,7 +722,6 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 
         left_cursor.nextN(left_key_tail);
         joinInequalsLeft<is_all>(block, left_columns, right_columns_to_add, right_columns, left_cursor.position(), left_cursor.end());
-        //left_cursor.nextN(left_cursor.end() - left_cursor.position());
 
         changeLeftColumns(block, std::move(left_columns));
         addRightColumns(block, std::move(right_columns));

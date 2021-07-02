@@ -7,15 +7,22 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <common/DateLUTImpl.h>
 #include <common/types.h>
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnUnique.h>
+#include <Columns/ColumnMap.h>
 #include <Interpreters/castColumn.h>
 #include <algorithm>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <fmt/format.h>
 
 
 namespace DB
@@ -27,6 +34,7 @@ namespace DB
         extern const int CANNOT_CONVERT_TYPE;
         extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
         extern const int THERE_IS_NO_COLUMN;
+        extern const int BAD_ARGUMENTS;
     }
 
     static const std::initializer_list<std::pair<arrow::Type::type, const char *>> arrow_type_to_internal_type =
@@ -152,11 +160,11 @@ namespace DB
                 if (days_num > DATE_LUT_MAX_DAY_NUM)
                 {
                     // TODO: will it rollback correctly?
-                    throw Exception{"Input value " + std::to_string(days_num) + " of a column \"" + internal_column.getName()
-                                    + "\" is greater than "
-                                      "max allowed Date value, which is "
-                                    + std::to_string(DATE_LUT_MAX_DAY_NUM),
-                                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
+                    throw Exception
+                        {
+                            fmt::format("Input value {} of a column \"{}\" is greater than max allowed Date value, which is {}", days_num, internal_column.getName(), DATE_LUT_MAX_DAY_NUM),
+                            ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+                        };
                 }
 
                 column_data.emplace_back(days_num);
@@ -217,18 +225,19 @@ namespace DB
         }
     }
 
+    template <typename DecimalType, typename DecimalArray>
     static void fillColumnWithDecimalData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, IColumn & internal_column)
     {
-        auto & column = assert_cast<ColumnDecimal<Decimal128> &>(internal_column);
+        auto & column = assert_cast<ColumnDecimal<DecimalType> &>(internal_column);
         auto & column_data = column.getData();
         column_data.reserve(arrow_column->length());
 
         for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            auto & chunk = static_cast<arrow::DecimalArray &>(*(arrow_column->chunk(chunk_i)));
+            auto & chunk = static_cast<DecimalArray &>(*(arrow_column->chunk(chunk_i)));
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
-                column_data.emplace_back(chunk.IsNull(value_i) ? Decimal128(0) : *reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
+                column_data.emplace_back(chunk.IsNull(value_i) ? DecimalType(0) : *reinterpret_cast<const DecimalType *>(chunk.Value(value_i))); // TODO: copy column
             }
         }
     }
@@ -263,23 +272,47 @@ namespace DB
                 offsets_data.emplace_back(start + arrow_offsets.Value(i));
         }
     }
+    static ColumnPtr createAndFillColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> & arrow_column)
+    {
+        switch (arrow_column->type()->id())
+        {
+#    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
+            case ARROW_NUMERIC_TYPE: \
+            { \
+                    auto column = DataTypeNumber<CPP_NUMERIC_TYPE>().createColumn(); \
+                    fillColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, *column); \
+                    return column; \
+            }
+            FOR_ARROW_INDEXES_TYPES(DISPATCH)
+#    undef DISPATCH
+            default:
+                throw Exception(fmt::format("Unsupported type for indexes in LowCardinality: {}.", arrow_column->type()->name()), ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
 
-    static void readColumnFromArrowColumn(std::shared_ptr<arrow::ChunkedArray> & arrow_column, IColumn & internal_column, const std::string & column_name, const std::string format_name, bool is_nullable)
+    static void readColumnFromArrowColumn(
+        std::shared_ptr<arrow::ChunkedArray> & arrow_column,
+        IColumn & internal_column,
+        const std::string & column_name,
+        const std::string & format_name,
+        bool is_nullable,
+        std::unordered_map<String, ColumnPtr> dictionary_values)
     {
         if (internal_column.isNullable())
         {
-            ColumnNullable & column_nullable = typeid_cast<ColumnNullable &>(internal_column);
-            readColumnFromArrowColumn(arrow_column, column_nullable.getNestedColumn(), column_name, format_name, true);
+            ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(internal_column);
+            readColumnFromArrowColumn(arrow_column, column_nullable.getNestedColumn(), column_name, format_name, true, dictionary_values);
             fillByteMapFromArrowColumn(arrow_column, column_nullable.getNullMapColumn());
             return;
         }
 
-        // TODO: check if a column is const?
-        if (!is_nullable && !checkColumn<ColumnArray>(internal_column) && arrow_column->null_count())
+        /// TODO: check if a column is const?
+        if (!is_nullable && arrow_column->null_count() && arrow_column->type()->id() != arrow::Type::LIST
+            && arrow_column->type()->id() != arrow::Type::MAP && arrow_column->type()->id() != arrow::Type::STRUCT)
         {
             throw Exception
                 {
-                    "Can not insert NULL data into non-nullable column \"" + column_name + "\"",
+                    fmt::format("Can not insert NULL data into non-nullable column \"{}\".", column_name),
                     ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
                 };
         }
@@ -303,14 +336,15 @@ namespace DB
             case arrow::Type::TIMESTAMP:
                 fillColumnWithTimestampData(arrow_column, internal_column);
                 break;
-            case arrow::Type::DECIMAL:
-                //fillColumnWithNumericData<Decimal128, ColumnDecimal<Decimal128>>(arrow_column, read_column); // Have problems with trash values under NULL, but faster
-                fillColumnWithDecimalData(arrow_column, internal_column /*, internal_nested_type*/);
+            case arrow::Type::DECIMAL128:
+                fillColumnWithDecimalData<Decimal128, arrow::Decimal128Array>(arrow_column, internal_column /*, internal_nested_type*/);
                 break;
+            case arrow::Type::DECIMAL256:
+                fillColumnWithDecimalData<Decimal256, arrow::Decimal256Array>(arrow_column, internal_column /*, internal_nested_type*/);
+                break;
+            case arrow::Type::MAP: [[fallthrough]];
             case arrow::Type::LIST:
             {
-                const auto * list_type = static_cast<arrow::ListType *>(arrow_column->type().get());
-                auto list_nested_type = list_type->value_type();
                 arrow::ArrayVector array_vector;
                 array_vector.reserve(arrow_column->num_chunks());
                 for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
@@ -321,9 +355,68 @@ namespace DB
                 }
                 auto arrow_nested_column = std::make_shared<arrow::ChunkedArray>(array_vector);
 
-                ColumnArray & column_array = typeid_cast<ColumnArray &>(internal_column);
-                readColumnFromArrowColumn(arrow_nested_column, column_array.getData(), column_name, format_name, false);
+                ColumnArray & column_array = arrow_column->type()->id() == arrow::Type::MAP
+                    ? assert_cast<ColumnMap &>(internal_column).getNestedColumn()
+                    : assert_cast<ColumnArray &>(internal_column);
+
+                readColumnFromArrowColumn(arrow_nested_column, column_array.getData(), column_name, format_name, false, dictionary_values);
                 fillOffsetsFromArrowListColumn(arrow_column, column_array.getOffsetsColumn());
+                break;
+            }
+            case arrow::Type::STRUCT:
+            {
+                ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(internal_column);
+                int fields_count = column_tuple.tupleSize();
+                std::vector<arrow::ArrayVector> nested_arrow_columns(fields_count);
+                for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+                {
+                    arrow::StructArray & struct_chunk = static_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
+                    for (int i = 0; i < fields_count; ++i)
+                        nested_arrow_columns[i].emplace_back(struct_chunk.field(i));
+                }
+
+                for (int i = 0; i != fields_count; ++i)
+                {
+                    auto nested_arrow_column = std::make_shared<arrow::ChunkedArray>(nested_arrow_columns[i]);
+                    readColumnFromArrowColumn(nested_arrow_column, column_tuple.getColumn(i), column_name, format_name, false, dictionary_values);
+                }
+                break;
+            }
+            case arrow::Type::DICTIONARY:
+            {
+                ColumnLowCardinality & column_lc = assert_cast<ColumnLowCardinality &>(internal_column);
+                auto & dict_values = dictionary_values[column_name];
+                /// Load dictionary values only once and reuse it.
+                if (!dict_values)
+                {
+                    arrow::ArrayVector dict_array;
+                    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+                    {
+                        arrow::DictionaryArray & dict_chunk = static_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
+                        dict_array.emplace_back(dict_chunk.dictionary());
+                    }
+                    auto arrow_dict_column = std::make_shared<arrow::ChunkedArray>(dict_array);
+
+                    auto dict_column = IColumn::mutate(column_lc.getDictionaryPtr());
+                    auto * uniq_column = static_cast<IColumnUnique *>(dict_column.get());
+                    auto values_column = uniq_column->getNestedColumn()->cloneEmpty();
+                    readColumnFromArrowColumn(arrow_dict_column, *values_column, column_name, format_name, false, dictionary_values);
+                    uniq_column->uniqueInsertRangeFrom(*values_column, 0, values_column->size());
+                    dict_values = std::move(dict_column);
+                }
+
+                arrow::ArrayVector indexes_array;
+                for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+                {
+                    arrow::DictionaryArray & dict_chunk = static_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
+                    indexes_array.emplace_back(dict_chunk.indices());
+                }
+
+                auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
+                auto indexes_column = createAndFillColumnWithIndexesData(arrow_indexes_column);
+
+                auto new_column_lc = ColumnLowCardinality::create(dict_values, std::move(indexes_column));
+                column_lc = std::move(*new_column_lc);
                 break;
             }
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
@@ -339,8 +432,7 @@ namespace DB
             default:
                 throw Exception
                     {
-                        "Unsupported " + format_name + " type \"" + arrow_column->type()->name() + "\" of an input column \""
-                        + column_name + "\"",
+                        fmt::format(R"(Unsupported {} type "{}" of an input column "{}".)", format_name, arrow_column->type()->name(), column_name),
                         ErrorCodes::UNKNOWN_TYPE
                     };
         }
@@ -350,14 +442,20 @@ namespace DB
     {
         if (column_type->isNullable())
         {
-            DataTypePtr nested_type = typeid_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
+            DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
             return makeNullable(getInternalType(arrow_type, nested_type, column_name, format_name));
         }
 
-        if (arrow_type->id() == arrow::Type::DECIMAL)
+        if (arrow_type->id() == arrow::Type::DECIMAL128)
         {
             const auto * decimal_type = static_cast<arrow::DecimalType *>(arrow_type.get());
             return std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->precision(), decimal_type->scale());
+        }
+
+        if (arrow_type->id() == arrow::Type::DECIMAL256)
+        {
+            const auto * decimal_type = static_cast<arrow::DecimalType *>(arrow_type.get());
+            return std::make_shared<DataTypeDecimal<Decimal256>>(decimal_type->precision(), decimal_type->scale());
         }
 
         if (arrow_type->id() == arrow::Type::LIST)
@@ -367,9 +465,59 @@ namespace DB
 
             const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(column_type.get());
             if (!array_type)
-                throw Exception{"Cannot convert arrow LIST type to a not Array ClickHouse type " + column_type->getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
+                throw Exception{fmt::format("Cannot convert arrow LIST type to a not Array ClickHouse type {}.", column_type->getName()), ErrorCodes::CANNOT_CONVERT_TYPE};
 
             return std::make_shared<DataTypeArray>(getInternalType(list_nested_type, array_type->getNestedType(), column_name, format_name));
+        }
+
+        if (arrow_type->id() == arrow::Type::STRUCT)
+        {
+            const auto * struct_type = static_cast<arrow::StructType *>(arrow_type.get());
+            const DataTypeTuple * tuple_type = typeid_cast<const DataTypeTuple *>(column_type.get());
+            if (!tuple_type)
+                throw Exception{fmt::format("Cannot convert arrow STRUCT type to a not Tuple ClickHouse type {}.", column_type->getName()), ErrorCodes::CANNOT_CONVERT_TYPE};
+
+            const DataTypes & tuple_nested_types = tuple_type->getElements();
+            int internal_fields_num = tuple_nested_types.size();
+            /// If internal column has less elements then arrow struct, we will select only first internal_fields_num columns.
+            if (internal_fields_num > struct_type->num_fields())
+                throw Exception
+                    {
+                        fmt::format(
+                            "Cannot convert arrow STRUCT with {} fields to a ClickHouse Tuple with {} elements: {}.",
+                            struct_type->num_fields(),
+                            internal_fields_num,
+                            column_type->getName()),
+                        ErrorCodes::CANNOT_CONVERT_TYPE
+                    };
+
+            DataTypes nested_types;
+            for (int i = 0; i < internal_fields_num; ++i)
+                nested_types.push_back(getInternalType(struct_type->field(i)->type(), tuple_nested_types[i], column_name, format_name));
+
+            return std::make_shared<DataTypeTuple>(std::move(nested_types));
+        }
+
+        if (arrow_type->id() == arrow::Type::DICTIONARY)
+        {
+            const auto * arrow_dict_type = static_cast<arrow::DictionaryType *>(arrow_type.get());
+            const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
+            /// We allow to insert arrow dictionary into a non-LowCardinality column.
+            const auto & dict_type = lc_type ? lc_type->getDictionaryType() : column_type;
+            return std::make_shared<DataTypeLowCardinality>(getInternalType(arrow_dict_type->value_type(), dict_type, column_name, format_name));
+        }
+
+        if (arrow_type->id() == arrow::Type::MAP)
+        {
+            const auto * arrow_map_type = typeid_cast<arrow::MapType *>(arrow_type.get());
+            const auto * map_type = typeid_cast<const DataTypeMap *>(column_type.get());
+            if (!map_type)
+                throw Exception{fmt::format("Cannot convert arrow MAP type to a not Map ClickHouse type {}.", column_type->getName()), ErrorCodes::CANNOT_CONVERT_TYPE};
+
+            return std::make_shared<DataTypeMap>(
+                getInternalType(arrow_map_type->key_type(), map_type->getKeyType(), column_name, format_name),
+                getInternalType(arrow_map_type->item_type(), map_type->getValueType(), column_name, format_name)
+                );
         }
 
         if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
@@ -380,13 +528,24 @@ namespace DB
         }
         throw Exception
             {
-                "The type \"" + arrow_type->name() + "\" of an input column \"" + column_name + "\" is not supported for conversion from a " + format_name + " data format",
+                fmt::format(R"(The type "{}" of an input column "{}" is not supported for conversion from a {} data format.)", arrow_type->name(), column_name, format_name),
                 ErrorCodes::CANNOT_CONVERT_TYPE
             };
     }
 
-    void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table,
-                                                    const Block & header, std::string format_name)
+    ArrowColumnToCHColumn::ArrowColumnToCHColumn(const Block & header_, std::shared_ptr<arrow::Schema> schema_, const std::string & format_name_) : header(header_), format_name(format_name_)
+    {
+        for (const auto & field : schema_->fields())
+        {
+            if (header.has(field->name()))
+            {
+                const auto column_type = recursiveRemoveLowCardinality(header.getByName(field->name()).type);
+                name_to_internal_type[field->name()] = getInternalType(field->type(), column_type, field->name(), format_name);
+            }
+        }
+    }
+
+    void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
     {
         Columns columns_list;
         UInt64 num_rows = 0;
@@ -404,20 +563,18 @@ namespace DB
 
         for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
         {
-            ColumnWithTypeAndName header_column = header.getByPosition(column_i);
-            const auto column_type = recursiveRemoveLowCardinality(header_column.type);
+            const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);
 
             if (name_to_column_ptr.find(header_column.name) == name_to_column_ptr.end())
                 // TODO: What if some columns were not presented? Insert NULLs? What if a column is not nullable?
-                throw Exception{"Column \"" + header_column.name + "\" is not presented in input data",
+                throw Exception{fmt::format("Column \"{}\" is not presented in input data.", header_column.name),
                                 ErrorCodes::THERE_IS_NO_COLUMN};
 
             std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[header_column.name];
 
-            DataTypePtr internal_type = getInternalType(arrow_column->type(), column_type, header_column.name, format_name);
-
+            DataTypePtr & internal_type = name_to_internal_type[header_column.name];
             MutableColumnPtr read_column = internal_type->createColumn();
-            readColumnFromArrowColumn(arrow_column, *read_column, header_column.name, format_name, false);
+            readColumnFromArrowColumn(arrow_column, *read_column, header_column.name, format_name, false, dictionary_values);
 
             ColumnWithTypeAndName column;
             column.name = header_column.name;

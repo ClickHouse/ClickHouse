@@ -76,7 +76,13 @@ ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, 
 
 bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds) const
 {
-    return available() || socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
+    if (available())
+        return true;
+
+    Stopwatch watch;
+    bool res = socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
+    ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
+    return res;
 }
 
 }
