@@ -679,7 +679,7 @@ struct JSONExtractTree
                 return false;
 
             const auto * type = assert_cast<const DataTypeDecimal<DecimalType> *>(data_type.get());
-            std::stringstream ss;
+            std::stringstream ss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             ss << std::setprecision(type->getPrecision()) << element.getDouble();
             auto str = ss.str();
             ReadBufferFromString res(str);
