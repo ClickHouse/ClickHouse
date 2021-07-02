@@ -538,7 +538,7 @@ public:
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (storage.use_table_fd)
         {
-            /** NOTE: Using real file binded to FD may be misleading:
+            /** NOTE: Using real file bounded to FD may be misleading:
               * SELECT *; INSERT insert_data; SELECT *; last SELECT returns initil_fd_data + insert_data
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
@@ -642,7 +642,7 @@ Strings StorageFile::getDataPaths() const
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!is_db_table)
-        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " bounded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     if (paths.size() != 1)
         throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
