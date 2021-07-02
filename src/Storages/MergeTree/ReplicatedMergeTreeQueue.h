@@ -373,7 +373,9 @@ public:
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
-    /// Check that part produced by some entry in queue and get source parts for it
+    /// Check that part produced by some entry in queue and get source parts for it.
+    /// If there are several entries return largest source_parts set. This rarely possible
+    /// for example after replica clone.
     bool checkPartInQueueAndGetSourceParts(const String & part_name, Strings & source_parts) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
