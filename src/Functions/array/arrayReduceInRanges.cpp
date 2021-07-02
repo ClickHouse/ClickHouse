@@ -41,7 +41,7 @@ public:
     static const size_t minimum_step = 64;
     static constexpr auto name = "arrayReduceInRanges";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayReduceInRanges>(context_); }
-    FunctionArrayReduceInRanges(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionArrayReduceInRanges(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 

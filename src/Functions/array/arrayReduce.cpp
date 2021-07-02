@@ -38,7 +38,7 @@ class FunctionArrayReduce : public IFunction, private WithContext
 public:
     static constexpr auto name = "arrayReduce";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayReduce>(context_); }
-    FunctionArrayReduce(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionArrayReduce(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
