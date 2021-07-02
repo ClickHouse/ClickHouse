@@ -70,7 +70,7 @@ public:
         MutableColumns result;
         result.emplace_back(std::move(longitude));
         result.emplace_back(std::move(latitude));
-        result_column = ColumnTuple::create(std::move(result), Names(2));
+        result_column = ColumnTuple::createWithoutNames(std::move(result));
 
         return true;
     }

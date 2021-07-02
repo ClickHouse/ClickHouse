@@ -50,7 +50,7 @@ ColumnWithTypeAndName getPreparedSetInfo(const SetPtr & prepared_set)
 
     /// FIXME: get names from Set
     return {
-        ColumnTuple::create(set_elements, Names(prepared_set->getSetElements().size())),
+        ColumnTuple::createWithoutNames(std::move(set_elements)),
         std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()),
         "dummy"};
 }

@@ -1876,7 +1876,7 @@ public:
             applyCIDRMask(ip, &vec_res_lower_range[offset_ipv6], &vec_res_upper_range[offset_ipv6], cidr);
         }
 
-        return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)}, {"", ""});
+        return ColumnTuple::createWithoutNames(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
     }
 };
 
@@ -1972,7 +1972,7 @@ public:
             std::tie(vec_res_lower_range[i], vec_res_upper_range[i]) = applyCIDRMask(ip, cidr);
         }
 
-        return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)}, {"", ""});
+        return ColumnTuple::createWithoutNames(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
     }
 };
 

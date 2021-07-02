@@ -258,7 +258,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
         }
 
         auto tuple_serialization = DataTypeTuple(types).getDefaultSerialization();
-        auto tuple_column = ColumnTuple::create(columns, Names(key_size));
+        auto tuple_column = ColumnTuple::createWithoutNames(std::move(columns));
         tuple_serialization->serializeText(*tuple_column, 0, out, format_settings);
     }
 }

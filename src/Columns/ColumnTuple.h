@@ -37,8 +37,15 @@ public:
     static Ptr create(const TupleColumns & columns, const Names & names);
     static Ptr create(Columns && arg, Names && names) { return create(arg, names); }
 
+    /// FIXME: actually it's used only for mutable columns in Arg1 - should replace with explicit type
     template <typename Arg1, typename Arg2, typename = typename std::enable_if<std::is_rvalue_reference<Arg1 &&>::value>::type>
     static MutablePtr create(Arg1 && arg, Arg2 && names) { return Base::create(std::forward<Arg1>(arg), std::forward<Arg2>(names)); }
+
+    static Ptr createWithoutNames(Columns && arg) { return create(arg, Names(arg.size())); }
+
+    /// FIXME: actually it's used only for mutable columns in Arg1 - should replace with explicit type
+    template <typename Arg, typename = typename std::enable_if<std::is_rvalue_reference<Arg &&>::value>::type>
+    static MutablePtr createWithoutNames(Arg && arg) { return Base::create(std::forward<Arg>(arg), Names(arg.size())); }
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }

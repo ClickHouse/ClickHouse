@@ -162,8 +162,8 @@ public:
                 max_columns[i] = ColumnString::create();
             }
 
-            auto min_tuple = ColumnTuple::create(std::move(min_columns), Names(num_hashes));
-            auto max_tuple = ColumnTuple::create(std::move(max_columns), Names(num_hashes));
+            auto min_tuple = ColumnTuple::createWithoutNames(std::move(min_columns));
+            auto max_tuple = ColumnTuple::createWithoutNames(std::move(max_columns));
 
             const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
             Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), shingle_size, num_hashes, nullptr, nullptr, min_tuple.get(), max_tuple.get());
@@ -171,7 +171,7 @@ public:
             MutableColumns tuple_columns;
             tuple_columns.emplace_back(std::move(min_tuple));
             tuple_columns.emplace_back(std::move(max_tuple));
-            return ColumnTuple::create(std::move(tuple_columns), Names(2));
+            return ColumnTuple::createWithoutNames(std::move(tuple_columns));
         }
         else // Min hash
         {
@@ -186,7 +186,7 @@ public:
             MutableColumns tuple_columns;
             tuple_columns.emplace_back(std::move(col_h1));
             tuple_columns.emplace_back(std::move(col_h2));
-            return ColumnTuple::create(std::move(tuple_columns), Names(2));
+            return ColumnTuple::createWithoutNames(std::move(tuple_columns));
         }
     }
 };

@@ -132,7 +132,7 @@ public:
         }
 
         auto nested_column = ColumnArray::create(
-            ColumnTuple::create(Columns{std::move(keys_data), std::move(values_data)}, Names(2)),
+            ColumnTuple::createWithoutNames(Columns{std::move(keys_data), std::move(values_data)}),
             std::move(offsets));
 
         return ColumnMap::create(nested_column);

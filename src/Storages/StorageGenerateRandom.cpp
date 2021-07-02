@@ -184,7 +184,7 @@ ColumnPtr fillColumnWithRandomData(
             for (size_t i = 0; i < tuple_size; ++i)
                 tuple_columns[i] = fillColumnWithRandomData(elements[i], limit, max_array_length, max_string_length, rng, context);
 
-            return ColumnTuple::create(std::move(tuple_columns), Names(tuple_size));
+            return ColumnTuple::createWithoutNames(std::move(tuple_columns));
         }
 
         case TypeIndex::Nullable:

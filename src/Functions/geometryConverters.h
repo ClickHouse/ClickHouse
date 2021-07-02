@@ -186,7 +186,7 @@ public:
         columns[0] = std::move(first);
         columns[1] = std::move(second);
 
-        return ColumnTuple::create(columns, Names(2));
+        return ColumnTuple::createWithoutNames(std::move(columns));
     }
 
 private:

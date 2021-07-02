@@ -566,7 +566,7 @@ private:
         }
 
         /// FIXME: should we preserve names here?
-        return ColumnTuple::create(tuple_columns, Names(tuple_size));
+        return ColumnTuple::createWithoutNames(std::move(tuple_columns));
     }
 
     static ColumnPtr executeGeneric(

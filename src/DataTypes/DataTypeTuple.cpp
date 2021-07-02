@@ -157,7 +157,7 @@ MutableColumnPtr DataTypeTuple::createColumn() const
     MutableColumns tuple_columns(size);
     for (size_t i = 0; i < size; ++i)
         tuple_columns[i] = elems[i]->createColumn();
-    return ColumnTuple::create(std::move(tuple_columns), std::vector<std::string>(size));
+    return ColumnTuple::createWithoutNames(std::move(tuple_columns));
 }
 
 Field DataTypeTuple::getDefault() const
