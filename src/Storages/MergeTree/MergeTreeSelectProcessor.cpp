@@ -73,7 +73,7 @@ try
 
     auto size_predictor = (preferred_block_size_bytes == 0)
         ? nullptr
-        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, metadata_snapshot->getSampleBlock());
+        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, task_columns.columns.getNames(), metadata_snapshot->getSampleBlock());
 
     /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
