@@ -480,7 +480,7 @@ static ASTPtr buildJoinConditionColumn(const ASTs & on_filter_condition_asts)
 
     if (on_filter_condition_asts.size() == 1)
         return on_filter_condition_asts[0];
-        
+
     auto function = std::make_shared<ASTFunction>();
     function->name = "and";
     function->arguments = std::make_shared<ASTExpressionList>();
