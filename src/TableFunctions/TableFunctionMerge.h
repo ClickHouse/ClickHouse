@@ -20,11 +20,12 @@ private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Merge"; }
 
-    using DbToTableSetMap = std::unordered_map<String, std::unordered_set<String>>;
+    using TableSet = std::set<String>;
+    using DbToTableSetMap = std::map<String, TableSet>;
     const DbToTableSetMap & getSourceDatabasesAndTables(ContextPtr context) const;
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-    static NameSet getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context);
+    static TableSet getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context);
 
     String source_database_name_or_regexp;
     String source_table_regexp;
