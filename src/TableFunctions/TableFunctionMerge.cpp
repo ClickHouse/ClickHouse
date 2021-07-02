@@ -106,9 +106,12 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
 {
     for (const auto & db_with_tables : getSourceDatabasesAndTables(context))
     {
-        auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{db_with_tables.first, *db_with_tables.second.begin()}, context);
-        if (storage)
-            return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
+        for (const auto & table : db_with_tables.second)
+        {
+            auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{db_with_tables.first, table}, context);
+            if (storage)
+                return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
+        }
     }
 
     throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
@@ -130,7 +133,7 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
     return res;
 }
 
-NameSet
+TableFunctionMerge::TableSet
 TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context)
 {
     OptimizedRegularExpression table_re(table_regexp);
@@ -144,7 +147,7 @@ TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, con
     bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, database_name);
     bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, database_name);
 
-    NameSet tables;
+    TableSet tables;
 
     for (auto it = database->getTablesIterator(context, table_name_match); it->isValid(); it->next())
     {

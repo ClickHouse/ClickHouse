@@ -49,7 +49,7 @@ public:
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
 private:
-    using DbToTableSetMap = std::unordered_map<String, std::unordered_set<String>>;
+    using DbToTableSetMap = std::map<String, std::set<String>>;
 
     std::optional<OptimizedRegularExpression> source_database_regexp;
     std::optional<OptimizedRegularExpression> source_table_regexp;
