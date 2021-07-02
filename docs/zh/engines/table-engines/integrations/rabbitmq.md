@@ -96,7 +96,7 @@ RabbitMQ 服务器配置应使用 ClickHouse 配置文件添加。
 
 ## 描述 {#description}
 
-`SELECT`对于读取消息不是特别有用（除了调试），因为每个消息只能读取一次。使用[物化视图](../../../sql-reference/statements/create/view.md)创建实时线程更为实用。要做到这一点:
+`SELECT`对于读取消息不是特别有用（除了调试），因为每个消息只能读取一次。使用[物化视图](../../../sql-reference/statements/create.md#create-view)创建实时线程更为实用。要做到这一点:
 
 1.  使用引擎创建一个 RabbitMQ 消费者，并将其视为一个数据流。
 2.  创建一个具有所需结构的表。
