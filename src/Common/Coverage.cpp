@@ -12,22 +12,11 @@
 #include "common/logger_useful.h"
 
 #include "Common/ProfileEvents.h"
-#include "Common/ErrorCodes.h"
-#include "Common/Exception.h"
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_OPEN_FILE;
-    extern const int FILE_ALREADY_EXISTS;
-    extern const int LOGICAL_ERROR;
-}
 
 namespace coverage
 {
 static const size_t hardware_concurrency { std::thread::hardware_concurrency() };
 static const String logger_base_name {"Coverage"};
-
-using DB::Exception;
 
 #if NON_ELF_BUILD
     Writer::Writer() : symbol_index(), dwarf() {}
@@ -101,14 +90,12 @@ void Writer::onServerInitialized()
     // In coverage mode it leads to concurrent file writes (file write + open in "w" truncate mode, to be precise),
     // which results in data corruption.
     // To prevent such situation, target file is not allowed to exist at server start.
-    if (access(report_path.c_str(), F_OK) == 0)
-        throw Exception(DB::ErrorCodes::FILE_ALREADY_EXISTS, "Report file {} already exists", report_path);
+    assert(access(report_path.c_str(), F_OK) != 0);
 
     // fwrite also can't be called before server initialization (some internal state is left uninitialized if we
     // try to write file in PC table callback).
-    if (report_file.set(report_path, "w") == nullptr)
-        throw Exception(DB::ErrorCodes::CANNOT_OPEN_FILE,
-            "Failed to open {} in write mode: {}", report_path, strerror(errno));
+    [[maybe_unused]] const FILE * const ptr = report_file.set(report_path, "w");
+    assert(ptr != nullptr);
 
     LOG_INFO(base_log, "Opened report file {}", report_path);
 
