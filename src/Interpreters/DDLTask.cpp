@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
+    extern const int LOGICAL_ERROR;
 }
 
 HostID HostID::fromString(const String & host_port_str)
@@ -401,7 +402,8 @@ UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
 
 void ZooKeeperMetadataTransaction::commit()
 {
-    assert(state == CREATED);
+    if (state != CREATED)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state ({}), it's a bug", state);
     state = FAILED;
     current_zookeeper->multi(ops);
     state = COMMITTED;

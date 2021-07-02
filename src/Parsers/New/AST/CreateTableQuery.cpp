@@ -99,12 +99,19 @@ CreateTableQuery::CreateTableQuery(
     bool attach_,
     bool temporary_,
     bool if_not_exists_,
+    bool create_or_replace_,
+    bool replace_,
     PtrTo<TableIdentifier> identifier,
     PtrTo<UUIDClause> uuid,
     PtrTo<TableSchemaClause> schema,
     PtrTo<EngineClause> engine,
     PtrTo<SelectUnionQuery> query)
-    : DDLQuery(cluster, {identifier, uuid, schema, engine, query}), attach(attach_), temporary(temporary_), if_not_exists(if_not_exists_)
+    : DDLQuery(cluster, {identifier, uuid, schema, engine, query})
+    , attach(attach_)
+    , temporary(temporary_)
+    , if_not_exists(if_not_exists_)
+    , create_or_replace(create_or_replace_)
+    , replace(replace_)
 {
 }
 
@@ -125,6 +132,8 @@ ASTPtr CreateTableQuery::convertToOld() const
     query->attach = attach;
     query->if_not_exists = if_not_exists;
     query->temporary = temporary;
+    query->create_or_replace = create_or_replace;
+    query->replace_table = replace;
 
     if (has(SCHEMA))
     {
@@ -164,6 +173,10 @@ String CreateTableQuery::dumpInfo() const
     else info += "temporary=false, ";
     if (if_not_exists) info += "if_not_exists=true";
     else info += "if_not_exists=false";
+    if (create_or_replace) info += "create_or_replace=true";
+    else info += "create_or_replace=false";
+    if (replace) info += "replace=true";
+    else info += "replace=false";
     return info;
 }
 
@@ -191,7 +204,7 @@ antlrcpp::Any ParseTreeVisitor::visitCreateTableStmt(ClickHouseParser::CreateTab
     auto engine = ctx->engineClause() ? visit(ctx->engineClause()).as<PtrTo<EngineClause>>() : nullptr;
     auto query = ctx->subqueryClause() ? visit(ctx->subqueryClause()).as<PtrTo<SelectUnionQuery>>() : nullptr;
     return std::make_shared<CreateTableQuery>(
-        cluster, !!ctx->ATTACH(), !!ctx->TEMPORARY(), !!ctx->IF(), visit(ctx->tableIdentifier()), uuid, schema, engine, query);
+        cluster, !!ctx->ATTACH(), !!ctx->TEMPORARY(), !!ctx->IF(), !!ctx->OR(), !!ctx->REPLACE(), visit(ctx->tableIdentifier()), uuid, schema, engine, query);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *ctx)

@@ -226,11 +226,17 @@ CreateDictionaryQuery::CreateDictionaryQuery(
     PtrTo<ClusterClause> cluster,
     bool attach_,
     bool if_not_exists_,
+    bool create_or_replace_,
+    bool replace_,
     PtrTo<TableIdentifier> identifier,
     PtrTo<UUIDClause> uuid,
     PtrTo<DictionarySchemaClause> schema,
     PtrTo<DictionaryEngineClause> engine)
-    : DDLQuery(cluster, {identifier, uuid, schema, engine}), attach(attach_), if_not_exists(if_not_exists_)
+    : DDLQuery(cluster, {identifier, uuid, schema, engine})
+    , attach(attach_)
+    , if_not_exists(if_not_exists_)
+    , create_or_replace(create_or_replace_)
+    , replace(replace_)
 {
 }
 
@@ -251,6 +257,8 @@ ASTPtr CreateDictionaryQuery::convertToOld() const
     query->is_dictionary = true;
     query->attach = attach;
     query->if_not_exists = if_not_exists;
+    query->create_or_replace = create_or_replace;
+    query->replace_table = replace;
 
     query->set(query->dictionary_attributes_list, get(SCHEMA)->convertToOld());
     query->set(query->dictionary, get(ENGINE)->convertToOld());
@@ -272,7 +280,7 @@ antlrcpp::Any ParseTreeVisitor::visitCreateDictionaryStmt(ClickHouseParser::Crea
     auto schema = ctx->dictionarySchemaClause() ? visit(ctx->dictionarySchemaClause()).as<PtrTo<DictionarySchemaClause>>() : nullptr;
     auto engine = ctx->dictionaryEngineClause() ? visit(ctx->dictionaryEngineClause()).as<PtrTo<DictionaryEngineClause>>() : nullptr;
     return std::make_shared<CreateDictionaryQuery>(
-        cluster, !!ctx->ATTACH(), !!ctx->IF(), visit(ctx->tableIdentifier()), uuid, schema, engine);
+        cluster, !!ctx->ATTACH(), !!ctx->IF(), !!ctx->OR(), !!ctx->REPLACE(), visit(ctx->tableIdentifier()), uuid, schema, engine);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitDictionaryArgExpr(ClickHouseParser::DictionaryArgExprContext *ctx)

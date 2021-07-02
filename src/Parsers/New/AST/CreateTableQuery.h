@@ -50,6 +50,8 @@ class CreateTableQuery : public DDLQuery
             bool attach,
             bool temporary,
             bool if_not_exists,
+            bool create_or_replace,
+            bool replace,
             PtrTo<TableIdentifier> identifier,
             PtrTo<UUIDClause> uuid,
             PtrTo<TableSchemaClause> schema,
@@ -68,7 +70,11 @@ class CreateTableQuery : public DDLQuery
             SUBQUERY,  // SelectUnionQuery
         };
 
-        const bool attach, temporary, if_not_exists;
+        const bool attach;
+        const bool temporary;
+        const bool if_not_exists;
+        const bool create_or_replace;
+        const bool replace;
 
         String dumpInfo() const override;
 };
