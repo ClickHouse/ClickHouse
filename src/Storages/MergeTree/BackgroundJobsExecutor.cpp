@@ -58,9 +58,10 @@ void IBackgroundJobExecutor::scheduleTask(bool with_backoff)
     }
     else
     {
-        no_work_done_count = 0; /// We have work, but run without backoff
+        no_work_done_count = 0;
         next_time_to_execute = 1000 * sleep_settings.thread_sleep_seconds_if_nothing_to_do;
     }
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "NO WORK DONE TIMES {}", no_work_done_count);
 
     scheduling_task->scheduleAfter(next_time_to_execute, false);
 }
