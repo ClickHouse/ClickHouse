@@ -161,6 +161,8 @@ class CreateDictionaryQuery : public DDLQuery
             PtrTo<ClusterClause> cluster,
             bool attach,
             bool if_not_exists,
+            bool create_or_replace,
+            bool replace,
             PtrTo<TableIdentifier> identifier,
             PtrTo<UUIDClause> uuid,
             PtrTo<DictionarySchemaClause> schema,
@@ -177,7 +179,10 @@ class CreateDictionaryQuery : public DDLQuery
             ENGINE,    // DictionaryEngineClause
         };
 
-        const bool attach, if_not_exists;
+    const bool attach;
+    const bool if_not_exists;
+    const bool create_or_replace;
+    const bool replace;
 };
 
 }

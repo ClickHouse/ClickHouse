@@ -782,6 +782,8 @@ public:
     void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
+    /// Removes context of current distributed DDL.
+    void resetZooKeeperMetadataTransaction();
 
     struct MySQLWireContext
     {

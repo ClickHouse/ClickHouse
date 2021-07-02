@@ -34,6 +34,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -86,7 +87,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int PATH_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
-    extern const int UNKNOWN_TABLE;
 }
 
 namespace fs = std::filesystem;
@@ -1075,6 +1075,29 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                                                        const InterpreterCreateQuery::TableProperties & properties)
 {
+    /// Replicated database requires separate contexts for each DDL query
+    ContextPtr current_context = getContext();
+    ContextMutablePtr create_context = Context::createCopy(current_context);
+    create_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+
+    auto make_drop_context = [&](bool on_error) -> ContextMutablePtr
+    {
+        ContextMutablePtr drop_context = Context::createCopy(current_context);
+        drop_context->makeQueryContext();
+        if (on_error)
+            return drop_context;
+
+        if (auto txn = current_context->getZooKeeperMetadataTransaction())
+        {
+            /// Execute drop as separate query, because [CREATE OR] REPLACE query can be considered as
+            /// successfully executed after RENAME/EXCHANGE query.
+            drop_context->resetZooKeeperMetadataTransaction();
+            auto drop_txn = std::make_shared<ZooKeeperMetadataTransaction>(txn->getZooKeeper(), txn->getDatabaseZooKeeperPath(), txn->isInitialQuery());
+            drop_context->initZooKeeperMetadataTransaction(drop_txn);
+        }
+        return drop_context;
+    };
+
     auto ast_drop = std::make_shared<ASTDropQuery>();
     String table_to_replace_name = create.table;
 
@@ -1091,6 +1114,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         create.table = fmt::format("_tmp_replace_{}_{}",
                                    getHexUIntLowercase(name_hash),
                                    getHexUIntLowercase(random_suffix));
+
+        ast_drop->table = create.table;
+        ast_drop->is_dictionary = create.is_dictionary;
+        ast_drop->database = create.database;
+        ast_drop->kind = ASTDropQuery::Drop;
     }
 
     bool created = false;
@@ -1098,12 +1126,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     try
     {
         /// Create temporary table (random name will be generated)
-        [[maybe_unused]] bool done = doCreateTable(create, properties);
+        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties);
         assert(done);
-        ast_drop->table = create.table;
-        ast_drop->is_dictionary = create.is_dictionary;
-        ast_drop->database = create.database;
-        ast_drop->kind = ASTDropQuery::Drop;
         created = true;
 
         /// Try fill temporary table
@@ -1124,14 +1148,15 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// Will execute ordinary RENAME instead of EXCHANGE if the target table does not exist
         ast_rename->rename_if_cannot_exchange = create.create_or_replace;
 
-        InterpreterRenameQuery interpreter_rename{ast_rename, getContext()};
+        InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
         interpreter_rename.execute();
         renamed = true;
 
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
             /// Target table was replaced with new one, drop old table
-            InterpreterDropQuery(ast_drop, getContext()).execute();
+            auto drop_context = make_drop_context(false);
+            InterpreterDropQuery(ast_drop, drop_context).execute();
         }
 
         create.table = table_to_replace_name;
@@ -1142,7 +1167,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         /// Drop temporary table if it was successfully created, but was not renamed to target name
         if (created && !renamed)
-            InterpreterDropQuery(ast_drop, getContext()).execute();
+        {
+            auto drop_context = make_drop_context(true);
+            InterpreterDropQuery(ast_drop, drop_context).execute();
+        }
         throw;
     }
 }

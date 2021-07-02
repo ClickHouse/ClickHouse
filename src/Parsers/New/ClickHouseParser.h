@@ -793,11 +793,13 @@ public:
     DictionaryEngineClauseContext *dictionaryEngineClause();
     antlr4::tree::TerminalNode *ATTACH();
     antlr4::tree::TerminalNode *CREATE();
+    antlr4::tree::TerminalNode *REPLACE();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
     UuidClauseContext *uuidClause();
     ClusterClauseContext *clusterClause();
+    antlr4::tree::TerminalNode *OR();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -870,6 +872,7 @@ public:
     TableIdentifierContext *tableIdentifier();
     antlr4::tree::TerminalNode *ATTACH();
     antlr4::tree::TerminalNode *CREATE();
+    antlr4::tree::TerminalNode *REPLACE();
     antlr4::tree::TerminalNode *TEMPORARY();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *NOT();
@@ -879,6 +882,7 @@ public:
     TableSchemaClauseContext *tableSchemaClause();
     EngineClauseContext *engineClause();
     SubqueryClauseContext *subqueryClause();
+    antlr4::tree::TerminalNode *OR();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
