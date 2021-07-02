@@ -232,7 +232,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
             wait_update_tables_name.emplace_back(table_modification_time.first);
     }
 
-    std::map<String, NamesAndTypesList> tables_and_columns = fetchTablesColumnsList(wait_update_tables_name, local_context);
+    std::map<String, ColumnsDescription> tables_and_columns = fetchTablesColumnsList(wait_update_tables_name, local_context);
 
     for (const auto & table_and_columns : tables_and_columns)
     {
@@ -296,7 +296,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
     return tables_with_modification_time;
 }
 
-std::map<String, NamesAndTypesList>
+std::map<String, ColumnsDescription>
 DatabaseMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();

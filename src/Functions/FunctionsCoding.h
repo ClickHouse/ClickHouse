@@ -992,7 +992,7 @@ public:
             UInt8 byte = x >> offset;
 
             /// Leading zeros.
-            if (byte == 0 && !was_nonzero && offset)
+            if (byte == 0 && !was_nonzero && offset)  // -V560
                 continue;
 
             was_nonzero = true;
