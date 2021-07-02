@@ -35,4 +35,4 @@ SELECT * FROM system.databases
 └────────────────────────────────┴────────┴────────────────────────────┴─────────────────────────────────────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/databases) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/databases) <!--hide-->
