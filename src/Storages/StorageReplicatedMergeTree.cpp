@@ -7486,7 +7486,16 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     try
     {
         MergeTreeData::Transaction transaction(*this);
-        renameTempPartAndReplace(new_data_part, nullptr, &transaction);
+        auto replaced_parts = renameTempPartAndReplace(new_data_part, nullptr, &transaction);
+
+        if (!replaced_parts.empty())
+        {
+            Strings part_names;
+            for (const auto & part : replaced_parts)
+                part_names.emplace_back(part->name);
+
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to create empty part {}, but it replaces existing parts {}.", lost_part_name, fmt::join(part_names, ", "));
+        }
 
         while (true)
         {
