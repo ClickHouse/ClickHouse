@@ -30,7 +30,7 @@ class FunctionInitializeAggregation : public IFunction, private WithContext
 public:
     static constexpr auto name = "initializeAggregation";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionInitializeAggregation>(context_); }
-    FunctionInitializeAggregation(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionInitializeAggregation(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
