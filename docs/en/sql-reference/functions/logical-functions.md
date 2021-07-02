@@ -153,7 +153,7 @@ Result:
 
 ## xor {#logical-xor-function}
 
-Calculates the result of the logical exclusive disjunction between two or more values. For more than two values the function works as if it calculates `XOR` of the first two values and then uses the result with the next value to calculate `XOR` and so on. Corresponds to [Logical XOR Operator](../../sql-reference/operators/index.md#logical-xor-operator).
+Calculates the result of the logical exclusive disjunction between two or more values. For more than two values the function works as if it calculates `XOR` of the first two values and then uses the result with the next value to calculate `XOR` and so on.
 
 **Syntax**
 
