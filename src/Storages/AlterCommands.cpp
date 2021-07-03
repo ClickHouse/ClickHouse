@@ -211,6 +211,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.after_index_name = command_ast->index->as<ASTIdentifier &>().name();
 
         command.if_not_exists = command_ast->if_not_exists;
+        command.first = command_ast->first;
 
         return command;
     }
@@ -453,6 +454,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         auto insert_it = metadata.secondary_indices.end();
+
+        /// insert the index in the beginning of the indices list
+        if (first)
+            insert_it = metadata.secondary_indices.begin();
 
         if (!after_index_name.empty())
         {
