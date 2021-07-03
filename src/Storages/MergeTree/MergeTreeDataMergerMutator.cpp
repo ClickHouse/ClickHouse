@@ -964,8 +964,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t rows_written = 0;
     const size_t initial_reservation = space_reservation ? space_reservation->getSize() : 0;
 
-    auto is_cancelled = [&]() { return merges_blocker.isCancelled()
-        || (need_remove_expired_values && ttl_merges_blocker.isCancelled()); };
+    auto is_cancelled = [&]()
+    {
+        return merges_blocker.isCancelled()
+            || (need_remove_expired_values && ttl_merges_blocker.isCancelled())
+            || merge_entry->is_cancelled.load(std::memory_order_relaxed);
+    };
 
     Block block;
     while (!is_cancelled() && (block = merged_stream->read()))
@@ -1280,7 +1284,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     bool need_sync = needSyncPart(source_part->rows_count, source_part->getBytesOnDisk(), *data_settings);
     bool need_remove_expired_values = false;
 
-    if (in && shouldExecuteTTL(metadata_snapshot, in->getHeader().getNamesAndTypesList().getNames(), commands_for_part))
+    if (in && shouldExecuteTTL(metadata_snapshot, interpreter->getColumnDependencies(), commands_for_part))
         need_remove_expired_values = true;
 
     /// All columns from part are changed and may be some more that were missing before in part
@@ -1969,7 +1973,8 @@ std::set<MergeTreeProjectionPtr> MergeTreeDataMergerMutator::getProjectionsToRec
     return projections_to_recalc;
 }
 
-bool MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const Names & columns, const MutationCommands & commands)
+bool MergeTreeDataMergerMutator::shouldExecuteTTL(
+    const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies, const MutationCommands & commands)
 {
     if (!metadata_snapshot->hasAnyTTL())
         return false;
@@ -1978,7 +1983,6 @@ bool MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadataPtr & met
         if (command.type == MutationCommand::MATERIALIZE_TTL)
             return true;
 
-    auto dependencies = metadata_snapshot->getColumnDependencies(NameSet(columns.begin(), columns.end()));
     for (const auto & dependency : dependencies)
         if (dependency.kind == ColumnDependency::TTL_EXPRESSION || dependency.kind == ColumnDependency::TTL_TARGET)
             return true;
