@@ -141,7 +141,6 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
             throw Exception("Columns of different size provided.", ErrorCodes::LOGICAL_ERROR);
 
     ColumnsDescription columns_description;
-    ColumnDescription column_description;
 
     for (
         auto [column_name_and_type, declare_column_ast] = std::tuple{columns_name_and_type.begin(), columns_definition->children.begin()};
@@ -157,10 +156,10 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
                 if (options->changes.count("comment"))
                     comment = options->changes.at("comment")->as<ASTLiteral>()->value.safeGet<String>();
 
-        column_description.name = column_name_and_type->name;
-        column_description.type = column_name_and_type->type;
+        ColumnDescription column_description(column_name_and_type->name, column_name_and_type->type);
         if (!comment.empty())
             column_description.comment = std::move(comment);
+
         columns_description.add(column_description);
     }
 

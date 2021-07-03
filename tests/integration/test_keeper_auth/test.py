@@ -6,7 +6,7 @@ from kazoo.security import ACL, make_digest_acl, make_acl
 from kazoo.exceptions import AuthFailedError, InvalidACLError, NoAuthError, KazooException
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/keeper_config.xml', 'configs/logs_conf.xml'], with_zookeeper=True, use_keeper=False, stay_alive=True)
+node = cluster.add_instance('node', main_configs=['configs/keeper_config.xml'], with_zookeeper=True, use_keeper=False, stay_alive=True)
 
 SUPERAUTH = "super:admin"
 
