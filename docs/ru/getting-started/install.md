@@ -87,9 +87,18 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Внутри образов используются официальные `deb` пакеты.
 
+### Из единого бинарного файла {#from-single-binary}
+
+Для установки ClickHouse под Linux можно использовать единый переносимый бинарный файл из последнего коммита ветки `master`: [https://builds.clickhouse.tech/master/amd64/clickhouse].
+
+``` bash
+curl -O 'https://builds.clickhouse.tech/master/amd64/clickhouse' && chmod a+x clickhouse
+sudo ./clickhouse install
+```
+
 ### Из исполняемых файлов для нестандартных окружений {#from-binaries-non-linux}
 
-Для других операционных систем и архитектуры AArch64, сборки ClickHouse предоставляются в виде кросс-компилированного бинарника с последнего коммита ветки master (с задержкой в несколько часов).
+Для других операционных систем и архитектуры AArch64 сборки ClickHouse предоставляются в виде кросс-компилированного бинарного файла из последнего коммита ветки `master` (с задержкой в несколько часов).
 
 - [macOS](https://builds.clickhouse.tech/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos/clickhouse' && chmod a+x ./clickhouse`
 - [AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
@@ -97,9 +106,9 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 После скачивания можно воспользоваться `clickhouse client` для подключения к серверу или `clickhouse local` для обработки локальных данных. 
 
-Чтобы установить ClickHouse в рамках всей системы (с необходимыми конфигурационными файлами, настройками пользователей и т.д.), выполните `sudo ./clickhouse install`. Затем выполните команды `clickhouse start` (чтобы запустить сервер) и `clickhouse-client` (чтобы подключиться к нему). 
+Чтобы установить ClickHouse в рамках всей системы (с необходимыми конфигурационными файлами, настройками пользователей и т.д.), выполните `sudo ./clickhouse install`. Затем выполните команды `clickhouse start` (чтобы запустить сервер) и `clickhouse-client` (чтобы подключиться к нему).
 
-Данные сборки не рекомендуются для использования в продакшене, так как они недостаточно тщательно протестированны. Также, в них присутствуют не все возможности ClickHouse.
+Данные сборки не рекомендуются для использования в рабочей среде, так как они недостаточно тщательно протестированы. Также в них присутствуют не все возможности ClickHouse.
 
 ### Из исходного кода {#from-sources}
 
