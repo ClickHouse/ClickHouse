@@ -9,8 +9,8 @@ from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=["configs/log_conf.xml"], with_postgres=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/log_conf.xml'], with_postgres_cluster=True)
+node1 = cluster.add_instance('node1', with_postgres=True)
+node2 = cluster.add_instance('node2', with_postgres_cluster=True)
 
 def get_postgres_conn(cluster, ip, database=False):
     if database == True:

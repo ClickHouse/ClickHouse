@@ -137,8 +137,9 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
         index_decl->formatImpl(settings, state, frame);
 
-        /// AFTER
-        if (index)
+        if (first)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FIRST " << (settings.hilite ? hilite_none : "");
+        else if (index)    /// AFTER
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
             index->formatImpl(settings, state, frame);
