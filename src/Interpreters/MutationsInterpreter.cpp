@@ -388,7 +388,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     if (commands.empty())
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
-
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
@@ -425,8 +424,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(storage, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
-    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
-    auto dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
+    dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
     /// First, break a sequence of commands into stages.
     for (auto & command : commands)
@@ -921,6 +919,10 @@ const Block & MutationsInterpreter::getUpdatedHeader() const
     return *updated_header;
 }
 
+const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
+{
+    return dependencies;
+}
 
 size_t MutationsInterpreter::evaluateCommandsSize()
 {
