@@ -1,7 +1,6 @@
 #pragma once
 
 #include <span>
-#include <thread>
 #include <unordered_map>
 #include <Poco/Logger.h>
 #include <common/types.h>
@@ -9,30 +8,6 @@
 
 namespace coverage
 {
-class TaskQueue
-{
-public:
-    void run();
-    void start(FileWrapper& wrapper_, std::span<bool> data_);
-    void wait();
-
-    ~TaskQueue() { wait(); }
-
-private:
-    static constexpr auto workers_count = 8;
-
-    std::thread workers[workers_count];
-
-    FileWrapper * wrapper { nullptr };
-    std::span<bool> data;
-
-    std::mutex mutex;
-    std::condition_variable task_or_shutdown;
-
-    bool shutdown { false };
-    bool task { false };
-};
-
 static const String report_path { "/report.ccr" }; // Change if you want to test runtime outside of Docker
 static constexpr std::string_view setting_test_name = "coverage_test_name";
 
@@ -83,7 +58,6 @@ private:
     std::span<bool> current; /// Counters for currently active test.
 
     FileWrapper report_file;
-    TaskQueue tq;
 
     void writeReportHeader() noexcept;
     void symbolizeInstrumentedData();
