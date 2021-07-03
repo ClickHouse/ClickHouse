@@ -291,7 +291,8 @@ void ExpressionAnalyzer::analyzeAggregation()
 
         /// Constant expressions are already removed during first 'analyze' run.
         /// So for second `analyze` information is taken from select_query.
-        has_const_aggregation_keys = select_query->group_by_with_constant_keys;
+        if (select_query)
+            has_const_aggregation_keys = select_query->group_by_with_constant_keys;
 
         for (const auto & desc : aggregate_descriptions)
             aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
