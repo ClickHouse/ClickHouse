@@ -1,5 +1,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
+#include <Poco/DirectoryIterator.h>
+#include <Poco/File.h>
 
 #include <common/logger_useful.h>
 #include <common/sleep.h>
@@ -15,33 +17,49 @@ namespace ErrorCodes
     extern const int CANNOT_COMMIT_OFFSET;
 }
 
-using namespace std::chrono_literals;
-
 ReadBufferFromFileLog::ReadBufferFromFileLog(
-    const std::vector<String> & log_files_,
-    Poco::Logger * log_,
-    size_t max_batch_size,
-    size_t poll_timeout_,
-    ContextPtr context_)
+    const String & path_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_, ContextPtr context_)
     : ReadBuffer(nullptr, 0)
+    , path(path_)
     , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , context(context_)
-    , log_files(log_files_.begin(), log_files_.end())
 {
 }
 
 void ReadBufferFromFileLog::open()
 {
-    for (const auto & file : log_files)
-        file_status[file].reader = std::ifstream(file);
+    Poco::File file(path);
+
+    bool path_is_directory = false;
+
+    if (file.isFile())
+    {
+        file_status[path].reader = std::ifstream(path);
+    }
+    else if (file.isDirectory())
+    {
+        path_is_directory = true;
+        Poco::DirectoryIterator dir_iter(file);
+        Poco::DirectoryIterator end;
+        while (dir_iter != end)
+        {
+            if (dir_iter->isFile())
+                file_status[dir_iter->path()].reader = std::ifstream(dir_iter->path());
+            ++dir_iter;
+        }
+    }
 
     wait_task = context->getMessageBrokerSchedulePool().createTask("waitTask", [this] { waitFunc(); });
     wait_task->deactivate();
 
-    select_task = context->getMessageBrokerSchedulePool().createTask("selectTask", [this] { selectFunc(); });
-    select_task->activateAndSchedule();
+    if (path_is_directory)
+    {
+        FileLogDirectoryWatcher dw(path);
+        select_task = context->getMessageBrokerSchedulePool().createTask("watchTask", [this, &dw] { watchFunc(dw); });
+        select_task->activateAndSchedule();
+    }
 
     cleanUnprocessed();
     allowed = false;
@@ -63,7 +81,6 @@ void ReadBufferFromFileLog::close()
         status.second.reader.close();
 }
 
-// it do the poll when needed
 bool ReadBufferFromFileLog::poll()
 {
 
@@ -113,10 +130,19 @@ ReadBufferFromFileLog::Records ReadBufferFromFileLog::pollBatch(size_t batch_siz
 
 void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_records, size_t batch_size_)
 {
+    std::lock_guard<std::mutex> lock(status_mutex);
+
     size_t need_records_size = batch_size_ - new_records.size();
     size_t read_records_size = 0;
+
     for (auto & status : file_status)
     {
+        if (status.second.status == FileStatus::NO_CHANGE)
+            continue;
+
+        if (status.second.status == FileStatus::REMOVED)
+            file_status.erase(status.first);
+
         while (read_records_size < need_records_size && status.second.reader.good() && !status.second.reader.eof())
         {
             Record record;
@@ -124,6 +150,11 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
             new_records.emplace_back(record);
             ++read_records_size;
         }
+
+        // Read to the end of the file
+        if (status.second.reader.eof())
+            status.second.status = FileStatus::NO_CHANGE;
+
         if (read_records_size == need_records_size)
             break;
     }
@@ -149,8 +180,41 @@ void ReadBufferFromFileLog::waitFunc()
     time_out = true;
 }
 
-void ReadBufferFromFileLog::selectFunc()
+void ReadBufferFromFileLog::watchFunc(FileLogDirectoryWatcher & dw)
 {
-}
-}
+    while (true)
+    {
+        sleepForNanoseconds(poll_timeout);
 
+        auto error = dw.getError();
+        if (error)
+            LOG_INFO(log, "Error happened during watching directory {}.", dw.getPath());
+
+        auto events = dw.getEvents();
+        std::lock_guard<std::mutex> lock(status_mutex);
+
+        for (const auto & event : events)
+        {
+            switch (event.type)
+            {
+                case Poco::DirectoryWatcher::DW_ITEM_ADDED:
+                    file_status[event.path].reader = std::ifstream(event.path);
+                    break;
+
+                case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
+                    file_status[event.path].status = FileStatus::UPDATED;
+                    break;
+
+                case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
+                case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
+                case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
+                    file_status[event.path].status = FileStatus::REMOVED;
+                    break;
+
+                default:
+                    LOG_INFO(log, "Undefine event type");
+            }
+        }
+    }
+}
+}
