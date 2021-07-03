@@ -86,6 +86,6 @@ private:
 
     void waitFunc();
 
-    void watchFunc(FileLogDirectoryWatcher & dw);
+    [[noreturn ]] void watchFunc(FileLogDirectoryWatcher & dw);
 };
 }
