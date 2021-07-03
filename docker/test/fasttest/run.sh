@@ -160,7 +160,6 @@ function clone_submodules
 
         SUBMODULES_TO_UPDATE=(
             contrib/abseil-cpp
-            contrib/antlr4-runtime
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
@@ -382,6 +381,9 @@ function run_tests
 
         # needs psql
         01889_postgresql_protocol_null_fields
+
+        # needs pv
+        01923_network_receive_time_metric_insert
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \

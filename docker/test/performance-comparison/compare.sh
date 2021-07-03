@@ -319,14 +319,14 @@ function get_profiles
 
     wait
 
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type = 'QueryFinish' format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
 
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type = 'QueryFinish' format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
@@ -409,10 +409,10 @@ create view right_query_log as select *
         '$(cat "right-query-log.tsv.columns")');
 
 create view query_logs as
-    select 0 version, query_id, ProfileEvents.keys, ProfileEvents.values,
+    select 0 version, query_id, ProfileEvents,
         query_duration_ms, memory_usage from left_query_log
     union all
-    select 1 version, query_id, ProfileEvents.keys, ProfileEvents.values,
+    select 1 version, query_id, ProfileEvents,
         query_duration_ms, memory_usage from right_query_log
     ;
 
@@ -424,7 +424,7 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
     with (
         -- sumMapState with the list of all keys with '-0.' values. Negative zero is because
         -- sumMap removes keys with positive zeros.
-        with (select groupUniqArrayArray(ProfileEvents.keys) from query_logs) as all_names
+        with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
             select arrayReduce('sumMapState', [(all_names, arrayMap(x->-0., all_names))])
         ) as all_metrics
     select test, query_index, version, query_id,
@@ -433,8 +433,8 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
                 [
                     all_metrics,
                     arrayReduce('sumMapState',
-                        [(ProfileEvents.keys,
-                            arrayMap(x->toFloat64(x), ProfileEvents.values))]
+                        [(mapKeys(ProfileEvents),
+                            arrayMap(x->toFloat64(x), mapValues(ProfileEvents)))]
                     ),
                     arrayReduce('sumMapState', [(
                         ['client_time', 'server_time', 'memory_usage'],
@@ -1003,10 +1003,11 @@ create view query_log as select *
 
 create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
         'unstable-run-metrics.$version.rep') as
-    select
-        test, query_index, query_id,
-        ProfileEvents.values value, ProfileEvents.keys metric
-    from query_log array join ProfileEvents
+    select test, query_index, query_id, value, metric
+    from query_log
+    array join
+        mapValues(ProfileEvents) as value,
+        mapKeys(ProfileEvents) as metric
     join unstable_query_runs using (query_id)
     ;
 
