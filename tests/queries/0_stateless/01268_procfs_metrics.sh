@@ -24,7 +24,7 @@ function show_processes_func()
         # These two system metrics for the generating query above are guaranteed to be nonzero when ProcFS is mounted at /proc
         $CLICKHOUSE_CLIENT -q "
             SELECT count() > 0 FROM system.processes\
-            WHERE has(ProfileEvents.Names, 'OSCPUVirtualTimeMicroseconds') AND has(ProfileEvents.Names, 'OSReadChars')\
+            WHERE ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0 AND ProfileEvents['OSReadChars'] > 0 \
             SETTINGS max_threads = 1
         " | grep '1' && break;
     done

@@ -398,7 +398,7 @@ struct ContextSharedPart
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
-    std::unique_ptr<Clusters> clusters;
+    std::shared_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
@@ -460,6 +460,14 @@ struct ContextSharedPart
         std::unique_ptr<SystemLogs> delete_system_logs;
         {
             auto lock = std::lock_guard(mutex);
+
+        /** Compiled expressions stored in cache need to be destroyed before destruction of static objects.
+          * Because CHJIT instance can be static object.
+          */
+#if USE_EMBEDDED_COMPILER
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
+#endif
 
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
             /// TODO: Get rid of this.
@@ -1905,7 +1913,7 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
-    auto res = getClusters().getCluster(cluster_name);
+    auto res = getClusters()->getCluster(cluster_name);
     if (res)
         return res;
 
@@ -1919,7 +1927,7 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
-    return getClusters().getCluster(cluster_name);
+    return getClusters()->getCluster(cluster_name);
 }
 
 
@@ -1934,7 +1942,7 @@ void Context::reloadClusterConfig() const
         }
 
         const auto & config = cluster_config ? *cluster_config : getConfigRef();
-        auto new_clusters = std::make_unique<Clusters>(config, settings);
+        auto new_clusters = std::make_shared<Clusters>(config, settings);
 
         {
             std::lock_guard lock(shared->clusters_mutex);
@@ -1950,16 +1958,16 @@ void Context::reloadClusterConfig() const
 }
 
 
-Clusters & Context::getClusters() const
+std::shared_ptr<Clusters> Context::getClusters() const
 {
     std::lock_guard lock(shared->clusters_mutex);
     if (!shared->clusters)
     {
         const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-        shared->clusters = std::make_unique<Clusters>(config, settings);
+        shared->clusters = std::make_shared<Clusters>(config, settings);
     }
 
-    return *shared->clusters;
+    return shared->clusters;
 }
 
 
