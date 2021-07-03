@@ -64,7 +64,10 @@ struct CompiledAggregateFunctions
     JITMergeAggregateStatesFunction merge_aggregate_states_function;
     JITInsertAggregateStatesIntoColumnsFunction insert_aggregates_into_columns_function;
 
+    /// Count of functions that were compiled
     size_t functions_count;
+
+    /// Compiled module. It is client responsibility to destroy it after functions are no longer required.
     CHJIT::CompiledModule compiled_module;
 };
 
