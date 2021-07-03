@@ -105,7 +105,7 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 2.  Table schema, i.e. list of columns and their [data types](../sql-reference/data-types/index.md).
 3.  [Table engine](../engines/table-engines/index.md) and its settings, which determines all the details on how queries to this table will be physically executed.
 
-Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
+Yandex.Metrica is a web analytics service, and sample dataset does not cover its full functionality, so there are only two tables to create:
 
 -   `hits` is a table with each action done by all users on all websites covered by the service.
 -   `visits` is a table that contains pre-built sessions instead of individual actions.
@@ -254,7 +254,6 @@ ENGINE = MergeTree()
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
-SETTINGS index_granularity = 8192
 ```
 
 ``` sql
@@ -450,7 +449,6 @@ ENGINE = CollapsingMergeTree(Sign)
 PARTITION BY toYYYYMM(StartDate)
 ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 SAMPLE BY intHash32(UserID)
-SETTINGS index_granularity = 8192
 ```
 
 You can execute those queries using the interactive mode of `clickhouse-client` (just launch it in a terminal without specifying a query in advance) or try some [alternative interface](../interfaces/index.md) if you want.
@@ -646,7 +644,7 @@ If there are no replicas at the moment on replicated table creation, a new first
 
 ``` sql
 CREATE TABLE tutorial.hits_replica (...)
-ENGINE = ReplcatedMergeTree(
+ENGINE = ReplicatedMergeTree(
     '/clickhouse_perftest/tables/{shard}/hits',
     '{replica}'
 )

@@ -22,12 +22,12 @@ DROP TABLE IF EXISTS test_r1;
 DROP TABLE IF EXISTS test_r2;
 
 CREATE TABLE test_r1 (x UInt64, "\\" String DEFAULT '\r\n\t\\' || '
-') ENGINE = ReplicatedMergeTree('/clickhouse/test', 'r1') ORDER BY "\\";
+') ENGINE = ReplicatedMergeTree('/clickhouse/test_01669', 'r1') ORDER BY "\\";
 
 INSERT INTO test_r1 ("\\") VALUES ('\\');
 
 CREATE TABLE test_r2 (x UInt64, "\\" String DEFAULT '\r\n\t\\' || '
-') ENGINE = ReplicatedMergeTree('/clickhouse/test', 'r2') ORDER BY "\\";
+') ENGINE = ReplicatedMergeTree('/clickhouse/test_01669', 'r2') ORDER BY "\\";
 
 SYSTEM SYNC REPLICA test_r2;
 

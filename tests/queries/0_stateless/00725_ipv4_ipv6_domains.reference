@@ -49,3 +49,19 @@ FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF is ipv6 string: 	1
 ::ffff:127.0.0.1 is ipv6 string:                        	1
 ::ffff:8.8.8.8 is ipv6 string:                          	1
 2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D is ipv6 string: 	1
+::ffff:0.0.0.0
+::ffff:127.0.0.1
+::ffff:127.0.0.1
+::ffff:127.0.0.0
+::ffff:127.0.0.1
+::ffff:127.0.0.2
+::ffff:127.0.0.3
+::ffff:127.0.0.4
+::ffff:127.0.0.5
+::ffff:127.0.0.6
+::ffff:127.0.0.7
+::ffff:127.0.0.8
+::ffff:127.0.0.9
+::ffff:127.0.0.10
+::ffff:127.0.0.11
+::ffff:127.0.0.12

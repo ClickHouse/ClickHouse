@@ -126,7 +126,13 @@ Contribute all new information in English language. Other languages are translat
 
 ### Adding a New File
 
-When adding a new file:
+When you add a new file, it should end with a link like:
+
+`[Original article](https://clickhouse.tech/docs/<path-to-the-page>) <!--hide-->`
+
+and there should be **a new empty line** after it.
+
+{## When adding a new file:
 
 - Make symbolic links for all other languages. You can use the following commands:
 
@@ -134,7 +140,7 @@ When adding a new file:
     $ cd /ClickHouse/clone/directory/docs
     $ ln -sr en/new/file.md lang/new/file.md
     ```
-
+##}
 <a name="adding-a-new-language"/>
 
 ### Adding a New Language
@@ -195,8 +201,11 @@ Templates:
 
 - [Function](_description_templates/template-function.md)
 - [Setting](_description_templates/template-setting.md)
+- [Server Setting](_description_templates/template-server-setting.md)
 - [Database or Table engine](_description_templates/template-engine.md)
 - [System table](_description_templates/template-system-table.md)
+- [Data type](_description_templates/data-type.md)
+- [Statement](_description_templates/statement.md)
 
 
 <a name="how-to-build-docs"/>

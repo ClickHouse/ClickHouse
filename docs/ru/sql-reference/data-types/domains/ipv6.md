@@ -81,4 +81,3 @@ SELECT toTypeName(i), CAST(from AS FixedString(16)) AS i FROM hits LIMIT 1;
 └───────────────────────────────────────────┴─────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/domains/ipv6) <!--hide-->

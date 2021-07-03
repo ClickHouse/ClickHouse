@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
 }
 
-///
+
 inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     if (isColumnedAsDecimal(left_type))
@@ -30,14 +30,19 @@ inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataType
             return true;
     }
     else if (isNotDecimalButComparableToDecimal(left_type) && isColumnedAsDecimal(right_type))
+    {
         return true;
+    }
     return false;
 }
 
-template <size_t > struct ConstructDecInt { using Type = Int32; };
+template <size_t> struct ConstructDecInt;
+template <> struct ConstructDecInt<1> { using Type = Int32; };
+template <> struct ConstructDecInt<2> { using Type = Int32; };
+template <> struct ConstructDecInt<4> { using Type = Int32; };
 template <> struct ConstructDecInt<8> { using Type = Int64; };
 template <> struct ConstructDecInt<16> { using Type = Int128; };
-template <> struct ConstructDecInt<48> { using Type = Int256; };
+template <> struct ConstructDecInt<32> { using Type = Int256; };
 
 template <typename T, typename U>
 struct DecCompareInt
@@ -76,7 +81,7 @@ public:
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
     {
-        static const UInt32 max_scale = DecimalUtils::maxPrecision<Decimal256>();
+        static const UInt32 max_scale = DecimalUtils::max_precision<Decimal256>;
         if (scale_a > max_scale || scale_b > max_scale)
             throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
 
@@ -233,9 +238,9 @@ private:
             bool overflow = false;
 
             if constexpr (sizeof(A) > sizeof(CompareInt))
-                overflow |= (bigint_cast<A>(x) != a);
+                overflow |= (static_cast<A>(x) != a);
             if constexpr (sizeof(B) > sizeof(CompareInt))
-                overflow |= (bigint_cast<B>(y) != b);
+                overflow |= (static_cast<B>(y) != b);
             if constexpr (is_unsigned_v<A>)
                 overflow |= (x < 0);
             if constexpr (is_unsigned_v<B>)
@@ -247,14 +252,14 @@ private:
                 overflow |= common::mulOverflow(y, scale, y);
 
             if (overflow)
-                throw Exception("Can't compare", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception("Can't compare decimal number due to overflow", ErrorCodes::DECIMAL_OVERFLOW);
         }
         else
         {
             if constexpr (scale_left)
-                x *= scale;
+                x = common::mulIgnoreOverflow(x, scale);
             if constexpr (scale_right)
-                y *= scale;
+                y = common::mulIgnoreOverflow(y, scale);
         }
 
         return Op::apply(x, y);

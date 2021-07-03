@@ -903,7 +903,7 @@ RQ_SRS_007_LDAP_Configuration_User_RBAC = Requirement(
         'the following RBAC command\n'
         '\n'
         '```sql\n'
-        "CREATE USER name IDENTIFIED WITH ldap_server BY 'server_name'\n"
+        "CREATE USER name IDENTIFIED WITH ldap SERVER 'server_name'\n"
         '```\n'
         '\n'
         ),
@@ -1841,7 +1841,7 @@ version: 1.0
 the following RBAC command
 
 ```sql
-CREATE USER name IDENTIFIED WITH ldap_server BY 'server_name'
+CREATE USER name IDENTIFIED WITH ldap SERVER 'server_name'
 ```
 
 #### RQ.SRS-007.LDAP.Configuration.User.Syntax

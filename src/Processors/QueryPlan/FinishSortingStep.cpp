@@ -5,6 +5,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -47,11 +48,11 @@ void FinishSortingStep::updateLimit(size_t limit_)
     if (limit_ && (limit == 0 || limit_ < limit))
     {
         limit = limit_;
-        transform_traits.preserves_number_of_rows = limit == 0;
+        transform_traits.preserves_number_of_rows = false;
     }
 }
 
-void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
+void FinishSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     bool need_finish_sorting = (prefix_description.size() < result_description.size());
     if (pipeline.getNumStreams() > 1)
@@ -99,6 +100,15 @@ void FinishSortingStep::describeActions(FormatSettings & settings) const
 
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
+}
+
+void FinishSortingStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Prefix Sort Description", explainSortDescription(prefix_description, input_streams.front().header));
+    map.add("Result Sort Description", explainSortDescription(result_description, input_streams.front().header));
+
+    if (limit)
+        map.add("Limit", limit);
 }
 
 }

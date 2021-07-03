@@ -1,4 +1,8 @@
-## rankCorr {#agg_function-rankcorr}
+---
+toc_priority: 145
+---
+
+# rankCorr {#agg_function-rankcorr}
 
 Computes a rank correlation coefficient.
 
@@ -8,7 +12,7 @@ Computes a rank correlation coefficient.
 rankCorr(x, y)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Arbitrary value. [Float32](../../../sql-reference/data-types/float.md#float32-float64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 -   `y` — Arbitrary value. [Float32](../../../sql-reference/data-types/float.md#float32-float64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64).

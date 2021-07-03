@@ -95,7 +95,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (tables())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FROM " << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FROM" << (s.hilite ? hilite_none : "");
         tables()->formatImpl(s, state, frame);
     }
 
@@ -137,8 +137,8 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (window())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str <<
-            "WINDOW " << (s.hilite ? hilite_none : "");
-        window()->formatImpl(s, state, frame);
+            "WINDOW" << (s.hilite ? hilite_none : "");
+        window()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (orderBy())
@@ -307,10 +307,11 @@ bool ASTSelectQuery::final() const
 
 bool ASTSelectQuery::withFill() const
 {
-    if (!orderBy())
+    const ASTPtr order_by = orderBy();
+    if (!order_by)
         return false;
 
-    for (const auto & order_expression_element : orderBy()->children)
+    for (const auto & order_expression_element : order_by->children)
         if (order_expression_element->as<ASTOrderByElement &>().with_fill)
             return true;
 
@@ -375,7 +376,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = createTableIdentifier(table_id);
+    table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>(table_id);
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);

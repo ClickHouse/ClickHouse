@@ -14,4 +14,4 @@ add_subdirectory("${protobuf_SOURCE_DIR}/cmake" "${protobuf_BINARY_DIR}")
 
 # We don't want to stop compilation on warnings in protobuf's headers.
 # The following line overrides the value assigned by the command target_include_directories() in libprotobuf.cmake 
-set_property(TARGET libprotobuf PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES ${protobuf_SOURCE_DIR}/src)
+set_property(TARGET libprotobuf PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${protobuf_SOURCE_DIR}/src")

@@ -92,20 +92,10 @@ public:
     LocalDate(const LocalDate &) noexcept = default;
     LocalDate & operator= (const LocalDate &) noexcept = default;
 
-    LocalDate & operator= (time_t time)
-    {
-        init(time);
-        return *this;
-    }
-
-    operator time_t() const
-    {
-        return DateLUT::instance().makeDate(m_year, m_month, m_day);
-    }
-
     DayNum getDayNum() const
     {
-        return DateLUT::instance().makeDayNum(m_year, m_month, m_day);
+        const auto & lut = DateLUT::instance();
+        return DayNum(lut.makeDayNum(m_year, m_month, m_day).toUnderType());
     }
 
     operator DayNum() const
@@ -166,20 +156,3 @@ public:
 };
 
 static_assert(sizeof(LocalDate) == 4);
-
-
-inline std::ostream & operator<< (std::ostream & ostr, const LocalDate & date)
-{
-    return ostr << date.year()
-        << '-' << (date.month() / 10) << (date.month() % 10)
-        << '-' << (date.day() / 10) << (date.day() % 10);
-}
-
-
-namespace std
-{
-inline string to_string(const LocalDate & date)
-{
-    return date.toString();
-}
-}

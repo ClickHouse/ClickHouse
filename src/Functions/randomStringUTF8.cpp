@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <pcg_random.hpp>
 #include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
@@ -30,7 +30,7 @@ class FunctionRandomStringUTF8 : public IFunction
 public:
     static constexpr auto name = "randomStringUTF8";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomStringUTF8>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomStringUTF8>(); }
 
     String getName() const override { return name; }
 
@@ -119,8 +119,13 @@ public:
                 UInt32 code_point2 = generate_code_point(rand >> 32);
 
                 /// We have padding in column buffers that we can overwrite.
-                pos += UTF8::convert(code_point1, pos, sizeof(int));
-                last_writen_bytes = UTF8::convert(code_point2, pos, sizeof(int));
+                size_t length1 = UTF8::convertCodePointToUTF8(code_point1, pos, sizeof(int));
+                assert(length1 <= 4);
+                pos += length1;
+
+                size_t length2 = UTF8::convertCodePointToUTF8(code_point2, pos, sizeof(int));
+                assert(length2 <= 4);
+                last_writen_bytes = length2;
                 pos += last_writen_bytes;
             }
             offset = pos - data_to.data() + 1;

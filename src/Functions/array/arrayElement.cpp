@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -41,7 +41,7 @@ class FunctionArrayElement : public IFunction
 {
 public:
     static constexpr auto name = "arrayElement";
-    static FunctionPtr create(const Context & context);
+    static FunctionPtr create(ContextPtr context);
 
     String getName() const override;
 
@@ -449,7 +449,7 @@ struct ArrayElementGenericImpl
 }
 
 
-FunctionPtr FunctionArrayElement::create(const Context &)
+FunctionPtr FunctionArrayElement::create(ContextPtr)
 {
     return std::make_shared<FunctionArrayElement>();
 }
@@ -872,10 +872,18 @@ bool FunctionArrayElement::matchKeyToIndexNumberConst(
     if (!data_numeric)
         return false;
 
-    if (index.getType() != Field::Types::UInt64 && index.getType() != Field::Types::Int64)
+    std::optional<DataType> index_as_integer;
+    Field::dispatch([&](const auto & value)
+    {
+        using FieldType = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<FieldType, DataType> || (is_integer_v<FieldType> && std::is_convertible_v<FieldType, DataType>))
+            index_as_integer = static_cast<DataType>(value);
+    }, index);
+
+    if (!index_as_integer)
         return false;
 
-    MatcherNumberConst<DataType> matcher{data_numeric->getData(), get<DataType>(index)};
+    MatcherNumberConst<DataType> matcher{data_numeric->getData(), *index_as_integer};
     executeMatchKeyToIndex(offsets, matched_idxs, matcher);
     return true;
 }
@@ -906,10 +914,15 @@ bool FunctionArrayElement::matchKeyToIndex(
         || matchKeyToIndexNumber<UInt16>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<UInt32>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<UInt64>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt128>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt256>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int8>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int16>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int32>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int64>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<Int128>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<Int256>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UUID>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexString(data, offsets, arguments, matched_idxs);
 }
 
@@ -921,10 +934,15 @@ bool FunctionArrayElement::matchKeyToIndexConst(
         || matchKeyToIndexNumberConst<UInt16>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<UInt32>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<UInt64>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UInt128>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UInt256>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int8>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int16>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int32>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int64>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<Int128>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<Int256>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UUID>(data, offsets, index, matched_idxs)
         || matchKeyToIndexStringConst(data, offsets, index, matched_idxs);
 }
 
@@ -949,7 +967,7 @@ ColumnPtr FunctionArrayElement::executeMap(
     {
         if (input_rows_count > 0 && !matchKeyToIndex(keys_data, offsets, arguments, indices_data))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal types of arguments: {}, {} for function ",
+                "Illegal types of arguments: {}, {} for function {}",
                 arguments[0].type->getName(), arguments[1].type->getName(), getName());
     }
     else

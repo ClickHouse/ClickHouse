@@ -494,11 +494,11 @@ SELECT now('Europe/Moscow');
 将时间向前取整半小时。
 此功能用于Yandex.Metrica，因为如果跟踪标记显示单个用户的连续综合浏览量在时间上严格超过此数量，则半小时是将会话分成两个会话的最短时间。这意味着（tag id，user id，time slot）可用于搜索相应会话中包含的综合浏览量。
 
-## toYYYMM {#toyyyymm}
+## toYYYYMM {#toyyyymm}
 
 将Date或DateTime转换为包含年份和月份编号的UInt32类型的数字（YYYY \* 100 + MM）。
 
-## toYYYMMDD {#toyyyymmdd}
+## toYYYYMMDD {#toyyyymmdd}
 
 将Date或DateTime转换为包含年份和月份编号的UInt32类型的数字（YYYY \* 10000 + MM \* 100 + DD）。
 

@@ -118,7 +118,7 @@ for (auto & stream : streams)
     stream.second->finalize();
 ```
 
-**18.** 行的某尾不应该包含空格。
+**18.** 行的末尾不应该包含空格。
 
 **19.** 源文件应该用 UTF-8 编码。
 
@@ -696,7 +696,7 @@ auto s = std::string{"Hello"};
 
 **2.** 语言： C++20.
 
-**3.** 编译器： `gcc`。 此时（2020年08月），代码使用9.3版编译。（它也可以使用`clang 8` 编译）
+**3.** 编译器： `clang`。 此时（2021年03月），代码使用11版编译。（它也可以使用`gcc` 编译 but it is not suitable for production）
 
 使用标准库 (`libc++`)。
 

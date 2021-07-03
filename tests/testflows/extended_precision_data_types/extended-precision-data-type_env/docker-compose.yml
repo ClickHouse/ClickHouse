@@ -1,0 +1,30 @@
+version: '2.3'
+
+services:
+
+  mysql1:
+    extends:
+      file: mysql-service.yml
+      service: mysql
+    hostname: mysql1
+    volumes:
+      - "${CLICKHOUSE_TESTS_DIR}/_instances/mysql1/database:/var/lib/mysql"
+
+  clickhouse1:
+    extends:
+      file: clickhouse-service.yml
+      service: clickhouse
+    hostname: clickhouse1
+    volumes:
+      - "${CLICKHOUSE_TESTS_DIR}/_instances/clickhouse1/database/:/var/lib/clickhouse/"
+      - "${CLICKHOUSE_TESTS_DIR}/_instances/clickhouse1/logs/:/var/log/clickhouse-server/"
+
+  # dummy service which does nothing, but allows to postpone
+  # 'docker-compose up -d' till all dependecies will go healthy
+  all_services_ready:
+    image: hello-world
+    depends_on:
+      clickhouse1:
+        condition: service_healthy
+      mysql1:
+        condition: service_healthy

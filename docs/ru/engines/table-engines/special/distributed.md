@@ -136,4 +136,3 @@ logs - имя кластера в конфигурационном файле с
 
 При выставлении опции max_parallel_replicas выполнение запроса распараллеливается по всем репликам внутри одного шарда. Подробнее смотрите раздел [max_parallel_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/distributed/) <!--hide-->

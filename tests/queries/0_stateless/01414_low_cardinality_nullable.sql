@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS lc_nullable;
 
 CREATE TABLE lc_nullable (
-    order_key   Array(LowCardinality(Nullable((UInt64)))),
+    order_key   Array(LowCardinality(Nullable(UInt64))),
 
     i8  Array(LowCardinality(Nullable(Int8))),
     i16 Array(LowCardinality(Nullable(Int16))),
@@ -14,10 +14,10 @@ CREATE TABLE lc_nullable (
     f32 Array(LowCardinality(Nullable(Float32))),
     f64 Array(LowCardinality(Nullable(Float64))),
 
-    date Array(LowCardinality(Nullable((Date)))),
+    date Array(LowCardinality(Nullable(Date))),
     date_time Array(LowCardinality(Nullable(DateTime('Europe/Moscow')))),
 
-    str Array(LowCardinality(Nullable((String)))),
+    str Array(LowCardinality(Nullable(String))),
     fixed_string Array(LowCardinality(Nullable(FixedString(5))))
 ) ENGINE = MergeTree() ORDER BY order_key;
 

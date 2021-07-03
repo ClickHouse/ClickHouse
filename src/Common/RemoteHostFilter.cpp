@@ -42,6 +42,7 @@ void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
             else if (startsWith(key, "host"))
                 primary_hosts.insert(config.getString("remote_url_allow_hosts." + key));
         }
+        is_allow_by_default = false;
     }
 }
 
@@ -58,6 +59,6 @@ bool RemoteHostFilter::checkForDirectEntry(const std::string & str) const
         }
         return true;
     }
-    return true;
+    return is_allow_by_default;
 }
 }

@@ -1,22 +1,21 @@
 # system.distributed_ddl_queue {#system_tables-distributed_ddl_queue}
 
-Contains information about distributed ddl queries (ON CLUSTER queries) that were executed on a cluster.
+Contains information about [distributed ddl queries (ON CLUSTER clause)](../../sql-reference/distributed-ddl.md) that were executed on a cluster.
 
 Columns:
 
--   `entry`  ([String](../../sql-reference/data-types/string.md)) - Query id.
--   `host_name`  ([String](../../sql-reference/data-types/string.md)) - Hostname.
--   `host_address`  ([String](../../sql-reference/data-types/string.md)) - IP address that the Hostname resolves to.
--   `port`  ([UInt16](../../sql-reference/data-types/int-uint.md)) - Host Port.
--   `status`  ([Enum](../../sql-reference/data-types/enum.md)) - Stats of the query.
--   `cluster`  ([String](../../sql-reference/data-types/string.md)) - Cluster name.
--   `query`  ([String](../../sql-reference/data-types/string.md)) - Query executed.
--   `initiator`  ([String](../../sql-reference/data-types/string.md)) - Nod that executed the query.
--   `query_start_time` ([Date](../../sql-reference/data-types/date.md)) — Query start time.
--   `query_finish_time` ([Date](../../sql-reference/data-types/date.md)) — Query finish time.
--   `query_duration_ms` ([UInt64](../../sql-reference/data-types/datetime64.md)) — Duration of query execution in milliseconds.
--   `exception_code`  ([Enum](../../sql-reference/data-types/enum.md)) - Exception code from ZooKeeper.
-
+-   `entry` ([String](../../sql-reference/data-types/string.md)) — Query id.
+-   `host_name` ([String](../../sql-reference/data-types/string.md)) — Hostname.
+-   `host_address` ([String](../../sql-reference/data-types/string.md)) — IP address that the Hostname resolves to.
+-   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — Host Port.
+-   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the query.
+-   `cluster` ([String](../../sql-reference/data-types/string.md)) — Cluster name.
+-   `query` ([String](../../sql-reference/data-types/string.md)) — Query executed.
+-   `initiator` ([String](../../sql-reference/data-types/string.md)) — Node that executed the query.
+-   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query start time.
+-   `query_finish_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query finish time.
+-   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Duration of query execution (in milliseconds).
+-   `exception_code` ([Enum8](../../sql-reference/data-types/enum.md)) — Exception code from [ZooKeeper](../../operations/tips.md#zookeeper).
 
 **Example**
 
@@ -61,7 +60,6 @@ exception_code:    ZOK
 
 2 rows in set. Elapsed: 0.025 sec.
 ```
-
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/distributed_ddl_queuedistributed_ddl_queue.md) <!--hide-->
  

@@ -3,7 +3,6 @@
 #include <sstream>
 
 #include <mysqlxx/UseQueryResult.h>
-#include <mysqlxx/StoreQueryResult.h>
 
 
 namespace mysqlxx
@@ -45,11 +44,6 @@ public:
       * То есть, оперативка расходуется только на одну строку.
       */
     UseQueryResult use();
-
-    /** Выполнить запрос с загрузкой на клиента всех строк.
-      * Требуется оперативка, чтобы вместить весь результат, зато к строкам можно обращаться в произвольном порядке.
-      */
-    StoreQueryResult store();
 
     /// Значение auto increment после последнего INSERT-а.
     UInt64 insertID();

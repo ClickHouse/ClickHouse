@@ -14,4 +14,4 @@ ${CLICKHOUSE_CURL} -sS "$url" --data "SELECT 'test_01194',$rnd,4" > /dev/null
 
 ${CLICKHOUSE_CURL} -sS "$url" --data "SYSTEM FLUSH LOGS"
 
-${CLICKHOUSE_CURL} -sS "$url&query=SELECT+count(DISTINCT+query_id)+FROM+system.query_log+WHERE+query+LIKE+'SELECT+''test_01194'',$rnd%25'"
+${CLICKHOUSE_CURL} -sS "$url&query=SELECT+count(DISTINCT+query_id)+FROM+system.query_log+WHERE+current_database+LIKE+currentDatabase()+AND+query+LIKE+'SELECT+''test_01194'',$rnd%25'"

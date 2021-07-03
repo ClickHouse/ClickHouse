@@ -4,3 +4,5 @@ SELECT ignore(10, ignore(*), ignore(ignore(-2, 1025, *)), NULL, *), * FROM lc_nu
 
 
 SELECT ignore(toLowCardinality(1), toLowCardinality(2), 3);
+
+DROP TABLE lc_null_int8_defnull;
