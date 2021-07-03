@@ -58,7 +58,7 @@ SELECT quantileBFloat16(0.75)(a), quantileBFloat16(0.75)(b) FROM example_table;
 ```
 Обратите внимание, что все числа с плавающей точкой в примере были округлены до 1.0 при преобразовании к `bfloat16`.
 
-**See Also**
+**См. также**
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
