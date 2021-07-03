@@ -71,7 +71,7 @@ void DataTypeMap::assertKeyType() const
 
     if (type_error)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Type of Map key must be a type, that can be represented by integer or String (possibly LowCardinality(String)) or UUID,"
+            "Type of Map key must be a type, that can be represented by integer or String or FixedString (possibly LowCardinality) or UUID,"
             " but {} given", key_type->getName());
 }
 
