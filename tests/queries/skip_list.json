@@ -522,7 +522,8 @@
         "01913_names_of_tuple_literal",
         "01925_merge_prewhere_table",
         "01932_null_valid_identifier",
-        "01934_constexpr_aggregate_function_parameters"
+        "01934_constexpr_aggregate_function_parameters",
+        "01932_alter_index_with_order"
     ],
     "parallel":
     [
