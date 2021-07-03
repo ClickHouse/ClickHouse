@@ -104,8 +104,6 @@ if (USE_HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
 endif()
 
-set (USE_FILELOG 1)
-
 if(USE_FILELOG)
     add_headers_and_sources(dbms Storages/FileLog)
 endif()

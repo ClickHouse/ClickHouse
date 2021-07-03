@@ -40,7 +40,6 @@ private:
     UInt64 max_block_size;
 
     ReadBufferFromFileLogPtr buffer;
-    bool finished = false;
 
     const Block non_virtual_header;
     const Block virtual_header;

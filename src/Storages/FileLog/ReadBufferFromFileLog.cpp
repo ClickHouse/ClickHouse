@@ -210,9 +210,6 @@ void ReadBufferFromFileLog::watchFunc(FileLogDirectoryWatcher & dw)
                 case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
                     file_status[event.path].status = FileStatus::REMOVED;
                     break;
-
-                default:
-                    LOG_INFO(log, "Undefine event type");
             }
         }
     }
