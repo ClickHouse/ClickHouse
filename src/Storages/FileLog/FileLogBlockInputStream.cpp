@@ -15,10 +15,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-// with default poll timeout (500ms) it will give about 5 sec delay for doing 10 retries
-// when selecting from empty topic
-const auto MAX_FAILED_POLL_ATTEMPTS = 10;
-
 FileLogBlockInputStream::FileLogBlockInputStream(
     StorageFileLog & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -55,15 +51,10 @@ void FileLogBlockInputStream::readPrefixImpl()
 
 Block FileLogBlockInputStream::readImpl()
 {
-    if (!buffer || finished)
+    if (!buffer)
         return Block();
 
-    finished = true;
-    // now it's one-time usage InputStream
-    // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
-    // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
-    // MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto input_format = FormatFactory::instance().getInputFormat(
         storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
@@ -93,8 +84,6 @@ Block FileLogBlockInputStream::readImpl()
                 {
                     auto chunk = port.pull();
 
-                    // that was returning bad value before https://github.com/ClickHouse/ClickHouse/pull/8005
-                    // if will be backported should go together with #8005
                     auto chunk_rows = chunk.getNumRows();
                     new_rows += chunk_rows;
 
@@ -125,7 +114,7 @@ Block FileLogBlockInputStream::readImpl()
             {
                 new_rows = read_file_log();
             }
-            catch (Exception & e)
+            catch (Exception &)
             {
                 throw;
             }
@@ -133,6 +122,7 @@ Block FileLogBlockInputStream::readImpl()
         if (new_rows)
         {
             total_rows = total_rows + new_rows;
+            LOG_INFO(log, "FileLogBlockInputStream, {} rows data polled from buffer.", new_rows);
         }
 
         if (!buffer->hasMorePolledRecords() && (total_rows >= max_block_size || !checkTimeLimit()))
@@ -144,18 +134,7 @@ Block FileLogBlockInputStream::readImpl()
     if (total_rows == 0)
         return Block();
 
-    /// MATERIALIZED columns can be added here, but I think
-    // they are not needed here:
-    // and it's misleading to use them here,
-    // as columns 'materialized' that way stays 'ephemeral'
-    // i.e. will not be stored anythere
-    // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
-
     auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
-    // auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
-
-    // for (const auto & column : virtual_block.getColumnsWithTypeAndName())
-        // result_block.insert(column);
 
     return ConvertingBlockInputStream(
                std::make_shared<OneBlockInputStream>(result_block),

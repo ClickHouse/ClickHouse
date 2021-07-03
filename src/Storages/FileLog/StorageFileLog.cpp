@@ -23,7 +23,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Poco/DirectoryIterator.h>
-#include <Poco/DirectoryWatcher.h>
 #include <Poco/File.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -66,24 +65,6 @@ StorageFileLog::StorageFileLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-
-    Poco::File file(path);
-
-    if (file.isFile())
-    {
-        log_files.emplace_back(path);
-    }
-    else if (file.isDirectory())
-    {
-        Poco::DirectoryIterator dir_iter(file);
-        Poco::DirectoryIterator end;
-        while (dir_iter != end)
-        {
-            if (dir_iter->isFile())
-                log_files.emplace_back(dir_iter->path());
-            ++dir_iter;
-        }
-    }
 
     auto thread = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this] { threadFunc(); });
     thread->deactivate();
@@ -157,7 +138,6 @@ bool StorageFileLog::checkDependencies(const StorageID & table_id)
     if (dependencies.empty())
         return true;
 
-    // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
         auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
@@ -180,7 +160,7 @@ bool StorageFileLog::checkDependencies(const StorageID & table_id)
 void StorageFileLog::createReadBuffer()
 {
     auto new_context = Context::createCopy(getContext());
-    buffer = std::make_shared<ReadBufferFromFileLog>(log_files, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), new_context);
+    buffer = std::make_shared<ReadBufferFromFileLog>(path, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), new_context);
 }
 
 void StorageFileLog::destroyReadBuffer()
@@ -208,13 +188,7 @@ void StorageFileLog::threadFunc()
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                // Exit the loop & reschedule if some stream stalled
-                auto some_stream_is_stalled = streamToViews();
-                if (some_stream_is_stalled)
-                {
-                    LOG_TRACE(log, "Stream(s) stalled. Reschedule.");
-                    break;
-                }
+                streamToViews();
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
@@ -255,14 +229,12 @@ bool StorageFileLog::streamToViews()
 
     auto new_context = Context::createCopy(getContext());
 
-    // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(insert, new_context, false, true, true);
     auto block_io = interpreter.execute();
 
     auto stream = std::make_shared<FileLogBlockInputStream>(
         *this, metadata_snapshot, new_context, block_io.out->getHeader().getNames(), log, block_size);
 
-    // Limit read batch to maximum block size to allow DDL
     StreamLocalLimits limits;
 
     limits.speed_limits.max_execution_time = getContext()->getSettingsRef().stream_flush_interval_ms;
@@ -270,8 +242,6 @@ bool StorageFileLog::streamToViews()
     limits.timeout_overflow_mode = OverflowMode::BREAK;
     stream->setLimits(limits);
 
-    // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
-    // It will be cancelled on underlying layer (kafka buffer)
     std::atomic<bool> stub = {false};
     size_t rows = 0;
     copyData(

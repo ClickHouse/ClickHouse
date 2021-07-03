@@ -50,8 +50,6 @@ void registerStorageMongoDB(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory);
 #endif
 
-void registerStorageFileLog(StorageFactory & factory);
-
 #if USE_AMQPCPP
 void registerStorageRabbitMQ(StorageFactory & factory);
 #endif
@@ -67,6 +65,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 
 #if USE_MYSQL || USE_LIBPQXX
 void registerStorageExternalDistributed(StorageFactory & factory);
+#endif
+
+#if USE_FILELOG
+void registerStorageFileLog(StorageFactory & factory);
 #endif
 
 void registerStorages()
@@ -114,7 +116,9 @@ void registerStorages()
     registerStorageKafka(factory);
     #endif
 
+#if USE_FILELOG
     registerStorageFileLog(factory);
+#endif
 
 #if USE_AMQPCPP
     registerStorageRabbitMQ(factory);

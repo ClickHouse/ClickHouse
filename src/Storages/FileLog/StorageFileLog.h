@@ -59,8 +59,6 @@ private:
     const String format_name;
     Poco::Logger * log;
 
-    Files log_files;
-
     ReadBufferFromFileLogPtr buffer;
 
     std::mutex mutex;
