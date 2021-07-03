@@ -19,7 +19,7 @@ struct RemoteQueryExecutorRoutine
         RemoteQueryExecutorReadContext & read_context;
         Fiber & fiber;
 
-        void operator()(int fd, const Poco::Timespan & timeout = 0, const std::string fd_description = "")
+        void operator()(int fd, Poco::Timespan timeout = 0, const std::string fd_description = "")
         {
             try
             {
@@ -89,7 +89,7 @@ RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(IConnections & co
     fiber = boost::context::fiber(std::allocator_arg_t(), stack, std::move(routine));
 }
 
-void RemoteQueryExecutorReadContext::setConnectionFD(int fd, const Poco::Timespan & timeout, const std::string & fd_description)
+void RemoteQueryExecutorReadContext::setConnectionFD(int fd, Poco::Timespan timeout, const std::string & fd_description)
 {
     if (fd == connection_fd)
         return;

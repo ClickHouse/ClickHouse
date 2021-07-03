@@ -1,3 +1,4 @@
+#include <common/map.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
@@ -19,9 +20,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
-
-#include <ext/map.h>
-#include <ext/enumerate.h>
 
 
 namespace DB
@@ -63,12 +61,17 @@ void DataTypeMap::assertKeyType() const
         if (!isStringOrFixedString(*(low_cardinality_data_type.getDictionaryType())))
             type_error = true;
     }
-    else if (!key_type->isValueRepresentedByInteger() && !isStringOrFixedString(*key_type) && !WhichDataType(key_type).isNothing())
+    else if (!key_type->isValueRepresentedByInteger()
+        && !isStringOrFixedString(*key_type)
+        && !WhichDataType(key_type).isNothing()
+        && !WhichDataType(key_type).isUUID())
+    {
         type_error = true;
+    }
 
     if (type_error)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Type of Map key must be a type, that can be represented by integer or [LowCardinality]string,"
+            "Type of Map key must be a type, that can be represented by integer or String (possibly LowCardinality(String)) or UUID,"
             " but {} given", key_type->getName());
 }
 

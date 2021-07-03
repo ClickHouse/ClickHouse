@@ -33,8 +33,8 @@ struct StringHashSetCell<StringKey16> : public HashTableCell<StringKey16, String
     // Zero means unoccupied cells in hash table. Use key with last word = 0 as
     // zero keys, because such keys are unrepresentable (no way to encode length).
     static bool isZero(const StringKey16 & key_, const HashTableNoState &)
-    { return key_.high == 0; }
-    void setZero() { this->key.high = 0; }
+    { return key_.items[1] == 0; }
+    void setZero() { this->key.items[1] = 0; }
 };
 
 template <>

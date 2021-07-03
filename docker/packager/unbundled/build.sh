@@ -5,7 +5,7 @@ set -x -e
 ccache --show-stats ||:
 ccache --zero-stats ||:
 read -ra ALIEN_PKGS <<< "${ALIEN_PKGS:-}"
-build/release --no-pbuilder "${ALIEN_PKGS[@]}" | ts '%Y-%m-%d %H:%M:%S'
+build/release "${ALIEN_PKGS[@]}" | ts '%Y-%m-%d %H:%M:%S'
 mv /*.deb /output
 mv -- *.changes /output
 mv -- *.buildinfo /output
