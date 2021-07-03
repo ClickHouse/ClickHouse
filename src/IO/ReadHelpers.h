@@ -572,27 +572,43 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
     /// Optimistic path, when whole value is in buffer.
     if (!buf.eof() && buf.position() + 10 <= buf.buffer().end())
     {
-        UInt16 year = (buf.position()[0] - '0') * 1000 + (buf.position()[1] - '0') * 100 + (buf.position()[2] - '0') * 10 + (buf.position()[3] - '0');
-        buf.position() += 5;
+        char * pos = buf.position();
 
-        UInt8 month = buf.position()[0] - '0';
-        if (isNumericASCII(buf.position()[1]))
+        /// YYYY-MM-DD
+        /// YYYY-MM-D
+        /// YYYY-M-DD
+        /// YYYY-M-D
+
+        /// The delimiters can be arbitrary characters, like YYYY/MM!DD, but obviously not digits.
+
+        UInt16 year = (pos[0] - '0') * 1000 + (pos[1] - '0') * 100 + (pos[2] - '0') * 10 + (pos[3] - '0');
+        pos += 5;
+
+        if (isNumericASCII(pos[-1]))
+            return ReturnType(false);
+
+        UInt8 month = pos[0] - '0';
+        if (isNumericASCII(pos[1]))
         {
-            month = month * 10 + buf.position()[1] - '0';
-            buf.position() += 3;
+            month = month * 10 + pos[1] - '0';
+            pos += 3;
         }
         else
-            buf.position() += 2;
+            pos += 2;
 
-        UInt8 day = buf.position()[0] - '0';
-        if (isNumericASCII(buf.position()[1]))
+        if (isNumericASCII(pos[-1]))
+            return ReturnType(false);
+
+        UInt8 day = pos[0] - '0';
+        if (isNumericASCII(pos[1]))
         {
-            day = day * 10 + buf.position()[1] - '0';
-            buf.position() += 2;
+            day = day * 10 + pos[1] - '0';
+            pos += 2;
         }
         else
-            buf.position() += 1;
+            pos += 1;
 
+        buf.position() = pos;
         date = LocalDate(year, month, day);
         return ReturnType(true);
     }
