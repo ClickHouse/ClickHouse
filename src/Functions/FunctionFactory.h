@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -20,7 +21,7 @@ namespace DB
   *  some dictionaries from Context.
   */
 class FunctionFactory : private boost::noncopyable,
-                        public IFactoryWithAliases<std::function<FunctionOverloadResolverPtr(ContextPtr)>>
+                        public IFactoryWithAliases<std::function<FunctionOverloadResolverPtr(ContextConstPtr)>>
 {
 public:
     static FunctionFactory & instance();
@@ -49,14 +50,14 @@ public:
     std::vector<std::string> getAllNames() const;
 
     /// Throws an exception if not found.
-    FunctionOverloadResolverPtr get(const std::string & name, ContextPtr context) const;
+    FunctionOverloadResolverPtr get(const std::string & name, ContextConstPtr context) const;
 
     /// Returns nullptr if not found.
-    FunctionOverloadResolverPtr tryGet(const std::string & name, ContextPtr context) const;
+    FunctionOverloadResolverPtr tryGet(const std::string & name, ContextConstPtr context) const;
 
     /// The same methods to get developer interface implementation.
-    FunctionOverloadResolverPtr getImpl(const std::string & name, ContextPtr context) const;
-    FunctionOverloadResolverPtr tryGetImpl(const std::string & name, ContextPtr context) const;
+    FunctionOverloadResolverPtr getImpl(const std::string & name, ContextConstPtr context) const;
+    FunctionOverloadResolverPtr tryGetImpl(const std::string & name, ContextConstPtr context) const;
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
@@ -71,9 +72,10 @@ private:
     Functions functions;
     std::unordered_set<String> user_defined_functions;
     Functions case_insensitive_functions;
+    mutable std::mutex mutex;
 
     template <typename Function>
-    static FunctionOverloadResolverPtr adaptFunctionToOverloadResolver(ContextPtr context)
+    static FunctionOverloadResolverPtr adaptFunctionToOverloadResolver(ContextConstPtr context)
     {
         return std::make_unique<FunctionToOverloadResolverAdaptor>(Function::create(context));
     }

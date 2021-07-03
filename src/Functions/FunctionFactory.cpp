@@ -1,4 +1,3 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefinedFunction.h>
 
@@ -32,11 +31,12 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
     return FunctionFactory::instance().getCanonicalNameIfAny(name);
 }
 
-void FunctionFactory::registerFunction(const
-    std::string & name,
+void FunctionFactory::registerFunction(
+    const std::string & name,
     Value creator,
     CaseSensitiveness case_sensitiveness)
 {
+    std::lock_guard<std::mutex> guard(mutex);
     if (!functions.emplace(name, creator).second)
         throw Exception("FunctionFactory: the function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
@@ -79,6 +79,7 @@ FunctionOverloadResolverPtr FunctionFactory::getImpl(
 
 std::vector<std::string> FunctionFactory::getAllNames() const
 {
+    std::lock_guard<std::mutex> guard(mutex);
     std::vector<std::string> res;
     res.reserve(functions.size());
     for (const auto & func : functions)
@@ -97,6 +98,7 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
     ContextConstPtr context) const
 {
+    std::lock_guard<std::mutex> guard(mutex);
     String name = getAliasToOrName(name_param);
     FunctionOverloadResolverPtr res;
 
@@ -146,6 +148,10 @@ void FunctionFactory::registerUserDefinedFunction(const ASTCreateFunctionQuery &
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(create_function_query.function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function {} already exists", create_function_query.function_name);
 
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        user_defined_functions.insert(create_function_query.function_name);
+    }
     registerFunction(create_function_query.function_name, [create_function_query](ContextPtr context)
     {
         auto function = UserDefinedFunction::create(context);
@@ -155,11 +161,11 @@ void FunctionFactory::registerUserDefinedFunction(const ASTCreateFunctionQuery &
         FunctionOverloadResolverPtr res = std::make_unique<FunctionToOverloadResolverAdaptor>(function);
         return res;
     }, CaseSensitiveness::CaseSensitive);
-    user_defined_functions.insert(create_function_query.function_name);
 }
 
 void FunctionFactory::unregisterUserDefinedFunction(const String & name)
 {
+    std::lock_guard<std::mutex> guard(mutex);
     if (functions.contains(name))
     {
         if (user_defined_functions.contains(name))
