@@ -22,7 +22,7 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     tasks = []
     with Pool(8) as pool:
         try:
-            #run_scenario(pool, tasks, Feature(test=load("example.regression", "regression")), args)
+            run_scenario(pool, tasks, Feature(test=load("example.regression", "regression")), args)
             #run_scenario(pool, tasks, Feature(test=load("ldap.regression", "regression")), args)
             #run_scenario(pool, tasks, Feature(test=load("rbac.regression", "regression")), args)
             #run_scenario(pool, tasks, Feature(test=load("aes_encryption.regression", "regression")), args)
