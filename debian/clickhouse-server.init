@@ -93,7 +93,7 @@ forcestop()
 service_or_func()
 {
     if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
-        service $PROGRAM $1
+        systemctl $1 $PROGRAM
     else
         $1
     fi
