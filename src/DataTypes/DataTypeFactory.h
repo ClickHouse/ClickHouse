@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 
@@ -67,6 +68,7 @@ private:
 private:
     DataTypesDictionary data_types;
     std::unordered_set<String> user_defined_data_types;
+    mutable std::mutex mutex;
 
     /// Case insensitive data types will be additionally added here with lowercased name.
     DataTypesDictionary case_insensitive_data_types;

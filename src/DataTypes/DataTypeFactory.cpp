@@ -68,6 +68,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 
 DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
 {
+    std::lock_guard<std::mutex> guard(mutex);
     String family_name = getAliasToOrName(family_name_param);
 
     if (endsWith(family_name, "WithDictionary"))
@@ -103,6 +104,7 @@ DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) cons
 
 void DataTypeFactory::registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness)
 {
+    std::lock_guard<std::mutex> guard(mutex);
     if (creator == nullptr)
         throw Exception("DataTypeFactory: the data type family " + family_name + " has been provided "
             " a null constructor", ErrorCodes::LOGICAL_ERROR);
@@ -162,6 +164,10 @@ void DataTypeFactory::registerUserDefinedDataType(
     UserDefinedTypeCreator creator,
     const ASTCreateDataTypeQuery & createDataTypeQuery)
 {
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        user_defined_data_types.insert(name);
+    }
     registerDataType(name, [this, creator, createDataTypeQuery](const ASTPtr &)
     {
         auto res = creator();
@@ -170,11 +176,11 @@ void DataTypeFactory::registerUserDefinedDataType(
         res->setTypeName(createDataTypeQuery.type_name);
         return res;
     }, CaseSensitiveness::CaseSensitive);
-    user_defined_data_types.insert(name);
 }
 
 void DataTypeFactory::unregisterUserDefinedDataType(const String & name)
 {
+    std::lock_guard<std::mutex> guard(mutex);
     if (data_types.contains(name))
     {
         if (user_defined_data_types.contains(name))
@@ -195,11 +201,13 @@ void DataTypeFactory::unregisterUserDefinedDataType(const String & name)
 
 bool DataTypeFactory::isUserDefinedDataType(const String & name) const
 {
+    std::lock_guard<std::mutex> guard(mutex);
     return user_defined_data_types.contains(name);
 }
 
 const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const
 {
+    std::lock_guard<std::mutex> guard(mutex);
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
