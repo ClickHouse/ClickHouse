@@ -8,6 +8,7 @@ toc_title: Map(key, value)
 `Map(key, value)` data type stores `key:value` pairs. 
 
 **Parameters** 
+
 -   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md) or [Integer](../../sql-reference/data-types/int-uint.md).
 -   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Array](../../sql-reference/data-types/array.md).
 
@@ -73,6 +74,36 @@ SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map
 ┌─map───────────────────────────┐
 │ {1:'Ready',2:'Steady',3:'Go'} │
 └───────────────────────────────┘
+```
+
+## Map.keys and Map.values Subcolumns {#map-subcolumns}
+
+To optimize `Map` column processing, in some cases you can use the `keys` and `values` subcolumns instead of reading the whole column.
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t_map (`a` Map(String, UInt64)) ENGINE = Memory;
+
+INSERT INTO t_map VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
+
+SELECT a.keys FROM t_map;
+
+SELECT a.values FROM t_map;
+```
+
+Result:
+
+``` text
+┌─a.keys─────────────────┐
+│ ['key1','key2','key3'] │
+└────────────────────────┘
+
+┌─a.values─┐
+│ [1,2,3]  │
+└──────────┘
 ```
 
 **See Also**
