@@ -52,8 +52,8 @@ private:
     const std::string password;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
-    bool authentified = false;
-    std::mutex connection_mutex; /// Protects the variables `connection` and `authentified`.
+    bool authenticated = false;
+    std::mutex connection_mutex; /// Protects the variables `connection` and `authenticated`.
 };
 
 }

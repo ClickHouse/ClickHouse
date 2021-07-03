@@ -62,7 +62,7 @@ public:
 
         const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
 
-        /// We don't have to list bucket, because there is no asterics.
+        /// We don't have to list bucket, because there is no asterisks.
         if (key_prefix.size() == globbed_uri.key.size())
         {
             buffer.emplace_back(globbed_uri.key);
@@ -434,7 +434,7 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         max_single_part_upload_size);
 }
 
-void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentificaiton & upd)
+void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentication & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
     if (upd.client && (!upd.access_key_id.empty() || settings == upd.auth_settings))
