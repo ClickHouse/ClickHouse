@@ -341,7 +341,6 @@ void Aggregator::compileAggregateFunctions()
         is_aggregate_function_compiled[i] = function->isCompilable();
     }
 
-    /// TODO: Probably better to compile more than 2 functions
     if (functions_to_compile.empty())
         return;
 
@@ -636,7 +635,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         return;
     }
 
-    /// Optimization for special case when aggregating by 8bit key.`
+    /// Optimization for special case when aggregating by 8bit key.
     if constexpr (!no_more_keys && std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
     {
         /// We use another method if there are aggregate functions with -Array combinator.
@@ -702,6 +701,8 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
 
 #if defined(MEMORY_SANITIZER)
+
+                    /// We compile only functions that do not allocate some data in Arena. Only store necessary state in AggregateData place.
                     for (size_t aggregate_function_index = 0; aggregate_function_index < aggregate_functions.size(); ++aggregate_function_index)
                     {
                         if (!is_aggregate_function_compiled[aggregate_function_index])
@@ -1384,17 +1385,18 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             auto & final_aggregate_column = final_aggregate_columns[aggregate_functions_destroy_index];
             size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
 
-            /** We increase aggregate_functions_destroy_index because by function contract if insertResultIntoAndDestroyBatch
+            /** We increase aggregate_functions_destroy_index because by function contract if insertResultIntoBatch
               * throws exception, it also must destroy all necessary states.
               * Then code need to continue to destroy other aggregate function states with next function index.
               */
             size_t destroy_index = aggregate_functions_destroy_index;
             ++aggregate_functions_destroy_index;
 
+            /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
             bool is_state = aggregate_functions[destroy_index]->isState();
-            bool destroy_place = !is_state;
+            bool destroy_place_after_insert = !is_state;
 
-            aggregate_functions[destroy_index]->insertResultIntoBatch(places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place);
+            aggregate_functions[destroy_index]->insertResultIntoBatch(places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
         }
     }
     catch (...)
@@ -1414,10 +1416,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         }
 
         size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
-
-        bool is_state = aggregate_functions[aggregate_functions_destroy_index]->isState();
-        if (!is_state)
-            aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(places.size(), places.data(), offset);
+        aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(places.size(), places.data(), offset);
     }
 
     if (exception)
@@ -2015,7 +2014,6 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
         }
         else if (res->without_key)
         {
-            /// TODO: Use compile function
             mergeDataNoMoreKeysImpl<Method>(
                 getDataVariant<Method>(*res).data,
                 res->without_key,
@@ -2024,7 +2022,6 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
         }
         else
         {
-            /// TODO: Use compile function
             mergeDataOnlyExistingKeysImpl<Method>(
                 getDataVariant<Method>(*res).data,
                 getDataVariant<Method>(current).data,
