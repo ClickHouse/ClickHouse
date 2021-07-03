@@ -48,10 +48,9 @@ private:
     // This variable is set on client initialization so we can ignore coverage for it.
     bool is_client {false};
 
-    size_t instrumented_basic_blocks {0};
-
     std::vector<SourceInfo> source_files;
 
+    size_t instrumented_basic_blocks {0};
     std::vector<Addr> instrumented_blocks_addrs;
     std::vector<Line> instrumented_blocks_start_lines;
 

@@ -265,7 +265,6 @@ endforeach ()
 if (WITH_COVERAGE)
     set_source_files_properties(
         Common/Coverage.cpp
-        Common/CoverageDecls.cpp
         Common/ThreadPool.cpp # Otherwise tests run about x2 slower.
 
         # Instrumentation slows down stack traces printing too much.

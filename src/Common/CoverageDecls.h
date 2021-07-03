@@ -1,5 +1,4 @@
-//#include <queue>
-//#include <thread>
+#pragma once
 
 /// FreeBSD and Darwin do not have DWARF, so coverage build is explicitly disabled.
 /// Fake classes are introduced to be able to build CH.
@@ -72,44 +71,4 @@ public:
 
     inline void close() { fclose(handle); handle = nullptr; }
 };
-
-/**
- * Simplified FreeThreadPool from Common/ThreadPool.h . Uses one external thread.
- *
- * Own implementation needed as Writer does not use most FreeThreadPool features (and we can save ~20 minutes by
- * using this class instead of the former).
- *
- * Each test duration is longer than coverage test processing pipeline (converting and dumping to disk), so no
- * more than 1 thread is needed.
- */
-// class TaskQueue
-// {
-// public:
-//     template <class J>
-//     inline void schedule(J && job)
-//     {
-//         {
-//             std::lock_guard lock(mutex);
-//             tasks.emplace(std::forward<J>(job));
-//         }
-// 
-//         task_or_shutdown.notify_one();
-//     }
-// 
-//     void start();
-//     void wait();
-// 
-//     ~TaskQueue() { wait(); }
-// 
-// private:
-//     using Task = std::function<void()>;
-// 
-//     std::thread worker;
-//     std::queue<Task> tasks;
-// 
-//     std::mutex mutex;
-//     std::condition_variable task_or_shutdown;
-// 
-//     bool shutdown {false};
-// };
 }
