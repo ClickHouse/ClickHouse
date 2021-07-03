@@ -16,8 +16,9 @@ public:
     BlockIO execute() override;
 
 private:
-    static void validateFunction(ASTPtr function);
-    static void getIdentifiers(ASTPtr node, std::vector<String> & identifiers);
+    static void validateFunction(ASTPtr function, const String & name);
+    static void getIdentifiers(ASTPtr node, std::set<String> & identifiers);
+    static void validateFunctionRecursiveness(ASTPtr node, const String & function_to_create);
 
 private:
     ASTPtr query_ptr;
