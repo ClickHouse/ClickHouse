@@ -847,7 +847,8 @@
         "01821_table_comment",
         "01710_projection_fetch",
         "01855_create_simple_function",
-        "01857_create_function_that_already_exists",
+        "01856_create_function_errors.sql",
+        "01857_create_function_and_check_jit_compiled.sql",
         "01824_prefer_global_in_and_join",
         "01870_modulo_partition_key",
         "01870_buffer_flush", // creates database
