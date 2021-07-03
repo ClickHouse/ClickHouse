@@ -137,7 +137,7 @@ expr AS alias
 - `AS` — 用于定义别名的关键字。可以对表或select语句中的列定义别名(`AS` 可以省略）
   例如, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-  在 [CAST函数](sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) 中，`AS`有其它含义。请参见该函数的说明部分。
+  在 [CAST函数](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 中，`AS`有其它含义。请参见该函数的说明部分。
 
 
 - `expr` — 任意CH支持的表达式.
