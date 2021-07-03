@@ -37,3 +37,5 @@ SELECT count() FROM map_subcolumns PREWHERE has(m.keys, 'b');
 
 SELECT id, m.size0 FROM map_subcolumns;
 SELECT count() FROM map_subcolumns WHERE m.size0 > 2;
+
+DROP TABLE map_subcolumns;

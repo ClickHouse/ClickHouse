@@ -1,4 +1,3 @@
-<!-- FIXME this instability is abysmal, investigate the unstable queries -->
 <test>
     <settings>
         <allow_suspicious_codecs>1</allow_suspicious_codecs>

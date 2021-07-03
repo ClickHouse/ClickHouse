@@ -1,6 +1,6 @@
 ---
 toc_priority: 40
-toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430\u0020\u0432\u043d\u0435\u0448\u043d\u0435\u0433\u043e\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u044f"
+toc_title: "Настройка внешнего словаря"
 ---
 
 # Настройка внешнего словаря {#dicts-external-dicts-dict}
@@ -48,4 +48,3 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 -   [structure](external-dicts-dict-structure.md) — Структура словаря. Ключ и атрибуты, которые можно получить по ключу.
 -   [lifetime](external-dicts-dict-lifetime.md) — Периодичность обновления словарей.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict/) <!--hide-->

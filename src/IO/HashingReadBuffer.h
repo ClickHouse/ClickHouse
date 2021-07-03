@@ -1,10 +1,11 @@
 #pragma once
 
-#include <IO/ReadBuffer.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
+
 /*
  * Calculates the hash from the read data. When reading, the data is read from the nested ReadBuffer.
  * Small pieces are copied into its own memory.
@@ -12,14 +13,14 @@ namespace DB
 class HashingReadBuffer : public IHashingBuffer<ReadBuffer>
 {
 public:
-    HashingReadBuffer(ReadBuffer & in_, size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE) :
-        IHashingBuffer<ReadBuffer>(block_size_), in(in_)
+    explicit HashingReadBuffer(ReadBuffer & in_, size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
+        : IHashingBuffer<ReadBuffer>(block_size_), in(in_)
     {
         working_buffer = in.buffer();
         pos = in.position();
 
         /// calculate hash from the data already read
-        if (working_buffer.size())
+        if (!working_buffer.empty())
         {
             calculateHash(pos, working_buffer.end() - pos);
         }
@@ -39,7 +40,7 @@ private:
         return res;
     }
 
-private:
     ReadBuffer & in;
 };
+
 }

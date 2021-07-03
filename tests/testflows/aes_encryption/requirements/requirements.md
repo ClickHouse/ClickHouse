@@ -6,102 +6,113 @@
 * 1 [Revision History](#revision-history)
 * 2 [Introduction](#introduction)
 * 3 [Terminology](#terminology)
+  * 3.1 [AES](#aes)
+  * 3.2 [AEAD](#aead)
 * 4 [Requirements](#requirements)
   * 4.1 [Generic](#generic)
     * 4.1.1 [RQ.SRS008.AES.Functions](#rqsrs008aesfunctions)
-    * 4.1.2 [RQ.SRS008.AES.Functions.Compatability.MySQL](#rqsrs008aesfunctionscompatabilitymysql)
-    * 4.1.3 [RQ.SRS008.AES.Functions.Compatability.Dictionaries](#rqsrs008aesfunctionscompatabilitydictionaries)
-    * 4.1.4 [RQ.SRS008.AES.Functions.Compatability.Engine.Database.MySQL](#rqsrs008aesfunctionscompatabilityenginedatabasemysql)
-    * 4.1.5 [RQ.SRS008.AES.Functions.Compatability.Engine.Table.MySQL](#rqsrs008aesfunctionscompatabilityenginetablemysql)
-    * 4.1.6 [RQ.SRS008.AES.Functions.Compatability.TableFunction.MySQL](#rqsrs008aesfunctionscompatabilitytablefunctionmysql)
-    * 4.1.7 [RQ.SRS008.AES.Functions.DifferentModes](#rqsrs008aesfunctionsdifferentmodes)
-    * 4.1.8 [RQ.SRS008.AES.Functions.DataFromMultipleSources](#rqsrs008aesfunctionsdatafrommultiplesources)
-    * 4.1.9 [RQ.SRS008.AES.Functions.SuppressOutputOfSensitiveValues](#rqsrs008aesfunctionssuppressoutputofsensitivevalues)
-    * 4.1.10 [RQ.SRS008.AES.Functions.InvalidParameters](#rqsrs008aesfunctionsinvalidparameters)
-    * 4.1.11 [RQ.SRS008.AES.Functions.Mismatched.Key](#rqsrs008aesfunctionsmismatchedkey)
-    * 4.1.12 [RQ.SRS008.AES.Functions.Mismatched.IV](#rqsrs008aesfunctionsmismatchediv)
-    * 4.1.13 [RQ.SRS008.AES.Functions.Mismatched.AAD](#rqsrs008aesfunctionsmismatchedaad)
-    * 4.1.14 [RQ.SRS008.AES.Functions.Mismatched.Mode](#rqsrs008aesfunctionsmismatchedmode)
-    * 4.1.15 [RQ.SRS008.AES.Functions.Check.Performance](#rqsrs008aesfunctionscheckperformance)
-    * 4.1.16 [RQ.SRS008.AES.Function.Check.Performance.BestCase](#rqsrs008aesfunctioncheckperformancebestcase)
-    * 4.1.17 [RQ.SRS008.AES.Function.Check.Performance.WorstCase](#rqsrs008aesfunctioncheckperformanceworstcase)
-    * 4.1.18 [RQ.SRS008.AES.Functions.Check.Compression](#rqsrs008aesfunctionscheckcompression)
-    * 4.1.19 [RQ.SRS008.AES.Functions.Check.Compression.LowCardinality](#rqsrs008aesfunctionscheckcompressionlowcardinality)
-  * 4.2 [Specific](#specific)
-    * 4.2.1 [RQ.SRS008.AES.Encrypt.Function](#rqsrs008aesencryptfunction)
-    * 4.2.2 [RQ.SRS008.AES.Encrypt.Function.Syntax](#rqsrs008aesencryptfunctionsyntax)
-    * 4.2.3 [RQ.SRS008.AES.Encrypt.Function.NIST.TestVectors](#rqsrs008aesencryptfunctionnisttestvectors)
-    * 4.2.4 [RQ.SRS008.AES.Encrypt.Function.Parameters.PlainText](#rqsrs008aesencryptfunctionparametersplaintext)
-    * 4.2.5 [RQ.SRS008.AES.Encrypt.Function.Parameters.Key](#rqsrs008aesencryptfunctionparameterskey)
-    * 4.2.6 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode](#rqsrs008aesencryptfunctionparametersmode)
-    * 4.2.7 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.ValuesFormat](#rqsrs008aesencryptfunctionparametersmodevaluesformat)
-    * 4.2.8 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.Invalid](#rqsrs008aesencryptfunctionparametersmodevalueinvalid)
-    * 4.2.9 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Values](#rqsrs008aesencryptfunctionparametersmodevalues)
-    * 4.2.10 [RQ.SRS008.AES.Encrypt.Function.Parameters.InitializationVector](#rqsrs008aesencryptfunctionparametersinitializationvector)
-    * 4.2.11 [RQ.SRS008.AES.Encrypt.Function.Parameters.AdditionalAuthenticatedData](#rqsrs008aesencryptfunctionparametersadditionalauthenticateddata)
-    * 4.2.12 [RQ.SRS008.AES.Encrypt.Function.Parameters.ReturnValue](#rqsrs008aesencryptfunctionparametersreturnvalue)
-    * 4.2.13 [RQ.SRS008.AES.Encrypt.Function.Key.Length.InvalidLengthError](#rqsrs008aesencryptfunctionkeylengthinvalidlengtherror)
-    * 4.2.14 [RQ.SRS008.AES.Encrypt.Function.InitializationVector.Length.InvalidLengthError](#rqsrs008aesencryptfunctioninitializationvectorlengthinvalidlengtherror)
-    * 4.2.15 [RQ.SRS008.AES.Encrypt.Function.InitializationVector.NotValidForMode](#rqsrs008aesencryptfunctioninitializationvectornotvalidformode)
-    * 4.2.16 [RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.NotValidForMode](#rqsrs008aesencryptfunctionadditionalauthenticationdatanotvalidformode)
-    * 4.2.17 [RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.Length](#rqsrs008aesencryptfunctionadditionalauthenticationdatalength)
-    * 4.2.18 [RQ.SRS008.AES.Encrypt.Function.NonGCMMode.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionnongcmmodekeyandinitializationvectorlength)
-    * 4.2.19 [RQ.SRS008.AES.Encrypt.Function.GCMMode.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctiongcmmodekeyandinitializationvectorlength)
-    * 4.2.20 [RQ.SRS008.AES.Decrypt.Function](#rqsrs008aesdecryptfunction)
-    * 4.2.21 [RQ.SRS008.AES.Decrypt.Function.Syntax](#rqsrs008aesdecryptfunctionsyntax)
-    * 4.2.22 [RQ.SRS008.AES.Decrypt.Function.Parameters.CipherText](#rqsrs008aesdecryptfunctionparametersciphertext)
-    * 4.2.23 [RQ.SRS008.AES.Decrypt.Function.Parameters.Key](#rqsrs008aesdecryptfunctionparameterskey)
-    * 4.2.24 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode](#rqsrs008aesdecryptfunctionparametersmode)
-    * 4.2.25 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.ValuesFormat](#rqsrs008aesdecryptfunctionparametersmodevaluesformat)
-    * 4.2.26 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.Invalid](#rqsrs008aesdecryptfunctionparametersmodevalueinvalid)
-    * 4.2.27 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Values](#rqsrs008aesdecryptfunctionparametersmodevalues)
-    * 4.2.28 [RQ.SRS008.AES.Decrypt.Function.Parameters.InitializationVector](#rqsrs008aesdecryptfunctionparametersinitializationvector)
-    * 4.2.29 [RQ.SRS008.AES.Decrypt.Function.Parameters.AdditionalAuthenticatedData](#rqsrs008aesdecryptfunctionparametersadditionalauthenticateddata)
-    * 4.2.30 [RQ.SRS008.AES.Decrypt.Function.Parameters.ReturnValue](#rqsrs008aesdecryptfunctionparametersreturnvalue)
-    * 4.2.31 [RQ.SRS008.AES.Decrypt.Function.Key.Length.InvalidLengthError](#rqsrs008aesdecryptfunctionkeylengthinvalidlengtherror)
-    * 4.2.32 [RQ.SRS008.AES.Decrypt.Function.InitializationVector.Length.InvalidLengthError](#rqsrs008aesdecryptfunctioninitializationvectorlengthinvalidlengtherror)
-    * 4.2.33 [RQ.SRS008.AES.Decrypt.Function.InitializationVector.NotValidForMode](#rqsrs008aesdecryptfunctioninitializationvectornotvalidformode)
-    * 4.2.34 [RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.NotValidForMode](#rqsrs008aesdecryptfunctionadditionalauthenticationdatanotvalidformode)
-    * 4.2.35 [RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.Length](#rqsrs008aesdecryptfunctionadditionalauthenticationdatalength)
-    * 4.2.36 [RQ.SRS008.AES.Decrypt.Function.NonGCMMode.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionnongcmmodekeyandinitializationvectorlength)
-    * 4.2.37 [RQ.SRS008.AES.Decrypt.Function.GCMMode.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctiongcmmodekeyandinitializationvectorlength)
-  * 4.3 [MySQL Specific Functions](#mysql-specific-functions)
-    * 4.3.1 [RQ.SRS008.AES.MySQL.Encrypt.Function](#rqsrs008aesmysqlencryptfunction)
-    * 4.3.2 [RQ.SRS008.AES.MySQL.Encrypt.Function.Syntax](#rqsrs008aesmysqlencryptfunctionsyntax)
-    * 4.3.3 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.PlainText](#rqsrs008aesmysqlencryptfunctionparametersplaintext)
-    * 4.3.4 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Key](#rqsrs008aesmysqlencryptfunctionparameterskey)
-    * 4.3.5 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode](#rqsrs008aesmysqlencryptfunctionparametersmode)
-    * 4.3.6 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.ValuesFormat](#rqsrs008aesmysqlencryptfunctionparametersmodevaluesformat)
-    * 4.3.7 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.Invalid](#rqsrs008aesmysqlencryptfunctionparametersmodevalueinvalid)
-    * 4.3.8 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values](#rqsrs008aesmysqlencryptfunctionparametersmodevalues)
-    * 4.3.9 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.GCM.Error](#rqsrs008aesmysqlencryptfunctionparametersmodevaluesgcmerror)
-    * 4.3.10 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.CTR.Error](#rqsrs008aesmysqlencryptfunctionparametersmodevaluesctrerror)
-    * 4.3.11 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.InitializationVector](#rqsrs008aesmysqlencryptfunctionparametersinitializationvector)
-    * 4.3.12 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.ReturnValue](#rqsrs008aesmysqlencryptfunctionparametersreturnvalue)
-    * 4.3.13 [RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooShortError](#rqsrs008aesmysqlencryptfunctionkeylengthtooshorterror)
-    * 4.3.14 [RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooLong](#rqsrs008aesmysqlencryptfunctionkeylengthtoolong)
-    * 4.3.15 [RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooShortError](#rqsrs008aesmysqlencryptfunctioninitializationvectorlengthtooshorterror)
-    * 4.3.16 [RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooLong](#rqsrs008aesmysqlencryptfunctioninitializationvectorlengthtoolong)
-    * 4.3.17 [RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.NotValidForMode](#rqsrs008aesmysqlencryptfunctioninitializationvectornotvalidformode)
-    * 4.3.18 [RQ.SRS008.AES.MySQL.Encrypt.Function.Mode.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionmodekeyandinitializationvectorlength)
-    * 4.3.19 [RQ.SRS008.AES.MySQL.Decrypt.Function](#rqsrs008aesmysqldecryptfunction)
-    * 4.3.20 [RQ.SRS008.AES.MySQL.Decrypt.Function.Syntax](#rqsrs008aesmysqldecryptfunctionsyntax)
-    * 4.3.21 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.CipherText](#rqsrs008aesmysqldecryptfunctionparametersciphertext)
-    * 4.3.22 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Key](#rqsrs008aesmysqldecryptfunctionparameterskey)
-    * 4.3.23 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode](#rqsrs008aesmysqldecryptfunctionparametersmode)
-    * 4.3.24 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.ValuesFormat](#rqsrs008aesmysqldecryptfunctionparametersmodevaluesformat)
-    * 4.3.25 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.Invalid](#rqsrs008aesmysqldecryptfunctionparametersmodevalueinvalid)
-    * 4.3.26 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values](#rqsrs008aesmysqldecryptfunctionparametersmodevalues)
-    * 4.3.27 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.GCM.Error](#rqsrs008aesmysqldecryptfunctionparametersmodevaluesgcmerror)
-    * 4.3.28 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.CTR.Error](#rqsrs008aesmysqldecryptfunctionparametersmodevaluesctrerror)
-    * 4.3.29 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.InitializationVector](#rqsrs008aesmysqldecryptfunctionparametersinitializationvector)
-    * 4.3.30 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.ReturnValue](#rqsrs008aesmysqldecryptfunctionparametersreturnvalue)
-    * 4.3.31 [RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooShortError](#rqsrs008aesmysqldecryptfunctionkeylengthtooshorterror)
-    * 4.3.32 [RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooLong](#rqsrs008aesmysqldecryptfunctionkeylengthtoolong)
-    * 4.3.33 [RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooShortError](#rqsrs008aesmysqldecryptfunctioninitializationvectorlengthtooshorterror)
-    * 4.3.34 [RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooLong](#rqsrs008aesmysqldecryptfunctioninitializationvectorlengthtoolong)
-    * 4.3.35 [RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.NotValidForMode](#rqsrs008aesmysqldecryptfunctioninitializationvectornotvalidformode)
-    * 4.3.36 [RQ.SRS008.AES.MySQL.Decrypt.Function.Mode.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionmodekeyandinitializationvectorlength)
+  * 4.2 [Compatibility](#compatibility)
+    * 4.2.1 [RQ.SRS008.AES.Functions.Compatibility.MySQL](#rqsrs008aesfunctionscompatibilitymysql)
+    * 4.2.2 [RQ.SRS008.AES.Functions.Compatibility.Dictionaries](#rqsrs008aesfunctionscompatibilitydictionaries)
+    * 4.2.3 [RQ.SRS008.AES.Functions.Compatibility.Engine.Database.MySQL](#rqsrs008aesfunctionscompatibilityenginedatabasemysql)
+    * 4.2.4 [RQ.SRS008.AES.Functions.Compatibility.Engine.Table.MySQL](#rqsrs008aesfunctionscompatibilityenginetablemysql)
+    * 4.2.5 [RQ.SRS008.AES.Functions.Compatibility.TableFunction.MySQL](#rqsrs008aesfunctionscompatibilitytablefunctionmysql)
+  * 4.3 [Different Modes](#different-modes)
+    * 4.3.1 [RQ.SRS008.AES.Functions.DifferentModes](#rqsrs008aesfunctionsdifferentmodes)
+  * 4.4 [Multiple Sources](#multiple-sources)
+    * 4.4.1 [RQ.SRS008.AES.Functions.DataFromMultipleSources](#rqsrs008aesfunctionsdatafrommultiplesources)
+  * 4.5 [Suppressing Sensitive Values](#suppressing-sensitive-values)
+    * 4.5.1 [RQ.SRS008.AES.Functions.SuppressOutputOfSensitiveValues](#rqsrs008aesfunctionssuppressoutputofsensitivevalues)
+  * 4.6 [Invalid Parameters](#invalid-parameters)
+    * 4.6.1 [RQ.SRS008.AES.Functions.InvalidParameters](#rqsrs008aesfunctionsinvalidparameters)
+  * 4.7 [Mismatched Values](#mismatched-values)
+    * 4.7.1 [RQ.SRS008.AES.Functions.Mismatched.Key](#rqsrs008aesfunctionsmismatchedkey)
+    * 4.7.2 [RQ.SRS008.AES.Functions.Mismatched.IV](#rqsrs008aesfunctionsmismatchediv)
+    * 4.7.3 [RQ.SRS008.AES.Functions.Mismatched.AAD](#rqsrs008aesfunctionsmismatchedaad)
+    * 4.7.4 [RQ.SRS008.AES.Functions.Mismatched.Mode](#rqsrs008aesfunctionsmismatchedmode)
+  * 4.8 [Performance](#performance)
+    * 4.8.1 [RQ.SRS008.AES.Functions.Check.Performance](#rqsrs008aesfunctionscheckperformance)
+    * 4.8.2 [RQ.SRS008.AES.Function.Check.Performance.BestCase](#rqsrs008aesfunctioncheckperformancebestcase)
+    * 4.8.3 [RQ.SRS008.AES.Function.Check.Performance.WorstCase](#rqsrs008aesfunctioncheckperformanceworstcase)
+    * 4.8.4 [RQ.SRS008.AES.Functions.Check.Compression](#rqsrs008aesfunctionscheckcompression)
+    * 4.8.5 [RQ.SRS008.AES.Functions.Check.Compression.LowCardinality](#rqsrs008aesfunctionscheckcompressionlowcardinality)
+  * 4.9 [Encrypt Function](#encrypt-function)
+    * 4.9.1 [RQ.SRS008.AES.Encrypt.Function](#rqsrs008aesencryptfunction)
+    * 4.9.2 [RQ.SRS008.AES.Encrypt.Function.Syntax](#rqsrs008aesencryptfunctionsyntax)
+    * 4.9.3 [RQ.SRS008.AES.Encrypt.Function.NIST.TestVectors](#rqsrs008aesencryptfunctionnisttestvectors)
+    * 4.9.4 [RQ.SRS008.AES.Encrypt.Function.Parameters.PlainText](#rqsrs008aesencryptfunctionparametersplaintext)
+    * 4.9.5 [RQ.SRS008.AES.Encrypt.Function.Parameters.Key](#rqsrs008aesencryptfunctionparameterskey)
+    * 4.9.6 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode](#rqsrs008aesencryptfunctionparametersmode)
+    * 4.9.7 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.ValuesFormat](#rqsrs008aesencryptfunctionparametersmodevaluesformat)
+    * 4.9.8 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.Invalid](#rqsrs008aesencryptfunctionparametersmodevalueinvalid)
+    * 4.9.9 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Values](#rqsrs008aesencryptfunctionparametersmodevalues)
+    * 4.9.10 [RQ.SRS008.AES.Encrypt.Function.Parameters.InitializationVector](#rqsrs008aesencryptfunctionparametersinitializationvector)
+    * 4.9.11 [RQ.SRS008.AES.Encrypt.Function.Parameters.AdditionalAuthenticatedData](#rqsrs008aesencryptfunctionparametersadditionalauthenticateddata)
+    * 4.9.12 [RQ.SRS008.AES.Encrypt.Function.Parameters.ReturnValue](#rqsrs008aesencryptfunctionparametersreturnvalue)
+    * 4.9.13 [RQ.SRS008.AES.Encrypt.Function.Key.Length.InvalidLengthError](#rqsrs008aesencryptfunctionkeylengthinvalidlengtherror)
+    * 4.9.14 [RQ.SRS008.AES.Encrypt.Function.InitializationVector.Length.InvalidLengthError](#rqsrs008aesencryptfunctioninitializationvectorlengthinvalidlengtherror)
+    * 4.9.15 [RQ.SRS008.AES.Encrypt.Function.InitializationVector.NotValidForMode](#rqsrs008aesencryptfunctioninitializationvectornotvalidformode)
+    * 4.9.16 [RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.NotValidForMode](#rqsrs008aesencryptfunctionadditionalauthenticationdatanotvalidformode)
+    * 4.9.17 [RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.Length](#rqsrs008aesencryptfunctionadditionalauthenticationdatalength)
+    * 4.9.18 [RQ.SRS008.AES.Encrypt.Function.NonGCMMode.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionnongcmmodekeyandinitializationvectorlength)
+    * 4.9.19 [RQ.SRS008.AES.Encrypt.Function.GCMMode.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctiongcmmodekeyandinitializationvectorlength)
+  * 4.10 [Decrypt Function](#decrypt-function)
+    * 4.10.1 [RQ.SRS008.AES.Decrypt.Function](#rqsrs008aesdecryptfunction)
+    * 4.10.2 [RQ.SRS008.AES.Decrypt.Function.Syntax](#rqsrs008aesdecryptfunctionsyntax)
+    * 4.10.3 [RQ.SRS008.AES.Decrypt.Function.Parameters.CipherText](#rqsrs008aesdecryptfunctionparametersciphertext)
+    * 4.10.4 [RQ.SRS008.AES.Decrypt.Function.Parameters.Key](#rqsrs008aesdecryptfunctionparameterskey)
+    * 4.10.5 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode](#rqsrs008aesdecryptfunctionparametersmode)
+    * 4.10.6 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.ValuesFormat](#rqsrs008aesdecryptfunctionparametersmodevaluesformat)
+    * 4.10.7 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.Invalid](#rqsrs008aesdecryptfunctionparametersmodevalueinvalid)
+    * 4.10.8 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Values](#rqsrs008aesdecryptfunctionparametersmodevalues)
+    * 4.10.9 [RQ.SRS008.AES.Decrypt.Function.Parameters.InitializationVector](#rqsrs008aesdecryptfunctionparametersinitializationvector)
+    * 4.10.10 [RQ.SRS008.AES.Decrypt.Function.Parameters.AdditionalAuthenticatedData](#rqsrs008aesdecryptfunctionparametersadditionalauthenticateddata)
+    * 4.10.11 [RQ.SRS008.AES.Decrypt.Function.Parameters.ReturnValue](#rqsrs008aesdecryptfunctionparametersreturnvalue)
+    * 4.10.12 [RQ.SRS008.AES.Decrypt.Function.Key.Length.InvalidLengthError](#rqsrs008aesdecryptfunctionkeylengthinvalidlengtherror)
+    * 4.10.13 [RQ.SRS008.AES.Decrypt.Function.InitializationVector.Length.InvalidLengthError](#rqsrs008aesdecryptfunctioninitializationvectorlengthinvalidlengtherror)
+    * 4.10.14 [RQ.SRS008.AES.Decrypt.Function.InitializationVector.NotValidForMode](#rqsrs008aesdecryptfunctioninitializationvectornotvalidformode)
+    * 4.10.15 [RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.NotValidForMode](#rqsrs008aesdecryptfunctionadditionalauthenticationdatanotvalidformode)
+    * 4.10.16 [RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.Length](#rqsrs008aesdecryptfunctionadditionalauthenticationdatalength)
+    * 4.10.17 [RQ.SRS008.AES.Decrypt.Function.NonGCMMode.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionnongcmmodekeyandinitializationvectorlength)
+    * 4.10.18 [RQ.SRS008.AES.Decrypt.Function.GCMMode.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctiongcmmodekeyandinitializationvectorlength)
+  * 4.11 [MySQL Encrypt Function](#mysql-encrypt-function)
+    * 4.11.1 [RQ.SRS008.AES.MySQL.Encrypt.Function](#rqsrs008aesmysqlencryptfunction)
+    * 4.11.2 [RQ.SRS008.AES.MySQL.Encrypt.Function.Syntax](#rqsrs008aesmysqlencryptfunctionsyntax)
+    * 4.11.3 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.PlainText](#rqsrs008aesmysqlencryptfunctionparametersplaintext)
+    * 4.11.4 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Key](#rqsrs008aesmysqlencryptfunctionparameterskey)
+    * 4.11.5 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode](#rqsrs008aesmysqlencryptfunctionparametersmode)
+    * 4.11.6 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.ValuesFormat](#rqsrs008aesmysqlencryptfunctionparametersmodevaluesformat)
+    * 4.11.7 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.Invalid](#rqsrs008aesmysqlencryptfunctionparametersmodevalueinvalid)
+    * 4.11.8 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values](#rqsrs008aesmysqlencryptfunctionparametersmodevalues)
+    * 4.11.9 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.GCM.Error](#rqsrs008aesmysqlencryptfunctionparametersmodevaluesgcmerror)
+    * 4.11.10 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.CTR.Error](#rqsrs008aesmysqlencryptfunctionparametersmodevaluesctrerror)
+    * 4.11.11 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.InitializationVector](#rqsrs008aesmysqlencryptfunctionparametersinitializationvector)
+    * 4.11.12 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.ReturnValue](#rqsrs008aesmysqlencryptfunctionparametersreturnvalue)
+    * 4.11.13 [RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooShortError](#rqsrs008aesmysqlencryptfunctionkeylengthtooshorterror)
+    * 4.11.14 [RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooLong](#rqsrs008aesmysqlencryptfunctionkeylengthtoolong)
+    * 4.11.15 [RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooShortError](#rqsrs008aesmysqlencryptfunctioninitializationvectorlengthtooshorterror)
+    * 4.11.16 [RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooLong](#rqsrs008aesmysqlencryptfunctioninitializationvectorlengthtoolong)
+    * 4.11.17 [RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.NotValidForMode](#rqsrs008aesmysqlencryptfunctioninitializationvectornotvalidformode)
+    * 4.11.18 [RQ.SRS008.AES.MySQL.Encrypt.Function.Mode.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionmodekeyandinitializationvectorlength)
+  * 4.12 [MySQL Decrypt Function](#mysql-decrypt-function)
+    * 4.12.1 [RQ.SRS008.AES.MySQL.Decrypt.Function](#rqsrs008aesmysqldecryptfunction)
+    * 4.12.2 [RQ.SRS008.AES.MySQL.Decrypt.Function.Syntax](#rqsrs008aesmysqldecryptfunctionsyntax)
+    * 4.12.3 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.CipherText](#rqsrs008aesmysqldecryptfunctionparametersciphertext)
+    * 4.12.4 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Key](#rqsrs008aesmysqldecryptfunctionparameterskey)
+    * 4.12.5 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode](#rqsrs008aesmysqldecryptfunctionparametersmode)
+    * 4.12.6 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.ValuesFormat](#rqsrs008aesmysqldecryptfunctionparametersmodevaluesformat)
+    * 4.12.7 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.Invalid](#rqsrs008aesmysqldecryptfunctionparametersmodevalueinvalid)
+    * 4.12.8 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values](#rqsrs008aesmysqldecryptfunctionparametersmodevalues)
+    * 4.12.9 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.GCM.Error](#rqsrs008aesmysqldecryptfunctionparametersmodevaluesgcmerror)
+    * 4.12.10 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.CTR.Error](#rqsrs008aesmysqldecryptfunctionparametersmodevaluesctrerror)
+    * 4.12.11 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.InitializationVector](#rqsrs008aesmysqldecryptfunctionparametersinitializationvector)
+    * 4.12.12 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.ReturnValue](#rqsrs008aesmysqldecryptfunctionparametersreturnvalue)
+    * 4.12.13 [RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooShortError](#rqsrs008aesmysqldecryptfunctionkeylengthtooshorterror)
+    * 4.12.14 [RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooLong](#rqsrs008aesmysqldecryptfunctionkeylengthtoolong)
+    * 4.12.15 [RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooShortError](#rqsrs008aesmysqldecryptfunctioninitializationvectorlengthtooshorterror)
+    * 4.12.16 [RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooLong](#rqsrs008aesmysqldecryptfunctioninitializationvectorlengthtoolong)
+    * 4.12.17 [RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.NotValidForMode](#rqsrs008aesmysqldecryptfunctioninitializationvectornotvalidformode)
+    * 4.12.18 [RQ.SRS008.AES.MySQL.Decrypt.Function.Mode.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionmodekeyandinitializationvectorlength)
 * 5 [References](#references)
 
 ## Revision History
@@ -122,8 +133,13 @@ accessed on remote [MySQL] servers via [MySQL Dictionary] or [MySQL Database Eng
 
 ## Terminology
 
-* **AES** -
+### AES
+
   Advanced Encryption Standard ([AES])
+
+### AEAD
+
+  Authenticated Encryption with Associated Data
 
 ## Requirements
 
@@ -134,37 +150,43 @@ version: 1.0
 
 [ClickHouse] SHALL support [AES] encryption functions to encrypt and decrypt data.
 
-#### RQ.SRS008.AES.Functions.Compatability.MySQL
+### Compatibility
+
+#### RQ.SRS008.AES.Functions.Compatibility.MySQL
 version: 1.0
 
 [ClickHouse] SHALL support [AES] encryption functions compatible with [MySQL 5.7].
 
-#### RQ.SRS008.AES.Functions.Compatability.Dictionaries
+#### RQ.SRS008.AES.Functions.Compatibility.Dictionaries
 version: 1.0
 
 [ClickHouse] SHALL support encryption and decryption of data accessed on remote
 [MySQL] servers using [MySQL Dictionary].
 
-#### RQ.SRS008.AES.Functions.Compatability.Engine.Database.MySQL
+#### RQ.SRS008.AES.Functions.Compatibility.Engine.Database.MySQL
 version: 1.0
 
 [ClickHouse] SHALL support encryption and decryption of data accessed using [MySQL Database Engine],
 
-#### RQ.SRS008.AES.Functions.Compatability.Engine.Table.MySQL
+#### RQ.SRS008.AES.Functions.Compatibility.Engine.Table.MySQL
 version: 1.0
 
 [ClickHouse] SHALL support encryption and decryption of data accessed using [MySQL Table Engine].
 
-#### RQ.SRS008.AES.Functions.Compatability.TableFunction.MySQL
+#### RQ.SRS008.AES.Functions.Compatibility.TableFunction.MySQL
 version: 1.0
 
 [ClickHouse] SHALL support encryption and decryption of data accessed using [MySQL Table Function].
+
+### Different Modes
 
 #### RQ.SRS008.AES.Functions.DifferentModes
 version: 1.0
 
 [ClickHouse] SHALL allow different modes to be supported in a single SQL statement
 using explicit function parameters.
+
+### Multiple Sources
 
 #### RQ.SRS008.AES.Functions.DataFromMultipleSources
 version: 1.0
@@ -174,16 +196,22 @@ in the `SELECT` statement, including [ClickHouse] [MergeTree] table as well as [
 [MySQL Database Engine], [MySQL Table Engine], and [MySQL Table Function]
 with possibly different encryption schemes.
 
+### Suppressing Sensitive Values
+
 #### RQ.SRS008.AES.Functions.SuppressOutputOfSensitiveValues
 version: 1.0
 
 [ClickHouse] SHALL suppress output of [AES] `string` and `key` parameters to the system log,
 error log, and `query_log` table to prevent leakage of sensitive values.
 
+### Invalid Parameters
+
 #### RQ.SRS008.AES.Functions.InvalidParameters
 version: 1.0
 
 [ClickHouse] SHALL return an error when parameters are invalid.
+
+### Mismatched Values
 
 #### RQ.SRS008.AES.Functions.Mismatched.Key
 version: 1.0
@@ -204,6 +232,8 @@ version: 1.0
 version: 1.0
 
 [ClickHouse] SHALL return an error or garbage for mismatched mode.
+
+### Performance
 
 #### RQ.SRS008.AES.Functions.Check.Performance
 version: 1.0
@@ -233,7 +263,7 @@ version: 1.0
 Effect of [AES] encryption on the compression of a column with [LowCardinality] data type
 SHALL be measured.
 
-### Specific
+### Encrypt Function
 
 #### RQ.SRS008.AES.Encrypt.Function
 version: 1.0
@@ -255,21 +285,23 @@ version: 1.0
 [ClickHouse] `encrypt` function output SHALL produce output that matches [NIST test vectors].
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.PlainText
-version: 1.0
+version: 2.0
 
-[ClickHouse] SHALL support `plaintext` accepting any data type as
-the first parameter to the `encrypt` function that SHALL specify the data to be encrypted.
+[ClickHouse] SHALL support `plaintext` with `String`, `FixedString`, `Nullable(String)`,
+`Nullable(FixedString)`, `LowCardinality(String)`, or `LowCardinality(FixedString(N))` data types as
+the second parameter to the `encrypt` function that SHALL specify the data to be encrypted.
+
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.Key
 version: 1.0
 
 [ClickHouse] SHALL support `key` with `String` or `FixedString` data types
-as the second parameter to the `encrypt` function that SHALL specify the encryption key.
+as the  parameter to the `encrypt` function that SHALL specify the encryption key.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode
 version: 1.0
 
-[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the third parameter
+[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter
 to the `encrypt` function that SHALL specify encryption key length and block encryption mode.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.ValuesFormat
@@ -308,13 +340,13 @@ of the `encrypt` function:
 * `aes-192-ofb` that SHALL use [OFB] block mode encryption with 192 bit key
 * `aes-256-ofb` that SHALL use [OFB] block mode encryption with 256 bit key
 * `aes-128-gcm` that SHALL use [GCM] block mode encryption with 128 bit key
-   and `AEAD` 16-byte tag is appended to the resulting ciphertext according to
+   and [AEAD] 16-byte tag is appended to the resulting ciphertext according to
    the [RFC5116]
 * `aes-192-gcm` that SHALL use [GCM] block mode encryption with 192 bit key
-   and `AEAD` 16-byte tag is appended to the resulting ciphertext according to
+   and [AEAD] 16-byte tag is appended to the resulting ciphertext according to
    the [RFC5116]
 * `aes-256-gcm` that SHALL use [GCM] block mode encryption with 256 bit key
-   and `AEAD` 16-byte tag is appended to the resulting ciphertext according to
+   and [AEAD] 16-byte tag is appended to the resulting ciphertext according to
    the [RFC5116]
 *  `aes-128-ctr` that SHALL use [CTR] block mode encryption with 128 bit key
 *  `aes-192-ctr` that SHALL use [CTR] block mode encryption with 192 bit key
@@ -403,6 +435,8 @@ when using GCM modes
 * `aes-192-gcm` mode and `key` is not 24 bytes or `iv` is not specified
 * `aes-256-gcm` mode and `key` is not 32 bytes or `iv` is not specified
 
+### Decrypt Function
+
 #### RQ.SRS008.AES.Decrypt.Function
 version: 1.0
 
@@ -421,18 +455,18 @@ decrypt(mode, ciphertext, key, [iv, aad])
 version: 1.0
 
 [ClickHouse] SHALL support `ciphertext` accepting `FixedString` or `String` data types as
-the first parameter to the `decrypt` function that SHALL specify the data to be decrypted.
+the second parameter to the `decrypt` function that SHALL specify the data to be decrypted.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.Key
 version: 1.0
 
 [ClickHouse] SHALL support `key` with `String` or `FixedString` data types
-as the second parameter to the `decrypt` function that SHALL specify the encryption key.
+as the third parameter to the `decrypt` function that SHALL specify the encryption key.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode
 version: 1.0
 
-[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the third parameter
+[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter
 to the `decrypt` function that SHALL specify encryption key length and block encryption mode.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.ValuesFormat
@@ -511,7 +545,7 @@ version: 1.0
 #### RQ.SRS008.AES.Decrypt.Function.InitializationVector.Length.InvalidLengthError
 version: 1.0
 
-[ClickHouse] SHALL return an error if the `iv` is speficified and the length is not exact for the `decrypt` function for a given block mode.
+[ClickHouse] SHALL return an error if the `iv` is specified and the length is not exact for the `decrypt` function for a given block mode.
 
 #### RQ.SRS008.AES.Decrypt.Function.InitializationVector.NotValidForMode
 version: 1.0
@@ -568,7 +602,7 @@ when using GCM modes
 * `aes-192-gcm` mode and `key` is not 24 bytes or `iv` is not specified
 * `aes-256-gcm` mode and `key` is not 32 bytes or `iv` is not specified
 
-### MySQL Specific Functions
+### MySQL Encrypt Function
 
 #### RQ.SRS008.AES.MySQL.Encrypt.Function
 version: 1.0
@@ -585,21 +619,22 @@ aes_encrypt_mysql(mode, plaintext, key, [iv])
 ```
 
 #### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.PlainText
-version: 1.0
+version: 2.0
 
-[ClickHouse] SHALL support `plaintext` accepting any data type as
-the first parameter to the `aes_encrypt_mysql` function that SHALL specify the data to be encrypted.
+[ClickHouse] SHALL support `plaintext` with `String`, `FixedString`, `Nullable(String)`,
+`Nullable(FixedString)`, `LowCardinality(String)`, or `LowCardinality(FixedString(N))` data types as
+the second parameter to the `aes_encrypt_mysql` function that SHALL specify the data to be encrypted.
 
 #### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Key
 version: 1.0
 
 [ClickHouse] SHALL support `key` with `String` or `FixedString` data types
-as the second parameter to the `aes_encrypt_mysql` function that SHALL specify the encryption key.
+as the third parameter to the `aes_encrypt_mysql` function that SHALL specify the encryption key.
 
 #### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode
 version: 1.0
 
-[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the third parameter
+[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter
 to the `aes_encrypt_mysql` function that SHALL specify encryption key length and block encryption mode.
 
 #### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.ValuesFormat
@@ -734,6 +769,8 @@ version: 1.0
 * `aes-192-ofb` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes
 * `aes-256-ofb` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes
 
+### MySQL Decrypt Function
+
 #### RQ.SRS008.AES.MySQL.Decrypt.Function
 version: 1.0
 
@@ -752,18 +789,18 @@ aes_decrypt_mysql(mode, ciphertext, key, [iv])
 version: 1.0
 
 [ClickHouse] SHALL support `ciphertext` accepting any data type as
-the first parameter to the `aes_decrypt_mysql` function that SHALL specify the data to be decrypted.
+the second parameter to the `aes_decrypt_mysql` function that SHALL specify the data to be decrypted.
 
 #### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Key
 version: 1.0
 
 [ClickHouse] SHALL support `key` with `String` or `FixedString` data types
-as the second parameter to the `aes_decrypt_mysql` function that SHALL specify the encryption key.
+as the third parameter to the `aes_decrypt_mysql` function that SHALL specify the encryption key.
 
 #### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode
 version: 1.0
 
-[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the third parameter
+[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter
 to the `aes_decrypt_mysql` function that SHALL specify encryption key length and block encryption mode.
 
 #### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.ValuesFormat
@@ -906,6 +943,7 @@ version: 1.0
 * **ClickHouse:** https://clickhouse.tech
 * **Git:** https://git-scm.com/
 
+[AEAD]: #aead
 [OpenSSL]: https://www.openssl.org/
 [LowCardinality]: https://clickhouse.tech/docs/en/sql-reference/data-types/lowcardinality/
 [MergeTree]: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/

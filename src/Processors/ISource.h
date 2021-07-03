@@ -19,7 +19,7 @@ protected:
     virtual std::optional<Chunk> tryGenerate();
 
 public:
-    ISource(Block header);
+    explicit ISource(Block header);
 
     Status prepare() override;
     void work() override;

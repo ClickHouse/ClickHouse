@@ -1,12 +1,13 @@
 #pragma once
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 
 
 namespace DB
@@ -24,7 +25,7 @@ class FunctionStringOrArrayToT : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionStringOrArrayToT>();
     }
@@ -42,7 +43,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0])
-            && !isArray(arguments[0]))
+            && !isArray(arguments[0]) && !isMap(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<ResultType>>();
@@ -91,6 +92,16 @@ public:
             vec_res.resize(col_arr->size());
             Impl::array(col_arr->getOffsets(), vec_res);
 
+            return col_res;
+        }
+        else if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(column.get()))
+        {
+            auto col_res = ColumnVector<ResultType>::create();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
+            vec_res.resize(col_map->size());
+            const auto & col_nested = col_map->getNestedColumn();
+
+            Impl::array(col_nested.getOffsets(), vec_res);
             return col_res;
         }
         else

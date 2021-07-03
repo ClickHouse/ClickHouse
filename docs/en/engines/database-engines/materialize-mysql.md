@@ -49,6 +49,7 @@ When working with the `MaterializeMySQL` database engine, [ReplacingMergeTree](.
 | DATE, NEWDATE           | [Date](../../sql-reference/data-types/date.md)               |
 | DATETIME, TIMESTAMP     | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | DATETIME2, TIMESTAMP2   | [DateTime64](../../sql-reference/data-types/datetime64.md)   |
+| ENUM                    | [Enum](../../sql-reference/data-types/enum.md)               |
 | STRING                  | [String](../../sql-reference/data-types/string.md)           |
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
@@ -69,7 +70,7 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 - MySQL `INSERT` query is converted into `INSERT` with `_sign=1`.
 
-- MySQl `DELETE` query is converted into `INSERT` with `_sign=-1`. 
+- MySQL `DELETE` query is converted into `INSERT` with `_sign=-1`. 
 
 - MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1`.
 
@@ -93,6 +94,7 @@ ClickHouse has only one physical order, which is determined by `ORDER BY` clause
 - Cascade `UPDATE/DELETE` queries are not supported by the `MaterializeMySQL` engine.
 - Replication can be easily broken.
 - Manual operations on database and tables are forbidden.
+- `MaterializeMySQL` is influenced by [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert) setting. The data is merged in the corresponding table in the `MaterializeMySQL` database when a table in the MySQL server changes.
 
 ## Examples of Use {#examples-of-use}
 
@@ -156,4 +158,4 @@ SELECT * FROM mysql.test;
 └───┴─────┴──────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/database_engines/materialize-mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/database-engines/materialize-mysql/) <!--hide-->

@@ -71,3 +71,12 @@ select (toLowCardinality('a') as val) || 'b' group by val;
 select toLowCardinality(z) as val from (select arrayJoin(['c', 'd']) as z) group by val;
 select (toLowCardinality(z) as val) || 'b'  from (select arrayJoin(['c', 'd']) as z) group by val;
 
+select '-';
+drop table if exists lc_str_uuid;
+create table lc_str_uuid(str1 String, str2 LowCardinality(String), str3 StringWithDictionary) ENGINE=Memory;
+select toUUID(str1), toUUID(str2), toUUID(str3) from lc_str_uuid;
+select toUUID(str1, '', NULL), toUUID(str2, '', NULL), toUUID(str3, '', NULL) from lc_str_uuid;
+insert into lc_str_uuid values ('61f0c404-5cb3-11e7-907b-a6006ad3dba0', '61f0c404-5cb3-11e7-907b-a6006ad3dba0', '61f0c404-5cb3-11e7-907b-a6006ad3dba0');
+select toUUID(str1), toUUID(str2), toUUID(str3) from lc_str_uuid;
+select toUUID(str1, '', NULL), toUUID(str2, '', NULL), toUUID(str3, '', NULL) from lc_str_uuid;
+drop table if exists lc_str_uuid;

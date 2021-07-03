@@ -10,10 +10,10 @@ Allows to populate test tables with data.
 Supports all data types that can be stored in table except `LowCardinality` and `AggregateFunction`.
 
 ``` sql
-generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]);
+generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `name` — Name of corresponding column.
 -   `TypeName` — Type of corresponding column.
@@ -39,4 +39,3 @@ SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(
 └──────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/generate/) <!--hide-->

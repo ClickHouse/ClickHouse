@@ -2,11 +2,12 @@
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -50,7 +51,7 @@ template <typename T> using AggregateFunctionSumKahan =
 
 
 template <template <typename> class Function>
-AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);

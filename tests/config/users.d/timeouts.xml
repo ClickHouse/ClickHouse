@@ -1,0 +1,9 @@
+<yandex>
+    <profiles>
+        <default>
+            <!-- Default HTTP timeout is 30 minutes. Set it to 1 minute. -->
+            <http_send_timeout>60</http_send_timeout>
+            <http_receive_timeout>60</http_receive_timeout>
+        </default>
+    </profiles>
+</yandex>

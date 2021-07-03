@@ -6,8 +6,6 @@
 #include <Poco/SHA1Engine.h>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
-#include <set>
-#include <vector>
 
 
 namespace DB
@@ -20,13 +18,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+class Credentials;
 class ExternalAuthenticators;
-struct LDAPSearchParams;
-using LDAPSearchParamsList = std::vector<LDAPSearchParams>;
-using LDAPSearchResults = std::set<String>;
-using LDAPSearchResultsList = std::vector<LDAPSearchResults>;
 
-/// Authentication type and encrypted password for checking when an user logins.
+/// Authentication type and encrypted password for checking when a user logins.
 class Authentication
 {
 public:
@@ -46,7 +41,10 @@ public:
         DOUBLE_SHA1_PASSWORD,
 
         /// Password is checked by a [remote] LDAP server. Connection will be made at each authentication attempt.
-        LDAP_SERVER,
+        LDAP,
+
+        /// Kerberos authentication performed through GSS-API negotiation loop.
+        KERBEROS,
 
         MAX_TYPE,
     };
@@ -56,6 +54,18 @@ public:
         const char * const raw_name;
         const String name; /// Lowercased with underscores, e.g. "sha256_password".
         static const TypeInfo & get(Type type_);
+    };
+
+    // A signaling class used to communicate requirements for credentials.
+    template <typename CredentialsType>
+    class Require : public Exception
+    {
+    public:
+        explicit Require(const String & realm_);
+        const String & getRealm() const;
+
+    private:
+        const String realm;
     };
 
     using Digest = std::vector<uint8_t>;
@@ -88,14 +98,16 @@ public:
     /// Allowed to use for Type::NO_PASSWORD, Type::PLAINTEXT_PASSWORD, Type::DOUBLE_SHA1_PASSWORD.
     Digest getPasswordDoubleSHA1() const;
 
-    /// Sets an external authentication server name.
-    /// When authentication type is LDAP_SERVER, server name is expected to be the name of a preconfigured LDAP server.
-    const String & getServerName() const;
-    void setServerName(const String & server_name_);
+    /// Sets the server name for authentication type LDAP.
+    const String & getLDAPServerName() const;
+    void setLDAPServerName(const String & name);
 
-    /// Checks if the provided password is correct. Returns false if not.
-    /// User name and external authenticators are used by the specific authentication types only (e.g., LDAP_SERVER).
-    bool isCorrectPassword(const String & user_, const String & password_, const ExternalAuthenticators & external_authenticators) const;
+    /// Sets the realm name for authentication type KERBEROS.
+    const String & getKerberosRealm() const;
+    void setKerberosRealm(const String & realm);
+
+    /// Checks the credentials (passwords, readiness, etc.)
+    bool areCredentialsValid(const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
 
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
     friend bool operator !=(const Authentication & lhs, const Authentication & rhs) { return !(lhs == rhs); }
@@ -109,7 +121,8 @@ private:
 
     Type type = Type::NO_PASSWORD;
     Digest password_hash;
-    String server_name;
+    String ldap_server_name;
+    String kerberos_realm;
 };
 
 
@@ -144,14 +157,33 @@ inline const Authentication::TypeInfo & Authentication::TypeInfo::get(Type type_
             static const auto info = make_info("DOUBLE_SHA1_PASSWORD");
             return info;
         }
-        case LDAP_SERVER:
+        case LDAP:
         {
-            static const auto info = make_info("LDAP_SERVER");
+            static const auto info = make_info("LDAP");
             return info;
         }
-        case MAX_TYPE: break;
+        case KERBEROS:
+        {
+            static const auto info = make_info("KERBEROS");
+            return info;
+        }
+        case MAX_TYPE:
+            break;
     }
     throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type_)), ErrorCodes::LOGICAL_ERROR);
+}
+
+template <typename CredentialsType>
+Authentication::Require<CredentialsType>::Require(const String & realm_)
+    : Exception("Credentials required", ErrorCodes::BAD_ARGUMENTS)
+    , realm(realm_)
+{
+}
+
+template <typename CredentialsType>
+const String & Authentication::Require<CredentialsType>::getRealm() const
+{
+    return realm;
 }
 
 inline String toString(Authentication::Type type_)
@@ -186,9 +218,6 @@ inline void Authentication::setPassword(const String & password_)
 {
     switch (type)
     {
-        case NO_PASSWORD:
-            throw Exception("Cannot specify password for the 'NO_PASSWORD' authentication type", ErrorCodes::LOGICAL_ERROR);
-
         case PLAINTEXT_PASSWORD:
             return setPasswordHashBinary(encodePlainText(password_));
 
@@ -198,10 +227,13 @@ inline void Authentication::setPassword(const String & password_)
         case DOUBLE_SHA1_PASSWORD:
             return setPasswordHashBinary(encodeDoubleSHA1(password_));
 
-        case LDAP_SERVER:
-            throw Exception("Cannot specify password for the 'LDAP_SERVER' authentication type", ErrorCodes::LOGICAL_ERROR);
+        case NO_PASSWORD:
+        case LDAP:
+        case KERBEROS:
+            throw Exception("Cannot specify password for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
-        case MAX_TYPE: break;
+        case MAX_TYPE:
+            break;
     }
     throw Exception("setPassword(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -225,8 +257,9 @@ inline void Authentication::setPasswordHashHex(const String & hash)
 
 inline String Authentication::getPasswordHashHex() const
 {
-    if (type == LDAP_SERVER)
-        throw Exception("Cannot get password of a user with the 'LDAP_SERVER' authentication type", ErrorCodes::LOGICAL_ERROR);
+    if (type == LDAP || type == KERBEROS)
+        throw Exception("Cannot get password hex hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
+
     String hex;
     hex.resize(password_hash.size() * 2);
     boost::algorithm::hex(password_hash.begin(), password_hash.end(), hex.data());
@@ -238,9 +271,6 @@ inline void Authentication::setPasswordHashBinary(const Digest & hash)
 {
     switch (type)
     {
-        case NO_PASSWORD:
-            throw Exception("Cannot specify password for the 'NO_PASSWORD' authentication type", ErrorCodes::LOGICAL_ERROR);
-
         case PLAINTEXT_PASSWORD:
         {
             password_hash = hash;
@@ -269,22 +299,35 @@ inline void Authentication::setPasswordHashBinary(const Digest & hash)
             return;
         }
 
-        case LDAP_SERVER:
-            throw Exception("Cannot specify password for the 'LDAP_SERVER' authentication type", ErrorCodes::LOGICAL_ERROR);
+        case NO_PASSWORD:
+        case LDAP:
+        case KERBEROS:
+            throw Exception("Cannot specify password binary hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
-        case MAX_TYPE: break;
+        case MAX_TYPE:
+            break;
     }
     throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-inline const String & Authentication::getServerName() const
+inline const String & Authentication::getLDAPServerName() const
 {
-    return server_name;
+    return ldap_server_name;
 }
 
-inline void Authentication::setServerName(const String & server_name_)
+inline void Authentication::setLDAPServerName(const String & name)
 {
-    server_name = server_name_;
+    ldap_server_name = name;
+}
+
+inline const String & Authentication::getKerberosRealm() const
+{
+    return kerberos_realm;
+}
+
+inline void Authentication::setKerberosRealm(const String & realm)
+{
+    kerberos_realm = realm;
 }
 
 }

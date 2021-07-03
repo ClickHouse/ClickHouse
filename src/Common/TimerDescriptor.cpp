@@ -27,10 +27,16 @@ TimerDescriptor::TimerDescriptor(int clockid, int flags)
         throwFromErrno("Cannot set O_NONBLOCK for timer_fd", ErrorCodes::CANNOT_FCNTL);
 }
 
+TimerDescriptor::TimerDescriptor(TimerDescriptor && other) : timer_fd(other.timer_fd)
+{
+    other.timer_fd = -1;
+}
+
 TimerDescriptor::~TimerDescriptor()
 {
     /// Do not check for result cause cannot throw exception.
-    close(timer_fd);
+    if (timer_fd != -1)
+        close(timer_fd);
 }
 
 void TimerDescriptor::reset() const
@@ -68,13 +74,13 @@ void TimerDescriptor::drain() const
     }
 }
 
-void TimerDescriptor::setRelative(const Poco::Timespan & timespan) const
+void TimerDescriptor::setRelative(Poco::Timespan timespan) const
 {
     itimerspec spec;
     spec.it_interval.tv_nsec = 0;
     spec.it_interval.tv_sec = 0;
     spec.it_value.tv_sec = timespan.totalSeconds();
-    spec.it_value.tv_nsec = timespan.useconds();
+    spec.it_value.tv_nsec = timespan.useconds() * 1000;
 
     if (-1 == timerfd_settime(timer_fd, 0 /*relative timer */, &spec, nullptr))
         throwFromErrno("Cannot set time for timer_fd", ErrorCodes::CANNOT_SET_TIMER_PERIOD);

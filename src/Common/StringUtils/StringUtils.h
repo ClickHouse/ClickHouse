@@ -120,6 +120,12 @@ inline bool isWhitespaceASCII(char c)
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
+/// Since |isWhiteSpaceASCII()| is used inside algorithms it's easier to implement another function than add extra argument.
+inline bool isWhitespaceASCIIOneLine(char c)
+{
+    return c == ' ' || c == '\t' || c == '\f' || c == '\v';
+}
+
 inline bool isControlASCII(char c)
 {
     return static_cast<unsigned char>(c) <= 31;
@@ -143,7 +149,11 @@ inline bool isPunctuationASCII(char c)
 
 inline bool isValidIdentifier(const std::string_view & str)
 {
-    return !str.empty() && isValidIdentifierBegin(str[0]) && std::all_of(str.begin() + 1, str.end(), isWordCharASCII);
+    return !str.empty()
+        && isValidIdentifierBegin(str[0])
+        && std::all_of(str.begin() + 1, str.end(), isWordCharASCII)
+        /// NULL is not a valid identifier in SQL, any case.
+        && !(str.size() == strlen("null") && 0 == strncasecmp(str.data(), "null", strlen("null")));
 }
 
 /// Works assuming isAlphaASCII.

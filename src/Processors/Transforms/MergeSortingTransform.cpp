@@ -8,7 +8,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <Disks/StoragePolicy.h>
+#include <Disks/IVolume.h>
 
 
 namespace ProfileEvents

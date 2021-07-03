@@ -18,6 +18,9 @@ DROP TABLE tmp;
 DETACH DATABASE test_01457;
 ATTACH DATABASE test_01457;
 
+-- To suppress "Structure does not match (...), implicit conversion will be done." message
+SET send_logs_level='error';
+
 CREATE TABLE tmp (n Int8) ENGINE=Memory;
 INSERT INTO test_01457.tf_remote_explicit_structure VALUES ('42');
 SELECT * FROM tmp;

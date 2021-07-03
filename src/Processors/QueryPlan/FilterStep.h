@@ -18,10 +18,11 @@ public:
         bool remove_filter_column_);
 
     String getName() const override { return "Filter"; }
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void updateInputStream(DataStream input_stream, bool keep_header);
 
+    void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
     const ActionsDAGPtr & getExpression() const { return actions_dag; }

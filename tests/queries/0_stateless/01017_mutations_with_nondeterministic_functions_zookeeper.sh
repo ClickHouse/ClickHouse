@@ -4,7 +4,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-
 R1=table_1017_1
 R2=table_1017_2
 T1=table_1017_merge
@@ -29,8 +28,8 @@ ${CLICKHOUSE_CLIENT} -n -q "
     CREATE TABLE lookup_table (y UInt32, y_new UInt32) ENGINE = Join(ANY, LEFT, y);
     INSERT INTO lookup_table VALUES(1,1001),(2,1002);
 
-    CREATE TABLE $R1 (x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}.table_1017', 'r1') ORDER BY x;
-    CREATE TABLE $R2 (x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}.table_1017', 'r2') ORDER BY x;
+    CREATE TABLE $R1 (x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table_1017', 'r1') ORDER BY x;
+    CREATE TABLE $R2 (x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table_1017', 'r2') ORDER BY x;
     CREATE TABLE $T1 (x UInt32, y UInt32) ENGINE MergeTree() ORDER BY x;
 
     INSERT INTO $R1 VALUES (0, 1)(1, 2)(2, 3)(3, 4);

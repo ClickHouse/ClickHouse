@@ -6,4 +6,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d 'SELECT 1' --referer 'https://yandex.ru/'
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
-${CLICKHOUSE_CLIENT} --query "SELECT http_referer FROM system.query_log WHERE http_referer LIKE '%yandex%' LIMIT 1"
+${CLICKHOUSE_CLIENT} --query "SELECT http_referer FROM system.query_log WHERE current_database = currentDatabase() AND http_referer LIKE '%yandex%' LIMIT 1"

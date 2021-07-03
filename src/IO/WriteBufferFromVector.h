@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <IO/WriteBuffer.h>
+#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -44,7 +45,7 @@ private:
     }
 
 public:
-    WriteBufferFromVector(VectorType & vector_)
+    explicit WriteBufferFromVector(VectorType & vector_)
         : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_)
     {
         if (vector.empty())
@@ -93,14 +94,9 @@ public:
 
     ~WriteBufferFromVector() override
     {
-        try
-        {
-            finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        /// FIXME move final flush into the caller
+        MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+        finalize();
     }
 };
 
