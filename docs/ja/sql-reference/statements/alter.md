@@ -175,7 +175,7 @@ MODIFY ORDER BY new_expression
 [複製](../../engines/table-engines/mergetree-family/replication.md) テーブル）。 次の操作
 利用できます:
 
--   `ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value AFTER name [AFTER name2]` -付加価指数の説明をテーブルメタデータを指すものとします。
+-   `ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value [FIRST|AFTER name]` -付加価指数の説明をテーブルメタデータを指すものとします。
 
 -   `ALTER TABLE [db].name DROP INDEX name` -除去す指標の説明からテーブルメタデータを削除を行指数のファイルからディスク。
 
