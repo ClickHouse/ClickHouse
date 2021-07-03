@@ -118,7 +118,7 @@ private:
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
     void addPrewhereAliasActions();
-    bool moveToPrewhereIfFinal();
+    bool shouldMoveToPrewhere();
 
     Block getSampleBlockImpl();
 
