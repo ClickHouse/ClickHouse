@@ -12,3 +12,10 @@ services:
             --gtid-mode="ON"
             --enforce-gtid-consistency
             --log-error-verbosity=3
+            --log-error=/var/log/mysqld/error.log
+            --general-log=ON
+            --general-log-file=/var/log/mysqld/general.log
+        volumes:
+            - type: ${MYSQL_LOGS_FS:-tmpfs}
+              source: ${MYSQL_LOGS:-}
+              target: /var/log/mysqld/

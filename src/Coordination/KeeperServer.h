@@ -12,10 +12,12 @@
 namespace DB
 {
 
+using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
+
 class KeeperServer
 {
 private:
-    int server_id;
+    const int server_id;
 
     CoordinationSettingsPtr coordination_settings;
 
@@ -29,13 +31,10 @@ private:
 
     std::mutex append_entries_mutex;
 
-    ResponsesQueue & responses_queue;
-
     std::mutex initialized_mutex;
     std::atomic<bool> initialized_flag = false;
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
-    std::atomic<size_t> active_session_id_requests = 0;
 
     Poco::Logger * log;
 
@@ -49,20 +48,20 @@ private:
 
     void shutdownRaftServer();
 
-
 public:
     KeeperServer(
         int server_id_,
         const CoordinationSettingsPtr & coordination_settings_,
         const Poco::Util::AbstractConfiguration & config,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_);
+        SnapshotsQueue & snapshots_queue_,
+        bool standalone_keeper);
 
     void startup();
 
-    void putRequest(const KeeperStorage::RequestForSession & request);
+    void putLocalReadRequest(const KeeperStorage::RequestForSession & request);
 
-    int64_t getSessionID(int64_t session_timeout_ms);
+    RaftAppendResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
 
     std::unordered_set<int64_t> getDeadSessions();
 
@@ -73,6 +72,8 @@ public:
     void waitInit();
 
     void shutdown();
+
+    int getServerID() const { return server_id; }
 };
 
 }

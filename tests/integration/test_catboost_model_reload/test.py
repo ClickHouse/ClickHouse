@@ -32,6 +32,9 @@ def started_cluster():
         cluster.shutdown()
 
 def test_model_reload(started_cluster):
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
     node.exec_in_container(["bash", "-c", "rm -f /etc/clickhouse-server/model/model.cbm"])
     node.exec_in_container(["bash", "-c", "ln /etc/clickhouse-server/model/conjunction.cbm /etc/clickhouse-server/model/model.cbm"])
     node.query("SYSTEM RELOAD MODEL model")
@@ -53,6 +56,9 @@ def test_model_reload(started_cluster):
     assert result == '1\n1\n1\n0\n'
 
 def test_models_reload(started_cluster):
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
     node.exec_in_container(["bash", "-c", "rm -f /etc/clickhouse-server/model/model.cbm"])
     node.exec_in_container(["bash", "-c", "ln /etc/clickhouse-server/model/conjunction.cbm /etc/clickhouse-server/model/model.cbm"])
     node.query("SYSTEM RELOAD MODELS")

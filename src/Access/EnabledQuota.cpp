@@ -2,8 +2,8 @@
 #include <Access/QuotaUsage.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <ext/chrono_io.h>
-#include <ext/range.h>
+#include <common/chrono_io.h>
+#include <common/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <boost/range/algorithm/fill.hpp>
 
@@ -28,9 +28,9 @@ struct EnabledQuota::Impl
     {
         const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
         throw Exception(
-            "Quota for user " + backQuote(user_name) + " for " + ext::to_string(duration) + " has been exceeded: "
+            "Quota for user " + backQuote(user_name) + " for " + to_string(duration) + " has been exceeded: "
                 + type_info.outputWithAmount(used) + "/" + type_info.amountToString(max) + ". "
-                + "Interval will end at " + ext::to_string(end_of_interval) + ". " + "Name of quota template: " + backQuote(quota_name),
+                + "Interval will end at " + to_string(end_of_interval) + ". " + "Name of quota template: " + backQuote(quota_name),
             ErrorCodes::QUOTA_EXPIRED);
     }
 
@@ -137,7 +137,7 @@ struct EnabledQuota::Impl
         const Intervals & intervals,
         std::chrono::system_clock::time_point current_time)
     {
-        for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+        for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
             checkExceeded(user_name, intervals, resource_type, current_time);
     }
 };
@@ -145,7 +145,7 @@ struct EnabledQuota::Impl
 
 EnabledQuota::Interval::Interval()
 {
-    for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
     {
         used[resource_type].store(0);
         max[resource_type] = 0;
@@ -161,7 +161,7 @@ EnabledQuota::Interval & EnabledQuota::Interval::operator =(const Interval & src
     randomize_interval = src.randomize_interval;
     duration = src.duration;
     end_of_interval.store(src.end_of_interval.load());
-    for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
     {
         max[resource_type] = src.max[resource_type];
         used[resource_type].store(src.used[resource_type].load());
@@ -187,7 +187,7 @@ std::optional<QuotaUsage> EnabledQuota::Intervals::getUsage(std::chrono::system_
         out.randomize_interval = in.randomize_interval;
         bool counters_were_reset = false;
         out.end_of_interval = Impl::getEndOfInterval(in, current_time, counters_were_reset);
-        for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+        for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
         {
             if (in.max[resource_type])
                 out.max[resource_type] = in.max[resource_type];

@@ -29,6 +29,9 @@ public:
 
     void shutdown() override;
 
+    static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
+                                   DatabaseReplicated * const database, bool committed = false);
+
 private:
     bool initializeMainThread() override;
     void initializeReplication();

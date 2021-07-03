@@ -23,8 +23,8 @@ struct Optimization
 {
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &);
     const Function apply = nullptr;
-    const char * name;
-    const bool QueryPlanOptimizationSettings::* const is_enabled;
+    const char * name = "";
+    const bool QueryPlanOptimizationSettings::* const is_enabled{};
 };
 
 /// Move ARRAY JOIN up if possible.
