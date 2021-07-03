@@ -20,10 +20,6 @@ system_logs = [
     ('system.metric_log', 1),
 ]
 
-# Default timeout for flush is 60
-# decrease timeout for the test to show possible issues.
-timeout = pytest.mark.timeout(30)
-
 
 @pytest.fixture(scope='module', autouse=True)
 def start_cluster():
@@ -39,7 +35,6 @@ def flush_logs():
     node.query('SYSTEM FLUSH LOGS')
 
 
-@timeout
 @pytest.mark.parametrize('table,exists', system_logs)
 def test_system_logs(flush_logs, table, exists):
     q = 'SELECT * FROM {}'.format(table)
@@ -51,7 +46,6 @@ def test_system_logs(flush_logs, table, exists):
 
 # Logic is tricky, let's check that there is no hang in case of message queue
 # is not empty (this is another code path in the code).
-@timeout
 def test_system_logs_non_empty_queue():
     node.query('SELECT 1', settings={
         # right now defaults are the same,
