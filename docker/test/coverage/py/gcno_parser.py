@@ -141,7 +141,6 @@ class GCNOParser(BinaryParser):
                     else:
                         self.sf_to_funcs[filename].append(current)
             elif tag == self.BLOCKS:
-                # flags are not read as they're going to be ignored
                 current.set_basic_blocks(word_len)
             elif tag == self.ARCS:
                 block_no, arcs = self.read_arcs_record(record_buf, word_len)
@@ -176,9 +175,7 @@ class GCNOParser(BinaryParser):
             if line != 0:
                 line_set.append(line)
             elif len(self.read_padded_string(f)) == 0:  # ignore line_str
-                break
-
-        return block_no, line_set
+                return block_no, line_set
 
     def read_arcs_record(self, f, record_len):
         block_no = self.read_uint32(f)

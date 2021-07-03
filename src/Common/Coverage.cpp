@@ -43,6 +43,64 @@ inline SymbolIndexInstance getInstanceAndInitGlobalCounters()
     return SymbolIndex::instance();
 }
 
+void TaskQueue::run()
+{
+    {
+        std::unique_lock lock(mutex);
+        task = true;
+    }
+
+    task_or_shutdown.notify_all();
+}
+
+void TaskQueue::start(FileWrapper& wrapper_, std::span<bool> data_)
+{
+    wrapper = &wrapper_;
+    data = data_;
+
+    for (size_t i = 0; i < workers_count; ++i)
+        workers[i] = std::thread([this, i]
+            {
+                const size_t step = data.size() / workers_count;
+                const size_t start_index = i * step;
+                const size_t end_index = std::min(start_index + step, data.size() - 1);
+
+                while (true)
+                {
+                    {
+                        std::unique_lock lock(mutex);
+
+                        task_or_shutdown.wait(lock, [this] { return shutdown || task; });
+
+                        if (shutdown)
+                            return;
+                    }
+
+                    for (size_t k = start_index; k < end_index; ++k)
+                        if (data[k])
+                        {
+                            data[k] = false;
+                            wrapper->write(k);
+                        }
+
+                    task = false;
+                }
+            });
+}
+
+void TaskQueue::wait()
+{
+    {
+        std::lock_guard lock(mutex);
+        shutdown = true;
+    }
+
+    task_or_shutdown.notify_all();
+
+    for (auto& worker : workers)
+        worker.join();
+}
+
 Writer::Writer() :
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf) {}
@@ -63,7 +121,7 @@ void Writer::pcTableCallback(const Addr * start, const Addr * end) noexcept
     instrumented_blocks_addrs.resize(instrumented_basic_blocks);
     instrumented_blocks_start_lines.resize(instrumented_basic_blocks);
 
-    for (size_t i = 0; i < instrumented_basic_blocks; ++i)
+    for (size_t i = 0; i < bb_pairs / 2; ++i)
         /// Real address for non-function entries is the previous instruction, see implementation in clang:
         /// https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L768
         instrumented_blocks_addrs[i] = start[2 * i] - !(start[2 * i + 1] & 1);
@@ -98,6 +156,8 @@ void Writer::onServerInitialized()
     assert(ptr != nullptr);
 
     LOG_INFO(base_log, "Opened report file {}", report_path);
+
+    tq.start(report_file, current);
 
     symbolizeInstrumentedData();
 }
@@ -202,12 +262,7 @@ void Writer::onChangedTestName(String name)
     report_file.write(Magic::TestEntry);
     report_file.write(finished_test);
 
-    for (size_t i = 0; i < instrumented_basic_blocks; ++i) // TODO SIMD
-        if (current[i])
-        {
-            current[i] = false;
-            report_file.write(i);
-        }
+    tq.run();
 
     if (unlikely(next_test.empty())) // Finished testing
     {
