@@ -12,6 +12,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 #include <optional>
 #include <unordered_map>
 
@@ -20,6 +21,7 @@ namespace DB
 {
 
 class ProtocolServerAdapter;
+class ReadBuffer;
 
 using AsynchronousMetricValue = double;
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
@@ -71,11 +73,14 @@ private:
     bool quit {false};
     AsynchronousMetricValues values;
 
+    /// Some values are incremental and we have to calculate the difference.
+    /// On first run we will only collect the values to subtract later.
+    bool first_run = true;
+
 #if defined(OS_LINUX)
     MemoryStatisticsOS memory_stat;
 
     std::optional<ReadBufferFromFile> meminfo;
-    std::optional<ReadBufferFromFile> mounts;
     std::optional<ReadBufferFromFile> loadavg;
     std::optional<ReadBufferFromFile> proc_stat;
     std::optional<ReadBufferFromFile> cpuinfo;
@@ -83,6 +88,39 @@ private:
     std::optional<ReadBufferFromFile> sockstat;
     std::optional<ReadBufferFromFile> netstat;
     std::optional<ReadBufferFromFile> file_nr;
+    std::optional<ReadBufferFromFile> uptime;
+    std::vector<std::unique_ptr<ReadBufferFromFile>> thermal;
+
+    struct ProcStatValuesCPU
+    {
+        uint64_t user;
+        uint64_t nice;
+        uint64_t system;
+        uint64_t idle;
+        uint64_t iowait;
+        uint64_t irq;
+        uint64_t softirq;
+        uint64_t steal;
+        uint64_t guest;
+        uint64_t guest_nice;
+
+        void read(ReadBuffer & in);
+        ProcStatValuesCPU operator-(const ProcStatValuesCPU & other) const;
+    };
+
+    struct ProcStatValuesOther
+    {
+        uint64_t interrupts;
+        uint64_t context_switches;
+        uint64_t processes_created;
+
+        ProcStatValuesOther operator-(const ProcStatValuesOther & other) const;
+    };
+
+    ProcStatValuesCPU proc_stat_values_all_cpus{};
+    ProcStatValuesOther proc_stat_values_other{};
+    std::vector<ProcStatValuesCPU> proc_stat_values_per_cpu;
+
 #endif
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
