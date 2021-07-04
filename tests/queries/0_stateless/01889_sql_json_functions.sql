@@ -46,5 +46,5 @@ CREATE TABLE 01889_sql_json (json String) ENGINE = MergeTree ORDER BY json;
 INSERT INTO 01889_sql_json(json) VALUES('{"name":"Vitali","surname":"Brown","friends":["Katya","Anatoliy","Ivan","Oleg"]}');
 INSERT INTO 01889_sql_json(json) VALUES('{"name":"Ivan","surname":"Ivanov","friends":["Vasily","Kostya","Artyom"]}');
 INSERT INTO 01889_sql_json(json) VALUES('{"name":"Katya","surname":"Baltica","friends":["Tihon","Ernest","Innokentiy"]}');
-SELECT JSON_QUERY('$.friends[0 to 2]', json);
+SELECT JSON_QUERY('$.friends[0 to 2]', json) FROM 01889_sql_json;
 DROP TABLE 01889_sql_json;
