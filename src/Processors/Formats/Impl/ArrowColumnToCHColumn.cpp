@@ -545,19 +545,18 @@ static void fillColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arro
                 );
         }
 
-        if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
-                [=](auto && elem) {
-                    auto which = WhichDataType(column_type);
-                    if (!which.isDateOrDate32())
-                    {
-                        return elem.first == arrow_type->id();
-                    }
-                    else
-                    {
-                        return (elem.second == "Date" && which.isDate())
-                        || (elem.second == "Date32" && which.isDate32());
-                    }
-                });
+        auto filter = [=](auto && elem) {
+            auto which = WhichDataType(column_type);
+            if (arrow_type->id() == arrow::Type::DATE32 && which.isDateOrDate32())
+            {
+                return (elem.second == "Date" && which.isDate()) || (elem.second == "Date32" && which.isDate32());
+            }
+            else
+            {
+                return elem.first == arrow_type->id();
+            }
+        };
+        if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(), filter);
             internal_type_it != arrow_type_to_internal_type.end())
         {
             return DataTypeFactory::instance().get(internal_type_it->second);
