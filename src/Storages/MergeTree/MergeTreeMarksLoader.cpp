@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Poco/File.h>
 
 #include <utility>
 

@@ -480,7 +480,7 @@ void RemoteQueryExecutor::sendExternalTables()
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
-                        context, QueryProcessingStage::Complete, query_info);
+                        context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
 
                     Pipe pipe = cur->read(
                         metadata_snapshot->getColumns().getNamesOfPhysical(),

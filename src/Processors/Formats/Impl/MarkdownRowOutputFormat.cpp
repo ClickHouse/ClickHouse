@@ -17,7 +17,10 @@ void MarkdownRowOutputFormat::writePrefix()
     for (size_t i = 0; i < columns; ++i)
     {
         writeEscapedString(header.safeGetByPosition(i).name, out);
-        writeCString(" | ", out);
+        if (i == (columns - 1))
+            writeCString(" |", out);
+        else
+            writeCString(" | ", out);
     }
     writeCString("\n|", out);
     String left_alignment = ":-|";

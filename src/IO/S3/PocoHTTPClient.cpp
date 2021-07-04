@@ -47,9 +47,11 @@ namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
+        const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_)
-    : remote_host_filter(remote_host_filter_)
+    : force_region(force_region_)
+    , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
 {
 }
@@ -63,15 +65,23 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
         if (uri.getScheme() == "http")
             scheme = Aws::Http::Scheme::HTTP;
 
-        String matched_region;
-        if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
+        if (force_region.empty())
         {
-            boost::algorithm::to_lower(matched_region);
-            region = matched_region;
+            String matched_region;
+            if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
+            {
+                boost::algorithm::to_lower(matched_region);
+                region = matched_region;
+            }
+            else
+            {
+                /// In global mode AWS C++ SDK send `us-east-1` but accept switching to another one if being suggested.
+                region = Aws::Region::AWS_GLOBAL;
+            }
         }
         else
         {
-            region = Aws::Region::AWS_GLOBAL;
+            region = force_region;
         }
     }
 }
@@ -176,7 +186,32 @@ void PocoHTTPClient::makeRequestInternal(
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
-            poco_request.setURI(target_uri.getPathAndQuery());
+            /** Aws::Http::URI will encode URL in appropriate way for AWS S3 server.
+              * Poco::URI also does that correctly but it's not compatible with AWS.
+              * For example, `+` symbol will not be converted to `%2B` by Poco and would
+              * be received as space symbol.
+              *
+              * References:
+              * https://github.com/aws/aws-sdk-java/issues/1946
+              * https://forums.aws.amazon.com/thread.jspa?threadID=55746
+              *
+              * Example:
+              * Suppose we are requesting a file: abc+def.txt
+              * To correctly do it, we need to construct an URL containing either:
+              * - abc%2Bdef.txt
+              * this is also technically correct:
+              * - abc+def.txt
+              * but AWS servers don't support it properly, interpreting plus character as whitespace
+              * although it is in path part, not in query string.
+              * e.g. this is not correct:
+              * - abc%20def.txt
+              *
+              * Poco will keep plus character as is (which is correct) while AWS servers will treat it as whitespace, which is not what is intended.
+              * To overcome this limitation, we encode URL with "Aws::Http::URI" and then pass already prepared URL to Poco.
+              */
+
+            Aws::Http::URI aws_target_uri(uri);
+            poco_request.setURI(aws_target_uri.GetPath() + aws_target_uri.GetQueryString());
 
             switch (request.GetMethod())
             {
@@ -254,29 +289,16 @@ void PocoHTTPClient::makeRequestInternal(
             }
             LOG_DEBUG(log, "Received headers: {}", headers_ss.str());
 
-            if (status_code >= 300)
-            {
-                String error_message;
-                Poco::StreamCopier::copyToString(response_body_stream, error_message);
-
-                if (Aws::Http::IsRetryableHttpResponseCode(response->GetResponseCode()))
-                    response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
-                else
-                    response->SetClientErrorType(Aws::Client::CoreErrors::USER_CANCELLED);
-
-                response->SetClientErrorMessage(error_message);
-
-                if (status_code == 429 || status_code == 503)
-                { // API throttling
-                    ProfileEvents::increment(select_metric(S3MetricType::Throttling));
-                }
-                else
-                {
-                    ProfileEvents::increment(select_metric(S3MetricType::Errors));
-                }
+            if (status_code == 429 || status_code == 503)
+            { // API throttling
+                ProfileEvents::increment(select_metric(S3MetricType::Throttling));
             }
-            else
-                response->SetResponseBody(response_body_stream, session);
+            else if (status_code >= 300)
+            {
+                ProfileEvents::increment(select_metric(S3MetricType::Errors));
+            }
+
+            response->SetResponseBody(response_body_stream, session);
 
             return;
         }

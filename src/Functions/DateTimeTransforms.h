@@ -1,16 +1,18 @@
 #pragma once
+
 #include <common/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
 #include <common/DateLUTImpl.h>
-//#include <common/TimeZone.h>
+#include <common/DateLUT.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+
 
 namespace DB
 {
@@ -857,15 +859,10 @@ struct Transformer
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeTransformImpl
 {
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
+    static ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
     {
         using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>;
-
-        size_t time_zone_argument_position = 1;
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-            time_zone_argument_position = 2;
-
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
 
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
@@ -873,7 +870,21 @@ struct DateTimeTransformImpl
             auto mutable_result_col = result_type->createColumn();
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
-            Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+            WhichDataType result_data_type(result_type);
+            if (result_data_type.isDateTime() || result_data_type.isDateTime64())
+            {
+                const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+            }
+            else
+            {
+                size_t time_zone_argument_position = 1;
+                if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    time_zone_argument_position = 2;
+
+                const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+            }
 
             return mutable_result_col;
         }

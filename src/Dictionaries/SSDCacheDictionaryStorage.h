@@ -53,7 +53,6 @@ struct SSDCacheDictionaryStorageConfiguration
 {
     const size_t strict_max_lifetime_seconds;
     const DictionaryLifetime lifetime;
-
     const std::string file_path;
     const size_t max_partitions_count;
     const size_t block_size;
@@ -744,6 +743,9 @@ private:
 
         FileDescriptor & operator=(FileDescriptor && rhs)
         {
+            if (this == &rhs)
+                return *this;
+
             close(fd);
 
             fd = rhs.fd;

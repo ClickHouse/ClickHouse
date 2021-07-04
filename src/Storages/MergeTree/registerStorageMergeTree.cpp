@@ -116,8 +116,11 @@ static bool compareRetentions(const Graphite::Retention & a, const Graphite::Ret
   *     </default>
   * </graphite_rollup>
   */
-static void
-appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const String & config_element, Graphite::Patterns & patterns)
+static void appendGraphitePattern(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_element,
+    Graphite::Patterns & out_patterns,
+    ContextPtr context)
 {
     Graphite::Pattern pattern;
 
@@ -137,7 +140,7 @@ appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const St
             String aggregate_function_name;
             Array params_row;
             getAggregateFunctionNameAndParametersArray(
-                aggregate_function_name_with_params, aggregate_function_name, params_row, "GraphiteMergeTree storage initialization");
+                aggregate_function_name_with_params, aggregate_function_name, params_row, "GraphiteMergeTree storage initialization", context);
 
             /// TODO Not only Float64
             AggregateFunctionProperties properties;
@@ -181,7 +184,7 @@ appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const St
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
         std::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
 
-    patterns.emplace_back(pattern);
+    out_patterns.emplace_back(pattern);
 }
 
 static void setGraphitePatternsFromConfig(ContextPtr context, const String & config_element, Graphite::Params & params)
@@ -204,7 +207,7 @@ static void setGraphitePatternsFromConfig(ContextPtr context, const String & con
     {
         if (startsWith(key, "pattern"))
         {
-            appendGraphitePattern(config, config_element + "." + key, params.patterns);
+            appendGraphitePattern(config, config_element + "." + key, params.patterns, context);
         }
         else if (key == "default")
         {
@@ -219,7 +222,7 @@ static void setGraphitePatternsFromConfig(ContextPtr context, const String & con
     }
 
     if (config.has(config_element + ".default"))
-        appendGraphitePattern(config, config_element + "." + ".default", params.patterns);
+        appendGraphitePattern(config, config_element + "." + ".default", params.patterns, context);
 }
 
 
@@ -257,7 +260,7 @@ If you use the Replicated version of engines, see https://clickhouse.tech/docs/e
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
-    /** [Replicated][|Summing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
+    /** [Replicated][|Summing|VersionedCollapsing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
         * The argument for the engine should be:
         *  - (for Replicated) The path to the table in ZooKeeper
         *  - (for Replicated) Replica name in ZooKeeper
@@ -290,7 +293,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     bool is_extended_storage_def = args.storage_def->partition_by || args.storage_def->primary_key || args.storage_def->order_by
         || args.storage_def->sample_by || (args.query.columns_list->indices && !args.query.columns_list->indices->children.empty())
-        || args.storage_def->settings;
+        || (args.query.columns_list->projections && !args.query.columns_list->projections->children.empty()) || args.storage_def->settings;
 
     String name_part = args.engine_name.substr(0, args.engine_name.size() - strlen("MergeTree"));
 
@@ -625,7 +628,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     String date_column_name;
 
     StorageInMemoryMetadata metadata;
-    metadata.columns = args.columns;
+    metadata.setColumns(args.columns);
+    metadata.setComment(args.comment);
 
     std::unique_ptr<MergeTreeSettings> storage_settings;
     if (replicated)
@@ -687,6 +691,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.getContext()));
+
+        if (args.query.columns_list && args.query.columns_list->projections)
+            for (auto & projection_ast : args.query.columns_list->projections->children)
+            {
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, args.columns, args.getContext());
+                metadata.projections.add(std::move(projection));
+            }
 
         if (args.query.columns_list && args.query.columns_list->constraints)
             for (auto & constraint : args.query.columns_list->constraints->children)
@@ -802,6 +813,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .supports_skipping_indices = true,
+        .supports_projections = true,
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,

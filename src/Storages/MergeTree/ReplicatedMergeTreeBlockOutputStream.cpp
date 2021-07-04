@@ -41,7 +41,7 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t max_parts_per_block_,
     bool quorum_parallel_,
     bool deduplicate_,
-    bool optimize_on_insert_,
+    ContextPtr context_,
     bool is_attach_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -52,7 +52,7 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
-    , optimize_on_insert(optimize_on_insert_)
+    , context(context_)
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
@@ -136,7 +136,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     if (quorum)
         checkQuorumPrecondition(zookeeper);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     for (auto & current_block : part_blocks)
     {
@@ -144,7 +144,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
@@ -262,8 +262,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             {
                 log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
 
-                /// We don't need to involve ZooKeeper to obtain the checksums as by the time we get
-                /// the MutableDataPartPtr here, we already have the data thus being able to
+                /// We don't need to involve ZooKeeper to obtain checksums as by the time we get
+                /// MutableDataPartPtr here, we already have the data thus being able to
                 /// calculate the checksums.
                 log_entry.part_checksum = part->checksums.getTotalChecksumHex();
             }
@@ -384,6 +384,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
         MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
+
         try
         {
             renamed = storage.renameTempPartAndAdd(part, nullptr, &transaction);
@@ -394,6 +395,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 && e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
                 throw;
         }
+
         if (!renamed)
         {
             if (is_already_existing_part)

@@ -29,6 +29,11 @@ void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
 
 void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    /// NOTE: due to trickery of filling cte_name (in interpreters) it is hard
+    /// to print it w/o newline (for !oneline case), since if nl_or_ws
+    /// prepended here, then formatting will be incorrect with alias:
+    ///
+    ///   (select 1 in ((select 1) as sub))
     if (!cte_name.empty())
     {
         settings.ostr << (settings.hilite ? hilite_identifier : "");
@@ -40,7 +45,7 @@ void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, Format
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
     std::string nl_or_nothing = settings.one_line ? "" : "\n";
 
-    settings.ostr << nl_or_nothing << indent_str << "(" << nl_or_nothing;
+    settings.ostr << "(" << nl_or_nothing;
     FormatStateStacked frame_nested = frame;
     frame_nested.need_parens = false;
     ++frame_nested.indent;
