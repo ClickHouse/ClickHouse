@@ -533,6 +533,10 @@ void AsynchronousMetrics::update()
                 }
                 else if (name == "MemFree:")
                 {
+                    /// We cannot simply name this metric "Free", because it confuses users.
+                    /// See https://www.linuxatemyram.com/
+                    /// For convenience we also provide OSMemoryFreePlusCached, that should be somewhat similar to OSMemoryAvailable.
+
                     free_plus_cached_bytes += bytes;
                     new_values["OSMemoryFreeWithoutCached"] = bytes;
                 }
