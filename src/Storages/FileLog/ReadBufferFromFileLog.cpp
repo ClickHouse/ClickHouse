@@ -32,8 +32,6 @@ void ReadBufferFromFileLog::open()
 {
     Poco::File file(path);
 
-    bool path_is_directory = false;
-
     if (file.isFile())
     {
         file_status[path].reader = std::ifstream(path);
@@ -56,8 +54,7 @@ void ReadBufferFromFileLog::open()
 
     if (path_is_directory)
     {
-        FileLogDirectoryWatcher dw(path);
-        select_task = context->getMessageBrokerSchedulePool().createTask("watchTask", [this, &dw] { watchFunc(dw); });
+        select_task = context->getMessageBrokerSchedulePool().createTask("watchTask", [this] { watchFunc(); });
         select_task->activateAndSchedule();
     }
 
@@ -75,7 +72,9 @@ void ReadBufferFromFileLog::cleanUnprocessed()
 void ReadBufferFromFileLog::close()
 {
     wait_task->deactivate();
-    select_task->deactivate();
+
+    if (path_is_directory)
+        select_task->deactivate();
 
     for (auto & status : file_status)
         status.second.reader.close();
@@ -90,6 +89,8 @@ bool ReadBufferFromFileLog::poll()
         return true;
     }
 
+    buffer_status = BufferStatus::NO_RECORD_RETURNED;
+
     auto new_records = pollBatch(batch_size);
     if (new_records.empty())
     {
@@ -100,7 +101,10 @@ bool ReadBufferFromFileLog::poll()
     {
         records = std::move(new_records);
         current = records.begin();
+
         LOG_TRACE(log, "Polled batch of {} records. ", records.size());
+
+        buffer_status = BufferStatus::NOT_STALLED;
         allowed = true;
         return true;
     }
@@ -180,8 +184,9 @@ void ReadBufferFromFileLog::waitFunc()
     time_out = true;
 }
 
-void ReadBufferFromFileLog::watchFunc(FileLogDirectoryWatcher & dw)
+void ReadBufferFromFileLog::watchFunc()
 {
+    FileLogDirectoryWatcher dw(path);
     while (true)
     {
         sleepForNanoseconds(poll_timeout);
@@ -197,6 +202,8 @@ void ReadBufferFromFileLog::watchFunc(FileLogDirectoryWatcher & dw)
         {
             switch (event.type)
             {
+                LOG_TRACE(log, "New event {} watched.", event.callback);
+
                 case Poco::DirectoryWatcher::DW_ITEM_ADDED:
                     file_status[event.path].reader = std::ifstream(event.path);
                     break;

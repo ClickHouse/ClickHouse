@@ -83,8 +83,7 @@ Pipe StorageFileLog::read(
     auto modified_context = Context::createCopy(local_context);
 
     return Pipe(std::make_shared<SourceFromInputStream>(
-        std::make_shared<FileLogBlockInputStream>(*this, metadata_snapshot, modified_context, column_names, log, 1)));
-
+        std::make_shared<FileLogBlockInputStream>(*this, metadata_snapshot, modified_context, column_names, 1)));
 }
 
 void StorageFileLog::startup()
@@ -188,7 +187,12 @@ void StorageFileLog::threadFunc()
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                streamToViews();
+                auto stream_is_stalled = streamToViews();
+                if (stream_is_stalled)
+                {
+                    LOG_TRACE(log, "Stream stalled. Reschedule.");
+                    break;
+                }
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
@@ -233,7 +237,7 @@ bool StorageFileLog::streamToViews()
     auto block_io = interpreter.execute();
 
     auto stream = std::make_shared<FileLogBlockInputStream>(
-        *this, metadata_snapshot, new_context, block_io.out->getHeader().getNames(), log, block_size);
+        *this, metadata_snapshot, new_context, block_io.out->getHeader().getNames(), block_size);
 
     StreamLocalLimits limits;
 
@@ -247,11 +251,15 @@ bool StorageFileLog::streamToViews()
     copyData(
         *stream, *block_io.out, [&rows](const Block & block) { rows += block.rows(); }, &stub);
 
+    bool stream_is_stalled = false;
+
+    stream_is_stalled = stream->as<FileLogBlockInputStream>()->isStalled();
+
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
         formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
 
-    return true;
+    return stream_is_stalled;
 }
 
 void registerStorageFileLog(StorageFactory & factory)
