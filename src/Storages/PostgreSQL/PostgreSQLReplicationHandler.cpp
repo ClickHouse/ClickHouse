@@ -20,6 +20,7 @@ static const auto BACKOFF_TRESHOLD_MS = 10000;
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
@@ -434,25 +435,75 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
 
 /// Used by MaterializedPostgreSQL database engine.
-NameSet PostgreSQLReplicationHandler::fetchRequiredTables(pqxx::connection & connection_)
+NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection & connection_)
 {
-    pqxx::work tx(connection_);
-    bool publication_exists = isPublicationExist(tx);
+    pqxx::work tx(connection_.getRef());
+    bool publication_exists_before_startup = isPublicationExist(tx);
     NameSet result_tables;
 
-    if (tables_list.empty() && !publication_exists)
+    Strings expected_tables;
+    if (!tables_list.empty())
     {
-        /// Fetch all tables list from database. Publication does not exist yet, which means
-        /// that no replication took place. Publication will be created in
-        /// startSynchronization method.
-        result_tables = fetchPostgreSQLTablesList(tx);
+         splitInto<','>(expected_tables, tables_list);
+         if (expected_tables.empty())
+             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse tables list: {}", tables_list);
+         for (auto & table_name : expected_tables)
+             boost::trim(table_name);
+    }
+
+    if (publication_exists_before_startup)
+    {
+        if (tables_list.empty())
+        {
+            /// There is no tables list, but publication already exists, then the expected behaviour
+            /// is to replicate the whole database. But it could be a server restart, so we can't drop it.
+            LOG_WARNING(log,
+                        "Publication {} already exists and tables list is empty. Assuming publication is correct",
+                        publication_name);
+
+            result_tables = fetchPostgreSQLTablesList(tx);
+        }
+        /// Check tables list from publication is the same as expected tables list.
+        /// If not - drop publication and return expected tables list.
+        else
+        {
+            result_tables = fetchTablesFromPublication(tx);
+            NameSet diff;
+            std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(),
+                                        result_tables.begin(), result_tables.end(),
+                                        std::inserter(diff, diff.begin()));
+            if (!diff.empty())
+            {
+                String diff_tables;
+                for (const auto & table_name : diff)
+                {
+                    if (!diff_tables.empty())
+                        diff_tables += ", ";
+                    diff_tables += table_name;
+                }
+
+                LOG_WARNING(log,
+                            "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}",
+                            publication_name, diff_tables);
+
+                connection->execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+            }
+        }
     }
     else
     {
-        if (!publication_exists)
-            createPublicationIfNeeded(tx, /* create_without_check = */ true);
-
-        result_tables = fetchTablesFromPublication(tx);
+        if (!tables_list.empty())
+        {
+            tx.commit();
+            return NameSet(expected_tables.begin(), expected_tables.end());
+        }
+        else
+        {
+            /// Fetch all tables list from database. Publication does not exist yet, which means
+            /// that no replication took place. Publication will be created in
+            /// startSynchronization method.
+            result_tables = fetchPostgreSQLTablesList(tx);
+        }
     }
 
     tx.commit();

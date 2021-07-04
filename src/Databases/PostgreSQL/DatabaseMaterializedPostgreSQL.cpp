@@ -29,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -63,7 +64,19 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             settings->materialized_postgresql_tables_list.value);
 
     postgres::Connection connection(connection_info);
-    std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection.getRef());
+    NameSet tables_to_replicate;
+    try
+    {
+        tables_to_replicate = replication_handler->fetchRequiredTables(connection);
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Unable to load replicated tables list");
+        throw;
+    }
+
+    if (tables_to_replicate.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty list of tables to replicate");
 
     for (const auto & table_name : tables_to_replicate)
     {
@@ -156,6 +169,7 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
 void DatabaseMaterializedPostgreSQL::shutdown()
 {
     stopReplication();
+    DatabaseAtomic::shutdown();
 }
 
 
