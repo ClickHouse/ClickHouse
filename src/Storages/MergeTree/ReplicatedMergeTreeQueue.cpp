@@ -64,6 +64,24 @@ bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & 
     return !virtual_part_name.empty() && virtual_part_name != data_part->name;
 }
 
+bool ReplicatedMergeTreeQueue::checkPartInQueueAndGetSourceParts(const String & part_name, Strings & source_parts) const
+{
+    std::lock_guard lock(state_mutex);
+
+    bool found = false;
+    for (const auto & entry : queue)
+    {
+        if (entry->new_part_name == part_name && entry->source_parts.size() > source_parts.size())
+        {
+            source_parts.clear();
+            source_parts.insert(source_parts.end(), entry->source_parts.begin(), entry->source_parts.end());
+            found = true;
+        }
+    }
+
+    return found;
+}
+
 
 bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 {
@@ -409,62 +427,6 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
 
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
 }
-
-
-bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name)
-{
-    LogEntryPtr found;
-    size_t queue_size = 0;
-
-    std::optional<time_t> min_unprocessed_insert_time_changed;
-    std::optional<time_t> max_processed_insert_time_changed;
-
-    {
-        std::unique_lock lock(state_mutex);
-
-        bool removed = virtual_parts.remove(part_name);
-
-        for (Queue::iterator it = queue.begin(); it != queue.end();)
-        {
-            if ((*it)->new_part_name == part_name)
-            {
-                found = *it;
-                if (removed)
-                {
-                    /// Preserve invariant `virtual_parts` = `current_parts` + `queue`.
-                    /// We remove new_part from virtual parts and add all source parts
-                    /// which present in current_parts.
-                    for (const auto & source_part : found->source_parts)
-                    {
-                        auto part_in_current_parts = current_parts.getContainingPart(source_part);
-                        if (part_in_current_parts == source_part)
-                            virtual_parts.add(source_part, nullptr, log);
-                    }
-                }
-
-                updateStateOnQueueEntryRemoval(
-                    found, /* is_successful = */ false,
-                    min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
-                queue.erase(it++);
-                queue_size = queue.size();
-                break;
-            }
-            else
-                ++it;
-        }
-    }
-
-    if (!found)
-        return false;
-
-    notifySubscribers(queue_size);
-
-    zookeeper->tryRemove(fs::path(replica_path) / "queue" / found->znode_name);
-    updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
-
-    return true;
-}
-
 
 bool ReplicatedMergeTreeQueue::removeFailedQuorumPart(const MergeTreePartInfo & part_info)
 {
