@@ -38,6 +38,6 @@ null
 0
 1
 --MANY ROWS--
-0   ["Vasily", "Kostya"]
-1   ["Tihon", "Ernest"]
-2   ["Katya", "Anatoliy"]
+0	["Vasily", "Kostya"]
+1	["Tihon", "Ernest"]
+2	["Katya", "Anatoliy"]
