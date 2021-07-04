@@ -18,7 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -26,9 +26,12 @@ namespace
     [[noreturn]] void throwNoTablesMatchRegexp(const String & source_database_regexp, const String & source_table_regexp)
     {
         throw Exception(
-            "Error while executing table function merge. Neither no one database matches regular expression " + source_database_regexp
-                + " nor in database matches " + source_database_regexp + " no one table matches regular expression: " + source_table_regexp,
-            ErrorCodes::UNKNOWN_TABLE);
+            ErrorCodes::BAD_ARGUMENTS,
+            "Error while executing table function merge. Either there is no database, which matches regular expression `{}`, or there are "
+            "no tables in database matches `{}`, which fit tables expression: {}",
+            source_database_regexp,
+            source_database_regexp,
+            source_table_regexp);
     }
 }
 
