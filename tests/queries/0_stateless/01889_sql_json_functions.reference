@@ -37,3 +37,7 @@ null
 1
 0
 1
+--MANY ROWS--
+["Vasily", "Kostya"]
+["Katya", "Anatoliy"]
+["Tihon", "Ernest"]
