@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Functions/JSONPath/ASTs/ASTJSONPathMemberAccess.h>
-#include <Functions/JSONPath/Generators/IVisitor.h>
-#include <Functions/JSONPath/Generators/VisitorStatus.h>
+#include <Functions/JSONPath/Generator/IVisitor.h>
+#include <Functions/JSONPath/Generator/VisitorStatus.h>
 
 namespace DB
 {
@@ -25,19 +25,17 @@ public:
 
     VisitorStatus visit(typename JSONParser::Element & element) override
     {
+        this->setExhausted(true);
         if (!element.isObject())
         {
-            this->setExhausted(true);
             return VisitorStatus::Error;
         }
         typename JSONParser::Element result;
         if (!element.getObject().find(std::string_view(member_access_ptr->member_name), result))
         {
-            this->setExhausted(true);
             return VisitorStatus::Error;
         }
         apply(element);
-        this->setExhausted(true);
         return VisitorStatus::Ok;
     }
 

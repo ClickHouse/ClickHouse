@@ -21,6 +21,7 @@ SELECT JSON_QUERY('$.hello', '{"hello":["world","world2"]}');
 SELECT JSON_QUERY('$.hello', '{"hello":{"world":"!"}}');
 SELECT JSON_QUERY('$.hello', '{hello:{"world":"!"}}}'); -- invalid json => default value (empty string)
 SELECT JSON_QUERY('$.hello', '');
+SELECT JSON_QUERY('$.array[*][0 to 2, 4]', '{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}');
 
 SELECT '--JSON_EXISTS--';
 SELECT JSON_EXISTS('$', '{"hello":1}');
