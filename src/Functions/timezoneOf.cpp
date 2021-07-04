@@ -28,7 +28,7 @@ class FunctionTimezoneOf : public IFunction
 public:
     static constexpr auto name = "timezoneOf";
     String getName() const override { return name; }
-    static FunctionPtr create(ContextConstPtr) { return std::make_unique<FunctionTimezoneOf>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_unique<FunctionTimezoneOf>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
 

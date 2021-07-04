@@ -29,7 +29,7 @@
 #include <common/logger_useful.h>
 #include <random>
 #include <pcg_random.hpp>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 namespace fs = std::filesystem;
 
@@ -1137,7 +1137,9 @@ void DDLWorker::runMainThread()
             scheduleTasks(reinitialized);
 
             LOG_DEBUG(log, "Waiting for queue updates");
-            queue_updated_event->wait();
+            /// FIXME It may hang for unknown reason. Timeout is just a hotfix.
+            constexpr int queue_wait_timeout_ms = 10000;
+            queue_updated_event->tryWait(queue_wait_timeout_ms);
         }
         catch (const Coordination::Exception & e)
         {

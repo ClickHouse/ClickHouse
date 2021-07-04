@@ -37,13 +37,13 @@ public:
                 return accurate::equalsOp(l, r);
 
             /// TODO This is wrong (does not respect scale).
-            if constexpr (isDecimalField<T>() && isDecimalField<U>())
+            if constexpr (is_decimal_field<T> && is_decimal_field<U>)
                 return l == r;
 
-            if constexpr (isDecimalField<T>() && std::is_arithmetic_v<U>)
+            if constexpr (is_decimal_field<T> && std::is_arithmetic_v<U>)
                 return l == DecimalField<Decimal256>(Decimal256(r), 0);
 
-            if constexpr (std::is_arithmetic_v<T> && isDecimalField<U>())
+            if constexpr (std::is_arithmetic_v<T> && is_decimal_field<U>)
                 return DecimalField<Decimal256>(Decimal256(l), 0) == r;
 
             if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
@@ -86,13 +86,13 @@ public:
                 return accurate::lessOp(l, r);
 
             /// TODO This is wrong (does not respect scale).
-            if constexpr (isDecimalField<T>() && isDecimalField<U>())
+            if constexpr (is_decimal_field<T> && is_decimal_field<U>)
                 return l < r;
 
-            if constexpr (isDecimalField<T>() && std::is_arithmetic_v<U>)
+            if constexpr (is_decimal_field<T> && std::is_arithmetic_v<U>)
                 return l < DecimalField<Decimal256>(Decimal256(r), 0);
 
-            if constexpr (std::is_arithmetic_v<T> && isDecimalField<U>())
+            if constexpr (std::is_arithmetic_v<T> && is_decimal_field<U>)
                 return DecimalField<Decimal256>(Decimal256(l), 0) < r;
 
             if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)

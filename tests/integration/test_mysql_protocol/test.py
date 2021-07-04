@@ -16,8 +16,8 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=["configs/log_conf.xml", "configs/ssl_conf.xml", "configs/mysql.xml",
-                                                  "configs/dhparam.pem", "configs/server.crt", "configs/server.key"],
+node = cluster.add_instance('node', main_configs=["configs/ssl_conf.xml", "configs/mysql.xml", "configs/dhparam.pem",
+                                                  "configs/server.crt", "configs/server.key"],
                             user_configs=["configs/users.xml"], env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'}, with_mysql_client=True)
 
 server_port = 9001
@@ -200,6 +200,14 @@ def test_mysql_replacement_query(started_cluster):
     assert stdout.decode() == 'DATABASE()\ndefault\n'
 
 
+def test_mysql_select_user(started_cluster):
+    code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "select user();"
+    '''.format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
+    assert code == 0
+    assert stdout.decode() == 'currentUser()\ndefault\n'
+
 def test_mysql_explain(started_cluster):
     # EXPLAIN SELECT 1
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run('''
@@ -310,6 +318,7 @@ def test_mysql_set_variables(started_cluster):
         "
     '''.format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
     assert code == 0
+
 
 
 def test_python_client(started_cluster):

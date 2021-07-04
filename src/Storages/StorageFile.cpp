@@ -63,7 +63,7 @@ namespace
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
-std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
+std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match, size_t & total_bytes_to_read)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -91,6 +91,7 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
+                total_bytes_to_read += fs::file_size(it->path());
                 result.push_back(it->path().string());
             }
         }
@@ -99,7 +100,7 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
             if (re2::RE2::FullMatch(file_name, matcher))
             {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
-                Strings result_part = listFilesWithRegexpMatching(fs::path(full_path) / "", suffix_with_globs.substr(next_slash));
+                Strings result_part = listFilesWithRegexpMatching(fs::path(full_path) / "", suffix_with_globs.substr(next_slash), total_bytes_to_read);
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
@@ -127,7 +128,7 @@ void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_di
 }
 }
 
-Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextPtr context)
+Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read)
 {
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_table_path(table_path);
@@ -137,9 +138,14 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     Strings paths;
     const String path = fs::weakly_canonical(fs_table_path);
     if (path.find_first_of("*?{") == std::string::npos)
+    {
+        std::error_code error;
+        if (fs::exists(path))
+            total_bytes_to_read += fs::file_size(path, error);
         paths.push_back(path);
+    }
     else
-        paths = listFilesWithRegexpMatching("/", path);
+        paths = listFilesWithRegexpMatching("/", path, total_bytes_to_read);
 
     for (const auto & cur_path : paths)
         checkCreationIsAllowed(context, user_files_absolute_path, cur_path);
@@ -173,7 +179,7 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     : StorageFile(args)
 {
     is_db_table = false;
-    paths = getPathsList(table_path_, user_files_path, args.getContext());
+    paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
 
     if (args.format_name == "Distributed")
     {
@@ -361,6 +367,13 @@ public:
                     method = chooseCompressionMethod(current_path, storage->compression_method);
                 }
 
+                /// For clickhouse-local add progress callback to display progress bar.
+                if (context->getApplicationType() == Context::ApplicationType::LOCAL)
+                {
+                    auto & in = static_cast<ReadBufferFromFileDescriptor &>(*nested_buffer);
+                    in.setProgressCallback(context);
+                }
+
                 read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
 
                 auto get_block_for_format = [&]() -> Block
@@ -417,6 +430,7 @@ public:
 
         return {};
     }
+
 
 private:
     std::shared_ptr<StorageFile> storage;
@@ -480,6 +494,11 @@ Pipe StorageFile::read(
     Pipes pipes;
     pipes.reserve(num_streams);
 
+    /// Set total number of bytes to process. For progress bar.
+    auto progress_callback = context->getFileProgressCallback();
+    if (context->getApplicationType() == Context::ApplicationType::LOCAL && progress_callback)
+        progress_callback(FileProgress(0, total_bytes_to_read));
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         const auto get_columns_for_format = [&]() -> ColumnsDescription
@@ -519,7 +538,7 @@ public:
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (storage.use_table_fd)
         {
-            /** NOTE: Using real file binded to FD may be misleading:
+            /** NOTE: Using real file bounded to FD may be misleading:
               * SELECT *; INSERT insert_data; SELECT *; last SELECT returns initil_fd_data + insert_data
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
@@ -623,7 +642,7 @@ Strings StorageFile::getDataPaths() const
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!is_db_table)
-        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " bounded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     if (paths.size() != 1)
         throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);

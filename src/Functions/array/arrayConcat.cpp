@@ -7,7 +7,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -26,7 +26,7 @@ class FunctionArrayConcat : public IFunction
 {
 public:
     static constexpr auto name = "arrayConcat";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionArrayConcat>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayConcat>(); }
 
     String getName() const override { return name; }
 
@@ -38,7 +38,7 @@ public:
         if (arguments.empty())
             throw Exception{"Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        for (auto i : ext::range(0, arguments.size()))
+        for (auto i : collections::range(0, arguments.size()))
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
             if (!array_type)

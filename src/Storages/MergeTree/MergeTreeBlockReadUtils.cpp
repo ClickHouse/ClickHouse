@@ -272,16 +272,16 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     if (prewhere_info)
     {
         if (prewhere_info->alias_actions)
-            pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
+            pre_column_names = prewhere_info->alias_actions->getRequiredColumnsNames();
         else
         {
-            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
 
             if (prewhere_info->row_level_filter)
             {
                 NameSet names(pre_column_names.begin(), pre_column_names.end());
 
-                for (auto & name : prewhere_info->row_level_filter->getRequiredColumns())
+                for (auto & name : prewhere_info->row_level_filter->getRequiredColumnsNames())
                 {
                     if (names.count(name) == 0)
                         pre_column_names.push_back(name);

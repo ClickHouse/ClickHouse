@@ -116,7 +116,7 @@ Type: `UInt8`.
 
 -   `.*` — Matches any number of events. You do not need conditional arguments to match this element of the pattern.
 
--   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=` operators.
+-   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=`, `==` operators.
 
 **Examples**
 
@@ -509,7 +509,7 @@ Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summ
 
 ## sequenceNextNode {#sequenceNextNode}
 
-Returns a value of next event that matched an event chain.
+Returns a value of the next event that matched an event chain.
 
 _Experimental function, `SET allow_experimental_funnel_functions = 1` to enable it._
 
@@ -520,33 +520,36 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 ```
 
 **Parameters**
--   `direction` - Used to navigate to directions.
-    - forward : Moving forward
-    - backward: Moving backward
 
--   `base` - Used to set the base point.
-    - head : Set the base point to the first event
-    - tail : Set the base point to the last event
-    - first_match : Set the base point to the first matched event1
-    - last_match : Set the base point to the last matched event1
+-   `direction` — Used to navigate to directions.
+    - forward — Moving forward.
+    - backward — Moving backward.
+
+-   `base` — Used to set the base point.
+    - head — Set the base point to the first event.
+    - tail — Set the base point to the last event.
+    - first_match — Set the base point to the first matched `event1`.
+    - last_match — Set the base point to the last matched `event1`.
     
 **Arguments**
--   `timestamp` — Name of the column containing the timestamp. Data types supported: `Date`, `DateTime` and other unsigned integer types.
--   `event_column` — Name of the column containing the value of the next event to be returned. Data types supported: `String` and `Nullable(String)`
+
+-   `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types.
+-   `event_column` — Name of the column containing the value of the next event to be returned. Data types supported: [String](../../sql-reference/data-types/string.md) and [Nullable(String)](../../sql-reference/data-types/nullable.md).
 -   `base_condition` — Condition that the base point must fulfill.
--   `cond` — Conditions describing the chain of events. `UInt8`
+-   `event1`, `event2`, ... — Conditions describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
 
-**Returned value**
--  `event_column[next_index]` - if the pattern is matched and next value exists.
--  `NULL` - if the pattern isn’t matched or next value doesn't exist.
+**Returned values**
 
-Type: `Nullable(String)`.
+-  `event_column[next_index]` — If the pattern is matched and next value exists.
+-  `NULL` - If the pattern isn’t matched or next value doesn't exist.
+
+Type: [Nullable(String)](../../sql-reference/data-types/nullable.md).
 
 **Example**
 
-It can be used when events are A->B->C->E->F and you want to know the event following B->C, which is E.
+It can be used when events are A->B->C->D->E and you want to know the event following B->C, which is D.
 
-The query statement searching the event following A->B :
+The query statement searching the event following A->B:
 
 ``` sql
 CREATE TABLE test_flow (
@@ -557,7 +560,7 @@ ENGINE = MergeTree()
 PARTITION BY toYYYYMMDD(dt) 
 ORDER BY id;
 
-INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'E') (5, 1, 'F');
+INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'D') (5, 1, 'E');
 
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'A', page = 'A', page = 'B') as next_flow FROM test_flow GROUP BY id;
 ```
@@ -572,7 +575,7 @@ Result:
 
 **Behavior for `forward` and `head`**
 
-```SQL
+``` sql
 ALTER TABLE test_flow DELETE WHERE 1 = 1 settings mutations_sync = 1;
 
 INSERT INTO test_flow VALUES (1, 1, 'Home') (2, 1, 'Gift') (3, 1, 'Exit');
@@ -580,7 +583,7 @@ INSERT INTO test_flow VALUES (1, 2, 'Home') (2, 2, 'Home') (3, 2, 'Gift') (4, 2,
 INSERT INTO test_flow VALUES (1, 3, 'Gift') (2, 3, 'Home') (3, 3, 'Gift') (4, 3, 'Basket');
 ```
 
-```SQL
+``` sql
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = 'Home', page = 'Gift') FROM test_flow GROUP BY id;
  
                   dt   id   page
@@ -601,7 +604,7 @@ SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = '
 
 **Behavior for `backward` and `tail`**
 
-```SQL
+``` sql
 SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page = 'Basket', page = 'Gift') FROM test_flow GROUP BY id;
 
                  dt   id   page
@@ -623,7 +626,7 @@ SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page 
 
 **Behavior for `forward` and `first_match`**
 
-```SQL
+``` sql
 SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
 
                  dt   id   page
@@ -637,12 +640,12 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:04    2   Basket  The result
                                      
 1970-01-01 09:00:01    3   Gift // Base point
-1970-01-01 09:00:02    3   Home // Thre result
+1970-01-01 09:00:02    3   Home // The result
 1970-01-01 09:00:03    3   Gift   
 1970-01-01 09:00:04    3   Basket    
 ```
 
-```SQL
+``` sql
 SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
 
                  dt   id   page
@@ -664,7 +667,7 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', p
 
 **Behavior for `backward` and `last_match`**
 
-```SQL
+``` sql
 SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
 
                  dt   id   page
@@ -683,7 +686,7 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:04    3   Basket    
 ```
 
-```SQL
+``` sql
 SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
 
                  dt   id   page
@@ -705,7 +708,7 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', p
 
 **Behavior for `base_condition`**
 
-```SQL
+``` sql
 CREATE TABLE test_flow_basecond
 (
     `dt` DateTime,
@@ -715,47 +718,47 @@ CREATE TABLE test_flow_basecond
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(dt)
-ORDER BY id
+ORDER BY id;
 
 INSERT INTO test_flow_basecond VALUES (1, 1, 'A', 'ref4') (2, 1, 'A', 'ref3') (3, 1, 'B', 'ref2') (4, 1, 'B', 'ref1');
 ```
 
-```SQL
+``` sql
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, ref = 'ref1', page = 'A') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref 
- 1970-01-01 09:00:01    1   A      ref4 // The head can't be base point becasue the ref column of the head unmatched with 'ref1'.
+ 1970-01-01 09:00:01    1   A      ref4 // The head can not be base point because the ref column of the head unmatched with 'ref1'.
  1970-01-01 09:00:02    1   A      ref3 
  1970-01-01 09:00:03    1   B      ref2 
  1970-01-01 09:00:04    1   B      ref1 
  ```
 
-```SQL
+``` sql
 SELECT id, sequenceNextNode('backward', 'tail')(dt, page, ref = 'ref4', page = 'B') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref 
  1970-01-01 09:00:01    1   A      ref4
  1970-01-01 09:00:02    1   A      ref3 
  1970-01-01 09:00:03    1   B      ref2 
- 1970-01-01 09:00:04    1   B      ref1 // The tail can't be base point becasue the ref column of the tail unmatched with 'ref4'.
+ 1970-01-01 09:00:04    1   B      ref1 // The tail can not be base point because the ref column of the tail unmatched with 'ref4'.
 ```
 
-```SQL
+``` sql
 SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, ref = 'ref3', page = 'A') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref 
- 1970-01-01 09:00:01    1   A      ref4 // This row can't be base point becasue the ref column unmatched with 'ref3'.
+ 1970-01-01 09:00:01    1   A      ref4 // This row can not be base point because the ref column unmatched with 'ref3'.
  1970-01-01 09:00:02    1   A      ref3 // Base point
  1970-01-01 09:00:03    1   B      ref2 // The result
  1970-01-01 09:00:04    1   B      ref1 
 ```
 
-```SQL
+``` sql
 SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, ref = 'ref2', page = 'B') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref 
  1970-01-01 09:00:01    1   A      ref4
  1970-01-01 09:00:02    1   A      ref3 // The result
  1970-01-01 09:00:03    1   B      ref2 // Base point
- 1970-01-01 09:00:04    1   B      ref1 // This row can't be base point becasue the ref column unmatched with 'ref2'. 
+ 1970-01-01 09:00:04    1   B      ref1 // This row can not be base point because the ref column unmatched with 'ref2'. 
 ```

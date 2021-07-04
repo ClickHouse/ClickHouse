@@ -705,6 +705,8 @@
                     "yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed.
             If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
             If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked.
+            Host should be specified using the host xml tag:
+                    <host>yandex.ru</host>
         -->
 
         <!-- Regular expression can be specified. RE2 engine is used for regexps.
