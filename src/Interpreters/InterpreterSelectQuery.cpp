@@ -506,7 +506,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         result_header = getSampleBlockImpl();
     };
 
-    analyze(settings.optimize_move_to_prewhere);
+    analyze(shouldMoveToPrewhere());
 
     bool need_analyze_again = false;
     if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
@@ -1532,16 +1532,22 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     }
 }
 
-void InterpreterSelectQuery::addPrewhereAliasActions()
+bool InterpreterSelectQuery::shouldMoveToPrewhere()
 {
     const Settings & settings = context->getSettingsRef();
+    const ASTSelectQuery & query = getSelectQuery();
+    return settings.optimize_move_to_prewhere && (!query.final() || settings.optimize_move_to_prewhere_if_final);
+}
+
+void InterpreterSelectQuery::addPrewhereAliasActions()
+{
     auto & expressions = analysis_result;
     if (expressions.filter_info)
     {
         if (!expressions.prewhere_info)
         {
             const bool does_storage_support_prewhere = !input && !input_pipe && storage && storage->supportsPrewhere();
-            if (does_storage_support_prewhere && settings.optimize_move_to_prewhere)
+            if (does_storage_support_prewhere && shouldMoveToPrewhere())
             {
                 /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
                 expressions.prewhere_info = std::make_shared<PrewhereInfo>(

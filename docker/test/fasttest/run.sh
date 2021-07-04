@@ -160,7 +160,6 @@ function clone_submodules
 
         SUBMODULES_TO_UPDATE=(
             contrib/abseil-cpp
-            contrib/antlr4-runtime
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
