@@ -20,13 +20,11 @@ FileLogBlockInputStream::FileLogBlockInputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const std::shared_ptr<Context> & context_,
     const Names & columns,
-    Poco::Logger * log_,
     size_t max_block_size_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
     , column_names(columns)
-    , log(log_)
     , max_block_size(max_block_size_)
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
     , virtual_header(
@@ -122,7 +120,6 @@ Block FileLogBlockInputStream::readImpl()
         if (new_rows)
         {
             total_rows = total_rows + new_rows;
-            LOG_INFO(log, "FileLogBlockInputStream, {} rows data polled from buffer.", new_rows);
         }
 
         if (!buffer->hasMorePolledRecords() && (total_rows >= max_block_size || !checkTimeLimit()))

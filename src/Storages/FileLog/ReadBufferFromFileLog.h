@@ -33,7 +33,14 @@ public:
 
     bool poll();
 
+    bool isStalled() { return buffer_status != BufferStatus::NOT_STALLED; }
+
 private:
+    enum class BufferStatus
+    {
+        NO_RECORD_RETURNED,
+        NOT_STALLED,
+    };
     enum class FileStatus
     {
         BEGIN,
@@ -48,7 +55,11 @@ private:
         std::ifstream reader;
     };
 
+    BufferStatus buffer_status;
+
     const String path;
+
+    bool path_is_directory = false;
 
     Poco::Logger * log;
     const size_t batch_size = 1;
@@ -86,6 +97,6 @@ private:
 
     void waitFunc();
 
-    [[noreturn ]] void watchFunc(FileLogDirectoryWatcher & dw);
+    [[noreturn]] void watchFunc();
 };
 }

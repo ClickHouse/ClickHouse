@@ -20,7 +20,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const std::shared_ptr<Context> & context_,
         const Names & columns,
-        Poco::Logger * log_,
         size_t max_block_size_);
     ~FileLogBlockInputStream() override = default;
 
@@ -31,12 +30,13 @@ public:
     Block readImpl() override;
     void readSuffixImpl() override;
 
+    bool isStalled() { return !buffer || buffer->isStalled(); }
+
 private:
     StorageFileLog & storage;
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
     Names column_names;
-    Poco::Logger * log;
     UInt64 max_block_size;
 
     ReadBufferFromFileLogPtr buffer;
