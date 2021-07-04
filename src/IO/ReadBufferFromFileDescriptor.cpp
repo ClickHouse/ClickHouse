@@ -149,7 +149,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         off_t res = ::lseek(fd, new_pos, SEEK_SET);
         if (-1 == res)
             throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
-                                   ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
         file_offset_of_buffer_end = new_pos;
 
         watch.stop();
@@ -157,6 +157,20 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         return res;
     }
+}
+
+
+void ReadBufferFromFileDescriptor::rewind()
+{
+    ProfileEvents::increment(ProfileEvents::Seek);
+    off_t res = ::lseek(fd, 0, SEEK_SET);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
+            ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+    /// Clearing the buffer with existing data. New data will be read on subsequent call to 'next'.
+    working_buffer.resize(0);
+    pos = working_buffer.begin();
 }
 
 
