@@ -88,28 +88,28 @@ Pipe StorageFileLog::read(
 
 void StorageFileLog::startup()
 {
-        try
-        {
-            createReadBuffer();
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException(log);
-        }
+    try
+    {
+        createReadBuffer();
+    }
+    catch (const Exception &)
+    {
+        tryLogCurrentException(log);
+    }
 
-        task->holder->activateAndSchedule();
+    task->holder->activateAndSchedule();
 }
 
 
 void StorageFileLog::shutdown()
 {
-        task->stream_cancelled = true;
+    task->stream_cancelled = true;
 
-        LOG_TRACE(log, "Waiting for cleanup");
-        task->holder->deactivate();
+    LOG_TRACE(log, "Waiting for cleanup");
+    task->holder->deactivate();
 
-        LOG_TRACE(log, "Closing files");
-        destroyReadBuffer();
+    LOG_TRACE(log, "Closing files");
+    destroyReadBuffer();
 }
 
 size_t StorageFileLog::getMaxBlockSize() const
