@@ -25,7 +25,7 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/ExpressionJIT.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
