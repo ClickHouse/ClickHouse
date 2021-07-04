@@ -5,6 +5,8 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getTableExpressions.h>
+
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
@@ -12,8 +14,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/parseQuery.h>
+
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDictionary.h>
@@ -33,6 +34,23 @@ namespace ErrorCodes
 namespace
 {
 
+template <typename T, typename ... Args>
+std::shared_ptr<T> addASTChildrenTo(IAST & node, ASTPtr & children, Args && ... args)
+{
+    auto new_children = std::make_shared<T>(std::forward<Args>(args)...);
+    children = new_children;
+    node.children.push_back(children);
+    return new_children;
+}
+
+template <typename T>
+std::shared_ptr<T> addASTChildren(IAST & node)
+{
+    auto children = std::make_shared<T>();
+    node.children.push_back(children);
+    return children;
+}
+
 void replaceJoinedTable(const ASTSelectQuery & select_query)
 {
     const ASTTablesInSelectQueryElement * join = select_query.join();
@@ -48,15 +66,30 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     if (table_expr.database_and_table_name)
     {
         const auto & table_id = table_expr.database_and_table_name->as<ASTTableIdentifier &>();
-        String expr = "(select * from " + table_id.name() + ") as " + table_id.shortName();
-
+        String table_name = table_id.name();
+        String table_short_name = table_id.shortName();
         // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
         //        we can't replace aliased tables.
         // FIXME: long table names include database name, which we can't save within alias.
         if (table_id.alias.empty() && table_id.isShort())
         {
-            ParserTableExpression parser;
-            table_expr = parseQuery(parser, expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH)->as<ASTTableExpression &>();
+            /// Build query of form '(SELECT * FROM table_name) AS table_short_name'
+            table_expr = ASTTableExpression();
+
+            auto subquery = addASTChildrenTo<ASTSubquery>(table_expr, table_expr.subquery);
+            subquery->setAlias(table_short_name);
+
+            auto sub_select_with_union = addASTChildren<ASTSelectWithUnionQuery>(*subquery);
+            auto list_of_selects = addASTChildrenTo<ASTExpressionList>(*sub_select_with_union, sub_select_with_union->list_of_selects);
+
+            auto new_select = addASTChildren<ASTSelectQuery>(*list_of_selects);
+            new_select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+            addASTChildren<ASTAsterisk>(*new_select->select());
+            new_select->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+
+            auto tables_elem = addASTChildren<ASTTablesInSelectQueryElement>(*new_select->tables());
+            auto sub_table_expr = addASTChildrenTo<ASTTableExpression>(*tables_elem, tables_elem->table_expression);
+            addASTChildrenTo<ASTTableIdentifier>(*sub_table_expr, sub_table_expr->database_and_table_name, table_name);
         }
     }
 }
