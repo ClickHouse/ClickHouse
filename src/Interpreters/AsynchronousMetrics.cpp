@@ -13,6 +13,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
+#include <IO/ReadHelpers.h>
 #include <Databases/IDatabase.h>
 #include <chrono>
 
@@ -34,6 +35,49 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFile> & out)
+{
+    static constexpr size_t small_buffer_size = 4096;
+
+    /// Ignoring time of check is not time of use cases, as procfs/sysfs files are fairly persistent.
+
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(filename, ec))
+        out.emplace(filename, small_buffer_size);
+}
+
+
+AsynchronousMetrics::AsynchronousMetrics(
+    ContextPtr global_context_,
+    int update_period_seconds,
+    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables_,
+    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_)
+    : WithContext(global_context_)
+    , update_period(update_period_seconds)
+    , servers_to_start_before_tables(servers_to_start_before_tables_)
+    , servers(servers_)
+{
+#if defined(OS_LINUX)
+    openFileIfExists("/proc/meminfo", meminfo);
+    openFileIfExists("/proc/mounts", mounts);
+    openFileIfExists("/proc/loadavg", loadavg);
+    openFileIfExists("/proc/stat", proc_stat);
+    openFileIfExists("/proc/cpuinfo", cpuinfo);
+    openFileIfExists("/proc/schedstat", schedstat);
+    openFileIfExists("/proc/sockstat", sockstat);
+    openFileIfExists("/proc/netstat", netstat);
+    openFileIfExists("/proc/sys/fs/file-nr", file_nr);
+#endif
+}
+
+void AsynchronousMetrics::start()
+{
+    /// Update once right now, to make metrics available just after server start
+    /// (without waiting for asynchronous_metrics_update_period_s).
+    update();
+    thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
+}
 
 AsynchronousMetrics::~AsynchronousMetrics()
 {
@@ -206,7 +250,7 @@ void AsynchronousMetrics::update()
 
     new_values["Uptime"] = getContext()->getUptimeSeconds();
 
-    /// Process memory usage according to OS
+    /// Process process memory usage according to OS
 #if defined(OS_LINUX)
     {
         MemoryStatisticsOS::Data data = memory_stat.get();
@@ -239,19 +283,39 @@ void AsynchronousMetrics::update()
     }
 #endif
 
-    /// Process memory information according to OS
 #if defined(OS_LINUX)
+    if (loadavg)
     {
-        MemoryInfoOS::Data data = memory_info.get();
+        loadavg->rewind();
 
-        new_values["MemoryTotal"] = data.total;
-        new_values["MemoryFreeWithoutCached"] = data.free;
-        new_values["MemoryBuffers"] = data.buffers;
-        new_values["MemoryCached"] = data.cached;
-        new_values["MemoryFreeOrCached"] = data.free_and_cached;
-        new_values["MemorySwapTotal"] = data.swap_total;
-        new_values["MemorySwapFree"] = data.swap_free;
-        new_values["MemorySwapCached"] = data.swap_cached;
+        Float64 loadavg1 = 0;
+        Float64 loadavg5 = 0;
+        Float64 loadavg15 = 0;
+        UInt64 threads_runnable = 0;
+        UInt64 threads_total = 0;
+
+        readText(loadavg1, *loadavg);
+        skipWhitespaceIfAny(*loadavg);
+        readText(loadavg5, *loadavg);
+        skipWhitespaceIfAny(*loadavg);
+        readText(loadavg15, *loadavg);
+        skipWhitespaceIfAny(*loadavg);
+        readText(threads_runnable, *loadavg);
+        assertChar('/', *loadavg);
+        readText(threads_total, *loadavg);
+
+        new_values["LoadAverage1"] = loadavg1;
+        new_values["LoadAverage5"] = loadavg5;
+        new_values["LoadAverage15"] = loadavg15;
+        new_values["OSThreadsRunnable"] = threads_runnable;
+        new_values["OSThreadsTotal"] = threads_total;
+    }
+
+    if (meminfo)
+    {
+        meminfo->rewind();
+
+
     }
 #endif
 
