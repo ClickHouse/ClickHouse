@@ -8,7 +8,7 @@
 
 #include <Poco/File.h>
 #include <Poco/Semaphore.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <mutex>
 #include <list>
@@ -16,9 +16,9 @@
 
 namespace DB
 {
-class StorageFileLog final : public ext::shared_ptr_helper<StorageFileLog>, public IStorage, WithContext
+class StorageFileLog final : public shared_ptr_helper<StorageFileLog>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageFileLog>;
+    friend struct shared_ptr_helper<StorageFileLog>;
 
 public:
     using Files = std::vector<String>;
