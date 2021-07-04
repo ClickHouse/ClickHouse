@@ -15,6 +15,7 @@ import sys
 import time
 import traceback
 import logging
+import subprocess
 import xml.etree.ElementTree as et
 from threading import Thread
 from scipy import stats
@@ -268,9 +269,10 @@ for query_index in queries_to_run:
     # can ensure that the test works properly. Remember the errors we had on
     # each server.
     query_error_on_connection = [None] * len(all_connections);
-    for conn_index, c in enumerate(all_connections):
+    for conn_index, server in enumerate(servers):
         try:
             prewarm_id = f'{query_prefix}.prewarm0'
+            elapsed = 0
 
             try:
                 # During the warmup runs, we will also:
@@ -278,16 +280,30 @@ for query_index in queries_to_run:
                 # * collect profiler traces, which might be helpful for analyzing
                 #   test coverage. We disable profiler for normal runs because
                 #   it makes the results unstable.
-                res = c.execute(q, query_id = prewarm_id,
-                    settings = {'max_execution_time': args.max_query_seconds,
-                        'query_profiler_real_time_period_ns': 10000000})
-            except clickhouse_driver.errors.Error as e:
+
+                proc = subprocess.run([
+                        "clickhouse-client",
+                        "--host", server['host'],
+                        "--port", server['port'],
+                        "--query_id", prewarm_id,
+                        "--query_profiler_real_time_period_ns", "10000000",
+                        "--format", "Null",
+                        "--time"],
+                    input = q,
+                    text = True,
+                    capture_output = True,
+                    check = True,
+                    timeout = args.max_query_seconds)
+
+                elapsed = proc.stderr
+
+            except subprocess.CalledProcessError as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (prewarm_id, *e.args)
                 e.message = prewarm_id + ': ' + e.message
                 raise
 
-            print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
+            print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{elapsed}')
         except KeyboardInterrupt:
             raise
         except:
