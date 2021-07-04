@@ -245,17 +245,17 @@ void AsynchronousMetrics::update()
         MemoryInfoOS::Data data = memory_info.get();
 
         new_values["MemoryTotal"] = data.total;
-        new_values["MemoryFree"] = data.free;
+        new_values["MemoryFreeWithoutCached"] = data.free;
         new_values["MemoryBuffers"] = data.buffers;
         new_values["MemoryCached"] = data.cached;
-        new_values["MemoryFreeAndCached"] = data.free_and_cached;
+        new_values["MemoryFreeOrCached"] = data.free_and_cached;
         new_values["MemorySwapTotal"] = data.swap_total;
         new_values["MemorySwapFree"] = data.swap_free;
         new_values["MemorySwapCached"] = data.swap_cached;
     }
 #endif
 
-    /// Process processor usage according to OS
+    /// Process CPU usage according to OS
 #if defined(OS_LINUX)
     {
         ProcessorStatisticsOS::Data data = proc_stat.get();
@@ -288,8 +288,10 @@ void AsynchronousMetrics::update()
     {
         DiskStatisticsOS::Data data = disk_stat.get();
 
-        new_values["DiskTotal"] = data.total;
-        new_values["DiskUsed"] = data.used;
+        new_values["FilesystemsTotalBytes"] = data.total_bytes;
+        new_values["FilesystemsUsedBytes"] = data.used_bytes;
+        new_values["FilesystemsTotalINodes"] = data.total_inodes;
+        new_values["FilesystemsUsedINodes"] = data.used_inodes;
     }
 #endif
 

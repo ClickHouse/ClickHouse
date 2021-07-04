@@ -28,15 +28,27 @@ namespace
         readStringUntilWhitespace(s, buf);
         skipWhitespaceIfAny(buf);
     }
+
+    std::pair<String, uint64_t> readField(ReadBuffer & meminfo_in)
+    {
+        String key;
+        uint64_t val;
+
+        readStringUntilWhitespaceAndSkipWhitespaceIfAny(key, meminfo_in);
+        readIntTextAndSkipWhitespaceIfAny(val, meminfo_in);
+        skipToNextLineOrEOF(meminfo_in);
+
+        // Delete the read ":" from the end
+        key.pop_back();
+
+        return std::make_pair(key, val);
+    }
 }
 
 static constexpr auto meminfo_filename = "/proc/meminfo";
 
 static constexpr size_t READ_BUFFER_BUF_SIZE = (64 << 10);
 
-MemoryInfoOS::MemoryInfoOS() {}
-
-MemoryInfoOS::~MemoryInfoOS() {}
 
 MemoryInfoOS::Data MemoryInfoOS::get()
 {
@@ -61,21 +73,6 @@ MemoryInfoOS::Data MemoryInfoOS::get()
     data.free_and_cached = data.free + data.cached;
 
     return data;
-}
-
-std::pair<String, uint64_t> MemoryInfoOS::readField(ReadBuffer & meminfo_in)
-{
-    String key;
-    uint64_t val;
-
-    readStringUntilWhitespaceAndSkipWhitespaceIfAny(key, meminfo_in);
-    readIntTextAndSkipWhitespaceIfAny(val, meminfo_in);
-    skipToNextLineOrEOF(meminfo_in);
-
-    // Delete the read ":" from the end
-    key.pop_back();
-
-    return std::make_pair(key, val);
 }
 
 }
