@@ -1,15 +1,13 @@
 #pragma once
 
+#include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Storages/PostgreSQL/ConnectionHolder.h>
 #include <common/logger_useful.h>
 
 
 namespace postgres
 {
-
-String formatConnectionString(String dbname, String host, UInt16 port, String user, String password);
 
 class PoolWithFailover
 {
