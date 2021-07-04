@@ -90,6 +90,7 @@ private:
     std::optional<FormatSettings> format_settings;
 
     int table_fd = -1;
+    int reads = 0;
     String compression_method;
 
     std::string base_path;
