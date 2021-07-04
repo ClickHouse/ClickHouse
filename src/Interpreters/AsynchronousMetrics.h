@@ -84,12 +84,11 @@ private:
     std::optional<ReadBufferFromFile> loadavg;
     std::optional<ReadBufferFromFile> proc_stat;
     std::optional<ReadBufferFromFile> cpuinfo;
-    std::optional<ReadBufferFromFile> schedstat;
-    std::optional<ReadBufferFromFile> sockstat;
-    std::optional<ReadBufferFromFile> netstat;
     std::optional<ReadBufferFromFile> file_nr;
     std::optional<ReadBufferFromFile> uptime;
     std::vector<std::unique_ptr<ReadBufferFromFile>> thermal;
+
+    /// TODO: IO load, Network rx/tx, sockets, EDAC.
 
     struct ProcStatValuesCPU
     {
