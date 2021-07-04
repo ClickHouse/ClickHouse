@@ -38,6 +38,6 @@ null
 0
 1
 --MANY ROWS--
-["Vasily", "Kostya"]
-["Tihon", "Ernest"]
-["Katya", "Anatoliy"]
+0   ["Vasily", "Kostya"]
+1   ["Tihon", "Ernest"]
+2   ["Katya", "Anatoliy"]
