@@ -40,11 +40,11 @@ SELECT JSON_EXISTS('$.a[*].b', '{"a":[{"b":1},{"c":2}]}');
 SELECT JSON_EXISTS('$.a[*].f', '{"a":[{"b":1},{"c":2}]}');
 SELECT JSON_EXISTS('$.a[*][0].h', '{"a":[[{"b":1}, {"g":1}],[{"h":1},{"y":1}]]}');
 
-SELECT '--MANY ROWS--'
+SELECT '--MANY ROWS--';
 DROP TABLE IF EXISTS 01889_sql_json;
 CREATE TABLE 01889_sql_json (json String) ENGINE = MergeTree ORDER BY json;
-INSERT INTO 01889_sql_json(json) VALUES('{"name":"Vitali","surname":"Brown","friends":["Katya","Anatoliy","Ivan","Oleg"]}')
-INSERT INTO 01889_sql_json(json) VALUES('{"name":"Ivan","surname":"Ivanov","friends":["Vasily","Kostya","Artyom"]}')
-INSERT INTO 01889_sql_json(json) VALUES('{"name":"Katya","surname":"Baltica","friends":["Tihon","Ernest","Innokentiy"]}')
-SELECT JSON_QUERY('$.friends[0 to 2]', json)
-DROP TABLE 01889_sql_json
+INSERT INTO 01889_sql_json(json) VALUES('{"name":"Vitali","surname":"Brown","friends":["Katya","Anatoliy","Ivan","Oleg"]}');
+INSERT INTO 01889_sql_json(json) VALUES('{"name":"Ivan","surname":"Ivanov","friends":["Vasily","Kostya","Artyom"]}');
+INSERT INTO 01889_sql_json(json) VALUES('{"name":"Katya","surname":"Baltica","friends":["Tihon","Ernest","Innokentiy"]}');
+SELECT JSON_QUERY('$.friends[0 to 2]', json);
+DROP TABLE 01889_sql_json;
