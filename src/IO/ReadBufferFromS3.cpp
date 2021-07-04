@@ -43,15 +43,12 @@ ReadBufferFromS3::ReadBufferFromS3(
 
 bool ReadBufferFromS3::nextImpl()
 {
-    /// Restoring valid value of `count()` during `nextImpl()`. See `ReadBuffer::next()`.
-    pos = working_buffer.begin();
-
-    if (!impl)
-        impl = initialize();
-
     Stopwatch watch;
     bool next_result = false;
     auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
+
+    if (!impl)
+        impl = initialize();
 
     for (size_t attempt = 0; attempt < max_single_read_retries; ++attempt)
     {
@@ -83,11 +80,14 @@ bool ReadBufferFromS3::nextImpl()
     ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
     if (!next_result)
         return false;
-    internal_buffer = impl->buffer();
+
+    working_buffer = internal_buffer = impl->buffer();
+    pos = working_buffer.begin();
 
     ProfileEvents::increment(ProfileEvents::S3ReadBytes, internal_buffer.size());
 
-    working_buffer = internal_buffer;
+    offset += working_buffer.size();
+
     return true;
 }
 
@@ -109,18 +109,17 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 
 off_t ReadBufferFromS3::getPosition()
 {
-    return offset + count();
+    return offset - available();
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, getPosition());
+    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
 
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    if (getPosition())
-        req.SetRange("bytes=" + std::to_string(getPosition()) + "-");
+    req.SetRange(fmt::format("bytes={}-", offset));
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 

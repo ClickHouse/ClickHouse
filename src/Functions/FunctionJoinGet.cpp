@@ -36,7 +36,7 @@ ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAnd
 }
 
 static std::pair<std::shared_ptr<StorageJoin>, String>
-getJoin(const ColumnsWithTypeAndName & arguments, ContextConstPtr context)
+getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
 {
     String join_name;
     if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))

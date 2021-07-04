@@ -184,6 +184,13 @@ if __name__ == "__main__":
         help="Use tmpfs for dockerd files")
 
     parser.add_argument(
+        "--cleanup-containers",
+        action='store_true',
+        default=False,
+        dest="cleanup_containers",
+        help="Remove all running containers on test session start")
+
+    parser.add_argument(
         "--dockerd-volume-dir",
         action='store',
         dest="dockerd_volume",
@@ -241,6 +248,10 @@ if __name__ == "__main__":
         subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
         dockerd_internal_volume = "--volume={}_volume:/var/lib/docker".format(CONTAINER_NAME)
 
+    # If enabled we kill and remove containers before pytest session run.
+    env_cleanup = ""
+    if args.cleanup_containers:
+        env_cleanup = "-e PYTEST_CLEANUP_CONTAINERS=1"
     # enable tty mode & interactive for docker if we have real tty
     tty = ""
     if sys.stdout.isatty() and sys.stdin.isatty():
@@ -253,7 +264,7 @@ if __name__ == "__main__":
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
         {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
-        {env_tags} -e PYTEST_OPTS='{parallel} {opts} {tests_list}' {img} {command}".format(
+        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list}' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
@@ -263,6 +274,7 @@ if __name__ == "__main__":
         cases_dir=args.cases_dir,
         src_dir=args.src_dir,
         env_tags=env_tags,
+        env_cleanup=env_cleanup,
         parallel=parallel_args,
         opts=' '.join(args.pytest_args),
         tests_list=' '.join(args.tests_list),

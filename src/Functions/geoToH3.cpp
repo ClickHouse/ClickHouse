@@ -11,7 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include <h3api.h>
 
@@ -33,7 +33,7 @@ class FunctionGeoToH3 : public IFunction
 public:
     static constexpr auto name = "geoToH3";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionGeoToH3>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeoToH3>(); }
 
     std::string getName() const override { return name; }
 
@@ -73,7 +73,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const double lon = col_lon->getFloat64(row);
             const double lat = col_lat->getFloat64(row);

@@ -11,7 +11,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <Core/Field.h>
 #include <Common/escapeForFileName.h>
 
@@ -20,7 +20,7 @@ namespace DB
 {
 
 LibraryBridgeHelper::LibraryBridgeHelper(
-        ContextConstPtr context_,
+        ContextPtr context_,
         const Block & sample_block_,
         const Field & dictionary_id_)
     : IBridgeHelper(context_->getGlobalContext())

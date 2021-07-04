@@ -11,7 +11,7 @@
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/set.hpp>
 #include <boost/noncopyable.hpp>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #include <common/getPageSize.h>
 

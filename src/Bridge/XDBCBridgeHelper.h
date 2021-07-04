@@ -12,7 +12,7 @@
 #include <Common/ShellCommand.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <common/logger_useful.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <Bridge/IBridgeHelper.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -60,7 +60,7 @@ public:
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
 
     XDBCBridgeHelper(
-        ContextConstPtr context_,
+        ContextPtr context_,
         Poco::Timespan http_timeout_,
         const std::string & connection_string_)
     : IXDBCBridgeHelper(context_->getGlobalContext())
