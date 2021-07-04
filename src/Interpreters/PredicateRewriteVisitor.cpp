@@ -17,12 +17,12 @@ namespace DB
 {
 
 PredicateRewriteVisitorData::PredicateRewriteVisitorData(
-    ContextConstPtr context_,
+    ContextPtr context_,
     const ASTs & predicates_,
     const TableWithColumnNamesAndTypes & table_columns_,
     bool optimize_final_,
     bool optimize_with_)
-    : WithConstContext(context_)
+    : WithContext(context_)
     , predicates(predicates_)
     , table_columns(table_columns_)
     , optimize_final(optimize_final_)

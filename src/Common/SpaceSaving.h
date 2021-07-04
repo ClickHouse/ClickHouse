@@ -5,6 +5,7 @@
 
 #include <boost/range/adaptor/reversed.hpp>
 
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
@@ -382,8 +383,8 @@ private:
     using CounterMap = HashMapWithStackMemory<TKey, Counter *, Hash, 4>;
 
     CounterMap counter_map;
-    std::vector<Counter *> counter_list;
-    std::vector<UInt64> alpha_map;
+    std::vector<Counter *, AllocatorWithMemoryTracking<Counter *>> counter_list;
+    std::vector<UInt64, AllocatorWithMemoryTracking<UInt64>> alpha_map;
     SpaceSavingArena<TKey> arena;
     size_t m_capacity;
     size_t removed_keys = 0;

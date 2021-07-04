@@ -16,9 +16,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class StorageMaterializeMySQL final : public ext::shared_ptr_helper<StorageMaterializeMySQL>, public StorageProxy
+class StorageMaterializeMySQL final : public shared_ptr_helper<StorageMaterializeMySQL>, public StorageProxy
 {
-    friend struct ext::shared_ptr_helper<StorageMaterializeMySQL>;
+    friend struct shared_ptr_helper<StorageMaterializeMySQL>;
 public:
     String getName() const override { return "MaterializeMySQL"; }
 

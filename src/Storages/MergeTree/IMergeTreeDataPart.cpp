@@ -429,9 +429,14 @@ void IMergeTreeDataPart::removeIfNeeded()
             }
 
             if (parent_part)
-                projectionRemove(parent_part->getFullRelativePath(), keep_s3_on_delete);
+            {
+                std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
+                if (!keep_shared_data.has_value())
+                    return;
+                projectionRemove(parent_part->getFullRelativePath(), *keep_shared_data);
+            }
             else
-                remove(keep_s3_on_delete);
+                remove();
 
             if (state == State::DeleteOnDestroy)
             {
@@ -1096,9 +1101,30 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     storage.lockSharedData(*this);
 }
 
-
-void IMergeTreeDataPart::remove(bool keep_s3) const
+std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
+    /// NOTE: It's needed for S3 zero-copy replication
+    if (force_keep_shared_data)
+        return true;
+
+    /// TODO Unlocking in try-catch and ignoring exception look ugly
+    try
+    {
+        return !storage.unlockSharedData(*this);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "There is a problem with deleting part " + name + " from filesystem");
+    }
+    return {};
+}
+
+void IMergeTreeDataPart::remove() const
+{
+    std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
+    if (!keep_shared_data.has_value())
+        return;
+
     if (!isStoredOnDisk())
         return;
 
@@ -1108,7 +1134,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     if (isProjectionPart())
     {
         LOG_WARNING(storage.log, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
-        projectionRemove(parent_part->getFullRelativePath(), keep_s3);
+        projectionRemove(parent_part->getFullRelativePath(), *keep_shared_data);
         return;
     }
 
@@ -1134,7 +1160,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
         LOG_WARNING(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart. Removing it.", fullPath(disk, to));
         try
         {
-            disk->removeSharedRecursive(fs::path(to) / "", keep_s3);
+            disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
         }
         catch (...)
         {
@@ -1161,7 +1187,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     std::unordered_set<String> projection_directories;
     for (const auto & [p_name, projection_part] : projection_parts)
     {
-        projection_part->projectionRemove(to, keep_s3);
+        projection_part->projectionRemove(to, *keep_shared_data);
         projection_directories.emplace(p_name + ".proj");
     }
 
@@ -1169,7 +1195,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     if (checksums.empty())
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(to) / "", keep_s3);
+        disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
     }
     else
     {
@@ -1184,17 +1210,17 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
             for (const auto & [file, _] : checksums.files)
             {
                 if (projection_directories.find(file) == projection_directories.end())
-                    disk->removeSharedFile(fs::path(to) / file, keep_s3);
+                    disk->removeSharedFile(fs::path(to) / file, *keep_shared_data);
             }
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(fs::path(to) / file, keep_s3);
+                disk->removeSharedFile(fs::path(to) / file, *keep_shared_data);
 
-            disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
+            disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, *keep_shared_data);
+            disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, *keep_shared_data);
 
             disk->removeDirectory(to);
         }
@@ -1204,13 +1230,13 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(fs::path(to) / "", keep_s3);
+            disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
         }
     }
 }
 
 
-void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3) const
+void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_shared_data) const
 {
     String to = parent_to + "/" + relative_path;
     auto disk = volume->getDisk();
@@ -1222,7 +1248,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
             "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
             fullPath(disk, to));
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(to + "/", keep_s3);
+        disk->removeSharedRecursive(to + "/", keep_shared_data);
     }
     else
     {
@@ -1235,17 +1261,17 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                disk->removeSharedFile(to + "/" + file, keep_s3);
+                disk->removeSharedFile(to + "/" + file, keep_shared_data);
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(to + "/" + file, keep_s3);
-            disk->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            disk->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
+                disk->removeSharedFile(to + "/" + file, keep_shared_data);
+            disk->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_shared_data);
+            disk->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_shared_data);
 
-            disk->removeSharedRecursive(to, keep_s3);
+            disk->removeSharedRecursive(to, keep_shared_data);
         }
         catch (...)
         {
@@ -1253,7 +1279,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(to + "/", keep_s3);
+            disk->removeSharedRecursive(to + "/", keep_shared_data);
          }
      }
  }
