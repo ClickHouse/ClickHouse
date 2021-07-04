@@ -5,10 +5,12 @@
 
 #include <Core/Types.h>
 
-#include <IO/ReadBufferFromFile.h>
 
 namespace DB
 {
+
+class ReadBuffer;
+
 
 /** Opens file /proc/mounts, reads all mounted filesystems and
   * calculates disk usage.
@@ -19,17 +21,13 @@ public:
     // In bytes
     struct Data
     {
-        uint64_t total;
-        uint64_t used;
+        uint64_t total_bytes;
+        uint64_t used_bytes;
+        uint64_t total_inodes;
+        uint64_t used_inodes;
     };
 
-    DiskStatisticsOS();
-    ~DiskStatisticsOS();
-
     Data get();
-
-private:
-    String readNextFilesystem(ReadBuffer & mounts_in);
 };
 
 }

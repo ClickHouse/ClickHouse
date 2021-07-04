@@ -33,13 +33,7 @@ public:
         uint64_t swap_cached;
     };
 
-    MemoryInfoOS();
-    ~MemoryInfoOS();
-
     Data get();
-
-private:
-    std::pair<String, uint64_t> readField(ReadBuffer & meminfo_in);
 };
 
 }
