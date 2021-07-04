@@ -4,20 +4,19 @@
 #include <Poco/Foundation.h>
 #include <Poco/Path.h>
 
-#include <deque>
 #include <mutex>
 
 class FileLogDirectoryWatcher
 {
 public:
     struct DirEvent
-	{
-		Poco::DirectoryWatcher::DirectoryEventType type;
-		std::string callback;
-		std::string path;
-	};
+    {
+        Poco::DirectoryWatcher::DirectoryEventType type;
+        std::string callback;
+        std::string path;
+    };
 
-    using Events = std::deque<DirEvent>;
+    using Events = std::vector<DirEvent>;
 
     explicit FileLogDirectoryWatcher(const std::string & path_);
     ~FileLogDirectoryWatcher() = default;
@@ -30,10 +29,10 @@ public:
 
 protected:
     void onItemAdded(const Poco::DirectoryWatcher::DirectoryEvent& ev);
-	void onItemRemoved(const Poco::DirectoryWatcher::DirectoryEvent& ev);
-	void onItemModified(const Poco::DirectoryWatcher::DirectoryEvent& ev);
-	void onItemMovedFrom(const Poco::DirectoryWatcher::DirectoryEvent& ev);
-	void onItemMovedTo(const Poco::DirectoryWatcher::DirectoryEvent& ev);
+    void onItemRemoved(const Poco::DirectoryWatcher::DirectoryEvent & ev);
+    void onItemModified(const Poco::DirectoryWatcher::DirectoryEvent& ev);
+    void onItemMovedFrom(const Poco::DirectoryWatcher::DirectoryEvent & ev);
+    void onItemMovedTo(const Poco::DirectoryWatcher::DirectoryEvent & ev);
     void onError(const Poco::Exception &);
 
 private:

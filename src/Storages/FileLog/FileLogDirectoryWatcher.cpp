@@ -34,56 +34,55 @@ void FileLogDirectoryWatcher::onItemAdded(const Poco::DirectoryWatcher::Director
 {
     std::lock_guard<std::mutex> lock(mutex);
     DirEvent de;
-	de.callback = "onItemAdded";
-	de.path = ev.item.path();
-	de.type = ev.event;
-	events.push_back(de);
+    de.callback = "onItemAdded";
+    de.path = ev.item.path();
+    de.type = ev.event;
+    events.emplace_back(de);
 }
 
 
 void FileLogDirectoryWatcher::onItemRemoved(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
-	DirEvent de;
-	de.callback = "onItemRemoved";
-	de.path = ev.item.path();
-	de.type = ev.event;
-	events.push_back(de);
+    DirEvent de;
+    de.callback = "onItemRemoved";
+    de.path = ev.item.path();
+    de.type = ev.event;
+    events.emplace_back(de);
 }
 
 
 void FileLogDirectoryWatcher::onItemModified(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
-	DirEvent de;
-	de.callback = "onItemModified";
-	de.path = ev.item.path();
-	de.type = ev.event;
-	events.push_back(de);
+    DirEvent de;
+    de.callback = "onItemModified";
+    de.path = ev.item.path();
+    de.type = ev.event;
+    events.emplace_back(de);
 }
 
 void FileLogDirectoryWatcher::onItemMovedFrom(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
     DirEvent de;
-	de.callback = "onItemMovedFrom";
-	de.path = ev.item.path();
-	de.type = ev.event;
-	events.push_back(de);
+    de.callback = "onItemMovedFrom";
+    de.path = ev.item.path();
+    de.type = ev.event;
+    events.emplace_back(de);
 }
 
 void FileLogDirectoryWatcher::onItemMovedTo(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
-	DirEvent de;
-	de.callback = "onItemMovedTo";
-	de.path = ev.item.path();
-	de.type = ev.event;
-	events.push_back(de);
+    DirEvent de;
+    de.callback = "onItemMovedTo";
+    de.path = ev.item.path();
+    de.type = ev.event;
+    events.emplace_back(de);
 }
-
 
 void FileLogDirectoryWatcher::onError(const Poco::Exception &)
 {
-	error = true;
+    error = true;
 }
