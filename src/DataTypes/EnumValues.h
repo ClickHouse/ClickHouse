@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Common/HashTable/HashMap.h>
 #include <unordered_map>
+#include <Common/HashTable/HashMap.h>
+#include <Common/NamePrompter.h>
 
 namespace DB
 {
@@ -12,7 +13,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-class EnumValues
+class EnumValues : public IHints<1, EnumValues<T>>
 {
 public:
     using Value = std::pair<std::string, T>;
@@ -65,6 +66,8 @@ public:
 
         return std::all_of(rhs_values.begin(), rhs_values.end(), check);
     }
+
+    Names getAllRegisteredNames() const override;
 };
 
 }

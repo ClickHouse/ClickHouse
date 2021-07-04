@@ -10,6 +10,7 @@ url="${url_without_session}session_id=test_01098"
 ${CLICKHOUSE_CURL} -m 30 -sSk "$url" --data "DROP TEMPORARY TABLE IF EXISTS tmp_table"
 ${CLICKHOUSE_CURL} -m 30 -sSk "$url" --data "CREATE TEMPORARY TABLE tmp_table AS SELECT number AS n FROM numbers(42)"
 
+# NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 id=$(echo "SELECT uuid FROM system.tables WHERE name='tmp_table' AND is_temporary" | ${CLICKHOUSE_CURL} -m 31 -sSgk "$url" -d @-)
 internal_table_name="_temporary_and_external_tables.\`_tmp_$id\`"
 

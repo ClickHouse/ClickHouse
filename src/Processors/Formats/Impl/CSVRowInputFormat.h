@@ -31,16 +31,12 @@ public:
     void resetParser() override;
 
 private:
+    /// There fields are computed in constructor.
     bool with_names;
     const FormatSettings format_settings;
     DataTypes data_types;
-
     using IndexesMap = std::unordered_map<String, size_t>;
     IndexesMap column_indexes_by_names;
-
-    /// Whether we have any columns that are not read from file at all,
-    /// and must be always initialized with defaults.
-    bool have_always_default_columns = false;
 
     void addInputColumn(const String & column_name);
 

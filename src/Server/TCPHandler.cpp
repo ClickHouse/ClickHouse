@@ -1,5 +1,5 @@
 #include <iomanip>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
@@ -745,7 +745,7 @@ void TCPHandler::processTablesStatusRequest()
             status.absolute_delay = replicated_table->getAbsoluteDelay();
         }
         else
-            status.is_replicated = false;
+            status.is_replicated = false; //-V1048
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
@@ -1135,8 +1135,9 @@ void TCPHandler::receiveQuery()
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-                                                                                                      : SettingsWriteFormat::BINARY;
+    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
+        ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+        : SettingsWriteFormat::BINARY;
     Settings passed_settings;
     passed_settings.read(*in, settings_format);
 
@@ -1398,7 +1399,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
             if (state.compression == Protocol::Compression::Enable)
             {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));

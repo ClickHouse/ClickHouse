@@ -86,7 +86,7 @@ private:
 public:
     KeeperStorageDispatcher();
 
-    void initialize(const Poco::Util::AbstractConfiguration & config);
+    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper);
 
     void shutdown();
 

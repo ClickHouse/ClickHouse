@@ -59,13 +59,26 @@ DataTypePtr FunctionValidateNestedArraySizes::getReturnTypeImpl(const DataTypes 
 ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
 {
+    bool is_condition_const = false;
+    bool condition = false;
     const ColumnUInt8 * condition_column = typeid_cast<const ColumnUInt8 *>(arguments[0].column.get());
+    if (!condition_column)
+    {
+        if (checkAndGetColumnConst<ColumnUInt8>(arguments[0].column.get()))
+        {
+            is_condition_const = true;
+            condition = arguments[0].column->getBool(0);
+        }
+    }
 
     size_t args_num = arguments.size();
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        if (!condition_column->getData()[i])
+        if (is_condition_const && !condition)
+            break;
+
+        if (!is_condition_const && !condition_column->getData()[i])
             continue;
 
         /// The condition is true, then check the row in subcolumns in Nested Type has the same array size

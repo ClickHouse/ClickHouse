@@ -11,6 +11,8 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -20,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <algorithm>
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -41,67 +43,10 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
-namespace
-{
-
-TreeRewriterResult modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_result, ContextPtr context)
-{
-
-    TreeRewriterResult new_rewriter_result = rewriter_result;
-    if (removeJoin(select))
-    {
-        /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
-        select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-        new_rewriter_result.aggregates.clear();
-
-        /// Replace select list to remove joined columns
-        auto select_list = std::make_shared<ASTExpressionList>();
-        for (const auto & column : rewriter_result.required_source_columns)
-            select_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
-
-        select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
-
-        const DB::IdentifierMembershipCollector membership_collector{select, context};
-
-        /// Remove unknown identifiers from where, leave only ones from left table
-        auto replace_where = [&membership_collector](ASTSelectQuery & query, ASTSelectQuery::Expression expr)
-        {
-            auto where = query.getExpression(expr, false);
-            if (!where)
-                return;
-
-            const size_t left_table_pos = 0;
-            /// Test each argument of `and` function and select ones related to only left table
-            std::shared_ptr<ASTFunction> new_conj = makeASTFunction("and");
-            for (const auto & node : collectConjunctions(where))
-            {
-                if (membership_collector.getIdentsMembership(node) == left_table_pos)
-                    new_conj->arguments->children.push_back(std::move(node));
-            }
-
-            if (new_conj->arguments->children.empty())
-                /// No identifiers from left table
-                query.setExpression(expr, {});
-            else if (new_conj->arguments->children.size() == 1)
-                /// Only one expression, lift from `and`
-                query.setExpression(expr, std::move(new_conj->arguments->children[0]));
-            else
-                /// Set new expression
-                query.setExpression(expr, std::move(new_conj));
-        };
-        replace_where(select,ASTSelectQuery::Expression::WHERE);
-        replace_where(select,ASTSelectQuery::Expression::PREWHERE);
-        select.setExpression(ASTSelectQuery::Expression::HAVING, {});
-        select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
-    }
-    return new_rewriter_result;
-}
-
-}
-
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const String & comment,
     const String & source_database_,
     const Strings & source_tables_,
     ContextPtr context_)
@@ -112,12 +57,14 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const String & comment,
     const String & source_database_,
     const String & source_table_regexp_,
     ContextPtr context_)
@@ -128,6 +75,7 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -179,14 +127,17 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, Cont
 }
 
 
-QueryProcessingStage::Enum
-StorageMerge::getQueryProcessingStage(ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
+    ContextPtr local_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageMetadataPtr &,
+    SelectQueryInfo & query_info) const
 {
     /// In case of JOIN the first stage (which includes JOIN)
     /// should be done on the initiator always.
     ///
     /// Since in case of JOIN query on shards will receive query w/o JOIN (and their columns).
-    /// (see modifySelect()/removeJoin())
+    /// (see removeJoin())
     ///
     /// And for this we need to return FetchColumns.
     if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
@@ -204,7 +155,9 @@ StorageMerge::getQueryProcessingStage(ContextPtr local_context, QueryProcessingS
         if (table && table.get() != this)
         {
             ++selected_table_size;
-            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(local_context, to_stage, query_info));
+            stage_in_source_tables = std::max(
+                stage_in_source_tables,
+                table->getQueryProcessingStage(local_context, to_stage, table->getInMemoryMetadataPtr(), query_info));
         }
 
         iterator->next();
@@ -241,7 +194,7 @@ Pipe StorageMerge::read(
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
     auto modified_context = Context::createCopy(local_context);
-    modified_context->setSetting("optimize_move_to_prewhere", false);
+    modified_context->setSetting("optimize_move_to_prewhere", Field{false});
 
     /// What will be result structure depending on query processed stage in source tables?
     Block header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, local_context, processed_stage);
@@ -254,7 +207,7 @@ Pipe StorageMerge::read(
     if (selected_tables.empty())
         /// FIXME: do we support sampling in this case?
         return createSources(
-            {}, query_info, processed_stage, max_block_size, header, {}, real_column_names, modified_context, 0, has_table_virtual_column);
+            {}, query_info, processed_stage, max_block_size, header, {}, {}, real_column_names, modified_context, 0, has_table_virtual_column);
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
@@ -282,6 +235,9 @@ Pipe StorageMerge::read(
         query_info.input_order_info = input_sorting_info;
     }
 
+    auto sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+    Names required_columns;
+
     for (const auto & table : selected_tables)
     {
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
@@ -295,12 +251,51 @@ Pipe StorageMerge::read(
         if (query_info.query->as<ASTSelectQuery>()->sampleSize() && !storage->supportsSampling())
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
+        Aliases aliases;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
+        auto storage_columns = storage_metadata_snapshot->getColumns();
+
+        if (processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty())
+        {
+            auto syntax_result = TreeRewriter(local_context).analyzeSelect(query_info.query, TreeRewriterResult({}, storage, storage_metadata_snapshot));
+            ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
+
+            ASTPtr column_expr;
+            for (const auto & column : real_column_names)
+            {
+                const auto column_default = storage_columns.getDefault(column);
+                bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
+
+                if (is_alias)
+                {
+                    column_expr = column_default->expression->clone();
+                    replaceAliasColumnsInQuery(column_expr, storage_metadata_snapshot->getColumns(),
+                                               syntax_result->array_join_result_to_source, local_context);
+
+                    auto column_description = storage_columns.get(column);
+                    column_expr = addTypeConversionToAST(std::move(column_expr), column_description.type->getName(),
+                                                         storage_metadata_snapshot->getColumns().getAll(), local_context);
+                    column_expr = setAlias(column_expr, column);
+
+                    auto type = sample_block.getByName(column).type;
+                    aliases.push_back({ .name = column, .type = type, .expression = column_expr->clone() });
+                }
+                else
+                    column_expr = std::make_shared<ASTIdentifier>(column);
+
+                required_columns_expr_list->children.emplace_back(std::move(column_expr));
+            }
+
+            syntax_result = TreeRewriter(local_context).analyze(required_columns_expr_list, storage_columns.getAllPhysical(),
+                                                                storage, storage_metadata_snapshot);
+            auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, local_context).getActionsDAG(true);
+            required_columns = alias_actions->getRequiredColumns().getNames();
+        }
 
         auto source_pipe = createSources(
             storage_metadata_snapshot, query_info, processed_stage,
-            max_block_size, header, table, real_column_names, modified_context,
-            current_streams, has_table_virtual_column);
+            max_block_size, header, aliases, table, required_columns.empty() ? real_column_names : required_columns,
+            modified_context, current_streams, has_table_virtual_column);
 
         pipes.emplace_back(std::move(source_pipe));
     }
@@ -321,9 +316,10 @@ Pipe StorageMerge::createSources(
     const QueryProcessingStage::Enum & processed_stage,
     const UInt64 max_block_size,
     const Block & header,
+    const Aliases & aliases,
     const StorageWithLockAndName & storage_with_lock,
     Names & real_column_names,
-    ContextPtr modified_context,
+    ContextMutablePtr modified_context,
     size_t streams_num,
     bool has_table_virtual_column,
     bool concat_streams)
@@ -334,7 +330,9 @@ Pipe StorageMerge::createSources(
 
     /// Original query could contain JOIN but we need only the first joined table and its columns.
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
-    auto new_analyzer_res = modifySelect(modified_select, *query_info.syntax_analyzer_result, modified_context);
+
+    TreeRewriterResult new_analyzer_res = *query_info.syntax_analyzer_result;
+    removeJoin(modified_select, new_analyzer_res, modified_context);
     modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
@@ -352,7 +350,8 @@ Pipe StorageMerge::createSources(
         return pipe;
     }
 
-    auto storage_stage = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, modified_query_info);
+    auto storage_stage
+        = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, metadata_snapshot, modified_query_info);
     if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
@@ -405,7 +404,7 @@ Pipe StorageMerge::createSources(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto adding_column_actions = std::make_shared<ExpressionActions>(
                 std::move(adding_column_dag),
-                ExpressionActionsSettings::fromContext(modified_context));
+                ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
 
             pipe.addSimpleTransform([&](const Block & stream_header)
             {
@@ -415,7 +414,7 @@ Pipe StorageMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, metadata_snapshot, modified_context, modified_query_info.query, pipe, processed_stage);
+        convertingSourceStream(header, metadata_snapshot, aliases, modified_context, modified_query_info.query, pipe, processed_stage);
 
         pipe.addTableLock(struct_lock);
         pipe.addStorageHolder(storage);
@@ -538,6 +537,7 @@ void StorageMerge::alter(
 void StorageMerge::convertingSourceStream(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
+    const Aliases & aliases,
     ContextPtr local_context,
     ASTPtr & query,
     Pipe & pipe,
@@ -545,23 +545,44 @@ void StorageMerge::convertingSourceStream(
 {
     Block before_block_header = pipe.getHeader();
 
-    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            pipe.getHeader().getColumnsWithTypeAndName(),
-            header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
-    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context));
+    auto storage_sample_block = metadata_snapshot->getSampleBlock();
+    auto pipe_columns = pipe.getHeader().getNamesAndTypesList();
 
-    pipe.addSimpleTransform([&](const Block & stream_header)
+    for (const auto & alias : aliases)
     {
-        return std::make_shared<ExpressionTransform>(stream_header, convert_actions);
-    });
+        pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
+        ASTPtr expr = std::move(alias.expression);
+        auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
+        auto expression_analyzer = ExpressionAnalyzer{alias.expression, syntax_result, local_context};
+
+        auto dag = std::make_shared<ActionsDAG>(pipe_columns);
+        auto actions_dag = expression_analyzer.getActionsDAG(true, false);
+        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+
+        pipe.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<ExpressionTransform>(stream_header, actions);
+        });
+    }
+
+    {
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(pipe.getHeader().getColumnsWithTypeAndName(),
+                                                                     header.getColumnsWithTypeAndName(),
+                                                                     ActionsDAG::MatchColumnsMode::Name);
+        auto actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+        pipe.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<ExpressionTransform>(stream_header, actions);
+        });
+    }
+
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
 
     if (!where_expression)
         return;
 
-    for (size_t column_index : ext::range(0, header.columns()))
+    for (size_t column_index : collections::range(0, header.columns()))
     {
         ColumnWithTypeAndName header_column = header.getByPosition(column_index);
         ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);
@@ -617,9 +638,7 @@ void registerStorageMerge(StorageFactory & factory)
         String source_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageMerge::create(
-            args.table_id, args.columns,
-            source_database, table_name_regexp, args.getContext());
+        return StorageMerge::create(args.table_id, args.columns, args.comment, source_database, table_name_regexp, args.getContext());
     });
 }
 

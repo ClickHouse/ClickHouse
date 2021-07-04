@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionMannWhitney.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include "registerAggregateFunctions.h"
 #include <AggregateFunctions/Helpers.h>
 
 
@@ -12,11 +11,13 @@ extern const int NOT_IMPLEMENTED;
 
 namespace DB
 {
+struct Settings;
 
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertBinary(name, argument_types);
 

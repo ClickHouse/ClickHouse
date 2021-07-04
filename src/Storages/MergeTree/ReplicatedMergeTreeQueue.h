@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
 
@@ -90,9 +91,6 @@ private:
     /// Used to block other actions on parts in the range covered by future_parts.
     using FuturePartsSet = std::map<String, LogEntryPtr>;
     FuturePartsSet future_parts;
-
-    /// Index of the first log entry that we didn't see yet.
-    Int64 log_pointer = 0;
 
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
     bool currently_executing_drop_or_replace_range = false;
@@ -182,9 +180,6 @@ private:
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
 
-    /// Put a set of (already existing) parts in virtual_parts.
-    void addVirtualParts(const MergeTreeData::DataParts & parts);
-
     /// Insert new entry from log into queue
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
@@ -237,11 +232,6 @@ private:
         std::optional<time_t> min_unprocessed_insert_time_changed,
         std::optional<time_t> max_processed_insert_time_changed) const;
 
-    /// Returns list of currently executing parts blocking execution a command modifying specified range
-    size_t getConflictsCountForRange(
-        const MergeTreePartInfo & range, const LogEntry & entry, String * out_description,
-        std::lock_guard<std::mutex> & state_lock) const;
-
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
     {
@@ -279,7 +269,10 @@ public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
     ~ReplicatedMergeTreeQueue();
 
+    /// Clears queue state
+    void clear();
 
+    /// Put a set of (already existing) parts in virtual_parts.
     void initialize(const MergeTreeData::DataParts & parts);
 
     /** Inserts an action to the end of the queue.
@@ -299,7 +292,7 @@ public:
       */
     bool load(zkutil::ZooKeeperPtr zookeeper);
 
-    bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
+    bool removeFailedQuorumPart(const MergeTreePartInfo & part_info);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If watch_callback is not empty, will call it when new entries appear in the log.
@@ -321,10 +314,6 @@ public:
       * And also wait for the completion of their execution, if they are now being executed.
       */
     void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current);
-
-    /** Throws and exception if there are currently executing entries in the range .
-     */
-    void checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const LogEntry & entry);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -385,12 +374,6 @@ public:
     /// Mark finished mutations as done. If the function needs to be called again at some later time
     /// (because some mutations are probably done but we are not sure yet), returns true.
     bool tryFinalizeMutations(zkutil::ZooKeeperPtr zookeeper);
-
-    /// Prohibit merges in the specified blocks range.
-    /// Add part to virtual_parts, which means that part must exist
-    /// after processing replication log up to log_pointer.
-    /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
-    void disableMergesInBlockRange(const String & part_name);
 
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
@@ -477,7 +460,7 @@ public:
 
     /// Can we assign a merge this part and some other part?
     /// For example a merge of a part and itself is needed for TTL.
-    /// This predicate is checked for the first part of each partitition.
+    /// This predicate is checked for the first part of each range.
     bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
 
     /// Return nonempty optional of desired mutation version and alter version.
@@ -500,6 +483,9 @@ private:
     /// partition ID -> block numbers of the inserts and mutations that are about to commit
     /// (loaded at some later time than prev_virtual_parts).
     std::unordered_map<String, std::set<Int64>> committing_blocks;
+
+    /// List of UUIDs for parts that have their identity "pinned".
+    PinnedPartUUIDs pinned_part_uuids;
 
     /// Quorum state taken at some later time than prev_virtual_parts.
     String inprogress_quorum_part;

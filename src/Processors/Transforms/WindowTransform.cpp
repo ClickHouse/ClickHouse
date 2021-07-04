@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <common/arithmeticOverflow.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ExpressionActions.h>
@@ -11,6 +12,8 @@
 
 namespace DB
 {
+
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -67,15 +70,9 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
 
     bool is_overflow;
     if (offset_is_preceding)
-    {
-        is_overflow = __builtin_sub_overflow(reference_value, offset,
-            &reference_value);
-    }
+        is_overflow = common::subOverflow(reference_value, offset, reference_value);
     else
-    {
-        is_overflow = __builtin_add_overflow(reference_value, offset,
-            &reference_value);
-    }
+        is_overflow = common::addOverflow(reference_value, offset, reference_value);
 
 //    fmt::print(stderr,
 //        "compared [{}] = {}, old ref {}, shifted ref [{}] = {}, offset {} preceding {} overflow {} to negative {}\n",
@@ -218,7 +215,9 @@ WindowTransform::WindowTransform(const Block & input_header_,
         }
         workspace.argument_columns.assign(f.argument_names.size(), nullptr);
 
-        workspace.window_function_impl = aggregate_function->asWindowFunction();
+        /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
+        workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
+
         if (!workspace.window_function_impl)
         {
             workspace.aggregate_function_state.reset(
@@ -1346,13 +1345,12 @@ struct WindowFunction
 {
     std::string name;
 
-    WindowFunction(const std::string & name_, const DataTypes & argument_types_,
-               const Array & parameters_)
+    WindowFunction(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunctionHelper<WindowFunction>(argument_types_, parameters_)
         , name(name_)
     {}
 
-    IWindowFunction * asWindowFunction() override { return this; }
+    bool isOnlyWindowFunction() const override { return true; }
 
     [[noreturn]] void fail() const
     {
@@ -1465,7 +1463,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        if (!isInt64FieldType(argument_types[1]->getDefault().getType()))
+        if (!isInt64OrUInt64FieldType(argument_types[1]->getDefault().getType()))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Offset must be an integer, '{}' given",
@@ -1576,35 +1574,35 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     // instead of adding separate logic for them.
 
     factory.registerFunction("rank", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
         });
 
     factory.registerFunction("dense_rank", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
         });
 
     factory.registerFunction("row_number", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
         });
 
     factory.registerFunction("lagInFrame", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
         });
 
     factory.registerFunction("leadInFrame", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);

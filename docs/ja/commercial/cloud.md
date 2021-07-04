@@ -22,7 +22,7 @@ toc_title: "\u30AF\u30E9\u30A6\u30C9"
 
 ## Alibaba Cloud {#alibaba-cloud}
 
-ClickHouseのためのAlibaba Cloudの管理サービス [中国サイト](https://www.aliyun.com/product/clickhouse) (2021年5月に国際サイトで利用可能になります) 次の主な機能を提供します:
+[ClickHouseのためのAlibaba Cloudの管理サービス](https://www.alibabacloud.com/product/clickhouse) 次の主な機能を提供します:
 
 -   Alibaba Cloud Apsara分散システムをベースにした信頼性の高いクラウドディスクストレージエンジン
 -   手動でのデータ移行を必要とせずに、オン・デマンドで容量を拡張
