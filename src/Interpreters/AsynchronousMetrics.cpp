@@ -750,6 +750,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             /// Check if database can contain MergeTree tables
             if (!db.second->canContainMergeTreeTables())
                 continue;
+
             for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
@@ -757,10 +758,17 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 if (!table)
                     continue;
 
-                StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
-                StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+                if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                {
+                    const auto & settings = getContext()->getSettingsRef();
 
-                if (table_replicated_merge_tree)
+                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
+                    total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
+                    total_number_of_rows += table_merge_tree->totalRows(settings).value();
+                    total_number_of_parts += table_merge_tree->getPartsCount();
+                }
+
+                if (StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
                     StorageReplicatedMergeTree::Status status;
                     table_replicated_merge_tree->getStatus(status, false);
@@ -786,24 +794,6 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                                 "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
                         }
                     }
-
-                    calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getMaxPartsCountForPartition());
-                }
-
-                if (table_merge_tree)
-                {
-                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
-                    const auto & settings = getContext()->getSettingsRef();
-                    total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
-                    total_number_of_rows += table_merge_tree->totalRows(settings).value();
-                    total_number_of_parts += table_merge_tree->getPartsCount();
-                }
-                if (table_replicated_merge_tree)
-                {
-                    const auto & settings = getContext()->getSettingsRef();
-                    total_number_of_bytes += table_replicated_merge_tree->totalBytes(settings).value();
-                    total_number_of_rows += table_replicated_merge_tree->totalRows(settings).value();
-                    total_number_of_parts += table_replicated_merge_tree->getPartsCount();
                 }
             }
         }
@@ -830,7 +820,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
         auto get_metric_name = [](const String & name) -> const char *
         {
-            static std::map<String, const char *> metric_map = {
+            static std::map<String, const char *> metric_map =
+            {
                 {"tcp_port", "TCPThreads"},
                 {"tcp_port_secure", "TCPSecureThreads"},
                 {"http_port", "HTTPThreads"},
