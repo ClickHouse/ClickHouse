@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Functions/JSONPath/Generators/IGenerator.h>
-#include <Functions/JSONPath/Generators/VisitorJSONPathMemberAccess.h>
-#include <Functions/JSONPath/Generators/VisitorJSONPathRange.h>
-#include <Functions/JSONPath/Generators/VisitorJSONPathRoot.h>
-#include <Functions/JSONPath/Generators/VisitorJSONPathStar.h>
-#include <Functions/JSONPath/Generators/VisitorStatus.h>
+#include <Functions/JSONPath/Generator/IGenerator.h>
+#include <Functions/JSONPath/Generator/VisitorJSONPathMemberAccess.h>
+#include <Functions/JSONPath/Generator/VisitorJSONPathRange.h>
+#include <Functions/JSONPath/Generator/VisitorJSONPathRoot.h>
+#include <Functions/JSONPath/Generator/VisitorJSONPathStar.h>
+#include <Functions/JSONPath/Generator/VisitorStatus.h>
 
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 

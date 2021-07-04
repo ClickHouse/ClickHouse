@@ -9,9 +9,6 @@ class ParserJSONPathQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "ParserJSONPathQuery"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-private:
-    /// backlog: strict or lax mode
+    bool parseImpl(Pos & pos, ASTPtr & query, Expected & expected) override;
 };
 }

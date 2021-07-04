@@ -11,7 +11,7 @@
 #include <Functions/DummyJSONParser.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
-#include <Functions/JSONPath/Generators/GeneratorJSONPath.h>
+#include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
 #include <Functions/RapidJSONParser.h>
 #include <Functions/SimdJSONParser.h>
@@ -257,6 +257,8 @@ public:
             else if (status == VisitorStatus::Error)
             {
                 /// ON ERROR
+                /// Here it is possible to handle errors with ON ERROR (as described in ISO/IEC TR 19075-6),
+                ///  however this functionality is not implemented yet
             }
             current_element = root;
         }

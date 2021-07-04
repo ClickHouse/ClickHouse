@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/JSONPath/Generators/IVisitor.h>
+#include <Functions/JSONPath/Generator/IVisitor.h>
 
 namespace DB
 {

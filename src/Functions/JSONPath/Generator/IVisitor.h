@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/JSONPath/Generators/VisitorStatus.h>
+#include <Functions/JSONPath/Generator/VisitorStatus.h>
 
 namespace DB
 {

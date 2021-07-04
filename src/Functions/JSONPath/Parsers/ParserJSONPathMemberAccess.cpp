@@ -36,11 +36,7 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     auto member_access = std::make_shared<ASTJSONPathMemberAccess>();
     node = member_access;
-    if (!tryGetIdentifierNameInto(member_name, member_access->member_name))
-    {
-        return false;
-    }
-    return true;
+    return tryGetIdentifierNameInto(member_name, member_access->member_name);
 }
 
 }
