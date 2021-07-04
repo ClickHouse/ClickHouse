@@ -98,7 +98,7 @@ void AsynchronousMetrics::start()
 {
     /// Update once right now, to make metrics available just after server start
     /// (without waiting for asynchronous_metrics_update_period_s).
-    update();
+    update(std::chrono::system_clock::now());
     thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
 }
 
@@ -158,10 +158,12 @@ void AsynchronousMetrics::run()
 
     while (true)
     {
+        auto next_update_time = get_next_update_time(update_period);
+
         {
             // Wait first, so that the first metric collection is also on even time.
             std::unique_lock lock{mutex};
-            if (wait_cond.wait_until(lock, get_next_update_time(update_period),
+            if (wait_cond.wait_until(lock, next_update_time,
                 [this] { return quit; }))
             {
                 break;
@@ -170,7 +172,7 @@ void AsynchronousMetrics::run()
 
         try
         {
-            update();
+            update(next_update_time);
         }
         catch (...)
         {
@@ -306,9 +308,18 @@ AsynchronousMetrics::ProcStatValuesOther::operator-(const AsynchronousMetrics::P
 #endif
 
 
-void AsynchronousMetrics::update()
+void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_time)
 {
+    Stopwatch watch;
+
     AsynchronousMetricValues new_values;
+
+    auto current_time = std::chrono::system_clock::now();
+    auto time_after_previous_update = current_time - previous_update_time;
+    previous_update_time = update_time;
+
+    /// This is also a good indicator of system responsiveness.
+    new_values["Jitter"] = std::chrono::duration_cast<std::chrono::nanoseconds>(current_time - update_time).count() / 1e9;
 
     {
         if (auto mark_cache = getContext()->getMarkCache())
@@ -424,7 +435,7 @@ void AsynchronousMetrics::update()
         if (-1 == hz)
             throwFromErrno("Cannot call 'sysconf' to obtain system HZ", ErrorCodes::CANNOT_SYSCONF);
 
-        double multiplier = 1.0 / hz / update_period.count();
+        double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_after_previous_update).count() / 1e9);
         size_t num_cpus = 0;
 
         ProcStatValuesOther current_other_values{};
@@ -884,7 +895,9 @@ void AsynchronousMetrics::update()
 
     /// Add more metrics as you wish.
 
-    // Log the new metrics.
+    new_values["AsynchronousMetricsCalculationTimeSpent"] = watch.elapsedSeconds();
+
+    /// Log the new metrics.
     if (auto log = getContext()->getAsynchronousMetricLog())
     {
         log->addValues(new_values);

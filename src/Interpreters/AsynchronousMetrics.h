@@ -73,6 +73,7 @@ private:
     /// Some values are incremental and we have to calculate the difference.
     /// On first run we will only collect the values to subtract later.
     bool first_run = true;
+    std::chrono::system_clock::time_point previous_update_time;
 
 #if defined(OS_LINUX)
     MemoryStatisticsOS memory_stat;
@@ -122,7 +123,7 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> thread;
 
     void run();
-    void update();
+    void update(std::chrono::system_clock::time_point update_time);
 };
 
 }
