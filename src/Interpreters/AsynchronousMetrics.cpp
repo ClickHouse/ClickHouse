@@ -240,24 +240,39 @@ static void saveAllArenasMetric(AsynchronousMetricValues & values,
 void AsynchronousMetrics::ProcStatValuesCPU::read(ReadBuffer & in)
 {
     readText(user, in);
-    skipWhitespaceIfAny(in);
+    skipWhitespaceIfAny(in, true);
     readText(nice, in);
-    skipWhitespaceIfAny(in);
+    skipWhitespaceIfAny(in, true);
     readText(system, in);
-    skipWhitespaceIfAny(in);
+    skipWhitespaceIfAny(in, true);
     readText(idle, in);
-    skipWhitespaceIfAny(in);
+    skipWhitespaceIfAny(in, true);
     readText(iowait, in);
-    skipWhitespaceIfAny(in);
+    skipWhitespaceIfAny(in, true);
     readText(irq, in);
-    skipWhitespaceIfAny(in);
+    skipWhitespaceIfAny(in, true);
     readText(softirq, in);
-    skipWhitespaceIfAny(in);
-    readText(steal, in);
-    skipWhitespaceIfAny(in);
-    readText(guest, in);
-    skipWhitespaceIfAny(in);
-    readText(guest_nice, in);
+
+    /// Just in case for old Linux kernels, we check if these values present.
+
+    if (!checkChar('\n', in))
+    {
+        skipWhitespaceIfAny(in, true);
+        readText(steal, in);
+    }
+
+    if (!checkChar('\n', in))
+    {
+        skipWhitespaceIfAny(in, true);
+        readText(guest, in);
+    }
+
+    if (!checkChar('\n', in))
+    {
+        skipWhitespaceIfAny(in, true);
+        readText(guest_nice, in);
+    }
+
     skipToNextLineOrEOF(in);
 }
 
@@ -410,8 +425,10 @@ void AsynchronousMetrics::update()
             throwFromErrno("Cannot call 'sysconf' to obtain system HZ", ErrorCodes::CANNOT_SYSCONF);
 
         double multiplier = 1.0 / hz / update_period.count();
+        size_t num_cpus = 0;
 
         ProcStatValuesOther current_other_values{};
+        ProcStatValuesCPU delta_values_all_cpus{};
 
         while (!proc_stat->eof())
         {
@@ -445,7 +462,12 @@ void AsynchronousMetrics::update()
 
                     String cpu_suffix;
                     if (!cpu_num_str.empty())
+                    {
                         cpu_suffix = "CPU" + cpu_num_str;
+                        ++num_cpus;
+                    }
+                    else
+                        delta_values_all_cpus = delta_values;
 
                     new_values["OSUserTime" + cpu_suffix] = delta_values.user * multiplier;
                     new_values["OSNiceTime" + cpu_suffix] = delta_values.nice * multiplier;
@@ -501,6 +523,20 @@ void AsynchronousMetrics::update()
             new_values["OSInterrupts"] = delta_values.interrupts * multiplier;
             new_values["OSContextSwitches"] = delta_values.context_switches * multiplier;
             new_values["OSProcessesCreated"] = delta_values.processes_created * multiplier;
+
+            /// Also write values normalized to 0..1 by diving to the number of CPUs.
+            /// These values are good to be averaged across the cluster of non-uniform servers.
+
+            new_values["OSUserTimeNormalized"] = delta_values_all_cpus.user * multiplier / num_cpus;
+            new_values["OSNiceTimeNormalized"] = delta_values_all_cpus.nice * multiplier / num_cpus;
+            new_values["OSSystemTimeNormalized"] = delta_values_all_cpus.system * multiplier / num_cpus;
+            new_values["OSIdleTimeNormalized"] = delta_values_all_cpus.idle * multiplier / num_cpus;
+            new_values["OSIOWaitTimeNormalized"] = delta_values_all_cpus.iowait * multiplier / num_cpus;
+            new_values["OSIrqTimeNormalized"] = delta_values_all_cpus.irq * multiplier / num_cpus;
+            new_values["OSSoftIrqTimeNormalized"] = delta_values_all_cpus.softirq * multiplier / num_cpus;
+            new_values["OSStealTimeNormalized"] = delta_values_all_cpus.steal * multiplier / num_cpus;
+            new_values["OSGuestTimeNormalized"] = delta_values_all_cpus.guest * multiplier / num_cpus;
+            new_values["OSGuestNiceTimeNormalized"] = delta_values_all_cpus.guest_nice * multiplier / num_cpus;
         }
 
         proc_stat_values_other = current_other_values;
@@ -516,13 +552,13 @@ void AsynchronousMetrics::update()
         {
             String name;
             readStringUntilWhitespace(name, *meminfo);
-            skipWhitespaceIfAny(*meminfo);
+            skipWhitespaceIfAny(*meminfo, true);
 
             uint64_t kb = 0;
             readText(kb, *meminfo);
             if (kb)
             {
-                skipWhitespaceIfAny(*meminfo);
+                skipWhitespaceIfAny(*meminfo, true);
                 assertString("kB", *meminfo);
 
                 uint64_t bytes = kb * 1024;
@@ -660,6 +696,11 @@ void AsynchronousMetrics::update()
         for (const auto & [name, disk] : disks_map)
         {
             auto total = disk->getTotalSpace();
+
+            /// Some disks don't support information about the space.
+            if (!total)
+                continue;
+
             auto available = disk->getAvailableSpace();
             auto unreserved = disk->getUnreservedSpace();
 
