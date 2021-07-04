@@ -5,7 +5,10 @@
 
 namespace DB
 {
-
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 /** Calculates the length of a string in bytes.
   */
@@ -36,7 +39,7 @@ struct LengthImpl
             res[i] = offsets[i] - offsets[i - 1];
     }
 
-    [[noreturn]] static void uuid(const ColumnUUID ::Container & , size_t &, PaddedPODArray<UInt64> & )
+    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt64> &)
     {
         throw Exception("Cannot apply function length to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

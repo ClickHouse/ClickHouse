@@ -54,7 +54,7 @@ struct LengthUTF8Impl
         throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    [[noreturn]] static void uuid(const ColumnUUID ::Container &, size_t &, PaddedPODArray<UInt64> &)
+    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt64> &)
     {
         throw Exception("Cannot apply function lengthUTF8 to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
