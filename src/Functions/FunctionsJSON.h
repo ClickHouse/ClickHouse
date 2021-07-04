@@ -30,7 +30,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadBufferFromString.h>
 #include <common/range.h>
 #include <type_traits>
 #include <boost/tti/has_member_function.hpp>
@@ -679,11 +678,8 @@ struct JSONExtractTree
                 return false;
 
             const auto * type = assert_cast<const DataTypeDecimal<DecimalType> *>(data_type.get());
-            std::stringstream ss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            ss << std::setprecision(type->getPrecision()) << element.getDouble();
-            auto str = ss.str();
-            ReadBufferFromString res(str);
-            assert_cast<const SerializationDecimal<DecimalType> *>(type->getDefaultSerialization().get())->deserializeText(dest, res, {});
+            auto result = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), type->getScale());
+            assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(result);
             return true;
         }
     private:
