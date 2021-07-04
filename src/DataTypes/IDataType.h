@@ -357,6 +357,7 @@ inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_t
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
 inline bool isMap(const DataTypePtr & data_type) { return WhichDataType(data_type).isMap(); }
 inline bool isNothing(const DataTypePtr & data_type) { return WhichDataType(data_type).isNothing(); }
+inline bool isUUID(const DataTypePtr & data_type) { return WhichDataType(data_type).isUUID(); }
 
 template <typename T>
 inline bool isUInt8(const T & data_type)
