@@ -44,6 +44,7 @@
             --table-header-color: #F8F8F8;
             --table-hover-color: #FFF8EF;
             --null-color: #A88;
+            --link-color: #06D;
         }
 
         [data-theme="dark"] {
@@ -61,6 +62,7 @@
             --table-header-color: #102020;
             --table-hover-color: #003333;
             --null-color: #A88;
+            --link-color: #4BDAF7;
         }
 
         html, body
@@ -275,6 +277,12 @@
             font-size: 110%;
             color: #080;
         }
+
+        a, a:visited
+        {
+            color: var(--link-color);
+            text-decoration: none;
+        }
     </style>
 </head>
 
@@ -482,6 +490,7 @@
                 let cell = response.data[row_idx][col_idx];
 
                 let is_null = (cell === null);
+                let is_link = false;
 
                 /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
                 let text;
@@ -491,9 +500,23 @@
                     text = JSON.stringify(cell);
                 } else {
                     text = cell;
+
+                    /// If it looks like URL, create a link. This is for convenience.
+                    if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
+                        is_link = true;
+                    }
                 }
 
-                td.appendChild(document.createTextNode(text));
+                let node = document.createTextNode(text);
+                if (is_link) {
+                    let link = document.createElement('a');
+                    link.appendChild(node);
+                    link.href = text;
+                    link.setAttribute('target', '_blank');
+                    node = link;
+                }
+
+                td.appendChild(node);
                 td.className = column_classes[col_idx];
                 if (is_null) {
                     td.className += ' null';

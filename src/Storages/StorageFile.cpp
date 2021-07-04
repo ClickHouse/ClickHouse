@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
 namespace
@@ -509,8 +510,17 @@ Pipe StorageFile::read(
             else
                 return metadata_snapshot->getColumns();
         };
-        if (!fs::is_regular_file(this_ptr->table_fd)) {
-                
+        if (this_ptr->use_table_fd) {
+            // if fd is a regular file, then seek to its start
+            if (/*regular &&*/ lseek(this_ptr->table_fd, this_ptr->table_fd_init_offset, SEEK_SET) < 0)
+            {
+                throwFromErrno("Cannot seek file descriptor, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            }
+            else
+            {
+                // else if fd is a pipeline, then throw an Exception
+                throw Exception("Cannot read from a pipeline twice", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            }
         }
         pipes.emplace_back(std::make_shared<StorageFileSource>(
             this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format()));

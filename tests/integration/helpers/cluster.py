@@ -1188,15 +1188,18 @@ class ClickHouseCluster:
                 time.sleep(1)
 
 
-    def wait_hdfs_to_start(self, timeout=300):
+    def wait_hdfs_to_start(self, timeout=300, check_marker=False):
         start = time.time()
         while time.time() - start < timeout:
             try:
                 self.hdfs_api.write_data("/somefilewithrandomname222", "1")
                 logging.debug("Connected to HDFS and SafeMode disabled! ")
+                if check_marker:
+                    self.hdfs_api.read_data("/preparations_done_marker")
+
                 return
             except Exception as ex:
-                logging.exception("Can't connect to HDFS " + str(ex))
+                logging.exception("Can't connect to HDFS or preparations are not done yet " + str(ex))
                 time.sleep(1)
 
         raise Exception("Can't wait HDFS to start")
@@ -1443,7 +1446,7 @@ class ClickHouseCluster:
                 os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 self.make_hdfs_api(kerberized=True)
-                self.wait_hdfs_to_start()
+                self.wait_hdfs_to_start(check_marker=True)
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
@@ -1489,9 +1492,9 @@ class ClickHouseCluster:
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
 
-                logging.debug("Waiting for ClickHouse start in {instance}, ip: {instance.ip_address}...")
+                logging.debug(f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}...")
                 instance.wait_for_start(start_timeout)
-                logging.debug("ClickHouse {instance} started")
+                logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(instance.ip_address, command=self.client_bin_path)
 
