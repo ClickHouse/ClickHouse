@@ -3,7 +3,9 @@
 set -x -e
 
 mkdir -p build/cmake/toolchain/darwin-x86_64
-tar xJf MacOSX10.15.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
+tar xJf MacOSX11.0.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
+
+ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
 
 mkdir -p build/cmake/toolchain/linux-aarch64
 tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolchain/linux-aarch64 --strip-components=1

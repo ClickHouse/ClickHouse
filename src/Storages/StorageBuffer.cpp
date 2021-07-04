@@ -15,13 +15,13 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <common/logger_useful.h>
 #include <common/getThreadId.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -369,13 +369,14 @@ void StorageBuffer::read(
     {
         if (query_info.prewhere_info)
         {
+            auto actions_settings = ExpressionActionsSettings::fromContext(local_context);
             if (query_info.prewhere_info->alias_actions)
             {
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
                     return std::make_shared<ExpressionTransform>(
                         header,
-                        query_info.prewhere_info->alias_actions);
+                        std::make_shared<ExpressionActions>(query_info.prewhere_info->alias_actions, actions_settings));
                 });
             }
 
@@ -385,7 +386,7 @@ void StorageBuffer::read(
                 {
                     return std::make_shared<FilterTransform>(
                             header,
-                            query_info.prewhere_info->row_level_filter,
+                            std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter, actions_settings),
                             query_info.prewhere_info->row_level_column_name,
                             false);
                 });
@@ -395,7 +396,7 @@ void StorageBuffer::read(
             {
                 return std::make_shared<FilterTransform>(
                         header,
-                        query_info.prewhere_info->prewhere_actions,
+                        std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions, actions_settings),
                         query_info.prewhere_info->prewhere_column_name,
                         query_info.prewhere_info->remove_prewhere_column);
             });
@@ -920,7 +921,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     Block structure_of_destination_table = allow_materialized ? destination_metadata_snapshot->getSampleBlock()
                                                               : destination_metadata_snapshot->getSampleBlockNonMaterialized();
     Block block_to_write;
-    for (size_t i : ext::range(0, structure_of_destination_table.columns()))
+    for (size_t i : collections::range(0, structure_of_destination_table.columns()))
     {
         auto dst_col = structure_of_destination_table.getByPosition(i);
         if (block.has(dst_col.name))
