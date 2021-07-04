@@ -7,6 +7,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
+#include <Common/filesystemHelpers.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
@@ -78,9 +79,6 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/loadavg", loadavg);
     openFileIfExists("/proc/stat", proc_stat);
     openFileIfExists("/proc/cpuinfo", cpuinfo);
-    openFileIfExists("/proc/schedstat", schedstat);
-    openFileIfExists("/proc/sockstat", sockstat);
-    openFileIfExists("/proc/netstat", netstat);
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/uptime", uptime);
 
@@ -617,21 +615,56 @@ void AsynchronousMetrics::update()
         readText(open_files, *file_nr);
         new_values["OSOpenFiles"] = open_files;
     }
-#endif
 
-
-
-    /// Process disk usage according to OS
-#if defined(OS_LINUX)
+    for (size_t i = 0, size = thermal.size(); i < size; ++i)
     {
-        DiskStatisticsOS::Data data = disk_stat.get();
+        ReadBufferFromFile & in = *thermal[i];
 
-        new_values["FilesystemsTotalBytes"] = data.total_bytes;
-        new_values["FilesystemsUsedBytes"] = data.used_bytes;
-        new_values["FilesystemsTotalINodes"] = data.total_inodes;
-        new_values["FilesystemsUsedINodes"] = data.used_inodes;
+        in.rewind();
+        uint64_t temperature = 0;
+        readText(temperature, in);
+        new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
     }
 #endif
+
+    /// Free space in filesystems at data path and logs path.
+    {
+        auto stat = getStatVFS(getContext()->getPath());
+
+        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
+        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_bsize;
+        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_bsize;
+        new_values["FilesystemMainPathTotalINodes"] = stat.f_files;
+        new_values["FilesystemMainPathAvailableINodes"] = stat.f_favail;
+        new_values["FilesystemMainPathUsedINodes"] = stat.f_files - stat.f_favail;
+    }
+
+    {
+        auto stat = getStatVFS(".");
+
+        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
+        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_bsize;
+        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_bsize;
+        new_values["FilesystemLogsPathTotalINodes"] = stat.f_files;
+        new_values["FilesystemLogsPathAvailableINodes"] = stat.f_favail;
+        new_values["FilesystemLogsPathUsedINodes"] = stat.f_files - stat.f_favail;
+    }
+
+    /// Free and total space on every configured disk.
+    {
+        DisksMap disks_map = getContext()->getDisksMap();
+        for (const auto & [name, disk] : disks_map)
+        {
+            auto total = disk->getTotalSpace();
+            auto available = disk->getAvailableSpace();
+            auto unreserved = disk->getUnreservedSpace();
+
+            new_values[fmt::format("DiskTotal_{}", name)] = total;
+            new_values[fmt::format("DiskUsed_{}", name)] = total - available;
+            new_values[fmt::format("DiskAvailable_{}", name)] = available;
+            new_values[fmt::format("DiskUnreserved_{}", name)] = unreserved;
+        }
+    }
 
     {
         auto databases = DatabaseCatalog::instance().getDatabases();
