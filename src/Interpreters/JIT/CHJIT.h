@@ -9,9 +9,9 @@
 #include <unordered_map>
 #include <atomic>
 
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/Target/TargetMachine.h>
+#include <llvm/IR/LLVMContext.h> // Y_IGNORE
+#include <llvm/IR/Module.h> // Y_IGNORE
+#include <llvm/Target/TargetMachine.h> // Y_IGNORE
 
 namespace DB
 {
