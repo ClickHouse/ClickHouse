@@ -2,9 +2,6 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/MemoryStatisticsOS.h>
-#include <Common/MemoryInfoOS.h>
-#include <Common/ProcessorStatisticsOS.h>
-#include <Common/DiskStatisticsOS.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadBufferFromFile.h>
 
