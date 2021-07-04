@@ -72,11 +72,8 @@ def create_materialized_db(ip, port,
     instance.query(create_query)
     assert materialized_database in instance.query('SHOW DATABASES')
 
-def drop_materialized_db(materialized_database='test_database', sync=False):
-    if sync:
-        instance.query('DROP DATABASE IF EXISTS {} SYNC'.format(materialized_database))
-    else:
-        instance.query('DROP DATABASE IF EXISTS {}'.format(materialized_database))
+def drop_materialized_db(materialized_database='test_database'):
+    instance.query('DROP DATABASE IF EXISTS {}'.format(materialized_database))
     assert materialized_database not in instance.query('SHOW DATABASES')
 
 def create_postgres_table(cursor, table_name, replica_identity_full=False, template=postgres_table_template):
@@ -108,7 +105,6 @@ queries = [
     ]
 
 
-@pytest.mark.timeout(30)
 def assert_nested_table_is_created(table_name, materialized_database='test_database'):
     database_tables = instance.query('SHOW TABLES FROM {}'.format(materialized_database))
     while table_name not in database_tables:
@@ -117,7 +113,6 @@ def assert_nested_table_is_created(table_name, materialized_database='test_datab
     assert(table_name in database_tables)
 
 
-@pytest.mark.timeout(30)
 def check_tables_are_synchronized(table_name, order_by='key', postgres_database='postgres_database', materialized_database='test_database'):
     assert_nested_table_is_created(table_name, materialized_database)
 
@@ -149,9 +144,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.timeout(120)
 def test_load_and_sync_all_database_tables(started_cluster):
-    drop_materialized_db(sync=True)
+    drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
                              port=started_cluster.postgres_port,
                              database=True)
@@ -177,7 +171,6 @@ def test_load_and_sync_all_database_tables(started_cluster):
     drop_materialized_db()
 
 
-@pytest.mark.timeout(120)
 def test_replicating_dml(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
@@ -221,7 +214,6 @@ def test_replicating_dml(started_cluster):
     drop_materialized_db()
 
 
-@pytest.mark.timeout(120)
 def test_different_data_types(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
@@ -307,9 +299,8 @@ def test_different_data_types(started_cluster):
     drop_materialized_db()
 
 
-@pytest.mark.timeout(120)
 def test_load_and_sync_subset_of_database_tables(started_cluster):
-    drop_materialized_db(sync=True)
+    drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
                              port=started_cluster.postgres_port,
                              database=True)
@@ -358,7 +349,6 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
     drop_materialized_db()
 
 
-@pytest.mark.timeout(120)
 def test_changing_replica_identity_value(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
@@ -378,7 +368,6 @@ def test_changing_replica_identity_value(started_cluster):
     drop_materialized_db()
 
 
-@pytest.mark.timeout(320)
 def test_clickhouse_restart(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
@@ -407,7 +396,6 @@ def test_clickhouse_restart(started_cluster):
     drop_materialized_db()
 
 
-@pytest.mark.timeout(120)
 def test_replica_identity_index(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
@@ -436,7 +424,6 @@ def test_replica_identity_index(started_cluster):
     drop_materialized_db()
 
 
-@pytest.mark.timeout(320)
 def test_table_schema_changes(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
@@ -492,7 +479,6 @@ def test_table_schema_changes(started_cluster):
     instance.query("DROP DATABASE test_database")
 
 
-@pytest.mark.timeout(120)
 def test_many_concurrent_queries(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
@@ -572,7 +558,6 @@ def test_many_concurrent_queries(started_cluster):
     drop_materialized_db()
 
 
-@pytest.mark.timeout(120)
 def test_single_transaction(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
@@ -692,7 +677,6 @@ def test_multiple_databases(started_cluster):
     drop_materialized_db('test_database_2')
 
 
-@pytest.mark.timeout(320)
 def test_concurrent_transactions(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
@@ -737,7 +721,6 @@ def test_concurrent_transactions(started_cluster):
     drop_materialized_db()
 
 
-@pytest.mark.timeout(320)
 def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,
@@ -839,7 +822,6 @@ def test_restart_server_while_replication_startup_not_finished(started_cluster):
     drop_materialized_db()
 
 
-@pytest.mark.timeout(320)
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
     drop_materialized_db()
     conn = get_postgres_conn(ip=started_cluster.postgres_ip,

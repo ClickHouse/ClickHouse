@@ -42,7 +42,7 @@ public:
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
-    NameSet fetchRequiredTables(pqxx::connection & connection_);
+    NameSet fetchRequiredTables(postgres::Connection & connection_);
 
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);
