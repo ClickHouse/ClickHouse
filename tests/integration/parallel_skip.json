@@ -181,6 +181,8 @@
   "test_materialize_mysql_database/test.py::test_system_tables_table[clickhouse_node1]",
   "test_materialize_mysql_database/test.py::test_materialize_with_column_comments[clickhouse_node0]",
   "test_materialize_mysql_database/test.py::test_materialize_with_column_comments[clickhouse_node1]",
+  "test_materialize_mysql_database/test.py::test_materialize_with_enum[clickhouse_node0]",
+  "test_materialize_mysql_database/test.py::test_materialize_with_enum[clickhouse_node1]",
   "test_materialize_mysql_database/test.py::test_utf8mb4[clickhouse_node0]",
   "test_materialize_mysql_database/test.py::test_utf8mb4[clickhouse_node1]",
   "test_parts_delete_zookeeper/test.py::test_merge_doesnt_work_without_zookeeper",
