@@ -718,16 +718,19 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 /// Also write values normalized to 0..1 by diving to the number of CPUs.
                 /// These values are good to be averaged across the cluster of non-uniform servers.
 
-                new_values["OSUserTimeNormalized"] = delta_values_all_cpus.user * multiplier / num_cpus;
-                new_values["OSNiceTimeNormalized"] = delta_values_all_cpus.nice * multiplier / num_cpus;
-                new_values["OSSystemTimeNormalized"] = delta_values_all_cpus.system * multiplier / num_cpus;
-                new_values["OSIdleTimeNormalized"] = delta_values_all_cpus.idle * multiplier / num_cpus;
-                new_values["OSIOWaitTimeNormalized"] = delta_values_all_cpus.iowait * multiplier / num_cpus;
-                new_values["OSIrqTimeNormalized"] = delta_values_all_cpus.irq * multiplier / num_cpus;
-                new_values["OSSoftIrqTimeNormalized"] = delta_values_all_cpus.softirq * multiplier / num_cpus;
-                new_values["OSStealTimeNormalized"] = delta_values_all_cpus.steal * multiplier / num_cpus;
-                new_values["OSGuestTimeNormalized"] = delta_values_all_cpus.guest * multiplier / num_cpus;
-                new_values["OSGuestNiceTimeNormalized"] = delta_values_all_cpus.guest_nice * multiplier / num_cpus;
+                if (num_cpus)
+                {
+                    new_values["OSUserTimeNormalized"] = delta_values_all_cpus.user * multiplier / num_cpus;
+                    new_values["OSNiceTimeNormalized"] = delta_values_all_cpus.nice * multiplier / num_cpus;
+                    new_values["OSSystemTimeNormalized"] = delta_values_all_cpus.system * multiplier / num_cpus;
+                    new_values["OSIdleTimeNormalized"] = delta_values_all_cpus.idle * multiplier / num_cpus;
+                    new_values["OSIOWaitTimeNormalized"] = delta_values_all_cpus.iowait * multiplier / num_cpus;
+                    new_values["OSIrqTimeNormalized"] = delta_values_all_cpus.irq * multiplier / num_cpus;
+                    new_values["OSSoftIrqTimeNormalized"] = delta_values_all_cpus.softirq * multiplier / num_cpus;
+                    new_values["OSStealTimeNormalized"] = delta_values_all_cpus.steal * multiplier / num_cpus;
+                    new_values["OSGuestTimeNormalized"] = delta_values_all_cpus.guest * multiplier / num_cpus;
+                    new_values["OSGuestNiceTimeNormalized"] = delta_values_all_cpus.guest_nice * multiplier / num_cpus;
+                }
             }
 
             proc_stat_values_other = current_other_values;
