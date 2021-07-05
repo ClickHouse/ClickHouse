@@ -4,7 +4,7 @@ toc_title: Build on Mac OS X
 ---
 # Как собрать ClickHouse на Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-Сборка должна запускаться с x86_64 (Intel) на macOS версии 10.15 (Catalina) и выше в последней версии компилятора Xcode's native AppleClang, или Homebrew's vanilla Clang или в GCC-компиляторах.
+Сборка должна запускаться с x86_64 (Intel) на macOS версии 10.15 (Catalina) и выше в последней версии компилятора Xcode's native AppleClang, Homebrew's vanilla Clang или в GCC-компиляторах.
 
 ## Установка Homebrew {#install-homebrew}
 
