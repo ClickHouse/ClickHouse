@@ -82,7 +82,7 @@ public:
         const String & tmp_prefix_ = "",
         std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
         bool try_zero_copy = true,
-        const DiskPtr disk_remote = nullptr);
+        DiskPtr dest_disk = nullptr);
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
@@ -115,7 +115,7 @@ private:
             const UUID & part_uuid,
             const StorageMetadataPtr & metadata_snapshot,
             ContextPtr context,
-            ReservationPtr reservation,
+            DiskPtr disk,
             PooledReadWriteBufferFromHTTP & in,
             size_t projections,
             ThrottlerPtr throttler);
@@ -125,7 +125,7 @@ private:
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
-            const Disks & disks_remote,
+            DiskPtr disk,
             PooledReadWriteBufferFromHTTP & in,
             ThrottlerPtr throttler);
 

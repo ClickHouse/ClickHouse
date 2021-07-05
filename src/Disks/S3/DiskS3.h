@@ -98,13 +98,11 @@ public:
 
     DiskType::Type getType() const override { return DiskType::Type::S3; }
 
+    bool supportZeroCopyReplication() const override { return true; }
+
     void shutdown() override;
 
     void startup() override;
-
-    /// Return some uniq string for file, overrode for remote disk
-    /// Required for distinguish different copies of the same part on remote disk
-    String getUniqueId(const String & path) const override;
 
     /// Check file exists and ClickHouse has an access to it
     /// Overrode in remote disk

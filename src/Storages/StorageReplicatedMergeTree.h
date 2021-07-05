@@ -225,10 +225,10 @@ public:
     /// Fetch part only when it stored on shared storage like S3
     bool executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
 
-    /// Lock part in zookeeper for use common S3/HDFS data in several nodes
+    /// Lock part in zookeeper for use shared data in several nodes
     void lockSharedData(const IMergeTreeDataPart & part) const override;
 
-    /// Unlock common S3/HDFS data part in zookeeper
+    /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
     /// Return false if data is still used by another node
     bool unlockSharedData(const IMergeTreeDataPart & part) const override;
