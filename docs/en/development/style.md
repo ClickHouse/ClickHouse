@@ -628,7 +628,7 @@ If the class is not intended for polymorphic use, you do not need to make functi
 
 **18.** Encodings.
 
-Use UTF-8 everywhere. Use `std::string`and`char *`. Do not use `std::wstring`and`wchar_t`.
+Use UTF-8 everywhere. Use `std::string` and `char *`. Do not use `std::wstring` and `wchar_t`.
 
 **19.** Logging.
 
