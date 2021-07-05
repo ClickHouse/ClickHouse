@@ -49,7 +49,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
@@ -82,9 +81,8 @@ static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const
     {
         auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
         if (!ast_select)
-            throw Exception("Logical error while creating StorageLiveView."
-                            " Could not retrieve table name from select query.",
-                            DB::ErrorCodes::LOGICAL_ERROR);
+            throw Exception("LIVE VIEWs are only supported for queries from tables, but there is no table name in select query.",
+                            DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 

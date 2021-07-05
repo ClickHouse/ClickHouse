@@ -15,6 +15,7 @@ ADDINCL(
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
+    contrib/restricted/murmurhash
 )
 
 PEERDIR(
@@ -30,6 +31,7 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
+    contrib/restricted/murmurhash
     library/cpp/consistent_hashing
 )
 

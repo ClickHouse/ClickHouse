@@ -13,7 +13,7 @@ namespace DB
 class FillingTransform : public ISimpleTransform
 {
 public:
-    FillingTransform(const Block & header_, const SortDescription & sort_description_);
+    FillingTransform(const Block & header_, const SortDescription & sort_description_, bool on_totals_);
 
     String getName() const override { return "FillingTransform"; }
 
@@ -28,6 +28,8 @@ private:
     void setResultColumns(Chunk & chunk, MutableColumns & fill_columns, MutableColumns & other_columns) const;
 
     const SortDescription sort_description; /// Contains only rows with WITH FILL.
+    const bool on_totals; /// FillingTransform does nothing on totals.
+
     FillingRow filling_row; /// Current row, which is used to fill gaps.
     FillingRow next_row; /// Row to which we need to generate filling rows.
 

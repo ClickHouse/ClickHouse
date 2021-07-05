@@ -1302,6 +1302,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `STRING`, `BINARY`         | [String](../sql-reference/data-types/string.md)     | `UTF8`                     |
 | `STRING`, `BINARY`         | [FixedString](../sql-reference/data-types/fixedstring.md)   | `UTF8`                        |
 | `DECIMAL`                  | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                  |
+| `DECIMAL256`               | [Decimal256](../sql-reference/data-types/decimal.md)| `DECIMAL256`               |
 | `LIST`                     | [Array](../sql-reference/data-types/array.md)       | `LIST`                     |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument.
