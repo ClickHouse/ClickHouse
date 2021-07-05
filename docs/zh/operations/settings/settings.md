@@ -817,21 +817,22 @@ load_balancing = first_or_random
 为了保持一致性（以获取相同数据拆分的不同部分），此选项仅在设置了采样键时有效。
 副本滞后不受控制。
 
-## 编译 {#compile}
+## compile_expressions {#compile-expressions}
 
-启用查询的编译。 默认情况下，0（禁用）。
+啟用或禁用在運行時使用 LLVM 將常用的簡單函數和運算符編譯為本機代碼。
 
-编译仅用于查询处理管道的一部分：用于聚合的第一阶段（GROUP BY）。
-如果编译了管道的这一部分，则由于部署周期较短和内联聚合函数调用，查询可能运行得更快。 对于具有多个简单聚合函数的查询，可以看到最大的性能改进（在极少数情况下可快四倍）。 通常，性能增益是微不足道的。 在极少数情况下，它可能会减慢查询执行速度。
+可能的值：
 
-## min_count_to_compile {#min-count-to-compile}
+- 0 — 禁用。
+- 1 — 啟用。
 
-在运行编译之前可能使用已编译代码块的次数。 默认情况下，3。
-For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
-如果该值为1或更大，则编译在单独的线程中异步进行。 结果将在准备就绪后立即使用，包括当前正在运行的查询。
+默認值：`1`。
 
-对于查询中使用的聚合函数的每个不同组合以及GROUP BY子句中的键类型，都需要编译代码。
-The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
+## min_count_to_compile_expression {#min-count-to-compile-expression}
+
+在編譯之前執行相同表達式的最小計數。
+
+默認值：`3`。
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
