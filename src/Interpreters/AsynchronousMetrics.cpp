@@ -481,7 +481,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     AsynchronousMetricValues new_values;
 
     auto current_time = std::chrono::system_clock::now();
-    auto time_after_previous_update = current_time - previous_update_time;
+    auto time_after_previous_update [[maybe_unused]] = current_time - previous_update_time;
     previous_update_time = update_time;
 
     /// This is also a good indicator of system responsiveness.
