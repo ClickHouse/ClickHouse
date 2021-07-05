@@ -555,11 +555,12 @@ static void fillColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arro
                 );
         }
 
-        auto filter = [=](auto && elem) {
+        auto filter = [=](auto && elem)
+        {
             auto which = WhichDataType(column_type);
             if (arrow_type->id() == arrow::Type::DATE32 && which.isDateOrDate32())
             {
-                return (elem.second == "Date" && which.isDate()) || (elem.second == "Date32" && which.isDate32());
+                return (strcmp(elem.second, "Date") == 0 && which.isDate()) || (strcmp(elem.second, "Date32") == 0 && which.isDate32());
             }
             else
             {
