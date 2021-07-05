@@ -1344,30 +1344,32 @@ struct BinImpl
     static void executeOneUInt(T x, char *& out)
     {
         bool was_nonzero = false;
-        T t = 1;
-
-        for (Int8 offset = sizeof(x) * 8 - 1; offset >= 0; --offset)
+        for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
-            t = t << offset;
-            if ((x & t) == t)
+            UInt8 byte = x >> offset;
+
+            /// Skip leading zeros
+            if (byte == 0 && !was_nonzero)
+                continue;
+
+            /// First non-zero byte without leading zeros
+            if (was_nonzero)
             {
-                x = x - t;
-                was_nonzero = true;
-                *out = '1';
-                t = 1;
+                writeBinByte(byte, out);
+                out += word_size;
             }
             else
             {
-                t = 1;
-                if (!was_nonzero)
-                {
-                    continue;
-                }
-                *out = '0';
+                size_t written = writeBinByteNoLeadZeros(byte, out);
+                out += written;
             }
+            was_nonzero = true;
+        }
+        if (!was_nonzero)
+        {
+            *out = '0';
             ++out;
         }
-
         *out = '\0';
         ++out;
     }
