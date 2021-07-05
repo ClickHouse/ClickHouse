@@ -196,6 +196,12 @@ namespace
             user->access.revokeGrantOption(AccessType::ALL);
         }
 
+        String default_database = config.getString(user_config + ".default_database", "");
+        if (!default_database.empty())
+        {
+            user->default_database = default_database;
+        }
+
         return user;
     }
 
