@@ -45,7 +45,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         try
         {
             auto res = std::make_unique<ReadBufferFromFile>(
-                filename, buffer_size, flags == -1 ? O_RDONLY | O_CLOEXEC : flags | O_DIRECT, existing_memory, alignment);
+                filename, buffer_size, (flags == -1 ? O_RDONLY | O_CLOEXEC : flags) | O_DIRECT, existing_memory, alignment);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
             return res;
         }
