@@ -210,6 +210,11 @@ namespace
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " GRANTEES " << (settings.hilite ? IAST::hilite_none : "");
         grantees.format(settings);
     }
+
+    void formatDefaultDatabase(const String & default_database, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT DATABASE " << (settings.hilite ? IAST::hilite_none : "") << default_database;
+    }
 }
 
 
@@ -262,6 +267,9 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (remove_hosts)
         formatHosts("DROP", *remove_hosts, format);
 
+    if (!default_database.empty())
+        formatDefaultDatabase(default_database, format);
+
     if (default_roles)
         formatDefaultRoles(*default_roles, format);
 
@@ -270,5 +278,7 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (grantees)
         formatGrantees(*grantees, format);
+
+
 }
 }

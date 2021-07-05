@@ -300,6 +300,17 @@ namespace
             return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
+
+    bool parseDefaultDatabase(IParserBase::Pos & pos, Expected & expected, String & default_database)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"DEFAULT DATABASE"}.ignore(pos, expected))
+                return false;
+
+            return parseIdentifierOrStringLiteral(pos, expected, default_database);
+        });
+    }
 }
 
 
@@ -350,6 +361,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     String cluster;
+    String default_database;
 
     while (true)
     {
@@ -388,6 +400,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
 
         if (!grantees && parseGrantees(pos, expected, attach_mode, grantees))
+            continue;
+
+        if (default_database.empty() && parseDefaultDatabase(pos, expected, default_database))
             continue;
 
         if (alter)
@@ -445,6 +460,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->default_roles = std::move(default_roles);
     query->settings = std::move(settings);
     query->grantees = std::move(grantees);
+    query->default_database = std::move(default_database);
 
     return true;
 }
