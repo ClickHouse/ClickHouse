@@ -57,7 +57,7 @@ static String generateDigest(const String & userdata)
 {
     std::vector<String> user_password;
     boost::split(user_password, userdata, [](char c) { return c == ':'; });
-    return user_password[0] + ":" + base64Encode(getSHA1(user_password[1]));
+    return user_password[0] + ":" + base64Encode(getSHA1(userdata));
 }
 
 static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const std::vector<KeeperStorage::AuthID> & session_auths)
@@ -77,8 +77,10 @@ static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, c
                 return true;
 
             for (const auto & session_auth : session_auths)
+            {
                 if (node_acl.scheme == session_auth.scheme && node_acl.id == session_auth.id)
                     return true;
+            }
         }
     }
 
@@ -88,7 +90,8 @@ static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, c
 static bool fixupACL(
     const std::vector<Coordination::ACL> & request_acls,
     const std::vector<KeeperStorage::AuthID> & current_ids,
-    std::vector<Coordination::ACL> & result_acls)
+    std::vector<Coordination::ACL> & result_acls,
+    bool hash_acls)
 {
     if (request_acls.empty())
         return true;
@@ -121,7 +124,8 @@ static bool fixupACL(
                 return false;
 
             valid_found = true;
-            new_acl.id = generateDigest(new_acl.id);
+            if (hash_acls)
+                new_acl.id = generateDigest(new_acl.id);
             result_acls.push_back(new_acl);
         }
     }
@@ -263,12 +267,13 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
             }
             else
             {
+
                 auto & session_auth_ids = storage.session_and_auth[session_id];
 
                 KeeperStorage::Node created_node;
 
                 Coordination::ACLs node_acls;
-                if (!fixupACL(request.acls, session_auth_ids, node_acls))
+                if (!fixupACL(request.acls, session_auth_ids, node_acls, request.need_to_hash_acls))
                 {
                     response.error = Coordination::Error::ZINVALIDACL;
                     return {response_ptr, {}};
@@ -280,6 +285,7 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                 created_node.acl_id = acl_id;
                 created_node.stat.czxid = zxid;
                 created_node.stat.mzxid = zxid;
+                created_node.stat.pzxid = zxid;
                 created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
                 created_node.stat.mtime = created_node.stat.ctime;
                 created_node.stat.numChildren = 0;
@@ -302,12 +308,15 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                 }
 
                 auto child_path = getBaseName(path_created);
-                container.updateValue(parent_path, [child_path] (KeeperStorage::Node & parent)
+                int64_t prev_parent_zxid;
+                container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid] (KeeperStorage::Node & parent)
                 {
                     /// Increment sequential number even if node is not sequential
                     ++parent.seq_num;
                     parent.children.insert(child_path);
                     ++parent.stat.cversion;
+                    prev_parent_zxid = parent.stat.pzxid;
+                    parent.stat.pzxid = zxid;
                     ++parent.stat.numChildren;
                 });
 
@@ -317,7 +326,7 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                 if (request.is_ephemeral)
                     ephemerals[session_id].emplace(path_created);
 
-                undo = [&storage, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path, acl_id]
+                undo = [&storage, prev_parent_zxid, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path, acl_id]
                 {
                     storage.container.erase(path_created);
                     storage.acl_map.removeUsage(acl_id);
@@ -325,11 +334,12 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                     if (is_ephemeral)
                         storage.ephemerals[session_id].erase(path_created);
 
-                    storage.container.updateValue(parent_path, [child_path] (KeeperStorage::Node & undo_parent)
+                    storage.container.updateValue(parent_path, [child_path, prev_parent_zxid] (KeeperStorage::Node & undo_parent)
                     {
                         --undo_parent.stat.cversion;
                         --undo_parent.stat.numChildren;
                         --undo_parent.seq_num;
+                        undo_parent.stat.pzxid = prev_parent_zxid;
                         undo_parent.children.erase(child_path);
                     });
                 };
@@ -536,6 +546,7 @@ struct KeeperStorageSetRequest final : public KeeperStorageRequest
         }
         else if (request.version == -1 || request.version == it->value.stat.version)
         {
+
             auto prev_node = it->value;
 
             auto itr = container.updateValue(request.path, [zxid, request] (KeeperStorage::Node & value)
@@ -664,6 +675,111 @@ struct KeeperStorageCheckRequest final : public KeeperStorageRequest
         }
 
         return { response_ptr, {} };
+    }
+};
+
+
+struct KeeperStorageSetACLRequest final : public KeeperStorageRequest
+{
+    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    {
+        auto & container = storage.container;
+        auto it = container.find(zk_request->getPath());
+        if (it == container.end())
+            return true;
+
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        if (node_acls.empty())
+            return true;
+
+        const auto & session_auths = storage.session_and_auth[session_id];
+        return checkACL(Coordination::ACL::Admin, node_acls, session_auths);
+    }
+
+    using KeeperStorageRequest::KeeperStorageRequest;
+
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t session_id) const override
+    {
+        auto & container = storage.container;
+
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperSetACLResponse & response = dynamic_cast<Coordination::ZooKeeperSetACLResponse &>(*response_ptr);
+        Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*zk_request);
+        auto it = container.find(request.path);
+        if (it == container.end())
+        {
+            response.error = Coordination::Error::ZNONODE;
+        }
+        else if (request.version != -1 && request.version != it->value.stat.aversion)
+        {
+            response.error = Coordination::Error::ZBADVERSION;
+        }
+        else
+        {
+            auto & session_auth_ids = storage.session_and_auth[session_id];
+            Coordination::ACLs node_acls;
+
+            if (!fixupACL(request.acls, session_auth_ids, node_acls, request.need_to_hash_acls))
+            {
+                response.error = Coordination::Error::ZINVALIDACL;
+                return {response_ptr, {}};
+            }
+
+            uint64_t acl_id = storage.acl_map.convertACLs(node_acls);
+            storage.acl_map.addUsage(acl_id);
+
+            storage.container.updateValue(request.path, [acl_id] (KeeperStorage::Node & node)
+            {
+                node.acl_id = acl_id;
+                ++node.stat.aversion;
+            });
+
+            response.stat = it->value.stat;
+            response.error = Coordination::Error::ZOK;
+        }
+
+        /// It cannot be used insied multitransaction?
+        return { response_ptr, {} };
+    }
+};
+
+struct KeeperStorageGetACLRequest final : public KeeperStorageRequest
+{
+    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    {
+        auto & container = storage.container;
+        auto it = container.find(zk_request->getPath());
+        if (it == container.end())
+            return true;
+
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        if (node_acls.empty())
+            return true;
+
+        const auto & session_auths = storage.session_and_auth[session_id];
+        /// LOL, GetACL require more permissions, then SetACL...
+        return checkACL(Coordination::ACL::Admin | Coordination::ACL::Read, node_acls, session_auths);
+    }
+    using KeeperStorageRequest::KeeperStorageRequest;
+
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperGetACLResponse & response = dynamic_cast<Coordination::ZooKeeperGetACLResponse &>(*response_ptr);
+        Coordination::ZooKeeperGetACLRequest & request = dynamic_cast<Coordination::ZooKeeperGetACLRequest &>(*zk_request);
+        auto & container = storage.container;
+        auto it = container.find(request.path);
+        if (it == container.end())
+        {
+            response.error = Coordination::Error::ZNONODE;
+        }
+        else
+        {
+            response.stat = it->value.stat;
+            response.acl = storage.acl_map.convertNumber(it->value.acl_id);
+        }
+
+        return {response_ptr, {}};
     }
 };
 
@@ -893,10 +1009,12 @@ KeeperWrapperFactory::KeeperWrapperFactory()
     registerKeeperRequestWrapper<Coordination::OpNum::SimpleList, KeeperStorageListRequest>(*this);
     registerKeeperRequestWrapper<Coordination::OpNum::Check, KeeperStorageCheckRequest>(*this);
     registerKeeperRequestWrapper<Coordination::OpNum::Multi, KeeperStorageMultiRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::SetACL, KeeperStorageSetACLRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::GetACL, KeeperStorageGetACLRequest>(*this);
 }
 
 
-KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id, std::optional<int64_t> new_last_zxid)
+KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id, std::optional<int64_t> new_last_zxid, bool check_acl)
 {
     KeeperStorage::ResponsesForSessions results;
     if (new_last_zxid)
@@ -954,7 +1072,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
         KeeperStorageRequestPtr storage_request = KeeperWrapperFactory::instance().get(zk_request);
         Coordination::ZooKeeperResponsePtr response;
 
-        if (!storage_request->checkAuth(*this, session_id))
+        if (check_acl && !storage_request->checkAuth(*this, session_id))
         {
             response = zk_request->makeResponse();
             /// Original ZooKeeper always throws no auth, even when user provided some credentials

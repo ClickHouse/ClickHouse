@@ -34,41 +34,15 @@ std::string concatenateName(const std::string & nested_table_name, const std::st
 }
 
 
-/** Name can be treated as compound if and only if both parts are simple identifiers.
+/** Name can be treated as compound if it contains dot (.) in the middle.
   */
 std::pair<std::string, std::string> splitName(const std::string & name)
 {
-    const char * begin = name.data();
-    const char * pos = begin;
-    const char * end = begin + name.size();
-
-    if (pos >= end || !isValidIdentifierBegin(*pos))
+    auto idx = name.find_first_of('.');
+    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
         return {name, {}};
 
-    ++pos;
-
-    while (pos < end && isWordCharASCII(*pos))
-        ++pos;
-
-    if (pos >= end || *pos != '.')
-        return {name, {}};
-
-    const char * first_end = pos;
-    ++pos;
-    const char * second_begin = pos;
-
-    if (pos >= end || !isValidIdentifierBegin(*pos))
-        return {name, {}};
-
-    ++pos;
-
-    while (pos < end && isWordCharASCII(*pos))
-        ++pos;
-
-    if (pos != end)
-        return {name, {}};
-
-    return {{ begin, first_end }, { second_begin, end }};
+    return {name.substr(0, idx), name.substr(idx + 1)};
 }
 
 
