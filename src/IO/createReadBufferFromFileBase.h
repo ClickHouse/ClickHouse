@@ -19,14 +19,14 @@ class MMappedFileCache;
   * Otherwise, the read operations are performed asynchronously.
   */
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
-    const std::string & filename_,
+    const std::string & filename,
     size_t estimated_size,
     size_t direct_io_threshold,
     size_t mmap_threshold,
     MMappedFileCache * mmap_cache,
-    size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+    size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE,
     int flags_ = -1,
-    char * existing_memory_ = nullptr,
+    char * existing_memory = nullptr,
     size_t alignment = 0);
 
 }

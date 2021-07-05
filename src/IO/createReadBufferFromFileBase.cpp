@@ -17,9 +17,9 @@ namespace DB
 {
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
-    const std::string & filename_,
+    const std::string & filename,
     size_t estimated_size, size_t direct_io_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache,
-    size_t buffer_size_, int flags_, char * existing_memory_, size_t alignment)
+    size_t buffer_size, int flags, char * existing_memory, size_t alignment)
 {
 #if defined(OS_LINUX) || defined(__FreeBSD__)
     if (direct_io_threshold && estimated_size >= direct_io_threshold)
@@ -44,7 +44,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         /// Attempt to open a file with O_DIRECT
         try
         {
-            auto res = std::make_unique<ReadBufferFromFile>(filename_, buffer_size_, flags_ | O_DIRECT, existing_memory_, alignment);
+            auto res = std::make_unique<ReadBufferFromFile>(
+                filename, buffer_size, flags == -1 ? O_RDONLY | O_CLOEXEC : flags | O_DIRECT, existing_memory, alignment);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
             return res;
         }
@@ -59,11 +60,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     (void)estimated_size;
 #endif
 
-    if (!existing_memory_ && mmap_threshold && mmap_cache && estimated_size >= mmap_threshold)
+    if (!existing_memory && mmap_threshold && mmap_cache && estimated_size >= mmap_threshold)
     {
         try
         {
-            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*mmap_cache, filename_, 0);
+            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*mmap_cache, filename, 0);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
             return res;
         }
@@ -75,7 +76,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     }
 
     ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    return std::make_unique<ReadBufferFromFile>(filename_, buffer_size_, flags_, existing_memory_, alignment);
+    return std::make_unique<ReadBufferFromFile>(filename, buffer_size, flags, existing_memory, alignment);
 }
 
 }
