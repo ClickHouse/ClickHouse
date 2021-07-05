@@ -65,11 +65,6 @@ namespace ErrorCodes
 constexpr size_t uuid_bytes_length = 16;
 constexpr size_t uuid_text_length = 36;
 
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-}
-
 class FunctionIPv6NumToString : public IFunction
 {
 public:
@@ -955,13 +950,15 @@ public:
     }
 };
 
+/// Encode number or string to string with binary or hexadecimal representation
 template <typename Impl>
-class Conversion : public IFunction
+class EncodeToBinaryRepr : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
     static constexpr size_t word_size = Impl::word_size;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<Conversion>(); }
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBinaryRepr>(); }
 
     String getName() const override { return name; }
 
@@ -1012,7 +1009,7 @@ public:
     }
 
     template <typename T>
-    bool tryExecuteUInt(const IColumn *col, ColumnPtr &col_res) const
+    bool tryExecuteUInt(const IColumn * col, ColumnPtr & col_res) const
     {
         const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
 
@@ -1071,16 +1068,8 @@ public:
             size_t size = in_offsets.size();
 
             out_offsets.resize(size);
-            if (getName() == "bin")
-            {
-                out_vec.resize((in_vec.size() - size) * word_size + size);
-            } else if (getName() == "hex")
-            {
-                out_vec.resize(in_vec.size() * word_size - size);
-            } else
-            {
-                throw Exception("new function is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-            }
+            /// reserve `word_size` bytes for each non trailing zero byte from input + `size` bytes for trailing zeros
+            out_vec.resize((in_vec.size() - size) * word_size + size);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
@@ -1187,13 +1176,14 @@ public:
     }
 };
 
+/// Decode number or string from string with binary or hexadecimal representation
 template <typename Impl>
-class UnConversion : public IFunction
+class DecodeFromBinaryRepr : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
     static constexpr size_t word_size = Impl::word_size;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<UnConversion>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<DecodeFromBinaryRepr>(); }
 
     String getName() const override { return name; }
 
@@ -1227,18 +1217,7 @@ public:
 
             size_t size = in_offsets.size();
             out_offsets.resize(size);
-            if (getName() == "unhex")
-            {
-                out_vec.resize(in_vec.size() / 2 + size);
-            }
-            else if (getName() == "unbin")
-            {
-                out_vec.resize(in_vec.size() / 8 + size);
-            }
-            else
-            {
-                throw Exception("new function is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-            }
+            out_vec.resize(in_vec.size() / word_size + size);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
@@ -1248,7 +1227,7 @@ public:
             {
                 size_t new_offset = in_offsets[i];
 
-                Impl::unConversion(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset - 1]), pos);
+                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset - 1]), pos);
 
                 out_offsets[i] = pos - begin;
 
@@ -1270,9 +1249,9 @@ public:
 
 struct HexImpl
 {
-public:
     static constexpr auto name = "hex";
-    static const size_t word_size = 2;
+    static constexpr size_t word_size = 2;
+
     template <typename T>
     static void executeOneUInt(T x, char *& out)
     {
@@ -1287,7 +1266,7 @@ public:
 
             was_nonzero = true;
             writeHexByteUppercase(byte, out);
-            out += 2;
+            out += word_size;
         }
         *out = '\0';
         ++out;
@@ -1299,7 +1278,7 @@ public:
         {
             writeHexByteUppercase(*pos, out);
             ++pos;
-            out += 2;
+            out += word_size;
         }
         *out = '\0';
         ++out;
@@ -1334,15 +1313,10 @@ public:
 
 struct UnhexImpl
 {
-public:
     static constexpr auto name = "unhex";
+    static constexpr size_t word_size = 2;
 
-    static String getName()
-    {
-        return name;
-    }
-
-    static void unConversion(const char * pos, const char * end, char *& out)
+    static void decode(const char * pos, const char * end, char *& out)
     {
         if ((end - pos) & 1)
         {
@@ -1353,7 +1327,7 @@ public:
         while (pos < end)
         {
             *out = unhex2(pos);
-            pos += 2;
+            pos += word_size;
             ++out;
         }
         *out = '\0';
@@ -1363,16 +1337,16 @@ public:
 
 struct BinImpl
 {
-public:
     static constexpr auto name = "bin";
     static constexpr size_t word_size = 8;
+
     template <typename T>
     static void executeOneUInt(T x, char *& out)
     {
         bool was_nonzero = false;
         T t = 1;
 
-        for (int8_t offset = sizeof(x) * 8 - 1; offset >= 0; --offset)
+        for (Int8 offset = sizeof(x) * 8 - 1; offset >= 0; --offset)
         {
             t = t << offset;
             if ((x & t) == t)
@@ -1401,7 +1375,7 @@ public:
     template <typename T>
     static void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, const size_t type_size_in_bytes)
     {
-        const size_t hex_length = type_size_in_bytes * 8 + 1; /// Including trailing zero byte.
+        const size_t hex_length = type_size_in_bytes * word_size + 1; /// Including trailing zero byte.
         auto col_str = ColumnString::create();
 
         ColumnString::Chars & out_vec = col_str->getChars();
@@ -1412,8 +1386,7 @@ public:
         out_vec.resize(size * hex_length);
 
         size_t pos = 0;
-        char * begin = reinterpret_cast<char *>(out_vec.data());
-        char * out = begin;
+        char * out = reinterpret_cast<char *>(out_vec.data());
         for (size_t i = 0; i < size; ++i)
         {
             const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
@@ -1440,12 +1413,10 @@ public:
 
 struct UnbinImpl
 {
-public:
     static constexpr auto name = "unbin";
+    static constexpr size_t word_size = 8;
 
-    static String getName() { return name; }
-
-    static void unConversion(const char * pos, const char * end, char *& out)
+    static void decode(const char * pos, const char * end, char *& out)
     {
         UInt8 left = 0;
 
@@ -1454,7 +1425,7 @@ public:
         /// e.g. the length is 9 and the input is "101000001",
         /// first left_cnt is 1, left is 0, right shift, pos is 1, left = 1
         /// then, left_cnt is 0, remain input is '01000001'.
-        for (uint8_t left_cnt = (end - pos) & 7; left_cnt > 0; --left_cnt)
+        for (UInt8 left_cnt = (end - pos) & 7; left_cnt > 0; --left_cnt)
         {
             left = left << 1;
             if (*pos != '0')
@@ -1469,12 +1440,12 @@ public:
             ++out;
         }
 
-        /// input character encoding is UTF-8. And
-        /// remain bits mod 8 is zero.
+        assert((end - pos) % 8 == 0);
+
         while (end - pos != 0)
         {
             UInt8 c = 0;
-            for (uint8_t i = 0; i < 8; ++i)
+            for (UInt8 i = 0; i < 8; ++i)
             {
                 c = c << 1;
                 if (*pos != '0')
@@ -1492,10 +1463,10 @@ public:
     }
 };
 
-using FunctionHex = Conversion<HexImpl>;
-using FunctionUnhex = UnConversion<UnhexImpl>;
-using FunctionBin = Conversion<BinImpl>;
-using FunctionUnbin = UnConversion<UnbinImpl>;
+using FunctionHex = EncodeToBinaryRepr<HexImpl>;
+using FunctionUnhex = DecodeFromBinaryRepr<UnhexImpl>;
+using FunctionBin = EncodeToBinaryRepr<BinImpl>;
+using FunctionUnbin = DecodeFromBinaryRepr<UnbinImpl>;
 
 class FunctionChar : public IFunction
 {
