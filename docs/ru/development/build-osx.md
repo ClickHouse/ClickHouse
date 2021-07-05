@@ -81,7 +81,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 ## Предупреждения {#caveats}
 
-Если будете запускать `clickhouse-server`, убедитесь, что увеличили системную переменную maxfiles.
+Если будете запускать `clickhouse-server`, убедитесь, что увеличили системную переменную `maxfiles`.
 
 !!! info "Note"
     Вам понадобится команда `sudo`.
