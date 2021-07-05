@@ -95,7 +95,7 @@ SELECT library_name, license_type, license_path FROM system.licenses ORDER BY li
 1. All external third-party code should reside in the dedicated directories under `contrib` directory of ClickHouse repo. Prefer Git submodules, when available.
 2. Fork/mirror the official repo in [Clickhouse-extras](https://github.com/ClickHouse-Extras). Prefer official GitHub repos, when available.
 3. Branch from the branch you want to integrate, e.g., `master` -> `clickhouse/master`, or `release/vX.Y.Z` -> `clickhouse/release/vX.Y.Z`.
-4. All forks in [Clickhouse-extras](https://github.com/ClickHouse-Extras) should be automatically synchronized with upstreams. `clickhouse/...` branches will remain unaffected, since virtually nobody is going to use that naming pattern in their upstream repos.
+4. All forks in [Clickhouse-extras](https://github.com/ClickHouse-Extras) can be automatically synchronized with upstreams. `clickhouse/...` branches will remain unaffected, since virtually nobody is going to use that naming pattern in their upstream repos.
 5. Add submodules under `contrib` of ClickHouse repo that refer the above forks/mirrors. Set the submodules to track the corresponding `clickhouse/...` branches.
 6. Every time the custom changes have to be made in the library code, a dedicated branch should be created, like `clickhouse/my-fix`. Then this branch should be merged into the branch, that is tracked by the submodule, e.g., `clickhouse/master` or `clickhouse/release/vX.Y.Z`.
 7. No code should be pushed in any branch of the forks in [Clickhouse-extras](https://github.com/ClickHouse-Extras), whose names do not follow `clickhouse/...` pattern.
