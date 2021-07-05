@@ -85,6 +85,7 @@ private:
     std::optional<ReadBufferFromFile> cpuinfo;
     std::optional<ReadBufferFromFile> file_nr;
     std::optional<ReadBufferFromFile> uptime;
+    std::optional<ReadBufferFromFile> net_dev;
 
     std::vector<std::unique_ptr<ReadBufferFromFile>> thermal;
 
@@ -98,7 +99,7 @@ private:
 
     std::unordered_map<String /* device name */, std::unique_ptr<ReadBufferFromFile>> block_devs;
 
-    /// TODO: Network rx/tx, sockets.
+    /// TODO: socket statistics.
 
     struct ProcStatValuesCPU
     {
@@ -154,6 +155,22 @@ private:
     };
 
     std::unordered_map<String /* device name */, BlockDeviceStatValues> block_device_stats;
+
+    struct NetworkInterfaceStatValues
+    {
+        uint64_t recv_bytes;
+        uint64_t recv_packets;
+        uint64_t recv_errors;
+        uint64_t recv_drop;
+        uint64_t send_bytes;
+        uint64_t send_packets;
+        uint64_t send_errors;
+        uint64_t send_drop;
+
+        NetworkInterfaceStatValues operator-(const NetworkInterfaceStatValues & other) const;
+    };
+
+    std::unordered_map<String /* device name */, NetworkInterfaceStatValues> network_interface_stats;
 
 #endif
 

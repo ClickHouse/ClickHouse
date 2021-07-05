@@ -80,6 +80,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/cpuinfo", cpuinfo);
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/uptime", uptime);
+    openFileIfExists("/proc/net/dev", net_dev);
 
     for (size_t thermal_device_index = 0;; ++thermal_device_index)
     {
@@ -455,6 +456,21 @@ AsynchronousMetrics::BlockDeviceStatValues::operator-(const AsynchronousMetrics:
     return res;
 }
 
+AsynchronousMetrics::NetworkInterfaceStatValues
+AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMetrics::NetworkInterfaceStatValues & other) const
+{
+    NetworkInterfaceStatValues res{};
+    res.recv_bytes = recv_bytes - other.recv_bytes;
+    res.recv_packets = recv_packets - other.recv_packets;
+    res.recv_errors = recv_errors - other.recv_errors;
+    res.recv_drop = recv_drop - other.recv_drop;
+    res.send_bytes = send_bytes - other.send_bytes;
+    res.send_packets = send_packets - other.send_packets;
+    res.send_errors = send_errors - other.send_errors;
+    res.send_drop = send_drop - other.send_drop;
+    return res;
+}
+
 #endif
 
 
@@ -821,7 +837,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     {
         device->rewind();
 
-        BlockDeviceStatValues current_values;
+        BlockDeviceStatValues current_values{};
         BlockDeviceStatValues & prev_values = block_device_stats[name];
         current_values.read(*device);
 
@@ -864,6 +880,85 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
             new_values["BlockActiveTimePerOp_" + name] = delta_values.io_ticks * time_multiplier / delta_values.in_flight_ios;
             new_values["BlockQueueTimePerOp_" + name] = delta_values.time_in_queue * time_multiplier / delta_values.in_flight_ios;
+        }
+    }
+
+    if (net_dev)
+    {
+        net_dev->rewind();
+
+        /// Skip first two lines:
+        /// Inter-|   Receive                                                |  Transmit
+        ///  face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+
+        skipToNextLineOrEOF(*net_dev);
+        skipToNextLineOrEOF(*net_dev);
+
+        while (!net_dev->eof())
+        {
+            skipWhitespaceIfAny(*net_dev, true);
+            String interface_name;
+            readStringUntilWhitespace(interface_name, *net_dev);
+
+            /// We are not interested in loopback devices.
+            if (!interface_name.ends_with(':') || interface_name == "lo:" || interface_name.size() <= 1)
+            {
+                skipToNextLineOrEOF(*net_dev);
+                continue;
+            }
+
+            interface_name.pop_back();
+
+            NetworkInterfaceStatValues current_values{};
+            uint64_t unused;
+
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(current_values.recv_bytes, *net_dev);
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(current_values.recv_packets, *net_dev);
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(current_values.recv_errors, *net_dev);
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(current_values.recv_drop, *net_dev);
+
+            /// NOTE We should pay more attention to the number of fields.
+
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(unused, *net_dev);
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(unused, *net_dev);
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(unused, *net_dev);
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(unused, *net_dev);
+
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(current_values.send_bytes, *net_dev);
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(current_values.send_packets, *net_dev);
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(current_values.send_errors, *net_dev);
+            skipWhitespaceIfAny(*net_dev, true);
+            readText(current_values.send_drop, *net_dev);
+
+            skipToNextLineOrEOF(*net_dev);
+
+            NetworkInterfaceStatValues & prev_values = network_interface_stats[interface_name];
+            NetworkInterfaceStatValues delta_values = current_values - prev_values;
+            prev_values = current_values;
+
+            if (!first_run)
+            {
+                new_values["NetworkReceiveBytes_" + interface_name] = delta_values.recv_bytes;
+                new_values["NetworkReceivePackets_" + interface_name] = delta_values.recv_packets;
+                new_values["NetworkReceiveErrors_" + interface_name] = delta_values.recv_errors;
+                new_values["NetworkReceiveDrop_" + interface_name] = delta_values.recv_drop;
+
+                new_values["NetworkSendBytes_" + interface_name] = delta_values.send_bytes;
+                new_values["NetworkSendPackets_" + interface_name] = delta_values.send_packets;
+                new_values["NetworkSendErrors_" + interface_name] = delta_values.send_errors;
+                new_values["NetworkSendDrop_" + interface_name] = delta_values.send_drop;
+            }
         }
     }
 
