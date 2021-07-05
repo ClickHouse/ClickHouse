@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -84,13 +85,18 @@ private:
     std::optional<ReadBufferFromFile> cpuinfo;
     std::optional<ReadBufferFromFile> file_nr;
     std::optional<ReadBufferFromFile> uptime;
+
     std::vector<std::unique_ptr<ReadBufferFromFile>> thermal;
 
     std::unordered_map<String /* device name */,
         std::unordered_map<String /* label name */,
             std::unique_ptr<ReadBufferFromFile>>> hwmon_devices;
 
-    /// TODO: IO load, Network rx/tx, sockets, EDAC.
+    std::vector<std::pair<
+        std::unique_ptr<ReadBufferFromFile> /* correctable errors */,
+        std::unique_ptr<ReadBufferFromFile> /* uncorrectable errors */>> edac;
+
+    /// TODO: IO load, Network rx/tx, sockets.
 
     struct ProcStatValuesCPU
     {
