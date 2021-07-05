@@ -96,7 +96,9 @@ private:
         std::unique_ptr<ReadBufferFromFile> /* correctable errors */,
         std::unique_ptr<ReadBufferFromFile> /* uncorrectable errors */>> edac;
 
-    /// TODO: IO load, Network rx/tx, sockets.
+    std::unordered_map<String /* device name */, std::unique_ptr<ReadBufferFromFile>> block_devs;
+
+    /// TODO: Network rx/tx, sockets.
 
     struct ProcStatValuesCPU
     {
@@ -127,6 +129,31 @@ private:
     ProcStatValuesCPU proc_stat_values_all_cpus{};
     ProcStatValuesOther proc_stat_values_other{};
     std::vector<ProcStatValuesCPU> proc_stat_values_per_cpu;
+
+    /// https://www.kernel.org/doc/Documentation/block/stat.txt
+    struct BlockDeviceStatValues
+    {
+        uint64_t read_ios;
+        uint64_t read_merges;
+        uint64_t read_sectors;
+        uint64_t read_ticks;
+        uint64_t write_ios;
+        uint64_t write_merges;
+        uint64_t write_sectors;
+        uint64_t write_ticks;
+        uint64_t in_flight_ios;
+        uint64_t io_ticks;
+        uint64_t time_in_queue;
+        uint64_t discard_ops;
+        uint64_t discard_merges;
+        uint64_t discard_sectors;
+        uint64_t discard_ticks;
+
+        void read(ReadBuffer & in);
+        BlockDeviceStatValues operator-(const BlockDeviceStatValues & other) const;
+    };
+
+    std::unordered_map<String /* device name */, BlockDeviceStatValues> block_device_stats;
 
 #endif
 
