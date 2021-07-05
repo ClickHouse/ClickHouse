@@ -43,6 +43,9 @@ namespace ErrorCodes
     extern const int CANNOT_SYSCONF;
 }
 
+
+#if defined(OS_LINUX)
+
 static constexpr size_t small_buffer_size = 4096;
 
 static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFile> & out)
@@ -61,6 +64,8 @@ static std::unique_ptr<ReadBufferFromFile> openFileIfExists(const std::string & 
         return std::make_unique<ReadBufferFromFile>(filename, small_buffer_size);
     return {};
 }
+
+#endif
 
 
 AsynchronousMetrics::AsynchronousMetrics(
