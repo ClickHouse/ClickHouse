@@ -18,6 +18,7 @@ select bin(toNullable(materialize('12332424')));
 select bin(toLowCardinality(materialize('12332424')));
 
 select unbin('');
+select unbin('0') == '\0';
 select unbin('00110000'); -- 0
 select unbin('0011000100110000'); -- 10
 select unbin('111001101011010110001011111010001010111110010101'); -- 测试
@@ -27,3 +28,9 @@ select unbin(toLowCardinality(materialize('00110000')));
 
 select unbin(bin('')) == '';
 select bin(unbin('')) == '';
+select bin(unbin('0')) == '00000000';
+
+-- hex and bin consistent for corner cases
+select hex('') == bin('');
+select unhex('') == unbin('');
+select unhex('0') == unbin('0');
