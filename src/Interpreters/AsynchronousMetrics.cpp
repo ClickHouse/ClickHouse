@@ -90,6 +90,41 @@ AsynchronousMetrics::AsynchronousMetrics(
         thermal.emplace_back(std::move(file));
         ++thermal_device_index;
     }
+
+    size_t hwmon_index = 0;
+    while (true)
+    {
+        String hwmon_name_file = fmt::format("/sys/class/hwmon/hwmon{}/name", hwmon_index);
+        if (!std::filesystem::exists(hwmon_name_file))
+            break;
+
+        String hwmon_name;
+        ReadBufferFromFile hwmon_name_in(hwmon_name_file, small_buffer_size);
+        readStringUntilEOF(hwmon_name, hwmon_name_in);
+
+        size_t sensor_index = 0;
+        while (true)
+        {
+            String sensor_name_file = fmt::format("/sys/class/hwmon/hwmon{}/temp{}_label", hwmon_index, sensor_index);
+            String sensor_value_file = fmt::format("/sys/class/hwmon/hwmon{}/temp{}_input", hwmon_index, sensor_index);
+
+            if (!std::filesystem::exists(sensor_name_file))
+                break;
+
+            std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(sensor_value_file);
+            if (!file)
+                break;
+
+            String sensor_name;
+            ReadBufferFromFile sensor_name_in(sensor_name_file, small_buffer_size);
+            readStringUntilEOF(sensor_name, sensor_name_in);
+
+            hwmon_temperatures[hwmon_name][sensor_name] = std::move(file);
+            ++sensor_index;
+        }
+
+        ++hwmon_index;
+    }
 #endif
 }
 
@@ -674,6 +709,17 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         uint64_t temperature = 0;
         readText(temperature, in);
         new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
+    }
+
+    for (const auto & [hwmon_name, sensors] : hwmon_temperatures)
+    {
+        for (const auto & [sensor_name, sensor_file] : sensors)
+        {
+            sensor_file->rewind();
+            uint64_t temperature = 0;
+            readText(temperature, *sensor_file);
+            new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = temperature * 0.001;
+        }
     }
 #endif
 

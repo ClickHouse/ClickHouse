@@ -86,6 +86,10 @@ private:
     std::optional<ReadBufferFromFile> uptime;
     std::vector<std::unique_ptr<ReadBufferFromFile>> thermal;
 
+    std::unordered_map<String /* device name */,
+        std::unordered_map<String /* label name */,
+            std::unique_ptr<ReadBufferFromFile>>> hwmon_temperatures;
+
     /// TODO: IO load, Network rx/tx, sockets, EDAC.
 
     struct ProcStatValuesCPU
