@@ -40,14 +40,14 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & dbname_,
         const String & postgres_dbname,
-        postgres::PoolWithFailoverPtr connection_pool_,
-        const bool cache_tables_)
+        postgres::PoolWithFailoverPtr pool_,
+        bool cache_tables_)
     : IDatabase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , dbname(postgres_dbname)
-    , connection_pool(std::move(connection_pool_))
+    , pool(std::move(pool_))
     , cache_tables(cache_tables_)
 {
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
@@ -59,7 +59,8 @@ bool DatabasePostgreSQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    auto tables_list = fetchTablesList();
+    auto connection_holder = pool->get();
+    auto tables_list = fetchPostgreSQLTablesList(connection_holder->get());
 
     for (const auto & table_name : tables_list)
         if (!detached_or_dropped.count(table_name))
@@ -74,28 +75,14 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
     std::lock_guard<std::mutex> lock(mutex);
 
     Tables tables;
-    auto table_names = fetchTablesList();
+    auto connection_holder = pool->get();
+    auto table_names = fetchPostgreSQLTablesList(connection_holder->get());
 
     for (const auto & table_name : table_names)
         if (!detached_or_dropped.count(table_name))
             tables[table_name] = fetchTable(table_name, local_context, true);
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
-}
-
-
-std::unordered_set<std::string> DatabasePostgreSQL::fetchTablesList() const
-{
-    std::unordered_set<std::string> tables;
-    std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
-        "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
-    auto connection_holder = connection_pool->get();
-    pqxx::read_transaction tx(connection_holder->get());
-
-    for (auto table_name : tx.stream<std::string>(query))
-        tables.insert(std::get<0>(table_name));
-
-    return tables;
 }
 
 
@@ -108,7 +95,7 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
             "PostgreSQL table name cannot contain single quote or backslash characters, passed {}", table_name);
     }
 
-    auto connection_holder = connection_pool->get();
+    auto connection_holder = pool->get();
     pqxx::nontransaction tx(connection_holder->get());
 
     try
@@ -163,20 +150,15 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
         if (!table_checked && !checkPostgresTable(table_name))
             return StoragePtr{};
 
-        auto use_nulls = local_context->getSettingsRef().external_table_functions_use_nulls;
-        auto columns = fetchPostgreSQLTableStructure(connection_pool->get(), doubleQuoteString(table_name), use_nulls);
+        auto connection_holder = pool->get();
+        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), doubleQuoteString(table_name)).columns;
 
         if (!columns)
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-            StorageID(database_name, table_name),
-            connection_pool,
-            table_name,
-            ColumnsDescription{*columns},
-            ConstraintsDescription{},
-            String{},
-            local_context);
+                StorageID(database_name, table_name), pool, table_name,
+                ColumnsDescription{*columns}, ConstraintsDescription{}, String{}, local_context);
 
         if (cache_tables)
             cached_tables[table_name] = storage;
@@ -298,7 +280,8 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool
 void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard<std::mutex> lock{mutex};
-    auto actual_tables = fetchTablesList();
+    auto connection_holder = pool->get();
+    auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get());
 
     if (cache_tables)
     {
