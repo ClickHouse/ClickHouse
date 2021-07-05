@@ -109,6 +109,7 @@ AsynchronousMetrics::AsynchronousMetrics(
         String hwmon_name;
         ReadBufferFromFile hwmon_name_in(hwmon_name_file, small_buffer_size);
         readText(hwmon_name, hwmon_name_in);
+        std::replace(hwmon_name.begin(), hwmon_name.end(), ' ', '_');
 
         for (size_t sensor_index = 0;; ++sensor_index)
         {
@@ -136,10 +137,35 @@ AsynchronousMetrics::AsynchronousMetrics(
             {
                 ReadBufferFromFile sensor_name_in(sensor_name_file, small_buffer_size);
                 readText(sensor_name, sensor_name_in);
+                std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
             }
 
             hwmon_devices[hwmon_name][sensor_name] = std::move(file);
         }
+    }
+
+    for (size_t edac_index = 0;; ++edac_index)
+    {
+        String edac_correctable_file = fmt::format("/sys/devices/system/edac/mc/mc{}/ce_count", edac_index);
+        String edac_uncorrectable_file = fmt::format("/sys/devices/system/edac/mc/mc{}/ue_count", edac_index);
+
+        bool edac_correctable_file_exists = std::filesystem::exists(edac_correctable_file);
+        bool edac_uncorrectable_file_exists = std::filesystem::exists(edac_uncorrectable_file);
+
+        if (!edac_correctable_file_exists && !edac_uncorrectable_file_exists)
+        {
+            if (edac_index == 0)
+                continue;
+            else
+                break;
+        }
+
+        edac.emplace_back();
+
+        if (edac_correctable_file_exists)
+            edac.back().first = openFileIfExists(edac_correctable_file);
+        if (edac_uncorrectable_file_exists)
+            edac.back().second = openFileIfExists(edac_uncorrectable_file);
     }
 #endif
 }
@@ -739,6 +765,27 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 new_values[fmt::format("Temperature_{}", hwmon_name)] = temperature * 0.001;
             else
                 new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = temperature * 0.001;
+        }
+    }
+
+    for (size_t i = 0, size = edac.size(); i < size; ++i)
+    {
+        if (edac[i].first)
+        {
+            ReadBufferFromFile & in = *edac[i].first;
+            in.rewind();
+            uint64_t errors = 0;
+            readText(errors, in);
+            new_values[fmt::format("EDAC{}_Correctable", i)] = errors;
+        }
+
+        if (edac[i].second)
+        {
+            ReadBufferFromFile & in = *edac[i].second;
+            in.rewind();
+            uint64_t errors = 0;
+            readText(errors, in);
+            new_values[fmt::format("EDAC{}_Uncorrectable", i)] = errors;
         }
     }
 #endif
