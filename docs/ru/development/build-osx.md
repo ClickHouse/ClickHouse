@@ -42,7 +42,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 ## Сборка ClickHouse {#build-clickhouse}
 
-  Чтобы запустить сборку в компиляторе Xcode's native AppleClang, выполните следующие команды:
+  Чтобы запустить сборку в компиляторе Xcode's native AppleClang:
 
   ``` bash
   $ cd ClickHouse
