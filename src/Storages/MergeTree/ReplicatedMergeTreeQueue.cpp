@@ -26,6 +26,7 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     , format_version(storage.format_version)
     , current_parts(format_version)
     , virtual_parts(format_version)
+    , drop_ranges(format_version)
 {
     zookeeper_path = storage.zookeeper_path;
     replica_path = storage.replica_path;
@@ -168,6 +169,13 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     }
     else
     {
+        drop_ranges.addDropRange(entry, log);
+        auto drop_range = *entry->getDropRange(format_version);
+        /// DROP PARTS removes parts from virtual parts
+        MergeTreePartInfo drop_range_info = MergeTreePartInfo::fromPartName(drop_range, format_version);
+        if (!drop_range_info.isFakeDropRangePart() && virtual_parts.getContainingPart(drop_range_info) == drop_range)
+            virtual_parts.removePartAndCoveredParts(drop_range);
+
         queue.push_front(entry);
     }
 
@@ -261,6 +269,11 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             virtual_parts.remove(*drop_range_part_name);
         }
 
+        if (entry->type == LogEntry::DROP_RANGE)
+        {
+            drop_ranges.removeDropRange(entry, log);
+        }
+
         if (entry->type == LogEntry::ALTER_METADATA)
         {
             LOG_TRACE(log, "Finishing metadata alter with version {}", entry->alter_version);
@@ -269,6 +282,11 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
     }
     else
     {
+        if (entry->type == LogEntry::DROP_RANGE)
+        {
+            drop_ranges.removeDropRange(entry, log);
+        }
+
         for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
         {
             /// Because execution of the entry is unsuccessful,
@@ -1001,6 +1019,16 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     {
         if (!isNotCoveredByFuturePartsImpl(entry.znode_name, new_part_name, out_postpone_reason, state_lock))
             return false;
+    }
+
+    if (entry.type != LogEntry::DROP_RANGE && drop_ranges.isAffectedByDropRange(entry, out_postpone_reason))
+    {
+        //LOG_DEBUG(log, "POSTPONE ENTRY {} ({}) PRODUCING PART {} BECAUSE OF DROP RANGE {}", entry.znode_name, entry.typeToString(), entry.new_part_name);
+        return false;
+    }
+    else
+    {
+        //LOG_DEBUG(log, "NO DROP RANGE FOUND FOR PART {} OF TYPE {}", entry.new_part_name, entry.typeToString());
     }
 
     /// Check that fetches pool is not overloaded
@@ -2072,6 +2100,12 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
     }
 
     return true;
+}
+
+bool ReplicatedMergeTreeMergePredicate::hasDropRange(const MergeTreePartInfo & new_drop_range_info) const
+{
+    std::lock_guard lock(queue.state_mutex);
+    return queue.drop_ranges.hasDropRange(new_drop_range_info);
 }
 
 
