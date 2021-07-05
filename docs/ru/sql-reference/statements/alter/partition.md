@@ -16,8 +16,11 @@ toc_title: PARTITION
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — удалить все значения в столбце для заданной партиции;
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — очистить построенные вторичные индексы для заданной партиции;
 -   [FREEZE PARTITION](#alter_freeze-partition) — создать резервную копию партиции;
+-   [UNFREEZE PARTITION](#alter_unfreeze-partition) — удалить резервную копию партиции;
 -   [FETCH PARTITION\|PART](#alter_fetch-partition) — скачать партицию/кусок с другого сервера;
--   [MOVE PARTITION\|PART](#alter_move-partition) — переместить партицию/кусок на другой диск или том.
+-   [MOVE PARTITION\|PART](#alter_move-partition) — переместить партицию/кускок на другой диск или том.
+-   [UPDATE IN PARTITION](#update-in-partition) — обновить данные внутри партиции по условию.
+-   [DELETE IN PARTITION](#delete-in-partition) — удалить данные внутри партиции по условию.
 
 ## DETACH PARTITION\|PART {#alter_detach-partition}
 

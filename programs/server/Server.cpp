@@ -50,7 +50,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/ExpressionJIT.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
