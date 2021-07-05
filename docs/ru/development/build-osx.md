@@ -1,6 +1,6 @@
 ---
 toc_priority: 65
-toc_title: Build on Mac OS X
+toc_title: Сборка на Mac OS X
 ---
 # Как собрать ClickHouse на Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
