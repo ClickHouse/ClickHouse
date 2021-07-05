@@ -1,8 +1,12 @@
-add_subdirectory(ASTs)
-target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_jsonpath_asts)
+include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
+add_headers_and_sources(clickhouse_functions_jsonpath Parsers)
+add_headers_and_sources(clickhouse_functions_jsonpath ASTs)
+add_headers_and_sources(clickhouse_functions_jsonpath Generator)
+add_library(clickhouse_functions_jsonpath ${clickhouse_functions_jsonpath_sources} ${clickhouse_functions_jsonpath_headers})
 
-add_subdirectory(Generator)
-target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_jsonpath_generator)
+target_link_libraries(clickhouse_functions_jsonpath PRIVATE dbms)
+target_link_libraries(clickhouse_functions_jsonpath PRIVATE clickhouse_parsers)
 
-add_subdirectory(Parsers)
-target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_jsonpath_parsers)
+if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
+    target_compile_options(clickhouse_functions_jsonpath PRIVATE "-g0")
+endif()
