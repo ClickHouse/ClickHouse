@@ -7174,6 +7174,11 @@ void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
         background_moves_executor.start();
 }
 
+std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSettings() const
+{
+    return std::make_unique<MergeTreeSettings>(getContext()->getReplicatedMergeTreeSettings());
+}
+
 
 void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part) const
 {

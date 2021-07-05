@@ -1818,11 +1818,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (MergeTreeSettings::isPartFormatSetting(setting_name) && !new_value)
             {
                 /// Use default settings + new and check if doesn't affect part format settings
-                MergeTreeSettings copy = *getSettings();
-                copy.resetToDefault();
-                copy.applyChanges(new_changes);
+                auto copy = getDefaultSettings();
+                copy->applyChanges(new_changes);
                 String reason;
-                if (!canUsePolymorphicParts(copy, &reason) && !reason.empty())
+                if (!canUsePolymorphicParts(*copy, &reason) && !reason.empty())
                     throw Exception("Can't change settings. Reason: " + reason, ErrorCodes::NOT_IMPLEMENTED);
             }
 
@@ -1984,14 +1983,12 @@ void MergeTreeData::changeSettings(
             }
         }
 
-        MergeTreeSettings copy = *getSettings();
-        /// reset to default settings before applying existing
-        copy.resetToDefault();
-        copy.applyChanges(new_changes);
+        /// Reset to default settings before applying existing.
+        auto copy = getDefaultSettings();
+        copy->applyChanges(new_changes);
+        copy->sanityCheck(getContext()->getSettingsRef());
 
-        copy.sanityCheck(getContext()->getSettingsRef());
-
-        storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
+        storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         new_metadata.setSettingsChanges(new_settings);
         setInMemoryMetadata(new_metadata);
