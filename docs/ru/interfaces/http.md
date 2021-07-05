@@ -15,7 +15,7 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-Веб-интерфейс доступен по адресу: http://localhost:8123/play. 
+Веб-интерфейс доступен по адресу: `http://localhost:8123/play`. 
 
 ![Веб-интерфейс](../images/play.png)
 
