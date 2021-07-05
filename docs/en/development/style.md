@@ -628,7 +628,7 @@ If the class is not intended for polymorphic use, you do not need to make functi
 
 **18.** Encodings.
 
-Use UTF-8 everywhere. Use `std::string`and`char *`. Do not use `std::wstring`and`wchar_t`.
+Use UTF-8 everywhere. Use `std::string` and `char *`. Do not use `std::wstring` and `wchar_t`.
 
 **19.** Logging.
 
@@ -757,7 +757,7 @@ If there is a good solution already available, then use it, even if it means you
 
 **3.** You can install a library that isn’t in the packages, if the packages do not have what you need or have an outdated version or the wrong type of compilation.
 
-**4.** If the library is small and does not have its own complex build system, put the source files in the `contrib` folder.
+**4.** If the library is small and does not have its own complex build system, put the source files in the `contrib` folder. See [Guidelines for adding new third-party libraries](https://clickhouse.tech/docs/en/development/contrib/#adding-third-party-libraries) for details.
 
 **5.** Preference is always given to libraries that are already in use.
 
