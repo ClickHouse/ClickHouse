@@ -33,6 +33,7 @@ public:
         const String & metadata_path_,
         UUID uuid_,
         const ASTStorage * database_engine_define_,
+        bool is_attach_,
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info,
@@ -63,6 +64,7 @@ private:
     void startSynchronization();
 
     ASTPtr database_engine_define;
+    bool is_attach;
     String remote_database_name;
     postgres::ConnectionInfo connection_info;
     std::unique_ptr<MaterializedPostgreSQLSettings> settings;
