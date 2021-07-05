@@ -1,7 +1,6 @@
 #pragma once
 
 #if defined(__ELF__) && !defined(__FreeBSD__)
-    #define NON_ELF_BUILD 0
     #include <Common/SymbolIndex.h>
     #include <Common/Dwarf.h>
 namespace coverage
@@ -11,7 +10,6 @@ namespace coverage
     using Dwarf = DB::Dwarf;
 }
 #else
-    #define NON_ELF_BUILD 1
     #if WITH_COVERAGE
         #error "Coverage build does not work on FreeBSD and Darwin".
     #endif

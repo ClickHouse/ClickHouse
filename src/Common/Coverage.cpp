@@ -9,14 +9,10 @@
 #include <utility>
 #include <thread>
 
-#include <fmt/core.h>
-#include <fmt/format.h>
-
 #include "common/logger_useful.h"
 
 namespace coverage
 {
-static const size_t hardware_concurrency { std::thread::hardware_concurrency() };
 static const String logger_base_name {"Coverage"};
 
 enum class Magic : uint32_t
@@ -38,7 +34,7 @@ void Writer::pcTableCallback(const Addr * start, const Addr * end) noexcept
 
     instrumented_blocks_addrs.resize(instrumented_basic_blocks);
 
-    for (size_t i = 0; i < bb_pairs / 2; ++i)
+    for (size_t i = 0; i < instrumented_basic_blocks; ++i)
         /// Real address for non-function entries is the previous instruction, see implementation in clang:
         /// https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L768
         instrumented_blocks_addrs[i] = start[2 * i] - !(start[2 * i + 1] & 1);
@@ -76,47 +72,41 @@ void Writer::onServerInitialized()
     assert(fd != -1);
 
     report_file_ptr = mmap(nullptr, report_file_size, PROT_WRITE, MAP_SHARED, fd, 0 /*offset*/);
-    assert(report_file_ptr != static_cast<void *>(-1));
+    assert(report_file_ptr != reinterpret_cast<void *>(-1));
 
     [[maybe_unused]] const int ret = close(fd);
     assert(ret == 0);
 
-    symbolizeInstrumentedData();
-}
-
-void Writer::symbolizeInstrumentedData()
-{
-    LocalCaches caches(hardware_concurrency);
-
-    LOG_INFO(base_log, "{} instrumented basic blocks. Using thread pool of size {}",
-        instrumented_basic_blocks, hardware_concurrency);
-
-    symbolizeAddrsIntoLocalCaches(caches);
-    mergeAndWriteHeader(caches);
+    mergeAndWriteHeader(symbolizeAddrsIntoLocalCaches());
 
     /// Testing script in docker (/docker/test/coverage/run.sh) waits for this message and starts tests afterwards.
     LOG_INFO(base_log, "Symbolized all addresses");
 }
 
-void Writer::symbolizeAddrsIntoLocalCaches(LocalCaches& caches)
+Writer::LocalCaches Writer::symbolizeAddrsIntoLocalCaches()
 {
+    const size_t hardware_concurrency { std::thread::hardware_concurrency() };
+
+    LOG_INFO(base_log, "{} instrumented basic blocks. Using thread pool of size {}",
+        instrumented_basic_blocks, hardware_concurrency);
+
+    LocalCaches caches(hardware_concurrency);
+
     const SymbolIndexInstance symbol_index;
     const Dwarf dwarf(symbol_index->getSelf()->elf);
 
-    std::vector<std::thread> workers(hardware_concurrency);
+    const size_t step = instrumented_basic_blocks / caches.size();
 
-    for (size_t thread_index = 0; thread_index < hardware_concurrency; ++thread_index)
-        workers[thread_index] = std::thread{[this, thread_index, &dwarf, &cache = caches[thread_index]]
+    std::vector<std::thread> workers(caches.size());
+
+    for (size_t thread_index = 0; thread_index < caches.size(); ++thread_index)
+        workers[thread_index] = std::thread{[this, step, thread_index, &dwarf, &cache = caches[thread_index]]
         {
-            const size_t step = instrumented_basic_blocks / hardware_concurrency;
             const size_t start_index = thread_index * step;
             const size_t end_index = std::min(start_index + step, instrumented_basic_blocks - 1);
 
-            const Poco::Logger * log = &Poco::Logger::get(fmt::format("{}.{}", logger_base_name, thread_index));
-
             for (size_t i = start_index; i < end_index; ++i)
             {
-                const BBIndex bb_index = static_cast<BBIndex>(i);
                 const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(instrumented_blocks_addrs[i]);
 
                 const SourcePath src_path = loc.file.toString();
@@ -125,7 +115,10 @@ void Writer::symbolizeAddrsIntoLocalCaches(LocalCaches& caches)
                 assert(!src_path.empty());
 
                 if (i % 4096 == 0)
-                    LOG_INFO(log, "{}/{}, file: {}:{}", i - start_index, end_index - start_index, src_path, line);
+                    LOG_INFO(base_log, "{} {}/{}, file: {}:{}",
+                        thread_index, i - start_index, end_index - start_index, src_path, line);
+
+                const BBIndex bb_index = static_cast<BBIndex>(i);
 
                 if (auto cache_it = cache.find(src_path); cache_it != cache.end())
                     cache_it->second.emplace_back(bb_index, line);
@@ -139,6 +132,8 @@ void Writer::symbolizeAddrsIntoLocalCaches(LocalCaches& caches)
 
     instrumented_blocks_addrs.clear();
     instrumented_blocks_addrs.shrink_to_fit();
+
+    return caches;
 }
 
 void Writer::mergeAndWriteHeader(const LocalCaches& caches)
@@ -185,15 +180,16 @@ void Writer::mergeAndWriteHeader(const LocalCaches& caches)
     for (const auto& [path, instrumented_blocks] : source_files)
     {
         const uint32_t path_size = path.size();
-        const uint32_t path_padding = (4 - path_size % 4) % 4;
+        const uint32_t path_mod4 = path_size % 4;
+        const uint32_t path_padding = (path_mod4 == 0) ? 0 : (4 - path_mod4);
         const uint32_t path_word_len = (path_size + path_padding) / 4;
 
         report_ptr[++report_file_pos] = path_word_len;
 
-        char * report_ptr_char = reinterpret_cast<char * >(&report_ptr[++report_file_pos]);
+        char * const report_ptr_char = reinterpret_cast<char *>(&report_ptr[++report_file_pos]);
 
-        for (const char c : path) *report_ptr_char++ = c;
-        for (size_t i = 0; i < path_padding; ++i) *report_ptr_char++ = '\0';
+        memcpy(report_ptr_char, path.c_str(), path_size);
+        memset(report_ptr_char + path_size, 0, path_padding);
 
         report_file_pos += path_word_len;
 

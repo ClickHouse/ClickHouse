@@ -272,8 +272,10 @@ int ShellCommand::tryWait()
     int status = 0;
 
     while (waitpid(pid, &status, 0) < 0)
+    {
         if (errno != EINTR)
             throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
+    }
 
     LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
 

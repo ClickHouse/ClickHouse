@@ -45,8 +45,7 @@ private:
     using LocalCache = std::unordered_map<SourcePath, SourceSymbolizedData>;
     using LocalCaches = std::vector<LocalCache>;
 
-    void symbolizeInstrumentedData();
-    void symbolizeAddrsIntoLocalCaches(LocalCaches& caches);
+    LocalCaches symbolizeAddrsIntoLocalCaches();
     void mergeAndWriteHeader(const LocalCaches& caches);
 };
 }

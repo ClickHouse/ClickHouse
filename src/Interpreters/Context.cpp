@@ -78,6 +78,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <filesystem>
 
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -1124,13 +1125,11 @@ void Context::setSettings(const Settings & settings_)
 void Context::setSetting(const StringRef & name, const String & value)
 {
     auto lock = getLock();
-
     if (name == "profile")
     {
         setProfile(value);
         return;
     }
-
     settings.set(std::string_view{name}, value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
@@ -1141,16 +1140,12 @@ void Context::setSetting(const StringRef & name, const String & value)
 void Context::setSetting(const StringRef & name, const Field & value)
 {
     auto lock = getLock();
-
-    const std::string_view name_view {name};
-
     if (name == "profile")
     {
         setProfile(value.safeGet<String>());
         return;
     }
-
-    settings.set(name_view, value);
+    settings.set(std::string_view{name}, value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();
