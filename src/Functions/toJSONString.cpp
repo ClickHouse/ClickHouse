@@ -16,7 +16,7 @@ namespace
         static constexpr auto name = "toJSONString";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToJSONString>(context); }
 
-        FunctionToJSONString(ContextPtr context) : format_settings(getFormatSettings(context)) {}
+        explicit FunctionToJSONString(ContextPtr context) : format_settings(getFormatSettings(context)) {}
 
         String getName() const override { return name; }
 
@@ -49,7 +49,7 @@ namespace
 
     private:
         /// Affects only subset of part of settings related to json.
-        FormatSettings format_settings;
+        const FormatSettings format_settings;
     };
 }
 
