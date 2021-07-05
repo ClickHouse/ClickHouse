@@ -1,8 +1,5 @@
 #include <IO/createReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromFile.h>
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-#include <IO/ReadBufferAIO.h>
-#endif
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <Common/ProfileEvents.h>
 
@@ -10,8 +7,8 @@
 namespace ProfileEvents
 {
     extern const Event CreatedReadBufferOrdinary;
-    extern const Event CreatedReadBufferAIO;
-    extern const Event CreatedReadBufferAIOFailed;
+    extern const Event CreatedReadBufferDirectIO;
+    extern const Event CreatedReadBufferDirectIOFailed;
     extern const Event CreatedReadBufferMMap;
     extern const Event CreatedReadBufferMMapFailed;
 }
@@ -21,27 +18,44 @@ namespace DB
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename_,
-    size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache,
+    size_t estimated_size, size_t direct_io_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache,
     size_t buffer_size_, int flags_, char * existing_memory_, size_t alignment)
 {
 #if defined(OS_LINUX) || defined(__FreeBSD__)
-    if (aio_threshold && estimated_size >= aio_threshold)
+    if (direct_io_threshold && estimated_size >= direct_io_threshold)
     {
+        /** O_DIRECT
+          * The O_DIRECT flag may impose alignment restrictions on the length and address of user-space buffers and the file offset of I/Os.
+          * In Linux alignment restrictions vary by filesystem and kernel version and might be absent entirely.
+          * However there is currently no filesystem-independent interface for an application to discover these restrictions
+          * for a given file or filesystem. Some filesystems provide their own interfaces for doing so, for example the
+          * XFS_IOC_DIOINFO operation in xfsctl(3).
+          *
+          * Under Linux 2.4, transfer sizes, and the alignment of the user buffer and the file offset must all be
+          * multiples of the logical block size of the filesystem. Since Linux 2.6.0, alignment to the logical block size
+          * of the underlying storage (typically 512 bytes) suffices.
+          *
+          * - man 2 open
+          */
+        constexpr size_t min_alignment = DEFAULT_AIO_FILE_BLOCK_SIZE;
+        if (alignment % min_alignment)
+            alignment = (alignment + min_alignment - 1) / min_alignment * min_alignment;
+
         /// Attempt to open a file with O_DIRECT
         try
         {
-            auto res = std::make_unique<ReadBufferAIO>(filename_, buffer_size_, flags_, existing_memory_);
-            ProfileEvents::increment(ProfileEvents::CreatedReadBufferAIO);
+            auto res = std::make_unique<ReadBufferFromFile>(filename_, buffer_size_, flags_ | O_DIRECT, existing_memory_, alignment);
+            ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
             return res;
         }
         catch (const ErrnoException &)
         {
             /// Fallback to cached IO if O_DIRECT is not supported.
-            ProfileEvents::increment(ProfileEvents::CreatedReadBufferAIOFailed);
+            ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIOFailed);
         }
     }
 #else
-    (void)aio_threshold;
+    (void)direct_io_threshold;
     (void)estimated_size;
 #endif
 

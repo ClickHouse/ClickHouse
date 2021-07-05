@@ -22,10 +22,6 @@
     M(WriteBufferFromFileDescriptorWrite, "Number of writes (write/pwrite) to a file descriptor. Does not include sockets.") \
     M(WriteBufferFromFileDescriptorWriteFailed, "Number of times the write (write/pwrite) to a file descriptor have failed.") \
     M(WriteBufferFromFileDescriptorWriteBytes, "Number of bytes written to file descriptors. If the file is compressed, this will show compressed data size.") \
-    M(ReadBufferAIORead, "") \
-    M(ReadBufferAIOReadBytes, "") \
-    M(WriteBufferAIOWrite, "") \
-    M(WriteBufferAIOWriteBytes, "") \
     M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).") \
     M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).") \
     M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).") \
@@ -34,6 +30,10 @@
     M(UncompressedCacheWeightLost, "") \
     M(MMappedFileCacheHits, "") \
     M(MMappedFileCacheMisses, "") \
+    M(AIOWrite, "Number of writes with Linux or FreeBSD AIO interface") \
+    M(AIOWriteBytes, "Number of bytes written with Linux or FreeBSD AIO interface") \
+    M(AIORead, "Number of reads with Linux or FreeBSD AIO interface") \
+    M(AIOReadBytes, "Number of bytes read with Linux or FreeBSD AIO interface") \
     M(IOBufferAllocs, "") \
     M(IOBufferAllocBytes, "") \
     M(ArenaAllocChunks, "") \
@@ -43,8 +43,8 @@
     M(MarkCacheHits, "") \
     M(MarkCacheMisses, "") \
     M(CreatedReadBufferOrdinary, "") \
-    M(CreatedReadBufferAIO, "") \
-    M(CreatedReadBufferAIOFailed, "") \
+    M(CreatedReadBufferDirectIO, "") \
+    M(CreatedReadBufferDirectIOFailed, "") \
     M(CreatedReadBufferMMap, "") \
     M(CreatedReadBufferMMapFailed, "") \
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
