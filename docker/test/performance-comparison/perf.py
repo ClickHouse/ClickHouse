@@ -290,7 +290,7 @@ for query_index in queries_to_run:
                         "--format", "Null",
                         "--time"],
                     input = q,
-                    text = True,
+                    universal_newlines = True,
                     capture_output = True,
                     check = True,
                     timeout = args.max_query_seconds)
