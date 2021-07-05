@@ -206,7 +206,7 @@ ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name
 
 Удаляет с диска "замороженные" партиции с указанным именем. Если секция `PARTITION` опущена, запрос удаляет резервную копию всех партиций сразу.
 
-## FETCH PARTITION {#alter_fetch-partition}
+## FETCH PARTITION\|PART {#alter_fetch-partition}
 
 ``` sql
 ALTER TABLE table_name FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
