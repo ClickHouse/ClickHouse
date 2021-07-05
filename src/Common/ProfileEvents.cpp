@@ -43,8 +43,6 @@
     M(MarkCacheHits, "") \
     M(MarkCacheMisses, "") \
     M(CreatedReadBufferOrdinary, "") \
-    M(CreatedReadBufferDirectIO, "") \
-    M(CreatedReadBufferDirectIOFailed, "") \
     M(CreatedReadBufferMMap, "") \
     M(CreatedReadBufferMMapFailed, "") \
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
