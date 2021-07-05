@@ -79,6 +79,8 @@ SRCS(
     JSONPath/Parsers/ParserJSONPathMemberAccess.cpp
     JSONPath/Parsers/ParserJSONPathQuery.cpp
     JSONPath/Parsers/ParserJSONPathRange.cpp
+    JSONPath/Parsers/ParserJSONPathRoot.cpp
+    JSONPath/Parsers/ParserJSONPathStar.cpp
     TargetSpecific.cpp
     URL/URLHierarchy.cpp
     URL/URLPathHierarchy.cpp
