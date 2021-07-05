@@ -1,8 +1,9 @@
 #include <common/ReplxxLineReader.h>
 #include <common/errnoToString.h>
 
-#include <errno.h>
-#include <string.h>
+#include <chrono>
+#include <cerrno>
+#include <cstring>
 #include <unistd.h>
 #include <functional>
 #include <sys/file.h>
@@ -22,6 +23,94 @@ namespace
 void trim(String & s)
 {
     s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
+}
+
+/// Copied from replxx::src/util.cxx::now_ms_str() under the terms of 3-clause BSD license of Replxx.
+/// Copyright (c) 2017-2018, Marcin Konarski (amok at codestation.org)
+/// Copyright (c) 2010, Salvatore Sanfilippo (antirez at gmail dot com)
+/// Copyright (c) 2010, Pieter Noordhuis (pcnoordhuis at gmail dot com)
+std::string replxx_now_ms_str()
+{
+    std::chrono::milliseconds ms(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()));
+    time_t t = ms.count() / 1000;
+    tm broken;
+    if (!localtime_r(&t, &broken))
+    {
+        return std::string();
+    }
+
+    static int const BUFF_SIZE(32);
+    char str[BUFF_SIZE];
+    strftime(str, BUFF_SIZE, "%Y-%m-%d %H:%M:%S.", &broken);
+    snprintf(str + sizeof("YYYY-mm-dd HH:MM:SS"), 5, "%03d", static_cast<int>(ms.count() % 1000));
+    return str;
+}
+
+/// Convert from readline to replxx format.
+///
+/// replxx requires each history line to prepended with time line:
+///
+///     ### YYYY-MM-DD HH:MM:SS.SSS
+///     select 1
+///
+/// And w/o those service lines it will load all lines from history file as
+/// one history line for suggestion. And if there are lots of lines in file it
+/// will take lots of time (getline() + tons of reallocations).
+///
+/// NOTE: this code uses std::ifstream/std::ofstream like original replxx code.
+void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
+{
+    std::ifstream in(path);
+    if (!in)
+    {
+        rx.print("Cannot open %s reading (for conversion): %s\n",
+            path.c_str(), errnoToString(errno).c_str());
+        return;
+    }
+
+    std::string line;
+    if (!getline(in, line).good())
+    {
+        rx.print("Cannot read from %s (for conversion): %s\n",
+            path.c_str(), errnoToString(errno).c_str());
+        return;
+    }
+
+    /// This is the marker of the date, no need to convert.
+    static char const REPLXX_TIMESTAMP_PATTERN[] = "### dddd-dd-dd dd:dd:dd.ddd";
+    if (line.starts_with("### ") && line.size() == strlen(REPLXX_TIMESTAMP_PATTERN))
+    {
+        return;
+    }
+
+    std::vector<std::string> lines;
+    in.seekg(0);
+    while (getline(in, line).good())
+    {
+        lines.push_back(line);
+    }
+    in.close();
+
+    size_t lines_size = lines.size();
+    std::sort(lines.begin(), lines.end());
+    lines.erase(std::unique(lines.begin(), lines.end()), lines.end());
+    rx.print("The history file (%s) is in old format. %zu lines, %zu unique lines.\n",
+        path.c_str(), lines_size, lines.size());
+
+    std::ofstream out(path);
+    if (!out)
+    {
+        rx.print("Cannot open %s for writing (for conversion): %s\n",
+            path.c_str(), errnoToString(errno).c_str());
+        return;
+    }
+
+    const std::string & timestamp = replxx_now_ms_str();
+    for (const auto & out_line : lines)
+    {
+        out << "### " << timestamp << "\n" << out_line << std::endl;
+    }
+    out.close();
 }
 
 }
@@ -47,6 +136,8 @@ ReplxxLineReader::ReplxxLineReader(
         }
         else
         {
+            convertHistoryFile(history_file_path, rx);
+
             if (flock(history_file_fd, LOCK_SH))
             {
                 rx.print("Shared lock of history file failed: %s\n", errnoToString(errno).c_str());

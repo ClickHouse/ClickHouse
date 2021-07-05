@@ -228,12 +228,12 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
     {
-        auto requiered_columns = expression->getRequiredColumns();
-        for (const auto & dependency : requiered_columns)
+        auto required_columns = expression->getRequiredColumns();
+        for (const auto & dependency : required_columns)
         {
             if (updated_columns.count(dependency))
             {
-                to_set.insert(requiered_columns.begin(), requiered_columns.end());
+                to_set.insert(required_columns.begin(), required_columns.end());
                 return true;
             }
         }

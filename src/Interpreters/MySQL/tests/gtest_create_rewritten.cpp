@@ -235,3 +235,25 @@ TEST(MySQLCreateRewritten, QueryWithColumnComments)
         std::string(MATERIALIZEMYSQL_TABLE_COLUMNS) +
         ") ENGINE = ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
 }
+
+TEST(MySQLCreateRewritten, QueryWithEnum)
+{
+    tryRegisterFunctions();
+    const auto & context_holder = getContext();
+
+    EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
+        "CREATE TABLE `test_database`.`test_table_1`(`key` INT NOT NULL PRIMARY KEY, `test` ENUM('a','b','c'))", context_holder.context)),
+        "CREATE TABLE test_database.test_table_1 (`key` Int32, `test` Nullable(Enum8('a' = 1, 'b' = 2, 'c' = 3))" +
+        std::string(MATERIALIZEMYSQL_TABLE_COLUMNS) +
+        ") ENGINE = ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
+    EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
+        "CREATE TABLE `test_database`.`test_table_1`(`key` INT NOT NULL PRIMARY KEY, `test` ENUM('a','b','c') NOT NULL)", context_holder.context)),
+        "CREATE TABLE test_database.test_table_1 (`key` Int32, `test` Enum8('a' = 1, 'b' = 2, 'c' = 3)" +
+        std::string(MATERIALIZEMYSQL_TABLE_COLUMNS) +
+        ") ENGINE = ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
+    EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
+        "CREATE TABLE `test_database`.`test_table_1`(`key` INT NOT NULL PRIMARY KEY, `test` ENUM('a','b','c') COMMENT 'test_comment')", context_holder.context)),
+        "CREATE TABLE test_database.test_table_1 (`key` Int32, `test` Nullable(Enum8('a' = 1, 'b' = 2, 'c' = 3)) COMMENT 'test_comment'" +
+        std::string(MATERIALIZEMYSQL_TABLE_COLUMNS) +
+        ") ENGINE = ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
+}

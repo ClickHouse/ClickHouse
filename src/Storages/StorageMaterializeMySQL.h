@@ -24,7 +24,7 @@ public:
 
     StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_);
 
-    bool needRewriteQueryWithFinal(const Names & /*column_names*/) const override;
+    bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
     Pipe read(
         const Names & column_names, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info,

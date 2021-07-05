@@ -19,6 +19,8 @@ toc_title: PARTITION
 -   [UNFREEZE PARTITION](#alter_unfreeze-partition) — удалить резервную копию партиции;
 -   [FETCH PARTITION](#alter_fetch-partition) — скачать партицию с другого сервера;
 -   [MOVE PARTITION\|PART](#alter_move-partition) — переместить партицию/кускок на другой диск или том.
+-   [UPDATE IN PARTITION](#update-in-partition) — обновить данные внутри партиции по условию.
+-   [DELETE IN PARTITION](#delete-in-partition) — удалить данные внутри партиции по условию.
 
 ## DETACH PARTITION\|PART {#alter_detach-partition}
 

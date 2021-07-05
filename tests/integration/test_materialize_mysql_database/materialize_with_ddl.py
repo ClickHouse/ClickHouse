@@ -850,8 +850,92 @@ def materialize_with_column_comments_test(clickhouse_node, mysql_node, service_n
     mysql_node.query("CREATE TABLE materialize_with_column_comments_test.test (id int NOT NULL PRIMARY KEY, value VARCHAR(255) COMMENT 'test comment') ENGINE=InnoDB")
     clickhouse_node.query("CREATE DATABASE materialize_with_column_comments_test ENGINE = MaterializeMySQL('{}:3306', 'materialize_with_column_comments_test', 'root', 'clickhouse')".format(service_name))
     check_query(clickhouse_node, "DESCRIBE TABLE materialize_with_column_comments_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(String)\t\t\ttest comment\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
+    mysql_node.query("ALTER TABLE materialize_with_column_comments_test.test MODIFY value VARCHAR(255) COMMENT 'comment test'")
+    check_query(clickhouse_node, "DESCRIBE TABLE materialize_with_column_comments_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(String)\t\t\tcomment test\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
+    mysql_node.query("ALTER TABLE materialize_with_column_comments_test.test ADD value2 int COMMENT 'test comment 2'")
+    check_query(clickhouse_node, "DESCRIBE TABLE materialize_with_column_comments_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(String)\t\t\tcomment test\t\t\nvalue2\tNullable(Int32)\t\t\ttest comment 2\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     clickhouse_node.query("DROP DATABASE materialize_with_column_comments_test")
     mysql_node.query("DROP DATABASE materialize_with_column_comments_test")
+
+def materialize_with_enum8_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS materialize_with_enum8_test")
+    clickhouse_node.query("DROP DATABASE IF EXISTS materialize_with_enum8_test")
+    mysql_node.query("CREATE DATABASE materialize_with_enum8_test")
+    enum8_values_count = 127
+    enum8_values = ""
+    enum8_values_with_backslash = ""
+    for i in range(1, enum8_values_count):
+        enum8_values += '\'' + str(i) + "\', "
+        enum8_values_with_backslash += "\\\'" + str(i) +"\\\' = " + str(i) + ", "
+    enum8_values += '\'' + str(enum8_values_count) + '\''
+    enum8_values_with_backslash += "\\\'" + str(enum8_values_count) +"\\\' = " + str(enum8_values_count)
+    mysql_node.query("CREATE TABLE materialize_with_enum8_test.test (id int NOT NULL PRIMARY KEY, value ENUM(" + enum8_values + ")) ENGINE=InnoDB")
+    mysql_node.query("INSERT INTO materialize_with_enum8_test.test (id, value) VALUES (1, '1'),(2, '2')")
+    clickhouse_node.query("CREATE DATABASE materialize_with_enum8_test ENGINE = MaterializeMySQL('{}:3306', 'materialize_with_enum8_test', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT value FROM materialize_with_enum8_test.test ORDER BY id", "1\n2\n")
+    mysql_node.query("INSERT INTO materialize_with_enum8_test.test (id, value) VALUES (3, '127')")
+    check_query(clickhouse_node, "SELECT value FROM materialize_with_enum8_test.test ORDER BY id", "1\n2\n127\n")
+    check_query(clickhouse_node, "DESCRIBE TABLE materialize_with_enum8_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(Enum8(" + enum8_values_with_backslash + "))\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
+    clickhouse_node.query("DROP DATABASE materialize_with_enum8_test")
+    mysql_node.query("DROP DATABASE materialize_with_enum8_test")
+
+def materialize_with_enum16_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS materialize_with_enum16_test")
+    clickhouse_node.query("DROP DATABASE IF EXISTS materialize_with_enum16_test")
+    mysql_node.query("CREATE DATABASE materialize_with_enum16_test")
+    enum16_values_count = 600
+    enum16_values = ""
+    enum16_values_with_backslash = ""
+    for i in range(1, enum16_values_count):
+        enum16_values += '\'' + str(i) + "\', "
+        enum16_values_with_backslash += "\\\'" + str(i) +"\\\' = " + str(i) + ", "
+    enum16_values += '\'' + str(enum16_values_count) + '\''
+    enum16_values_with_backslash += "\\\'" + str(enum16_values_count) +"\\\' = " + str(enum16_values_count)
+    mysql_node.query("CREATE TABLE materialize_with_enum16_test.test (id int NOT NULL PRIMARY KEY, value ENUM(" + enum16_values + ")) ENGINE=InnoDB")
+    mysql_node.query("INSERT INTO materialize_with_enum16_test.test (id, value) VALUES (1, '1'),(2, '2')")
+    clickhouse_node.query("CREATE DATABASE materialize_with_enum16_test ENGINE = MaterializeMySQL('{}:3306', 'materialize_with_enum16_test', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT value FROM materialize_with_enum16_test.test ORDER BY id", "1\n2\n")
+    mysql_node.query("INSERT INTO materialize_with_enum16_test.test (id, value) VALUES (3, '500')")
+    check_query(clickhouse_node, "SELECT value FROM materialize_with_enum16_test.test ORDER BY id", "1\n2\n500\n")
+    check_query(clickhouse_node, "DESCRIBE TABLE materialize_with_enum16_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(Enum16(" + enum16_values_with_backslash + "))\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
+    clickhouse_node.query("DROP DATABASE materialize_with_enum16_test")
+    mysql_node.query("DROP DATABASE materialize_with_enum16_test")
+
+def alter_enum8_to_enum16_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS alter_enum8_to_enum16_test")
+    clickhouse_node.query("DROP DATABASE IF EXISTS alter_enum8_to_enum16_test")
+    mysql_node.query("CREATE DATABASE alter_enum8_to_enum16_test")
+    
+    enum8_values_count = 100
+    enum8_values = ""
+    enum8_values_with_backslash = ""
+    for i in range(1, enum8_values_count):
+        enum8_values += '\'' + str(i) + "\', "
+        enum8_values_with_backslash += "\\\'" + str(i) +"\\\' = " + str(i) + ", "
+    enum8_values += '\'' + str(enum8_values_count) + '\''
+    enum8_values_with_backslash += "\\\'" + str(enum8_values_count) +"\\\' = " + str(enum8_values_count)
+    mysql_node.query("CREATE TABLE alter_enum8_to_enum16_test.test (id int NOT NULL PRIMARY KEY, value ENUM(" + enum8_values + ")) ENGINE=InnoDB")
+    mysql_node.query("INSERT INTO alter_enum8_to_enum16_test.test (id, value) VALUES (1, '1'),(2, '2')")
+    clickhouse_node.query("CREATE DATABASE alter_enum8_to_enum16_test ENGINE = MaterializeMySQL('{}:3306', 'alter_enum8_to_enum16_test', 'root', 'clickhouse')".format(service_name))
+    mysql_node.query("INSERT INTO alter_enum8_to_enum16_test.test (id, value) VALUES (3, '75')")
+    check_query(clickhouse_node, "SELECT value FROM alter_enum8_to_enum16_test.test ORDER BY id", "1\n2\n75\n")
+    check_query(clickhouse_node, "DESCRIBE TABLE alter_enum8_to_enum16_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(Enum8(" + enum8_values_with_backslash + "))\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
+    
+    enum16_values_count = 600
+    enum16_values = ""
+    enum16_values_with_backslash = ""
+    for i in range(1, enum16_values_count):
+        enum16_values += '\'' + str(i) + "\', "
+        enum16_values_with_backslash += "\\\'" + str(i) +"\\\' = " + str(i) + ", "
+    enum16_values += '\'' + str(enum16_values_count) + '\''
+    enum16_values_with_backslash += "\\\'" + str(enum16_values_count) +"\\\' = " + str(enum16_values_count)
+    mysql_node.query("ALTER TABLE alter_enum8_to_enum16_test.test MODIFY COLUMN value ENUM(" + enum16_values + ")")
+    check_query(clickhouse_node, "DESCRIBE TABLE alter_enum8_to_enum16_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(Enum16(" + enum16_values_with_backslash + "))\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
+    mysql_node.query("INSERT INTO alter_enum8_to_enum16_test.test (id, value) VALUES (4, '500')")
+    check_query(clickhouse_node, "SELECT value FROM alter_enum8_to_enum16_test.test ORDER BY id", "1\n2\n75\n500\n")
+   
+    clickhouse_node.query("DROP DATABASE alter_enum8_to_enum16_test")
+    mysql_node.query("DROP DATABASE alter_enum8_to_enum16_test")
 
 def move_to_prewhere_and_column_filtering(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("DROP DATABASE IF EXISTS cond_on_key_col")
