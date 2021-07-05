@@ -23,6 +23,7 @@ void Connection::execWithRetry(const std::function<void(pqxx::nontransaction &)>
         {
             pqxx::nontransaction tx(getRef());
             exec(tx);
+            break;
         }
         catch (const pqxx::broken_connection & e)
         {
