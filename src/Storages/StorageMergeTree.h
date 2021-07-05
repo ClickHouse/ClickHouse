@@ -196,6 +196,7 @@ private:
         bool final,
         String * disable_reason,
         TableLockHolder & table_lock_holder,
+        std::unique_lock<std::mutex> & lock,
         bool optimize_skip_merged_partitions = false,
         SelectPartsDecision * select_decision_out = nullptr);
 
