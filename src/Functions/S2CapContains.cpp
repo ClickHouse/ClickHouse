@@ -14,7 +14,7 @@
 #include "../contrib/s2geometry/src/s2/s2cap.h"
 #include "../contrib/s2geometry/src/s2/s1angle.h"
 
-namespace DB 
+namespace DB
 {
 
 namespace ErrorCodes
@@ -60,7 +60,7 @@ public:
 
         if (!WhichDataType(arg).isUInt64()) {
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
+                fmt::format("Illegal type {} of argument {} of function {}. Must be UInt64", arg->getName(), 1, getName()),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
