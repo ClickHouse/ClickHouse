@@ -115,7 +115,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
     auto hdfs_path = remote_fs_root_path + file_name;
 
     LOG_DEBUG(log, "{} to file by path: {}. HDFS path: {}", mode == WriteMode::Rewrite ? "Write" : "Append",
-              backQuote(metadata_path + path), remote_fs_root_path + hdfs_path);
+              backQuote(metadata_path + path), hdfs_path);
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
@@ -153,20 +153,13 @@ void DiskHDFS::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
         });
 }
 
-String DiskHDFS::getUniqueId(const String & path) const
-{
-    Metadata metadata(remote_fs_root_path, metadata_path, path);
-    String id;
-    if (!metadata.remote_fs_objects.empty())
-        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
-    return id;
-}
-
 bool DiskHDFS::checkUniqueId(const String & hdfs_uri) const
 {
+    if (!boost::algorithm::starts_with(hdfs_uri, remote_fs_root_path))
+        return false;
     const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
-    const String path = hdfs_uri.substr(begin_of_path);
-    return (0 == hdfsExists(hdfs_fs.get(), path.c_str()));
+    const String remote_fs_object_path = hdfs_uri.substr(begin_of_path);
+    return (0 == hdfsExists(hdfs_fs.get(), remote_fs_object_path.c_str()));
 }
 
 namespace

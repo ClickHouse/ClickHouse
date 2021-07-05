@@ -1501,16 +1501,11 @@ SerializationPtr IMergeTreeDataPart::getSerializationForColumn(const NameAndType
 
 String IMergeTreeDataPart::getUniqueId() const
 {
-    String id;
-
     auto disk = volume->getDisk();
+    if (!disk->supportZeroCopyReplication())
+        throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
 
-    if (disk->getType() == DiskType::Type::S3 || disk->getType() == DiskType::Type::HDFS)
-        id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
-
-    if (id.empty())
-        throw Exception("Can't get unique S3/HDFS object", ErrorCodes::LOGICAL_ERROR);
-
+    String id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
     return id;
 }
 

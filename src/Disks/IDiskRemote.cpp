@@ -488,4 +488,13 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
     return false;
 }
 
+String IDiskRemote::getUniqueId(const String & path) const
+{
+    Metadata metadata(remote_fs_root_path, metadata_path, path);
+    String id;
+    if (!metadata.remote_fs_objects.empty())
+        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
+    return id;
+}
+
 }

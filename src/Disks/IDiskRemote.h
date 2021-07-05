@@ -117,6 +117,10 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
+    String getUniqueId(const String & path) const override;
+
+    bool checkUniqueId(const String & id) const override = 0;
+
     virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
 
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;

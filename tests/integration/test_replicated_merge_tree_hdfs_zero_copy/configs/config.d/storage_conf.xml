@@ -36,20 +36,20 @@
             <tiered>
                 <volumes>
                     <main>
-                        <disk>hdfs1</disk>
+                        <disk>hdfs2</disk>
                     </main>
                     <external>
-                        <disk>hdfs2</disk>
+                        <disk>hdfs1</disk>
                     </external>
                 </volumes>
             </tiered>
             <tiered_copy>
                 <volumes>
                     <main>
-                        <disk>hdfs1</disk>
+                        <disk>hdfs1_again</disk>
                     </main>
                     <external>
-                        <disk>hdfs1_again</disk>
+                        <disk>hdfs1</disk>
                     </external>
                 </volumes>
             </tiered_copy>
@@ -59,7 +59,7 @@
     <merge_tree>
         <min_bytes_for_wide_part>1024000</min_bytes_for_wide_part>
         <old_parts_lifetime>1</old_parts_lifetime>
-        <allow_hdfs_zero_copy_replication>1</allow_hdfs_zero_copy_replication>
+        <allow_remote_fs_zero_copy_replication>1</allow_remote_fs_zero_copy_replication>
     </merge_tree>
 
     <remote_servers>
