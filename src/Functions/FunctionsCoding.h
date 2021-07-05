@@ -1420,6 +1420,13 @@ struct UnbinImpl
 
     static void decode(const char * pos, const char * end, char *& out)
     {
+        if (pos == end)
+        {
+            *out = '\0';
+            ++out;
+            return;
+        }
+
         UInt8 left = 0;
 
         /// end - pos is the length of input.
@@ -1431,12 +1438,11 @@ struct UnbinImpl
         {
             left = left << 1;
             if (*pos != '0')
-            {
                 left += 1;
-            }
             ++pos;
         }
-        if (0 != left)
+
+        if (left != 0 || end - pos == 0)
         {
             *out = left;
             ++out;
@@ -1451,9 +1457,7 @@ struct UnbinImpl
             {
                 c = c << 1;
                 if (*pos != '0')
-                {
                     c += 1;
-                }
                 ++pos;
             }
             *out = c;
