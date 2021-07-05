@@ -81,49 +81,59 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/uptime", uptime);
 
-    size_t thermal_device_index = 0;
-    while (true)
+    for (size_t thermal_device_index = 0;; ++thermal_device_index)
     {
         std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(fmt::format("/sys/class/thermal/thermal_zone{}/temp", thermal_device_index));
         if (!file)
-            break;
+        {
+            /// Sometimes indices are from zero sometimes from one.
+            if (thermal_device_index == 0)
+                continue;
+            else
+                break;
+        }
         thermal.emplace_back(std::move(file));
-        ++thermal_device_index;
     }
 
-    size_t hwmon_index = 0;
-    while (true)
+    for (size_t hwmon_index = 0;; ++hwmon_index)
     {
         String hwmon_name_file = fmt::format("/sys/class/hwmon/hwmon{}/name", hwmon_index);
         if (!std::filesystem::exists(hwmon_name_file))
-            break;
+        {
+            if (hwmon_index == 0)
+                continue;
+            else
+                break;
+        }
 
         String hwmon_name;
         ReadBufferFromFile hwmon_name_in(hwmon_name_file, small_buffer_size);
-        readStringUntilEOF(hwmon_name, hwmon_name_in);
+        readText(hwmon_name, hwmon_name_in);
 
-        size_t sensor_index = 0;
-        while (true)
+        for (size_t sensor_index = 0;; ++sensor_index)
         {
             String sensor_name_file = fmt::format("/sys/class/hwmon/hwmon{}/temp{}_label", hwmon_index, sensor_index);
             String sensor_value_file = fmt::format("/sys/class/hwmon/hwmon{}/temp{}_input", hwmon_index, sensor_index);
 
             if (!std::filesystem::exists(sensor_name_file))
-                break;
+            {
+                if (sensor_index == 0)
+                    continue;
+                else
+                    break;
+            }
 
+            /// Sometimes there are labels but there is no files with data.
             std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(sensor_value_file);
             if (!file)
-                break;
+                continue;
 
             String sensor_name;
             ReadBufferFromFile sensor_name_in(sensor_name_file, small_buffer_size);
-            readStringUntilEOF(sensor_name, sensor_name_in);
+            readText(sensor_name, sensor_name_in);
 
-            hwmon_temperatures[hwmon_name][sensor_name] = std::move(file);
-            ++sensor_index;
+            hwmon_devices[hwmon_name][sensor_name] = std::move(file);
         }
-
-        ++hwmon_index;
     }
 #endif
 }
@@ -711,7 +721,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
     }
 
-    for (const auto & [hwmon_name, sensors] : hwmon_temperatures)
+    for (const auto & [hwmon_name, sensors] : hwmon_devices)
     {
         for (const auto & [sensor_name, sensor_file] : sensors)
         {

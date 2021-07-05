@@ -88,7 +88,7 @@ private:
 
     std::unordered_map<String /* device name */,
         std::unordered_map<String /* label name */,
-            std::unique_ptr<ReadBufferFromFile>>> hwmon_temperatures;
+            std::unique_ptr<ReadBufferFromFile>>> hwmon_devices;
 
     /// TODO: IO load, Network rx/tx, sockets, EDAC.
 
