@@ -28,6 +28,9 @@ using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMet
 /** Periodically (by default, each minute, starting at 30 seconds offset)
   *  calculates and updates some metrics,
   *  that are not updated automatically (so, need to be asynchronously calculated).
+  *
+  * This includes both ClickHouse-related metrics (like memory usage of ClickHouse process)
+  *  and common OS-related metrics (like total memory usage on the server).
   */
 class AsynchronousMetrics : WithContext
 {
