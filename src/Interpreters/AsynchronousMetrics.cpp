@@ -115,7 +115,11 @@ AsynchronousMetrics::AsynchronousMetrics(
             String sensor_name_file = fmt::format("/sys/class/hwmon/hwmon{}/temp{}_label", hwmon_index, sensor_index);
             String sensor_value_file = fmt::format("/sys/class/hwmon/hwmon{}/temp{}_input", hwmon_index, sensor_index);
 
-            if (!std::filesystem::exists(sensor_name_file))
+            bool sensor_name_file_exists = std::filesystem::exists(sensor_name_file);
+            bool sensor_value_file_exists = std::filesystem::exists(sensor_value_file);
+
+            /// Sometimes there are labels but there is no files with data or vice versa.
+            if (!sensor_name_file_exists && !sensor_value_file_exists)
             {
                 if (sensor_index == 0)
                     continue;
@@ -123,14 +127,16 @@ AsynchronousMetrics::AsynchronousMetrics(
                     break;
             }
 
-            /// Sometimes there are labels but there is no files with data.
             std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(sensor_value_file);
             if (!file)
                 continue;
 
             String sensor_name;
-            ReadBufferFromFile sensor_name_in(sensor_name_file, small_buffer_size);
-            readText(sensor_name, sensor_name_in);
+            if (sensor_name_file_exists)
+            {
+                ReadBufferFromFile sensor_name_in(sensor_name_file, small_buffer_size);
+                readText(sensor_name, sensor_name_in);
+            }
 
             hwmon_devices[hwmon_name][sensor_name] = std::move(file);
         }
@@ -728,7 +734,11 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             sensor_file->rewind();
             uint64_t temperature = 0;
             readText(temperature, *sensor_file);
-            new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = temperature * 0.001;
+
+            if (sensor_name.empty())
+                new_values[fmt::format("Temperature_{}", hwmon_name)] = temperature * 0.001;
+            else
+                new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = temperature * 0.001;
         }
     }
 #endif
