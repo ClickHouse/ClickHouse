@@ -26,11 +26,6 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Lexer.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Parsers/New/parseQuery.h>  // Y_IGNORE
-#endif
-
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
@@ -166,11 +161,10 @@ static void logQuery(const String & query, ContextPtr context, bool internal)
         if (!comment.empty())
             comment = fmt::format(" (comment: {})", comment);
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser){} {}",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){} {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
-            (context->getSettingsRef().use_antlr_parser ? "experimental" : "production"),
             comment,
             joinLines(query));
 
@@ -386,24 +380,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_table;
     try
     {
-#if !defined(ARCADIA_BUILD)
-        if (settings.use_antlr_parser)
-        {
-            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth, context->getCurrentDatabase());
-        }
-        else
-        {
-            ParserQuery parser(end);
-
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-        }
-#else
         ParserQuery parser(end);
 
         /// TODO: parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-#endif
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.

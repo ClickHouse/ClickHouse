@@ -16,7 +16,7 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 **示例**
 
 ``` sql
-SELECT * FROM system.data_type_families WHERE alias_to = 'String'
+SELECT * FROM system.data_type_families WHERE alias_to = 'String';
 ```
 
 ``` text
