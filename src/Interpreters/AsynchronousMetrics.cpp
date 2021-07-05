@@ -167,6 +167,24 @@ AsynchronousMetrics::AsynchronousMetrics(
         if (edac_uncorrectable_file_exists)
             edac.back().second = openFileIfExists(edac_uncorrectable_file);
     }
+
+    if (std::filesystem::exists("/sys/block"))
+    {
+        for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
+        {
+            String device_name = device_dir.path().filename();
+
+            /// We are not interested in loopback devices.
+            if (device_name.starts_with("loop"))
+                continue;
+
+            std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(device_dir.path() / "stat");
+            if (!file)
+                continue;
+
+            block_devs[device_name] = std::move(file);
+        }
+    }
 #endif
 }
 
@@ -378,6 +396,62 @@ AsynchronousMetrics::ProcStatValuesOther::operator-(const AsynchronousMetrics::P
     res.interrupts = interrupts - other.interrupts;
     res.context_switches = context_switches - other.context_switches;
     res.processes_created = processes_created - other.processes_created;
+    return res;
+}
+
+void AsynchronousMetrics::BlockDeviceStatValues::read(ReadBuffer & in)
+{
+    skipWhitespaceIfAny(in, true);
+    readText(read_ios, in);
+    skipWhitespaceIfAny(in, true);
+    readText(read_merges, in);
+    skipWhitespaceIfAny(in, true);
+    readText(read_sectors, in);
+    skipWhitespaceIfAny(in, true);
+    readText(read_ticks, in);
+    skipWhitespaceIfAny(in, true);
+    readText(write_ios, in);
+    skipWhitespaceIfAny(in, true);
+    readText(write_merges, in);
+    skipWhitespaceIfAny(in, true);
+    readText(write_sectors, in);
+    skipWhitespaceIfAny(in, true);
+    readText(write_ticks, in);
+    skipWhitespaceIfAny(in, true);
+    readText(in_flight_ios, in);
+    skipWhitespaceIfAny(in, true);
+    readText(io_ticks, in);
+    skipWhitespaceIfAny(in, true);
+    readText(time_in_queue, in);
+    skipWhitespaceIfAny(in, true);
+    readText(discard_ops, in);
+    skipWhitespaceIfAny(in, true);
+    readText(discard_merges, in);
+    skipWhitespaceIfAny(in, true);
+    readText(discard_sectors, in);
+    skipWhitespaceIfAny(in, true);
+    readText(discard_ticks, in);
+}
+
+AsynchronousMetrics::BlockDeviceStatValues
+AsynchronousMetrics::BlockDeviceStatValues::operator-(const AsynchronousMetrics::BlockDeviceStatValues & other) const
+{
+    BlockDeviceStatValues res{};
+    res.read_ios = read_ios - other.read_ios;
+    res.read_merges = read_merges - other.read_merges;
+    res.read_sectors = read_sectors - other.read_sectors;
+    res.read_ticks = read_ticks - other.read_ticks;
+    res.write_ios = write_ios - other.write_ios;
+    res.write_merges = write_merges - other.write_merges;
+    res.write_sectors = write_sectors - other.write_sectors;
+    res.write_ticks = write_ticks - other.write_ticks;
+    res.in_flight_ios = in_flight_ios; /// This is current value, not total.
+    res.io_ticks = io_ticks - other.io_ticks;
+    res.time_in_queue = time_in_queue - other.time_in_queue;
+    res.discard_ops = discard_ops - other.discard_ops;
+    res.discard_merges = discard_merges - other.discard_merges;
+    res.discard_sectors = discard_sectors - other.discard_sectors;
+    res.discard_ticks = discard_ticks - other.discard_ticks;
     return res;
 }
 
@@ -743,6 +817,56 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         new_values["OSOpenFiles"] = open_files;
     }
 
+    for (auto & [name, device] : block_devs)
+    {
+        device->rewind();
+
+        BlockDeviceStatValues current_values;
+        BlockDeviceStatValues & prev_values = block_device_stats[name];
+        current_values.read(*device);
+
+        BlockDeviceStatValues delta_values = current_values - prev_values;
+        prev_values = current_values;
+
+        if (first_run)
+            continue;
+
+        /// Always 512 according to the docs.
+        static constexpr size_t sector_size = 512;
+
+        /// Always in milliseconds according to the docs.
+        static constexpr double time_multiplier = 1e-6;
+
+        new_values["BlockReadOps_" + name] = delta_values.read_ios;
+        new_values["BlockWriteOps_" + name] = delta_values.write_ios;
+        new_values["BlockDiscardOps_" + name] = delta_values.discard_ops;
+
+        new_values["BlockReadMerges_" + name] = delta_values.read_merges;
+        new_values["BlockWriteMerges_" + name] = delta_values.write_merges;
+        new_values["BlockDiscardMerges_" + name] = delta_values.discard_merges;
+
+        new_values["BlockReadBytes_" + name] = delta_values.read_sectors * sector_size;
+        new_values["BlockWriteBytes_" + name] = delta_values.write_sectors * sector_size;
+        new_values["BlockDiscardBytes_" + name] = delta_values.discard_sectors * sector_size;
+
+        new_values["BlockReadTime_" + name] = delta_values.read_ticks * time_multiplier;
+        new_values["BlockWriteTime_" + name] = delta_values.write_ticks * time_multiplier;
+        new_values["BlockDiscardTime_" + name] = delta_values.discard_ticks * time_multiplier;
+
+        new_values["BlockInFlightOps_" + name] = delta_values.in_flight_ios;
+
+        new_values["BlockActiveTime_" + name] = delta_values.io_ticks * time_multiplier;
+        new_values["BlockQueueTime_" + name] = delta_values.time_in_queue * time_multiplier;
+
+        if (delta_values.in_flight_ios)
+        {
+            /// TODO Check if these values are meaningful.
+
+            new_values["BlockActiveTimePerOp_" + name] = delta_values.io_ticks * time_multiplier / delta_values.in_flight_ios;
+            new_values["BlockQueueTimePerOp_" + name] = delta_values.time_in_queue * time_multiplier / delta_values.in_flight_ios;
+        }
+    }
+
     for (size_t i = 0, size = thermal.size(); i < size; ++i)
     {
         ReadBufferFromFile & in = *thermal[i];
@@ -770,6 +894,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
     for (size_t i = 0, size = edac.size(); i < size; ++i)
     {
+        /// NOTE maybe we need to take difference with previous values.
+
         if (edac[i].first)
         {
             ReadBufferFromFile & in = *edac[i].first;
@@ -803,6 +929,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
 
     {
+        /// Current working directory of the server is the directory with logs.
         auto stat = getStatVFS(".");
 
         new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
