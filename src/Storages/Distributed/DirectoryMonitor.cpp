@@ -52,6 +52,15 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int EMPTY_DATA_PASSED;
     extern const int INCORRECT_FILE_NAME;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int DISTRIBUTED_BROKEN_BATCH_INFO;
+    extern const int DISTRIBUTED_BROKEN_BATCH_FILES;
+    extern const int TOO_MANY_PARTS;
+    extern const int TOO_MANY_BYTES;
+    extern const int TOO_MANY_ROWS_OR_BYTES;
+    extern const int TOO_MANY_PARTITIONS;
+    extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -60,13 +69,12 @@ namespace
     constexpr const std::chrono::minutes decrease_error_count_period{5};
 
     template <typename PoolFactory>
-    ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory, Poco::Logger * log)
+    ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory, const Cluster::ShardsInfo & shards_info, Poco::Logger * log)
     {
         ConnectionPoolPtrs pools;
 
-        for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+        auto make_connection = [&](const Cluster::Address & address)
         {
-            Cluster::Address address = Cluster::Address::fromFullString(boost::copy_range<std::string>(*it));
             try
             {
                 pools.emplace_back(factory(address));
@@ -76,10 +84,35 @@ namespace
                 if (e.code() == ErrorCodes::INCORRECT_FILE_NAME)
                 {
                     tryLogCurrentException(log);
-                    continue;
+                    return;
                 }
                 throw;
             }
+        };
+
+        for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+        {
+            const std::string & dirname = boost::copy_range<std::string>(*it);
+            Cluster::Address address = Cluster::Address::fromFullString(dirname);
+            if (address.shard_index && dirname.ends_with("_all_replicas"))
+            {
+                if (address.shard_index > shards_info.size())
+                {
+                    LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
+                    continue;
+                }
+
+                const auto & shard_info = shards_info[address.shard_index - 1];
+                size_t replicas = shard_info.per_replica_pools.size();
+
+                for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
+                {
+                    address.replica_index = replica_index;
+                    make_connection(address);
+                }
+            }
+            else
+                make_connection(address);
         }
 
         return pools;
@@ -203,7 +236,25 @@ namespace
             || code == ErrorCodes::CANNOT_READ_ALL_DATA
             || code == ErrorCodes::UNKNOWN_CODEC
             || code == ErrorCodes::CANNOT_DECOMPRESS
+            || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_INFO
+            || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES
             || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+    }
+
+    /// Can the batch be split and send files from batch one-by-one instead?
+    bool isSplittableErrorCode(int code, bool remote)
+    {
+        return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+            /// FunctionRange::max_elements and similar
+            || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND
+            || code == ErrorCodes::TOO_MANY_PARTS
+            || code == ErrorCodes::TOO_MANY_BYTES
+            || code == ErrorCodes::TOO_MANY_ROWS_OR_BYTES
+            || code == ErrorCodes::TOO_MANY_PARTITIONS
+            || code == ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES
+            || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_INFO
+            || isFileBrokenErrorCode(code, remote)
+        ;
     }
 
     SyncGuardPtr getDirectorySyncGuard(bool dir_fsync, const DiskPtr & disk, const String & path)
@@ -295,6 +346,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , relative_path(relative_path_)
     , path(fs::path(disk->getPath()) / relative_path / "")
     , should_batch_inserts(storage.getContext()->getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , split_batch_on_failure(storage.getContext()->getSettingsRef().distributed_directory_monitor_split_batch_on_failure)
     , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
     , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
     , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
@@ -420,13 +472,13 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
 
-        /// check new format shard{shard_index}_number{replica_index}
+        /// check new format shard{shard_index}_replica{replica_index}
         /// (shard_index and replica_index starts from 1)
         if (address.shard_index != 0)
         {
             if (!address.replica_index)
                 throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "Wrong replica_index ({})", address.replica_index, name);
+                    "Wrong replica_index={} ({})", address.replica_index, name);
 
             if (address.shard_index > shards_info.size())
                 throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
@@ -475,7 +527,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             address.secure);
     };
 
-    auto pools = createPoolsForAddresses(name, pool_factory, storage.log);
+    auto pools = createPoolsForAddresses(name, pool_factory, storage.getCluster()->getShardsInfo(), storage.log);
 
     const auto settings = storage.getContext()->getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
@@ -618,6 +670,7 @@ struct StorageDistributedDirectoryMonitor::Batch
     StorageDistributedDirectoryMonitor & parent;
     const std::map<UInt64, String> & file_index_to_path;
 
+    bool split_batch_on_failure = true;
     bool fsync = false;
     bool dir_fsync = false;
 
@@ -626,6 +679,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         const std::map<UInt64, String> & file_index_to_path_)
         : parent(parent_)
         , file_index_to_path(file_index_to_path_)
+        , split_batch_on_failure(parent.split_batch_on_failure)
         , fsync(parent.storage.getDistributedSettingsRef().fsync_after_insert)
         , dir_fsync(parent.dir_fsync)
     {}
@@ -679,37 +733,23 @@ struct StorageDistributedDirectoryMonitor::Batch
         auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;
+        bool batch_marked_as_broken = false;
         try
         {
-            std::unique_ptr<RemoteBlockOutputStream> remote;
-
-            for (UInt64 file_idx : file_indices)
+            try
             {
-                auto file_path = file_index_to_path.find(file_idx);
-                if (file_path == file_index_to_path.end())
-                {
-                    LOG_ERROR(parent.log, "Failed to send batch: file with index {} is absent", file_idx);
-                    batch_broken = true;
-                    break;
-                }
-
-                ReadBufferFromFile in(file_path->second);
-                const auto & distributed_header = readDistributedHeader(in, parent.log);
-
-                if (!remote)
-                {
-                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts,
-                        distributed_header.insert_query,
-                        distributed_header.insert_settings,
-                        distributed_header.client_info);
-                    remote->writePrefix();
-                }
-                bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-                writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
+                sendBatch(*connection, timeouts);
             }
-
-            if (remote)
-                remote->writeSuffix();
+            catch (const Exception & e)
+            {
+                if (split_batch_on_failure && isSplittableErrorCode(e.code(), e.isRemoteException()))
+                {
+                    tryLogCurrentException(parent.log, "Trying to split batch due to");
+                    sendSeparateFiles(*connection, timeouts);
+                }
+                else
+                    throw;
+            }
         }
         catch (Exception & e)
         {
@@ -717,6 +757,8 @@ struct StorageDistributedDirectoryMonitor::Batch
             {
                 tryLogCurrentException(parent.log, "Failed to send batch due to");
                 batch_broken = true;
+                if (!e.isRemoteException() && e.code() == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES)
+                    batch_marked_as_broken = true;
             }
             else
             {
@@ -737,7 +779,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             for (UInt64 file_index : file_indices)
                 parent.markAsSend(file_index_to_path.at(file_index));
         }
-        else
+        else if (!batch_marked_as_broken)
         {
             LOG_ERROR(parent.log, "Marking a batch of {} files as broken.", file_indices.size());
 
@@ -772,6 +814,78 @@ struct StorageDistributedDirectoryMonitor::Batch
             file_indices.push_back(idx);
         }
         recovered = true;
+    }
+
+private:
+    void sendBatch(Connection & connection, const ConnectionTimeouts & timeouts)
+    {
+        std::unique_ptr<RemoteBlockOutputStream> remote;
+
+        for (UInt64 file_idx : file_indices)
+        {
+            auto file_path = file_index_to_path.find(file_idx);
+            if (file_path == file_index_to_path.end())
+                throw Exception(ErrorCodes::DISTRIBUTED_BROKEN_BATCH_INFO,
+                    "Failed to send batch: file with index {} is absent", file_idx);
+
+            ReadBufferFromFile in(file_path->second);
+            const auto & distributed_header = readDistributedHeader(in, parent.log);
+
+            if (!remote)
+            {
+                remote = std::make_unique<RemoteBlockOutputStream>(connection, timeouts,
+                    distributed_header.insert_query,
+                    distributed_header.insert_settings,
+                    distributed_header.client_info);
+                remote->writePrefix();
+            }
+            bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
+            writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
+        }
+
+        if (remote)
+            remote->writeSuffix();
+    }
+
+    void sendSeparateFiles(Connection & connection, const ConnectionTimeouts & timeouts)
+    {
+        size_t broken_files = 0;
+
+        for (UInt64 file_idx : file_indices)
+        {
+            auto file_path = file_index_to_path.find(file_idx);
+            if (file_path == file_index_to_path.end())
+            {
+                LOG_ERROR(parent.log, "Failed to send one file from batch: file with index {} is absent", file_idx);
+                ++broken_files;
+                continue;
+            }
+
+            try
+            {
+                ReadBufferFromFile in(file_path->second);
+                const auto & distributed_header = readDistributedHeader(in, parent.log);
+
+                RemoteBlockOutputStream remote(connection, timeouts,
+                    distributed_header.insert_query,
+                    distributed_header.insert_settings,
+                    distributed_header.client_info);
+                remote.writePrefix();
+                bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
+                writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
+                remote.writeSuffix();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format("While sending {}", file_path->second));
+                parent.maybeMarkAsBroken(file_path->second, e);
+                ++broken_files;
+            }
+        }
+
+        if (broken_files)
+            throw Exception(ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES,
+                "Failed to send {} files", broken_files);
     }
 };
 

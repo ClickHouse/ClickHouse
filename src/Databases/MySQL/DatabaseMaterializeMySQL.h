@@ -66,6 +66,8 @@ public:
     void assertCalledFromSyncThreadOrDrop(const char * method) const;
 
     void shutdownSynchronizationThread();
+
+    friend class DatabaseMaterializeTablesIterator;
 };
 
 
