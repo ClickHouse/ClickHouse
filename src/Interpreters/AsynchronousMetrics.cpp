@@ -553,229 +553,255 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
         }
     }
-#endif
 
-#if defined(OS_LINUX)
     if (loadavg)
     {
-        loadavg->rewind();
+        try
+        {
+            loadavg->rewind();
 
-        Float64 loadavg1 = 0;
-        Float64 loadavg5 = 0;
-        Float64 loadavg15 = 0;
-        UInt64 threads_runnable = 0;
-        UInt64 threads_total = 0;
+            Float64 loadavg1 = 0;
+            Float64 loadavg5 = 0;
+            Float64 loadavg15 = 0;
+            UInt64 threads_runnable = 0;
+            UInt64 threads_total = 0;
 
-        readText(loadavg1, *loadavg);
-        skipWhitespaceIfAny(*loadavg);
-        readText(loadavg5, *loadavg);
-        skipWhitespaceIfAny(*loadavg);
-        readText(loadavg15, *loadavg);
-        skipWhitespaceIfAny(*loadavg);
-        readText(threads_runnable, *loadavg);
-        assertChar('/', *loadavg);
-        readText(threads_total, *loadavg);
+            readText(loadavg1, *loadavg);
+            skipWhitespaceIfAny(*loadavg);
+            readText(loadavg5, *loadavg);
+            skipWhitespaceIfAny(*loadavg);
+            readText(loadavg15, *loadavg);
+            skipWhitespaceIfAny(*loadavg);
+            readText(threads_runnable, *loadavg);
+            assertChar('/', *loadavg);
+            readText(threads_total, *loadavg);
 
-        new_values["LoadAverage1"] = loadavg1;
-        new_values["LoadAverage5"] = loadavg5;
-        new_values["LoadAverage15"] = loadavg15;
-        new_values["OSThreadsRunnable"] = threads_runnable;
-        new_values["OSThreadsTotal"] = threads_total;
+            new_values["LoadAverage1"] = loadavg1;
+            new_values["LoadAverage5"] = loadavg5;
+            new_values["LoadAverage15"] = loadavg15;
+            new_values["OSThreadsRunnable"] = threads_runnable;
+            new_values["OSThreadsTotal"] = threads_total;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     if (uptime)
     {
-        uptime->rewind();
+        try
+        {
+            uptime->rewind();
 
-        Float64 uptime_seconds = 0;
-        readText(uptime_seconds, *uptime);
+            Float64 uptime_seconds = 0;
+            readText(uptime_seconds, *uptime);
 
-        new_values["OSUptime"] = uptime_seconds;
+            new_values["OSUptime"] = uptime_seconds;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     if (proc_stat)
     {
-        proc_stat->rewind();
-
-        int64_t hz = sysconf(_SC_CLK_TCK);
-        if (-1 == hz)
-            throwFromErrno("Cannot call 'sysconf' to obtain system HZ", ErrorCodes::CANNOT_SYSCONF);
-
-        double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_after_previous_update).count() / 1e9);
-        size_t num_cpus = 0;
-
-        ProcStatValuesOther current_other_values{};
-        ProcStatValuesCPU delta_values_all_cpus{};
-
-        while (!proc_stat->eof())
+        try
         {
-            String name;
-            readStringUntilWhitespace(name, *proc_stat);
-            skipWhitespaceIfAny(*proc_stat);
+            proc_stat->rewind();
 
-            if (name.starts_with("cpu"))
+            int64_t hz = sysconf(_SC_CLK_TCK);
+            if (-1 == hz)
+                throwFromErrno("Cannot call 'sysconf' to obtain system HZ", ErrorCodes::CANNOT_SYSCONF);
+
+            double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_after_previous_update).count() / 1e9);
+            size_t num_cpus = 0;
+
+            ProcStatValuesOther current_other_values{};
+            ProcStatValuesCPU delta_values_all_cpus{};
+
+            while (!proc_stat->eof())
             {
-                String cpu_num_str = name.substr(strlen("cpu"));
-                UInt64 cpu_num = 0;
-                if (!cpu_num_str.empty())
+                String name;
+                readStringUntilWhitespace(name, *proc_stat);
+                skipWhitespaceIfAny(*proc_stat);
+
+                if (name.starts_with("cpu"))
                 {
-                    cpu_num = parse<UInt64>(cpu_num_str);
-
-                    if (cpu_num > 1000000) /// Safety check, arbitrary large number, suitable for supercomputing applications.
-                        throw Exception(ErrorCodes::CORRUPTED_DATA, "Too many CPUs (at least {}) in '/proc/stat' file", cpu_num);
-
-                    if (proc_stat_values_per_cpu.size() <= cpu_num)
-                        proc_stat_values_per_cpu.resize(cpu_num + 1);
-                }
-
-                ProcStatValuesCPU current_values{};
-                current_values.read(*proc_stat);
-
-                ProcStatValuesCPU & prev_values = !cpu_num_str.empty() ? proc_stat_values_per_cpu[cpu_num] : proc_stat_values_all_cpus;
-
-                if (!first_run)
-                {
-                    ProcStatValuesCPU delta_values = current_values - prev_values;
-
-                    String cpu_suffix;
+                    String cpu_num_str = name.substr(strlen("cpu"));
+                    UInt64 cpu_num = 0;
                     if (!cpu_num_str.empty())
                     {
-                        cpu_suffix = "CPU" + cpu_num_str;
-                        ++num_cpus;
+                        cpu_num = parse<UInt64>(cpu_num_str);
+
+                        if (cpu_num > 1000000) /// Safety check, arbitrary large number, suitable for supercomputing applications.
+                            throw Exception(ErrorCodes::CORRUPTED_DATA, "Too many CPUs (at least {}) in '/proc/stat' file", cpu_num);
+
+                        if (proc_stat_values_per_cpu.size() <= cpu_num)
+                            proc_stat_values_per_cpu.resize(cpu_num + 1);
                     }
-                    else
-                        delta_values_all_cpus = delta_values;
 
-                    new_values["OSUserTime" + cpu_suffix] = delta_values.user * multiplier;
-                    new_values["OSNiceTime" + cpu_suffix] = delta_values.nice * multiplier;
-                    new_values["OSSystemTime" + cpu_suffix] = delta_values.system * multiplier;
-                    new_values["OSIdleTime" + cpu_suffix] = delta_values.idle * multiplier;
-                    new_values["OSIOWaitTime" + cpu_suffix] = delta_values.iowait * multiplier;
-                    new_values["OSIrqTime" + cpu_suffix] = delta_values.irq * multiplier;
-                    new_values["OSSoftIrqTime" + cpu_suffix] = delta_values.softirq * multiplier;
-                    new_values["OSStealTime" + cpu_suffix] = delta_values.steal * multiplier;
-                    new_values["OSGuestTime" + cpu_suffix] = delta_values.guest * multiplier;
-                    new_values["OSGuestNiceTime" + cpu_suffix] = delta_values.guest_nice * multiplier;
+                    ProcStatValuesCPU current_values{};
+                    current_values.read(*proc_stat);
+
+                    ProcStatValuesCPU & prev_values = !cpu_num_str.empty() ? proc_stat_values_per_cpu[cpu_num] : proc_stat_values_all_cpus;
+
+                    if (!first_run)
+                    {
+                        ProcStatValuesCPU delta_values = current_values - prev_values;
+
+                        String cpu_suffix;
+                        if (!cpu_num_str.empty())
+                        {
+                            cpu_suffix = "CPU" + cpu_num_str;
+                            ++num_cpus;
+                        }
+                        else
+                            delta_values_all_cpus = delta_values;
+
+                        new_values["OSUserTime" + cpu_suffix] = delta_values.user * multiplier;
+                        new_values["OSNiceTime" + cpu_suffix] = delta_values.nice * multiplier;
+                        new_values["OSSystemTime" + cpu_suffix] = delta_values.system * multiplier;
+                        new_values["OSIdleTime" + cpu_suffix] = delta_values.idle * multiplier;
+                        new_values["OSIOWaitTime" + cpu_suffix] = delta_values.iowait * multiplier;
+                        new_values["OSIrqTime" + cpu_suffix] = delta_values.irq * multiplier;
+                        new_values["OSSoftIrqTime" + cpu_suffix] = delta_values.softirq * multiplier;
+                        new_values["OSStealTime" + cpu_suffix] = delta_values.steal * multiplier;
+                        new_values["OSGuestTime" + cpu_suffix] = delta_values.guest * multiplier;
+                        new_values["OSGuestNiceTime" + cpu_suffix] = delta_values.guest_nice * multiplier;
+                    }
+
+                    prev_values = current_values;
                 }
+                else if (name == "intr")
+                {
+                    readText(current_other_values.interrupts, *proc_stat);
+                    skipToNextLineOrEOF(*proc_stat);
+                }
+                else if (name == "ctxt")
+                {
+                    readText(current_other_values.context_switches, *proc_stat);
+                    skipToNextLineOrEOF(*proc_stat);
+                }
+                else if (name == "processes")
+                {
+                    readText(current_other_values.processes_created, *proc_stat);
+                    skipToNextLineOrEOF(*proc_stat);
+                }
+                else if (name == "procs_running")
+                {
+                    UInt64 processes_running = 0;
+                    readText(processes_running, *proc_stat);
+                    skipToNextLineOrEOF(*proc_stat);
+                    new_values["OSProcessesRunning"] = processes_running;
+                }
+                else if (name == "procs_blocked")
+                {
+                    UInt64 processes_blocked = 0;
+                    readText(processes_blocked, *proc_stat);
+                    skipToNextLineOrEOF(*proc_stat);
+                    new_values["OSProcessesBlocked"] = processes_blocked;
+                }
+                else
+                    skipToNextLineOrEOF(*proc_stat);
+            }
 
-                prev_values = current_values;
-            }
-            else if (name == "intr")
+            if (!first_run)
             {
-                readText(current_other_values.interrupts, *proc_stat);
-                skipToNextLineOrEOF(*proc_stat);
+                ProcStatValuesOther delta_values = current_other_values - proc_stat_values_other;
+
+                new_values["OSInterrupts"] = delta_values.interrupts * multiplier;
+                new_values["OSContextSwitches"] = delta_values.context_switches * multiplier;
+                new_values["OSProcessesCreated"] = delta_values.processes_created * multiplier;
+
+                /// Also write values normalized to 0..1 by diving to the number of CPUs.
+                /// These values are good to be averaged across the cluster of non-uniform servers.
+
+                new_values["OSUserTimeNormalized"] = delta_values_all_cpus.user * multiplier / num_cpus;
+                new_values["OSNiceTimeNormalized"] = delta_values_all_cpus.nice * multiplier / num_cpus;
+                new_values["OSSystemTimeNormalized"] = delta_values_all_cpus.system * multiplier / num_cpus;
+                new_values["OSIdleTimeNormalized"] = delta_values_all_cpus.idle * multiplier / num_cpus;
+                new_values["OSIOWaitTimeNormalized"] = delta_values_all_cpus.iowait * multiplier / num_cpus;
+                new_values["OSIrqTimeNormalized"] = delta_values_all_cpus.irq * multiplier / num_cpus;
+                new_values["OSSoftIrqTimeNormalized"] = delta_values_all_cpus.softirq * multiplier / num_cpus;
+                new_values["OSStealTimeNormalized"] = delta_values_all_cpus.steal * multiplier / num_cpus;
+                new_values["OSGuestTimeNormalized"] = delta_values_all_cpus.guest * multiplier / num_cpus;
+                new_values["OSGuestNiceTimeNormalized"] = delta_values_all_cpus.guest_nice * multiplier / num_cpus;
             }
-            else if (name == "ctxt")
-            {
-                readText(current_other_values.context_switches, *proc_stat);
-                skipToNextLineOrEOF(*proc_stat);
-            }
-            else if (name == "processes")
-            {
-                readText(current_other_values.processes_created, *proc_stat);
-                skipToNextLineOrEOF(*proc_stat);
-            }
-            else if (name == "procs_running")
-            {
-                UInt64 processes_running = 0;
-                readText(processes_running, *proc_stat);
-                skipToNextLineOrEOF(*proc_stat);
-                new_values["OSProcessesRunning"] = processes_running;
-            }
-            else if (name == "procs_blocked")
-            {
-                UInt64 processes_blocked = 0;
-                readText(processes_blocked, *proc_stat);
-                skipToNextLineOrEOF(*proc_stat);
-                new_values["OSProcessesBlocked"] = processes_blocked;
-            }
-            else
-                skipToNextLineOrEOF(*proc_stat);
+
+            proc_stat_values_other = current_other_values;
         }
-
-        if (!first_run)
+        catch (...)
         {
-            ProcStatValuesOther delta_values = current_other_values - proc_stat_values_other;
-
-            new_values["OSInterrupts"] = delta_values.interrupts * multiplier;
-            new_values["OSContextSwitches"] = delta_values.context_switches * multiplier;
-            new_values["OSProcessesCreated"] = delta_values.processes_created * multiplier;
-
-            /// Also write values normalized to 0..1 by diving to the number of CPUs.
-            /// These values are good to be averaged across the cluster of non-uniform servers.
-
-            new_values["OSUserTimeNormalized"] = delta_values_all_cpus.user * multiplier / num_cpus;
-            new_values["OSNiceTimeNormalized"] = delta_values_all_cpus.nice * multiplier / num_cpus;
-            new_values["OSSystemTimeNormalized"] = delta_values_all_cpus.system * multiplier / num_cpus;
-            new_values["OSIdleTimeNormalized"] = delta_values_all_cpus.idle * multiplier / num_cpus;
-            new_values["OSIOWaitTimeNormalized"] = delta_values_all_cpus.iowait * multiplier / num_cpus;
-            new_values["OSIrqTimeNormalized"] = delta_values_all_cpus.irq * multiplier / num_cpus;
-            new_values["OSSoftIrqTimeNormalized"] = delta_values_all_cpus.softirq * multiplier / num_cpus;
-            new_values["OSStealTimeNormalized"] = delta_values_all_cpus.steal * multiplier / num_cpus;
-            new_values["OSGuestTimeNormalized"] = delta_values_all_cpus.guest * multiplier / num_cpus;
-            new_values["OSGuestNiceTimeNormalized"] = delta_values_all_cpus.guest_nice * multiplier / num_cpus;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-
-        proc_stat_values_other = current_other_values;
     }
 
     if (meminfo)
     {
-        meminfo->rewind();
-
-        uint64_t free_plus_cached_bytes = 0;
-
-        while (!meminfo->eof())
+        try
         {
-            String name;
-            readStringUntilWhitespace(name, *meminfo);
-            skipWhitespaceIfAny(*meminfo, true);
+            meminfo->rewind();
 
-            uint64_t kb = 0;
-            readText(kb, *meminfo);
-            if (kb)
+            uint64_t free_plus_cached_bytes = 0;
+
+            while (!meminfo->eof())
             {
+                String name;
+                readStringUntilWhitespace(name, *meminfo);
                 skipWhitespaceIfAny(*meminfo, true);
-                assertString("kB", *meminfo);
 
-                uint64_t bytes = kb * 1024;
+                uint64_t kb = 0;
+                readText(kb, *meminfo);
+                if (kb)
+                {
+                    skipWhitespaceIfAny(*meminfo, true);
+                    assertString("kB", *meminfo);
 
-                if (name == "MemTotal:")
-                {
-                    new_values["OSMemoryTotal"] = bytes;
-                }
-                else if (name == "MemFree:")
-                {
-                    /// We cannot simply name this metric "Free", because it confuses users.
-                    /// See https://www.linuxatemyram.com/
-                    /// For convenience we also provide OSMemoryFreePlusCached, that should be somewhat similar to OSMemoryAvailable.
+                    uint64_t bytes = kb * 1024;
 
-                    free_plus_cached_bytes += bytes;
-                    new_values["OSMemoryFreeWithoutCached"] = bytes;
+                    if (name == "MemTotal:")
+                    {
+                        new_values["OSMemoryTotal"] = bytes;
+                    }
+                    else if (name == "MemFree:")
+                    {
+                        /// We cannot simply name this metric "Free", because it confuses users.
+                        /// See https://www.linuxatemyram.com/
+                        /// For convenience we also provide OSMemoryFreePlusCached, that should be somewhat similar to OSMemoryAvailable.
+
+                        free_plus_cached_bytes += bytes;
+                        new_values["OSMemoryFreeWithoutCached"] = bytes;
+                    }
+                    else if (name == "MemAvailable:")
+                    {
+                        new_values["OSMemoryAvailable"] = bytes;
+                    }
+                    else if (name == "Buffers:")
+                    {
+                        new_values["OSMemoryBuffers"] = bytes;
+                    }
+                    else if (name == "Cached:")
+                    {
+                        free_plus_cached_bytes += bytes;
+                        new_values["OSMemoryCached"] = bytes;
+                    }
+                    else if (name == "SwapCached:")
+                    {
+                        new_values["OSMemorySwapCached"] = bytes;
+                    }
                 }
-                else if (name == "MemAvailable:")
-                {
-                    new_values["OSMemoryAvailable"] = bytes;
-                }
-                else if (name == "Buffers:")
-                {
-                    new_values["OSMemoryBuffers"] = bytes;
-                }
-                else if (name == "Cached:")
-                {
-                    free_plus_cached_bytes += bytes;
-                    new_values["OSMemoryCached"] = bytes;
-                }
-                else if (name == "SwapCached:")
-                {
-                    new_values["OSMemorySwapCached"] = bytes;
-                }
+
+                skipToNextLineOrEOF(*meminfo);
             }
 
-            skipToNextLineOrEOF(*meminfo);
+            new_values["OSMemoryFreePlusCached"] = free_plus_cached_bytes;
         }
-
-        new_values["OSMemoryFreePlusCached"] = free_plus_cached_bytes;
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     // Try to add processor frequencies, ignoring errors.
@@ -826,164 +852,199 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
     if (file_nr)
     {
-        file_nr->rewind();
+        try
+        {
+            file_nr->rewind();
 
-        uint64_t open_files = 0;
-        readText(open_files, *file_nr);
-        new_values["OSOpenFiles"] = open_files;
+            uint64_t open_files = 0;
+            readText(open_files, *file_nr);
+            new_values["OSOpenFiles"] = open_files;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     for (auto & [name, device] : block_devs)
     {
-        device->rewind();
-
-        BlockDeviceStatValues current_values{};
-        BlockDeviceStatValues & prev_values = block_device_stats[name];
-        current_values.read(*device);
-
-        BlockDeviceStatValues delta_values = current_values - prev_values;
-        prev_values = current_values;
-
-        if (first_run)
-            continue;
-
-        /// Always 512 according to the docs.
-        static constexpr size_t sector_size = 512;
-
-        /// Always in milliseconds according to the docs.
-        static constexpr double time_multiplier = 1e-6;
-
-        new_values["BlockReadOps_" + name] = delta_values.read_ios;
-        new_values["BlockWriteOps_" + name] = delta_values.write_ios;
-        new_values["BlockDiscardOps_" + name] = delta_values.discard_ops;
-
-        new_values["BlockReadMerges_" + name] = delta_values.read_merges;
-        new_values["BlockWriteMerges_" + name] = delta_values.write_merges;
-        new_values["BlockDiscardMerges_" + name] = delta_values.discard_merges;
-
-        new_values["BlockReadBytes_" + name] = delta_values.read_sectors * sector_size;
-        new_values["BlockWriteBytes_" + name] = delta_values.write_sectors * sector_size;
-        new_values["BlockDiscardBytes_" + name] = delta_values.discard_sectors * sector_size;
-
-        new_values["BlockReadTime_" + name] = delta_values.read_ticks * time_multiplier;
-        new_values["BlockWriteTime_" + name] = delta_values.write_ticks * time_multiplier;
-        new_values["BlockDiscardTime_" + name] = delta_values.discard_ticks * time_multiplier;
-
-        new_values["BlockInFlightOps_" + name] = delta_values.in_flight_ios;
-
-        new_values["BlockActiveTime_" + name] = delta_values.io_ticks * time_multiplier;
-        new_values["BlockQueueTime_" + name] = delta_values.time_in_queue * time_multiplier;
-
-        if (delta_values.in_flight_ios)
+        try
         {
-            /// TODO Check if these values are meaningful.
+            device->rewind();
 
-            new_values["BlockActiveTimePerOp_" + name] = delta_values.io_ticks * time_multiplier / delta_values.in_flight_ios;
-            new_values["BlockQueueTimePerOp_" + name] = delta_values.time_in_queue * time_multiplier / delta_values.in_flight_ios;
+            BlockDeviceStatValues current_values{};
+            BlockDeviceStatValues & prev_values = block_device_stats[name];
+            current_values.read(*device);
+
+            BlockDeviceStatValues delta_values = current_values - prev_values;
+            prev_values = current_values;
+
+            if (first_run)
+                continue;
+
+            /// Always 512 according to the docs.
+            static constexpr size_t sector_size = 512;
+
+            /// Always in milliseconds according to the docs.
+            static constexpr double time_multiplier = 1e-6;
+
+            new_values["BlockReadOps_" + name] = delta_values.read_ios;
+            new_values["BlockWriteOps_" + name] = delta_values.write_ios;
+            new_values["BlockDiscardOps_" + name] = delta_values.discard_ops;
+
+            new_values["BlockReadMerges_" + name] = delta_values.read_merges;
+            new_values["BlockWriteMerges_" + name] = delta_values.write_merges;
+            new_values["BlockDiscardMerges_" + name] = delta_values.discard_merges;
+
+            new_values["BlockReadBytes_" + name] = delta_values.read_sectors * sector_size;
+            new_values["BlockWriteBytes_" + name] = delta_values.write_sectors * sector_size;
+            new_values["BlockDiscardBytes_" + name] = delta_values.discard_sectors * sector_size;
+
+            new_values["BlockReadTime_" + name] = delta_values.read_ticks * time_multiplier;
+            new_values["BlockWriteTime_" + name] = delta_values.write_ticks * time_multiplier;
+            new_values["BlockDiscardTime_" + name] = delta_values.discard_ticks * time_multiplier;
+
+            new_values["BlockInFlightOps_" + name] = delta_values.in_flight_ios;
+
+            new_values["BlockActiveTime_" + name] = delta_values.io_ticks * time_multiplier;
+            new_values["BlockQueueTime_" + name] = delta_values.time_in_queue * time_multiplier;
+
+            if (delta_values.in_flight_ios)
+            {
+                /// TODO Check if these values are meaningful.
+
+                new_values["BlockActiveTimePerOp_" + name] = delta_values.io_ticks * time_multiplier / delta_values.in_flight_ios;
+                new_values["BlockQueueTimePerOp_" + name] = delta_values.time_in_queue * time_multiplier / delta_values.in_flight_ios;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
     if (net_dev)
     {
-        net_dev->rewind();
-
-        /// Skip first two lines:
-        /// Inter-|   Receive                                                |  Transmit
-        ///  face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-
-        skipToNextLineOrEOF(*net_dev);
-        skipToNextLineOrEOF(*net_dev);
-
-        while (!net_dev->eof())
+        try
         {
-            skipWhitespaceIfAny(*net_dev, true);
-            String interface_name;
-            readStringUntilWhitespace(interface_name, *net_dev);
+            net_dev->rewind();
 
-            /// We are not interested in loopback devices.
-            if (!interface_name.ends_with(':') || interface_name == "lo:" || interface_name.size() <= 1)
-            {
-                skipToNextLineOrEOF(*net_dev);
-                continue;
-            }
-
-            interface_name.pop_back();
-
-            NetworkInterfaceStatValues current_values{};
-            uint64_t unused;
-
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(current_values.recv_bytes, *net_dev);
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(current_values.recv_packets, *net_dev);
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(current_values.recv_errors, *net_dev);
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(current_values.recv_drop, *net_dev);
-
-            /// NOTE We should pay more attention to the number of fields.
-
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(unused, *net_dev);
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(unused, *net_dev);
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(unused, *net_dev);
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(unused, *net_dev);
-
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(current_values.send_bytes, *net_dev);
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(current_values.send_packets, *net_dev);
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(current_values.send_errors, *net_dev);
-            skipWhitespaceIfAny(*net_dev, true);
-            readText(current_values.send_drop, *net_dev);
+            /// Skip first two lines:
+            /// Inter-|   Receive                                                |  Transmit
+            ///  face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
 
             skipToNextLineOrEOF(*net_dev);
+            skipToNextLineOrEOF(*net_dev);
 
-            NetworkInterfaceStatValues & prev_values = network_interface_stats[interface_name];
-            NetworkInterfaceStatValues delta_values = current_values - prev_values;
-            prev_values = current_values;
-
-            if (!first_run)
+            while (!net_dev->eof())
             {
-                new_values["NetworkReceiveBytes_" + interface_name] = delta_values.recv_bytes;
-                new_values["NetworkReceivePackets_" + interface_name] = delta_values.recv_packets;
-                new_values["NetworkReceiveErrors_" + interface_name] = delta_values.recv_errors;
-                new_values["NetworkReceiveDrop_" + interface_name] = delta_values.recv_drop;
+                skipWhitespaceIfAny(*net_dev, true);
+                String interface_name;
+                readStringUntilWhitespace(interface_name, *net_dev);
 
-                new_values["NetworkSendBytes_" + interface_name] = delta_values.send_bytes;
-                new_values["NetworkSendPackets_" + interface_name] = delta_values.send_packets;
-                new_values["NetworkSendErrors_" + interface_name] = delta_values.send_errors;
-                new_values["NetworkSendDrop_" + interface_name] = delta_values.send_drop;
+                /// We are not interested in loopback devices.
+                if (!interface_name.ends_with(':') || interface_name == "lo:" || interface_name.size() <= 1)
+                {
+                    skipToNextLineOrEOF(*net_dev);
+                    continue;
+                }
+
+                interface_name.pop_back();
+
+                NetworkInterfaceStatValues current_values{};
+                uint64_t unused;
+
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(current_values.recv_bytes, *net_dev);
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(current_values.recv_packets, *net_dev);
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(current_values.recv_errors, *net_dev);
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(current_values.recv_drop, *net_dev);
+
+                /// NOTE We should pay more attention to the number of fields.
+
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(unused, *net_dev);
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(unused, *net_dev);
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(unused, *net_dev);
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(unused, *net_dev);
+
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(current_values.send_bytes, *net_dev);
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(current_values.send_packets, *net_dev);
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(current_values.send_errors, *net_dev);
+                skipWhitespaceIfAny(*net_dev, true);
+                readText(current_values.send_drop, *net_dev);
+
+                skipToNextLineOrEOF(*net_dev);
+
+                NetworkInterfaceStatValues & prev_values = network_interface_stats[interface_name];
+                NetworkInterfaceStatValues delta_values = current_values - prev_values;
+                prev_values = current_values;
+
+                if (!first_run)
+                {
+                    new_values["NetworkReceiveBytes_" + interface_name] = delta_values.recv_bytes;
+                    new_values["NetworkReceivePackets_" + interface_name] = delta_values.recv_packets;
+                    new_values["NetworkReceiveErrors_" + interface_name] = delta_values.recv_errors;
+                    new_values["NetworkReceiveDrop_" + interface_name] = delta_values.recv_drop;
+
+                    new_values["NetworkSendBytes_" + interface_name] = delta_values.send_bytes;
+                    new_values["NetworkSendPackets_" + interface_name] = delta_values.send_packets;
+                    new_values["NetworkSendErrors_" + interface_name] = delta_values.send_errors;
+                    new_values["NetworkSendDrop_" + interface_name] = delta_values.send_drop;
+                }
             }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
     for (size_t i = 0, size = thermal.size(); i < size; ++i)
     {
-        ReadBufferFromFile & in = *thermal[i];
+        try
+        {
+            ReadBufferFromFile & in = *thermal[i];
 
-        in.rewind();
-        uint64_t temperature = 0;
-        readText(temperature, in);
-        new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
+            in.rewind();
+            uint64_t temperature = 0;
+            readText(temperature, in);
+            new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     for (const auto & [hwmon_name, sensors] : hwmon_devices)
     {
-        for (const auto & [sensor_name, sensor_file] : sensors)
+        try
         {
-            sensor_file->rewind();
-            uint64_t temperature = 0;
-            readText(temperature, *sensor_file);
+            for (const auto & [sensor_name, sensor_file] : sensors)
+            {
+                sensor_file->rewind();
+                uint64_t temperature = 0;
+                readText(temperature, *sensor_file);
 
-            if (sensor_name.empty())
-                new_values[fmt::format("Temperature_{}", hwmon_name)] = temperature * 0.001;
-            else
-                new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = temperature * 0.001;
+                if (sensor_name.empty())
+                    new_values[fmt::format("Temperature_{}", hwmon_name)] = temperature * 0.001;
+                else
+                    new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = temperature * 0.001;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
@@ -991,22 +1052,29 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     {
         /// NOTE maybe we need to take difference with previous values.
 
-        if (edac[i].first)
+        try
         {
-            ReadBufferFromFile & in = *edac[i].first;
-            in.rewind();
-            uint64_t errors = 0;
-            readText(errors, in);
-            new_values[fmt::format("EDAC{}_Correctable", i)] = errors;
-        }
+            if (edac[i].first)
+            {
+                ReadBufferFromFile & in = *edac[i].first;
+                in.rewind();
+                uint64_t errors = 0;
+                readText(errors, in);
+                new_values[fmt::format("EDAC{}_Correctable", i)] = errors;
+            }
 
-        if (edac[i].second)
+            if (edac[i].second)
+            {
+                ReadBufferFromFile & in = *edac[i].second;
+                in.rewind();
+                uint64_t errors = 0;
+                readText(errors, in);
+                new_values[fmt::format("EDAC{}_Uncorrectable", i)] = errors;
+            }
+        }
+        catch (...)
         {
-            ReadBufferFromFile & in = *edac[i].second;
-            in.rewind();
-            uint64_t errors = 0;
-            readText(errors, in);
-            new_values[fmt::format("EDAC{}_Uncorrectable", i)] = errors;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 #endif
