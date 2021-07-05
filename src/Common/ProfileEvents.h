@@ -21,9 +21,6 @@ namespace ProfileEvents
     /// Counters - how many times each event happened
     extern Counters global_counters;
 
-    // Needed for coverage runtime, see src/Common/Coverage.cpp:27
-    extern Counter global_counters_array[];
-
     class Counters
     {
         Counter * counters = nullptr;

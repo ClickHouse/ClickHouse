@@ -96,10 +96,6 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
-#if WITH_COVERAGE
-#    include <Common/Coverage.h>
-#endif
-
 namespace fs = std::filesystem;
 
 namespace DB
@@ -2730,10 +2726,6 @@ public:
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
-#if WITH_COVERAGE
-    ::coverage::Writer::instance().onClientInitialized();
-#endif
-
     try
     {
         DB::Client client;

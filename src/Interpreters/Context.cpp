@@ -78,11 +78,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <filesystem>
 
-#if WITH_COVERAGE
-#include <Common/Coverage.h>
-#endif
-
-
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -1148,19 +1143,6 @@ void Context::setSetting(const StringRef & name, const Field & value)
     auto lock = getLock();
 
     const std::string_view name_view {name};
-
-#if WITH_COVERAGE
-    /// Note that we just use setting mechanism to notify coverage runtime, settings are not actually set but it's ok
-    /// as we don't use them anywhere else.
-
-    // Despite value being string, this method get called instead of the above one.
-    if (name_view == ::coverage::setting_test_name)
-    {
-        /// We don't move this check up the stack to ensure that internal function is called under an exclusive lock.
-        ::coverage::Writer::instance().onChangedTestName(value.get<String>());
-        return;
-    }
-#endif
 
     if (name == "profile")
     {

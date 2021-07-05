@@ -1,6 +1,9 @@
 #include "Coverage.h"
+#include "CoverageDecls.h"
 
 #include <unistd.h>
+#include <signal.h>
+#include <sys/mman.h>
 
 #include <memory>
 #include <utility>
@@ -11,43 +14,16 @@
 
 #include "common/logger_useful.h"
 
-#include "Common/ProfileEvents.h"
-
 namespace coverage
 {
 static const size_t hardware_concurrency { std::thread::hardware_concurrency() };
 static const String logger_base_name {"Coverage"};
 
-#if NON_ELF_BUILD
-    Writer::Writer() : symbol_index(), dwarf() {}
-#else
-
-inline SymbolIndexInstance getInstanceAndInitGlobalCounters()
+enum class Magic : uint32_t
 {
-    /**
-     * Writer is a singleton, so it initializes statically.
-     * SymbolIndex uses a MMapReadBufferFromFile which uses ProfileEvents.
-     * If no thread was found in the events profiler, a global variable global_counters is used.
-     *
-     * This variable may get initialized after Writer (static initialization order fiasco).
-     * In fact, sanitizer callback is evaluated before global_counters init.
-     *
-     * We can't use constinit on that variable as it has a shared_ptr on it, so we just
-     * ultimately initialize it before getting the instance.
-     *
-     * We can't initialize global_counters in ProfileEvents.cpp to nullptr as in that case it will become nullptr.
-     * So we just initialize it twice (here and in ProfileEvents.cpp).
-     */
-    ProfileEvents::global_counters = ProfileEvents::Counters(ProfileEvents::global_counters_array);
-
-    return SymbolIndex::instance();
-}
-
-Writer::Writer() :
-      symbol_index(getInstanceAndInitGlobalCounters()),
-      dwarf(symbol_index->getSelf()->elf) {}
-
-#endif
+    ReportHeader = 0xcafefefe,
+    TestEntry = 0xcafecafe
+};
 
 Writer& Writer::instance()
 {
@@ -61,7 +37,6 @@ void Writer::pcTableCallback(const Addr * start, const Addr * end) noexcept
     instrumented_basic_blocks = bb_pairs / 2;
 
     instrumented_blocks_addrs.resize(instrumented_basic_blocks);
-    instrumented_blocks_start_lines.resize(instrumented_basic_blocks);
 
     for (size_t i = 0; i < bb_pairs / 2; ++i)
         /// Real address for non-function entries is the previous instruction, see implementation in clang:
@@ -75,29 +50,36 @@ void Writer::countersCallback(bool * start, bool * end) noexcept
     current = {start, end};
 }
 
-void Writer::onClientInitialized() noexcept
-{
-    is_client = true;
-}
-
 void Writer::onServerInitialized()
 {
-    // We can't log data using Poco before server initialization as Writer constructor gets called in
-    // sanitizer callback which occurs before Poco internal structures initialization.
+    // Some .sh tests spawn multiple server instances. However, only one server instance (the first) should write to
+    // report file. If report file already exists, we silently start as server without coverage.
+    if (access(report_path.c_str(), F_OK) != 0)
+    {
+        LOG_WARNING(base_log, "Report file already exists");
+        return;
+    }
+
+    // Writer constructor occurs before Poco internal structures initialization.
     base_log = &Poco::Logger::get(logger_base_name);
 
-    // Some functional .sh tests spawn own server instances.
-    // In coverage mode it leads to concurrent file writes (file write + open in "w" truncate mode, to be precise),
-    // which results in data corruption.
-    // To prevent such situation, target file is not allowed to exist at server start.
-    assert(access(report_path.c_str(), F_OK) != 0);
+    struct sigaction test_change = { .sa_handler = [](int) { Writer::instance().onTestFinished(); } };
+    struct sigaction shut_down = { .sa_handler = [](int) { Writer::instance().onShutRuntime(); } };
 
-    // fwrite also can't be called before server initialization (some internal state is left uninitialized if we
-    // try to write file in PC table callback).
-    [[maybe_unused]] const FILE * const ptr = report_file.set(report_path, "w");
-    assert(ptr != nullptr);
+    [[maybe_unused]] const int test_change_ret = sigaction(SIGRTMIN + 1, &test_change, nullptr);
+    [[maybe_unused]] const int shut_down_ret = sigaction(SIGRTMIN + 2, &shut_down, nullptr);
 
-    LOG_INFO(base_log, "Opened report file {}", report_path);
+    assert(test_change_ret == 0);
+    assert(shut_down_ret == 0);
+
+    const int fd = creat(report_path.c_str(), 0666);
+    assert(fd != -1);
+
+    report_file_ptr = mmap(nullptr, report_file_size, PROT_WRITE, MAP_SHARED, fd, 0 /*offset*/);
+    assert(report_file_ptr != static_cast<void *>(-1));
+
+    [[maybe_unused]] const int ret = close(fd);
+    assert(ret == 0);
 
     symbolizeInstrumentedData();
 }
@@ -110,12 +92,7 @@ void Writer::symbolizeInstrumentedData()
         instrumented_basic_blocks, hardware_concurrency);
 
     symbolizeAddrsIntoLocalCaches(caches);
-    mergeIntoGlobalCache(caches);
-
-    LOG_INFO(base_log, "Found {} source files", source_files.size());
-    assert(source_files.size() > 2000);
-
-    writeReportHeader();
+    mergeAndWriteHeader(caches);
 
     /// Testing script in docker (/docker/test/coverage/run.sh) waits for this message and starts tests afterwards.
     LOG_INFO(base_log, "Symbolized all addresses");
@@ -123,10 +100,13 @@ void Writer::symbolizeInstrumentedData()
 
 void Writer::symbolizeAddrsIntoLocalCaches(LocalCaches& caches)
 {
+    const SymbolIndexInstance symbol_index;
+    const Dwarf dwarf(symbol_index->getSelf()->elf);
+
     std::vector<std::thread> workers(hardware_concurrency);
 
     for (size_t thread_index = 0; thread_index < hardware_concurrency; ++thread_index)
-        workers[thread_index] = std::thread{[this, thread_index, &cache = caches[thread_index]]
+        workers[thread_index] = std::thread{[this, thread_index, &dwarf, &cache = caches[thread_index]]
         {
             const size_t step = instrumented_basic_blocks / hardware_concurrency;
             const size_t start_index = thread_index * step;
@@ -156,11 +136,20 @@ void Writer::symbolizeAddrsIntoLocalCaches(LocalCaches& caches)
 
     for (auto & worker : workers)
         worker.join();
+
+    instrumented_blocks_addrs.clear();
+    instrumented_blocks_addrs.shrink_to_fit();
 }
 
-void Writer::mergeIntoGlobalCache(const LocalCaches& caches)
+void Writer::mergeAndWriteHeader(const LocalCaches& caches)
 {
+    using SourceIndex = int;
+    using InstrumentedBlocks = std::vector<BBIndex>;
+    using SourceInfo = std::pair<SourcePath, InstrumentedBlocks>;
+
     std::unordered_map<SourcePath, SourceIndex> path_to_index;
+    std::vector<SourceInfo> source_files;
+    std::vector<Line> instrumented_blocks_start_lines(instrumented_basic_blocks);
 
     for (const auto & cache : caches)
         for (const auto & [source_path, symbolized_data] : cache)
@@ -173,10 +162,10 @@ void Writer::mergeIntoGlobalCache(const LocalCaches& caches)
             {
                 source_index = path_to_index.size();
                 path_to_index.emplace(source_path, source_index);
-                source_files.push_back(std::make_pair(source_path, Blocks{}));
+                source_files.push_back(std::make_pair(source_path, InstrumentedBlocks{}));
             }
 
-            Blocks & instrumented = source_files[source_index].second;
+            InstrumentedBlocks & instrumented = source_files[source_index].second;
 
             for (const auto & [bb_index, start_line] : symbolized_data)
             {
@@ -184,53 +173,57 @@ void Writer::mergeIntoGlobalCache(const LocalCaches& caches)
                 instrumented.push_back(bb_index);
             }
         }
-}
 
-void Writer::onChangedTestName(String name)
-{
-    if (unlikely(is_client))
-        return;
+    LOG_INFO(base_log, "Found {} source files", source_files.size());
+    assert(source_files.size() > 2000);
 
-    name.swap(test_name);
+    uint32_t * const report_ptr = reinterpret_cast<uint32_t*>(report_file_ptr);
 
-    const String& finished_test = name;
-    const String& next_test = test_name;
-
-    if (unlikely(finished_test.empty())) // Processing first test
-        return;
-
-    report_file.write(Magic::TestEntry);
-    report_file.write(finished_test);
-
-    for (size_t i = 0; i < instrumented_basic_blocks; ++i)
-        if (current[i])
-        {
-            current[i] = false;
-            report_file.write(i);
-        }
-
-    if (unlikely(next_test.empty())) // Finished testing
-    {
-        report_file.close();
-        LOG_INFO(base_log, "Shut down runtime");
-    }
-}
-
-void Writer::writeReportHeader() noexcept
-{
-    report_file.write(Magic::ReportHeader);
-    report_file.write(source_files.size());
+    report_ptr[0] = static_cast<uint32_t>(Magic::ReportHeader);
+    report_ptr[++report_file_pos] = source_files.size();
 
     for (const auto& [path, instrumented_blocks] : source_files)
     {
-        report_file.write(path);
-        report_file.write(instrumented_blocks.size());
+        const uint32_t path_size = path.size();
+        const uint32_t path_padding = (4 - path_size % 4) % 4;
+        const uint32_t path_word_len = (path_size + path_padding) / 4;
+
+        report_ptr[++report_file_pos] = path_word_len;
+
+        char * report_ptr_char = reinterpret_cast<char * >(&report_ptr[++report_file_pos]);
+
+        for (const char c : path) *report_ptr_char++ = c;
+        for (size_t i = 0; i < path_padding; ++i) *report_ptr_char++ = '\0';
+
+        report_file_pos += path_word_len;
+
+        report_ptr[++report_file_pos] = instrumented_blocks.size();
 
         for (BBIndex index : instrumented_blocks)
         {
-            report_file.write(index);
-            report_file.write(instrumented_blocks_start_lines[index]);
+            report_ptr[++report_file_pos] = index;
+            report_ptr[++report_file_pos] = instrumented_blocks_start_lines[index];
         }
     }
+}
+
+void Writer::onTestFinished()
+{
+    uint32_t * const report_ptr = reinterpret_cast<uint32_t*>(report_file_ptr);
+
+    report_ptr[++report_file_pos] = static_cast<uint32_t>(Magic::TestEntry);
+
+    for (size_t bb_index = 0; bb_index < instrumented_basic_blocks; ++bb_index)
+        if (current[bb_index])
+        {
+            current[bb_index] = false;
+            report_ptr[++report_file_pos] = bb_index;
+        }
+}
+
+void Writer::onShutRuntime()
+{
+    msync(report_file_ptr, report_file_size, MS_SYNC);
+    munmap(report_file_ptr, report_file_size);
 }
 }

@@ -787,7 +787,7 @@ def coverage_run_item(test_name: str, failures: int = 0) -> Tuple[bool, int]:
     if not args.coverage:
         return True, failures
 
-    return run_query("SET coverage_test_name='{}';".format(test_name), failures)
+    coverage_tests_file.write(test_name + "\n")
 
 def print_stack_traces() -> None:
     clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
