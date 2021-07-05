@@ -63,7 +63,6 @@ static std::unique_ptr<ReadBufferFromFile> openFileIfExists(const std::string & 
 }
 
 
-
 AsynchronousMetrics::AsynchronousMetrics(
     ContextPtr global_context_,
     int update_period_seconds,
