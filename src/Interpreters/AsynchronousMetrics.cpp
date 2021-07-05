@@ -1054,6 +1054,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     for (size_t i = 0, size = edac.size(); i < size; ++i)
     {
         /// NOTE maybe we need to take difference with previous values.
+        /// But these metrics should be exceptionally rare, so it's ok to keep them accumulated.
 
         try
         {
