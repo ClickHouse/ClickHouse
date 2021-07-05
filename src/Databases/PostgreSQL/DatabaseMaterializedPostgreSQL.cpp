@@ -37,12 +37,14 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
         const String & metadata_path_,
         UUID uuid_,
         const ASTStorage * database_engine_define_,
+        bool is_attach_,
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info_,
         std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
     , database_engine_define(database_engine_define_->clone())
+    , is_attach(is_attach_)
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
@@ -58,6 +60,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             database_name,
             connection_info,
             getContext(),
+            is_attach,
             settings->materialized_postgresql_max_block_size.value,
             settings->materialized_postgresql_allow_automatic_update,
             /* is_materialized_postgresql_database = */ true,

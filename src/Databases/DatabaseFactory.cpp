@@ -293,7 +293,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             postgresql_replica_settings->loadFromQuery(*engine_define);
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
-                context, metadata_path, uuid, engine_define,
+                context, metadata_path, uuid, engine_define, create.attach,
                 database_name, postgres_database_name, connection_info,
                 std::move(postgresql_replica_settings));
     }
