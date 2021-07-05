@@ -226,7 +226,7 @@ void StorageMaterializedPostgreSQL::shutdown()
 {
     if (replication_handler)
         replication_handler->shutdown();
-    auto nested = getNested();
+    auto nested = tryGetNested();
     if (nested)
         nested->shutdown();
 }
