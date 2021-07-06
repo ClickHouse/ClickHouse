@@ -253,3 +253,4 @@
 01923_different_expression_name_alias
 01932_null_valid_identifier
 00918_json_functions
+01889_sql_json_functions
