@@ -566,7 +566,6 @@ void ZooKeeper::sendThread()
                     if (info.watch)
                     {
                         info.request->has_watch = true;
-                        CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
                     }
 
                     if (expired)
@@ -773,6 +772,8 @@ void ZooKeeper::receiveEvent()
 
             if (add_watch)
             {
+                CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
+
                 /// The key of wathces should exclude the root_path
                 String req_path = request_info.request->getPath();
                 removeRootPath(req_path, root_path);
