@@ -29,12 +29,14 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const String & current_database_name_,
     const postgres::ConnectionInfo & connection_info_,
     ContextPtr context_,
+    bool is_attach_,
     const size_t max_block_size_,
     bool allow_automatic_update_,
     bool is_materialized_postgresql_database_,
     const String tables_list_)
     : log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
     , context(context_)
+    , is_attach(is_attach_)
     , remote_database_name(remote_database_name_)
     , current_database_name(current_database_name_)
     , connection_info(connection_info_)
@@ -145,10 +147,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     {
         initial_sync();
     }
-    /// Replication slot depends on publication, so if replication slot exists and new
-    /// publication was just created - drop that replication slot and start from scratch.
-    /// TODO: tests
-    else if (new_publication_created)
+    /// Always drop replication slot if it is CREATE query and not ATTACH.
+    else if (!is_attach || new_publication)
     {
         dropReplicationSlot(tx);
         initial_sync();
@@ -285,22 +285,25 @@ bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::work & tx)
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
     pqxx::result result{tx.exec(query_str)};
     assert(!result.empty());
-    bool publication_exists = (result[0][0].as<std::string>() == "t");
-
-    if (publication_exists)
-        LOG_INFO(log, "Publication {} already exists. Using existing version", publication_name);
-
-    return publication_exists;
+    return result[0][0].as<std::string>() == "t";
 }
 
 
-void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx, bool create_without_check)
+void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx)
 {
-    /// For database engine a publication can be created earlier than in startReplication().
-    if (new_publication_created)
-        return;
+    auto publication_exists = isPublicationExist(tx);
 
-    if (create_without_check || !isPublicationExist(tx))
+    if (!is_attach && publication_exists)
+    {
+        /// This is a case for single Materialized storage. In case of database engine this check is done in advance.
+        LOG_WARNING(log,
+                    "Publication {} already exists, but it is a CREATE query, not ATTACH. Publication will be dropped",
+                    publication_name);
+
+        connection->execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+    }
+
+    if (!is_attach || !publication_exists)
     {
         if (tables_list.empty())
         {
@@ -320,14 +323,18 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx, bo
         try
         {
             tx.exec(query_str);
-            new_publication_created = true;
             LOG_TRACE(log, "Created publication {} with tables list: {}", publication_name, tables_list);
+            new_publication = true;
         }
         catch (Exception & e)
         {
             e.addMessage("while creating pg_publication");
             throw;
         }
+    }
+    else
+    {
+        LOG_TRACE(log, "Using existing publication ({}) version", publication_name);
     }
 }
 
@@ -401,6 +408,7 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", publication_name);
     tx.exec(query_str);
+    LOG_TRACE(log, "Dropped publication: {}", publication_name);
 }
 
 
@@ -438,8 +446,10 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection & connection_)
 {
     pqxx::work tx(connection_.getRef());
-    bool publication_exists_before_startup = isPublicationExist(tx);
     NameSet result_tables;
+
+    bool publication_exists_before_startup = isPublicationExist(tx);
+    LOG_DEBUG(log, "Publication exists: {}, is attach: {}", publication_exists_before_startup, is_attach);
 
     Strings expected_tables;
     if (!tables_list.empty())
@@ -453,49 +463,58 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
 
     if (publication_exists_before_startup)
     {
-        if (tables_list.empty())
+        if (!is_attach)
         {
-            /// There is no tables list, but publication already exists, then the expected behaviour
-            /// is to replicate the whole database. But it could be a server restart, so we can't drop it.
             LOG_WARNING(log,
-                        "Publication {} already exists and tables list is empty. Assuming publication is correct",
+                        "Publication {} already exists, but it is a CREATE query, not ATTACH. Publication will be dropped",
                         publication_name);
 
-            result_tables = fetchPostgreSQLTablesList(tx);
+            connection->execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
         }
-        /// Check tables list from publication is the same as expected tables list.
-        /// If not - drop publication and return expected tables list.
         else
         {
-            result_tables = fetchTablesFromPublication(tx);
-            NameSet diff;
-            std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(),
-                                        result_tables.begin(), result_tables.end(),
-                                        std::inserter(diff, diff.begin()));
-            if (!diff.empty())
+            if (tables_list.empty())
             {
-                String diff_tables;
-                for (const auto & table_name : diff)
-                {
-                    if (!diff_tables.empty())
-                        diff_tables += ", ";
-                    diff_tables += table_name;
-                }
-
                 LOG_WARNING(log,
-                            "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}",
-                            publication_name, diff_tables);
+                            "Publication {} already exists and tables list is empty. Assuming publication is correct.",
+                            publication_name);
 
-                connection->execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+                result_tables = fetchPostgreSQLTablesList(tx);
+            }
+            /// Check tables list from publication is the same as expected tables list.
+            /// If not - drop publication and return expected tables list.
+            else
+            {
+                result_tables = fetchTablesFromPublication(tx);
+                NameSet diff;
+                std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(),
+                                              result_tables.begin(), result_tables.end(),
+                                              std::inserter(diff, diff.begin()));
+                if (!diff.empty())
+                {
+                    String diff_tables;
+                    for (const auto & table_name : diff)
+                    {
+                        if (!diff_tables.empty())
+                            diff_tables += ", ";
+                        diff_tables += table_name;
+                    }
+
+                    LOG_WARNING(log,
+                                "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}.",
+                                publication_name, diff_tables);
+
+                    connection->execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+                }
             }
         }
     }
-    else
+
+    if (result_tables.empty())
     {
         if (!tables_list.empty())
         {
-            tx.commit();
-            return NameSet(expected_tables.begin(), expected_tables.end());
+            result_tables = NameSet(expected_tables.begin(), expected_tables.end());
         }
         else
         {

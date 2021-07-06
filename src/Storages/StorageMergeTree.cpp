@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
+    extern const int ABORTED;
 }
 
 namespace ActionLocks
@@ -676,9 +677,16 @@ void StorageMergeTree::loadMutations()
 }
 
 std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
-    const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * out_disable_reason, TableLockHolder & /* table_lock_holder */, bool optimize_skip_merged_partitions, SelectPartsDecision * select_decision_out)
+    const StorageMetadataPtr & metadata_snapshot,
+    bool aggressive,
+    const String & partition_id,
+    bool final,
+    String * out_disable_reason,
+    TableLockHolder & /* table_lock_holder */,
+    std::unique_lock<std::mutex> & lock,
+    bool optimize_skip_merged_partitions,
+    SelectPartsDecision * select_decision_out)
 {
-    std::unique_lock lock(currently_processing_in_background_mutex);
     auto data_settings = getSettings();
 
     FutureMergedMutatedPart future_part;
@@ -795,7 +803,24 @@ bool StorageMergeTree::merge(
 
     SelectPartsDecision select_decision;
 
-    auto merge_mutate_entry = selectPartsToMerge(metadata_snapshot, aggressive, partition_id, final, out_disable_reason, table_lock_holder, optimize_skip_merged_partitions, &select_decision);
+    std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry;
+
+    {
+        std::unique_lock lock(currently_processing_in_background_mutex);
+        if (merger_mutator.merges_blocker.isCancelled())
+            throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+
+        merge_mutate_entry = selectPartsToMerge(
+            metadata_snapshot,
+            aggressive,
+            partition_id,
+            final,
+            out_disable_reason,
+            table_lock_holder,
+            lock,
+            optimize_skip_merged_partitions,
+            &select_decision);
+    }
 
     /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
     if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
@@ -867,7 +892,6 @@ bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & p
 std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
     const StorageMetadataPtr & metadata_snapshot, String * /* disable_reason */, TableLockHolder & /* table_lock_holder */)
 {
-    std::lock_guard lock(currently_processing_in_background_mutex);
     size_t max_ast_elements = getContext()->getSettingsRef().max_expanded_ast_elements;
 
     FutureMergedMutatedPart future_part;
@@ -1006,16 +1030,20 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
     if (shutdown_called)
         return false;
 
-    if (merger_mutator.merges_blocker.isCancelled())
-        return false;
-
     auto metadata_snapshot = getInMemoryMetadataPtr();
     std::shared_ptr<MergeMutateSelectedEntry> merge_entry, mutate_entry;
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-    merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock);
-    if (!merge_entry)
-        mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
+
+    {
+        std::unique_lock lock(currently_processing_in_background_mutex);
+        if (merger_mutator.merges_blocker.isCancelled())
+            return false;
+
+        merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock);
+        if (!merge_entry)
+            mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
+    }
 
     if (merge_entry)
     {
@@ -1033,7 +1061,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
         }, PoolType::MERGE_MUTATE});
         return true;
     }
-    else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
+    else if (auto cmp_lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
     {
         executor.execute({[this, share_lock] ()
         {
@@ -1186,22 +1214,21 @@ bool StorageMergeTree::optimize(
 
 ActionLock StorageMergeTree::stopMergesAndWait()
 {
+    std::unique_lock lock(currently_processing_in_background_mutex);
+
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
+    while (!currently_merging_mutating_parts.empty())
     {
-        std::unique_lock lock(currently_processing_in_background_mutex);
-        while (!currently_merging_mutating_parts.empty())
-        {
-            LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now)",
-                currently_merging_mutating_parts.size());
+        LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now)",
+            currently_merging_mutating_parts.size());
 
-            if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
-                lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
-            {
-                throw Exception("Timeout while waiting for already running merges", ErrorCodes::TIMEOUT_EXCEEDED);
-            }
+        if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
+            lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
+        {
+            throw Exception("Timeout while waiting for already running merges", ErrorCodes::TIMEOUT_EXCEEDED);
         }
     }
 
