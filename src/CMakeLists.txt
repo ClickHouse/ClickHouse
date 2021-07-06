@@ -420,8 +420,8 @@ if (USE_AWS_S3)
 endif()
 
 if (USE_S2_GEOMETRY)
-    target_link_libraries (clickhouse_common_io PUBLIC ${S2_GEOMETRY_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${S2_GEOMETRY_INCLUDE_DIR})
+    dbms_target_link_libraries (PUBLIC ${S2_GEOMETRY_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${S2_GEOMETRY_INCLUDE_DIR})
 endif()
 
 if (USE_BROTLI)

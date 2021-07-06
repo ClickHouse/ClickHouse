@@ -113,7 +113,7 @@ set(S2_SRCS
 
 add_library(s2 ${S2_SRCS})
 
-target_include_directories(s2 PRIVATE "${S2_SOURCE_DIR}/" SYSTEM PUBLIC "${S2_SOURCE_DIR}/")
+target_include_directories(s2 SYSTEM BEFORE PUBLIC "${S2_SOURCE_DIR}/")
 
 if(M_LIBRARY)
     target_link_libraries(s2 PRIVATE ${M_LIBRARY})

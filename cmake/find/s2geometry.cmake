@@ -17,4 +17,4 @@ if (ENABLE_S2_GEOMETRY)
     endif()
 endif()
 
-message (STATUS "Using s2geometry=${USE_S2_GEOMETRY} : ${S2_INCLUDE_DIR}")
+message (STATUS "Using s2geometry=${USE_S2_GEOMETRY} : ${S2_GEOMETRY_INCLUDE_DIR}")

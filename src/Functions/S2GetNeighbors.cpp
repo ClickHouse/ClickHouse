@@ -8,9 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <common/range.h>
 
-#include <s2/s2latlng.h>
-#include <s2/s2cell_id.h>
-#include <s2/s2point.h>
+#include "s2_fwd.h"
 
 namespace DB
 {
