@@ -49,17 +49,19 @@ public:
         size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments != 1) {
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(number_of_arguments) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2",
+                getName(), number_of_arguments);
         }
 
         const auto * arg = arguments[0].get();
 
         if (!WhichDataType(arg).isUInt64()) {
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be Float64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be Float64",
+                arg->getName(), 1, getName());
         }
 
         DataTypePtr element = std::make_shared<DataTypeUInt64>();
