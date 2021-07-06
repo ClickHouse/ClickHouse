@@ -3,6 +3,7 @@
 import subprocess
 import os
 import getpass
+import glob
 import argparse
 import logging
 import signal
@@ -99,7 +100,7 @@ signal.signal(signal.SIGINT, docker_kill_handler_handler)
 # 2) path of runner script is used to determine paths for trivial case, when we run it from repository
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [ %(process)d ] %(levelname)s : %(message)s (%(filename)s:%(lineno)s, %(funcName)s)')
     parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
 
     parser.add_argument(
@@ -257,6 +258,9 @@ if __name__ == "__main__":
     if sys.stdout.isatty() and sys.stdin.isatty():
         tty = "-it"
 
+    # Remove old logs.
+    for old_log_path in glob.glob(args.cases_dir + "/pytest*.log"):
+        os.remove(old_log_path)
 
     cmd = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \

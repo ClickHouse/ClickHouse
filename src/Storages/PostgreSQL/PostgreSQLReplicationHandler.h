@@ -24,6 +24,7 @@ public:
             const String & current_database_name_,
             const postgres::ConnectionInfo & connection_info_,
             ContextPtr context_,
+            bool is_attach_,
             const size_t max_block_size_,
             bool allow_automatic_update_,
             bool is_materialized_postgresql_database_,
@@ -54,7 +55,7 @@ private:
 
     bool isPublicationExist(pqxx::work & tx);
 
-    void createPublicationIfNeeded(pqxx::work & tx, bool create_without_check = false);
+    void createPublicationIfNeeded(pqxx::work & tx);
 
     NameSet fetchTablesFromPublication(pqxx::work & tx);
 
@@ -82,6 +83,12 @@ private:
 
     Poco::Logger * log;
     ContextPtr context;
+
+    /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
+    bool is_attach;
+
+    /// If new publication is created at start up - always drop replication slot if it exists.
+    bool new_publication = false;
 
     const String remote_database_name, current_database_name;
 
@@ -112,11 +119,6 @@ private:
     BackgroundSchedulePool::TaskHolder startup_task, consumer_task;
 
     std::atomic<bool> stop_synchronization = false;
-
-    /// For database engine there are 2 places where it is checked for publication:
-    /// 1. to fetch tables list from already created publication when database is loaded
-    /// 2. at replication startup
-    bool new_publication_created = false;
 
     /// MaterializedPostgreSQL tables. Used for managing all operations with its internal nested tables.
     MaterializedStorages materialized_storages;

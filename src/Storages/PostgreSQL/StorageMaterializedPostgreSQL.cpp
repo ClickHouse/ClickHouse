@@ -70,6 +70,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             table_id_.database_name,
             connection_info,
             getContext(),
+            is_attach,
             replication_settings->materialized_postgresql_max_block_size.value,
             /* allow_automatic_update */ false, /* is_materialized_postgresql_database */false);
 }
@@ -225,7 +226,7 @@ void StorageMaterializedPostgreSQL::shutdown()
 {
     if (replication_handler)
         replication_handler->shutdown();
-    auto nested = getNested();
+    auto nested = tryGetNested();
     if (nested)
         nested->shutdown();
 }
