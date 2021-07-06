@@ -1028,14 +1028,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     }
 
     if (entry.type != LogEntry::DROP_RANGE && drop_ranges.isAffectedByDropRange(entry, out_postpone_reason))
-    {
-        //LOG_DEBUG(log, "POSTPONE ENTRY {} ({}) PRODUCING PART {} BECAUSE OF DROP RANGE {}", entry.znode_name, entry.typeToString(), entry.new_part_name);
         return false;
-    }
-    else
-    {
-        //LOG_DEBUG(log, "NO DROP RANGE FOUND FOR PART {} OF TYPE {}", entry.new_part_name, entry.typeToString());
-    }
 
     /// Check that fetches pool is not overloaded
     if ((entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
