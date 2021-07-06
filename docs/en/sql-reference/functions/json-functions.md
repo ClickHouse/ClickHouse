@@ -308,7 +308,9 @@ Result:
 
 ## toJSONString {#tojsonstring}
 
-Serializes value to its JSON representation.
+Serializes a value to its JSON representation. Various data types and nested sctructures are supported.
+[64-bit integers](../../sql-reference/data-types/int-uint.md) or bigger are quoted by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
+When serializing an [Enum](../../sql-reference/data-types/enum.md) value the function outputs its name.
 
 **Syntax**
 
@@ -318,26 +320,29 @@ toJSONString(value)
 
 **Arguments**
 
--   `value` — Value of *any* type to serialize. 
+-   `value` — Value to serialize.
 
 **Returned value**
 
--   Text representation of a value. 
+-   JSON representation of a value. 
 
-Type: [String](../../sql-reference/data-types/string.md)).
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
+
+The first example serializes a [map](../../sql-reference/data-types/map.md).
+The second example shows some special values wrapped into a [tuple](../../sql-reference/data-types/tuple.md).
 
 Query:
 
 ``` sql
-SELECT toJSONString(map('1234', '5678')) AS value;
+SELECT toJSONString(map('key1', 1, 'key2', 2));
+SELECT toJSONString(tuple(NULL, NaN, inf, []));
 ```
 
 Result:
 
 ``` text
-┌─value───────────┐
-│ {"1234":"5678"} │
-└─────────────────┘
+{"key1":1,"key2":2}
+[null,"nan","inf",[]] 
 ```
