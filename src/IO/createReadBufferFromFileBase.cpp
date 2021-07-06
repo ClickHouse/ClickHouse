@@ -43,6 +43,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
     if (direct_io_threshold && estimated_size >= direct_io_threshold)
     {
+#if defined(OS_LINUX)
         /** We don't use O_DIRECT because it is tricky and previous implementation has a bug.
           * Instead, we advise the OS that the data should not be cached.
           * This is not exactly the same for two reasons:
@@ -56,6 +57,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
             LOG_WARNING(&Poco::Logger::get("createReadBufferFromFileBase"),
                 "Cannot request 'posix_fadvise' with POSIX_FADV_DONTNEED for file {}", filename);
     }
+#else
+    (void)direct_io_threshold;
+#endif
 
     return res;
 }
