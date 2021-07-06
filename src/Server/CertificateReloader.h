@@ -31,16 +31,72 @@
 
 namespace DB
 {
-#if !USE_SSL
-class CertReloader
+#if USE_SSL
+
+/// SSL_CTX_set_cert_cb function
+extern "C" int cert_reloader_dispatch(SSL * ssl, void * arg);
+
+/// The CertificateReloader singleton performs 2 functions:
+/// 1. Dynamic reloading of TLS keypair when requested by main:
+///   Main notifies CertificateReloader when the config changes. On changed config,
+///   CertificateReloader reloads certs from disk.
+/// 2. Implement `SSL_CTX_set_cert_cb` to set certificate for a new connection:
+///   OpenSSL invokes `cert_reloader_dispatch_set_cert` to setup a connection.
+class CertificateReloader
+{
+public:
+    using stat_t = struct stat;
+
+    /// Singleton
+    CertificateReloader(CertificateReloader const &) = delete;
+    void operator=(CertificateReloader const &) = delete;
+    static CertificateReloader & instance()
+    {
+        static CertificateReloader instance;
+        return instance;
+    }
+
+    /// Initialize the callback and perfom the initial cert loading
+    void init(const ::Poco::Util::AbstractConfiguration & config);
+
+    /// Handle configuration reload
+    void reload(const Poco::Util::AbstractConfiguration & config);
+
+    /// Add cert, key to SSL* connection. SetCertificate runs in an IO thread during
+    /// connection setup. SetCertificate is
+    /// establishing a new TLS connection.
+    int setCertificate(SSL * ssl);
+
+private:
+    CertificateReloader()
+    {
+    }
+
+    mutable std::shared_mutex mutex;
+    Poco::Logger * log = &Poco::Logger::get("CertificateReloader");
+
+    std::string cert_file;
+    stat_t cert_file_st;
+    std::unique_ptr<Poco::Crypto::X509Certificate> cert;
+    bool setCertificateFile(std::string cert_file);
+
+    std::string key_file;
+    stat_t key_file_st;
+    std::unique_ptr<Poco::Crypto::RSAKey> key;
+    bool setKeyFile(std::string key_file);
+};
+
+#else
+
+class CertificateReloader
 {
 public:
     /// Singleton
-    CertReloader(CertReloader const &) = delete;
-    void operator=(CertReloader const &) = delete;
-    static CertReloader & instance()
+    CertificateReloader(CertificateReloader const &) = delete;
+    void operator=(CertificateReloader const &) = delete;
+    static CertificateReloader & instance()
     {
-        static CertReloader instance;
+        static CertificateReloader instance;
         return instance;
     }
 
@@ -51,63 +107,8 @@ public:
     void reload([[maybe_unused]] const Poco::Util::AbstractConfiguration & config){};
 
 private:
-    CertReloader() : log(&Poco::Logger::get("CertReloader")){};
+    CertificateReloader() : log(&Poco::Logger::get("CertificateReloader")){};
     Poco::Logger * log;
-};
-
-#else
-
-/// SSL_CTX_set_cert_cb function
-extern "C" int cert_reloader_dispatch(SSL * ssl, void * arg);
-
-/// The CertReloader singleton performs 2 functions:
-/// 1. Dynamic reloading of TLS keypair when requested by main:
-///   Main notifies CertReloader when the config changes. On changed config,
-///   CertReloader reloads certs from disk.
-/// 2. Implement `SSL_CTX_set_cert_cb` to set certificate for a new connection:
-///   OpenSSL invokes `cert_reloader_dispatch_set_cert` to setup a connection.
-class CertReloader
-{
-public:
-    using stat_t = struct stat;
-
-    /// Singleton
-    CertReloader(CertReloader const &) = delete;
-    void operator=(CertReloader const &) = delete;
-    static CertReloader & instance()
-    {
-        static CertReloader instance;
-        return instance;
-    }
-
-    /// Initialize the callback and perfom the initial cert loading
-    void init(const ::Poco::Util::AbstractConfiguration & config);
-
-    /// Handle configuration reload
-    void reload(const Poco::Util::AbstractConfiguration & config);
-
-    /// Add cert, key to SSL* connection. SetCert runs in an IO thread during
-    /// connection setup. SetCert is
-    /// establishing a new TLS connection.
-    int SetCert(SSL * ssl);
-
-private:
-    CertReloader()
-    {
-    }
-
-    mutable std::shared_mutex mutex;
-    Poco::Logger * log = &Poco::Logger::get("CertReloader");
-
-    std::string cert_file;
-    stat_t cert_file_st;
-    std::unique_ptr<Poco::Crypto::X509Certificate> cert;
-    bool setCertFile(std::string cert_file);
-
-    std::string key_file;
-    stat_t key_file_st;
-    std::unique_ptr<Poco::Crypto::RSAKey> key;
-    bool setKeyFile(std::string key_file);
 };
 
 #endif
