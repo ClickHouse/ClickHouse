@@ -419,6 +419,11 @@ if (USE_AWS_S3)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_INCLUDE_DIR})
 endif()
 
+if (USE_S2_GEOMETRY)
+    target_link_libraries (clickhouse_common_io PUBLIC ${S2_GEOMETRY_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${S2_GEOMETRY_INCLUDE_DIR})
+endif()
+
 if (USE_BROTLI)
     target_link_libraries (clickhouse_common_io PRIVATE ${BROTLI_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})

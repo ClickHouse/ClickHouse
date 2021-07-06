@@ -5,16 +5,15 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
-#include "../contrib/s2geometry/src/s2/s2latlng.h"
-#include "../contrib/s2geometry/src/s2/s2cell_id.h"
+#include <s2/s2latlng.h>
+#include <s2/s2cell_id.h>
 
 class S2CellId;
 
-namespace DB 
+namespace DB
 {
 
 namespace ErrorCodes
@@ -84,11 +83,11 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 id_first = col_id_first->getInt(row);
             const UInt64 id_second = col_id_second->getInt(row);
-        
+
             dst_data[row] = S2CellId(id_first).intersects(S2CellId(id_second));
         }
 

@@ -5,14 +5,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
-#include "../contrib/s2geometry/src/s2/s2latlng.h"
-#include "../contrib/s2geometry/src/s2/s2cell_id.h"
-#include "../contrib/s2geometry/src/s2/s2cap.h"
-#include "../contrib/s2geometry/src/s2/s1angle.h"
+#include <s2/s2latlng.h>
+#include <s2/s2cell_id.h>
+#include <s2/s2cap.h>
+#include <s2/s1angle.h>
 
 namespace DB
 {
@@ -93,7 +92,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 center = col_center->getUInt(row);
             const Float64 degrees = col_degrees->getFloat64(row);

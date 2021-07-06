@@ -5,18 +5,17 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
-#include "../contrib/s2geometry/src/s2/s2latlng.h"
-#include "../contrib/s2geometry/src/s2/s2cell_id.h"
-#include "../contrib/s2geometry/src/s2/s2point.h"
-#include "../contrib/s2geometry/src/s2/s2latlng_rect.h"
+#include <s2/s2latlng.h>
+#include <s2/s2cell_id.h>
+#include <s2/s2point.h>
+#include <s2/s2latlng_rect.h>
 
 class S2CellId;
 
-namespace DB 
+namespace DB
 {
 
 namespace ErrorCodes
@@ -111,7 +110,7 @@ public:
         auto & vec_res_second = col_res_second->getData();
         vec_res_second.resize(input_rows_count);
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 lo1 = col_lo1->getUInt(row);
             const UInt64 hi1 = col_hi1->getUInt(row);

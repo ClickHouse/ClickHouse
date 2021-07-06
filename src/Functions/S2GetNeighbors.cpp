@@ -5,15 +5,14 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
-#include "../contrib/s2geometry/src/s2/s2latlng.h"
-#include "../contrib/s2geometry/src/s2/s2cell_id.h"
-#include "../contrib/s2geometry/src/s2/s2point.h"
+#include <s2/s2latlng.h>
+#include <s2/s2cell_id.h>
+#include <s2/s2point.h>
 
-namespace DB 
+namespace DB
 {
 
 namespace ErrorCodes
@@ -76,10 +75,10 @@ public:
         dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 id = col_id->getUInt(row);
-        
+
             S2CellId cell_id(id);
             S2CellId neighbors[4];
             cell_id.GetEdgeNeighbors(neighbors);
