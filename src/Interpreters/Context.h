@@ -267,6 +267,9 @@ private:
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
+    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
+    bool is_internal_query = false;
+
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
@@ -741,6 +744,9 @@ public:
     void reloadConfig() const;
 
     void shutdown();
+
+    bool isInternalQuery() const { return is_internal_query; }
+    void setInternalQuery(bool internal) { is_internal_query = internal; }
 
     ActionLocksManagerPtr getActionLocksManager();
 
