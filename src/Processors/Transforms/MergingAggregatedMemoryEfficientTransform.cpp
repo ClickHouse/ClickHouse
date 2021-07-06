@@ -228,13 +228,14 @@ IProcessor::Status GroupingAggregatedTransform::prepare()
             return Status::PortFull;
 
         /// Sanity check. If new bucket was read, we should be able to push it.
-        if (!all_inputs_finished)
+        /// This is always false, but we still keep this condition in case the code will be changed.
+        if (!all_inputs_finished) // -V547
             throw Exception("GroupingAggregatedTransform has read new two-level bucket, but couldn't push it.",
                             ErrorCodes::LOGICAL_ERROR);
     }
     else
     {
-        if (!all_inputs_finished)
+        if (!all_inputs_finished) // -V547
             throw Exception("GroupingAggregatedTransform should have read all chunks for single level aggregation, "
                             "but not all of the inputs are finished.", ErrorCodes::LOGICAL_ERROR);
 
@@ -511,7 +512,7 @@ void addMergingAggregatedMemoryEfficientTransform(
     /// --> GroupingAggregated --> ResizeProcessor --> MergingAggregatedBucket --> SortingAggregated -->
     /// -->                                        --> MergingAggregatedBucket -->
 
-    pipe.addTransform(std::make_shared<ResizeProcessor>(Block(), 1, num_merging_processors));
+    pipe.resize(num_merging_processors);
 
     pipe.addSimpleTransform([params](const Block &)
     {

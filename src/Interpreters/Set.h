@@ -36,8 +36,6 @@ public:
     {
     }
 
-    bool empty() const { return data.empty(); }
-
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
 
@@ -58,8 +56,9 @@ public:
       */
     ColumnPtr execute(const Block & block, bool negative) const;
 
-    size_t getTotalRowCount() const { return data.getTotalRowCount(); }
-    size_t getTotalByteCount() const { return data.getTotalByteCount(); }
+    bool empty() const;
+    size_t getTotalRowCount() const;
+    size_t getTotalByteCount() const;
 
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
@@ -108,9 +107,8 @@ private:
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements;
 
+    /// If true, insert NULL values to set.
     bool transform_null_in;
-
-    bool has_null = false;
 
     /// Check if set contains all the data.
     bool is_created = false;
@@ -128,8 +126,6 @@ private:
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
-      *  and StorageSet calls only these two functions.
-      * Therefore, the rest of the functions for working with set are not protected.
       */
     mutable std::shared_mutex rwlock;
 

@@ -1,5 +1,6 @@
 #include <common/ReadlineLineReader.h>
-#include <ext/scope_guard.h>
+#include <common/errnoToString.h>
+#include <common/scope_guard.h>
 
 #include <errno.h>
 #include <signal.h>
@@ -69,7 +70,7 @@ ReadlineLineReader::ReadlineLineReader(
     {
         int res = read_history(history_file_path.c_str());
         if (res)
-            std::cerr << "Cannot read history from file " + history_file_path + ": "+ strerror(errno) << std::endl;
+            std::cerr << "Cannot read history from file " + history_file_path + ": "+ errnoToString(errno) << std::endl;
     }
 
     /// Added '.' to the default list. Because it is used to separate database and table.
@@ -107,7 +108,7 @@ ReadlineLineReader::ReadlineLineReader(
     };
 
     if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
-        throw std::runtime_error(std::string("Cannot set signal handler for readline: ") + strerror(errno));
+        throw std::runtime_error(std::string("Cannot set signal handler for readline: ") + errnoToString(errno));
 
     rl_variable_bind("completion-ignore-case", "on");
     // TODO: it doesn't work

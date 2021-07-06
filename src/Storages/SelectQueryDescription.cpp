@@ -44,11 +44,11 @@ SelectQueryDescription & SelectQueryDescription::SelectQueryDescription::operato
 namespace
 {
 
-StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, const Context & context, bool add_default_db = true)
+StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPtr context, bool add_default_db = true)
 {
     if (add_default_db)
     {
-        AddDefaultDatabaseVisitor visitor(context.getCurrentDatabase(), false, nullptr);
+        AddDefaultDatabaseVisitor visitor(context->getCurrentDatabase(), false, nullptr);
         visitor.visit(query);
     }
 
@@ -98,20 +98,35 @@ void checkAllowedQueries(const ASTSelectQuery & query)
 
 }
 
-SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(const ASTPtr & select, const Context & context)
+/// check if only one single select query in SelectWithUnionQuery
+static bool isSingleSelect(const ASTPtr & select, ASTPtr & res)
 {
-    auto & new_select = select->as<ASTSelectWithUnionQuery &>();
-
+    auto new_select = select->as<ASTSelectWithUnionQuery &>();
     if (new_select.list_of_selects->children.size() != 1)
+        return false;
+    auto & new_inner_query = new_select.list_of_selects->children.at(0);
+    if (new_inner_query->as<ASTSelectQuery>())
+    {
+        res = new_inner_query;
+        return true;
+    }
+    else
+        return isSingleSelect(new_inner_query, res);
+}
+
+SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(const ASTPtr & select, ContextPtr context)
+{
+    ASTPtr new_inner_query;
+
+    if (!isSingleSelect(select, new_inner_query))
         throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-    auto & new_inner_query = new_select.list_of_selects->children.at(0);
     auto & select_query = new_inner_query->as<ASTSelectQuery &>();
     checkAllowedQueries(select_query);
 
     SelectQueryDescription result;
     result.select_table_id = extractDependentTableFromSelectQuery(select_query, context);
-    result.select_query = new_select.clone();
+    result.select_query = select->as<ASTSelectWithUnionQuery &>().clone();
     result.inner_query = new_inner_query->clone();
 
     return result;

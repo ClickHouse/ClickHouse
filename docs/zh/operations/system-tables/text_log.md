@@ -3,7 +3,7 @@ machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 ---
 
-# 系统。text\_log {#system_tables-text_log}
+# 系统。text_log {#system_tables-text_log}
 
 包含日志记录条目。 进入该表的日志记录级别可以通过以下方式进行限制 `text_log.level` 服务器设置。
 

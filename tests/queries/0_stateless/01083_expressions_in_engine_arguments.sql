@@ -59,7 +59,7 @@ SHOW CREATE distributed;
 SHOW CREATE distributed_tf;
 SHOW CREATE url;
 SHOW CREATE rich_syntax;
-SHOW CREATE view;
+SHOW CREATE VIEW view;
 SHOW CREATE dict;
 
 INSERT INTO buffer VALUES (1);

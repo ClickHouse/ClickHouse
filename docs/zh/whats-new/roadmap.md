@@ -1,17 +1,10 @@
 ---
 toc_priority: 74
-toc_title: 路线图
+toc_title: Roadmap
 ---
 
-# 路线图 {#roadmap}
+# Roadmap {#roadmap}
 
-## Q2 2020 {#q2-2020}
+`2021年Roadmap`已公布供公开讨论查看[这里](https://github.com/ClickHouse/ClickHouse/issues/17623).
 
--  和外部认证服务集成
-
-## Q3 2020 {#q3-2020}
-
--   资源池，为用户提供更精准的集群资源分配
-
-{## [原始文档](https://clickhouse.tech/docs/en/roadmap/) ##}
-
+{## [源文章](https://clickhouse.tech/docs/en/roadmap/) ##}

@@ -317,7 +317,7 @@ JumpConsistentHashを計算すると、UInt64を形成します。
 UInt64型のキーとバケットの数です。 Int32を返します。
 詳細は、リンクを参照してください: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2\_32,murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
+## murmurHash2_32,murmurHash2_64 {#murmurhash2-32-murmurhash2-64}
 
 を生成する。 [つぶやき2](https://github.com/aappleby/smhasher) ハッシュ値。
 
@@ -385,7 +385,7 @@ SELECT
 └──────────────────────┴─────────────────────┘
 ```
 
-## murmurHash3\_32,murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
+## murmurHash3_32,murmurHash3_64 {#murmurhash3-32-murmurhash3-64}
 
 を生成する。 [マムルハシュ3世](https://github.com/aappleby/smhasher) ハッシュ値。
 
@@ -415,7 +415,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └─────────────┴────────┘
 ```
 
-## つぶやき3\_128 {#murmurhash3-128}
+## つぶやき3_128 {#murmurhash3-128}
 
 128ビットを生成する [マムルハシュ3世](https://github.com/aappleby/smhasher) ハッシュ値。
 
@@ -434,13 +434,13 @@ A [FixedString(16)](../../sql-reference/data-types/fixedstring.md) データ型�
 **例**
 
 ``` sql
-SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3) AS type
+SELECT hex(murmurHash3_128('example_string')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
 ``` text
-┌─MurmurHash3──────┬─type────────────┐
-│ 6�1�4"S5KT�~~q │ FixedString(16) │
-└──────────────────┴─────────────────┘
+┌─MurmurHash3──────────────────────┬─type───┐
+│ 368A1A311CB7342253354B548E7E7E71 │ String │
+└──────────────────────────────────┴────────┘
 ```
 
 ## xxHash32,xxHash64 {#hash-functions-xxhash32}

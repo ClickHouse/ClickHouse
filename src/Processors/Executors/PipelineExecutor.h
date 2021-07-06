@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <Processors/Executors/PollingQueue.h>
 #include <Processors/Executors/ThreadsQueue.h>
 #include <Processors/Executors/TasksQueue.h>
 #include <Processors/Executors/ExecutingGraph.h>
@@ -57,6 +58,12 @@ private:
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue<ExecutingGraph::Node> task_queue;
 
+    /// Queue which stores tasks where processors returned Async status after prepare.
+    /// If multiple threads are using, main thread will wait for async tasks.
+    /// For single thread, will wait for async tasks only when task_queue is empty.
+    PollingQueue async_task_queue;
+    size_t num_waiting_async_tasks = 0;
+
     ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;
 
@@ -89,6 +96,9 @@ private:
         /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
         /// This can be solved by using atomic shard ptr.
         std::list<ExpandPipelineTask> task_list;
+
+        std::queue<ExecutingGraph::Node *> async_tasks;
+        std::atomic_bool has_async_tasks = false;
 
         std::condition_variable condvar;
         std::mutex mutex;
@@ -126,14 +136,14 @@ private:
 
     /// Pipeline execution related methods.
     void addChildlessProcessorsToStack(Stack & stack);
-    bool tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & edge, Queue & queue, size_t thread_number);
+    bool tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & edge, Queue & queue, Queue & async_queue, size_t thread_number);
     static void addJob(ExecutingGraph::Node * execution_state);
     // TODO: void addAsyncJob(UInt64 pid);
 
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
     /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    bool prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, std::unique_lock<std::mutex> node_lock);
+    bool prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, Queue & async_queue, std::unique_lock<std::mutex> node_lock);
     bool doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
     /// Continue executor (in case there are tasks in queue).

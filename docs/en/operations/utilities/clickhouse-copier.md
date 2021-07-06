@@ -7,6 +7,9 @@ toc_title: clickhouse-copier
 
 Copies data from the tables in one cluster to tables in another (or the same) cluster.
 
+!!! warning "Warning"
+    To get a consistent copy, the data in the source tables and partitions should not change during the entire process.
+
 You can run multiple `clickhouse-copier` instances on different servers to perform the same job. ZooKeeper is used for syncing the processes.
 
 After starting, `clickhouse-copier`:
@@ -67,11 +70,21 @@ Parameters:
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
         <source_cluster>
+            <!--
+                source cluster & destination clusters accept exactly the same
+                parameters as parameters for the usual Distributed table
+                see https://clickhouse.tech/docs/en/engines/table-engines/special/distributed/
+            --> 
             <shard>
                 <internal_replication>false</internal_replication>
                     <replica>
                         <host>127.0.0.1</host>
                         <port>9000</port>
+                        <!--
+                        <user>default</user>
+                        <password>default</password>
+                        <secure>1</secure>
+                        -->
                     </replica>
             </shard>
             ...

@@ -1,3 +1,5 @@
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 CFLAGS(
@@ -12,6 +14,7 @@ ADDINCL(
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
+    GLOBAL contrib/restricted/murmurhash
 )
 
 PEERDIR(
@@ -27,14 +30,14 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
+    contrib/restricted/murmurhash
     library/cpp/consistent_hashing
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
-CFLAGS(-g0)
 
 SRCS(
-<? find . -name '*.cpp' | grep -i -v -P 'tests|Bitmap|sumbur|abtesting' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -i -v -P 'tests|Bitmap|abtesting' | grep -v -F examples  | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

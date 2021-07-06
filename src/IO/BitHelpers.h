@@ -9,6 +9,8 @@
 
 #if defined(__OpenBSD__) || defined(__FreeBSD__) || defined (__ANDROID__)
 #   include <sys/endian.h>
+#elif defined(__sun)
+#   include <endian.h>
 #elif defined(__APPLE__)
 #   include <libkern/OSByteOrder.h>
 

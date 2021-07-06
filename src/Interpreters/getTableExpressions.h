@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
@@ -8,7 +9,6 @@ namespace DB
 
 struct ASTTableExpression;
 class ASTSelectQuery;
-class Context;
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 
@@ -16,7 +16,7 @@ std::vector<const ASTTableExpression *> getTableExpressions(const ASTSelectQuery
 const ASTTableExpression * getTableExpression(const ASTSelectQuery & select, size_t table_number);
 ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number);
 
-NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
-TablesWithColumns getDatabaseAndTablesWithColumns(const std::vector<const ASTTableExpression *> & table_expressions, const Context & context);
+NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, ContextPtr context);
+TablesWithColumns getDatabaseAndTablesWithColumns(const std::vector<const ASTTableExpression *> & table_expressions, ContextPtr context);
 
 }

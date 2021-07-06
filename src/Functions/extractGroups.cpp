@@ -31,7 +31,7 @@ class FunctionExtractGroups : public IFunction
 {
 public:
     static constexpr auto name = "extractGroups";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionExtractGroups>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractGroups>(); }
 
     String getName() const override { return name; }
 
@@ -51,10 +51,10 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnPtr column_haystack = block.getByPosition(arguments[0]).column;
-        const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
+        const ColumnPtr column_haystack = arguments[0].column;
+        const ColumnPtr column_needle = arguments[1].column;
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
@@ -65,12 +65,12 @@ public:
         const auto & re2 = regexp->getRE2();
 
         if (!re2)
-            throw Exception("There is no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
 
         const size_t groups_count = re2->NumberOfCapturingGroups();
 
         if (!groups_count)
-            throw Exception("There is no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
 
         // Including 0-group, which is the whole regexp.
         PODArrayWithStackMemory<re2_st::StringPiece, 128> matched_groups(groups_count + 1);
@@ -100,7 +100,7 @@ public:
             offsets_data[i] = current_offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 };
 

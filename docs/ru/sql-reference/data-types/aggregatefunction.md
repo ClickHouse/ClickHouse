@@ -7,7 +7,7 @@ toc_title: AggregateFunction
 
 Агрегатные функции могут обладать определяемым реализацией промежуточным состоянием, которое может быть сериализовано в тип данных, соответствующий AggregateFunction(…), и быть записано в таблицу обычно посредством [материализованного представления] (../../sql-reference/statements/create.md#create-view). Чтобы получить промежуточное состояние, обычно используются агрегатные функции с суффиксом `-State`. Чтобы в дальнейшем получить агрегированные данные необходимо использовать те же агрегатные функции с суффиксом `-Merge`.
 
-`AggregateFunction(name, types\_of\_arguments…)` — параметрический тип данных.
+`AggregateFunction(name, types_of_arguments…)` — параметрический тип данных.
 
 **Параметры**
 
@@ -65,4 +65,3 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 
 Смотрите в описании движка [AggregatingMergeTree](../../sql-reference/data-types/aggregatefunction.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/nested_data_structures/aggregatefunction/) <!--hide-->

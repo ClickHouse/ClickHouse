@@ -1,6 +1,11 @@
+---
+toc_priority: 57
+toc_title: "Конфигурационные параметры сервера"
+---
+
 # Конфигурационные параметры сервера {#server-configuration-parameters-reference}
 
-## builtin\_dictionaries\_reload\_interval {#builtin-dictionaries-reload-interval}
+## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
 Интервал (в секундах) перезагрузки встроенных словарей.
 
@@ -61,6 +66,47 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </compression>
 ```
 
+## custom_settings_prefixes {#custom_settings_prefixes}
+
+Список префиксов для [пользовательских настроек](../../operations/settings/index.md#custom_settings). Префиксы должны перечисляться через запятую.
+
+**Пример**
+
+```xml
+<custom_settings_prefixes>custom_</custom_settings_prefixes>
+```
+
+**См. также**
+
+-   [Пользовательские настройки](../../operations/settings/index.md#custom_settings)
+
+## core_dump {#server_configuration_parameters-core_dump}
+
+Задает мягкое ограничение для размера файла дампа памяти.
+
+Возможные значения:
+
+-   положительное целое число.
+
+Значение по умолчанию: `1073741824` (1 ГБ).
+
+!!! info "Примечание"
+    Жесткое ограничение настраивается с помощью системных инструментов.
+
+**Пример**
+
+```xml
+<core_dump>
+    <size_limit>1073741824</size_limit>
+</core_dump> 
+```
+
+## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
+
+Устанавливает задержку перед удалением табличных данных, в секундах. Если запрос имеет идентификатор `SYNC`, эта настройка игнорируется.
+
+Значение по умолчанию: `480` (8 минут).
+
 ## default\_database {#default-database}
 
 База данных по умолчанию.
@@ -73,7 +119,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <default_database>default</default_database>
 ```
 
-## default\_profile {#default-profile}
+## default_profile {#default-profile}
 
 Профиль настроек по умолчанию.
 
@@ -85,7 +131,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <default_profile>default</default_profile>
 ```
 
-## dictionaries\_config {#server_configuration_parameters-dictionaries_config}
+## dictionaries_config {#server_configuration_parameters-dictionaries_config}
 
 Путь к конфигурации внешних словарей.
 
@@ -102,13 +148,14 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## dictionaries\_lazy\_load {#server_configuration_parameters-dictionaries_lazy_load}
+## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
 
 Отложенная загрузка словарей.
 
 Если `true`, то каждый словарь создаётся при первом использовании. Если словарь не удалось создать, то вызов функции, использующей словарь, сгенерирует исключение.
 
-Если `false`, то все словари создаются при старте сервера, и в случае ошибки сервер завершает работу.
+Если `false`, то все словари создаются при старте сервера, если словарь или словари создаются слишком долго или создаются с ошибкой, то сервер загружается без 
+этих словарей и продолжает попытки создать эти словари.
 
 По умолчанию - `true`.
 
@@ -118,7 +165,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-## format\_schema\_path {#server_configuration_parameters-format_schema_path}
+## format_schema_path {#server_configuration_parameters-format_schema_path}
 
 Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../interfaces/formats.md#capnproto).
 
@@ -139,11 +186,11 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 -   port – Порт сервера Graphite.
 -   interval – Период отправки в секундах.
 -   timeout – Таймаут отправки данных в секундах.
--   root\_path – Префикс для ключей.
+-   root_path – Префикс для ключей.
 -   metrics – Отправка данных из таблицы [system.metrics](../../operations/server-configuration-parameters/settings.md#system_tables-metrics).
 -   events – Отправка дельты данных, накопленной за промежуток времени из таблицы [system.events](../../operations/server-configuration-parameters/settings.md#system_tables-events).
--   events\_cumulative – Отправка суммарных данных из таблицы [system.events](../../operations/server-configuration-parameters/settings.md#system_tables-events).
--   asynchronous\_metrics – Отправка данных из таблицы [system.asynchronous\_metrics](../../operations/server-configuration-parameters/settings.md#system_tables-asynchronous_metrics).
+-   events_cumulative – Отправка суммарных данных из таблицы [system.events](../../operations/server-configuration-parameters/settings.md#system_tables-events).
+-   asynchronous_metrics – Отправка данных из таблицы [system.asynchronous_metrics](../../operations/server-configuration-parameters/settings.md#system_tables-asynchronous_metrics).
 
 Можно определить несколько секций `<graphite>`, например, для передачи различных данных с различной частотой.
 
@@ -163,7 +210,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </graphite>
 ```
 
-## graphite\_rollup {#server_configuration_parameters-graphite-rollup}
+## graphite_rollup {#server_configuration_parameters-graphite-rollup}
 
 Настройка прореживания данных для Graphite.
 
@@ -191,7 +238,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </graphite_rollup_example>
 ```
 
-## http\_port/https\_port {#http-porthttps-port}
+## http_port/https_port {#http-porthttps-port}
 
 Порт для обращений к серверу по протоколу HTTP(s).
 
@@ -205,7 +252,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <https_port>9999</https_port>
 ```
 
-## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
+## http_server_default_response {#server_configuration_parameters-http_server_default_response}
 
 Страница, показываемая по умолчанию, при обращении к HTTP(s) серверу ClickHouse.
 Значение по умолчанию «Ok.» (с переводом строки на конце).
@@ -220,7 +267,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </http_server_default_response>
 ```
 
-## include\_from {#server_configuration_parameters-include_from}
+## include_from {#server_configuration_parameters-include_from}
 
 Путь к файлу с подстановками.
 
@@ -232,7 +279,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <include_from>/etc/metrica.xml</include_from>
 ```
 
-## interserver\_http\_port {#interserver-http-port}
+## interserver_http_port {#interserver-http-port}
 
 Порт для обмена между серверами ClickHouse.
 
@@ -242,9 +289,9 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <interserver_http_port>9009</interserver_http_port>
 ```
 
-## interserver\_http\_host {#interserver-http-host}
+## interserver_http_host {#interserver-http-host}
 
-Имя хоста, которое могут использовать другие серверы для обращения к этому.
+Имя хоста, которое могут использовать другие серверы для обращения к этому хосту.
 
 Если не указано, то определяется аналогично команде `hostname -f`.
 
@@ -256,10 +303,35 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
-## interserver\_http\_credentials {#server-settings-interserver-http-credentials}
+## interserver_https_port {#interserver-https-port}
+
+Порт для обмена данными между репликами ClickHouse по протоколу `HTTPS`.
+
+**Пример**
+
+``` xml
+<interserver_https_port>9010</interserver_https_port>
+```
+
+## interserver_https_host {#interserver-https-host}
+
+Имя хоста, которое могут использовать другие реплики для обращения к нему по протоколу `HTTPS`.
+
+**Пример**
+
+``` xml
+<interserver_https_host>example.yandex.ru</interserver_https_host>
+```
+
+
+
+## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
 Имя пользователя и пароль, использующиеся для аутентификации при [репликации](../../operations/server-configuration-parameters/settings.md) движками Replicated\*. Это имя пользователя и пароль используются только для взаимодействия между репликами кластера и никак не связаны с аутентификацией клиентов ClickHouse. Сервер проверяет совпадение имени и пароля для соединяющихся с ним реплик, а также использует это же имя и пароль для соединения с другими репликами. Соответственно, эти имя и пароль должны быть прописаны одинаковыми для всех реплик кластера.
 По умолчанию аутентификация не используется.
+
+!!! note "Примечание"
+    Эти учетные данные являются общими для обмена данными по протоколам `HTTP` и `HTTPS`.
 
 Раздел содержит следующие параметры:
 
@@ -275,7 +347,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </interserver_http_credentials>
 ```
 
-## keep\_alive\_timeout {#keep-alive-timeout}
+## keep_alive_timeout {#keep-alive-timeout}
 
 Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем закрыть соединение.
 
@@ -285,7 +357,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <keep_alive_timeout>3</keep_alive_timeout>
 ```
 
-## listen\_host {#server_configuration_parameters-listen_host}
+## listen_host {#server_configuration_parameters-listen_host}
 
 Ограничение по хостам, с которых может прийти запрос. Если необходимо, чтобы сервер отвечал всем, то надо указать `::`.
 
@@ -336,14 +408,14 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 Ключи для syslog:
 
--   use\_syslog - обязательная настройка, если требуется запись в syslog
+-   use_syslog - обязательная настройка, если требуется запись в syslog
 -   address - хост\[:порт\] демона syslogd. Если не указан, используется локальный
 -   hostname - опционально, имя хоста, с которого отсылаются логи
--   facility - [категория syslog](https://en.wikipedia.org/wiki/Syslog#Facility), записанная в верхнем регистре, с префиксом «LOG\_»: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` и прочие).
+-   facility - [категория syslog](https://en.wikipedia.org/wiki/Syslog#Facility), записанная в верхнем регистре, с префиксом «LOG_»: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` и прочие).
     Значения по умолчанию: при указанном `address` - `LOG_USER`, иначе - `LOG_DAEMON`
 -   format - формат сообщений. Возможные значения - `bsd` и `syslog`
 
-## send\_crash\_reports {#server_configuration_parameters-logger}
+## send_crash_reports {#server_configuration_parameters-send_crash_reports}
 
 Настройки для отправки сообщений о сбоях в команду разработчиков ядра ClickHouse через [Sentry](https://sentry.io).
 Включение этих настроек, особенно в pre-production среде, может дать очень ценную информацию и поможет развитию ClickHouse.
@@ -373,7 +445,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 Можно не указывать, если реплицируемых таблицы не используются.
 
-Подробнее смотрите в разделе «[Создание реплицируемых таблиц](../../operations/server-configuration-parameters/settings.md)».
+Подробнее смотрите в разделе «[Создание реплицируемых таблиц](../../engines/table-engines/mergetree-family/replication.md)».
 
 **Пример**
 
@@ -381,7 +453,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <macros incl="macros" optional="true" />
 ```
 
-## mark\_cache\_size {#server-mark-cache-size}
+## mark_cache_size {#server-mark-cache-size}
 
 Приблизительный размер (в байтах) кэша засечек, используемых движками таблиц семейства [MergeTree](../../operations/server-configuration-parameters/settings.md).
 
@@ -393,14 +465,14 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <mark_cache_size>5368709120</mark_cache_size>
 ```
 
-## max\_server\_memory\_usage {#max_server_memory_usage}
+## max_server_memory_usage {#max_server_memory_usage}
 
 Ограничивает объём оперативной памяти, используемой сервером ClickHouse. Настройка может быть задана только для профиля `default`.
 
 Возможные значения:
 
 -   Положительное целое число.
--   0 — объём используемой памяти не ограничен.
+-   0 — автоматически.
 
 Значение по умолчанию: `0`.
 
@@ -410,7 +482,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 **См. также**
 
--   [max\_memory\_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
+-   [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
 -   [max_server_memory_usage_to_ram_ratio](#max_server_memory_usage_to_ram_ratio)
 
 ## max_server_memory_usage_to_ram_ratio {#max_server_memory_usage_to_ram_ratio}
@@ -438,9 +510,17 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 -   [max_server_memory_usage](#max_server_memory_usage)
 
-## max\_concurrent\_queries {#max-concurrent-queries}
+## max_concurrent_queries {#max-concurrent-queries}
 
-Максимальное количество одновременно обрабатываемых запросов.
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+
+!!! info "Примечание"
+	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений. 
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
 
 **Пример**
 
@@ -448,7 +528,42 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
-## max\_connections {#max-connections}
+## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
+
+Если значение этой настройки меньше или равно текущему количеству одновременно обрабатываемых запросов, то будет сгенерировано исключение.
+
+Пример: `max_concurrent_queries_for_all_users` установлен на 99 для всех пользователей. Чтобы выполнять запросы даже когда сервер перегружен, администратор баз данных устанавливает для себя значение настройки на 100.
+
+Изменение настройки для одного запроса или пользователя не влияет на другие запросы.
+
+Значение по умолчанию: `0` — отсутствие ограничений.
+
+**Пример**
+
+``` xml
+<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+```
+
+**Смотрите также**
+
+-   [max_concurrent_queries](#max-concurrent-queries)
+
+## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
+
+Определяет минимальное количество засечек, считываемых запросом для применения настройки [max_concurrent_queries](#max-concurrent-queries).
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
+
+**Пример**
+
+``` xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```
+
+## max_connections {#max-connections}
 
 Максимальное количество входящих соединений.
 
@@ -458,7 +573,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <max_connections>4096</max_connections>
 ```
 
-## max\_open\_files {#max-open-files}
+## max_open_files {#max-open-files}
 
 Максимальное количество открытых файлов.
 
@@ -472,7 +587,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <max_open_files>262144</max_open_files>
 ```
 
-## max\_table\_size\_to\_drop {#max-table-size-to-drop}
+## max_table_size_to_drop {#max-table-size-to-drop}
 
 Ограничение на удаление таблиц.
 
@@ -490,19 +605,19 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
-## max\_thread\_pool\_size {#max-thread-pool-size}
+## max_thread_pool_size {#max-thread-pool-size}
 
-Максимальное кол-во потоков в глобальном пуле потоков.
+Максимальное количество потоков в глобальном пуле потоков.
 
-Default value: 10000.
+Значение по умолчанию: 10000.
 
-**Example**
+**Пример**
 
 ``` xml
 <max_thread_pool_size>12000</max_thread_pool_size>
 ```
 
-## merge\_tree {#server_configuration_parameters-merge_tree}
+## merge_tree {#server_configuration_parameters-merge_tree}
 
 Тонкая настройка таблиц семейства [MergeTree](../../operations/server-configuration-parameters/settings.md).
 
@@ -514,6 +629,51 @@ Default value: 10000.
 <merge_tree>
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </merge_tree>
+```
+
+## metric_log {#metric_log}
+
+Эта настройка включена по умолчанию. Если это не так, вы можете включить ее сами.
+
+**Включение**
+
+Чтобы вручную включить сбор истории метрик в таблице [`system.metric_log`](../../operations/system-tables/metric_log.md), создайте `/etc/clickhouse-server/config.d/metric_log.xml` следующего содержания:
+
+``` xml
+<yandex>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+</yandex>
+```
+
+**Выключение**
+
+Чтобы отключить настройку `metric_log` , создайте файл `/etc/clickhouse-server/config.d/disable_metric_log.xml` следующего содержания:
+
+``` xml
+<yandex>
+<metric_log remove="1" />
+</yandex>
+```
+
+## replicated\_merge\_tree {#server_configuration_parameters-replicated_merge_tree}
+
+Тонкая настройка таблиц в [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+Эта настройка имеет более высокий приоритет.
+
+Подробнее смотрите в заголовочном файле MergeTreeSettings.h.
+
+**Пример**
+
+``` xml
+<replicated_merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</replicated_merge_tree>
 ```
 
 ## openSSL {#server_configuration_parameters-openssl}
@@ -537,8 +697,8 @@ Default value: 10000.
 -   sessionTimeout - Время кеширования сессии на сервере.
 -   extendedVerification - Автоматическая расширенная проверка сертификатов после завершении сессии. Допустимые значения: `true`, `false`.
 -   requireTLSv1 - Требование соединения TLSv1. Допустимые значения: `true`, `false`.
--   requireTLSv1\_1 - Требование соединения TLSv1.1. Допустимые значения: `true`, `false`.
--   requireTLSv1\_2 - Требование соединения TLSv1.2. Допустимые значения: `true`, `false`.
+-   requireTLSv1_1 - Требование соединения TLSv1.1. Допустимые значения: `true`, `false`.
+-   requireTLSv1_2 - Требование соединения TLSv1.2. Допустимые значения: `true`, `false`.
 -   fips - Активация режима OpenSSL FIPS. Поддерживается, если версия OpenSSL, с которой собрана библиотека поддерживает fips.
 -   privateKeyPassphraseHandler - Класс (подкласс PrivateKeyPassphraseHandler)запрашивающий кодовую фразу доступа к секретному ключу. Например, `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler - Класс (подкласс CertificateHandler) для подтверждения не валидных сертификатов. Например, `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>`.
@@ -575,11 +735,11 @@ Default value: 10000.
 </openSSL>
 ```
 
-## part\_log {#server_configuration_parameters-part-log}
+## part_log {#server_configuration_parameters-part-log}
 
 Логирование событий, связанных с данными типа [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
-Запросы логируются не в отдельный файл, а в таблицу [system.part\_log](../../operations/system-tables/part_log.md#system_tables-part-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в таблицу [system.part_log](../../operations/system-tables/part_log.md#system_tables-part-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
@@ -623,7 +783,7 @@ Default value: 10000.
 -   `port` – порт по которому будет доступен endpoint для сбора метрик.
 -   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](../system-tables/metrics.md#system_tables-metrics).
 -   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](../system-tables/events.md#system_tables-events).
--   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous\_metrics](../system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics).
+-   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics).
 
 **Пример**
 
@@ -637,11 +797,11 @@ Default value: 10000.
     </prometheus>
 ```
 
-## query\_log {#server_configuration_parameters-query-log}
+## query_log {#server_configuration_parameters-query-log}
 
-Настройка логирования запросов, принятых с настройкой [log\_queries=1](../../operations/settings/settings.md).
+Настройка логирования запросов, принятых с настройкой [log_queries=1](../../operations/settings/settings.md).
 
-Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_log](../../operations/system-tables/query_log.md#system_tables-query_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
@@ -664,11 +824,11 @@ Default value: 10000.
 </query_log>
 ```
 
-## query\_thread\_log {#server_configuration_parameters-query_thread_log}
+## query_thread_log {#server_configuration_parameters-query_thread_log}
 
-Настройка логирования потоков выполнения запросов, принятых с настройкой [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads).
+Настройка логирования потоков выполнения запросов, принятых с настройкой [log_query_threads=1](../settings/settings.md#settings-log-query-threads).
 
-Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
@@ -691,9 +851,9 @@ Default value: 10000.
 </query_thread_log>
 ```
 
-## text\_log {#server_configuration_parameters-text_log}
+## text_log {#server_configuration_parameters-text_log}
 
-Настройка логирования текстовых сообщений в системную таблицу [text\_log](../../operations/system-tables/text_log.md#system_tables-text_log).
+Настройка логирования текстовых сообщений в системную таблицу [text_log](../../operations/system-tables/text_log.md#system_tables-text_log).
 
 Параметры:
 
@@ -719,9 +879,9 @@ Default value: 10000.
 ```
 
 
-## trace\_log {#server_configuration_parameters-trace_log}
+## trace_log {#server_configuration_parameters-trace_log}
 
-Настройки для [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
+Настройки для [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
 
 Parameters:
 
@@ -742,7 +902,7 @@ The default server configuration file `config.xml` contains the following settin
 </trace_log>
 ```
 
-## query\_masking\_rules {#query-masking-rules}
+## query_masking_rules {#query-masking-rules}
 
 Правила основанные на регурялных выражениях, которые будут применены для всех запросов а также  для всех сообщений перед сохранением их в лог на сервере,
 `system.query_log`, `system.text_log`, `system.processes` таблицы, а также в логах отсылаемых клиенту. Это позволяет предотвратить
@@ -772,7 +932,7 @@ The default server configuration file `config.xml` contains the following settin
 Для распределенных запросов каждый сервер должен быть сконфигурирован отдельно, иначе, подзапросы, 
 переданные на другие узлы, будут сохраняться без маскировки.
 
-## remote\_servers {#server-settings-remote-servers}
+## remote_servers {#server-settings-remote-servers}
 
 Конфигурация кластеров, которые использует движок таблиц [Distributed](../../operations/server-configuration-parameters/settings.md) и табличная функция `cluster`.
 
@@ -786,7 +946,7 @@ The default server configuration file `config.xml` contains the following settin
 
 **Смотрите также**
 
--   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
+-   [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## timezone {#server_configuration_parameters-timezone}
 
@@ -802,7 +962,7 @@ The default server configuration file `config.xml` contains the following settin
 <timezone>Europe/Moscow</timezone>
 ```
 
-## tcp\_port {#server_configuration_parameters-tcp_port}
+## tcp_port {#server_configuration_parameters-tcp_port}
 
 Порт для взаимодействия с клиентами по протоколу TCP.
 
@@ -812,7 +972,7 @@ The default server configuration file `config.xml` contains the following settin
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
+## tcp_port_secure {#server_configuration_parameters-tcp_port_secure}
 
 TCP порт для защищённого обмена данными с клиентами. Используйте с настройкой [OpenSSL](#server_configuration_parameters-openssl).
 
@@ -826,7 +986,7 @@ TCP порт для защищённого обмена данными с кли
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql\_port {#server_configuration_parameters-mysql_port}
+## mysql_port {#server_configuration_parameters-mysql_port}
 
 Порт для взаимодействия с клиентами по протоколу MySQL.
 
@@ -853,7 +1013,7 @@ TCP порт для защищённого обмена данными с кли
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-## tmp\_policy {#tmp-policy}
+## tmp_policy {#tmp-policy}
 
 Политика из [storage_configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) для хранения временных файлов.
 
@@ -865,11 +1025,11 @@ TCP порт для защищённого обмена данными с кли
     - `max_data_part_size_bytes` игнорируется.
     - В данной политике у вас должен быть ровно один том.
 
-## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
+## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/server-configuration-parameters/settings.md).
 
-Кеш единый для сервера. Память выделяется по требованию. Кеш используется в том случае, если включена опция [use\_uncompressed\_cache](../settings/settings.md).
+Кеш единый для сервера. Память выделяется по требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../settings/settings.md).
 
 Несжатый кеш выгодно использовать для очень коротких запросов в отдельных случаях.
 
@@ -879,7 +1039,7 @@ TCP порт для защищённого обмена данными с кли
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user\_files\_path {#server_configuration_parameters-user_files_path}
+## user_files_path {#server_configuration_parameters-user_files_path}
 
 Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../operations/server-configuration-parameters/settings.md).
 
@@ -889,7 +1049,7 @@ TCP порт для защищённого обмена данными с кли
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-## users\_config {#users-config}
+## users_config {#users-config}
 
 Путь к файлу, который содержит:
 
@@ -957,13 +1117,13 @@ ClickHouse использует ZooKeeper для хранения метадан
 -   [Репликация](../../engines/table-engines/mergetree-family/replication.md)
 -   [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
-## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
+## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
 Способ хранения заголовков кусков данных в ZooKeeper.
 
 Параметр применяется только к семейству таблиц `MergeTree`. Его можно установить:
 
--   Глобально в разделе [merge\_tree](#server_configuration_parameters-merge_tree) файла `config.xml`.
+-   Глобально в разделе [merge_tree](#server_configuration_parameters-merge_tree) файла `config.xml`.
 
     ClickHouse использует этот параметр для всех таблиц на сервере. Вы можете изменить настройку в любое время. Существующие таблицы изменяют свое поведение при изменении параметра.
 
@@ -985,14 +1145,14 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 **Значение по умолчанию**: 0.
 
-## disable\_internal\_dns\_cache {#server-settings-disable-internal-dns-cache}
+## disable_internal_dns_cache {#server-settings-disable-internal-dns-cache}
 
 Отключает внутренний кеш DNS записей. Используется при эксплуатации ClickHouse в системах
 с часто меняющейся инфраструктурой, таких как Kubernetes.
 
 **Значение по умолчанию**: 0.
 
-## dns\_cache\_update\_period {#server-settings-dns-cache-update-period}
+## dns_cache_update_period {#server-settings-dns-cache-update-period}
 
 Период обновления IP адресов у записей во внутреннем DNS кеше ClickHouse (в секундах).
 Обновление выполняется асинхронно, отдельным системным потоком.
@@ -1013,4 +1173,43 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 - [Управление доступом](../access-rights.md#access-control)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/settings/) <!--hide-->
+## user_directories {#user_directories}
+
+Секция конфигурационного файла,которая содержит настройки:
+-   Путь к конфигурационному файлу с предустановленными пользователями.
+-   Путь к файлу, в котором содержатся пользователи, созданные при помощи SQL команд. 
+
+Если эта секция определена, путь из [users_config](../../operations/server-configuration-parameters/settings.md#users-config) и [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) не используется.
+
+Секция `user_directories` может содержать любое количество элементов, порядок расположения элементов обозначает их приоритет (чем выше элемент, тем выше приоритет).
+
+**Пример**
+
+``` xml
+<user_directories>
+    <users_xml>
+        <path>/etc/clickhouse-server/users.xml</path>
+    </users_xml>
+    <local_directory>
+        <path>/var/lib/clickhouse/access/</path>
+    </local_directory>
+</user_directories>
+```
+
+Также вы можете указать настройку `memory` — означает хранение информации только в памяти, без записи на диск, и `ldap` — означает хранения информации на [LDAP-сервере](https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol).
+
+Чтобы добавить LDAP-сервер в качестве удаленного каталога пользователей, которые не определены локально, определите один раздел `ldap` со следующими параметрами:
+-   `server` — имя одного из LDAP-серверов, определенных в секции `ldap_servers` конфигурациионного файла. Этот параметр явялется необязательным и может быть пустым.
+-   `roles` — раздел со списком локально определенных ролей, которые будут назначены каждому пользователю, полученному с LDAP-сервера. Если роли не заданы, пользователь не сможет выполнять никаких действий после аутентификации. Если какая-либо из перечисленных ролей не определена локально во время проверки подлинности, попытка проверки подлинности завершится неудачей, как если бы предоставленный пароль был неверным.
+
+**Пример**
+
+``` xml
+<ldap>
+    <server>my_ldap_server</server>
+        <roles>
+            <my_local_role1 />
+            <my_local_role2 />
+        </roles>
+</ldap>
+```

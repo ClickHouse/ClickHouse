@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+
 namespace DB
 {
 
@@ -16,7 +17,7 @@ struct PreparedSetKey
     /// if left hand sides of the IN operators have different types).
     static PreparedSetKey forLiteral(const IAST & ast, DataTypes types_)
     {
-        /// Remove LowCardinality types from type list because Set doesn't support LowCardinality keys now, 
+        /// Remove LowCardinality types from type list because Set doesn't support LowCardinality keys now,
         ///   just converts LowCardinality to ordinary types.
         for (auto & type : types_)
             type = recursiveRemoveLowCardinality(type);

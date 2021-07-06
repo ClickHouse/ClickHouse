@@ -16,7 +16,7 @@ Queries in ClickHouse can be divided into several types:
 The following settings regulate user permissions by the type of query:
 
 -   [readonly](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
--   [allow\_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
+-   [allow_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
 
 `KILL QUERY` can be performed with any settings.
 
@@ -41,7 +41,7 @@ from changing only specific settings, for details see [constraints on settings](
 
 Default value: 0
 
-## allow\_ddl {#settings_allow_ddl}
+## allow_ddl {#settings_allow_ddl}
 
 Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
 

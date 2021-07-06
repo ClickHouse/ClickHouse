@@ -39,14 +39,20 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t quorum_,
     size_t quorum_timeout_ms_,
     size_t max_parts_per_block_,
-    bool deduplicate_)
+    bool quorum_parallel_,
+    bool deduplicate_,
+    ContextPtr context_,
+    bool is_attach_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , quorum(quorum_)
     , quorum_timeout_ms(quorum_timeout_ms_)
     , max_parts_per_block(max_parts_per_block_)
+    , is_attach(is_attach_)
+    , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
+    , context(context_)
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
@@ -75,7 +81,6 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
 {
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
-    std::future<Coordination::GetResponse> quorum_status_future = zookeeper->asyncTryGet(quorum_info.status_path);
     std::future<Coordination::GetResponse> is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
     std::future<Coordination::GetResponse> host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
 
@@ -97,9 +102,9 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
         * If the quorum is reached, then the node is deleted.
         */
 
-    auto quorum_status = quorum_status_future.get();
-    if (quorum_status.error != Coordination::Error::ZNONODE)
-        throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status.data,
+    String quorum_status;
+    if (!quorum_parallel && zookeeper->tryGet(quorum_info.status_path, quorum_status))
+        throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status,
                         ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
 
     /// Both checks are implicitly made also later (otherwise there would be a race condition).
@@ -120,8 +125,6 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 {
     last_block_is_duplicate = false;
 
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
-
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
 
@@ -133,7 +136,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     if (quorum)
         checkQuorumPrecondition(zookeeper);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     for (auto & current_block : part_blocks)
     {
@@ -141,24 +144,20 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
+
+        /// If optimize_on_insert setting is true, current_block could become empty after merge
+        /// and we didn't create part.
+        if (!part)
+            continue;
 
         String block_id;
 
         if (deduplicate)
         {
-            SipHash hash;
-            part->checksums.computeTotalChecksumDataOnly(hash);
-            union
-            {
-                char bytes[16];
-                UInt64 words[2];
-            } hash_value;
-            hash.get128(hash_value.bytes);
-
             /// We add the hash from the data and partition identifier to deduplication ID.
             /// That is, do not insert the same data to the same partition twice.
-            block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
+            block_id = part->getZeroLevelPartBlockID();
 
             LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
@@ -173,11 +172,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && last_block_is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus(error));
+            PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus(error));
         }
         catch (...)
         {
-            PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
             throw;
         }
     }
@@ -201,11 +200,11 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
     try
     {
         commitPart(zookeeper, part, "");
-        PartLog::addNewPart(storage.global_context, part, watch.elapsed());
+        PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
     {
-        PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+        PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
         throw;
     }
 }
@@ -253,16 +252,28 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             part->info.min_block = block_number;
             part->info.max_block = block_number;
             part->info.level = 0;
+            part->info.mutation = 0;
 
             part->name = part->getNewName(part->info);
 
-            /// Will add log entry about new part.
-
             StorageReplicatedMergeTree::LogEntry log_entry;
-            log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+
+            if (is_attach)
+            {
+                log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
+
+                /// We don't need to involve ZooKeeper to obtain checksums as by the time we get
+                /// MutableDataPartPtr here, we already have the data thus being able to
+                /// calculate the checksums.
+                log_entry.part_checksum = part->checksums.getTotalChecksumHex();
+            }
+            else
+                log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+
             log_entry.create_time = time(nullptr);
             log_entry.source_replica = storage.replica_name;
             log_entry.new_part_name = part->name;
+            /// TODO maybe add UUID here as well?
             log_entry.quorum = quorum;
             log_entry.block_id = block_id;
             log_entry.new_part_type = part->getType();
@@ -293,6 +304,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                     * When it contains information about `quorum` number of replicas, this node is deleted,
                     *  which indicates that the quorum has been reached.
                     */
+
+                if (quorum_parallel)
+                    quorum_info.status_path = storage.zookeeper_path + "/quorum/parallel/" + part->name;
 
                 ops.emplace_back(
                     zkutil::makeCreateRequest(
@@ -327,13 +341,28 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             /// If it exists on our replica, ignore it.
             if (storage.getActiveContainingPart(existing_part_name))
             {
-                LOG_INFO(log, "Block with ID {} already exists locally as part {}; ignoring it.", block_id, existing_part_name);
                 part->is_duplicate = true;
                 last_block_is_duplicate = true;
                 ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
+                if (quorum)
+                {
+                    LOG_INFO(log, "Block with ID {} already exists locally as part {}; ignoring it, but checking quorum.", block_id, existing_part_name);
+
+                    std::string quorum_path;
+                    if (quorum_parallel)
+                        quorum_path = storage.zookeeper_path + "/quorum/parallel/" + existing_part_name;
+                    else
+                        quorum_path = storage.zookeeper_path + "/quorum/status";
+
+                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_value);
+                }
+                else
+                {
+                    LOG_INFO(log, "Block with ID {} already exists locally as part {}; ignoring it.", block_id, existing_part_name);
+                }
+
                 return;
             }
-
             LOG_INFO(log, "Block with ID {} already exists on other replicas as part {}; will write it locally with that name.",
                 block_id, existing_part_name);
 
@@ -346,7 +375,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             /// Used only for exception messages.
             block_number = part->info.min_block;
 
-
             /// Do not check for duplicate on commit to ZK.
             block_id_path.clear();
         }
@@ -356,6 +384,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
         MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
+
         try
         {
             renamed = storage.renameTempPartAndAdd(part, nullptr, &transaction);
@@ -366,6 +395,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 && e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
                 throw;
         }
+
         if (!renamed)
         {
             if (is_already_existing_part)
@@ -466,57 +496,75 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         if (is_already_existing_part)
         {
             /// We get duplicate part without fetch
-            storage.updateQuorum(part->name);
+            /// Check if this quorum insert is parallel or not
+            if (zookeeper->exists(storage.zookeeper_path + "/quorum/parallel/" + part->name))
+                storage.updateQuorum(part->name, true);
+            else if (zookeeper->exists(storage.zookeeper_path + "/quorum/status"))
+                storage.updateQuorum(part->name, false);
         }
 
-        /// We are waiting for quorum to be satisfied.
-        LOG_TRACE(log, "Waiting for quorum");
-
-        String quorum_status_path = storage.zookeeper_path + "/quorum/status";
-
-        try
-        {
-            while (true)
-            {
-                zkutil::EventPtr event = std::make_shared<Poco::Event>();
-
-                std::string value;
-                /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.
-                if (!zookeeper->tryGet(quorum_status_path, value, nullptr, event))
-                    break;
-
-                ReplicatedMergeTreeQuorumEntry quorum_entry(value);
-
-                /// If the node has time to disappear, and then appear again for the next insert.
-                if (quorum_entry.part_name != part->name)
-                    break;
-
-                if (!event->tryWait(quorum_timeout_ms))
-                    throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
-            }
-
-            /// And what if it is possible that the current replica at this time has ceased to be active
-            /// and the quorum is marked as failed and deleted?
-            String value;
-            if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, nullptr)
-                || value != quorum_info.is_active_node_value)
-                throw Exception("Replica become inactive while waiting for quorum", ErrorCodes::NO_ACTIVE_REPLICAS);
-        }
-        catch (...)
-        {
-            /// We do not know whether or not data has been inserted
-            /// - whether other replicas have time to download the part and mark the quorum as done.
-            throw Exception("Unknown status, client must retry. Reason: " + getCurrentExceptionMessage(false),
-                ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
-        }
-
-        LOG_TRACE(log, "Quorum satisfied");
+        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value);
     }
 }
 
 void ReplicatedMergeTreeBlockOutputStream::writePrefix()
 {
-    storage.throwInsertIfNeeded();
+    /// Only check "too many parts" before write,
+    /// because interrupting long-running INSERT query in the middle is not convenient for users.
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
+}
+
+
+void ReplicatedMergeTreeBlockOutputStream::waitForQuorum(
+    zkutil::ZooKeeperPtr & zookeeper,
+    const std::string & part_name,
+    const std::string & quorum_path,
+    const std::string & is_active_node_value) const
+{
+    /// We are waiting for quorum to be satisfied.
+    LOG_TRACE(log, "Waiting for quorum");
+
+    try
+    {
+        while (true)
+        {
+            zkutil::EventPtr event = std::make_shared<Poco::Event>();
+
+            std::string value;
+            /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.
+            if (!zookeeper->tryGet(quorum_path, value, nullptr, event))
+                break;
+
+            LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_path);
+
+            ReplicatedMergeTreeQuorumEntry quorum_entry(value);
+
+            /// If the node has time to disappear, and then appear again for the next insert.
+            if (quorum_entry.part_name != part_name)
+                break;
+
+            if (!event->tryWait(quorum_timeout_ms))
+                throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
+
+            LOG_TRACE(log, "Quorum {} updated, will check quorum node still exists", quorum_path);
+        }
+
+        /// And what if it is possible that the current replica at this time has ceased to be active
+        /// and the quorum is marked as failed and deleted?
+        String value;
+        if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, nullptr)
+            || value != is_active_node_value)
+            throw Exception("Replica become inactive while waiting for quorum", ErrorCodes::NO_ACTIVE_REPLICAS);
+    }
+    catch (...)
+    {
+        /// We do not know whether or not data has been inserted
+        /// - whether other replicas have time to download the part and mark the quorum as done.
+        throw Exception("Unknown status, client must retry. Reason: " + getCurrentExceptionMessage(false),
+            ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
+    }
+
+    LOG_TRACE(log, "Quorum satisfied");
 }
 
 

@@ -1,9 +1,10 @@
+#pragma once
 /**
   * This file contains some using-declarations that define various kinds of
   * PODArray.
   */
-#pragma once
 
+#include <common/types.h>
 #include <Common/Allocator_fwd.h>
 
 namespace DB

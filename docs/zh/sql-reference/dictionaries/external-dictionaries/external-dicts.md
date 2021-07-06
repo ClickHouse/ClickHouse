@@ -15,9 +15,9 @@ ClickHouse:
 -   定期更新字典并动态加载缺失的值。 换句话说，字典可以动态加载。
 -   允许创建外部字典与xml文件或 [DDL查询](../../statements/create.md#create-dictionary-query).
 
-外部字典的配置可以位于一个或多个xml文件中。 配置的路径在指定 [dictionaries\_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) 参数。
+外部字典的配置可以位于一个或多个xml文件中。 配置的路径在指定 [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) 参数。
 
-字典可以在服务器启动或首次使用时加载，具体取决于 [dictionaries\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) 设置。
+字典可以在服务器启动或首次使用时加载，具体取决于 [dictionaries_lazy_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) 设置。
 
 该 [字典](../../../operations/system-tables/dictionaries.md#system_tables-dictionaries) 系统表包含有关在服务器上配置的字典的信息。 对于每个字典，你可以在那里找到:
 

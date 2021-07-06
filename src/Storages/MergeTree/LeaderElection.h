@@ -83,7 +83,7 @@ private:
     void createNode()
     {
         shutdown_called = false;
-        node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
+        node = EphemeralNodeHolder::createSequential(fs::path(path) / "leader_election-", zookeeper, identifier);
 
         std::string node_path = node->getPath();
         node_name = node_path.substr(node_path.find_last_of('/') + 1);
@@ -112,13 +112,12 @@ private:
 
             String value = zookeeper.get(path + "/" + children.front());
 
-#if !defined(ARCADIA_BUILD) /// C++20; Replicated tables are unused in Arcadia.
             if (value.ends_with(suffix))
             {
                 handler();
                 return;
             }
-#endif
+
             if (my_node_it == children.begin())
                 throw Poco::Exception("Assertion failed in LeaderElection");
 

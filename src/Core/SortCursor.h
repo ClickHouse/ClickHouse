@@ -30,7 +30,6 @@ struct SortCursorImpl
     ColumnRawPtrs all_columns;
     SortDescription desc;
     size_t sort_columns_size = 0;
-    size_t pos = 0;
     size_t rows = 0;
 
     /** Determines order if comparing columns are equal.
@@ -49,15 +48,20 @@ struct SortCursorImpl
     /** Is there at least one column with Collator. */
     bool has_collation = false;
 
+    /** We could use SortCursorImpl in case when columns aren't sorted
+      *  but we have their sorted permutation
+      */
+    IColumn::Permutation * permutation = nullptr;
+
     SortCursorImpl() {}
 
-    SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0)
+    SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0, IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
     {
-        reset(block);
+        reset(block, perm);
     }
 
-    SortCursorImpl(const Columns & columns, const SortDescription & desc_, size_t order_ = 0)
+    SortCursorImpl(const Columns & columns, const SortDescription & desc_, size_t order_ = 0, IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
     {
         for (auto & column_desc : desc)
@@ -66,19 +70,19 @@ struct SortCursorImpl
                 throw Exception("SortDescription should contain column position if SortCursor was used without header.",
                         ErrorCodes::LOGICAL_ERROR);
         }
-        reset(columns, {});
+        reset(columns, {}, perm);
     }
 
     bool empty() const { return rows == 0; }
 
     /// Set the cursor to the beginning of the new block.
-    void reset(const Block & block)
+    void reset(const Block & block, IColumn::Permutation * perm = nullptr)
     {
-        reset(block.getColumns(), block);
+        reset(block.getColumns(), block, perm);
     }
 
     /// Set the cursor to the beginning of the new block.
-    void reset(const Columns & columns, const Block & block)
+    void reset(const Columns & columns, const Block & block, IColumn::Permutation * perm = nullptr)
     {
         all_columns.clear();
         sort_columns.clear();
@@ -96,18 +100,33 @@ struct SortCursorImpl
                                    : column_desc.column_number;
             sort_columns.push_back(columns[column_number].get());
 
-            need_collation[j] = desc[j].collator != nullptr && typeid_cast<const ColumnString *>(sort_columns.back());    /// TODO Nullable(String)
+            need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->isCollationSupported();
             has_collation |= need_collation[j];
         }
 
         pos = 0;
         rows = all_columns[0]->size();
+        permutation = perm;
     }
+
+    size_t getRow() const
+    {
+        if (permutation)
+            return (*permutation)[pos];
+        return pos;
+    }
+
+    /// We need a possibility to change pos (see MergeJoin).
+    size_t & getPosRef() { return pos; }
 
     bool isFirst() const { return pos == 0; }
     bool isLast() const { return pos + 1 >= rows; }
     bool isValid() const { return pos < rows; }
     void next() { ++pos; }
+
+/// Prevent using pos instead of getRow()
+private:
+    size_t pos = 0;
 };
 
 using SortCursorImpls = std::vector<SortCursorImpl>;
@@ -127,7 +146,7 @@ struct SortCursorHelper
 
     bool ALWAYS_INLINE greater(const SortCursorHelper & rhs) const
     {
-        return derived().greaterAt(rhs.derived(), impl->pos, rhs.impl->pos);
+        return derived().greaterAt(rhs.derived(), impl->getRow(), rhs.impl->getRow());
     }
 
     /// Inverted so that the priority queue elements are removed in ascending order.
@@ -201,10 +220,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
             int nulls_direction = desc.nulls_direction;
             int res;
             if (impl->need_collation[i])
-            {
-                const ColumnString & column_string = assert_cast<const ColumnString &>(*impl->sort_columns[i]);
-                res = column_string.compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), *impl->desc[i].collator);
-            }
+                res = impl->sort_columns[i]->compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction, *impl->desc[i].collator);
             else
                 res = impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
 
@@ -349,5 +365,21 @@ private:
         *curr_it = std::move(top);
     }
 };
+
+template <typename TLeftColumns, typename TRightColumns>
+bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t j, const SortDescription & descr)
+{
+    for (const auto & elem : descr)
+    {
+        size_t ind = elem.column_number;
+        int res = elem.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.nulls_direction);
+        if (res < 0)
+            return true;
+        else if (res > 0)
+            return false;
+    }
+
+    return false;
+}
 
 }

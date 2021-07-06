@@ -22,7 +22,7 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTRowPolicyName>(clone()); }
 
-    void replaceEmptyDatabaseWithCurrent(const String & current_database);
+    void replaceEmptyDatabase(const String & current_database);
 };
 
 
@@ -44,6 +44,6 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTRowPolicyNames>(clone()); }
 
-    void replaceEmptyDatabaseWithCurrent(const String & current_database);
+    void replaceEmptyDatabase(const String & current_database);
 };
 }

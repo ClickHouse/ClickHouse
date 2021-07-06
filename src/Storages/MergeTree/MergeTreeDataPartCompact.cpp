@@ -1,7 +1,7 @@
 #include "MergeTreeDataPartCompact.h"
+#include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
-#include <Poco/File.h>
 
 
 namespace DB
@@ -20,8 +20,9 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
        MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT)
+        const std::optional<String> & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT, parent_part_)
 {
 }
 
@@ -30,8 +31,9 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT)
+        const std::optional<String> & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT, parent_part_)
 {
 }
 
@@ -121,9 +123,9 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     index_granularity.setInitialized();
 }
 
-bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const IDataType &) const
+bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
 {
-    if (!getColumnPosition(column_name))
+    if (!getColumnPosition(column.name))
         return false;
 
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);

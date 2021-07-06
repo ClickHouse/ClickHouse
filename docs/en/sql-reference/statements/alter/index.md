@@ -1,5 +1,5 @@
 ---
-toc_priority: 36
+toc_priority: 35
 toc_title: ALTER
 ---
 
@@ -47,4 +47,3 @@ For `ALTER ... ATTACH|DETACH|DROP` queries, you can use the `replication_alter_p
 
 For `ALTER TABLE ... UPDATE|DELETE` queries the synchronicity is defined by the [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

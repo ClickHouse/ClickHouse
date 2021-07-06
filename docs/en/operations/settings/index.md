@@ -25,6 +25,7 @@ Ways to configure settings, in order of priority:
 
     -   When starting the ClickHouse console client in non-interactive mode, set the startup parameter `--setting=value`.
     -   When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
+    -   Make settings in the [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select) clause of the SELECT query. The setting value is applied only to that query and is reset to default or previous value after the query is executed.
 
 Settings that can only be made in the server config file are not covered in this section.
 

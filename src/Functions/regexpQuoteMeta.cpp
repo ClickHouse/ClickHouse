@@ -21,7 +21,7 @@ class FunctionRegexpQuoteMeta : public IFunction
 public:
     static constexpr auto name = "regexpQuoteMeta";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionRegexpQuoteMeta>();
     }
@@ -51,14 +51,14 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnPtr & column_string = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & column_string = arguments[0].column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
 
         if (!input)
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();
@@ -104,7 +104,7 @@ public:
             dst_offsets[row_idx] = dst_data.size();
         }
 
-        block.getByPosition(result).column = std::move(dst_column);
+        return dst_column;
     }
 };
 

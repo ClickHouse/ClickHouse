@@ -35,6 +35,8 @@ protected:
             return name;
     }
 
+    std::unordered_map<String, String> case_insensitive_name_mapping;
+
 public:
     /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
     enum CaseSensitiveness
@@ -68,9 +70,12 @@ public:
                 factory_name + ": the alias name '" + alias_name + "' is already registered as real name", ErrorCodes::LOGICAL_ERROR);
 
         if (case_sensitiveness == CaseInsensitive)
+        {
             if (!case_insensitive_aliases.emplace(alias_name_lowercase, real_dict_name).second)
                 throw Exception(
                     factory_name + ": case insensitive alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+            case_insensitive_name_mapping[alias_name_lowercase] = real_name;
+        }
 
         if (!aliases.emplace(alias_name, real_dict_name).second)
             throw Exception(factory_name + ": alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
@@ -104,6 +109,20 @@ public:
     bool isAlias(const String & name) const
     {
         return aliases.count(name) || case_insensitive_aliases.count(name);
+    }
+
+    bool hasNameOrAlias(const String & name) const
+    {
+        return getMap().count(name) || getCaseInsensitiveMap().count(name) || isAlias(name);
+    }
+
+    /// Return the canonical name (the name used in registration) if it's different from `name`.
+    const String & getCanonicalNameIfAny(const String & name) const
+    {
+        auto it = case_insensitive_name_mapping.find(Poco::toLower(name));
+        if (it != case_insensitive_name_mapping.end())
+            return it->second;
+        return name;
     }
 
     virtual ~IFactoryWithAliases() override {}

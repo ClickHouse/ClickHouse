@@ -5,6 +5,7 @@
 #include <Interpreters/executeQuery.h>
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
+#include <Common/setThreadName.h>
 #include <random>
 
 #if !defined(ARCADIA_BUILD)
@@ -32,7 +33,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
-    , connection_context(server.context())
+    , connection_context(Context::createCopy(server.context()))
     , ssl_enabled(ssl_enabled_)
     , connection_id(connection_id_)
     , authentication_manager(auth_methods_)
@@ -49,8 +50,11 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void PostgreSQLHandler::run()
 {
-    connection_context.makeSessionContext();
-    connection_context.setDefaultFormat("PostgreSQLWire");
+    setThreadName("PostgresHandler");
+    ThreadStatus thread_status;
+    connection_context->makeSessionContext();
+    connection_context->getClientInfo().interface = ClientInfo::Interface::POSTGRESQL;
+    connection_context->setDefaultFormat("PostgreSQLWire");
 
     try
     {
@@ -68,7 +72,7 @@ void PostgreSQLHandler::run()
                     processQuery();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE:
-                    LOG_INFO(log, "Client closed the connection");
+                    LOG_DEBUG(log, "Client closed the connection");
                     return;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::PARSE:
                 case PostgreSQLProtocol::Messaging::FrontMessageType::BIND:
@@ -112,7 +116,7 @@ bool PostgreSQLHandler::startup()
 
     if (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info) == PostgreSQLProtocol::Messaging::FrontMessageType::CANCEL_REQUEST)
     {
-        LOG_INFO(log, "Client issued request canceling");
+        LOG_DEBUG(log, "Client issued request canceling");
         cancelRequest();
         return false;
     }
@@ -128,8 +132,8 @@ bool PostgreSQLHandler::startup()
     try
     {
         if (!start_up_msg->database.empty())
-            connection_context.setCurrentDatabase(start_up_msg->database);
-        connection_context.setCurrentQueryId(Poco::format("postgres:%d:%d", connection_id, secret_key));
+            connection_context->setCurrentDatabase(start_up_msg->database);
+        connection_context->setCurrentQueryId(Poco::format("postgres:%d:%d", connection_id, secret_key));
     }
     catch (const Exception & exc)
     {
@@ -145,7 +149,7 @@ bool PostgreSQLHandler::startup()
     message_transport->send(
         PostgreSQLProtocol::Messaging::BackendKeyData(connection_id, secret_key), true);
 
-    LOG_INFO(log, "Successfully finished Startup stage");
+    LOG_DEBUG(log, "Successfully finished Startup stage");
     return true;
 }
 
@@ -158,14 +162,14 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
     switch (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info))
     {
         case PostgreSQLProtocol::Messaging::FrontMessageType::SSL_REQUEST:
-            LOG_INFO(log, "Client requested SSL");
+            LOG_DEBUG(log, "Client requested SSL");
             if (ssl_enabled)
                 makeSecureConnectionSSL();
             else
                 message_transport->send('N', true);
             break;
         case PostgreSQLProtocol::Messaging::FrontMessageType::GSSENC_REQUEST:
-            LOG_INFO(log, "Client requested GSSENC");
+            LOG_DEBUG(log, "Client requested GSSENC");
             message_transport->send('N', true);
             break;
         default:
@@ -209,8 +213,8 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
 
 void PostgreSQLHandler::cancelRequest()
 {
-    connection_context.setCurrentQueryId("");
-    connection_context.setDefaultFormat("Null");
+    connection_context->setCurrentQueryId("");
+    connection_context->setDefaultFormat("Null");
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg =
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
@@ -218,10 +222,7 @@ void PostgreSQLHandler::cancelRequest()
     String query = Poco::format("KILL QUERY WHERE query_id = 'postgres:%d:%d'", msg->process_id, msg->secret_key);
     ReadBufferFromString replacement(query);
 
-    executeQuery(
-        replacement, *out, true, connection_context,
-        [](const String &, const String &, const String &, const String &) {}
-    );
+    executeQuery(replacement, *out, true, connection_context, {});
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -240,7 +241,7 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
         throw;
     }
 
-    LOG_INFO(log, "Successfully received Startup message");
+    LOG_DEBUG(log, "Successfully received Startup message");
     return message;
 }
 
@@ -267,7 +268,7 @@ void PostgreSQLHandler::processQuery()
             return;
         }
 
-        const auto & settings = connection_context.getSettingsRef();
+        const auto & settings = connection_context->getSettingsRef();
         std::vector<String> queries;
         auto parse_res = splitMultipartQuery(query->query, queries, settings.max_query_size, settings.max_parser_depth);
         if (!parse_res.second)
@@ -275,8 +276,10 @@ void PostgreSQLHandler::processQuery()
 
         for (const auto & spl_query : queries)
         {
+            /// FIXME why do we execute all queries in a single connection context?
+            CurrentThread::QueryScope query_scope{connection_context};
             ReadBufferFromString read_buf(spl_query);
-            executeQuery(read_buf, *out, true, connection_context, {});
+            executeQuery(read_buf, *out, false, connection_context, {});
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);

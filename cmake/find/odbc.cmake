@@ -26,8 +26,8 @@ if (NOT USE_INTERNAL_ODBC_LIBRARY)
     find_path (INCLUDE_ODBC sql.h)
 
     if(LIBRARY_ODBC AND INCLUDE_ODBC)
-        add_library (unixodbc UNKNOWN IMPORTED)
-        set_target_properties (unixodbc PROPERTIES IMPORTED_LOCATION ${LIBRARY_ODBC})
+        add_library (unixodbc INTERFACE)
+        set_target_properties (unixodbc PROPERTIES INTERFACE_LINK_LIBRARIES ${LIBRARY_ODBC})
         set_target_properties (unixodbc PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_ODBC})
         set_target_properties (unixodbc PROPERTIES INTERFACE_COMPILE_DEFINITIONS USE_ODBC=1)
 
@@ -49,5 +49,7 @@ endif()
 if (NOT EXTERNAL_ODBC_LIBRARY_FOUND)
     set (USE_INTERNAL_ODBC_LIBRARY 1)
 endif ()
+
+set (USE_INTERNAL_NANODBC_LIBRARY 1)
 
 message (STATUS "Using unixodbc")

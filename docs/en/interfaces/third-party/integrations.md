@@ -17,15 +17,15 @@ toc_title: Integrations
         -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
     -   [PostgreSQL](https://www.postgresql.org)
-        -   [clickhousedb\_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
-        -   [infi.clickhouse\_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (uses [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
+        -   [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
         -   [pg2ch](https://github.com/mkabilov/pg2ch)
-        -   [clickhouse\_fdw](https://github.com/adjust/clickhouse_fdw)
+        -   [clickhouse_fdw](https://github.com/adjust/clickhouse_fdw)
     -   [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         -   [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
 -   Message queues
     -   [Kafka](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [clickhouse_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
         -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Stream processing
     -   [Flink](https://flink.apache.org)
@@ -49,12 +49,12 @@ toc_title: Integrations
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
-        -   [clickhouse\_exporter](https://github.com/f1yegor/clickhouse_exporter)
+        -   [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
         -   [PromHouse](https://github.com/Percona-Lab/PromHouse)
-        -   [clickhouse\_exporter](https://github.com/hot-wifi/clickhouse_exporter) (uses [Go client](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse_exporter](https://github.com/hot-wifi/clickhouse_exporter) (uses [Go client](https://github.com/kshvakov/clickhouse/))
     -   [Nagios](https://www.nagios.org/)
-        -   [check\_clickhouse](https://github.com/exogroup/check_clickhouse/)
-        -   [check\_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
+        -   [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+        -   [check_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
     -   [Zabbix](https://www.zabbix.com)
         -   [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
     -   [Sematext](https://sematext.com/)
@@ -69,12 +69,15 @@ toc_title: Integrations
 -   Geo
     -   [MaxMind](https://dev.maxmind.com/geoip/)
         -   [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
+-   AutoML
+    -   [MindsDB](https://mindsdb.com/)
+        -   [MindsDB](https://github.com/mindsdb/mindsdb) - Predictive AI layer for ClickHouse database.
 
 ## Programming Language Ecosystems {#programming-language-ecosystems}
 
 -   Python
     -   [SQLAlchemy](https://www.sqlalchemy.org)
-        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
 -   PHP
@@ -89,7 +92,7 @@ toc_title: Integrations
 -   Scala
     -   [Akka](https://akka.io)
         -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
--   C\#
+-   C#
     -   [ADO.NET](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview)
         -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
         -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
@@ -97,7 +100,7 @@ toc_title: Integrations
         -   [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
-        -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+        -   [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 -   Ruby
     -   [Ruby on Rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)

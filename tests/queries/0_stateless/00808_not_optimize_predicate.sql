@@ -49,7 +49,7 @@ SELECT
 FROM numbers(2500)
 GROUP BY n;
 
-SET force_primary_key = 1, enable_debug_queries = 1, enable_optimize_predicate_expression = 1;
+SET force_primary_key = 1, enable_optimize_predicate_expression = 1;
 
 SELECT *
 FROM
@@ -61,7 +61,7 @@ FROM
 )
 WHERE (n >= 2) AND (n <= 5);
 
-ANALYZE SELECT *
+EXPLAIN SYNTAX SELECT *
 FROM
 (
     SELECT

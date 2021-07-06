@@ -46,7 +46,7 @@ struct IndexDescription
     size_t granularity;
 
     /// Parse index from definition AST
-    static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
+    static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
 
     IndexDescription() = default;
 
@@ -57,7 +57,7 @@ struct IndexDescription
 
     /// Recalculate index with new columns because index expression may change
     /// if something change in columns.
-    void recalculateWithNewColumns(const ColumnsDescription & new_columns, const Context & context);
+    void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context);
 };
 
 /// All secondary indices in storage
@@ -68,10 +68,10 @@ struct IndicesDescription : public std::vector<IndexDescription>
     /// Convert description to string
     String toString() const;
     /// Parse description from string
-    static IndicesDescription parse(const String & str, const ColumnsDescription & columns, const Context & context);
+    static IndicesDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
 
     /// Return common expression for all stored indices
-    ExpressionActionsPtr getSingleExpressionForIndices(const ColumnsDescription & columns, const Context & context) const;
+    ExpressionActionsPtr getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const;
 };
 
 }

@@ -59,12 +59,11 @@ public:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// Copy and paste from ParserIdentifier,
-/// the difference is that multiple tokens are glued if there is no whitespace ASCII between them
-struct ParserCharsetName : public IParserBase
+/// identifier, string literal, binary keyword
+struct ParserCharsetOrCollateName : public IParserBase
 {
 protected:
-    const char * getName() const override { return "charset name"; }
+    const char * getName() const override { return "charset or collate name"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected &) override;
 };

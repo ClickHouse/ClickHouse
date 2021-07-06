@@ -28,18 +28,23 @@ DictionaryReader::FunctionWrapper::FunctionWrapper(FunctionOverloadResolverPtr r
 
     ColumnWithTypeAndName result;
     result.name = "get_" + column_name;
-    result.type = prepared_function->getReturnType();
+    result.type = prepared_function->getResultType();
     if (result.type->getTypeId() != expected_type)
         throw Exception("Type mismatch in dictionary reader for: " + column_name, ErrorCodes::TYPE_MISMATCH);
     block.insert(result);
 
-    function = prepared_function->prepare(block, arg_positions, result_pos);
+    ColumnsWithTypeAndName args;
+    args.reserve(arg_positions.size());
+    for (auto pos : arg_positions)
+        args.emplace_back(block.getByPosition(pos));
+
+    function = prepared_function->prepare(block.getColumnsWithTypeAndName());
 }
 
 static constexpr const size_t key_size = 1;
 
 DictionaryReader::DictionaryReader(const String & dictionary_name, const Names & src_column_names, const NamesAndTypesList & result_columns,
-                                   const Context & context)
+                                   ContextPtr context)
     : result_header(makeResultBlock(result_columns))
     , key_position(key_size + result_header.columns())
 {
@@ -108,17 +113,17 @@ DictionaryReader::DictionaryReader(const String & dictionary_name, const Names &
 void DictionaryReader::readKeys(const IColumn & keys, Block & out_block, ColumnVector<UInt8>::Container & found,
                                 std::vector<size_t> & positions) const
 {
-    Block working_block = sample_block;
+    auto working_block = sample_block.getColumnsWithTypeAndName();
     size_t has_position = key_position + 1;
     size_t size = keys.size();
 
     /// set keys for dictHas()
-    ColumnWithTypeAndName & key_column = working_block.getByPosition(key_position);
+    ColumnWithTypeAndName & key_column = working_block[key_position];
     key_column.column = keys.cloneResized(size); /// just a copy we cannot avoid
 
     /// calculate and extract dictHas()
     function_has->execute(working_block, size);
-    ColumnWithTypeAndName & has_column = working_block.getByPosition(has_position);
+    ColumnWithTypeAndName & has_column = working_block[has_position];
     auto mutable_has = IColumn::mutate(std::move(has_column.column));
     found.swap(typeid_cast<ColumnVector<UInt8> &>(*mutable_has).getData());
     has_column.column = nullptr;
@@ -144,7 +149,7 @@ void DictionaryReader::readKeys(const IColumn & keys, Block & out_block, ColumnV
     size_t first_get_position = has_position + 1;
     for (size_t i = 0; i < out_block.columns(); ++i)
     {
-        auto & src_column = working_block.getByPosition(first_get_position + i);
+        auto & src_column = working_block[first_get_position + i];
         auto & dst_column = out_block.getByPosition(i);
         dst_column.column = src_column.column;
         src_column.column = nullptr;

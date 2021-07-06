@@ -47,13 +47,7 @@ public:
     size_t getMarksCountWithoutFinal() const { return getMarksCount() - hasFinalMark(); }
 
     /// Rows after mark to next mark
-    inline size_t getMarkRows(size_t mark_index) const
-    {
-        if (mark_index == 0)
-            return marks_rows_partial_sums[0];
-        else
-            return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
-    }
+    size_t getMarkRows(size_t mark_index) const;
 
     /// Return amount of rows before mark
     size_t getMarkStartingRow(size_t mark_index) const;

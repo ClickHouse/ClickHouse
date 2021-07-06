@@ -31,16 +31,16 @@ public:
     struct Part
     {
         /// Size of data part in bytes.
-        size_t size;
+        size_t size = 0;
 
         /// How old this data part in seconds.
-        time_t age;
+        time_t age = 0;
 
         /// Depth of tree of merges by which this part was created. New parts has zero level.
-        unsigned level;
+        unsigned level = 0;
 
         /// Opaque pointer to avoid dependencies (it is not possible to do forward declaration of typedef).
-        const void * data;
+        const void * data = nullptr;
 
         /// Information about different TTLs for part. Can be used by
         /// TTLSelector to assign merges with TTL.
@@ -48,6 +48,8 @@ public:
 
         /// Part compression codec definition.
         ASTPtr compression_codec_desc;
+
+        bool shall_participate_in_merges = true;
     };
 
     /// Parts are belong to partitions. Only parts within same partition could be merged.

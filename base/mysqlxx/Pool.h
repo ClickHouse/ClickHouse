@@ -3,8 +3,11 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <atomic>
 
 #include <Poco/Exception.h>
+#include <Poco/Logger.h>
+
 #include <mysqlxx/Connection.h>
 
 
@@ -35,7 +38,9 @@ protected:
     struct Connection
     {
         mysqlxx::Connection conn;
-        int ref_count = 0;
+        /// Ref count modified in constructor/descructor of Entry
+        /// but also read in pool code.
+        std::atomic<int> ref_count = 0;
     };
 
 public:
@@ -124,10 +129,7 @@ public:
         void forceConnected() const;
 
         /// Connects to database. If connection is failed then returns false.
-        bool tryForceConnected() const
-        {
-            return data->conn.ping();
-        }
+        bool tryForceConnected() const;
 
         void incrementRefCount();
         void decrementRefCount();
@@ -157,27 +159,29 @@ public:
       */
     Pool(const std::string & db_,
          const std::string & server_,
-         const std::string & user_ = "",
-         const std::string & password_ = "",
-         unsigned port_ = 0,
+         const std::string & user_,
+         const std::string & password_,
+         unsigned port_,
          const std::string & socket_ = "",
          unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
          unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
-         unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE)
-    : default_connections(default_connections_), max_connections(max_connections_),
-    db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
-    connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_) {}
+         unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
+         bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT)
+    : logger(Poco::Logger::get("mysqlxx::Pool")), default_connections(default_connections_),
+    max_connections(max_connections_), db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
+    connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_),
+    opt_reconnect(opt_reconnect_) {}
 
     Pool(const Pool & other)
-        : default_connections{other.default_connections},
+        : logger(other.logger), default_connections{other.default_connections},
           max_connections{other.max_connections},
           db{other.db}, server{other.server},
           user{other.user}, password{other.password},
           port{other.port}, socket{other.socket},
           connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout},
-          enable_local_infile{other.enable_local_infile}
+          enable_local_infile{other.enable_local_infile}, opt_reconnect(other.opt_reconnect)
     {}
 
     Pool & operator=(const Pool &) = delete;
@@ -201,6 +205,8 @@ public:
     void removeConnection(Connection * connection);
 
 protected:
+    Poco::Logger & logger;
+
     /// Number of MySQL connections which are created at launch.
     unsigned default_connections;
     /// Maximum possible number of connections
@@ -231,6 +237,7 @@ private:
     std::string ssl_cert;
     std::string ssl_key;
     bool enable_local_infile;
+    bool opt_reconnect;
 
     /// True if connection was established at least once.
     bool was_successful{false};

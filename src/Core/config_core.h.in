@@ -11,3 +11,7 @@
 #cmakedefine01 USE_SSL
 #cmakedefine01 USE_OPENCL
 #cmakedefine01 USE_LDAP
+#cmakedefine01 USE_ROCKSDB
+#cmakedefine01 USE_LIBPQXX
+#cmakedefine01 USE_NURAFT
+#cmakedefine01 USE_KRB5

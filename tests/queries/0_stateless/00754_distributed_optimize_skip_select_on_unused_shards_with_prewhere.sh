@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS distributed_00754;"
@@ -98,3 +99,6 @@ ${CLICKHOUSE_CLIENT} -n --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed_00754 PREWHERE a = 0 AND b = 0 OR c LIKE '%l%';
 " 2>&1 \ | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE distributed_00754"
+$CLICKHOUSE_CLIENT -q "DROP TABLE mergetree_00754"

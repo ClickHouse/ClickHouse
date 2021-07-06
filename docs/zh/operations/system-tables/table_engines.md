@@ -3,7 +3,7 @@ machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 ---
 
-# 系统。表\_engines {#system-table-engines}
+# 系统。表_engines {#system-table-engines}
 
 包含服务器支持的表引擎的描述及其功能支持信息。
 

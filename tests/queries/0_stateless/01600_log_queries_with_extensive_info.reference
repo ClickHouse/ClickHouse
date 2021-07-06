@@ -1,0 +1,22 @@
+6
+3
+1	2	3
+drop database if exists test_log_queries	8423962102517407543	Drop	['test_log_queries']	[]	[]
+create database test_log_queries	18329631544365042880	Create	['test_log_queries']	[]	[]
+create table test_log_queries.logtable(i int, j int, k int) engine MergeTree order by i	14473140110122260412	Create	['test_log_queries']	['test_log_queries.logtable']	[]
+insert into test_log_queries.logtable values 	10533878590475998223	Insert	['test_log_queries']	['test_log_queries.logtable']	[]
+select k from test_log_queries.logtable where i = 4	10551554599491277990	Select	['test_log_queries']	['test_log_queries.logtable']	['test_log_queries.logtable.i','test_log_queries.logtable.k']
+select k from test_log_queries.logtable where i = 1	10551554599491277990	Select	['test_log_queries']	['test_log_queries.logtable']	['test_log_queries.logtable.i','test_log_queries.logtable.k']
+select * from test_log_queries.logtable where i = 1	2790142879136771124	Select	['test_log_queries']	['test_log_queries.logtable']	['test_log_queries.logtable.i','test_log_queries.logtable.j','test_log_queries.logtable.k']
+create table test_log_queries.logtable2 as test_log_queries.logtable	16326833375045356331	Create	['test_log_queries']	['test_log_queries.logtable','test_log_queries.logtable2']	[]
+insert into test_log_queries.logtable2 select * from test_log_queries.logtable	15683299942754449665	Insert	['test_log_queries']	['test_log_queries.logtable','test_log_queries.logtable2']	['test_log_queries.logtable.i','test_log_queries.logtable.j','test_log_queries.logtable.k']
+create table test_log_queries.logtable3 engine MergeTree order by j as select * from test_log_queries.logtable	2545631118949476303	Create	['test_log_queries']	['test_log_queries.logtable','test_log_queries.logtable3']	['test_log_queries.logtable.i','test_log_queries.logtable.j','test_log_queries.logtable.k']
+alter table test_log_queries.logtable rename column j to x, rename column k to y	2382309514482911248	Alter	['test_log_queries']	['test_log_queries.logtable']	['test_log_queries.logtable.j','test_log_queries.logtable.k','test_log_queries.logtable.x','test_log_queries.logtable.y']
+alter table test_log_queries.logtable2 add column x int, add column y int	1199561338572582360	Alter	['test_log_queries']	['test_log_queries.logtable2']	['test_log_queries.logtable2.x','test_log_queries.logtable2.y']
+alter table test_log_queries.logtable3 drop column i, drop column k	340702370038862784	Alter	['test_log_queries']	['test_log_queries.logtable3']	['test_log_queries.logtable3.i','test_log_queries.logtable3.k']
+rename table test_log_queries.logtable2 to test_log_queries.logtable4, test_log_queries.logtable3 to test_log_queries.logtable5	17256232154191063008	Rename	['test_log_queries']	['test_log_queries.logtable2','test_log_queries.logtable3','test_log_queries.logtable4','test_log_queries.logtable5']	[]
+optimize table test_log_queries.logtable	12932884188099170316		['test_log_queries']	['test_log_queries.logtable']	[]
+drop table if exists test_log_queries.logtable	9614905142075064664	Drop	['test_log_queries']	['test_log_queries.logtable']	[]
+drop table if exists test_log_queries.logtable2	5276868561533661466	Drop	['test_log_queries']	['test_log_queries.logtable2']	[]
+drop table if exists test_log_queries.logtable3	4776768361842582387	Drop	['test_log_queries']	['test_log_queries.logtable3']	[]
+drop database if exists test_log_queries	8423962102517407543	Drop	['test_log_queries']	[]	[]

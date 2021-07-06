@@ -7,8 +7,10 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnCompressed.h>
 
 #include <common/unaligned.h>
+#include <common/sort.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -237,6 +239,16 @@ const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
+const char * ColumnArray::skipSerializedInArena(const char * pos) const
+{
+    size_t array_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(array_size);
+
+    for (size_t i = 0; i < array_size; ++i)
+        pos = getData().skipSerializedInArena(pos);
+
+    return pos;
+}
 
 void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
 {
@@ -324,8 +336,7 @@ void ColumnArray::popBack(size_t n)
     offsets_data.resize_assume_reserved(offsets_data.size() - n);
 }
 
-
-int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator) const
 {
     const ColumnArray & rhs = assert_cast<const ColumnArray &>(rhs_);
 
@@ -334,14 +345,31 @@ int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_dir
     size_t rhs_size = rhs.sizeAt(m);
     size_t min_size = std::min(lhs_size, rhs_size);
     for (size_t i = 0; i < min_size; ++i)
-        if (int res = getData().compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint))
+    {
+        int res;
+        if (collator)
+            res = getData().compareAtWithCollation(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint, *collator);
+        else
+            res = getData().compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint);
+        if (res)
             return res;
+    }
 
     return lhs_size < rhs_size
         ? -1
         : (lhs_size == rhs_size
             ? 0
             : 1);
+}
+
+int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+{
+    return compareAtImpl(n, m, rhs_, nan_direction_hint);
+}
+
+int ColumnArray::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const
+{
+    return compareAtImpl(n, m, rhs_, nan_direction_hint, &collator);
 }
 
 void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
@@ -352,25 +380,35 @@ void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
+bool ColumnArray::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnArray>();
+}
+
 namespace
 {
-    template <bool positive>
-    struct Less
+
+template <bool positive>
+struct Cmp
+{
+    const ColumnArray & parent;
+    int nan_direction_hint;
+    const Collator * collator;
+
+    Cmp(const ColumnArray & parent_, int nan_direction_hint_, const Collator * collator_=nullptr)
+        : parent(parent_), nan_direction_hint(nan_direction_hint_), collator(collator_) {}
+
+    int operator()(size_t lhs, size_t rhs) const
     {
-        const ColumnArray & parent;
-        int nan_direction_hint;
+        int res;
+        if (collator)
+            res = parent.compareAtWithCollation(lhs, rhs, parent, nan_direction_hint, *collator);
+        else
+            res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
+        return positive ? res : -res;
+    }
+};
 
-        Less(const ColumnArray & parent_, int nan_direction_hint_)
-            : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
-
-        bool operator()(size_t lhs, size_t rhs) const
-        {
-            if (positive)
-                return parent.compareAt(lhs, rhs, parent, nan_direction_hint) < 0;
-            else
-                return parent.compareAt(lhs, rhs, parent, nan_direction_hint) > 0;
-        }
-    };
 }
 
 
@@ -384,6 +422,21 @@ void ColumnArray::reserve(size_t n)
 size_t ColumnArray::byteSize() const
 {
     return getData().byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
+}
+
+
+size_t ColumnArray::byteSizeAt(size_t n) const
+{
+    const auto & offsets_data = getOffsets();
+
+    size_t pos = offsets_data[n - 1];
+    size_t end = offsets_data[n];
+
+    size_t res = sizeof(offsets_data[0]);
+    for (; pos < end; ++pos)
+        res += getData().byteSizeAt(pos);
+
+    return res;
 }
 
 
@@ -753,7 +806,8 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
 
-void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+template <typename Comparator>
+void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const
 {
     size_t s = size();
     if (limit >= s)
@@ -763,23 +817,16 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
     for (size_t i = 0; i < s; ++i)
         res[i] = i;
 
+    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
+
     if (limit)
-    {
-        if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<false>(*this, nan_direction_hint));
-        else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<true>(*this, nan_direction_hint));
-    }
+        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-    {
-        if (reverse)
-            std::sort(res.begin(), res.end(), Less<false>(*this, nan_direction_hint));
-        else
-            std::sort(res.begin(), res.end(), Less<true>(*this, nan_direction_hint));
-    }
+        std::sort(res.begin(), res.end(), less);
 }
 
-void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
+template <typename Comparator>
+void ColumnArray::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const
 {
     if (equal_range.empty())
         return;
@@ -792,20 +839,19 @@ void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_directio
     if (limit)
         --number_of_ranges;
 
+    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
+
     EqualRanges new_ranges;
     for (size_t i = 0; i < number_of_ranges; ++i)
     {
         const auto & [first, last] = equal_range[i];
 
-        if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, Less<false>(*this, nan_direction_hint));
-        else
-            std::sort(res.begin() + first, res.begin() + last, Less<true>(*this, nan_direction_hint));
+        std::sort(res.begin() + first, res.begin() + last, less);
         auto new_first = first;
 
         for (auto j = first + 1; j < last; ++j)
         {
-            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) != 0)
+            if (cmp(res[new_first], res[j]) != 0)
             {
                 if (j - new_first > 1)
                     new_ranges.emplace_back(new_first, j);
@@ -826,15 +872,11 @@ void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_directio
             return;
 
         /// Since then we are working inside the interval.
-
-        if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, Less<false>(*this, nan_direction_hint));
-        else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, Less<true>(*this, nan_direction_hint));
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {
-            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) != 0)
+            if (cmp(res[new_first], res[j]) != 0)
             {
                 if (j - new_first > 1)
                     new_ranges.emplace_back(new_first, j);
@@ -845,7 +887,7 @@ void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_directio
         auto new_last = limit;
         for (auto j = limit; j < last; ++j)
         {
-            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) == 0)
+            if (cmp(res[new_first], res[j]) == 0)
             {
                 std::swap(res[new_last], res[j]);
                 ++new_last;
@@ -858,6 +900,54 @@ void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_directio
     }
     equal_range = std::move(new_ranges);
 }
+
+void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+{
+    if (reverse)
+        getPermutationImpl(limit, res, Cmp<false>(*this, nan_direction_hint));
+    else
+        getPermutationImpl(limit, res, Cmp<true>(*this, nan_direction_hint));
+
+}
+
+void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
+{
+    if (reverse)
+        updatePermutationImpl(limit, res, equal_range, Cmp<false>(*this, nan_direction_hint));
+    else
+        updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint));
+}
+
+void ColumnArray::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+{
+    if (reverse)
+        getPermutationImpl(limit, res, Cmp<false>(*this, nan_direction_hint, &collator));
+    else
+        getPermutationImpl(limit, res, Cmp<true>(*this, nan_direction_hint, &collator));
+}
+
+void ColumnArray::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
+{
+    if (reverse)
+        updatePermutationImpl(limit, res, equal_range, Cmp<false>(*this, nan_direction_hint, &collator));
+    else
+        updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint, &collator));
+}
+
+ColumnPtr ColumnArray::compress() const
+{
+    ColumnPtr data_compressed = data->compress();
+    ColumnPtr offsets_compressed = offsets->compress();
+
+    size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
+
+    return ColumnCompressed::create(size(), byte_size,
+        [data_compressed = std::move(data_compressed), offsets_compressed = std::move(offsets_compressed)]
+        {
+            return ColumnArray::create(data_compressed->decompress(), offsets_compressed->decompress());
+        });
+}
+
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
@@ -1120,7 +1210,6 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
         ColumnTuple::create(tuple_columns),
         assert_cast<const ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
-
 
 void ColumnArray::gather(ColumnGathererStream & gatherer)
 {

@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/PoolBase.h>
-
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -26,7 +26,7 @@ public:
     using Entry = PoolBase<Connection>::Entry;
 
 public:
-    virtual ~IConnectionPool() {}
+    virtual ~IConnectionPool() = default;
 
     /// Selects the connection to work.
     /// If force_connected is false, the client must manually ensure that returned connection is good.
@@ -56,9 +56,9 @@ public:
             const String & password_,
             const String & cluster_,
             const String & cluster_secret_,
-            const String & client_name_ = "client",
-            Protocol::Compression compression_ = Protocol::Compression::Enable,
-            Protocol::Secure secure_ = Protocol::Secure::Disable,
+            const String & client_name_,
+            Protocol::Compression compression_,
+            Protocol::Secure secure_,
             Int64 priority_ = 1)
        : Base(max_connections_,
         &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),

@@ -1,5 +1,6 @@
 #include <Parsers/ASTPartition.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 namespace DB
 {

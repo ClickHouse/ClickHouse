@@ -1,15 +1,20 @@
-# 纽约市出租车数据 {#niu-yue-shi-chu-zu-che-shu-ju}
+---
+toc_priority: 20
+toc_title: New York Taxi Data
+---
+
+# 纽约出租车数据 {#niu-yue-shi-chu-zu-che-shu-ju}
 
 纽约市出租车数据有以下两个方式获取：
 
-从原始数据导入
-下载预处理好的分区数据
+- 从原始数据导入
+- 下载处理好的数据
 
 ## 怎样导入原始数据 {#zen-yang-dao-ru-yuan-shi-shu-ju}
 
-可以参考https://github.com/toddwschneider/nyc-taxi-data和http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html中的关于数据集结构描述与数据下载指令说明。
+可以参考 https://github.com/toddwschneider/nyc-taxi-data 和 http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html 中的关于数据集结构描述与数据下载指令说明。
 
-数据集包含227GB的CSV文件。这大约需要一个小时的下载时间(1Gbit带宽下，并行下载大概是一半时间)。
+数据集包含227GB的CSV文件。在1Gbig的带宽下，下载大约需要一个小时这大约需要一个小时的下载时间(从s3.amazonaws.com并行下载时间至少可以缩减一半)。
 下载时注意损坏的文件。可以检查文件大小并重新下载损坏的文件。
 
 有些文件中包含一些无效的行，您可以使用如下语句修复他们：
@@ -21,7 +26,7 @@ mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
 mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
 ```
 
-然后您必须在PostgreSQL中预处理这些数据。这将创建多边形中的点（以匹配在地图中纽约市中范围），然后通过使用JOIN查询将数据关联组合到一个规范的表中。为了完成这部分操作，您需要安装PostgreSQL的同时安装PostGIS插件。
+然后必须在PostgreSQL中对数据进行预处理。这将创建多边形中选择的点(将地图上的点与纽约市的行政区相匹配)，并使用连接将所有数据合并到一个非规范化的平面表中。为此，您需要安装支持PostGIS的PostgreSQL。
 
 运行`initialize_database.sh`时要小心，并手动重新检查是否正确创建了所有表。
 
@@ -114,7 +119,7 @@ COPY
 ) TO '/opt/milovidov/nyc-taxi-data/trips.tsv';
 ```
 
-数据快照的创建速度约为每秒50 MB。 在创建快照时，PostgreSQL以每秒约28 MB的速度从磁盘读取数据。
+数据快照的创建速度约为每秒50MB。 在创建快照时，PostgreSQL以每秒约28MB的速度从磁盘读取数据。
 这大约需要5个小时。 最终生成的TSV文件为590612904969 bytes。
 
 在ClickHouse中创建临时表：
@@ -186,11 +191,11 @@ real    75m56.214s
 
 数据的读取速度为112-140 Mb/秒。
 通过这种方式将数据加载到Log表中需要76分钟。
-这个表中的数据需要使用142 GB的磁盘空间.
+这个表中的数据需要使用142GB的磁盘空间.
 
 （也可以直接使用`COPY ... TO PROGRAM`从Postgres中导入数据）
 
-由于数据中与天气相关的所有数据（precipitation……average\_wind\_speed）都填充了NULL。 所以，我们将从最终数据集中删除它们
+数据中所有与天气相关的字段(precipitation……average_wind_speed)都填充了NULL。 所以，我们将从最终数据集中删除它们
 
 首先，我们使用单台服务器创建表，后面我们将在多台节点上创建这些表。
 
@@ -259,7 +264,7 @@ FROM trips
 ```
 
 这需要3030秒，速度约为每秒428,000行。
-要加快速度，可以使用`Log`引擎替换’MergeTree\`引擎来创建表。 在这种情况下，下载速度超过200秒。
+要加快速度，可以使用`Log`引擎替换`MergeTree`引擎来创建表。 在这种情况下，下载速度超过200秒。
 
 这个表需要使用126GB的磁盘空间。
 
@@ -278,7 +283,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 ## 下载预处理好的分区数据 {#xia-zai-yu-chu-li-hao-de-fen-qu-shu-ju}
 
 ``` bash
-$ curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
@@ -286,8 +291,7 @@ $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 ```
 
 !!! info "信息"
-    如果要运行下面的SQL查询，必须使用完整的表名，
-`datasets.trips_mergetree`。
+    如果要运行下面的SQL查询，必须使用完整的表名，`datasets.trips_mergetree`。
 
 ## 单台服务器运行结果 {#dan-tai-fu-wu-qi-yun-xing-jie-guo}
 
@@ -328,9 +332,9 @@ ORDER BY year, count(*) DESC
 
 我们使用的是如下配置的服务器：
 
-两个英特尔（R）至强（R）CPU E5-2650v2@2.60GHz，总共有16个物理内核，128GiB RAM，硬件RAID-5上的8X6TB HD
+两个`Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz`，总共有16个物理内核，128GiB RAM，8X6TB HD，RAID-5
 
-执行时间是取三次运行中最好的值，但是从第二次查询开始，查询就讲从文件系统的缓存中读取数据。同时在每次读取和处理后不在进行缓存。
+执行时间是取三次运行中最好的值，但是从第二次查询开始，查询就将从文件系统的缓存中读取数据。同时在每次读取和处理后不在进行缓存。
 
 在三台服务器中创建表结构：
 
@@ -356,12 +360,12 @@ INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree
 
 在三台服务器集群中运行的结果：
 
-Q1:0.212秒.
+Q1: 0.212秒.
 Q2：0.438秒。
 Q3：0.733秒。
-Q4:1.241秒.
+Q4: 1.241秒.
 
-不出意料，查询是线性扩展的。
+这并不奇怪，因为查询是线性扩展的。
 
 我们同时在140台服务器的集群中运行的结果：
 
@@ -371,7 +375,7 @@ Q3：0.051秒。
 Q4：0.072秒。
 
 在这种情况下，查询处理时间首先由网络延迟确定。
-我们使用位于芬兰的Yandex数据中心中的客户端去位于俄罗斯的集群上运行查询，这增加了大约20毫秒的延迟。
+我们使用位于芬兰Yandex数据中心的客户机在俄罗斯的一个集群上运行查询，这增加了大约20毫秒的延迟。
 
 ## 总结 {#zong-jie}
 

@@ -38,4 +38,10 @@ SELECT count() FROM t_01411_num WHERE has(arr, num);
 SELECT count() FROM t_01411_num WHERE indexOf(arr, num) > 0;
 SELECT count() FROM t_01411_num WHERE indexOf(arr, num % 337) > 0;
 
+-- Checking Arr(String) and LC(String)
+SELECT indexOf(['a', 'b', 'c'], toLowCardinality('a'));
+
+-- Checking Arr(Nullable(String)) and LC(String)
+SELECT indexOf(['a', 'b', NULL], toLowCardinality('a'));
+
 DROP TABLE IF EXISTS t_01411_num;

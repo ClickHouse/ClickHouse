@@ -25,3 +25,43 @@ ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff	FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 > 127.0.0.1	2001:db8:ac10:fe01:feed:babe:cafe:f00d
 > 127.0.0.1	ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 = 127.0.0.1	::ffff:127.0.0.1
+0.0.0.0 is ipv4 string:                                 	1
+255.255.255.255 is ipv4 string:                         	1
+192.168.0.91 is ipv4 string:                            	1
+127.0.0.1 is ipv4 string:                               	1
+8.8.8.8 is ipv4 string:                                 	1
+hello is ipv4 string:                                   	0
+0:0:0:0:0:0:0:0 is ipv4 string:                         	0
+0000:0000:0000:0000:0000:FFFF:C1FC:110A is ipv4 string: 	0
+FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF is ipv4 string: 	0
+::ffff:127.0.0.1 is ipv4 string:                        	0
+::ffff:8.8.8.8 is ipv4 string:                          	0
+2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D is ipv4 string: 	0
+0.0.0.0 is ipv6 string:                                 	0
+255.255.255.255 is ipv6 string:                         	0
+192.168.0.91 is ipv6 string:                            	0
+127.0.0.1 is ipv6 string:                               	0
+8.8.8.8 is ipv6 string:                                 	0
+hello is ipv6 string:                                   	0
+0:0:0:0:0:0:0:0 is ipv6 string:                         	1
+0000:0000:0000:0000:0000:FFFF:C1FC:110A is ipv6 string: 	1
+FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF is ipv6 string: 	1
+::ffff:127.0.0.1 is ipv6 string:                        	1
+::ffff:8.8.8.8 is ipv6 string:                          	1
+2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D is ipv6 string: 	1
+::ffff:0.0.0.0
+::ffff:127.0.0.1
+::ffff:127.0.0.1
+::ffff:127.0.0.0
+::ffff:127.0.0.1
+::ffff:127.0.0.2
+::ffff:127.0.0.3
+::ffff:127.0.0.4
+::ffff:127.0.0.5
+::ffff:127.0.0.6
+::ffff:127.0.0.7
+::ffff:127.0.0.8
+::ffff:127.0.0.9
+::ffff:127.0.0.10
+::ffff:127.0.0.11
+::ffff:127.0.0.12

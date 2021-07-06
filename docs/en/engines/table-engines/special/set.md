@@ -14,4 +14,10 @@ Data is always located in RAM. For `INSERT`, the blocks of inserted data are als
 
 For a rough server restart, the block of data on the disk might be lost or damaged. In the latter case, you may need to manually delete the file with damaged data.
 
+### Limitations and Settings {#join-limitations-and-settings}
+
+When creating a table, the following settings are applied:
+
+-   [persistent](../../../operations/settings/settings.md#persistent)
+
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/set/) <!--hide-->

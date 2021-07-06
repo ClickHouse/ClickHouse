@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS quorum2;
 CREATE TABLE quorum1(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00732/quorum_lost', '1') ORDER BY x PARTITION BY y;
 CREATE TABLE quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00732/quorum_lost', '2') ORDER BY x PARTITION BY y;
 
-SET insert_quorum=2;
+SET insert_quorum=2, insert_quorum_parallel=0;
 SET select_sequential_consistency=1;
 
 SET insert_quorum_timeout=0;
@@ -27,7 +27,7 @@ SET insert_quorum_timeout=100;
 
 SYSTEM START FETCHES quorum1;
 SYSTEM SYNC REPLICA quorum1;
- 
+
 SELECT x FROM quorum1 ORDER BY x;
 SELECT x FROM quorum2 ORDER BY x;
 

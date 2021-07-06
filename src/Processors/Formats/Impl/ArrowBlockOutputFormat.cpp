@@ -18,17 +18,26 @@ namespace ErrorCodes
 }
 
 ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), stream{stream_}, format_settings{format_settings_}, arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
+    : IOutputFormat(header_, out_)
+    , stream{stream_}
+    , format_settings{format_settings_}
+    , arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
 {
 }
 
 void ArrowBlockOutputFormat::consume(Chunk chunk)
 {
-    const Block & header = getPort(PortKind::Main).getHeader();
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
-    CHColumnToArrowColumn::chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Arrow");
+    if (!ch_column_to_arrow_column)
+    {
+        const Block & header = getPort(PortKind::Main).getHeader();
+        ch_column_to_arrow_column
+            = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", format_settings.arrow.low_cardinality_as_dictionary);
+    }
+
+    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
 
     if (!writer)
         prepareWriter(arrow_table->schema());
@@ -62,9 +71,9 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
 
     // TODO: should we use arrow::ipc::IpcOptions::alignment?
     if (stream)
-        writer_status = arrow::ipc::NewStreamWriter(arrow_ostream.get(), schema);
+        writer_status = arrow::ipc::MakeStreamWriter(arrow_ostream.get(), schema);
     else
-        writer_status = arrow::ipc::NewFileWriter(arrow_ostream.get(), schema);
+        writer_status = arrow::ipc::MakeFileWriter(arrow_ostream.get(), schema);
 
     if (!writer_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
@@ -79,7 +88,7 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
-           FormatFactory::WriteCallback,
+           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
@@ -89,7 +98,7 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
-           FormatFactory::WriteCallback,
+           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);

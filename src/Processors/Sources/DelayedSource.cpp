@@ -30,12 +30,12 @@ DelayedSource::DelayedSource(const Block & header, Creator processors_creator, b
 
 IProcessor::Status DelayedSource::prepare()
 {
-    /// At first, wait for main input is needed and expand pipeline.
+    /// At first, wait for main output is needed and expand pipeline.
     if (inputs.empty())
     {
         auto & first_output = outputs.front();
 
-        /// If main port was finished before callback was called, stop execution.
+        /// If main output port was finished before callback was called, stop execution.
         if (first_output.isFinished())
         {
             for (auto & output : outputs)
@@ -75,7 +75,7 @@ IProcessor::Status DelayedSource::prepare()
 
         input->setNeeded();
         if (!input->hasData())
-            return Status::PortFull;
+            return Status::NeedData;
 
         output->pushData(input->pullData(true));
         return Status::PortFull;
@@ -122,8 +122,7 @@ void DelayedSource::work()
         return;
     }
 
-    if (pipe.numOutputPorts() > 1)
-        pipe.addTransform(std::make_shared<ResizeProcessor>(header, pipe.numOutputPorts(), 1));
+    pipe.resize(1);
 
     main_output = pipe.getOutputPort(0);
     totals_output = pipe.getTotalsPort();

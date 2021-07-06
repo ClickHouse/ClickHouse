@@ -22,7 +22,7 @@ toc_title: "\u56FA\u5B9A\u6587\u5B57\u5217(N)"
 効率的に格納できる値の例 `FixedString`-型指定された列:
 
 -   IPアドレスのバイナリ表現 (`FixedString(16)` IPv6の場合）。
--   Language codes (ru\_RU, en\_US … ).
+-   Language codes (ru_RU, en_US … ).
 -   Currency codes (USD, RUB … ).
 -   ハッシュのバイナリ表現 (`FixedString(16)` MD5の場合, `FixedString(32)` SHA256）のため。
 

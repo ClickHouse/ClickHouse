@@ -1,18 +1,17 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/SubqueryForSet.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
 {
 
-class Context;
 class ASTFunction;
 
-struct ExpressionAction;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
@@ -25,7 +24,7 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 /// The case of an explicit enumeration of values.
 SetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
-    const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
+    ContextPtr context, const SizeLimits & limits, PreparedSets & prepared_sets);
 
 /** Create a block for set from expression.
   * 'set_element_types' - types of what are on the left hand side of IN.
@@ -42,7 +41,7 @@ Block createBlockForSet(
     const DataTypePtr & left_arg_type,
     const std::shared_ptr<ASTFunction> & right_arg,
     const DataTypes & set_element_types,
-    const Context & context);
+    ContextPtr context);
 
 /** Create a block for set from literal.
   * 'set_element_types' - types of what are on the left hand side of IN.
@@ -52,7 +51,7 @@ Block createBlockForSet(
     const DataTypePtr & left_arg_type,
     const ASTPtr & right_arg,
     const DataTypes & set_element_types,
-    const Context & context);
+    ContextPtr context);
 
 /** For ActionsVisitor
   * A stack of ExpressionActions corresponding to nested lambda expressions.
@@ -61,21 +60,27 @@ Block createBlockForSet(
   *  calculation of the product must be done outside the lambda expression (it does not depend on x),
   *  and the calculation of the sum is inside (depends on x).
   */
-struct ScopeStack
+struct ScopeStack : WithContext
 {
+    class Index;
+    using IndexPtr = std::unique_ptr<Index>;
+
     struct Level
     {
-        ActionsDAGPtr actions;
+        ActionsDAGPtr actions_dag;
+        IndexPtr index;
         NameSet inputs;
+
+        Level();
+        Level(Level &&);
+        ~Level();
     };
 
     using Levels = std::vector<Level>;
 
     Levels stack;
 
-    const Context & context;
-
-    ScopeStack(ActionsDAGPtr actions, const Context & context_);
+    ScopeStack(ActionsDAGPtr actions_dag, ContextPtr context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
 
@@ -83,16 +88,16 @@ struct ScopeStack
 
     void addColumn(ColumnWithTypeAndName column);
     void addAlias(const std::string & name, std::string alias);
-    void addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name);
+    void addArrayJoin(const std::string & source_name, std::string result_name);
     void addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
-            std::string result_name,
-            bool compile_expressions);
+            std::string result_name);
 
     ActionsDAGPtr popLevel();
 
     const ActionsDAG & getLastActions() const;
+    const Index & getLastActionsIndex() const;
     std::string dumpNames() const;
 };
 
@@ -106,9 +111,8 @@ class ActionsMatcher
 public:
     using Visitor = ConstInDepthNodeVisitor<ActionsMatcher, true>;
 
-    struct Data
+    struct Data : public WithContext
     {
-        const Context & context;
         SizeLimits set_size_limit;
         size_t subquery_depth;
         const NamesAndTypesList & source_columns;
@@ -117,7 +121,7 @@ public:
         bool no_subqueries;
         bool no_makeset;
         bool only_consts;
-        bool no_storage_or_local;
+        bool create_source_for_in;
         size_t visit_depth;
         ScopeStack actions_stack;
 
@@ -128,10 +132,18 @@ public:
          */
         int next_unique_suffix;
 
-        Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-                const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
-                PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_);
+        Data(
+            ContextPtr context_,
+            SizeLimits set_size_limit_,
+            size_t subquery_depth_,
+            const NamesAndTypesList & source_columns_,
+            ActionsDAGPtr actions_dag,
+            PreparedSets & prepared_sets_,
+            SubqueriesForSets & subqueries_for_sets_,
+            bool no_subqueries_,
+            bool no_makeset_,
+            bool only_consts_,
+            bool create_source_for_in_);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;
@@ -147,15 +159,14 @@ public:
 
         void addArrayJoin(const std::string & source_name, std::string result_name)
         {
-            actions_stack.addArrayJoin(source_name, std::move(result_name), getUniqueName("_array_join_" + source_name));
+            actions_stack.addArrayJoin(source_name, std::move(result_name));
         }
 
         void addFunction(const FunctionOverloadResolverPtr & function,
                          const Names & argument_names,
                          std::string result_name)
         {
-            actions_stack.addFunction(function, argument_names, std::move(result_name),
-                                      context.getSettingsRef().compile_expressions);
+            actions_stack.addFunction(function, argument_names, std::move(result_name));
         }
 
         ActionsDAGPtr getActions()
@@ -191,8 +202,11 @@ private:
     static void visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data);
     static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data);
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
+    static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 
     static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
+    static ASTs doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
+    static std::optional<NameAndTypePair> getNameAndTypeFromAST(const ASTPtr & ast, Data & data);
 };
 
 using ActionsVisitor = ActionsMatcher::Visitor;

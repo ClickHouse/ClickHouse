@@ -1,59 +1,76 @@
-#include <Formats/FormatFactory.h>
 #include "ProtobufRowOutputFormat.h"
 
 #if USE_PROTOBUF
-
-#include <Core/Block.h>
-#include <Formats/FormatSchemaInfo.h>
-#include <Formats/ProtobufSchemas.h>
-#include <Interpreters/Context.h>
-#include <google/protobuf/descriptor.h>
+#   include <Formats/FormatFactory.h>
+#   include <Core/Block.h>
+#   include <Formats/FormatSchemaInfo.h>
+#   include <Formats/ProtobufSchemas.h>
+#   include <Formats/ProtobufSerializer.h>
+#   include <Formats/ProtobufWriter.h>
+#   include <google/protobuf/descriptor.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NO_ROW_DELIMITER;
 }
 
 
 ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     WriteBuffer & out_,
-    const Block & header,
-    FormatFactory::WriteCallback callback,
-    const FormatSchemaInfo & format_schema)
-    : IRowOutputFormat(header, out_, callback)
-    , data_types(header.getDataTypes())
-    , writer(out, ProtobufSchemas::instance().getMessageTypeForFormatSchema(format_schema), header.getNames())
+    const Block & header_,
+    const RowOutputFormatParams & params_,
+    const FormatSchemaInfo & schema_info_,
+    const FormatSettings & settings_,
+    bool with_length_delimiter_)
+    : IRowOutputFormat(header_, out_, params_)
+    , writer(std::make_unique<ProtobufWriter>(out))
+    , serializer(ProtobufSerializer::create(
+          header_.getNames(),
+          header_.getDataTypes(),
+          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_),
+          with_length_delimiter_,
+          *writer))
+    , allow_multiple_rows(with_length_delimiter_ || settings_.protobuf.allow_multiple_rows_without_delimiter)
 {
-    value_indices.resize(header.columns());
 }
 
 void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    writer.startMessage();
-    std::fill(value_indices.begin(), value_indices.end(), 0);
-    size_t column_index;
-    while (writer.writeField(column_index))
-        data_types[column_index]->serializeProtobuf(
-                *columns[column_index], row_num, writer, value_indices[column_index]);
-    writer.endMessage();
+    if (!allow_multiple_rows && !first_row)
+        throw Exception(
+            "The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.",
+            ErrorCodes::NO_ROW_DELIMITER);
+
+    if (!row_num)
+        serializer->setColumns(columns.data(), columns.size());
+
+    serializer->writeRow(row_num);
 }
 
 
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor(
-        "Protobuf",
-        [](WriteBuffer & buf,
-           const Block & header,
-           FormatFactory::WriteCallback callback,
-           const FormatSettings & settings)
-        {
-            return std::make_shared<ProtobufRowOutputFormat>(buf, header, std::move(callback),
-                FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
-                                 settings.schema.is_server, settings.schema.format_schema_path));
-        });
+    for (bool with_length_delimiter : {false, true})
+    {
+        factory.registerOutputFormatProcessor(
+            with_length_delimiter ? "Protobuf" : "ProtobufSingle",
+            [with_length_delimiter](WriteBuffer & buf,
+               const Block & header,
+               const RowOutputFormatParams & params,
+               const FormatSettings & settings)
+            {
+                return std::make_shared<ProtobufRowOutputFormat>(
+                    buf, header, params,
+                    FormatSchemaInfo(settings.schema.format_schema, "Protobuf",
+                        true, settings.schema.is_server,
+                        settings.schema.format_schema_path),
+                    settings,
+                    with_length_delimiter);
+            });
+    }
 }
 
 }

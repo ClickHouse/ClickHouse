@@ -29,6 +29,8 @@ public:
         /// between different algorithm objects in parallel FINAL.
         bool skip_last_row = false;
 
+        IColumn::Permutation * permutation = nullptr;
+
         void swap(Input & other)
         {
             chunk.swap(other.chunk);

@@ -26,7 +26,7 @@ def bootstrap():
         # just after server starts (+ 2 seconds, reload timeout).
         #
         # And on configuration reload the clusters will be re-created, so some
-        # internal stuff will be reseted:
+        # internal stuff will be reset:
         # - error_count
         # - last_used (round_robing)
         #
@@ -106,7 +106,7 @@ def get_node(query_node, table='dist', *args, **kwargs):
         LIMIT 1
     ) a
     JOIN system.clusters c
-    ON a._shard_num = c.shard_num AND cluster = 'shards_cluster'
+    ON a._shard_num = c.shard_num WHERE cluster = 'shards_cluster'
     """.format(query_id=query_id))
     return rows.strip()
 
@@ -166,6 +166,7 @@ def test_load_balancing_priority_round_robin(dist_table):
 
 def test_distributed_replica_max_ignored_errors():
     settings = {
+        'use_hedged_requests' : 0,
         'load_balancing': 'in_order',
         'prefer_localhost_replica': 0,
         'connect_timeout': 2,

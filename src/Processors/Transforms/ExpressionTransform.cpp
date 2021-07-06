@@ -1,30 +1,27 @@
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-
 namespace DB
 {
 
-Block ExpressionTransform::transformHeader(Block header, const ExpressionActionsPtr & expression)
+Block ExpressionTransform::transformHeader(Block header, const ActionsDAG & expression)
 {
-    expression->execute(header, true);
-    return header;
+    return expression.updateHeader(std::move(header));
 }
 
 
 ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionActionsPtr expression_)
-    : ISimpleTransform(header_, transformHeader(header_, expression_), false)
+    : ISimpleTransform(header_, transformHeader(header_, expression_->getActionsDAG()), false)
     , expression(std::move(expression_))
 {
 }
 
 void ExpressionTransform::transform(Chunk & chunk)
 {
+    size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    expression->execute(block);
+    expression->execute(block, num_rows);
 
-    auto num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);
 }
 

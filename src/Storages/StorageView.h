@@ -4,15 +4,15 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 
 namespace DB
 {
 
-class StorageView final : public ext::shared_ptr_helper<StorageView>, public IStorage
+class StorageView final : public shared_ptr_helper<StorageView>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageView>;
+    friend struct shared_ptr_helper<StorageView>;
 public:
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
@@ -24,8 +24,18 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
-        const Context & context,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -42,7 +52,8 @@ protected:
     StorageView(
         const StorageID & table_id_,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        const String & comment);
 };
 
 }

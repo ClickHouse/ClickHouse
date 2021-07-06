@@ -16,7 +16,7 @@ By default `clickhouse-local` does not have access to data on the same host, but
 !!! warning "Warning"
     It is not recommended to load production server configuration into `clickhouse-local` because data can be damaged in case of human error.
 
-For temporary data an unique temporary data directory is created by default. If you want to override this behavior the data directory can be explicitly specified with the `-- --path` option.
+For temporary data, a unique temporary data directory is created by default.
 
 ## Usage {#usage}
 
@@ -32,14 +32,22 @@ Arguments:
 -   `-S`, `--structure` — table structure for input data.
 -   `-if`, `--input-format` — input format, `TSV` by default.
 -   `-f`, `--file` — path to data, `stdin` by default.
--   `-q` `--query` — queries to execute with `;` as delimeter.
+-   `-q`, `--query` — queries to execute with `;` as delimeter. You must specify either `query` or `queries-file` option.
+-   `-qf`, `--queries-file` - file path with queries to execute. You must specify either `query` or `queries-file` option.
 -   `-N`, `--table` — table name where to put output data, `table` by default.
 -   `-of`, `--format`, `--output-format` — output format, `TSV` by default.
+-   `-d`, `--database` — default database, `_local` by default.
 -   `--stacktrace` — whether to dump debug output in case of exception.
+-   `--echo` — print query before execution. 
 -   `--verbose` — more details on query execution.
--   `-s` — disables `stderr` logging.
--   `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
+-   `--logger.console` — Log to console.
+-   `--logger.log` — Log file name.
+-   `--logger.level` — Log level.
+-   `--ignore-error` — do not stop processing if a query failed.
+-   `-c`, `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
+-   `--no-system-tables` — do not attach system tables.
 -   `--help` — arguments references for `clickhouse-local`.
+-   `-V`, `--version` — print version information and exit.
 
 Also there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 
@@ -83,12 +91,16 @@ $ clickhouse-local --query "
 
 Now let’s output memory user for each Unix user:
 
+Query:
+
 ``` bash
 $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
     | clickhouse-local --structure "user String, mem Float64" \
         --query "SELECT user, round(sum(mem), 2) as memTotal
             FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
 ```
+
+Result:
 
 ``` text
 Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.

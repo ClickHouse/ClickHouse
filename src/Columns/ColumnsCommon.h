@@ -15,7 +15,9 @@ namespace ErrorCodes
 }
 
 /// Counts how many bytes of `filt` are greater than zero.
+size_t countBytesInFilter(const UInt8 * filt, size_t sz);
 size_t countBytesInFilter(const IColumn::Filter & filt);
+size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map);
 
 /// Returns vector with num_columns elements. vector[i] is the count of i values in selector.
 /// Selector must contain values from 0 to num_columns - 1. NOTE: this is not checked.
@@ -64,7 +66,7 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
     else if (auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
         return column.template indexImpl<UInt64>(*data_uint64, limit);
     else
-        throw Exception("Indexes column for IColumn::select must be ColumnUInt, got" + indexes.getName(),
+        throw Exception("Indexes column for IColumn::select must be ColumnUInt, got " + indexes.getName(),
                         ErrorCodes::LOGICAL_ERROR);
 }
 

@@ -347,8 +347,8 @@ static avro::Codec getCodec(const std::string & codec_name)
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_, callback)
+    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
+    : IRowOutputFormat(header_, out_, params_)
     , settings(settings_)
     , serializer(header_.getColumnsWithTypeAndName())
     , file_writer(
@@ -383,10 +383,10 @@ void registerOutputFormatProcessorAvro(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowOutputFormat>(buf, sample, callback, settings);
+        return std::make_shared<AvroRowOutputFormat>(buf, sample, params, settings);
     });
 }
 

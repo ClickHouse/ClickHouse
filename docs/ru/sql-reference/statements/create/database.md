@@ -1,6 +1,6 @@
 ---
-toc_priority: 1
-toc_title: База данных
+toc_priority: 35
+toc_title: "База данных"
 ---
 
 # CREATE DATABASE {#query-language-create-database}
@@ -31,5 +31,4 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
         По умолчанию ClickHouse использует собственный движок баз данных.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/database) 
 <!--hide-->

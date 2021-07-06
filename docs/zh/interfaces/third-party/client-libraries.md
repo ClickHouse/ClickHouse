@@ -1,51 +1,67 @@
-# 第三方开发的库 {#di-san-fang-kai-fa-de-ku}
+---
+toc_priority: 26
+toc_title: 客户端开发库
+---
 
-!!! warning "放弃"
-    Yandex不维护下面列出的库，也没有进行任何广泛的测试以确保其质量。
+# 第三方开发库 {#client-libraries-from-third-party-developers}
+
+!!! warning "声明"
+Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试来确保它们的质量。
 
 -   Python
-    -   [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
-    -   [ﾂ环板driverｮﾂ嘉ｯﾂ偲](https://github.com/mymarilyn/clickhouse-driver)
-    -   [ﾂ环板clientｮﾂ嘉ｯﾂ偲](https://github.com/yurial/clickhouse-client)
+    -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
+    -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
+    -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
+    -   [asynch](https://github.com/long2ice/asynch)
 -   PHP
     -   [smi2/phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
-    -   [8bitov/clickhouse-php客户端](https://packagist.org/packages/8bitov/clickhouse-php-client)
-    -   [ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人](https://packagist.org/packages/bozerkins/clickhouse-client)
-    -   [ﾂ环板clientｮﾂ嘉ｯﾂ偲](https://packagist.org/packages/simpod/clickhouse-client)
+    -   [8bitov/clickhouse-php-client](https://packagist.org/packages/8bitov/clickhouse-php-client)
+    -   [bozerkins/clickhouse-client](https://packagist.org/packages/bozerkins/clickhouse-client)
+    -   [simpod/clickhouse-client](https://packagist.org/packages/simpod/clickhouse-client)
     -   [seva-code/php-click-house-client](https://packagist.org/packages/seva-code/php-click-house-client)
-    -   [ﾂ环板clientｮﾂ嘉ｯﾂ偲](https://github.com/SeasX/SeasClick)
--   走吧
+    -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
+    -   [one-ck](https://github.com/lizhichao/one-ck)
+    -   [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
+-   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
-    -   [ﾂ环板-ｮﾂ嘉ｯﾂ偲](https://github.com/roistat/go-clickhouse)
-    -   [ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人](https://github.com/mailru/go-clickhouse)
+    -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
+    -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
     -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
+-   Swift
+    -   [ClickHouseNIO](https://github.com/patrick-zippenfenig/ClickHouseNIO)
+    -   [ClickHouseVapor ORM](https://github.com/patrick-zippenfenig/ClickHouseVapor)
 -   NodeJs
-    -   [ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人)](https://github.com/TimonKK/clickhouse)
-    -   [ﾂ环板-ｮﾂ嘉ｯﾂ偲](https://github.com/apla/node-clickhouse)
+    -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
+    -   [node-clickhouse](https://github.com/apla/node-clickhouse)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
-    -   [ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人](https://metacpan.org/release/AnyEvent-ClickHouse)
+    -   [AnyEvent-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
 -   Ruby
-    -   [ﾂ暗ｪﾂ氾环催ﾂ団)](https://github.com/shlima/click_house)
-    -   [ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人](https://github.com/PNixx/clickhouse-activerecord)
+    -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
+    -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   R
     -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
-    -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)
+    -   [RClickHouse](https://github.com/IMSMWU/RClickHouse)
 -   Java
     -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
--   斯卡拉
-    -   [掳胫client-禄脢鹿脷露胫鲁隆鹿-client酶](https://github.com/crobox/clickhouse-scala-client)
+    -   [clickhouse-client](https://github.com/Ecwid/clickhouse-client)
+-   Scala
+    -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
--   C\#
+-   C#
     -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
-    -   [克莱克豪斯Ado](https://github.com/killwort/ClickHouse-Net)
+    -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
+    -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
-    -   [克莱克豪斯客户](https://github.com/DarkWanderer/ClickHouse.Client)
--   仙丹
+-   Elixir
     -   [clickhousex](https://github.com/appodeal/clickhousex/)
--   尼姆
+    -   [pillar](https://github.com/sofakingworld/pillar)
+-   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
+-   Haskell
+    -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
 
-[来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/client_libraries/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

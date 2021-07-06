@@ -24,7 +24,7 @@ cd ClickHouse
 
 以下教程是在 Ubuntu Linux 中进行编译的示例。
 通过适当的更改，它应该可以适用于任何其他的 Linux 发行版。
-仅支持具有 x86\_64、AArch64。 对 Power9 的支持是实验性的。
+仅支持具有 x86_64、AArch64。 对 Power9 的支持是实验性的。
 
 ## 安装 Git 和 CMake 和 Ninja {#an-zhuang-git-he-cmake-he-ninja}
 
@@ -35,28 +35,12 @@ sudo apt-get install git cmake ninja-build
 或cmake3而不是旧系统上的cmake。
 或者在早期版本的系统中用 cmake3 替代 cmake
 
-## 安装 GCC 9 {#an-zhuang-gcc-9}
+## 安装 Clang
 
-有几种方法可以做到这一点。
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
-### 安装 PPA 包 {#an-zhuang-ppa-bao}
-
-``` bash
-sudo apt-get install software-properties-common
-sudo apt-add-repository ppa:ubuntu-toolchain-r/test
-sudo apt-get update
-sudo apt-get install gcc-9 g++-9
-```
-
-### 源码安装 gcc {#yuan-ma-an-zhuang-gcc}
-
-请查看 [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
-
-## 使用 GCC 9 来编译 {#shi-yong-gcc-9-lai-bian-yi}
-
-``` bash
-export CC=gcc-9
-export CXX=g++-9
+```bash
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
 ## 拉取 ClickHouse 源码 {#la-qu-clickhouse-yuan-ma-1}

@@ -18,7 +18,7 @@ toc_title: "\u30AF\u30A8\u30EA\u306E\u6A29\u9650"
 次の設定では、クエリの種類によってユーザー権限を調整します:
 
 -   [読み取り専用](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
--   [allow\_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
+-   [allow_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
 
 `KILL QUERY` 任意の設定で実行できます。
 
@@ -43,7 +43,7 @@ toc_title: "\u30AF\u30A8\u30EA\u306E\u6A29\u9650"
 
 デフォルト値:0
 
-## allow\_ddl {#settings_allow_ddl}
+## allow_ddl {#settings_allow_ddl}
 
 許可または拒否 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) クエリ。
 

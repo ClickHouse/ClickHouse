@@ -3,7 +3,6 @@
 #if !defined(ARCADIA_BUILD) && USE_STATS
 
 #include <math.h>
-#include <sstream>
 
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
@@ -12,7 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromString.h>
 
 #define STATS_ENABLE_STDVEC_WRAPPERS
 #include <stats.hpp>
@@ -139,31 +138,29 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
 String convertToJson(const PODArray<String> & variant_names, const Variants & variants)
 {
     FormatSettings settings;
-    std::stringstream s;
 
+    WriteBufferFromOwnString buf;
+
+    writeCString("{\"data\":[", buf);
+    for (size_t i = 0; i < variants.size(); ++i)
     {
-        WriteBufferFromOStream buf(s);
-
-        writeCString("{\"data\":[", buf);
-        for (size_t i = 0; i < variants.size(); ++i)
-        {
-            writeCString("{\"variant_name\":", buf);
-            writeJSONString(variant_names[i], buf, settings);
-            writeCString(",\"x\":", buf);
-            writeText(variants[i].x, buf);
-            writeCString(",\"y\":", buf);
-            writeText(variants[i].y, buf);
-            writeCString(",\"beats_control\":", buf);
-            writeText(variants[i].beats_control, buf);
-            writeCString(",\"to_be_best\":", buf);
-            writeText(variants[i].best, buf);
-            writeCString("}", buf);
-            if (i != variant_names.size() -1) writeCString(",", buf);
-        }
-        writeCString("]}", buf);
+        writeCString("{\"variant_name\":", buf);
+        writeJSONString(variant_names[i], buf, settings);
+        writeCString(",\"x\":", buf);
+        writeText(variants[i].x, buf);
+        writeCString(",\"y\":", buf);
+        writeText(variants[i].y, buf);
+        writeCString(",\"beats_control\":", buf);
+        writeText(variants[i].beats_control, buf);
+        writeCString(",\"to_be_best\":", buf);
+        writeText(variants[i].best, buf);
+        writeCString("}", buf);
+        if (i != variant_names.size() -1)
+            writeCString(",", buf);
     }
+    writeCString("]}", buf);
 
-    return s.str();
+    return buf.str();
 }
 
 class FunctionBayesAB : public IFunction
@@ -171,7 +168,7 @@ class FunctionBayesAB : public IFunction
 public:
     static constexpr auto name = "bayesAB";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBayesAB>();
     }
@@ -216,20 +213,17 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
-        {
-            block.getByPosition(result).column = ColumnString::create();
-            return;
-        }
+            return ColumnString::create();
 
         PODArray<Float64> xs, ys;
         PODArray<String> variant_names;
         String dist;
         bool higher_is_better;
 
-        if (const ColumnConst * col_dist = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnConst * col_dist = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
         {
             dist = col_dist->getDataAt(0).data;
             dist = Poco::toLower(dist);
@@ -239,16 +233,13 @@ public:
         else
             throw Exception("First argument for function " + getName() + " must be Constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (const ColumnConst * col_higher_is_better = checkAndGetColumnConst<ColumnUInt8>(block.getByPosition(arguments[1]).column.get()))
+        if (const ColumnConst * col_higher_is_better = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get()))
             higher_is_better = col_higher_is_better->getBool(0);
         else
-            throw Exception("Second argument for function " + getName() + " must be Constatnt boolean", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument for function " + getName() + " must be Constant boolean", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[2]).column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get()))
         {
-            if (!col_const_arr)
-                throw Exception("Third argument for function " + getName() + " must be Array of constant strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
             Array src_arr = col_const_arr->getValue<Array>();
 
             for (size_t i = 0; i < src_arr.size(); ++i)
@@ -258,22 +249,24 @@ public:
                 variant_names.push_back(src_arr[i].get<const String &>());
             }
         }
+        else
+            throw Exception("Third argument for function " + getName() + " must be Array of constant strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[3]).column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[3].column.get()))
         {
-            if (!col_const_arr)
-                throw Exception("Forth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!toFloat64(col_const_arr, xs))
                 throw Exception("Forth and fifth Argument for function " + getName() + " must be Array of constant Numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
+        else
+            throw Exception("Forth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[4]).column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[4].column.get()))
         {
-            if (!col_const_arr)
-                throw Exception("Fifth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!toFloat64(col_const_arr, ys))
                 throw Exception("Fifth Argument for function " + getName() + " must be Array of constant Numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
+        else
+            throw Exception("Fifth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (variant_names.size() != xs.size() || xs.size() != ys.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments doesn't match: variant_names: {}, xs: {}, ys: {}", variant_names.size(), xs.size(), ys.size());
@@ -294,7 +287,7 @@ public:
         auto dst = ColumnString::create();
         std::string result_str = convertToJson(variant_names, variants);
         dst->insertData(result_str.c_str(), result_str.length());
-        block.getByPosition(result).column = std::move(dst);
+        return dst;
     }
 };
 

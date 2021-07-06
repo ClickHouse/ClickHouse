@@ -31,7 +31,7 @@
     {% set description = description.replace('¶','')[0:120] %}
 {% endif %}
 
-{% set data_version = config.extra.version_prefix or 'master' %}
+{% set data_version = 'master' %}
 {% set data_single_page = 'true' if config.extra.single_page else 'false' %}
 
 {% if is_amp %}

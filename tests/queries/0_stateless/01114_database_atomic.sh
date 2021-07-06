@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01114_1"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01114_2"
@@ -36,9 +38,10 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_01114_3.mt_tmp"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_3"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test_01114_2.mt UUID '00001114-0000-4000-8000-000000000002' (n UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY (n % 5)"
-$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_2.mt"
-$CLICKHOUSE_CLIENT -q "SELECT name, uuid, create_table_query FROM system.tables WHERE database='test_01114_2'"
+explicit_uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+$CLICKHOUSE_CLIENT -q "CREATE TABLE test_01114_2.mt UUID '$explicit_uuid' (n UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY (n % 5)"
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_2.mt" | sed "s/$explicit_uuid/00001114-0000-4000-8000-000000000002/g"
+$CLICKHOUSE_CLIENT -q "SELECT name, uuid, create_table_query FROM system.tables WHERE database='test_01114_2'" | sed "s/$explicit_uuid/00001114-0000-4000-8000-000000000002/g"
 
 
 $CLICKHOUSE_CLIENT -q "SELECT count(col), sum(col) FROM (SELECT n + sleepEachRow(1.5) AS col FROM test_01114_1.mt)" &     # 30s, result: 20, 190
@@ -55,18 +58,18 @@ $CLICKHOUSE_CLIENT -q "EXCHANGE TABLES test_01114_1.mt AND test_01114_2.mt"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_01114_1.mt"
 uuid_mt1=$($CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database='test_01114_1' AND name='mt'")
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_1.mt" | sed "s/$uuid_mt1/00001114-0000-4000-8000-000000000001/g"
-$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_2.mt"
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_2.mt" | sed "s/$explicit_uuid/00001114-0000-4000-8000-000000000002/g"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE test_01114_1.mt"
+$CLICKHOUSE_CLIENT -q "DROP TABLE test_01114_1.mt" --database_atomic_wait_for_drop_and_detach_synchronously=0
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01114_1.mt (s String) ENGINE=Log()"
 $CLICKHOUSE_CLIENT -q "INSERT INTO test_01114_1.mt SELECT 's' || toString(number) FROM numbers(5)"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_01114_1.mt"   # result: 5
 
 $CLICKHOUSE_CLIENT -q "SELECT tuple(s, sleepEachRow(3)) FROM test_01114_1.mt" > /dev/null &    # 15s
 sleep 1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_1" && echo "dropped"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_1" --database_atomic_wait_for_drop_and_detach_synchronously=0 && echo "dropped"
 
 wait # for INSERT
 
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01114_2.mt"    # result: 30, 435
-$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_2"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_2" --database_atomic_wait_for_drop_and_detach_synchronously=0
