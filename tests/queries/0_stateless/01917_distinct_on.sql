@@ -7,7 +7,7 @@ SELECT DISTINCT ON (a, b) a, b, c FROM t1;
 SELECT DISTINCT ON (a, b) * FROM t1;
 SELECT DISTINCT ON (a) * FROM t1;
 
-SELECT DISTINCT ON (a, b) a, b, c FROM t1 LIMIT 1 BY a, b; -- { clientError 590 }
+SELECT DISTINCT ON (a, b) a, b, c FROM t1 LIMIT 1 BY a, b; -- { clientError 1 }
 
 SELECT DISTINCT ON a, b a, b FROM t1; -- { clientError 62 }
 SELECT DISTINCT ON a a, b FROM t1; -- { clientError 62 }
@@ -20,4 +20,3 @@ SELECT ALL DISTINCT ON (a, b) a, b FROM t1; -- { clientError 62 }
 SELECT DISTINCT ON (a, b) ALL a, b FROM t1; -- { clientError 62 }
 
 DROP TABLE IF EXISTS t1;
-
