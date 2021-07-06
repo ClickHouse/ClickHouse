@@ -48,7 +48,7 @@ def create_postgres_db(cursor, name='postgres_database'):
     cursor.execute("CREATE DATABASE {}".format(name))
 
 def drop_postgres_db(cursor, name='postgres_database'):
-    cursor.execute("DROP DATABASE {}".format(name))
+    cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
 
 def create_clickhouse_postgres_db(ip, port, name='postgres_database'):
     instance.query('''
@@ -168,7 +168,10 @@ def test_load_and_sync_all_database_tables(started_cluster):
 
     result = instance.query('''SELECT count() FROM system.tables WHERE database = 'test_database';''')
     assert(int(result) == NUM_TABLES)
+
     drop_materialized_db()
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
 def test_replicating_dml(started_cluster):
@@ -209,7 +212,7 @@ def test_replicating_dml(started_cluster):
         check_tables_are_synchronized('postgresql_replica_{}'.format(i));
 
     for i in range(NUM_TABLES):
-        cursor.execute('drop table postgresql_replica_{};'.format(i))
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
     drop_materialized_db()
 
@@ -262,7 +265,6 @@ def test_different_data_types(started_cluster):
         cursor.execute('''UPDATE test_data_types SET i = '2020-12-12';'''.format(col, i))
 
     check_tables_are_synchronized('test_data_types', 'id');
-    cursor.execute('drop table test_data_types;')
 
     instance.query("INSERT INTO postgres_database.test_array_data_type "
         "VALUES ("
@@ -296,7 +298,10 @@ def test_different_data_types(started_cluster):
     check_tables_are_synchronized('test_array_data_type');
     result = instance.query('SELECT * FROM test_database.test_array_data_type ORDER BY key;')
     assert(result == expected)
+
     drop_materialized_db()
+    cursor.execute('drop table if exists test_data_types;')
+    cursor.execute('drop table if exists test_array_data_type;')
 
 
 def test_load_and_sync_subset_of_database_tables(started_cluster):
@@ -345,8 +350,10 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
         table_name = 'postgresql_replica_{}'.format(i)
         if i < int(NUM_TABLES/2):
             check_tables_are_synchronized(table_name);
-        cursor.execute('drop table {};'.format(table_name))
+
     drop_materialized_db()
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
 def test_changing_replica_identity_value(started_cluster):
@@ -365,7 +372,9 @@ def test_changing_replica_identity_value(started_cluster):
     check_tables_are_synchronized('postgresql_replica');
     cursor.execute("UPDATE postgresql_replica SET key=key-25 WHERE key<100 ")
     check_tables_are_synchronized('postgresql_replica');
+
     drop_materialized_db()
+    cursor.execute('drop table if exists postgresql_replica;')
 
 
 def test_clickhouse_restart(started_cluster):
@@ -393,7 +402,10 @@ def test_clickhouse_restart(started_cluster):
 
     for i in range(NUM_TABLES):
         check_tables_are_synchronized('postgresql_replica_{}'.format(i));
+
     drop_materialized_db()
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
 def test_replica_identity_index(started_cluster):
@@ -421,7 +433,9 @@ def test_replica_identity_index(started_cluster):
 
     cursor.execute('DELETE FROM postgresql_replica WHERE key2<75;')
     check_tables_are_synchronized('postgresql_replica', order_by='key1');
+
     drop_materialized_db()
+    cursor.execute('drop table if exists postgresql_replica;')
 
 
 def test_table_schema_changes(started_cluster):
@@ -477,6 +491,8 @@ def test_table_schema_changes(started_cluster):
         cursor.execute('drop table postgresql_replica_{};'.format(i))
 
     instance.query("DROP DATABASE test_database")
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
 def test_many_concurrent_queries(started_cluster):
@@ -555,7 +571,10 @@ def test_many_concurrent_queries(started_cluster):
         count2 = instance.query('SELECT count() FROM (SELECT * FROM test_database.postgresql_replica_{})'.format(i))
         assert(int(count1) == int(count2))
         print(count1, count2)
+
     drop_materialized_db()
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
 def test_single_transaction(started_cluster):
@@ -583,7 +602,9 @@ def test_single_transaction(started_cluster):
 
     conn.commit()
     check_tables_are_synchronized('postgresql_replica_0');
+
     drop_materialized_db()
+    cursor.execute('drop table if exists postgresql_replica_0;')
 
 
 def test_virtual_columns(started_cluster):
@@ -617,7 +638,9 @@ def test_virtual_columns(started_cluster):
 
     result = instance.query('SELECT key, value, value2,  _sign, _version FROM test_database.postgresql_replica_0;')
     print(result)
+
     drop_materialized_db()
+    cursor.execute('drop table if exists postgresql_replica_0;')
 
 
 def test_multiple_databases(started_cluster):
@@ -671,8 +694,14 @@ def test_multiple_databases(started_cluster):
             check_tables_are_synchronized(
                     table_name, 'key', 'postgres_database_{}'.format(cursor_id + 1), 'test_database_{}'.format(cursor_id + 1));
 
+    for i in range(NUM_TABLES):
+        cursor1.execute('drop table if exists postgresql_replica_{};'.format(i))
+    for i in range(NUM_TABLES):
+        cursor2.execute('drop table if exists postgresql_replica_{};'.format(i))
+
     drop_clickhouse_postgres_db('postgres_database_1')
     drop_clickhouse_postgres_db('postgres_database_2')
+
     drop_materialized_db('test_database_1')
     drop_materialized_db('test_database_2')
 
@@ -718,7 +747,10 @@ def test_concurrent_transactions(started_cluster):
         count2 = instance.query('SELECT count() FROM (SELECT * FROM test_database.postgresql_replica_{})'.format(i))
         print(int(count1), int(count2), sep=' ')
         assert(int(count1) == int(count2))
+
     drop_materialized_db()
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
 def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
@@ -780,6 +812,8 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
         print(result) # Just debug
 
     drop_materialized_db()
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
 def test_drop_database_while_replication_startup_not_finished(started_cluster):
@@ -800,6 +834,9 @@ def test_drop_database_while_replication_startup_not_finished(started_cluster):
         time.sleep(0.5 * i)
         drop_materialized_db()
 
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
+
 
 def test_restart_server_while_replication_startup_not_finished(started_cluster):
     drop_materialized_db()
@@ -819,7 +856,10 @@ def test_restart_server_while_replication_startup_not_finished(started_cluster):
     instance.restart_clickhouse()
     for i in range(NUM_TABLES):
         check_tables_are_synchronized('postgresql_replica_{}'.format(i));
+
     drop_materialized_db()
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table postgresql_replica_{};'.format(i))
 
 
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
@@ -878,6 +918,8 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
         print(result) # Just debug
 
     drop_materialized_db()
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
 if __name__ == '__main__':
