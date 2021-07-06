@@ -170,12 +170,11 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     else
     {
         drop_ranges.addDropRange(entry);
-        auto drop_range = *entry->getDropRange(format_version);
 
-        /// DROP PARTS (not DROP PARTITIONS) removes parts from virtual parts.
-        MergeTreePartInfo drop_range_info = MergeTreePartInfo::fromPartName(drop_range, format_version);
-        if (!drop_range_info.isFakeDropRangePart() && virtual_parts.getContainingPart(drop_range_info) == drop_range)
-            virtual_parts.removePartAndCoveredParts(drop_range);
+        /// DROP PART remove parts, so we remove it from virtual parts to
+        /// preserve invariant virtual_parts = current_parts + queue
+        if (entry->isDropPart(format_version))
+            virtual_parts.removePartAndCoveredParts(*entry->getDropRange(format_version));
 
         queue.push_front(entry);
     }
@@ -266,7 +265,15 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         if (auto drop_range_part_name = entry->getDropRange(format_version))
         {
-            current_parts.remove(*drop_range_part_name);
+            MergeTreePartInfo drop_range_info = MergeTreePartInfo::fromPartName(*drop_range_part_name, format_version);
+
+            /// DROP PART doesn't have virtual parts so remove from current
+            /// parts all covered parts.
+            if (entry->isDropPart(format_version))
+                current_parts.removePartAndCoveredParts(*drop_range_part_name);
+            else
+                current_parts.remove(*drop_range_part_name);
+
             virtual_parts.remove(*drop_range_part_name);
         }
 

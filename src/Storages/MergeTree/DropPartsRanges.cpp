@@ -46,7 +46,9 @@ void DropPartsRanges::removeDropRange(const ReplicatedMergeTreeLogEntryPtr & ent
     if (entry->type != ReplicatedMergeTreeLogEntry::DROP_RANGE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove entry of type {} from drop ranges, expected DROP_RANGE", entry->typeToString());
 
-    drop_ranges.erase(entry->znode_name);
+    auto it = drop_ranges.find(entry->znode_name);
+    assert(it != drop_ranges.end());
+    drop_ranges.erase(it);
 }
 
 bool DropPartsRanges::hasDropRange(const MergeTreePartInfo & new_drop_range_info) const

@@ -431,6 +431,16 @@ std::optional<String> ReplicatedMergeTreeLogEntryData::getDropRange(MergeTreeDat
     return {};
 }
 
+bool ReplicatedMergeTreeLogEntryData::isDropPart(MergeTreeDataFormatVersion format_version) const
+{
+    if (type == DROP_RANGE)
+    {
+        auto drop_range_info = MergeTreePartInfo::fromPartName(new_part_name, format_version);
+        return !drop_range_info.isFakeDropRangePart();
+    }
+    return false;
+}
+
 Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormatVersion format_version) const
 {
     /// Doesn't produce any part
