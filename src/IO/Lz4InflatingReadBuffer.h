@@ -5,6 +5,7 @@
 #include <IO/ReadBuffer.h>
 
 #include <lz4.h>
+#include <lz4frame.h>
 
 
 namespace DB
@@ -28,6 +29,23 @@ private:
     bool nextImpl() override;
 
     std::unique_ptr<ReadBuffer> in;
+
+    size_t ret;
+
+    void * src;
+    void * dst;
+
+    size_t src_capacity;
+    size_t dst_capacity;
+
+    size_t in_available;
+
+    LZ4F_dctx* dctx;
+    size_t dctx_status;
+
+
+    bool eof = false;
+
 };
 
 }
