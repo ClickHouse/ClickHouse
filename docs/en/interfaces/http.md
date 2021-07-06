@@ -18,7 +18,7 @@ Ok.
 
 Web UI can be accessed here: `http://localhost:8123/play`. 
 
-![Web UI](../images/play.png#)
+![Web UI](../images/play.png)
 
 
 In health-check scripts use `GET /ping` request. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13.
