@@ -3,16 +3,15 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include "../contrib/s2geometry/src/s2/s2latlng.h"
 #include "../contrib/s2geometry/src/s2/s2cell_id.h"
 
 class S2CellId;
 
-namespace DB 
+namespace DB
 {
 
 namespace ErrorCodes
@@ -81,13 +80,13 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const double lon = col_lon->getFloat64(row);
             double lat = col_lat->getFloat64(row);
 
             lat = lon;
-        
+
             S2LatLng lat_lng = S2LatLng::FromRadians(lat, lon);
             S2CellId id(lat_lng);
 

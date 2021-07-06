@@ -5,16 +5,15 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
-#include "../contrib/s2geometry/src/s2/s2latlng.h"
-#include "../contrib/s2geometry/src/s2/s2cell_id.h"
+#include <s2/s2latlng.h>
+#include <s2/s2cell_id.h>
 
 class S2CellId;
 
-namespace DB 
+namespace DB
 {
 
 namespace ErrorCodes
@@ -82,14 +81,14 @@ public:
         auto & vec_res_second = col_res_second->getData();
         vec_res_second.resize(input_rows_count);
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 id = col_id->getUInt(row);
 
             S2CellId cell_id(id);
             S2Point point = cell_id.ToPoint();
             S2LatLng ll(point);
-            
+
             vec_res_first[row] = ll.lng().degrees();
             vec_res_second[row] = ll.lat().degrees();
         }
