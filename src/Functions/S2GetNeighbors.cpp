@@ -1,4 +1,8 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_S2_GEOMETRY
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -104,3 +108,5 @@ void registerFunctionS2GetNeighbors(FunctionFactory & factory)
 
 
 }
+
+#endif

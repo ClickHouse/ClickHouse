@@ -1,4 +1,8 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_S2_GEOMETRY
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -6,8 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <common/range.h>
 
-#include <s2/s2latlng.h>
-#include <s2/s2cell_id.h>
+#include "s2_fwd.h"
 
 class S2CellId;
 
@@ -105,3 +108,5 @@ void registerFunctionDegreesToS2(FunctionFactory & factory)
 
 
 }
+
+#endif

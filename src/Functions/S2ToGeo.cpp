@@ -1,4 +1,8 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_S2_GEOMETRY
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
@@ -108,3 +112,5 @@ void registerFunctionS2ToGeo(FunctionFactory & factory)
 
 
 }
+
+#endif

@@ -1,4 +1,8 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_S2_GEOMETRY
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -109,3 +113,5 @@ void registerFunctionRadiansToS2(FunctionFactory & factory)
 
 
 }
+
+#endif
