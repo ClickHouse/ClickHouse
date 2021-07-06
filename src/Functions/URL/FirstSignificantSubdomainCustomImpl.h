@@ -60,14 +60,25 @@ public:
         return arguments[0].type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const ColumnConst * column_tld_list_name = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
         FirstSignificantSubdomainCustomLookup tld_lookup(column_tld_list_name->getValue<String>());
 
-        /// FIXME: convertToFullColumnIfConst() is suboptimal
-        auto column = arguments[0].column->convertToFullColumnIfConst();
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(*column))
+        auto column = arguments[0].column;
+
+        if (const ColumnConst * const_col = checkAndGetColumnConst<ColumnString>(column.get()))
+        {
+            const String & data = const_col->getValue<String>();
+            const String & res = scalar(tld_lookup, data);
+
+            auto col_res = ColumnString::create();
+            col_res->insert(res);
+
+            auto col_const_res = ColumnConst::create(std::move(col_res), input_rows_count);
+            return col_const_res;
+        }
+        else if (const ColumnString * col = checkAndGetColumn<ColumnString>(*column))
         {
             auto col_res = ColumnString::create();
             vector(tld_lookup, col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
@@ -106,6 +117,15 @@ public:
             res_offsets[i] = res_offset;
             prev_offset = offsets[i];
         }
+    }
+
+    static String scalar(FirstSignificantSubdomainCustomLookup & tld_lookup, const String & data)
+    {
+        Pos start;
+        size_t length;
+        Extractor::execute(tld_lookup, &data[0], data.size(), start, length);
+        String output(start, length);
+        return output;
     }
 };
 
