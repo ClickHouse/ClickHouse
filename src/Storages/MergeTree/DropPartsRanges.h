@@ -21,6 +21,7 @@ public:
     {}
 
     bool isAffectedByDropRange(const ReplicatedMergeTreeLogEntry & entry, std::string & postpone_reason) const;
+    bool isAffectedByDropRange(const std::string & new_part_name, std::string & postpone_reason) const;
 
     bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
 
