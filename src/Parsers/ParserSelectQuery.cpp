@@ -17,12 +17,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOP_AND_LIMIT_TOGETHER;
-    extern const int WITH_TIES_WITHOUT_ORDER_BY;
+    extern const int FIRST_AND_NEXT_TOGETHER;
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
     extern const int ROW_AND_ROWS_TOGETHER;
-    extern const int FIRST_AND_NEXT_TOGETHER;
-    extern const int DISTINCT_ON_AND_LIMIT_BY_TOGETHER;
+    extern const int TOP_AND_LIMIT_TOGETHER;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int WITH_TIES_WITHOUT_ORDER_BY;
 }
 
 
@@ -286,7 +286,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 throw Exception("Can not use WITH TIES alongside LIMIT BY/DISTINCT ON", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
 
             if (distinct_on_expression_list)
-                throw Exception("Can not use DISTINCT ON alongside LIMIT BY", ErrorCodes::DISTINCT_ON_AND_LIMIT_BY_TOGETHER);
+                throw Exception("Can not use DISTINCT ON alongside LIMIT BY", ErrorCodes::UNSUPPORTED_METHOD);
 
             limit_by_length = limit_length;
             limit_by_offset = limit_offset;
