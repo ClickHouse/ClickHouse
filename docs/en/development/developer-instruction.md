@@ -237,6 +237,8 @@ The description of ClickHouse architecture can be found here: https://clickhouse
 
 The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
+Adding third-party libraries: https://clickhouse.tech/docs/en/development/contrib/#adding-third-party-libraries
+
 Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
 List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
