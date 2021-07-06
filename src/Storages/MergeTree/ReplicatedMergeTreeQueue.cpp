@@ -169,9 +169,10 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     }
     else
     {
-        drop_ranges.addDropRange(entry, log);
+        drop_ranges.addDropRange(entry);
         auto drop_range = *entry->getDropRange(format_version);
-        /// DROP PARTS removes parts from virtual parts
+
+        /// DROP PARTS (not DROP PARTITIONS) removes parts from virtual parts.
         MergeTreePartInfo drop_range_info = MergeTreePartInfo::fromPartName(drop_range, format_version);
         if (!drop_range_info.isFakeDropRangePart() && virtual_parts.getContainingPart(drop_range_info) == drop_range)
             virtual_parts.removePartAndCoveredParts(drop_range);
@@ -271,7 +272,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         if (entry->type == LogEntry::DROP_RANGE)
         {
-            drop_ranges.removeDropRange(entry, log);
+            drop_ranges.removeDropRange(entry);
         }
 
         if (entry->type == LogEntry::ALTER_METADATA)
@@ -284,7 +285,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
     {
         if (entry->type == LogEntry::DROP_RANGE)
         {
-            drop_ranges.removeDropRange(entry, log);
+            drop_ranges.removeDropRange(entry);
         }
 
         for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
@@ -996,6 +997,8 @@ bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & pa
 {
     std::lock_guard lock(state_mutex);
 
+    /// FIXME get rid of actual_part_name.
+    /// If new covering part jumps over DROP_RANGE we should execute drop range first
     if (drop_ranges.isAffectedByDropRange(part_name, reject_reason))
         return false;
 
