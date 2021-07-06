@@ -102,7 +102,7 @@ private:
     ActiveDataPartSet virtual_parts;
 
 
-    ///
+    /// Dropped ranges inserted into queue
     DropPartsRanges drop_ranges;
 
     /// A set of mutations loaded from ZooKeeper.
