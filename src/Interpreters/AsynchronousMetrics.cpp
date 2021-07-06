@@ -1,6 +1,6 @@
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/ExpressionJIT.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
