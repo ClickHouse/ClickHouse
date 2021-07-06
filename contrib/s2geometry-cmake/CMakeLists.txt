@@ -113,6 +113,10 @@ set(S2_SRCS
 
 add_library(s2 ${S2_SRCS})
 
+if (OPENSSL_FOUND)
+    target_link_libraries(s2 PRIVATE ${OPENSSL_LIBRARIES})
+endif()
+
 target_include_directories(s2 SYSTEM BEFORE PUBLIC "${S2_SOURCE_DIR}/")
 
 if(M_LIBRARY)
