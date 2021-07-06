@@ -1098,7 +1098,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// Execute drop as separate query, because [CREATE OR] REPLACE query can be considered as
             /// successfully executed after RENAME/EXCHANGE query.
             drop_context->resetZooKeeperMetadataTransaction();
-            auto drop_txn = std::make_shared<ZooKeeperMetadataTransaction>(txn->getZooKeeper(), txn->getDatabaseZooKeeperPath(), txn->isInitialQuery());
+            auto drop_txn = std::make_shared<ZooKeeperMetadataTransaction>(txn->getZooKeeper(), txn->getDatabaseZooKeeperPath(),
+                                                                           txn->isInitialQuery(), txn->getTaskZooKeeperPath());
             drop_context->initZooKeeperMetadataTransaction(drop_txn);
         }
         return drop_context;
@@ -1117,6 +1118,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         UInt64 name_hash = sipHash64(create.database + create.table);
         UInt16 random_suffix = thread_local_rng();
+        if (auto txn = current_context->getZooKeeperMetadataTransaction())
+        {
+            /// Avoid different table name on database replicas
+            random_suffix = sipHash64(txn->getTaskZooKeeperPath());
+        }
         create.table = fmt::format("_tmp_replace_{}_{}",
                                    getHexUIntLowercase(name_hash),
                                    getHexUIntLowercase(random_suffix));

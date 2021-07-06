@@ -169,13 +169,15 @@ class ZooKeeperMetadataTransaction
     ZooKeeperPtr current_zookeeper;
     String zookeeper_path;
     bool is_initial_query;
+    String task_path;
     Coordination::Requests ops;
 
 public:
-    ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_)
+    ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_, const String & task_path_)
     : current_zookeeper(current_zookeeper_)
     , zookeeper_path(zookeeper_path_)
     , is_initial_query(is_initial_query_)
+    , task_path(task_path_)
     {
     }
 
@@ -184,6 +186,8 @@ public:
     bool isExecuted() const { return state != CREATED; }
 
     String getDatabaseZooKeeperPath() const { return zookeeper_path; }
+
+    String getTaskZooKeeperPath() const { return task_path; }
 
     ZooKeeperPtr getZooKeeper() const { return current_zookeeper; }
 
