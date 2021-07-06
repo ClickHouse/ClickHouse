@@ -10,7 +10,7 @@ PEERDIR(
 
 
 SRCS(
-    CertReloader.cpp
+    CertificateReloader.cpp
     GRPCServer.cpp
     HTTP/HTMLForm.cpp
     HTTP/HTTPServer.cpp
@@ -36,6 +36,7 @@ SRCS(
     StaticRequestHandler.cpp
     TCPHandler.cpp
     WebUIRequestHandler.cpp
+
 )
 
 END()

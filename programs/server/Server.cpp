@@ -72,7 +72,7 @@
 #include <Common/Elf.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
-#include <Server/CertReloader.h>
+#include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <filesystem>
@@ -839,7 +839,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
-            CertReloader::instance().reload(*config);
+            CertificateReloader::instance().reload(*config);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -1373,7 +1373,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
              throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
                 ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-        CertReloader::instance().init(config());
+        CertificateReloader::instance().init(config());
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();

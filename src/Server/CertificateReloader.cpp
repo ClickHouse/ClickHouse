@@ -1,14 +1,16 @@
-#include "CertReloader.h"
+#include "CertificateReloader.h"
+
+#if USE_SSL
 
 namespace DB
 {
-#if USE_SSL
+
 int cert_reloader_dispatch_set_cert(SSL * ssl, [[maybe_unused]] void * arg)
 {
-    return CertReloader::instance().SetCert(ssl);
+    return CertificateReloader::instance().setCertificate(ssl);
 }
 
-int CertReloader::SetCert(SSL * ssl)
+int CertificateReloader::setCertificate(SSL * ssl)
 {
     std::shared_lock lock(mutex);
     SSL_use_certificate(ssl, const_cast<X509 *>(cert->certificate()));
@@ -24,7 +26,7 @@ int CertReloader::SetCert(SSL * ssl)
     return 1;
 }
 
-void CertReloader::init(const Poco::Util::AbstractConfiguration & config)
+void CertificateReloader::init(const Poco::Util::AbstractConfiguration & config)
 {
     LOG_DEBUG(log, "Initializing config reloader.");
 
@@ -36,7 +38,7 @@ void CertReloader::init(const Poco::Util::AbstractConfiguration & config)
     reload(config);
 }
 
-void CertReloader::reload(const Poco::Util::AbstractConfiguration & config)
+void CertificateReloader::reload(const Poco::Util::AbstractConfiguration & config)
 {
     LOG_DEBUG(log, "Handling cert reload.");
     const auto cert_file_ = config.getString("openSSL.server.certificateFile", "");
@@ -44,7 +46,7 @@ void CertReloader::reload(const Poco::Util::AbstractConfiguration & config)
 
     bool changed = false;
     changed |= setKeyFile(key_file_);
-    changed |= setCertFile(cert_file_);
+    changed |= setCertificateFile(cert_file_);
 
     if (changed)
     {
@@ -58,7 +60,7 @@ void CertReloader::reload(const Poco::Util::AbstractConfiguration & config)
     }
 }
 
-bool CertReloader::setKeyFile(const std::string key_file_)
+bool CertificateReloader::setKeyFile(const std::string key_file_)
 {
     if (key_file_.empty())
         return false;
@@ -78,7 +80,7 @@ bool CertReloader::setKeyFile(const std::string key_file_)
     return false;
 }
 
-bool CertReloader::setCertFile(const std::string cert_file_)
+bool CertificateReloader::setCertificateFile(const std::string cert_file_)
 {
     if (cert_file_.empty())
         return false;
@@ -98,6 +100,6 @@ bool CertReloader::setCertFile(const std::string cert_file_)
     return false;
 }
 
-#endif
-
 }
+
+#endif
