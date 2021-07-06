@@ -92,10 +92,12 @@ public:
     int SetCert(SSL * ssl);
 
 private:
-    CertReloader() : log(&Poco::Logger::get("CertReloader")), cert_file(""), cert(nullptr), key_file(""), key(nullptr) { }
+    CertReloader()
+    {
+    }
 
-    mutable std::shared_mutex lck;
-    Poco::Logger * log;
+    mutable std::shared_mutex lock;
+    Poco::Logger * log = &Poco::Logger::get("CertReloader");
 
     std::string cert_file;
     stat_t cert_file_st;
