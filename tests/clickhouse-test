@@ -29,7 +29,7 @@ import string
 import multiprocessing
 from contextlib import closing
 
-DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_timeout (=120)"
+DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_timeout"
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
