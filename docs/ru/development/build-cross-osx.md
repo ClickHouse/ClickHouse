@@ -1,1 +1,1 @@
-../../en/development/build-cross-osx.md
+См. [тут](../../en/development/build-cross-osx.md).
