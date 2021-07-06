@@ -1,6 +1,5 @@
 #pragma once
 #include <string>
-#include <bit>
 
 
 /// Maps 0..15 to 0..9A..F or 0..9a..f correspondingly.
@@ -45,20 +44,6 @@ extern const char * const bin_byte_to_char_table;
 inline void writeBinByte(UInt8 byte, void * out)
 {
     memcpy(out, &bin_byte_to_char_table[static_cast<size_t>(byte) * 8], 8);
-}
-
-inline size_t writeBinByteNoLeadZeros(UInt8 byte, char * out)
-{
-    if (byte == 0)
-        return 0;
-
-    int clz = std::countl_zero(byte);
-    for (Int8 offset = sizeof(UInt8) * 8 - clz - 1; offset >= 0; --offset)
-    {
-        *out = ((byte >> offset) & 1) ? '1' : '0';
-        ++out;
-    }
-    return sizeof(UInt8) * 8 - clz;
 }
 
 /// Produces hex representation of an unsigned int with leading zeros (for checksums)

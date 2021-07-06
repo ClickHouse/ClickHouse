@@ -1260,7 +1260,7 @@ struct HexImpl
         {
             UInt8 byte = x >> offset;
 
-            /// Leading zeros.
+            /// Skip leading zeros
             if (byte == 0 && !was_nonzero && offset)
                 continue;
 
@@ -1349,26 +1349,12 @@ struct BinImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero)
+            if (byte == 0 && !was_nonzero && offset)
                 continue;
 
-            /// First non-zero byte without leading zeros
-            if (was_nonzero)
-            {
-                writeBinByte(byte, out);
-                out += word_size;
-            }
-            else
-            {
-                size_t written = writeBinByteNoLeadZeros(byte, out);
-                out += written;
-            }
             was_nonzero = true;
-        }
-        if (!was_nonzero)
-        {
-            *out = '0';
-            ++out;
+            writeBinByte(byte, out);
+            out += word_size;
         }
         *out = '\0';
         ++out;
