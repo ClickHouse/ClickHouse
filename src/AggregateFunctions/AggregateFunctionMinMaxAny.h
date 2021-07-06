@@ -199,7 +199,7 @@ public:
         static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
 
         auto * type = toNativeType<T>(builder);
-        auto * value_ptr_with_offset = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, value_offset_from_structure);
+        auto * value_ptr_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, value_offset_from_structure);
         auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
 
         return value_ptr;
