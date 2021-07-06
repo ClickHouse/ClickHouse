@@ -144,8 +144,8 @@ template <typename Name, template <typename> typename Impl>
 class FunctionSQLJSON : public IFunction, WithConstContext
 {
 public:
-    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionSQLJSON>(context_); }
-    FunctionSQLJSON(ContextConstPtr context_) : WithConstContext(context_) { }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionSQLJSON>(context_); }
+    explicit FunctionSQLJSON(ContextPtr context_) : WithConstContext(context_) { }
 
     static constexpr auto name = Name::name;
     String getName() const override { return Name::name; }
