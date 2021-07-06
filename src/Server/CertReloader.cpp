@@ -10,7 +10,7 @@ int cert_reloader_dispatch_set_cert(SSL * ssl, [[maybe_unused]] void * arg)
 
 int CertReloader::SetCert(SSL * ssl)
 {
-    std::shared_lock lock(lck);
+    std::shared_lock lock(mutex);
     SSL_use_certificate(ssl, const_cast<X509 *>(cert->certificate()));
     SSL_use_RSAPrivateKey(ssl, key->impl()->getRSA());
 
@@ -50,7 +50,7 @@ void CertReloader::reload(const Poco::Util::AbstractConfiguration & config)
     {
         LOG_INFO(log, "Reloading cert({}), key({})", cert_file, key_file);
         {
-            std::unique_lock lock(lck);
+            std::unique_lock lock(mutex);
             key.reset(new Poco::Crypto::RSAKey("", key_file));
             cert.reset(new Poco::Crypto::X509Certificate(cert_file));
         }
