@@ -996,6 +996,9 @@ bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & pa
 {
     std::lock_guard lock(state_mutex);
 
+    if (drop_ranges.isAffectedByDropRange(part_name, reject_reason))
+        return false;
+
     if (isNotCoveredByFuturePartsImpl(entry.znode_name, part_name, reject_reason, lock))
     {
         CurrentlyExecuting::setActualPartName(entry, part_name, *this);

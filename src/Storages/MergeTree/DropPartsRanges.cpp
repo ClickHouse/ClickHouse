@@ -9,12 +9,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-bool DropPartsRanges::isAffectedByDropRange(const ReplicatedMergeTreeLogEntry & entry, std::string & postpone_reason) const
+
+bool DropPartsRanges::isAffectedByDropRange(const std::string & new_part_name, std::string & postpone_reason) const
 {
-    if (entry.new_part_name.empty())
+    if (new_part_name.empty())
         return false;
 
-    MergeTreePartInfo entry_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    MergeTreePartInfo entry_info = MergeTreePartInfo::fromPartName(new_part_name, format_version);
     for (const auto & [znode, drop_range] : drop_ranges)
     {
         if (!drop_range.isDisjoint(entry_info))
@@ -25,6 +26,11 @@ bool DropPartsRanges::isAffectedByDropRange(const ReplicatedMergeTreeLogEntry & 
     }
 
     return false;
+}
+
+bool DropPartsRanges::isAffectedByDropRange(const ReplicatedMergeTreeLogEntry & entry, std::string & postpone_reason) const
+{
+    return isAffectedByDropRange(entry.new_part_name, postpone_reason);
 }
 
 void DropPartsRanges::addDropRange(const ReplicatedMergeTreeLogEntryPtr & entry, Poco::Logger * /*log*/)
