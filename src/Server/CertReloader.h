@@ -96,7 +96,7 @@ private:
     {
     }
 
-    mutable std::shared_mutex lock;
+    mutable std::shared_mutex mutex;
     Poco::Logger * log = &Poco::Logger::get("CertReloader");
 
     std::string cert_file;
