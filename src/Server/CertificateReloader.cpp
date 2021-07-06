@@ -12,11 +12,6 @@ namespace ErrorCodes
     extern const int CANNOT_STAT;
 }
 
-int cert_reloader_dispatch_set_cert(SSL * ssl, [[maybe_unused]] void * arg)
-{
-    return CertificateReloader::instance().setCertificate(ssl);
-}
-
 int CertificateReloader::setCertificate(SSL * ssl)
 {
     std::shared_lock lock(mutex);
