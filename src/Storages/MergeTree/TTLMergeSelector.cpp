@@ -111,8 +111,9 @@ bool TTLDeleteMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & 
     if (only_drop_parts)
         return false;
 
+    /// All TTL satisfied
     if (!part.ttl_infos->hasAnyNonFinishedTTLs())
-        return false;
+        return true;
 
     return !part.shall_participate_in_merges;
 }

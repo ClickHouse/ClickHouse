@@ -21,7 +21,8 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
         new_ttl_info = old_ttl_info;
         is_fully_empty = false;
     }
-    else
+
+    if (isMaxTTLExpired())
         new_ttl_info.finished = true;
 }
 
