@@ -33,6 +33,8 @@ from contextlib import closing
 
 from typing import Tuple, Union, Optional, TextIO
 
+coverage_tests_file = None
+
 DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_timeout (=120)"
 
 MESSAGES_TO_RETRY = [
@@ -318,20 +320,35 @@ def get_stacktraces_from_clickhouse(client, replicated_database=False):
         print("Error occured while receiving stack traces from client: {}".format(str(ex)))
         return None
 
-def get_server_pid(server_tcp_port):
+
+coverage_cached_pid = None
+
+
+def get_server_pid_coverage():
+    global coverage_cached_pid
+
+    if coverage_cached_pid is None:
+        coverage_cached_pid = get_server_pid()
+
+    return coverage_cached_pid
+
+def get_server_pid():
     # lsof does not work in stress tests for some reason
-    cmd_lsof = "lsof -i tcp:{port} -s tcp:LISTEN -Fp | awk '/^p[0-9]+$/{{print substr($0, 2)}}'".format(port=server_tcp_port)
+    cmd_lsof = f"lsof -i tcp:{args.tcp_port} -s tcp:LISTEN -Fp | awk '/^p[0-9]+$/{{print substr($0, 2)}}'"
     cmd_pidof = "pidof -s clickhouse-server"
+
     commands = [cmd_lsof, cmd_pidof]
     output = None
+
     for cmd in commands:
         try:
             output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, universal_newlines=True)
             if output:
                 return int(output)
         except Exception as e:
-            print("Cannot get server pid with {}, got {}: {}".format(cmd, output, e))
-    return None # most likely server dead
+            print(f"Cannot get server pid with {cmd}, got {output}: {e}")
+
+    return None  # most likely server is dead
 
 
 def colored(text, args, color=None, on_color=None, attrs=None):
@@ -346,21 +363,26 @@ exit_code = 0
 stop_time = None
 queue = multiprocessing.Queue(maxsize=1)
 
-def run_query(query_to_run: str, failures: int):
+
+def run_testname(suite: str, case: str, failures: int):
+    if not args.testname:
+        return True, failures
+
     global SERVER_DIED
+
+    pid = os.getpid()
+    query = f"SELECT 'Running test {suite}/{case} from pid={pid}';"
 
     clickhouse_proc = open_client_process(args.client, universal_newlines=True)
     failed_to_check = False
 
     try:
-        clickhouse_proc.communicate((query_to_run), timeout=20)
+        clickhouse_proc.communicate((query), timeout=20)
     except:
         failed_to_check = True
 
     if not failed_to_check and clickhouse_proc.returncode == 0:
         return True, failures
-
-    print("Server did not respond to query", query_to_run)
 
     SERVER_DIED = True
     stop_tests()
@@ -403,7 +425,8 @@ def run_tests_array(all_tests_with_params):
 
     if num_tests > 0:
         about = 'about ' if is_concurrent else ''
-        print(f"\nRunning {about}{num_tests} {suite} tests ({multiprocessing.current_process().name}).\n")
+        name = multiprocessing.current_process().name
+        print(f"\nRunning {about}{num_tests} {suite} tests ({name}).\n")
 
     while True:
         if is_concurrent:
@@ -466,14 +489,7 @@ def run_tests_array(all_tests_with_params):
                     message = open(disabled_file, 'r').read()
                     status += MSG_SKIPPED + " - " + message + "\n"
                 else:
-                    if args.testname:
-                        query = "SELECT 'Running test {}/{} from pid={}';".format(suite, case, os.getpid())
-                        res, failures = run_query(query, failures)
-
-                        if not res:
-                            break
-
-                    res, failures = coverage_run_item(case, failures)
+                    res, failures = run_testname(suite, case, failures)
 
                     if not res:
                         break
@@ -486,6 +502,8 @@ def run_tests_array(all_tests_with_params):
 
                     testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
                     proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+
+                    coverage_test_finished(case)
 
                     if proc.returncode is None:
                         try:
@@ -742,6 +760,7 @@ def collect_build_flags(client):
 
     return result
 
+
 def suite_key_func(item: str) -> Union[int, Tuple[int, str]]:
     if args.order == 'random':
         return random.random()
@@ -755,6 +774,7 @@ def suite_key_func(item: str) -> Union[int, Tuple[int, str]]:
         return int(prefix), suffix
     except ValueError:
         return 99997, ''
+
 
 def tests_in_suite_key_func(item: str) -> int:
     if args.order == 'random':
@@ -772,32 +792,45 @@ def tests_in_suite_key_func(item: str) -> int:
     except ValueError:
         return 99997
 
+
 def extract_key(key: str) -> str:
-    return subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + key)[1]
+    return subprocess.getstatusoutput(
+        args.extract_from_config +
+        " --try --config " +
+        args.configserver + key)[1]
+
 
 def open_client_process(
     client_args: str,
     universal_newlines: bool = False,
     stderr_file: Optional[TextIO] = None):
-    return Popen(shlex.split(client_args), stdin=PIPE, stdout=PIPE,
+    return Popen(
+        shlex.split(client_args), stdin=PIPE, stdout=PIPE,
         stderr=stderr_file if stderr_file is not None else PIPE,
         universal_newlines=True if universal_newlines else None)
 
-def coverage_run_item(test_name: str, failures: int = 0) -> Tuple[bool, int]:
-    if not args.coverage:
-        return True, failures
 
+def coverage_test_finished(test_name: str) -> None:
+    if not args.coverage:
+        return
+
+    os.kill(get_server_pid_coverage(), signal.SIGRTMIN + 1)
     coverage_tests_file.write(test_name + "\n")
 
+
+def coverage_shut_down() -> None:
+    os.kill(get_server_pid_coverage(), signal.SIGRTMIN + 2)
+
+
 def print_stack_traces() -> None:
-    clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
-    server_pid = get_server_pid(clickhouse_tcp_port)
+    server_pid = get_server_pid()
 
     bt = None
 
     if server_pid and not args.replicated_database:
-        print(f"\nLocated ClickHouse server process {server_pid} listening at TCP port {clickhouse_tcp_port}"
-               "\nCollecting stacktraces from all running threads with gdb:")
+        print("")
+        print(f"Located ClickHouse server process {server_pid} listening at TCP port {args.tcp_port}")
+        print("Collecting stacktraces from all running threads with gdb:")
 
         bt = get_stacktraces_from_gdb(server_pid)
 
@@ -816,9 +849,10 @@ def print_stack_traces() -> None:
         return
 
     print(colored(
-        f"\nUnable to locate ClickHouse server process listening at TCP port {clickhouse_tcp_port}. "
+        f"\nUnable to locate ClickHouse server process listening at TCP port {args.tcp_port}. "
          "It must have crashed or exited prematurely!",
         args, "red", attrs=["bold"]))
+
 
 def do_run_tests(jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_tests, sequential_tests, parallel):
     if jobs > 1 and len(parallel_tests) > 0:
@@ -1031,7 +1065,7 @@ def main(args):
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
-    coverage_run_item("")
+    coverage_shut_down()
 
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
@@ -1179,11 +1213,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.coverage:
-        # Need to process all tests separately in order to calculate per-test data
+        # Process all tests separately in order to calculate per-test data
         assert args.jobs == 1
+        coverage_tests_file = open("tests_lists.txt", "w")
 
     if args.queries and not os.path.isdir(args.queries):
-        print("Cannot access the specified directory with queries (" + args.queries + ")", file=sys.stderr)
+        print(f"Cannot access the specified directory with queries ({args.queries})", file=sys.stderr)
         sys.exit(1)
 
     # Autodetect the directory with queries if not specified
@@ -1234,10 +1269,18 @@ if __name__ == '__main__':
 
         if args.configclient:
             args.client += ' --config-file=' + args.configclient
+
         if os.getenv("CLICKHOUSE_HOST"):
             args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
-        if os.getenv("CLICKHOUSE_PORT_TCP"):
-            args.client += ' --port=' + os.getenv("CLICKHOUSE_PORT_TCP")
+
+        server_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP")
+
+        if server_tcp_port:
+            args.client += ' --port=' + server_tcp_port
+            args.tcp_port = int(server_tcp_port)
+        else:
+            args.tcp_potr = 9000
+
         if os.getenv("CLICKHOUSE_DATABASE"):
             args.client += ' --database=' + os.getenv("CLICKHOUSE_DATABASE")
 

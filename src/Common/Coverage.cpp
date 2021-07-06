@@ -48,34 +48,40 @@ void Writer::countersCallback(bool * start, bool * end) noexcept
 
 void Writer::onServerInitialized()
 {
-    // Some .sh tests spawn multiple server instances. However, only one server instance (the first) should write to
-    // report file. If report file already exists, we silently start as server without coverage.
-    if (access(report_path.c_str(), F_OK) != 0)
-    {
-        LOG_WARNING(base_log, "Report file already exists");
-        return;
-    }
-
     // Writer constructor occurs before Poco internal structures initialization.
     base_log = &Poco::Logger::get(logger_base_name);
+
+    // Some .sh tests spawn multiple server instances. However, only one server instance (the first) should write to
+    // report file. If report file already exists, we silently start as server without coverage.
+    if (access(report_path.c_str(), F_OK) == 0)
+    {
+        LOG_WARNING(base_log, "Report file {} already exists", report_path);
+        return;
+    }
 
     struct sigaction test_change = { .sa_handler = [](int) { Writer::instance().onTestFinished(); } };
     struct sigaction shut_down = { .sa_handler = [](int) { Writer::instance().onShutRuntime(); } };
 
-    [[maybe_unused]] const int test_change_ret = sigaction(SIGRTMIN + 1, &test_change, nullptr);
-    [[maybe_unused]] const int shut_down_ret = sigaction(SIGRTMIN + 2, &shut_down, nullptr);
+    auto print_and_exit = [this]
+    {
+        LOG_FATAL(base_log, "{}", strerror(errno));
+        throw;
+    };
 
-    assert(test_change_ret == 0);
-    assert(shut_down_ret == 0);
+    if (sigaction(SIGRTMIN + 1, &test_change, nullptr) == -1) print_and_exit();
+    if (sigaction(SIGRTMIN + 2, &shut_down, nullptr) == -1) print_and_exit();
 
-    const int fd = creat(report_path.c_str(), 0666);
-    assert(fd != -1);
+    const int fd = open(report_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
+    if (fd == -1) print_and_exit();
+
+    LOG_INFO(base_log, "Opened report file {}", report_path);
+
+    if (ftruncate(fd, report_file_size) == -1) print_and_exit();
 
     report_file_ptr = mmap(nullptr, report_file_size, PROT_WRITE, MAP_SHARED, fd, 0 /*offset*/);
-    assert(report_file_ptr != reinterpret_cast<void *>(-1));
 
-    [[maybe_unused]] const int ret = close(fd);
-    assert(ret == 0);
+    if (report_file_ptr == MAP_FAILED) print_and_exit();
+    if (close(fd) == -1) print_and_exit();
 
     mergeAndWriteHeader(symbolizeAddrsIntoLocalCaches());
 
@@ -92,7 +98,7 @@ Writer::LocalCaches Writer::symbolizeAddrsIntoLocalCaches()
 
     LocalCaches caches(hardware_concurrency);
 
-    const SymbolIndexInstance symbol_index;
+    const SymbolIndexInstance symbol_index = SymbolIndex::instance();
     const Dwarf dwarf(symbol_index->getSelf()->elf);
 
     const size_t step = instrumented_basic_blocks / caches.size();
@@ -172,7 +178,7 @@ void Writer::mergeAndWriteHeader(const LocalCaches& caches)
     LOG_INFO(base_log, "Found {} source files", source_files.size());
     assert(source_files.size() > 2000);
 
-    uint32_t * const report_ptr = reinterpret_cast<uint32_t*>(report_file_ptr);
+    uint32_t * const report_ptr = static_cast<uint32_t *>(report_file_ptr);
 
     report_ptr[0] = static_cast<uint32_t>(Magic::ReportHeader);
     report_ptr[++report_file_pos] = source_files.size();

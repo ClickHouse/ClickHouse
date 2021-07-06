@@ -13,8 +13,8 @@ namespace coverage
     #if WITH_COVERAGE
         #error "Coverage build does not work on FreeBSD and Darwin".
     #endif
-/// FreeBSD and Darwin do not have DWARF, so coverage build is explicitly disabled.
-/// Fake classes are introduced to be able to build CH.
+// FreeBSD and Darwin do not have DWARF, so coverage build is explicitly disabled.
+// Fake classes are introduced to be able to build CH.
 namespace coverage
 {
     struct SymbolIndexInstance {};

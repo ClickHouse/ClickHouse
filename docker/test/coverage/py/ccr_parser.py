@@ -12,10 +12,13 @@ class CCRParser(BinaryParser):
         self.bb = {}
         self.excluded_bb = []
 
-    def read(self, report_file):
+    def read(self, report_file, tests_file):
         with open(report_file, "rb") as f:
             self.read_header(f)
             self.read_tests(f)
+
+        with open(tests_file, "r") as f:
+            self.read_tests_names(f)
 
         return self.files, self.tests, self.bb
 
@@ -32,7 +35,7 @@ class CCRParser(BinaryParser):
         files_count = self.read_uint32(f)
 
         for _ in range(files_count):
-            file_path = self.read_string(f)
+            file_path = self.read_str(f)
             bb_count = self.read_uint32(f)
 
             file_path = os.path.normpath(file_path)
@@ -62,7 +65,7 @@ class CCRParser(BinaryParser):
             raise Exception("Corrupted file")
 
         while True:
-            test_name = self.read_string(f)
+            test_name = self.read_str(f)
             hit_bb = []
 
             while True:
