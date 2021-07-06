@@ -227,24 +227,43 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
     if (!normal_parts.empty())
     {
-        auto storage_from_base_parts_of_projection = StorageFromMergeTreeDataPart::create(std::move(normal_parts));
-        auto ast = query_info.projection->desc->query_ast->clone();
-        auto & select = ast->as<ASTSelectQuery &>();
-        if (given_select.where())
-            select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
-        if (given_select.prewhere())
-            select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.prewhere()->clone());
+        if (query_info.projection->desc->type == ProjectionDescription::Type::Normal)
+        {
+            auto plan = readFromParts(
+                normal_parts,
+                column_names_to_return,
+                metadata_snapshot,
+                metadata_snapshot,
+                query_info,
+                context,
+                max_block_size,
+                num_streams,
+                max_block_numbers_to_read);
 
-        // After overriding the group by clause, we finish the possible aggregations directly
-        if (processed_stage >= QueryProcessingStage::Enum::WithMergeableState && given_select.groupBy())
-            select.setExpression(ASTSelectQuery::Expression::GROUP_BY, given_select.groupBy()->clone());
-        auto interpreter = InterpreterSelectQuery(
-            ast,
-            context,
-            storage_from_base_parts_of_projection,
-            nullptr,
-            SelectQueryOptions{processed_stage}.ignoreAggregation().ignoreProjections());
-        ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
+            ordinary_pipe = plan->convertToPipe(
+                QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        }
+        else
+        {
+            auto storage_from_base_parts_of_projection = StorageFromMergeTreeDataPart::create(std::move(normal_parts));
+            auto ast = query_info.projection->desc->query_ast->clone();
+            auto & select = ast->as<ASTSelectQuery &>();
+            if (given_select.where())
+                select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
+            if (given_select.prewhere())
+                select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.prewhere()->clone());
+
+            // After overriding the group by clause, we finish the possible aggregations directly
+            if (processed_stage >= QueryProcessingStage::Enum::WithMergeableState && given_select.groupBy())
+                select.setExpression(ASTSelectQuery::Expression::GROUP_BY, given_select.groupBy()->clone());
+            auto interpreter = InterpreterSelectQuery(
+                ast,
+                context,
+                storage_from_base_parts_of_projection,
+                nullptr,
+                SelectQueryOptions{processed_stage}.ignoreAggregation().ignoreProjections());
+            ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
+        }
     }
 
     if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
