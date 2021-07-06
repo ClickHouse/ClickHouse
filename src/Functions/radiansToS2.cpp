@@ -6,8 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <common/range.h>
 
-#include "../contrib/s2geometry/src/s2/s2latlng.h"
-#include "../contrib/s2geometry/src/s2/s2cell_id.h"
+#include "s2_fwd.h"
 
 class S2CellId;
 
@@ -100,7 +99,7 @@ public:
 
 }
 
-void registerRadianssToS2(FunctionFactory & factory)
+void registerFunctionRadiansToS2(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRadiansToS2>();
 }
