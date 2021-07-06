@@ -3,6 +3,7 @@
 import logging
 import subprocess
 import os
+import glob
 import time
 import shutil
 from collections import defaultdict
@@ -17,7 +18,6 @@ SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
-DOCKERD_LOGS_PATH = "/ClickHouse/tests/integration/dockerd.log"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-library-bridge"
 
 TRIES_COUNT = 10
@@ -256,8 +256,8 @@ class ClickhouseIntegrationTestsRunner:
         shutil.copy(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, result_path_library_bridge)
         return None, None
 
-    def _compress_logs(self, path, result_path):
-        subprocess.check_call("tar czf {} -C {} .".format(result_path, path), shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+    def _compress_logs(self, dir, relpaths, result_path):
+        subprocess.check_call("tar czf {} -C {} {}".format(result_path, dir, ' '.join(relpaths)), shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
 
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
@@ -336,6 +336,27 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Cannot run with custom docker image version :(")
         return image_cmd
 
+    def _find_test_data_dirs(self, repo_path, test_names):
+        relpaths = {}
+        for test_name in test_names:
+            if '/' in test_name:
+                test_dir = test_name[:test_name.find('/')]
+            else:
+                test_dir = test_name
+            if os.path.isdir(os.path.join(repo_path, "tests/integration", test_dir)):
+                for name in os.listdir(os.path.join(repo_path, "tests/integration", test_dir)):
+                    relpath = os.path.join(os.path.join(test_dir, name))
+                    mtime = os.path.getmtime(os.path.join(repo_path, "tests/integration", relpath))
+                    relpaths[relpath] = mtime
+        return relpaths
+
+    def _get_test_data_dirs_difference(self, new_snapshot, old_snapshot):
+        res = set()
+        for path in new_snapshot:
+            if (not path in old_snapshot) or (old_snapshot[path] != new_snapshot[path]):
+                res.add(path)
+        return res
+
     def run_test_group(self, repo_path, test_group, tests_in_group, num_tries, num_workers):
         counters = {
             "ERROR": [],
@@ -355,17 +376,13 @@ class ClickhouseIntegrationTestsRunner:
 
         image_cmd = self._get_runner_image_cmd(repo_path)
         test_group_str = test_group.replace('/', '_').replace('.', '_')
+        
         log_paths = []
+        test_data_dirs = {}
 
         for i in range(num_tries):
             logging.info("Running test group %s for the %s retry", test_group, i)
             clear_ip_tables_and_restart_daemons()
-
-            output_path = os.path.join(str(self.path()), "test_output_" + test_group_str + "_" + str(i) + ".log")
-            log_name = "integration_run_" + test_group_str + "_" + str(i) + ".txt"
-            log_path = os.path.join(str(self.path()), log_name)
-            log_paths.append(log_path)
-            logging.info("Will wait output inside %s", output_path)
 
             test_names = set([])
             for test_name in tests_in_group:
@@ -375,11 +392,19 @@ class ClickhouseIntegrationTestsRunner:
                     else:
                         test_names.add(test_name)
 
+            if i == 0:
+                test_data_dirs = self._find_test_data_dirs(repo_path, test_names)
+
+            info_basename = test_group_str + "_" + str(i) + ".nfo"
+            info_path = os.path.join(repo_path, "tests/integration", info_basename)
+
             test_cmd = ' '.join([test for test in sorted(test_names)])
             parallel_cmd = " --parallel {} ".format(num_workers) if num_workers > 0 else ""
-            cmd = "cd {}/tests/integration && ./runner --tmpfs {} -t {} {} '-ss -rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
-                repo_path, image_cmd, test_cmd, parallel_cmd, i, _get_deselect_option(self.should_skip_tests()), output_path)
+            cmd = "cd {}/tests/integration && ./runner --tmpfs {} -t {} {} '-rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
+                repo_path, image_cmd, test_cmd, parallel_cmd, i, _get_deselect_option(self.should_skip_tests()), info_path)
 
+            log_basename = test_group_str + "_" + str(i) + ".log"
+            log_path = os.path.join(repo_path, "tests/integration", log_basename)
             with open(log_path, 'w') as log:
                 logging.info("Executing cmd: %s", cmd)
                 retcode = subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
@@ -388,15 +413,41 @@ class ClickhouseIntegrationTestsRunner:
                 else:
                     logging.info("Some tests failed")
 
-            if os.path.exists(output_path):
-                lines = parse_test_results_output(output_path)
+            extra_logs_names = [log_basename]
+            log_result_path = os.path.join(str(self.path()), 'integration_run_' + log_basename)
+            shutil.copy(log_path, log_result_path)
+            log_paths.append(log_result_path)
+
+            for pytest_log_path in glob.glob(os.path.join(repo_path, "tests/integration/pytest*.log")):
+                new_name = test_group_str + "_" + str(i) + "_" + os.path.basename(pytest_log_path)
+                os.rename(pytest_log_path, os.path.join(repo_path, "tests/integration", new_name))
+                extra_logs_names.append(new_name)
+
+            dockerd_log_path = os.path.join(repo_path, "tests/integration/dockerd.log")
+            if os.path.exists(dockerd_log_path):
+                new_name = test_group_str + "_" + str(i) + "_" + os.path.basename(dockerd_log_path)
+                os.rename(dockerd_log_path, os.path.join(repo_path, "tests/integration", new_name))
+                extra_logs_names.append(new_name)
+
+            if os.path.exists(info_path):
+                extra_logs_names.append(info_basename)
+                lines = parse_test_results_output(info_path)
                 new_counters = get_counters(lines)
-                times_lines = parse_test_times(output_path)
+                times_lines = parse_test_times(info_path)
                 new_tests_times = get_test_times(times_lines)
                 self._update_counters(counters, new_counters)
                 for test_name, test_time in new_tests_times.items():
                     tests_times[test_name] = test_time
-                os.remove(output_path)
+
+            test_data_dirs_new = self._find_test_data_dirs(repo_path, test_names)
+            test_data_dirs_diff = self._get_test_data_dirs_difference(test_data_dirs_new, test_data_dirs)
+            test_data_dirs = test_data_dirs_new
+
+            if extra_logs_names or test_data_dirs_diff:
+                extras_result_path = os.path.join(str(self.path()), "integration_run_" + test_group_str + "_" + str(i) + ".tar.gz")
+                self._compress_logs(os.path.join(repo_path, "tests/integration"), extra_logs_names + list(test_data_dirs_diff), extras_result_path)
+                log_paths.append(extras_result_path)
+
             if len(counters["PASSED"]) + len(counters["FLAKY"]) == len(tests_in_group):
                 logging.info("All tests from group %s passed", test_group)
                 break
@@ -459,15 +510,6 @@ class ClickhouseIntegrationTestsRunner:
                 break
             time.sleep(5)
 
-        logging.info("Finally all tests done, going to compress test dir")
-        test_logs = os.path.join(str(self.path()), "./test_dir.tar.gz")
-        self._compress_logs("{}/tests/integration".format(repo_path), test_logs)
-        logging.info("Compression finished")
-
-        result_path_dockerd_logs = os.path.join(str(self.path()), "dockerd.log")
-        if os.path.exists(result_path_dockerd_logs):
-            shutil.copy(DOCKERD_LOGS_PATH, result_path_dockerd_logs)
-
         test_result = []
         for state in ("ERROR", "FAILED", "PASSED", "SKIPPED", "FLAKY"):
             if state == "PASSED":
@@ -479,7 +521,7 @@ class ClickhouseIntegrationTestsRunner:
             test_result += [(c + ' (✕' + str(final_retry) + ')', text_state, "{:.2f}".format(tests_times[c])) for c in counters[state]]
         status_text = description_prefix + ', '.join([str(n).lower().replace('failed', 'fail') + ': ' + str(len(c)) for n, c in counters.items()])
 
-        return result_state, status_text, test_result, [test_logs] + logs
+        return result_state, status_text, test_result, logs
 
     def run_impl(self, repo_path, build_path):
         if self.flaky_check:
@@ -539,15 +581,6 @@ class ClickhouseIntegrationTestsRunner:
                 logging.info("Collected more than 20 failed/error tests, stopping")
                 break
 
-        logging.info("Finally all tests done, going to compress test dir")
-        test_logs = os.path.join(str(self.path()), "./test_dir.tar.gz")
-        self._compress_logs("{}/tests/integration".format(repo_path), test_logs)
-        logging.info("Compression finished")
-
-        result_path_dockerd_logs = os.path.join(str(self.path()), "dockerd.log")
-        if os.path.exists(result_path_dockerd_logs):
-            shutil.copy(DOCKERD_LOGS_PATH, result_path_dockerd_logs)
-
         if counters["FAILED"] or counters["ERROR"]:
             logging.info("Overall status failure, because we have tests in FAILED or ERROR state")
             result_state = "failure"
@@ -580,7 +613,7 @@ class ClickhouseIntegrationTestsRunner:
         if '(memory)' in self.params['context_name']:
             result_state = "success"
 
-        return result_state, status_text, test_result, [test_logs]
+        return result_state, status_text, test_result, []
 
 def write_results(results_file, status_file, results, status):
     with open(results_file, 'w') as f:
