@@ -1,5 +1,6 @@
 #include <Parsers/ASTUserNameWithHost.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB

@@ -29,3 +29,4 @@ Statements represent various kinds of action you can perform using SQL queries. 
 -   [SET ROLE](../../sql-reference/statements/set-role.md)
 -   [TRUNCATE](../../sql-reference/statements/truncate.md)
 -   [USE](../../sql-reference/statements/use.md)
+-   [EXPLAIN](../../sql-reference/statements/explain.md)

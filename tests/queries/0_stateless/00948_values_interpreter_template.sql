@@ -3,6 +3,8 @@ DROP TABLE IF EXISTS values_template;
 DROP TABLE IF EXISTS values_template_nullable;
 DROP TABLE IF EXISTS values_template_fallback;
 
+SET input_format_null_as_default = 0;
+
 CREATE TABLE type_names (n UInt8, s1 String, s2 String, s3 String) ENGINE=Memory;
 CREATE TABLE values_template (d Date, s String, u UInt8, i Int64, f Float64, a Array(UInt8)) ENGINE = Memory;
 CREATE TABLE values_template_nullable (d Date, s Nullable(String), u Nullable(UInt8), a Array(Nullable(Float32))) ENGINE = Memory;

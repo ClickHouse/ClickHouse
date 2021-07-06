@@ -12,6 +12,15 @@ class Collator;
 namespace DB
 {
 
+namespace JSONBuilder
+{
+    class JSONMap;
+    class IItem;
+    using ItemPtr = std::unique_ptr<IItem>;
+}
+
+class Block;
+
 struct FillColumnDescription
 {
     /// All missed values in range [FROM, TO) will be filled
@@ -60,18 +69,20 @@ struct SortColumnDescription
 
     std::string dump() const
     {
-        std::stringstream ss;
-        ss << column_name << ":" << column_number << ":dir " << direction << "nulls " << nulls_direction;
-        return ss.str();
+        return fmt::format("{}:{}:dir {}nulls ", column_name, column_number, direction, nulls_direction);
     }
+
+    void explain(JSONBuilder::JSONMap & map, const Block & header) const;
 };
 
 /// Description of the sorting rule for several columns.
 using SortDescription = std::vector<SortColumnDescription>;
 
-class Block;
-
 /// Outputs user-readable description into `out`.
 void dumpSortDescription(const SortDescription & description, const Block & header, WriteBuffer & out);
+
+std::string dumpSortDescription(const SortDescription & description);
+
+JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description, const Block & header);
 
 }

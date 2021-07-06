@@ -20,18 +20,18 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
 }
 
-DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, const Context & context)
-        : IDatabase(name_), log(&Poco::Logger::get(logger)), global_context(context.getGlobalContext())
+DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
+        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get(logger))
 {
 }
 
-bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, const Context &) const
+bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
     std::lock_guard lock(mutex);
     return tables.find(table_name) != tables.end();
 }
 
-StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, const Context &) const
+StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
 {
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
@@ -40,7 +40,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, con
     return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
@@ -72,7 +72,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
     auto it = tables.find(table_name);
     if (it == tables.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist.",
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                         backQuote(database_name), backQuote(table_name));
     res = it->second;
     tables.erase(it);
@@ -80,7 +80,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
     {
-        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
@@ -100,13 +100,17 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
                         database_name, table_id.database_name);
 
-    if (!tables.emplace(table_name, table).second)
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", table_id.getFullTableName());
-
     if (table_id.hasUUID())
     {
-        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
+    }
+
+    if (!tables.emplace(table_name, table).second)
+    {
+        if (table_id.hasUUID())
+            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", table_id.getFullTableName());
     }
 }
 
@@ -123,11 +127,16 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     for (const auto & kv : tables_snapshot)
     {
+        kv.second->flush();
+    }
+
+    for (const auto & kv : tables_snapshot)
+    {
         auto table_id = kv.second->getStorageID();
-        kv.second->shutdown();
+        kv.second->flushAndShutdown();
         if (table_id.hasUUID())
         {
-            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
+            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
             DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
         }
     }
@@ -153,7 +162,7 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
     auto it = tables.find(table_name);
     if (it != tables.end())
         return it->second;
-    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist.",
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                     backQuote(database_name), backQuote(table_name));
 }
 

@@ -16,13 +16,14 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 class FunctionMapPopulateSeries : public IFunction
 {
 public:
     static constexpr auto name = "mapPopulateSeries";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapPopulateSeries>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapPopulateSeries>(); }
 
 private:
     String getName() const override { return name; }
@@ -71,9 +72,7 @@ private:
     }
 
     template <typename KeyType, typename ValType>
-    void execute2(
-        Block & block, size_t result, ColumnPtr key_column, ColumnPtr val_column, ColumnPtr max_key_column, const DataTypeTuple & res_type)
-        const
+    ColumnPtr execute2(ColumnPtr key_column, ColumnPtr val_column, ColumnPtr max_key_column, const DataTypeTuple & res_type) const
     {
         MutableColumnPtr res_tuple = res_type.createColumn();
 
@@ -190,9 +189,13 @@ private:
                 }
             }
 
+            static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
+            if (static_cast<size_t>(max_key) - static_cast<size_t>(min_key) > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in the result of function {}", getName());
+
             /* fill the result arrays */
             KeyType key;
-            for (key = min_key; key <= max_key; ++key)
+            for (key = min_key;; ++key)
             {
                 to_keys_data.insert(key);
 
@@ -207,55 +210,48 @@ private:
                 }
 
                 ++offset;
+                if (key == max_key)
+                    break;
             }
 
             to_keys_offsets.push_back(offset);
         }
 
         to_vals_arr.getOffsets().insert(to_keys_offsets.begin(), to_keys_offsets.end());
-        block.getByPosition(result).column = std::move(res_tuple);
+        return res_tuple;
     }
 
     template <typename KeyType>
-    void execute1(
-        Block & block, size_t result, ColumnPtr key_column, ColumnPtr val_column, ColumnPtr max_key_column, const DataTypeTuple & res_type)
-        const
+    ColumnPtr execute1(ColumnPtr key_column, ColumnPtr val_column, ColumnPtr max_key_column, const DataTypeTuple & res_type) const
     {
         const auto & val_type = (assert_cast<const DataTypeArray *>(res_type.getElements()[1].get()))->getNestedType();
         switch (val_type->getTypeId())
         {
             case TypeIndex::Int8:
-                execute2<KeyType, Int8>(block, result, key_column, val_column, max_key_column, res_type);
-                break;
+                return execute2<KeyType, Int8>(key_column, val_column, max_key_column, res_type);
             case TypeIndex::Int16:
-                execute2<KeyType, Int16>(block, result, key_column, val_column, max_key_column, res_type);
-                break;
+                return execute2<KeyType, Int16>(key_column, val_column, max_key_column, res_type);
             case TypeIndex::Int32:
-                execute2<KeyType, Int32>(block, result, key_column, val_column, max_key_column, res_type);
-                break;
+                return execute2<KeyType, Int32>(key_column, val_column, max_key_column, res_type);
             case TypeIndex::Int64:
-                execute2<KeyType, Int64>(block, result, key_column, val_column, max_key_column, res_type);
-                break;
+                return execute2<KeyType, Int64>(key_column, val_column, max_key_column, res_type);
             case TypeIndex::UInt8:
-                execute2<KeyType, UInt8>(block, result, key_column, val_column, max_key_column, res_type);
-                break;
+                return execute2<KeyType, UInt8>(key_column, val_column, max_key_column, res_type);
             case TypeIndex::UInt16:
-                execute2<KeyType, UInt16>(block, result, key_column, val_column, max_key_column, res_type);
-                break;
+                return execute2<KeyType, UInt16>(key_column, val_column, max_key_column, res_type);
             case TypeIndex::UInt32:
-                execute2<KeyType, UInt32>(block, result, key_column, val_column, max_key_column, res_type);
-                break;
+                return execute2<KeyType, UInt32>(key_column, val_column, max_key_column, res_type);
             case TypeIndex::UInt64:
-                execute2<KeyType, UInt64>(block, result, key_column, val_column, max_key_column, res_type);
-                break;
+                return execute2<KeyType, UInt64>(key_column, val_column, max_key_column, res_type);
             default:
                 throw Exception{"Illegal columns in arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        auto col1 = block.safeGetByPosition(arguments[0]), col2 = block.safeGetByPosition(arguments[1]);
+        auto col1 = arguments[0];
+        auto col2 = arguments[1];
 
         const auto * k = assert_cast<const DataTypeArray *>(col1.type.get());
         const auto * v = assert_cast<const DataTypeArray *>(col2.type.get());
@@ -269,35 +265,27 @@ private:
         if (arguments.size() == 3)
         {
             /* max key provided */
-            max_key_column = block.safeGetByPosition(arguments[2]).column;
+            max_key_column = arguments[2].column;
         }
 
         switch (k->getNestedType()->getTypeId())
         {
             case TypeIndex::Int8:
-                execute1<Int8>(block, result, col1.column, col2.column, max_key_column, res_type);
-                break;
+                return execute1<Int8>(col1.column, col2.column, max_key_column, res_type);
             case TypeIndex::Int16:
-                execute1<Int16>(block, result, col1.column, col2.column, max_key_column, res_type);
-                break;
+                return execute1<Int16>(col1.column, col2.column, max_key_column, res_type);
             case TypeIndex::Int32:
-                execute1<Int32>(block, result, col1.column, col2.column, max_key_column, res_type);
-                break;
+                return execute1<Int32>(col1.column, col2.column, max_key_column, res_type);
             case TypeIndex::Int64:
-                execute1<Int64>(block, result, col1.column, col2.column, max_key_column, res_type);
-                break;
+                return execute1<Int64>(col1.column, col2.column, max_key_column, res_type);
             case TypeIndex::UInt8:
-                execute1<UInt8>(block, result, col1.column, col2.column, max_key_column, res_type);
-                break;
+                return execute1<UInt8>(col1.column, col2.column, max_key_column, res_type);
             case TypeIndex::UInt16:
-                execute1<UInt16>(block, result, col1.column, col2.column, max_key_column, res_type);
-                break;
+                return execute1<UInt16>(col1.column, col2.column, max_key_column, res_type);
             case TypeIndex::UInt32:
-                execute1<UInt32>(block, result, col1.column, col2.column, max_key_column, res_type);
-                break;
+                return execute1<UInt32>(col1.column, col2.column, max_key_column, res_type);
             case TypeIndex::UInt64:
-                execute1<UInt64>(block, result, col1.column, col2.column, max_key_column, res_type);
-                break;
+                return execute1<UInt64>(col1.column, col2.column, max_key_column, res_type);
             default:
                 throw Exception{"Illegal columns in arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }

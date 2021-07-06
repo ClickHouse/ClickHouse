@@ -8,7 +8,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <Disks/StoragePolicy.h>
+#include <Disks/IVolume.h>
 
 
 namespace ProfileEvents
@@ -25,7 +25,6 @@ namespace ErrorCodes
 {
     extern const int NOT_ENOUGH_SPACE;
 }
-class MergeSorter;
 
 
 class BufferingToFileTransform : public IAccumulatingTransform
@@ -96,10 +95,12 @@ MergeSortingTransform::MergeSortingTransform(
     const SortDescription & description_,
     size_t max_merged_block_size_, UInt64 limit_,
     size_t max_bytes_before_remerge_,
+    double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
+    , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_) {}
 
@@ -268,9 +269,12 @@ void MergeSortingTransform::remerge()
 
     LOG_DEBUG(log, "Memory usage is lowered from {} to {}", ReadableSize(sum_bytes_in_blocks), ReadableSize(new_sum_bytes_in_blocks));
 
-    /// If the memory consumption was not lowered enough - we will not perform remerge anymore. 2 is a guess.
-    if (new_sum_bytes_in_blocks * 2 > sum_bytes_in_blocks)
+    /// If the memory consumption was not lowered enough - we will not perform remerge anymore.
+    if (remerge_lowered_memory_bytes_ratio && (new_sum_bytes_in_blocks * remerge_lowered_memory_bytes_ratio > sum_bytes_in_blocks))
+    {
         remerge_is_useful = false;
+        LOG_DEBUG(log, "Re-merging is not useful (memory usage was not lowered by remerge_sort_lowered_memory_bytes_ratio={})", remerge_lowered_memory_bytes_ratio);
+    }
 
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;

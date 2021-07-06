@@ -35,6 +35,9 @@ ru
 com
 com
 com
+рф
+
+
 ====PATH====
 П
 %D%9
@@ -74,6 +77,15 @@ example.com
 example.com
 example.com
 example.com
+example.com
+example.com
+example.com
+example.com
+com
+
+====CUT TO FIRST SIGNIFICANT SUBDOMAIN WITH WWW====
+
+www.com
 example.com
 example.com
 example.com

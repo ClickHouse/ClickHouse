@@ -29,7 +29,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
-    const Context & context,
+    ContextPtr context,
     const ASTPtr & table_func_ptr)
 {
     String query;
@@ -38,10 +38,8 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     {
         if (shard_info.isLocal())
         {
-            const auto * table_function = table_func_ptr->as<ASTFunction>();
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
-            auto storage_ptr = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
-            return storage_ptr->getInMemoryMetadataPtr()->getColumns();
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
+            return table_function_ptr->getActualTableStructure(context);
         }
 
         auto table_func_name = queryToString(table_func_ptr);
@@ -61,7 +59,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ColumnsDescription res;
 
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context.getSettingsRef());
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef());
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     Block sample_block
@@ -106,7 +104,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
                 column.default_desc.kind = columnDefaultKindFromString(kind_name);
                 String expr_str = (*default_expr)[i].get<const String &>();
                 column.default_desc.expression = parseQuery(
-                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0, context.getSettingsRef().max_parser_depth);
+                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0, context->getSettingsRef().max_parser_depth);
             }
 
             res.add(column);
@@ -119,7 +117,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const StorageID & table_id,
-    const Context & context,
+    ContextPtr context,
     const ASTPtr & table_func_ptr)
 {
     const auto & shards_info = cluster.getShardsInfo();

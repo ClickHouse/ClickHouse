@@ -1,11 +1,11 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionBoundingRatio.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -15,7 +15,7 @@ namespace ErrorCodes
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionRate(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionRate(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
     assertBinary(name, argument_types);
@@ -31,7 +31,7 @@ AggregateFunctionPtr createAggregateFunctionRate(const std::string & name, const
 
 void registerAggregateFunctionRate(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("boundingRatio", createAggregateFunctionRate, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("boundingRatio", createAggregateFunctionRate);
 }
 
 }

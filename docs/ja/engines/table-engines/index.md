@@ -62,7 +62,7 @@ toc_title: "\u306F\u3058\u3081\u306B"
 -   [分散](special/distributed.md#distributed)
 -   [マテリアライズドビュー](special/materializedview.md#materializedview)
 -   [辞書](special/dictionary.md#dictionary)
--   \[Merge\](special/merge.md\#merge
+-   \[Merge\](special/merge.md#merge
 -   [ファイル](special/file.md#file)
 -   [Null](special/null.md#null)
 -   [セット](special/set.md#set)

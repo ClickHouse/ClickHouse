@@ -4,9 +4,9 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/StorageID.h>
-
 
 namespace DB
 {
@@ -23,7 +23,9 @@ public:
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
+    IAST * comment = nullptr;
     ASTSetQuery * settings = nullptr;
+
 
     String getID(char) const override { return "Storage definition"; }
 
@@ -41,6 +43,8 @@ public:
     ASTExpressionList * columns = nullptr;
     ASTExpressionList * indices = nullptr;
     ASTExpressionList * constraints = nullptr;
+    ASTExpressionList * projections = nullptr;
+    IAST              * primary_key = nullptr;
 
     String getID(char) const override { return "Columns definition"; }
 
@@ -56,15 +60,16 @@ class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnC
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
     bool if_not_exists{false};
-    bool is_view{false};
+    bool is_ordinary_view{false};
     bool is_materialized_view{false};
     bool is_live_view{false};
     bool is_populate{false};
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * tables = nullptr;
-    //FIXME
+
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
+    UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;
@@ -76,7 +81,14 @@ public:
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
     std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
+    std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
+
     bool attach_short_syntax{false};
+
+    std::optional<String> attach_from_path = std::nullopt;
+
+    bool replace_table{false};
+    bool create_or_replace{false};
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }
@@ -87,6 +99,8 @@ public:
     {
         return removeOnCluster<ASTCreateQuery>(clone(), new_database);
     }
+
+    bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

@@ -14,11 +14,11 @@ For proper operation of introspection functions:
 
 -   Install the `clickhouse-common-static-dbg` package.
 
--   Set the [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
+-   Set the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse saves profiler reports to the [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
+ClickHouse saves profiler reports to the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
 
 ## addressToLine {#addresstoline}
 
@@ -32,7 +32,7 @@ If you use official ClickHouse packages, you need to install the `clickhouse-com
 addressToLine(address_of_binary_instruction)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
 
@@ -53,13 +53,13 @@ Type: [String](../../sql-reference/data-types/string.md).
 Enabling introspection functions:
 
 ``` sql
-SET allow_introspection_functions=1
+SET allow_introspection_functions=1;
 ```
 
 Selecting the first string from the `trace_log` system table:
 
 ``` sql
-SELECT * FROM system.trace_log LIMIT 1 \G
+SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ``` text
@@ -79,7 +79,7 @@ The `trace` field contains the stack trace at the moment of sampling.
 Getting the source code filename and the line number for a single address:
 
 ``` sql
-SELECT addressToLine(94784076370703) \G
+SELECT addressToLine(94784076370703) \G;
 ```
 
 ``` text
@@ -123,7 +123,7 @@ Converts virtual memory address inside ClickHouse server process to the symbol f
 addressToSymbol(address_of_binary_instruction)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
 
@@ -139,13 +139,13 @@ Type: [String](../../sql-reference/data-types/string.md).
 Enabling introspection functions:
 
 ``` sql
-SET allow_introspection_functions=1
+SET allow_introspection_functions=1;
 ```
 
 Selecting the first string from the `trace_log` system table:
 
 ``` sql
-SELECT * FROM system.trace_log LIMIT 1 \G
+SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ``` text
@@ -165,7 +165,7 @@ The `trace` field contains the stack trace at the moment of sampling.
 Getting a symbol for a single address:
 
 ``` sql
-SELECT addressToSymbol(94138803686098) \G
+SELECT addressToSymbol(94138803686098) \G;
 ```
 
 ``` text
@@ -220,7 +220,7 @@ Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol)
 demangle(symbol)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `symbol` ([String](../../sql-reference/data-types/string.md)) — Symbol from an object file.
 
@@ -236,13 +236,13 @@ Type: [String](../../sql-reference/data-types/string.md).
 Enabling introspection functions:
 
 ``` sql
-SET allow_introspection_functions=1
+SET allow_introspection_functions=1;
 ```
 
 Selecting the first string from the `trace_log` system table:
 
 ``` sql
-SELECT * FROM system.trace_log LIMIT 1 \G
+SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ``` text
@@ -262,7 +262,7 @@ The `trace` field contains the stack trace at the moment of sampling.
 Getting a function name for a single address:
 
 ``` sql
-SELECT demangle(addressToSymbol(94138803686098)) \G
+SELECT demangle(addressToSymbol(94138803686098)) \G;
 ```
 
 ``` text
@@ -306,3 +306,67 @@ execute_native_thread_routine
 start_thread
 clone
 ```
+## tid {#tid}
+
+Returns id of the thread, in which current [Block](https://clickhouse.tech/docs/en/development/architecture/#block) is processed.
+
+**Syntax**
+
+``` sql
+tid()
+```
+
+**Returned value**
+
+-   Current thread id. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT tid();
+```
+
+Result:
+
+``` text
+┌─tid()─┐
+│  3878 │
+└───────┘
+```
+
+## logTrace {#logtrace}
+
+Emits trace log message to server log for each [Block](https://clickhouse.tech/docs/en/development/architecture/#block).
+
+**Syntax**
+
+``` sql
+logTrace('message')
+```
+
+**Arguments**
+
+-   `message` — Message that is emitted to server log. [String](../../sql-reference/data-types/string.md#string).
+
+**Returned value**
+
+-   Always returns 0.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT logTrace('logTrace message');
+```
+
+Result:
+
+``` text
+┌─logTrace('logTrace message')─┐
+│                            0 │
+└──────────────────────────────┘
+```
+

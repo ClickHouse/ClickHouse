@@ -7,7 +7,7 @@ toc_title: "\u30B5\u30FC\u30D0\u30FC\u8A2D\u5B9A"
 
 # サーバー設定 {#server-settings}
 
-## builtin\_dictionaries\_reload\_interval {#builtin-dictionaries-reload-interval}
+## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
 組み込み辞書を再ロードするまでの秒単位の間隔。
 
@@ -68,7 +68,7 @@ ClickHouseはx秒ごとに組み込みの辞書を再読み込みします。 �
 </compression>
 ```
 
-## default\_database {#default-database}
+## default_database {#default-database}
 
 既定のデータベース。
 
@@ -80,7 +80,7 @@ ClickHouseはx秒ごとに組み込みの辞書を再読み込みします。 �
 <default_database>default</default_database>
 ```
 
-## default\_profile {#default-profile}
+## default_profile {#default-profile}
 
 既定の設定プロファイル。
 
@@ -92,7 +92,7 @@ ClickHouseはx秒ごとに組み込みの辞書を再読み込みします。 �
 <default_profile>default</default_profile>
 ```
 
-## dictionaries\_config {#server_configuration_parameters-dictionaries_config}
+## dictionaries_config {#server_configuration_parameters-dictionaries_config}
 
 外部辞書の設定ファイルへのパス。
 
@@ -109,7 +109,7 @@ ClickHouseはx秒ごとに組み込みの辞書を再読み込みします。 �
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## dictionaries\_lazy\_load {#server_configuration_parameters-dictionaries_lazy_load}
+## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
 
 辞書の遅延読み込み。
 
@@ -125,7 +125,7 @@ ClickHouseはx秒ごとに組み込みの辞書を再読み込みします。 �
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-## format\_schema\_path {#server_configuration_parameters-format_schema_path}
+## format_schema_path {#server_configuration_parameters-format_schema_path}
 
 入力データのスキーマを含むディレクトリへのパス。 [CapnProto](../../interfaces/formats.md#capnproto) 形式。
 
@@ -146,11 +146,11 @@ ClickHouseはx秒ごとに組み込みの辞書を再読み込みします。 �
 -   port – The port on the Graphite server.
 -   interval – The interval for sending, in seconds.
 -   timeout – The timeout for sending data, in seconds.
--   root\_path – Prefix for keys.
+-   root_path – Prefix for keys.
 -   metrics – Sending data from the [システムメトリック](../../operations/system-tables.md#system_tables-metrics) テーブル。
 -   events – Sending deltas data accumulated for the time period from the [システムイベント](../../operations/system-tables.md#system_tables-events) テーブル。
--   events\_cumulative – Sending cumulative data from the [システムイベント](../../operations/system-tables.md#system_tables-events) テーブル。
--   asynchronous\_metrics – Sending data from the [システムasynchronous\_metrics](../../operations/system-tables.md#system_tables-asynchronous_metrics) テーブル。
+-   events_cumulative – Sending cumulative data from the [システムイベント](../../operations/system-tables.md#system_tables-events) テーブル。
+-   asynchronous_metrics – Sending data from the [システムasynchronous_metrics](../../operations/system-tables.md#system_tables-asynchronous_metrics) テーブル。
 
 複数の設定が可能です `<graphite>` 句。 たとえば、異なる間隔で異なるデータを送信するためにこれを使用できます。
 
@@ -170,7 +170,7 @@ ClickHouseはx秒ごとに組み込みの辞書を再読み込みします。 �
 </graphite>
 ```
 
-## graphite\_rollup {#server_configuration_parameters-graphite-rollup}
+## graphite_rollup {#server_configuration_parameters-graphite-rollup}
 
 グラファイトのデータを薄くする設定。
 
@@ -198,7 +198,7 @@ ClickHouseはx秒ごとに組み込みの辞書を再読み込みします。 �
 </graphite_rollup_example>
 ```
 
-## http\_port/https\_port {#http-porthttps-port}
+## http_port/https_port {#http-porthttps-port}
 
 HTTP経由でサーバーに接続するためのポート。
 
@@ -212,7 +212,7 @@ HTTP経由でサーバーに接続するためのポート。
 <https_port>9999</https_port>
 ```
 
-## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
+## http_server_default_response {#server_configuration_parameters-http_server_default_response}
 
 ClickHouse HTTP(s)サーバーにアクセスするときにデフォルトで表示されるページ。
 既定値は次のとおりです “Ok.” （最後に改行があります)
@@ -227,7 +227,7 @@ ClickHouse HTTP(s)サーバーにアクセスするときにデフォルトで�
 </http_server_default_response>
 ```
 
-## include\_from {#server_configuration_parameters-include_from}
+## include_from {#server_configuration_parameters-include_from}
 
 置換されたファイルへのパス。
 
@@ -239,7 +239,7 @@ ClickHouse HTTP(s)サーバーにアクセスするときにデフォルトで�
 <include_from>/etc/metrica.xml</include_from>
 ```
 
-## interserver\_http\_port {#interserver-http-port}
+## interserver_http_port {#interserver-http-port}
 
 ClickHouseサーバー間でデータを交換するポート。
 
@@ -249,7 +249,7 @@ ClickHouseサーバー間でデータを交換するポート。
 <interserver_http_port>9009</interserver_http_port>
 ```
 
-## interserver\_http\_host {#interserver-http-host}
+## interserver_http_host {#interserver-http-host}
 
 このサーバーへのアクセスに他のサーバーが使用できるホスト名。
 
@@ -263,7 +263,7 @@ ClickHouseサーバー間でデータを交換するポート。
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
-## interserver\_http\_credentials {#server-settings-interserver-http-credentials}
+## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
 認証時に使用されるユーザー名とパスワード [複製](../../engines/table-engines/mergetree-family/replication.md) 複製された\*エンジンで。 これらの資格情報は、レプリカ間の通信にのみ使用され、ClickHouseクライアントの資格情報とは無関係です。 サーバーにあるチェックにこれらの資格の接続にはレプリカと同じ資格を接続する場合はその他のレプリカ. なので、これらの資格を設定する同じすべてのレプリカ、クラスター
 既定では、認証は使用されません。
@@ -282,7 +282,7 @@ ClickHouseサーバー間でデータを交換するポート。
 </interserver_http_credentials>
 ```
 
-## keep\_alive\_timeout {#keep-alive-timeout}
+## keep_alive_timeout {#keep-alive-timeout}
 
 ClickHouseが接続を閉じる前に受信要求を待機する秒数。 既定値は3秒です。
 
@@ -292,7 +292,7 @@ ClickHouseが接続を閉じる前に受信要求を待機する秒数。 既定
 <keep_alive_timeout>3</keep_alive_timeout>
 ```
 
-## listen\_host {#server_configuration_parameters-listen_host}
+## listen_host {#server_configuration_parameters-listen_host}
 
 要求元のホストに対する制限。 したい場合はサーバーの回答をしているが、それらを指定し `::`.
 
@@ -343,10 +343,10 @@ Syslogへの書き込みもサポートされています。 設定の例:
 
 キー:
 
--   use\_syslog — Required setting if you want to write to the syslog.
+-   use_syslog — Required setting if you want to write to the syslog.
 -   address — The host\[:port\] of syslogd. If omitted, the local daemon is used.
 -   hostname — Optional. The name of the host that logs are sent from.
--   facility — [Syslog機能キーワード](https://en.wikipedia.org/wiki/Syslog#Facility) 大文字では “LOG\_” 接頭辞: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`、というように）。
+-   facility — [Syslog機能キーワード](https://en.wikipedia.org/wiki/Syslog#Facility) 大文字では “LOG_” 接頭辞: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`、というように）。
     デフォルト値: `LOG_USER` もし `address` 指定される, `LOG_DAEMON otherwise.`
 -   format – Message format. Possible values: `bsd` と `syslog.`
 
@@ -364,7 +364,7 @@ Syslogへの書き込みもサポートされています。 設定の例:
 <macros incl="macros" optional="true" />
 ```
 
-## mark\_cache\_size {#server-mark-cache-size}
+## mark_cache_size {#server-mark-cache-size}
 
 テーブルエンジンが使用するマークのキャッシュのおおよそのサイズ(バイト単位) [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md) 家族だ
 
@@ -376,7 +376,7 @@ Syslogへの書き込みもサポートされています。 設定の例:
 <mark_cache_size>5368709120</mark_cache_size>
 ```
 
-## max\_concurrent\_queries {#max-concurrent-queries}
+## max_concurrent_queries {#max-concurrent-queries}
 
 同時に処理される要求の最大数。
 
@@ -386,7 +386,7 @@ Syslogへの書き込みもサポートされています。 設定の例:
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
-## max\_connections {#max-connections}
+## max_connections {#max-connections}
 
 受信接続の最大数。
 
@@ -396,7 +396,7 @@ Syslogへの書き込みもサポートされています。 設定の例:
 <max_connections>4096</max_connections>
 ```
 
-## max\_open\_files {#max-open-files}
+## max_open_files {#max-open-files}
 
 開いているファイルの最大数。
 
@@ -410,7 +410,7 @@ Syslogへの書き込みもサポートされています。 設定の例:
 <max_open_files>262144</max_open_files>
 ```
 
-## max\_table\_size\_to\_drop {#max-table-size-to-drop}
+## max_table_size_to_drop {#max-table-size-to-drop}
 
 テーブルの削除に関する制限。
 
@@ -428,7 +428,7 @@ ClickHouseサーバーを再起動せずにテーブルを削除する必要が�
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
-## merge\_tree {#server_configuration_parameters-merge_tree}
+## merge_tree {#server_configuration_parameters-merge_tree}
 
 テーブルの微調整 [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md).
 
@@ -463,7 +463,7 @@ SSLのサポートは以下によって提供されます `libpoco` 図書館 �
 -   sessionTimeout – Time for caching the session on the server.
 -   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1\_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
@@ -501,11 +501,11 @@ SSLのサポートは以下によって提供されます `libpoco` 図書館 �
 </openSSL>
 ```
 
-## part\_log {#server_configuration_parameters-part-log}
+## part_log {#server_configuration_parameters-part-log}
 
 関連付けられたイベントのログ記録 [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md). たとえば、データの追加やマージなどです。 利用できるログを統合アルゴリズムと比較しています。 マージプロセスを視覚化できます。
 
-クエリは [システムpart\_log](../../operations/system-tables.md#system_tables-part-log) 別のファイルではなく、テーブル。 このテーブルの名前は、 `table` パラメータ(下記参照)。
+クエリは [システムpart_log](../../operations/system-tables.md#system_tables-part-log) 別のファイルではなく、テーブル。 このテーブルの名前は、 `table` パラメータ(下記参照)。
 
 以下のパラメータの設定ロギング:
 
@@ -548,7 +548,7 @@ SSLのサポートは以下によって提供されます `libpoco` 図書館 �
 -   `port` – Port for `endpoint`.
 -   `metrics` – Flag that sets to expose metrics from the [システムメトリック](../system-tables.md#system_tables-metrics) テーブル。
 -   `events` – Flag that sets to expose metrics from the [システムイベント](../system-tables.md#system_tables-events) テーブル。
--   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [システムasynchronous\_metrics](../system-tables.md#system_tables-asynchronous_metrics) テーブル。
+-   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [システムasynchronous_metrics](../system-tables.md#system_tables-asynchronous_metrics) テーブル。
 
 **例**
 
@@ -562,11 +562,11 @@ SSLのサポートは以下によって提供されます `libpoco` 図書館 �
     </prometheus>
 ```
 
-## query\_log {#server_configuration_parameters-query-log}
+## query_log {#server_configuration_parameters-query-log}
 
-クエリをログに記録するための設定 [log\_queries=1](../settings/settings.md) 設定。
+クエリをログに記録するための設定 [log_queries=1](../settings/settings.md) 設定。
 
-クエリは [システムquery\_log](../../operations/system-tables.md#system_tables-query_log) 別のファイルではなく、テーブル。 テーブルの名前を変更することができます。 `table` パラメータ(下記参照)。
+クエリは [システムquery_log](../../operations/system-tables.md#system_tables-query_log) 別のファイルではなく、テーブル。 テーブルの名前を変更することができます。 `table` パラメータ(下記参照)。
 
 以下のパラメータの設定ロギング:
 
@@ -588,11 +588,11 @@ SSLのサポートは以下によって提供されます `libpoco` 図書館 �
 </query_log>
 ```
 
-## query\_thread\_log {#server_configuration_parameters-query-thread-log}
+## query_thread_log {#server_configuration_parameters-query-thread-log}
 
-クエリのスレッドをログに記録するための設定 [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads) 設定。
+クエリのスレッドをログに記録するための設定 [log_query_threads=1](../settings/settings.md#settings-log-query-threads) 設定。
 
-クエリは [システムquery\_thread\_log](../../operations/system-tables.md#system_tables-query-thread-log) 別のファイルではなく、テーブル。 テーブルの名前を変更することができます。 `table` パラメータ(下記参照)。
+クエリは [システムquery_thread_log](../../operations/system-tables.md#system_tables-query-thread-log) 別のファイルではなく、テーブル。 テーブルの名前を変更することができます。 `table` パラメータ(下記参照)。
 
 以下のパラメータの設定ロギング:
 
@@ -614,9 +614,9 @@ SSLのサポートは以下によって提供されます `libpoco` 図書館 �
 </query_thread_log>
 ```
 
-## trace\_log {#server_configuration_parameters-trace_log}
+## trace_log {#server_configuration_parameters-trace_log}
 
-の設定 [trace\_log](../../operations/system-tables.md#system_tables-trace_log) システムテーブル操作。
+の設定 [trace_log](../../operations/system-tables.md#system_tables-trace_log) システムテーブル操作。
 
 パラメータ:
 
@@ -636,7 +636,7 @@ SSLのサポートは以下によって提供されます `libpoco` 図書館 �
 </trace_log>
 ```
 
-## query\_masking\_rules {#query-masking-rules}
+## query_masking_rules {#query-masking-rules}
 
 サーバーログに格納する前に、すべてのログメッセージだけでなく、クエリにも適用されます,
 `system.query_log`, `system.text_log`, `system.processes` クライアントに送信されたログ。 これにより
@@ -667,7 +667,7 @@ SQLクエリからの機密データ漏洩(名前、電子メール、個人な�
 分散クエリの場合は、各サーバーを個別に構成する必要があります。
 ノードはマスクなしで保存されます。
 
-## remote\_servers {#server-settings-remote-servers}
+## remote_servers {#server-settings-remote-servers}
 
 によって使用されるクラスタの構成 [分散](../../engines/table-engines/special/distributed.md) テーブルエンジンと `cluster` テーブル関数。
 
@@ -681,7 +681,7 @@ SQLクエリからの機密データ漏洩(名前、電子メール、個人な�
 
 **も参照。**
 
--   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
+-   [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## タイムゾーン {#server_configuration_parameters-timezone}
 
@@ -697,7 +697,7 @@ UTCタイムゾーンまたは地理的位置(たとえば、Africa/Abidjan)のI
 <timezone>Europe/Moscow</timezone>
 ```
 
-## tcp\_port {#server_configuration_parameters-tcp_port}
+## tcp_port {#server_configuration_parameters-tcp_port}
 
 TCPプロトコル経由でクライアントと通信するポート。
 
@@ -707,7 +707,7 @@ TCPプロトコル経由でクライアントと通信するポート。
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
+## tcp_port_secure {#server_configuration_parameters-tcp_port_secure}
 
 クライアントとの安全な通信用のTCPポート。 それを使用して [OpenSSL](#server_configuration_parameters-openssl) 設定。
 
@@ -721,7 +721,7 @@ TCPプロトコル経由でクライアントと通信するポート。
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql\_port {#server_configuration_parameters-mysql_port}
+## mysql_port {#server_configuration_parameters-mysql_port}
 
 MySQLプロトコ
 
@@ -735,7 +735,7 @@ MySQLプロトコ
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp\_path {#server-settings-tmp_path}
+## tmp_path {#server-settings-tmp_path}
 
 大規模なクエリを処理するための一時データへのパス。
 
@@ -748,7 +748,7 @@ MySQLプロトコ
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-## tmp\_policy {#server-settings-tmp-policy}
+## tmp_policy {#server-settings-tmp-policy}
 
 ポリシーから [`storage_configuration`](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) 一時ファイルを格納する。
 設定されていない場合 [`tmp_path`](#server-settings-tmp_path) それ以外の場合は無視されます。
@@ -759,11 +759,11 @@ MySQLプロトコ
 - `max_data_part_size_bytes` 無視される
 なければならない同一数量の政策
 
-## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
+## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 テーブルエンジンが使用する非圧縮データのキャッシュサイズ(バイト単位) [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md).
 
-サーバーの共有キャッシュが一つあります。 メモリが割り当てられます。 キャッシュが使用されるのは [use\_uncompressed\_cache](../settings/settings.md#setting-use_uncompressed_cache) 有効です。
+サーバーの共有キャッシュが一つあります。 メモリが割り当てられます。 キャッシュが使用されるのは [use_uncompressed_cache](../settings/settings.md#setting-use_uncompressed_cache) 有効です。
 
 非圧縮キャッシュは、個々のケースで非常に短いクエリで有利です。
 
@@ -773,7 +773,7 @@ MySQLプロトコ
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user\_files\_path {#server_configuration_parameters-user_files_path}
+## user_files_path {#server_configuration_parameters-user_files_path}
 
 ユ テーブル関数で使用されます [ファイル()](../../sql-reference/table-functions/file.md).
 
@@ -783,7 +783,7 @@ MySQLプロトコ
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-## users\_config {#users-config}
+## users_config {#users-config}
 
 以下のファイルへのパス:
 
@@ -851,13 +851,13 @@ ClickHouse用飼育係の保存メタデータのレプリカの使用時に再�
 -   [複製](../../engines/table-engines/mergetree-family/replication.md)
 -   [ZooKeeperプログラマガイド](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
-## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
+## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
 ZooKeeperのデータ部分ヘッダーの格納方法。
 
 この設定は、 `MergeTree` 家族だ 指定できます:
 
--   グローバルに [merge\_tree](#server_configuration_parameters-merge_tree) のセクション `config.xml` ファイル
+-   グローバルに [merge_tree](#server_configuration_parameters-merge_tree) のセクション `config.xml` ファイル
 
     ClickHouseは、サーバー上のすべてのテーブルの設定を使用します。 設定はいつでも変更できます。 既存のテーブルは、設定が変更されると動作を変更します。
 
@@ -879,21 +879,21 @@ ZooKeeperのデータ部分ヘッダーの格納方法。
 
 **デフォルト値:** 0.
 
-## disable\_internal\_dns\_cache {#server-settings-disable-internal-dns-cache}
+## disable_internal_dns_cache {#server-settings-disable-internal-dns-cache}
 
 内部DNSキャッシュを無効にします。 システムの作動のClickHouseのために推薦される
 頻繁に変化するインフラなどのKubernetes.
 
 **デフォルト値:** 0.
 
-## dns\_cache\_update\_period {#server-settings-dns-cache-update-period}
+## dns_cache_update_period {#server-settings-dns-cache-update-period}
 
 ClickHouse内部DNSキャッシュに格納されているIPアドレスの更新期間(秒単位)。
 更新は、別のシステムスレッドで非同期に実行されます。
 
 **デフォルト値**: 15.
 
-## access\_control\_path {#access_control_path}
+## access_control_path {#access_control_path}
 
 パフォルダがClickHouseサーバー店舗ユーザーの役割構成で作成したSQLコマンド.
 

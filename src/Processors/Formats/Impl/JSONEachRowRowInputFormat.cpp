@@ -5,7 +5,7 @@
 #include <Formats/JSONEachRowUtils.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
 {
@@ -96,7 +96,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 {
     // This is just an optimization: try to avoid copying the name into current_column_name
 
-    if (nested_prefix_length == 0 && buf.position() + 1 < buf.buffer().end())
+    if (nested_prefix_length == 0 && !buf.eof() && buf.position() + 1 < buf.buffer().end())
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position() + 1, buf.buffer().end());
 
@@ -140,6 +140,7 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     {
         seen_columns[index] = read_columns[index] = true;
         const auto & type = getPort().getHeader().getByPosition(index).type;
+        const auto & serialization = serializations[index];
 
         if (yield_strings)
         {
@@ -149,21 +150,21 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
             ReadBufferFromString buf(str);
 
             if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = DataTypeNullable::deserializeWholeText(*columns[index], buf, format_settings, type);
+                read_columns[index] = SerializationNullable::deserializeWholeTextImpl(*columns[index], buf, format_settings, serialization);
             else
-                type->deserializeAsWholeText(*columns[index], buf, format_settings);
+                serialization->deserializeWholeText(*columns[index], buf, format_settings);
         }
         else
         {
             if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+                read_columns[index] = SerializationNullable::deserializeTextJSONImpl(*columns[index], in, format_settings, serialization);
             else
-                type->deserializeAsTextJSON(*columns[index], in, format_settings);
+                serialization->deserializeTextJSON(*columns[index], in, format_settings);
         }
     }
     catch (Exception & e)
     {
-        e.addMessage("(while read the value of key " + columnName(index) + ")");
+        e.addMessage("(while reading the value of key " + columnName(index) + ")");
         throw;
     }
 }
@@ -173,7 +174,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(in);
 
     if (in.eof())
-        throw Exception("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw ParsingException("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
     else if (*in.position() == '}')
     {
         ++in.position();

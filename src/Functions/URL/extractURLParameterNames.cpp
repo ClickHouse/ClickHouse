@@ -34,7 +34,7 @@ public:
         return 0;
     }
 
-    void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
+    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)

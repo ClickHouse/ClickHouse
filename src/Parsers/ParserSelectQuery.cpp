@@ -19,6 +19,8 @@ namespace ErrorCodes
     extern const int TOP_AND_LIMIT_TOGETHER;
     extern const int WITH_TIES_WITHOUT_ORDER_BY;
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
+    extern const int ROW_AND_ROWS_TOGETHER;
+    extern const int FIRST_AND_NEXT_TOGETHER;
 }
 
 
@@ -28,6 +30,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     node = select_query;
 
     ParserKeyword s_select("SELECT");
+    ParserKeyword s_all("ALL");
     ParserKeyword s_distinct("DISTINCT");
     ParserKeyword s_from("FROM");
     ParserKeyword s_prewhere("PREWHERE");
@@ -36,6 +39,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_with("WITH");
     ParserKeyword s_totals("TOTALS");
     ParserKeyword s_having("HAVING");
+    ParserKeyword s_window("WINDOW");
     ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_limit("LIMIT");
     ParserKeyword s_settings("SETTINGS");
@@ -45,6 +49,12 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_top("TOP");
     ParserKeyword s_with_ties("WITH TIES");
     ParserKeyword s_offset("OFFSET");
+    ParserKeyword s_fetch("FETCH");
+    ParserKeyword s_only("ONLY");
+    ParserKeyword s_row("ROW");
+    ParserKeyword s_rows("ROWS");
+    ParserKeyword s_first("FIRST");
+    ParserKeyword s_next("NEXT");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -62,6 +72,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr where_expression;
     ASTPtr group_expression_list;
     ASTPtr having_expression;
+    ASTPtr window_list;
     ASTPtr order_expression_list;
     ASTPtr limit_by_length;
     ASTPtr limit_by_offset;
@@ -83,13 +94,23 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SELECT [DISTINCT] [TOP N [WITH TIES]] expr list
+    /// SELECT [ALL/DISTINCT] [TOP N [WITH TIES]] expr list
     {
+        bool has_all = false;
         if (!s_select.ignore(pos, expected))
             return false;
 
+        if (s_all.ignore(pos, expected))
+            has_all = true;
+
         if (s_distinct.ignore(pos, expected))
             select_query->distinct = true;
+
+        if (!has_all && s_all.ignore(pos, expected))
+            has_all = true;
+
+        if (has_all && select_query->distinct)
+            return false;
 
         if (s_top.ignore(pos, expected))
         {
@@ -184,6 +205,16 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    /// WINDOW clause
+    if (s_window.ignore(pos, expected))
+    {
+        ParserWindowList window_list_parser;
+        if (!window_list_parser.parse(pos, window_list, expected))
+        {
+            return false;
+        }
+    }
+
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
     if (s_order_by.ignore(pos, expected))
     {
@@ -247,8 +278,61 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (s_offset.ignore(pos, expected))
     {
+        /// OFFSET offset_row_count {ROW | ROWS} FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}
+        bool offset_with_fetch_maybe = false;
+
         if (!exp_elem.parse(pos, limit_offset, expected))
             return false;
+
+        if (s_row.ignore(pos, expected))
+        {
+            if (s_rows.ignore(pos, expected))
+                throw Exception("Can not use ROW and ROWS together", ErrorCodes::ROW_AND_ROWS_TOGETHER);
+            offset_with_fetch_maybe = true;
+        }
+        else if (s_rows.ignore(pos, expected))
+        {
+            offset_with_fetch_maybe = true;
+        }
+
+        if (offset_with_fetch_maybe && s_fetch.ignore(pos, expected))
+        {
+            /// OFFSET FETCH clause must exists with "ORDER BY"
+            if (!order_expression_list)
+                return false;
+
+            if (s_first.ignore(pos, expected))
+            {
+                if (s_next.ignore(pos, expected))
+                    throw Exception("Can not use FIRST and NEXT together", ErrorCodes::FIRST_AND_NEXT_TOGETHER);
+            }
+            else if (!s_next.ignore(pos, expected))
+                return false;
+
+            if (!exp_elem.parse(pos, limit_length, expected))
+                return false;
+
+            if (s_row.ignore(pos, expected))
+            {
+                if (s_rows.ignore(pos, expected))
+                    throw Exception("Can not use ROW and ROWS together", ErrorCodes::ROW_AND_ROWS_TOGETHER);
+            }
+            else if (!s_rows.ignore(pos, expected))
+                return false;
+
+            if (s_with_ties.ignore(pos, expected))
+            {
+                select_query->limit_with_ties = true;
+            }
+            else if (s_only.ignore(pos, expected))
+            {
+                select_query->limit_with_ties = false;
+            }
+            else
+            {
+                return false;
+            }
+        }
     }
 
     /// Because TOP n in totally equals LIMIT n
@@ -302,6 +386,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::HAVING, std::move(having_expression));
+    select_query->setExpression(ASTSelectQuery::Expression::WINDOW, std::move(window_list));
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(limit_by_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(limit_by_length));

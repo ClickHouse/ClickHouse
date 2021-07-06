@@ -1,5 +1,5 @@
 ---
-toc_priority: 6
+toc_priority: 10
 toc_title: RabbitMQ
 ---
 
@@ -51,17 +51,33 @@ Optional parameters:
 -   `rabbitmq_row_delimiter` – Delimiter character, which ends the message.
 -   `rabbitmq_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 -   `rabbitmq_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
--   `rabbitmq_num_queues` – The number of queues per consumer. Default: `1`. Specify more queues if the capacity of one queue per consumer is insufficient.
--   `rabbitmq_queue_base` - Specify a base name for queues that will be declared. By default, queues are declared unique to tables based on db and table names.
+-   `rabbitmq_num_queues` – Total number of queues. Default: `1`. Increasing this number can significantly improve performance.
+-   `rabbitmq_queue_base` - Specify a hint for queue names. Use cases of this setting are described below.
 -   `rabbitmq_deadletter_exchange` - Specify name for a [dead letter exchange](https://www.rabbitmq.com/dlx.html). You can create another table with this exchange name and collect messages in cases when they are republished to dead letter exchange. By default dead letter exchange is not specified.
--   `persistent` - If set to 1 (true), in insert query delivery mode will be set to 2 (marks messages as 'persistent'). Default: `0`.
+-   `rabbitmq_persistent` - If set to 1 (true), in insert query delivery mode will be set to 2 (marks messages as 'persistent'). Default: `0`.
 -   `rabbitmq_skip_broken_messages` – RabbitMQ message parser tolerance to schema-incompatible messages per block. Default: `0`. If `rabbitmq_skip_broken_messages = N` then the engine skips *N* RabbitMQ messages that cannot be parsed (a message equals a row of data).
 -   `rabbitmq_max_block_size`
 -   `rabbitmq_flush_interval_ms`
 
-Required configuration:
+Also format settings can be added along with rabbitmq-related settings.
+
+Example:
+
+``` sql
+  CREATE TABLE queue (
+    key UInt64,
+    value UInt64,
+    date DateTime
+  ) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'localhost:5672',
+                            rabbitmq_exchange_name = 'exchange1',
+                            rabbitmq_format = 'JSONEachRow',
+                            rabbitmq_num_consumers = 5,
+                            date_time_input_format = 'best_effort';
+```
 
 The RabbitMQ server configuration should be added using the ClickHouse config file.
+
+Required configuration:
 
 ``` xml
  <rabbitmq>
@@ -70,16 +86,12 @@ The RabbitMQ server configuration should be added using the ClickHouse config fi
  </rabbitmq>
 ```
 
-Example:
+Additional configuration:
 
-``` sql
-  CREATE TABLE queue (
-    key UInt64,
-    value UInt64
-  ) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'localhost:5672',
-                            rabbitmq_exchange_name = 'exchange1',
-                            rabbitmq_format = 'JSONEachRow',
-                            rabbitmq_num_consumers = 5;
+``` xml
+ <rabbitmq>
+    <vhost>clickhouse</vhost>
+ </rabbitmq>
 ```
 
 ## Description {#description}
@@ -102,14 +114,15 @@ Exchange type options:
 -   `fanout` - Routing to all tables (where exchange name is the same) regardless of the keys.
 -   `topic` - Routing is based on patterns with dot-separated keys. Examples: `*.logs`, `records.*.*.2020`, `*.2018,*.2019,*.2020`.
 -   `headers` - Routing is based on `key=value` matches with a setting `x-match=all` or `x-match=any`. Example table key list: `x-match=all,format=logs,type=report,year=2020`.
--   `consistent-hash` - Data is evenly distributed between all bound tables (where the exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
+-   `consistent_hash` - Data is evenly distributed between all bound tables (where the exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
 
 Setting `rabbitmq_queue_base` may be used for the following cases:
--   to let different tables share queues, so that multiple consumers could be registered for the same queues, which makes a better performance. If using `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings, the exact match of queues is achieved in case these parameters are the same.
--   to be able to restore reading from certain durable queues when not all messages were successfully consumed. To be able to resume consumption from one specific queue - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To be able to resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. By default, queue names will be unique to tables. Note: it makes sence only if messages are sent with delivery mode 2 - marked 'persistent', durable.
--   to reuse queues as they are declared durable and not auto-deleted.
 
-To improve performance, received messages are grouped into blocks the size of [max\_insert\_block\_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream\_flush\_interval\_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+-   to let different tables share queues, so that multiple consumers could be registered for the same queues, which makes a better performance. If using `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings, the exact match of queues is achieved in case these parameters are the same.
+-   to be able to restore reading from certain durable queues when not all messages were successfully consumed. To resume consumption from one specific queue - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. By default, queue names will be unique to tables.
+-   to reuse queues as they are declared durable and not auto-deleted. (Can be deleted via any of RabbitMQ CLI tools.)
+
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings are specified along with `rabbitmq_exchange_type`, then:
 
@@ -148,4 +161,7 @@ Example:
 -   `_channel_id` - ChannelID, on which consumer, who received the message, was declared.
 -   `_delivery_tag` - DeliveryTag of the received message. Scoped per channel.
 -   `_redelivered` - `redelivered` flag of the message.
--   `_message_id` - MessageID of the received message; non-empty if was set, when message was published.
+-   `_message_id` - messageID of the received message; non-empty if was set, when message was published.
+-   `_timestamp` - timestamp of the received message; non-empty if was set, when message was published.
+
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/rabbitmq/) <!--hide-->

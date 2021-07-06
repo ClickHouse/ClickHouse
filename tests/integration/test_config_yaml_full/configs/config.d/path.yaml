@@ -1,0 +1,18 @@
+path:
+  - ./
+  - "@replace": replace
+tmp_path:
+  - ./tmp/
+  - "@replace": replace
+user_files_path:
+  - ./user_files/
+  - "@replace": replace
+format_schema_path:
+  - ./format_schemas/
+  - "@replace": replace
+access_control_path:
+  - ./access/
+  - "@replace": replace
+top_level_domains_path:
+  - ./top_level_domains/
+  - "@replace": replace

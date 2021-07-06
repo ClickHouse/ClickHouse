@@ -26,7 +26,7 @@ namespace DB
 
 bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserQueryWithOutput query_with_output_p(enable_explain);
+    ParserQueryWithOutput query_with_output_p(end);
     ParserInsertQuery insert_p(end);
     ParserUseQuery use_p;
     ParserSetQuery set_p;

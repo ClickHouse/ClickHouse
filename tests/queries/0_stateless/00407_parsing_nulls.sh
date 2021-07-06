@@ -3,6 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 echo -ne '\\tHello\t123\t\\N\n\\N\t\t2000-01-01 00:00:00\n' | ${CLICKHOUSE_LOCAL} --input-format=TabSeparated --output-format=TabSeparated --structure='s Nullable(String), x Nullable(UInt64), t Nullable(DateTime)' --query="SELECT * FROM table"

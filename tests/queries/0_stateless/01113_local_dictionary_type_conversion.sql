@@ -18,7 +18,7 @@ CREATE DICTIONARY database_for_dict.dict_with_conversion
   SomeID Int32 DEFAULT 0
 )
 PRIMARY KEY CompanyID
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 20)
 LAYOUT(COMPLEX_KEY_HASHED());
 

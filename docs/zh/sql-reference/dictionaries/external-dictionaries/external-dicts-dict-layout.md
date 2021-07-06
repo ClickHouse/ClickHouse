@@ -9,7 +9,7 @@ toc_title: "\u5728\u5185\u5B58\u4E2D\u5B58\u50A8\u5B57\u5178"
 
 有多种方法可以将字典存储在内存中。
 
-我们建议 [平](#flat), [散列](#dicts-external_dicts_dict_layout-hashed) 和 [complex\_key\_hashed](#complex-key-hashed). 其提供最佳的处理速度。
+我们建议 [平](#flat), [散列](#dicts-external_dicts_dict_layout-hashed) 和 [complex_key_hashed](#complex-key-hashed). 其提供最佳的处理速度。
 
 不建议使用缓存，因为性能可能较差，并且难以选择最佳参数。 阅读更多的部分 “[缓存](#cache)”.
 
@@ -54,13 +54,13 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 -   [平](#flat)
 -   [散列](#dicts-external_dicts_dict_layout-hashed)
--   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [缓存](#cache)
 -   [直接](#direct)
--   [range\_hashed](#range-hashed)
--   [complex\_key\_hashed](#complex-key-hashed)
--   [complex\_key\_cache](#complex-key-cache)
--   [ip\_trie](#ip-trie)
+-   [range_hashed](#range-hashed)
+-   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_cache](#complex-key-cache)
+-   [ip_trie](#ip-trie)
 
 ### 平 {#flat}
 
@@ -106,7 +106,7 @@ LAYOUT(FLAT())
 LAYOUT(HASHED())
 ```
 
-### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 类似于 `hashed`，但使用更少的内存，有利于更多的CPU使用率。
 
@@ -122,7 +122,7 @@ LAYOUT(HASHED())
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex\_key\_hashed {#complex-key-hashed}
+### complex_key_hashed {#complex-key-hashed}
 
 这种类型的存储是用于复合 [键](external-dicts-dict-structure.md). 类似于 `hashed`.
 
@@ -138,7 +138,7 @@ LAYOUT(SPARSE_HASHED())
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### range\_hashed {#range-hashed}
+### range_hashed {#range-hashed}
 
 字典以哈希表的形式存储在内存中，其中包含有序范围及其相应值的数组。
 
@@ -293,7 +293,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 !!! warning "警告"
     不要使用ClickHouse作为源，因为处理随机读取的查询速度很慢。
 
-### complex\_key\_cache {#complex-key-cache}
+### complex_key_cache {#complex-key-cache}
 
 这种类型的存储是用于复合 [键](external-dicts-dict-structure.md). 类似于 `cache`.
 
@@ -319,7 +319,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 LAYOUT(DIRECT())
 ```
 
-### ip\_trie {#ip-trie}
+### ip_trie {#ip-trie}
 
 这种类型的存储用于将网络前缀（IP地址）映射到ASN等元数据。
 
@@ -362,6 +362,12 @@ LAYOUT(DIRECT())
             <null_value>??</null_value>
     </attribute>
     ...
+</structure>
+<layout>
+    <ip_trie>
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
 ```
 
 或

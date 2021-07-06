@@ -22,6 +22,8 @@ struct ExternalResultDescription
         vtInt64,
         vtFloat32,
         vtFloat64,
+        vtEnum8,
+        vtEnum16,
         vtString,
         vtDate,
         vtDateTime,
@@ -30,7 +32,9 @@ struct ExternalResultDescription
         vtDecimal32,
         vtDecimal64,
         vtDecimal128,
-        vtDecimal256
+        vtDecimal256,
+        vtArray,
+        vtFixedString
     };
 
     Block sample_block;

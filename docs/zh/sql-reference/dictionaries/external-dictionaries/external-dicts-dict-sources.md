@@ -55,7 +55,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 或
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
@@ -87,7 +87,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 或
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 ```
 
 设置字段:

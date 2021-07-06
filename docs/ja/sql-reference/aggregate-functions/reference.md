@@ -31,7 +31,7 @@ ClickHouseは以下の構文をサポートしています `count`:
 
 **詳細**
 
-クリックハウスは `COUNT(DISTINCT ...)` 構文。 この構造の動作は、 [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) 設定。 それはのどれを定義します [uniq\*](#agg_function-uniq) 関数は、操作を実行するために使用されます。 デフォルトは [uniqExact](#agg_function-uniqexact) 機能。
+クリックハウスは `COUNT(DISTINCT ...)` 構文。 この構造の動作は、 [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) 設定。 それはのどれを定義します [uniq\*](#agg_function-uniq) 関数は、操作を実行するために使用されます。 デフォルトは [uniqExact](#agg_function-uniqexact) 機能。
 
 その `SELECT count() FROM table` テーブル内のエントリの数が別々に格納されないため、クエリは最適化されません。 テーブルから小さな列を選択し、その中の値の数をカウントします。
 
@@ -464,69 +464,6 @@ The kurtosis of the given distribution. Type — [Float64](../../sql-reference/d
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
-## timeSeriesGroupSum(uid,タイムスタンプ,値) {#agg-function-timeseriesgroupsum}
-
-`timeSeriesGroupSum` 総異なる時系列のサンプルのタイムスタンプなアライメントを実施します。
-これは、二つのサンプルタイムスタンプ間の線形補間を使用して、一緒に時系列を合計します。
-
--   `uid` 時系列は一意のidですか, `UInt64`.
--   `timestamp` ミリ秒またはマイクロ秒をサポートするためにInt64型です。
--   `value` は指標です。
-
-この関数は、次のような組の配列を返します `(timestamp, aggregated_value)` ペア。
-
-この関数を使用する前に、必ず `timestamp` 昇順です。
-
-例:
-
-``` text
-┌─uid─┬─timestamp─┬─value─┐
-│ 1   │     2     │   0.2 │
-│ 1   │     7     │   0.7 │
-│ 1   │    12     │   1.2 │
-│ 1   │    17     │   1.7 │
-│ 1   │    25     │   2.5 │
-│ 2   │     3     │   0.6 │
-│ 2   │     8     │   1.6 │
-│ 2   │    12     │   2.4 │
-│ 2   │    18     │   3.6 │
-│ 2   │    24     │   4.8 │
-└─────┴───────────┴───────┘
-```
-
-``` sql
-CREATE TABLE time_series(
-    uid       UInt64,
-    timestamp Int64,
-    value     Float64
-) ENGINE = Memory;
-INSERT INTO time_series VALUES
-    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
-    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
-
-SELECT timeSeriesGroupSum(uid, timestamp, value)
-FROM (
-    SELECT * FROM time_series order by timestamp ASC
-);
-```
-
-結果は次のようになります:
-
-``` text
-[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
-```
-
-## タイムセリエスグロプラテスム(uid,ts,val) {#agg-function-timeseriesgroupratesum}
-
-同様に `timeSeriesGroupSum`, `timeSeriesGroupRateSum` 時系列のレートを計算し、レートを合計します。
-また、timestampはこの関数を使用する前に上昇順にする必要があります。
-
-のデータにこの関数を適用します。 `timeSeriesGroupSum` 例では、次の結果が得られます:
-
-``` text
-[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
-```
-
 ## avg(x) {#agg_function-avg}
 
 平均を計算します。
@@ -687,7 +624,7 @@ uniqHLL12(x[, ...])
 
 -   HyperLogLogアルゴリズムを使用して、異なる引数値の数を近似します。
 
-        212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
+        2^12 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
 -   決定的な結果を提供します(クエリ処理順序に依存しません)。
 
@@ -721,7 +658,7 @@ uniqExact(x[, ...])
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x),groupArray(max\_size)(x) {#agg_function-grouparray}
+## groupArray(x),groupArray(max_size)(x) {#agg_function-grouparray}
 
 引数値の配列を作成します。
 値は、任意の（不確定な）順序で配列に追加できます。
@@ -967,7 +904,7 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x),groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## groupUniqArray(x),groupUniqArray(max_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 異なる引数値から配列を作成します。 メモリ消費量は `uniqExact` 機能。
 

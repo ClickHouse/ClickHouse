@@ -1,3 +1,8 @@
+---
+toc_priority: 46
+toc_title: "Устранение неисправностей"
+---
+
 # Устранение неисправностей {#ustranenie-neispravnostei}
 
 -   [Установка дистрибутива](#troubleshooting-installation-errors)

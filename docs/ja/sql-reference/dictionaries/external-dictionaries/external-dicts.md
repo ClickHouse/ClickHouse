@@ -15,9 +15,9 @@ toc_title: "\u4E00\u822C\u7684\u306A\u8AAC\u660E"
 -   辞書を定期的に更新し、欠損値を動的に読み込みます。 つまり、辞書は動的に読み込むことができます。
 -   Xmlファイルで外部辞書を作成することができます。 [DDLクエリ](../../statements/create.md#create-dictionary-query).
 
-外部辞書の構成は、一つ以上のxmlファイルに配置できます。 設定へのパスは [dictionaries\_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) パラメータ。
+外部辞書の構成は、一つ以上のxmlファイルに配置できます。 設定へのパスは [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) パラメータ。
 
-辞書は、サーバーの起動時または最初の使用時に読み込むことができます。 [dictionaries\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) 設定。
+辞書は、サーバーの起動時または最初の使用時に読み込むことができます。 [dictionaries_lazy_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) 設定。
 
 その [辞書](../../../operations/system-tables.md#system_tables-dictionaries) システムテーブルについての情報が含まれて辞書に設定されます。 各辞書については、そこにあります:
 

@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -21,6 +21,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
     {
         {"partition",                                   std::make_shared<DataTypeString>()},
         {"name",                                        std::make_shared<DataTypeString>()},
+        {"uuid",                                        std::make_shared<DataTypeUUID>()},
         {"part_type",                                   std::make_shared<DataTypeString>()},
         {"active",                                      std::make_shared<DataTypeUInt8>()},
         {"marks",                                       std::make_shared<DataTypeUInt64>()},
@@ -67,12 +68,21 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"recompression_ttl_info.expression",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"recompression_ttl_info.min",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
         {"recompression_ttl_info.max",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+
+        {"group_by_ttl_info.expression",                std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"group_by_ttl_info.min",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"group_by_ttl_info.max",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+
+        {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())}
     }
     )
 {
 }
 
-void StorageSystemParts::processNextStorage(MutableColumns & columns_, const StoragesInfo & info, bool has_state_column)
+void StorageSystemParts::processNextStorage(
+    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
@@ -87,101 +97,166 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
 
         ColumnSize columns_size = part->getTotalColumnsSize();
 
-        size_t i = 0;
+        size_t src_index = 0, res_index = 0;
+        if (columns_mask[src_index++])
         {
             WriteBufferFromOwnString out;
             part->partition.serializeText(*info.data, out, format_settings);
-            columns_[i++]->insert(out.str());
+            columns[res_index++]->insert(out.str());
         }
-        columns_[i++]->insert(part->name);
-        columns_[i++]->insert(part->getTypeName());
-        columns_[i++]->insert(part_state == State::Committed);
-        columns_[i++]->insert(part->getMarksCount());
-        columns_[i++]->insert(part->rows_count);
-        columns_[i++]->insert(part->getBytesOnDisk());
-        columns_[i++]->insert(columns_size.data_compressed);
-        columns_[i++]->insert(columns_size.data_uncompressed);
-        columns_[i++]->insert(columns_size.marks);
-        columns_[i++]->insert(static_cast<UInt64>(part->modification_time));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->name);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->uuid);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getTypeName());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part_state == State::Committed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getMarksCount());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->rows_count);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getBytesOnDisk());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(columns_size.data_compressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(columns_size.data_uncompressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(columns_size.marks);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt64>(part->modification_time));
 
-        time_t remove_time = part->remove_time.load(std::memory_order_relaxed);
-        columns_[i++]->insert(static_cast<UInt64>(remove_time == std::numeric_limits<time_t>::max() ? 0 : remove_time));
+        if (columns_mask[src_index++])
+        {
+            time_t remove_time = part->remove_time.load(std::memory_order_relaxed);
+            columns[res_index++]->insert(static_cast<UInt64>(remove_time == std::numeric_limits<time_t>::max() ? 0 : remove_time));
+        }
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
-        columns_[i++]->insert(static_cast<UInt64>(part.use_count() - 1));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt64>(part.use_count() - 1));
 
-        columns_[i++]->insert(part->getMinDate());
-        columns_[i++]->insert(part->getMaxDate());
-        columns_[i++]->insert(static_cast<UInt32>(part->getMinTime()));
-        columns_[i++]->insert(static_cast<UInt32>(part->getMaxTime()));
-        columns_[i++]->insert(part->info.partition_id);
-        columns_[i++]->insert(part->info.min_block);
-        columns_[i++]->insert(part->info.max_block);
-        columns_[i++]->insert(part->info.level);
-        columns_[i++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
-        columns_[i++]->insert(part->getIndexSizeInBytes());
-        columns_[i++]->insert(part->getIndexSizeInAllocatedBytes());
-        columns_[i++]->insert(part->is_frozen.load(std::memory_order_relaxed));
+        auto min_max_date = part->getMinMaxDate();
+        auto min_max_time = part->getMinMaxTime();
 
-        columns_[i++]->insert(info.database);
-        columns_[i++]->insert(info.table);
-        columns_[i++]->insert(info.engine);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(min_max_date.first);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(min_max_date.second);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt32>(min_max_time.first));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->info.partition_id);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->info.min_block);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->info.max_block);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->info.level);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getIndexSizeInBytes());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getIndexSizeInAllocatedBytes());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->is_frozen.load(std::memory_order_relaxed));
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(info.database);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(info.table);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(info.engine);
+
         if (part->isStoredOnDisk())
         {
-            columns_[i++]->insert(part->volume->getDisk()->getName());
-            columns_[i++]->insert(part->getFullPath());
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->volume->getDisk()->getName());
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->getFullPath());
         }
         else
         {
-            columns_[i++]->insertDefault();
-            columns_[i++]->insertDefault();
+            if (columns_mask[src_index++])
+                columns[res_index++]->insertDefault();
+            if (columns_mask[src_index++])
+                columns[res_index++]->insertDefault();
         }
 
-        if (has_state_column)
-            columns_[i++]->insert(part->stateString());
 
-        MinimalisticDataPartChecksums helper;
-        helper.computeTotalChecksums(part->checksums);
+        {
+            MinimalisticDataPartChecksums helper;
+            if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
+                helper.computeTotalChecksums(part->checksums);
 
-        auto checksum = helper.hash_of_all_files;
-        columns_[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
-
-        checksum = helper.hash_of_uncompressed_files;
-        columns_[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
-
-        checksum = helper.uncompressed_hash_of_compressed_files;
-        columns_[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+            if (columns_mask[src_index++])
+            {
+                auto checksum = helper.hash_of_all_files;
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+            }
+            if (columns_mask[src_index++])
+            {
+                auto checksum = helper.hash_of_uncompressed_files;
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+            }
+            if (columns_mask[src_index++])
+            {
+                auto checksum = helper.uncompressed_hash_of_compressed_files;
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+            }
+        }
 
         /// delete_ttl_info
-        {
-            columns_[i++]->insert(static_cast<UInt32>(part->ttl_infos.table_ttl.min));
-            columns_[i++]->insert(static_cast<UInt32>(part->ttl_infos.table_ttl.max));
-        }
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.table_ttl.min));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.table_ttl.max));
 
         auto add_ttl_info_map = [&](const TTLInfoMap & ttl_info_map)
         {
             Array expression_array;
             Array min_array;
             Array max_array;
-            expression_array.reserve(ttl_info_map.size());
-            min_array.reserve(ttl_info_map.size());
-            max_array.reserve(ttl_info_map.size());
+            if (columns_mask[src_index])
+                expression_array.reserve(ttl_info_map.size());
+            if (columns_mask[src_index + 1])
+                min_array.reserve(ttl_info_map.size());
+            if (columns_mask[src_index + 2])
+                max_array.reserve(ttl_info_map.size());
             for (const auto & [expression, ttl_info] : ttl_info_map)
             {
-                expression_array.emplace_back(expression);
-                min_array.push_back(static_cast<UInt32>(ttl_info.min));
-                max_array.push_back(static_cast<UInt32>(ttl_info.max));
+                if (columns_mask[src_index])
+                    expression_array.emplace_back(expression);
+                if (columns_mask[src_index + 1])
+                    min_array.push_back(static_cast<UInt32>(ttl_info.min));
+                if (columns_mask[src_index + 2])
+                    max_array.push_back(static_cast<UInt32>(ttl_info.max));
             }
-            columns_[i++]->insert(expression_array);
-            columns_[i++]->insert(min_array);
-            columns_[i++]->insert(max_array);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(expression_array);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(min_array);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(max_array);
         };
 
         add_ttl_info_map(part->ttl_infos.moves_ttl);
 
-        columns_[i++]->insert(queryToString(part->default_codec->getCodecDesc()));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
+        add_ttl_info_map(part->ttl_infos.group_by_ttl);
+        add_ttl_info_map(part->ttl_infos.rows_where_ttl);
+
+        /// _state column should be the latest.
+        /// Do not use part->getState*, it can be changed from different thread
+        if (has_state_column)
+            columns[res_index++]->insert(IMergeTreeDataPart::stateToString(part_state));
     }
 }
 

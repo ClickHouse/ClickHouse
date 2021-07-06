@@ -13,8 +13,11 @@ namespace DB
 
         if (expr_func && expr_func->name == "tuple")
         {
-            /// Primary key is specified in tuple, extract its arguments.
-            return expr_func->arguments->clone();
+            if (expr_func->arguments)
+                /// Primary key is specified in tuple, extract its arguments.
+                return expr_func->arguments->clone();
+            else
+                return std::make_shared<ASTExpressionList>();
         }
         else
         {

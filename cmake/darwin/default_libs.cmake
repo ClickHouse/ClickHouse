@@ -1,10 +1,13 @@
 set (DEFAULT_LIBS "-nodefaultlibs")
 
-if (NOT COMPILER_CLANG)
-    message (FATAL_ERROR "Darwin build is supported only for Clang")
-endif ()
-
 set (DEFAULT_LIBS "${DEFAULT_LIBS} ${COVERAGE_OPTION} -lc -lm -lpthread -ldl")
+
+if (COMPILER_GCC)
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lgcc_eh")
+    if (ARCH_AARCH64)
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -lgcc")
+    endif ()
+endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 
@@ -12,17 +15,7 @@ set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
 # Minimal supported SDK version
-
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=10.15")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=10.15")
-set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -mmacosx-version-min=10.15")
-
-set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -mmacosx-version-min=10.15")
-set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -mmacosx-version-min=10.15")
-
-# Global libraries
-
-add_library(global-libs INTERFACE)
+set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15)
 
 # Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
 # Just make sure we have pthreads at all.

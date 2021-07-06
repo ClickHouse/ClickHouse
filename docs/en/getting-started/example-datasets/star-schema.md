@@ -1,5 +1,5 @@
 ---
-toc_priority: 20
+toc_priority: 16
 toc_title: Star Schema Benchmark
 ---
 

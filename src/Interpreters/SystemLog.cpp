@@ -7,6 +7,7 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
@@ -24,11 +25,12 @@ namespace
 {
 
 constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
+constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
 std::shared_ptr<TSystemLog> createSystemLog(
-    Context & context,
+    ContextPtr context,
     const String & default_database_name,
     const String & default_table_name,
     const Poco::Util::AbstractConfiguration & config,
@@ -55,6 +57,10 @@ std::shared_ptr<TSystemLog> createSystemLog(
             throw Exception("If 'engine' is specified for system table, "
                 "PARTITION BY parameters should be specified directly inside 'engine' and 'partition_by' setting doesn't make sense",
                 ErrorCodes::BAD_ARGUMENTS);
+        if (config.has(config_prefix + ".ttl"))
+            throw Exception("If 'engine' is specified for system table, "
+                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense",
+                            ErrorCodes::BAD_ARGUMENTS);
         engine = config.getString(config_prefix + ".engine");
     }
     else
@@ -63,8 +69,15 @@ std::shared_ptr<TSystemLog> createSystemLog(
         engine = "ENGINE = MergeTree";
         if (!partition_by.empty())
             engine += " PARTITION BY (" + partition_by + ")";
+        String ttl = config.getString(config_prefix + ".ttl", "");
+        if (!ttl.empty())
+            engine += " TTL " + ttl;
         engine += " ORDER BY (event_date, event_time)";
     }
+    // Validate engine definition grammatically to prevent some configuration errors
+    ParserStorage storage_parser;
+    parseQuery(storage_parser, engine.data(), engine.data() + engine.size(),
+            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                           DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
@@ -75,7 +88,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 }
 
 
-SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfiguration & config)
+SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
     query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
     query_thread_log = createSystemLog<QueryThreadLog>(global_context, "system", "query_thread_log", config, "query_thread_log");
@@ -87,6 +100,9 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
         global_context, "system", "asynchronous_metric_log", config,
         "asynchronous_metric_log");
+    opentelemetry_span_log = createSystemLog<OpenTelemetrySpanLog>(
+        global_context, "system", "opentelemetry_span_log", config,
+        "opentelemetry_span_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -104,6 +120,8 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
         logs.emplace_back(metric_log.get());
     if (asynchronous_metric_log)
         logs.emplace_back(asynchronous_metric_log.get());
+    if (opentelemetry_span_log)
+        logs.emplace_back(opentelemetry_span_log.get());
 
     try
     {
@@ -119,7 +137,8 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
 
     if (metric_log)
     {
-        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds");
+        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
+                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
         metric_log->startCollectMetric(collect_interval_milliseconds);
     }
 

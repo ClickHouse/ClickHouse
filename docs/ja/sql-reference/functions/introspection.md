@@ -16,11 +16,11 @@ toc_title: "\u5185\u7701"
 
 -   インストール `clickhouse-common-static-dbg` パッケージ。
 
--   セット [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) 1に設定します。
+-   セット [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) 1に設定します。
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouseはプロファイラレポートを [trace\_log](../../operations/system-tables.md#system_tables-trace_log) システムテーブル。 のテーブルプロファイラで設定されます。
+ClickHouseはプロファイラレポートを [trace_log](../../operations/system-tables.md#system_tables-trace_log) システムテーブル。 のテーブルプロファイラで設定されます。
 
 ## アドレストリン {#addresstoline}
 

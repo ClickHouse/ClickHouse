@@ -27,7 +27,7 @@ class FunctionGeohashDecode : public IFunction
 {
 public:
     static constexpr auto name = "geohashDecode";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashDecode>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashDecode>(); }
 
     String getName() const override
     {
@@ -75,16 +75,16 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const IColumn * encoded = block.getByPosition(arguments[0]).column.get();
-        ColumnPtr & res_column = block.getByPosition(result).column;
+        const IColumn * encoded = arguments[0].column.get();
+        ColumnPtr res_column;
 
         if (tryExecute<ColumnString>(encoded, res_column) ||
             tryExecute<ColumnFixedString>(encoded, res_column))
-            return;
+            return res_column;
 
-        throw Exception("Unsupported argument type:" + block.getByPosition(arguments[0]).column->getName()
+        throw Exception("Unsupported argument type:" + arguments[0].column->getName()
                         + " of argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
     }

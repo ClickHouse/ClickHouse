@@ -3,7 +3,6 @@
 /// Macros for convenient usage of Poco logger.
 
 #include <fmt/format.h>
-#include <fmt/ostream.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>

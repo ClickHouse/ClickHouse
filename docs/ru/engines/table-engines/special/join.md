@@ -1,3 +1,8 @@
+---
+toc_priority: 40
+toc_title: Join
+---
+
 # Join {#join}
 
 Подготовленная структура данных для использования в операциях [JOIN](../../../engines/table-engines/special/join.md#select-join).
@@ -85,15 +90,16 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 При создании таблицы, применяются следующие параметры :
 
--   [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls)
--   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
--   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
--   [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
--   [join\_any\_take\_last\_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+-   [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+-   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
+-   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
+-   [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
+-   [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+-   [persistent](../../../operations/settings/settings.md#persistent)
 
 Таблицы с движком `Join` нельзя использовать в операциях `GLOBAL JOIN`.
 
-Движок `Join` позволяет использовать параметр [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) в запросе `CREATE TABLE`, который также можно использовать в запросе [SELECT](../../../engines/table-engines/special/join.md). Если у вас разные настройки `join_use_nulls`, вы можете получить сообщение об ошибке при объединении таблиц. Это зависит от типа соединения. Когда вы используете функцию [joinGet](../../../engines/table-engines/special/join.md#joinget), вам необходимо использовать один и тот же параметр `join_use_nulls` в запросах `CRATE TABLE` и `SELECT`.
+Движок `Join` позволяет использовать параметр [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) в запросе `CREATE TABLE`, который также можно использовать в запросе [SELECT](../../../engines/table-engines/special/join.md). Если у вас разные настройки `join_use_nulls`, вы можете получить сообщение об ошибке при объединении таблиц. Это зависит от типа соединения. Когда вы используете функцию [joinGet](../../../engines/table-engines/special/join.md#joinget), вам необходимо использовать один и тот же параметр `join_use_nulls` в запросах `CRATE TABLE` и `SELECT`.
 
 ## Хранение данных {#khranenie-dannykh}
 
@@ -101,4 +107,3 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 При аварийном перезапуске сервера блок данных на диске может быть потерян или повреждён. В последнем случае, может потребоваться вручную удалить файл с повреждёнными данными.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/join/) <!--hide-->

@@ -15,10 +15,16 @@ class TableFunctionInput : public ITableFunction
 public:
     static constexpr auto name = "input";
     std::string getName() const override { return name; }
+    bool hasStaticStructure() const override { return true; }
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Input"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    String structure;
 };
 
 }

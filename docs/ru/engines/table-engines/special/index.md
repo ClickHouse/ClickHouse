@@ -1,5 +1,5 @@
 ---
-toc_folder_title: Special
+toc_folder_title: "Специальные движки таблиц"
 toc_priority: 31
 ---
 
@@ -13,4 +13,3 @@ toc_priority: 31
 
 Остальные движки таблиц уникальны по своему назначению и еще не сгруппированы в семейства, поэтому они помещены в эту специальную категорию.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/special/) <!--hide-->

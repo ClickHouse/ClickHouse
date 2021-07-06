@@ -59,6 +59,9 @@ public:
     String getBuildID() const;
     static String getBuildID(const char * nhdr_pos, size_t size);
 
+    /// Hash of the binary for integrity checks.
+    String getBinaryHash() const;
+
 private:
     MMapReadBufferFromFile in;
     size_t elf_size;

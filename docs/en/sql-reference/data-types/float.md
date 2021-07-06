@@ -9,10 +9,17 @@ toc_title: Float32, Float64
 
 Types are equivalent to types of C:
 
--   `Float32` - `float`
--   `Float64` - `double`
+-   `Float32` — `float`.
+-   `Float64` — `double`.
 
 We recommend that you store data in integer form whenever possible. For example, convert fixed precision numbers to integer values, such as monetary amounts or page load times in milliseconds.
+
+Aliases:
+
+-   `Float32` — `FLOAT`.
+-   `Float64` — `DOUBLE`.
+
+When creating tables, numeric parameters for floating point numbers can be set (e.g. `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), but ClickHouse ignores them.
 
 ## Using Floating-point Numbers {#using-floating-point-numbers}
 
@@ -52,7 +59,7 @@ SELECT 0.5 / 0
 └────────────────┘
 ```
 
--   `-Inf` – Negative infinity.
+-   `-Inf` — Negative infinity.
 
 <!-- -->
 
@@ -66,7 +73,7 @@ SELECT -0.5 / 0
 └─────────────────┘
 ```
 
--   `NaN` – Not a number.
+-   `NaN` — Not a number.
 
 <!-- -->
 
@@ -80,6 +87,6 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-    See the rules for `NaN` sorting in the section [ORDER BY clause](../sql_reference/statements/select/order-by.md).
+See the rules for `NaN` sorting in the section [ORDER BY clause](../../sql-reference/statements/select/order-by.md).
 
 [Original article](https://clickhouse.tech/docs/en/data_types/float/) <!--hide-->

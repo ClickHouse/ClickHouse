@@ -18,7 +18,7 @@ public:
     void ALWAYS_INLINE forEachMapped(Func && func)
     {
         for (auto i = 0u; i < this->NUM_BUCKETS; ++i)
-            return this->impls[i].forEachMapped(func);
+            this->impls[i].forEachMapped(func);
     }
 
     TMapped & ALWAYS_INLINE operator[](const Key & x)

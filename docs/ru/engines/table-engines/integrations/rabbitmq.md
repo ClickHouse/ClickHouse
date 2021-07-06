@@ -1,8 +1,3 @@
----
-toc_priority: 6
-toc_title: RabbitMQ
----
-
 # RabbitMQ {#rabbitmq-engine}
 
 Движок работает с [RabbitMQ](https://www.rabbitmq.com).
@@ -27,9 +22,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_exchange_type = 'exchange_type',]
     [rabbitmq_routing_key_list = 'key1,key2,...',]
     [rabbitmq_row_delimiter = 'delimiter_symbol',]
+    [rabbitmq_schema = '',]
     [rabbitmq_num_consumers = N,]
     [rabbitmq_num_queues = N,]
-    [rabbitmq_transactional_channel = 0]
+    [rabbitmq_queue_base = 'queue',]
+    [rabbitmq_persistent = 0,]
+    [rabbitmq_skip_broken_messages = N,]
+    [rabbitmq_max_block_size = N,]
+    [rabbitmq_flush_interval_ms = N]
 ```
 
 Обязательные параметры:
@@ -40,16 +40,37 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Дополнительные параметры:
 
--   `rabbitmq_exchange_type` – тип точки обмена в RabbitMQ: `direct`, `fanout`, `topic`, `headers`, `consistent-hash`. По умолчанию: `fanout`.
+-   `rabbitmq_exchange_type` – тип точки обмена в RabbitMQ: `direct`, `fanout`, `topic`, `headers`, `consistent_hash`. По умолчанию: `fanout`.
 -   `rabbitmq_routing_key_list` – список ключей маршрутизации, через запятую.
 -   `rabbitmq_row_delimiter` – символ-разделитель, который завершает сообщение.
+-   `rabbitmq_schema` – опциональный параметр, необходимый, если используется формат, требующий определения схемы. Например, [Cap’n Proto](https://capnproto.org/) требует путь к файлу со схемой и название корневого объекта `schema.capnp:Message`.
 -   `rabbitmq_num_consumers` – количество потребителей на таблицу. По умолчанию: `1`. Укажите больше потребителей, если пропускная способность одного потребителя недостаточна.
--   `rabbitmq_num_queues` – количество очередей на потребителя. По умолчанию: `1`. Укажите больше потребителей, если пропускная способность одной очереди на потребителя недостаточна. Одна очередь поддерживает до 50 тысяч сообщений одновременно.
--   `rabbitmq_transactional_channel` – обернутые запросы `INSERT` в  транзакциях. По умолчанию: `0`.
+-   `rabbitmq_num_queues` – количество очередей. По умолчанию: `1`. Большее число очередей может сильно увеличить пропускную способность.
+-   `rabbitmq_queue_base` - настройка для имен очередей. Сценарии использования описаны ниже.
+-   `rabbitmq_persistent` - флаг, от которого зависит настройка 'durable' для сообщений при запросах `INSERT`. По умолчанию: `0`.
+-   `rabbitmq_skip_broken_messages` – максимальное количество некорректных сообщений в блоке. Если `rabbitmq_skip_broken_messages = N`, то движок отбрасывает `N` сообщений, которые не получилось обработать. Одно сообщение в точности соответствует одной записи (строке). Значение по умолчанию – 0.
+-   `rabbitmq_max_block_size`
+-   `rabbitmq_flush_interval_ms`
 
-Требуемая конфигурация:
+Настройки форматов данных также могут быть добавлены в списке RabbitMQ настроек.
+
+Example:
+
+``` sql
+  CREATE TABLE queue (
+    key UInt64,
+    value UInt64,
+    date DateTime
+  ) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'localhost:5672',
+                            rabbitmq_exchange_name = 'exchange1',
+                            rabbitmq_format = 'JSONEachRow',
+                            rabbitmq_num_consumers = 5,
+                            date_time_input_format = 'best_effort';
+```
 
 Конфигурация сервера RabbitMQ добавляется с помощью конфигурационного файла ClickHouse.
+
+Требуемая конфигурация:
 
 ``` xml
  <rabbitmq>
@@ -58,16 +79,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
  </rabbitmq>
 ```
 
-Example:
+Дополнительная конфигурация:
 
-``` sql
-  CREATE TABLE queue (
-    key UInt64,
-    value UInt64
-  ) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'localhost:5672',
-                            rabbitmq_exchange_name = 'exchange1',
-                            rabbitmq_format = 'JSONEachRow',
-                            rabbitmq_num_consumers = 5;
+``` xml
+ <rabbitmq>
+    <vhost>clickhouse</vhost>
+ </rabbitmq>
 ```
 
 ## Описание {#description}
@@ -90,14 +107,23 @@ Example:
 -   `fanout` - маршрутизация по всем таблицам, где имя точки обмена совпадает, независимо от ключей.
 -   `topic` - маршрутизация основана на правилах с ключами, разделенными точками. Например: `*.logs`, `records.*.*.2020`, `*.2018,*.2019,*.2020`.
 -   `headers` - маршрутизация основана на совпадении `key=value` с настройкой `x-match=all` или `x-match=any`. Пример списка ключей таблицы: `x-match=all,format=logs,type=report,year=2020`.
--   `consistent-hash` - данные равномерно распределяются между всеми связанными таблицами, где имя точки обмена совпадает. Обратите внимание, что этот тип обмена должен быть включен с помощью плагина RabbitMQ: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
+-   `consistent_hash` - данные равномерно распределяются между всеми связанными таблицами, где имя точки обмена совпадает. Обратите внимание, что этот тип обмена должен быть включен с помощью плагина RabbitMQ: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
 
-Если тип точки обмена не задан, по умолчанию используется `fanout`.  В таком случае ключи маршрутизации для публикации данных должны быть рандомизированы в диапазоне `[1, num_consumers]` за каждое сообщение/пакет (или в диапазоне `[1, num_consumers * num_queues]`, если `rabbitmq_num_queues` задано). Эта конфигурация таблицы работает быстрее, чем любая другая, особенно когда заданы параметры  `rabbitmq_num_consumers` и/или `rabbitmq_num_queues`.
+Настройка `rabbitmq_queue_base` может быть использована в следующих случаях:
+
+1.   чтобы восстановить чтение из ранее созданных очередей, если оно прекратилось по какой-либо причине, но очереди остались непустыми. Для восстановления чтения из одной конкретной очереди, нужно написать ее имя в `rabbitmq_queue_base` настройку и не указывать настройки `rabbitmq_num_consumers` и `rabbitmq_num_queues`. Чтобы восстановить чтение из всех очередей, которые были созданы для конкретной таблицы, необходимо совпадение следующих настроек: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. По умолчанию, если настройка `rabbitmq_queue_base` не указана, будут использованы уникальные для каждой таблицы имена очередей.
+2.   чтобы объявить одни и те же очереди для разных таблиц, что позволяет создавать несколько параллельных подписчиков на каждую из очередей. То есть обеспечивается лучшая производительность. В данном случае, для таких таблиц также необходимо совпадение настроек: `rabbitmq_num_consumers`, `rabbitmq_num_queues`.
+3.   чтобы повторно использовать созданные c `durable` настройкой очереди, так как они не удаляются автоматически (но могут быть удалены с помощью любого RabbitMQ CLI).
+
+Для улучшения производительности полученные сообщения группируются в блоки размера [max_insert_block_size](../../../operations/settings/settings.md#settings-max_insert_block_size). Если блок не удалось сформировать за [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
 
 Если параметры`rabbitmq_num_consumers` и/или `rabbitmq_num_queues` заданы вместе с параметром `rabbitmq_exchange_type`:
 
 -   плагин `rabbitmq-consistent-hash-exchange` должен быть включен.
 -   свойство `message_id` должно быть определено (уникальное для каждого сообщения/пакета).
+
+При запросах `INSERT` отправляемым сообщениям добавляются метаданные: `messageID` и флаг `republished` - доступны через заголовки сообщений (headers).
+Для запросов чтения и вставки не должна использоваться одна и та же таблица.
 
 Пример:
 
@@ -120,3 +146,13 @@ Example:
 
   SELECT key, value FROM daily ORDER BY key;
 ```
+
+## Virtual Columns {#virtual-columns}
+
+-   `_exchange_name` - имя точки обмена RabbitMQ.
+-   `_channel_id` - идентификатор канала `ChannelID`, на котором было получено сообщение.
+-   `_delivery_tag` - значение `DeliveryTag` полученного сообщения. Уникально в рамках одного канала.
+-   `_redelivered` - флаг `redelivered`. (Не равно нулю, если есть возможность, что сообщение было получено более, чем одним каналом.)
+-   `_message_id` - значение поля `messageID` полученного сообщения. Данное поле непусто, если указано в параметрах при отправке сообщения.
+-   `_timestamp` - значение поля `timestamp` полученного сообщения. Данное поле непусто, если указано в параметрах при отправке сообщения.
+

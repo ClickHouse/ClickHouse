@@ -201,7 +201,7 @@ ORDER BY h ASC
 对于相同的字母（T或U），如果数值类型，那么它们不可不完全匹配的，只需要具备共同的类型即可。
 例如，第一个参数是Int64类型，第二个参数是Array(UInt16)类型。
 
-如果’x’值等于’array\_from’数组中的一个元素，它将从’array\_to’数组返回一个对应的元素（下标相同）。否则，它返回’default’。如果’array\_from’匹配到了多个元素，则返回第一个匹配的元素。
+如果’x’值等于’array_from’数组中的一个元素，它将从’array_to’数组返回一个对应的元素（下标相同）。否则，它返回’default’。如果’array_from’匹配到了多个元素，则返回第一个匹配的元素。
 
 示例:
 
@@ -224,7 +224,7 @@ ORDER BY c DESC
 1.  `transform(x, array_from, array_to)`
 
 与第一种不同在于省略了’default’参数。
-如果’x’值等于’array\_from’数组中的一个元素，它将从’array\_to’数组返回相应的元素（下标相同）。 否则，它返回’x’。
+如果’x’值等于’array_from’数组中的一个元素，它将从’array_to’数组返回相应的元素（下标相同）。 否则，它返回’x’。
 
 类型约束:
 
@@ -477,6 +477,103 @@ FROM
 
     1 rows in set. Elapsed: 0.002 sec.
 
+
+## indexHint  {#indexhint}
+输出符合索引选择范围内的所有数据，同时不实用参数中的表达式进行过滤。
+
+传递给函数的表达式参数将不会被计算，但ClickHouse使用参数中的表达式进行索引过滤。
+
+**返回值**
+
+- 1。
+
+**示例**
+
+这是一个包含[ontime](../../getting-started/example-datasets/ontime.md)测试数据集的测试表。
+
+```
+SELECT count() FROM ontime
+
+┌─count()─┐
+│ 4276457 │
+└─────────┘
+```
+
+该表使用`(FlightDate, (Year, FlightDate))`作为索引。
+
+对该表进行如下的查询：
+
+```
+:) SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
+
+SELECT
+    FlightDate AS k,
+    count()
+FROM ontime
+GROUP BY k
+ORDER BY k ASC
+
+┌──────────k─┬─count()─┐
+│ 2017-01-01 │   13970 │
+│ 2017-01-02 │   15882 │
+........................
+│ 2017-09-28 │   16411 │
+│ 2017-09-29 │   16384 │
+│ 2017-09-30 │   12520 │
+└────────────┴─────────┘
+
+273 rows in set. Elapsed: 0.072 sec. Processed 4.28 million rows, 8.55 MB (59.00 million rows/s., 118.01 MB/s.)
+```
+
+在这个查询中，由于没有使用索引，所以ClickHouse将处理整个表的所有数据(`Processed 4.28 million rows`)。使用下面的查询尝试使用索引进行查询：
+
+```
+:) SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
+
+SELECT
+    FlightDate AS k,
+    count()
+FROM ontime
+WHERE k = '2017-09-15'
+GROUP BY k
+ORDER BY k ASC
+
+┌──────────k─┬─count()─┐
+│ 2017-09-15 │   16428 │
+└────────────┴─────────┘
+
+1 rows in set. Elapsed: 0.014 sec. Processed 32.74 thousand rows, 65.49 KB (2.31 million rows/s., 4.63 MB/s.)
+```
+
+在最后一行的显示中，通过索引ClickHouse处理的行数明显减少（`Processed 32.74 thousand rows`）。
+
+现在将表达式`k = '2017-09-15'`传递给`indexHint`函数：
+
+```
+:) SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2017-09-15') GROUP BY k ORDER BY k
+
+SELECT
+    FlightDate AS k,
+    count()
+FROM ontime
+WHERE indexHint(k = '2017-09-15')
+GROUP BY k
+ORDER BY k ASC
+
+┌──────────k─┬─count()─┐
+│ 2017-09-14 │    7071 │
+│ 2017-09-15 │   16428 │
+│ 2017-09-16 │    1077 │
+│ 2017-09-30 │    8167 │
+└────────────┴─────────┘
+
+4 rows in set. Elapsed: 0.004 sec. Processed 32.74 thousand rows, 65.49 KB (8.97 million rows/s., 17.94 MB/s.)
+```
+
+对于这个请求，根据ClickHouse显示ClickHouse与上一次相同的方式应用了索引（`Processed 32.74 thousand rows`）。但是，最终返回的结果集中并没有根据`k = '2017-09-15'`表达式进行过滤结果。
+
+由于ClickHouse中使用稀疏索引，因此在读取范围时（本示例中为相邻日期），"额外"的数据将包含在索引结果中。使用`indexHint`函数可以查看到它们。
+
 ## 复制 {#replicate}
 
 使用单个值填充一个数组。
@@ -521,11 +618,11 @@ FROM
 例如，获取聚合函数的状态（示例runningAccumulate(uniqState(UserID))），对于数据块的每一行，返回所有先前行和当前行的状态合并后的聚合函数的结果。
 因此，函数的结果取决于分区中数据块的顺序以及数据块中行的顺序。
 
-## joinGet(‘join\_storage\_table\_name’, ‘get\_column’,join\_key) {#joingetjoin-storage-table-name-get-column-join-key}
+## joinGet(‘join_storage_table_name’, ‘get_column’,join_key) {#joingetjoin-storage-table-name-get-column-join-key}
 
 使用指定的连接键从Join类型引擎的表中获取数据。
 
-## modelEvaluate(model\_name, …) {#function-modelevaluate}
+## modelEvaluate(model_name, …) {#function-modelevaluate}
 
 使用外部模型计算。
 接受模型的名称以及模型的参数。返回Float64类型的值。

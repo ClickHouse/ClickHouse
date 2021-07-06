@@ -75,13 +75,6 @@ inline TUInt safeDiff(TUInt prev, TUInt curr)
 }
 
 
-inline UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
-{
-    struct timespec ts;
-    clock_gettime(clock_type, &ts);
-    return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-}
-
 struct RUsageCounters
 {
     /// In nanoseconds
@@ -108,13 +101,17 @@ struct RUsageCounters
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
     }
 
-    static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
+    static RUsageCounters current()
     {
         ::rusage rusage {};
 #if !defined(__APPLE__)
+#if defined(OS_SUNOS)
+        ::getrusage(RUSAGE_LWP, &rusage);
+#else
         ::getrusage(RUSAGE_THREAD, &rusage);
-#endif
-        return RUsageCounters(rusage, real_time_);
+#endif // OS_SUNOS
+#endif // __APPLE
+        return RUsageCounters(rusage, getClockMonotonic());
     }
 
     static void incrementProfileEvents(const RUsageCounters & prev, const RUsageCounters & curr, ProfileEvents::Counters & profile_events)
@@ -133,11 +130,17 @@ struct RUsageCounters
         incrementProfileEvents(last_counters, current_counters, profile_events);
         last_counters = current_counters;
     }
+
+private:
+    static inline UInt64 getClockMonotonic()
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+    }
 };
 
-// thread_local is disabled in Arcadia, so we have to use a dummy implementation
-// there.
-#if defined(__linux__) && !defined(ARCADIA_BUILD)
+#if defined(__linux__)
 
 struct PerfEventInfo
 {
@@ -194,7 +197,7 @@ extern thread_local PerfEventsCounters current_thread_counters;
 
 #else
 
-// Not on Linux, or in Arcadia: the functionality is disabled.
+// the functionality is disabled when we are not running on Linux.
 struct PerfEventsCounters
 {
     void initializeProfileEvents(const std::string & /* events_list */) {}
@@ -202,7 +205,6 @@ struct PerfEventsCounters
     void closeEventDescriptors() {}
 };
 
-// thread_local is disabled in Arcadia, so we are going to use a static dummy.
 extern PerfEventsCounters current_thread_counters;
 
 #endif

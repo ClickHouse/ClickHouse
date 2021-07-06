@@ -1,3 +1,8 @@
+---
+toc_priority: 37
+toc_title: VersionedCollapsingMergeTree
+---
+
 # VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
 
 Движок:
@@ -228,4 +233,3 @@ SELECT * FROM UAct FINAL
 
 Это очень неэффективный способ выбора данных. Не используйте его для больших таблиц.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

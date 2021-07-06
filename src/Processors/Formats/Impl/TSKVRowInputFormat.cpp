@@ -1,7 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/TSKVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 
 namespace DB
@@ -89,7 +89,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
         }
     }
 
-    throw Exception("Unexpected end of stream while reading key name from TSKV format", ErrorCodes::CANNOT_READ_ALL_DATA);
+    throw ParsingException("Unexpected end of stream while reading key name from TSKV format", ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
 
@@ -130,7 +130,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                         throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
                     /// If the key is not found, skip the value.
-                    NullSink sink;
+                    NullOutput sink;
                     readEscapedStringInto(sink, in);
                 }
                 else
@@ -142,10 +142,11 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
+                    const auto & serialization = serializations[index];
                     if (format_settings.null_as_default && !type->isNullable())
-                        read_columns[index] = DataTypeNullable::deserializeTextEscaped(*columns[index], in, format_settings, type);
+                        read_columns[index] = SerializationNullable::deserializeTextEscapedImpl(*columns[index], in, format_settings, serialization);
                     else
-                        header.getByPosition(index).type->deserializeAsTextEscaped(*columns[index], in, format_settings);
+                        serialization->deserializeTextEscaped(*columns[index], in, format_settings);
                 }
             }
             else
@@ -157,7 +158,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
             if (in.eof())
             {
-                throw Exception("Unexpected end of stream after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw ParsingException("Unexpected end of stream after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_READ_ALL_DATA);
             }
             else if (*in.position() == '\t')
             {

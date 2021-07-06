@@ -1,3 +1,8 @@
+---
+toc_priority: 16
+toc_title: Star Schema Benchmark
+---
+
 # Star Schema Benchmark {#star-schema-benchmark}
 
 Компиляция dbgen:

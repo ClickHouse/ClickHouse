@@ -10,6 +10,11 @@ RUN apt-get update --yes \
         gpg-agent \
         debsig-verify \
         strace \
+        protobuf-compiler \
+        protobuf-compiler-grpc \
+        libprotoc-dev \
+        libgrpc++-dev \
+        libc-ares-dev \
         --yes --no-install-recommends
 
 #RUN wget -nv -O - http://files.viva64.com/etc/pubkey.txt | sudo apt-key add -
@@ -33,8 +38,9 @@ RUN set -x \
     && dpkg -i "${PKG_VERSION}.deb"
 
 CMD echo "Running PVS version $PKG_VERSION" && cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
-    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF && ninja re2_st \
+    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"USE_INTERNAL_PROTOBUF_LIBRARY"=OFF -D"USE_INTERNAL_GRPC_LIBRARY"=OFF \
+    && ninja re2_st clickhouse_grpc_protos \
     && pvs-studio-analyzer analyze -o pvs-studio.log -e contrib -j 4 -l ./licence.lic; \
+    cp /repo_folder/pvs-studio.log /test_output; \
     plog-converter -a GA:1,2 -t fullhtml -o /test_output/pvs-studio-html-report pvs-studio.log; \
     plog-converter -a GA:1,2 -t tasklist -o /test_output/pvs-studio-task-report.txt pvs-studio.log
-

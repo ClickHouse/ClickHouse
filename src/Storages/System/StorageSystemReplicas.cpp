@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -60,23 +59,23 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 Pipe StorageSystemReplicas::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    const auto access = context.getAccess();
+    const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
-        /// Lazy database can not contain replicated tables
-        if (db.second->getEngineName() == "Lazy")
+        /// Check if database can contain replicated tables
+        if (!db.second->canContainMergeTreeTables())
             continue;
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())

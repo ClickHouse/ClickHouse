@@ -1,3 +1,8 @@
+---
+toc_priority: 45
+toc_title: FixedString(N)
+---
+
 # FixedString {#fixedstring}
 
 Строка фиксированной длины `N` байт (не символов, не кодовых точек).
@@ -15,7 +20,7 @@
 Примеры значений, которые можно эффективно хранить в столбцах типа `FixedString`:
 
 -   Двоичное представление IP-адреса (`FixedString(16)` для IPv6).
--   Коды языков (ru\_RU, en\_US … ).
+-   Коды языков (ru_RU, en_US … ).
 -   Коды валют (USD, RUB … ).
 -   Двоичное представление хэшей (`FixedString(16)` для MD5, `FixedString(32)` для SHA256).
 
@@ -53,4 +58,3 @@ WHERE a = 'b\0'
 
 Обратите внимание, что длина значения `FixedString(N)` постоянна. Функция [length](../../sql-reference/data-types/fixedstring.md#array_functions-length) возвращает `N` даже если значение `FixedString(N)` заполнено только нулевыми байтами, однако функция [empty](../../sql-reference/data-types/fixedstring.md#empty) в этом же случае возвращает `1`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/fixedstring/) <!--hide-->
