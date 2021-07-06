@@ -83,10 +83,18 @@
 #define DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO 54443
 #define DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO 54447
 
-/// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
-#define DBMS_TCP_PROTOCOL_VERSION 54448
-
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH 54448
+
+/// Version of ClickHouse TCP protocol.
+///
+/// Should be incremented manually on protocol changes.
+///
+/// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
+/// later is just a number for server version (one number instead of commit SHA)
+/// for simplicity (sometimes it may be more convenient in some use cases).
+#define DBMS_TCP_PROTOCOL_VERSION 54449
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME 54449
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
 

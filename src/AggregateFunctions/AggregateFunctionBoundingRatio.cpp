@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionBoundingRatio.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB

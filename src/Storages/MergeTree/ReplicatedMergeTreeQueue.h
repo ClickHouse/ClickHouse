@@ -92,9 +92,6 @@ private:
     using FuturePartsSet = std::map<String, LogEntryPtr>;
     FuturePartsSet future_parts;
 
-    /// Index of the first log entry that we didn't see yet.
-    Int64 log_pointer = 0;
-
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
     bool currently_executing_drop_or_replace_range = false;
 
@@ -182,9 +179,6 @@ private:
 
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
-
-    /// Put a set of (already existing) parts in virtual_parts.
-    void addVirtualParts(const MergeTreeData::DataParts & parts);
 
     /// Insert new entry from log into queue
     void insertUnlocked(
@@ -275,7 +269,10 @@ public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
     ~ReplicatedMergeTreeQueue();
 
+    /// Clears queue state
+    void clear();
 
+    /// Put a set of (already existing) parts in virtual_parts.
     void initialize(const MergeTreeData::DataParts & parts);
 
     /** Inserts an action to the end of the queue.
@@ -284,18 +281,13 @@ public:
       */
     void insert(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
-    /** Delete the action with the specified part (as new_part_name) from the queue.
-      * Called for unreachable actions in the queue - old lost parts.
-      */
-    bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
-
     /** Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
       * If queue was not empty load() would not load duplicate records.
       * return true, if we update queue.
       */
     bool load(zkutil::ZooKeeperPtr zookeeper);
 
-    bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
+    bool removeFailedQuorumPart(const MergeTreePartInfo & part_info);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If watch_callback is not empty, will call it when new entries appear in the log.
@@ -380,6 +372,11 @@ public:
 
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
+
+    /// Check that part produced by some entry in queue and get source parts for it.
+    /// If there are several entries return largest source_parts set. This rarely possible
+    /// for example after replica clone.
+    bool checkPartInQueueAndGetSourceParts(const String & part_name, Strings & source_parts) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
     /// Locks queue's mutex.

@@ -26,11 +26,6 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Lexer.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Parsers/New/parseQuery.h>  // Y_IGNORE
-#endif
-
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
@@ -166,11 +161,10 @@ static void logQuery(const String & query, ContextPtr context, bool internal)
         if (!comment.empty())
             comment = fmt::format(" (comment: {})", comment);
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser){} {}",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){} {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
-            (context->getSettingsRef().use_antlr_parser ? "experimental" : "production"),
             comment,
             joinLines(query));
 
@@ -355,6 +349,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 {
     const auto current_time = std::chrono::system_clock::now();
 
+    auto & client_info = context->getClientInfo();
+
+    // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it
+    // to current time. Internal queries are those executed without an independent client context,
+    // thus should not set initial_query_start_time, because it might introduce data race. It's also
+    // possible to have unset initial_query_start_time for non-internal and non-initial queries. For
+    // example, the query is from an initiator that is running an old version of clickhouse.
+    if (!internal && client_info.initial_query_start_time == 0)
+    {
+        client_info.initial_query_start_time = time_in_seconds(current_time);
+        client_info.initial_query_start_time_microseconds = time_in_microseconds(current_time);
+    }
+
 #if !defined(ARCADIA_BUILD)
     assert(internal || CurrentThread::get().getQueryContext());
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
@@ -373,24 +380,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_table;
     try
     {
-#if !defined(ARCADIA_BUILD)
-        if (settings.use_antlr_parser)
-        {
-            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth, context->getCurrentDatabase());
-        }
-        else
-        {
-            ParserQuery parser(end);
-
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-        }
-#else
         ParserQuery parser(end);
 
         /// TODO: parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-#endif
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
@@ -643,7 +636,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.query = query_for_logging;
             elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
-            elem.client_info = context->getClientInfo();
+            elem.client_info = client_info;
 
             bool log_queries = settings.log_queries && !internal;
 

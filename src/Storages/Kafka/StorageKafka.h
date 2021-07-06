@@ -7,7 +7,7 @@
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <mutex>
 #include <list>
@@ -28,9 +28,9 @@ struct StorageKafkaInterceptors;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public ext::shared_ptr_helper<StorageKafka>, public IStorage, WithContext
+class StorageKafka final : public shared_ptr_helper<StorageKafka>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageKafka>;
+    friend struct shared_ptr_helper<StorageKafka>;
     friend struct StorageKafkaInterceptors;
 
 public:

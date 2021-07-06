@@ -7,9 +7,6 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1',
                              main_configs=['configs/logs_config.xml'])
 
-node2 = cluster.add_instance('node2',
-                             main_configs=['configs/logs_config.xml'])
-
 
 @pytest.fixture(scope="module")
 def started_cluster():

@@ -88,7 +88,4 @@ select 2 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1000, event
 select 3 = windowFunnel(10000)(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
 select 1 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
 
-set allow_experimental_funnel_functions = 0;
-select 1 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase; -- { serverError 63 }
-
 drop table funnel_test_strict_increase;

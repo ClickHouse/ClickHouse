@@ -38,6 +38,18 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 Остальные условия и ограничение выборки `LIMIT` будут выполнены в ClickHouse только после выполнения запроса к MySQL.
 
+Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
+
+```sql
+SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
+или
+
+```sql
+SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
 **Возвращаемое значение**
 
 Объект таблицы с теми же столбцами, что и в исходной таблице MySQL.

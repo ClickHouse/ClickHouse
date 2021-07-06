@@ -1,9 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <memory>
+#include <boost/noncopyable.hpp>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
 
@@ -14,15 +15,16 @@
 #include <roaring.hh>
 #include <roaring64map.hh>
 
+
 namespace DB
 {
-struct Settings;
 
 enum BitmapKind
 {
     Small = 0,
     Bitmap = 1
 };
+
 
 /**
   * For a small number of values - an array of fixed size "on the stack".
@@ -42,7 +44,7 @@ private:
 
     void toLarge()
     {
-        rb = std::make_shared<RoaringBitmap>();
+        rb = std::make_unique<RoaringBitmap>();
         for (const auto & x : small)
             rb->add(static_cast<Value>(x.getValue()));
         small.clear();
@@ -112,7 +114,7 @@ public:
             readVarUInt(size, in);
             std::unique_ptr<char[]> buf(new char[size]);
             in.readStrict(buf.get(), size);
-            rb = std::make_shared<RoaringBitmap>(RoaringBitmap::read(buf.get()));
+            rb = std::make_unique<RoaringBitmap>(RoaringBitmap::read(buf.get()));
         }
     }
 
@@ -139,7 +141,7 @@ public:
      */
     std::shared_ptr<RoaringBitmap> getNewRoaringBitmapFromSmall() const
     {
-        std::shared_ptr<RoaringBitmap> ret = std::make_shared<RoaringBitmap>();
+        std::shared_ptr<RoaringBitmap> ret = std::make_unique<RoaringBitmap>();
         for (const auto & x : small)
             ret->add(static_cast<Value>(x.getValue()));
         return ret;

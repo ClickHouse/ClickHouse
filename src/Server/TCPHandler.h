@@ -119,7 +119,7 @@ public:
     void run() override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(ContextPtr /*context*/) {}
+    virtual void customizeContext(ContextMutablePtr /*context*/) {}
 
 private:
     IServer & server;

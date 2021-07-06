@@ -14,7 +14,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <DataStreams/MongoDBBlockInputStream.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -25,7 +25,6 @@
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <IO/WriteHelpers.h>
-#include <ext/enumerate.h>
 
 namespace DB
 {
@@ -244,6 +243,8 @@ namespace
                 insertNumber<Float64>(column, value, name);
                 break;
 
+            case ValueType::vtEnum8:
+            case ValueType::vtEnum16:
             case ValueType::vtString:
             {
                 if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
@@ -314,7 +315,7 @@ Block MongoDBBlockInputStream::readImpl()
     MutableColumns columns(description.sample_block.columns());
     const size_t size = columns.size();
 
-    for (const auto i : ext::range(0, size))
+    for (const auto i : collections::range(0, size))
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
@@ -326,7 +327,7 @@ Block MongoDBBlockInputStream::readImpl()
         {
             ++num_rows;
 
-            for (const auto idx : ext::range(0, size))
+            for (const auto idx : collections::range(0, size))
             {
                 const auto & name = description.sample_block.getByPosition(idx).name;
 

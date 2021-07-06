@@ -57,6 +57,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
+class IBackgroundJobExecutor;
 
 namespace ErrorCodes
 {
@@ -402,6 +403,7 @@ public:
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
     DataParts getDataParts(const DataPartStates & affordable_states) const;
+
     /// Returns sorted list of the parts with specified states
     ///  out_states will contain snapshot of each part state
     DataPartsVector getDataPartsVector(
@@ -613,7 +615,7 @@ public:
 
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
-    void checkPartCanBeDropped(const ASTPtr & part);
+    void checkPartCanBeDropped(const String & part_name);
 
     Pipe alterPartition(
         const StorageMetadataPtr & metadata_snapshot,
@@ -806,10 +808,10 @@ public:
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
-    /// Return main processing background job, like merge/mutate/fetch and so on
-    virtual std::optional<JobAndPool> getDataProcessingJob() = 0;
-    /// Return job to move parts between disks/volumes and so on.
-    std::optional<JobAndPool> getDataMovingJob();
+    /// Schedules background job to like merge/mutate/fetch an executor
+    virtual bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) = 0;
+    /// Schedules job to move parts between disks/volumes and so on.
+    bool scheduleDataMovingJob(IBackgroundJobExecutor & executor);
     bool areBackgroundMovesNeeded() const;
 
     /// Lock part in zookeeper for use common S3 data in several nodes
@@ -993,7 +995,11 @@ protected:
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
 
-    virtual void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr context, bool throw_if_noop = true) = 0;
+    /// Tries to drop part in background without any waits or throwing exceptions in case of errors.
+    virtual void dropPartNoWaitNoThrow(const String & part_name) = 0;
+
+    virtual void dropPart(const String & part_name, bool detach, ContextPtr context) = 0;
+    virtual void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) = 0;
     virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) = 0;
     virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) = 0;
     virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) = 0;

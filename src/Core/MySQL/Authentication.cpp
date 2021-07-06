@@ -8,7 +8,7 @@
 #include <common/logger_useful.h>
 #include <Common/OpenSSLHelpers.h>
 
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 namespace DB
 {

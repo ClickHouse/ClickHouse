@@ -31,15 +31,17 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engin
 If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](../../sql-reference/statements/select/index.md#asterisk), [`COLUMNS`](../../sql-reference/statements/select/index.md#columns-expression) or [`EXCEPT`](../../sql-reference/statements/select/index.md#except-modifier) expressions. The explictly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key).
 
 !!! note "Note"
-    Notice that `*` behaves just like in `SELECT`: `MATERIALIZED` and `ALIAS` columns are not used for expansion.
-    Also, it is an error to specify empty list of columns, or write an expression that results in an empty list of columns, or deduplicate by an ALIAS column.
+    Notice that `*` behaves just like in `SELECT`: [MATERIALIZED](../../sql-reference/statements/create/table.md#materialized) and [ALIAS](../../sql-reference/statements/create/table.md#alias) columns are not used for expansion.
+    Also, it is an error to specify empty list of columns, or write an expression that results in an empty list of columns, or deduplicate by an `ALIAS` column.
+
+**Syntax**
 
 ``` sql
-OPTIMIZE TABLE table DEDUPLICATE; -- the old one
-OPTIMIZE TABLE table DEDUPLICATE BY *; -- not the same as the old one, excludes MATERIALIZED columns (see the note above)
+OPTIMIZE TABLE table DEDUPLICATE; -- all columns 
+OPTIMIZE TABLE table DEDUPLICATE BY *; -- excludes MATERIALIZED and ALIAS columns
+OPTIMIZE TABLE table DEDUPLICATE BY colX,colY,colZ;
 OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT colX;
 OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT (colX, colY);
-OPTIMIZE TABLE table DEDUPLICATE BY col1,col2,col3;
 OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex');
 OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT colX;
 OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (colX, colY);
@@ -47,7 +49,7 @@ OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (c
 
 **Examples**
 
-Create a table:
+Consider the table:
 
 ``` sql
 CREATE TABLE example (
@@ -62,32 +64,129 @@ CREATE TABLE example (
 PARTITION BY partition_key
 ORDER BY (primary_key, secondary_key);
 ```
+``` sql
+INSERT INTO example (primary_key, secondary_key, value, partition_key) 
+VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
+```
+``` sql
+SELECT * FROM example;
+```
+Result:
+```
 
-The 'old' deduplicate, all columns are taken into account, i.e. row is removed only if all values in all columns are equal to corresponding values in previous row.
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+When columns for deduplication are not specified, all of them are taken into account. Row is removed only if all values in all columns are equal to corresponding values in previous row:
 
 ``` sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE;
 ```
-
-Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED`: `primary_key`, `secondary_key`, `value`, `partition_key`, and `materialized_value` columns.
-
 ``` sql
+SELECT * FROM example;
+```
+Result:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+When columns are specified implicitly, the table is deduplicated by all columns that are not `ALIAS` or `MATERIALIZED`. Considering the table above, these are `primary_key`, `secondary_key`, `value`, and `partition_key` columns:
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
 ```
-
-Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED` and explicitly not `materialized_value`: `primary_key`, `secondary_key`, `value`, and `partition_key` columns.
-
 ``` sql
-OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT materialized_value;
+SELECT * FROM example;
+```
+Result:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-Deduplicate explicitly by `primary_key`, `secondary_key`, and `partition_key` columns.
+Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED` and explicitly not `value`: `primary_key`, `secondary_key`, and `partition_key` columns.
+
 ``` sql
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
+```
+``` sql
+SELECT * FROM example;
+```
+Result:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+Deduplicate explicitly by `primary_key`, `secondary_key`, and `partition_key` columns:
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
 ```
-
-Deduplicate by any column matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns.
-
 ``` sql
+SELECT * FROM example;
+```
+Result:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+Deduplicate by any column matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns:
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
+```
+``` sql
+SELECT * FROM example;
+```
+Result:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
 ```
