@@ -332,4 +332,6 @@ if (USE_SQLITE)
     add_subdirectory(sqlite-cmake)
 endif()
 
-add_subdirectory(s2geometry-cmake)
+if (USE_S2_GEOMETRY)
+    add_subdirectory(s2geometry-cmake)
+endif()
