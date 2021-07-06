@@ -25,6 +25,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -302,20 +303,6 @@ public:
             unique_lock = std::unique_lock(storage->rwlock, getLockTimeout(context));
             if (!unique_lock)
                 throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
-            /// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
-            ///  and add ability to seek unseekable files, but cache sync isn't supported.
-
-            if (storage->table_fd_was_used) /// We need seek to initial position
-            {
-                if (storage->table_fd_init_offset < 0)
-                    throw Exception("File descriptor isn't seekable, inside " + storage->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-
-                /// ReadBuffer's seek() doesn't make sense, since cache is empty
-                if (lseek(storage->table_fd, storage->table_fd_init_offset, SEEK_SET) < 0)
-                    throwFromErrno("Cannot seek file descriptor, inside " + storage->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-            }
-
             storage->table_fd_was_used = true;
         }
         else
@@ -511,11 +498,13 @@ Pipe StorageFile::read(
                 return metadata_snapshot->getColumns();
         };
         // if we do multiple reads from pipe, we want to check if pipe is a regular file or a pipe
-        if (reads > 0 && this_ptr->use_table_fd)
+        if (this_ptr->table_fd_was_used)
         {
-            if (fs::is_regular_file(this_ptr->base_path) && lseek(this_ptr->table_fd, this_ptr->table_fd_init_offset, SEEK_SET) < 0)
+            if (S_ISREG(this_ptr->table_fd))
             {
-                throwFromErrno("Cannot seek file descriptor, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                if (lseek(this_ptr->table_fd, this_ptr->table_fd_init_offset, SEEK_SET) < 0) {
+                    throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                }
             }
             else
             {
@@ -526,7 +515,6 @@ Pipe StorageFile::read(
         pipes.emplace_back(std::make_shared<StorageFileSource>(
             this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format()));
     }
-    ++this->reads;
 
     return Pipe::unitePipes(std::move(pipes));
 }
