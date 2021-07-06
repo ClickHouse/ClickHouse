@@ -1,4 +1,8 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_S2_GEOMETRY
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
@@ -49,41 +53,46 @@ public:
         size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments != 4) {
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(number_of_arguments) + ", should be 4",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 4",
+                getName(), number_of_arguments);
         }
 
         const auto * arg = arguments[0].get();
 
         if (!WhichDataType(arg).isUInt64()) {
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
         }
 
         arg = arguments[1].get();
 
         if (!WhichDataType(arg).isUInt64()) {
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(2) + " of function " + getName() + ". Must be UInt64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 2, getName());
         }
 
         arg = arguments[2].get();
 
         if (!WhichDataType(arg).isUInt64()) {
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(3) + " of function " + getName() + ". Must be UInt64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 3, getName());
         }
 
         arg = arguments[3].get();
 
         if (!WhichDataType(arg).isUInt64()) {
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(4) + " of function " + getName() + ". Must be UInt64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 4, getName());
         }
 
         DataTypePtr element = std::make_shared<DataTypeUInt64>();
@@ -142,3 +151,5 @@ void registerFunctionS2RectIntersection(FunctionFactory & factory)
 
 
 }
+
+#endif
