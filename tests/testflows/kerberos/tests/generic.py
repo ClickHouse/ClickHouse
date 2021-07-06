@@ -16,7 +16,7 @@ def ping(self):
 
     for i in range(3):
         with When(f"curl ch_{i} kerberos"):
-            r = ch_nodes[i].command(f"curl kerberos_env_kerberos_1 -c 1")
+            r = ch_nodes[i].command(f"curl kerberos -c 1")
             kinit_no_keytab(node=ch_nodes[2])
         with Then(f"return code should be 0"):
             assert r.exitcode == 7, error()
@@ -100,10 +100,8 @@ def invalid_server_ticket(self):
         self.context.krb_server.start()
         ch_nodes[2].cmd("kdestroy")
         while True:
-            time.sleep(1)
             kinit_no_keytab(node=ch_nodes[2])
             create_server_principal(node=ch_nodes[0])
-            time.sleep(1)
             if ch_nodes[2].cmd(test_select_query(node=ch_nodes[0])).output == "kerberos_user":
                 break
             debug(test_select_query(node=ch_nodes[0]))

@@ -68,8 +68,8 @@ def create_server_principal(self, node):
     """
     try:
         node.cmd("echo pwd | kinit admin/admin")
-        node.cmd(f"kadmin -w pwd -q \"add_principal -randkey HTTP/kerberos_env_{node.name}_1.kerberos_env_default\"")
-        node.cmd(f"kadmin -w pwd -q \"ktadd -k /etc/krb5.keytab HTTP/kerberos_env_{node.name}_1.kerberos_env_default\"")
+        node.cmd(f"kadmin -w pwd -q \"add_principal -randkey HTTP/kerberos_env_{node.name}_1.krbnet\"")
+        node.cmd(f"kadmin -w pwd -q \"ktadd -k /etc/krb5.keytab HTTP/kerberos_env_{node.name}_1.krbnet\"")
         yield
     finally:
         node.cmd("kdestroy")
