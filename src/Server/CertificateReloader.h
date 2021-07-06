@@ -33,9 +33,6 @@ namespace DB
 {
 #if USE_SSL
 
-/// SSL_CTX_set_cert_cb function
-extern "C" int cert_reloader_dispatch(SSL * ssl, void * arg);
-
 /// The CertificateReloader singleton performs 2 functions:
 /// 1. Dynamic reloading of TLS keypair when requested by main:
 ///   Main notifies CertificateReloader when the config changes. On changed config,

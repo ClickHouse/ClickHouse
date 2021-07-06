@@ -1,9 +1,16 @@
 #include "CertificateReloader.h"
+#include <common/errnoToString.h>
+
 
 #if USE_SSL
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_STAT;
+}
 
 int cert_reloader_dispatch_set_cert(SSL * ssl, [[maybe_unused]] void * arg)
 {
@@ -28,19 +35,19 @@ int CertificateReloader::setCertificate(SSL * ssl)
 
 void CertificateReloader::init(const Poco::Util::AbstractConfiguration & config)
 {
-    LOG_DEBUG(log, "Initializing config reloader.");
+    LOG_DEBUG(log, "Initializing certificate reloader.");
 
-    auto & ssl_manager = Poco::Net::SSLManager::instance();
-    const auto ssl_ctx_ptr = ssl_manager.defaultServerContext();
-    auto ctx = ssl_ctx_ptr->sslContext();
-    SSL_CTX_set_cert_cb(ctx, cert_reloader_dispatch_set_cert, nullptr);
+    SSL_CTX_set_cert_cb(
+        Poco::Net::SSLManager::instance().defaultClientContext()->sslContext(),
+        [](SSL * ssl, void * arg) { return reinterpret_cast<CertificateReloader *>(arg)->setCertificate(ssl); },
+        static_cast<void *>(this));
 
     reload(config);
 }
 
 void CertificateReloader::reload(const Poco::Util::AbstractConfiguration & config)
 {
-    LOG_DEBUG(log, "Handling cert reload.");
+    LOG_DEBUG(log, "Handling certificate reload.");
     const auto cert_file_ = config.getString("openSSL.server.certificateFile", "");
     const auto key_file_ = config.getString("openSSL.server.privateKeyFile", "");
 
@@ -50,13 +57,13 @@ void CertificateReloader::reload(const Poco::Util::AbstractConfiguration & confi
 
     if (changed)
     {
-        LOG_INFO(log, "Reloading cert({}), key({})", cert_file, key_file);
+        LOG_INFO(log, "Reloading certificate ({}) and key ({}).", cert_file, key_file);
         {
             std::unique_lock lock(mutex);
-            key = std::make_unique<Poco::Crypto::RSAKey>("", key_file);
+            key = std::make_unique<Poco::Crypto::RSAKey>(/* public key */ "", /* private key */ key_file);
             cert = std::make_unique<Poco::Crypto::X509Certificate>(cert_file);
         }
-        LOG_INFO(log, "Reloaded cert {}", cert_file);
+        LOG_INFO(log, "Reloaded certificate ({}).", cert_file);
     }
 }
 
@@ -68,7 +75,12 @@ bool CertificateReloader::setKeyFile(const std::string key_file_)
     stat_t st;
     int res = stat(key_file_.c_str(), &st);
     if (res == -1)
+    {
+        LOG_ERROR(log, "Cannot obtain stat for key file {}, skipping update. {}", key_file_, errnoToString(ErrorCodes::CANNOT_STAT));
         return false;
+    }
+
+    /// NOTE: if file changed twice in a second, the update will be missed.
 
     if (st.st_mtime != key_file_st.st_mtime || key_file != key_file_)
     {
@@ -88,7 +100,10 @@ bool CertificateReloader::setCertificateFile(const std::string cert_file_)
     stat_t st;
     int res = stat(cert_file_.c_str(), &st);
     if (res == -1)
+    {
+        LOG_ERROR(log, "Cannot obtain stat for certificate file {}, skipping update. {}", cert_file_, errnoToString(ErrorCodes::CANNOT_STAT));
         return false;
+    }
 
     if (st.st_mtime != cert_file_st.st_mtime || cert_file != cert_file_)
     {
