@@ -1013,7 +1013,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
     for (auto & part : broken_parts_to_detach)
-        part->renameToDetached("broken_on_start");
+        part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
 
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
