@@ -41,9 +41,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
     auto res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, flags, existing_memory, alignment);
 
+#if defined(OS_LINUX)
     if (direct_io_threshold && estimated_size >= direct_io_threshold)
     {
-#if defined(OS_LINUX)
         /** We don't use O_DIRECT because it is tricky and previous implementation has a bug.
           * Instead, we advise the OS that the data should not be cached.
           * This is not exactly the same for two reasons:
