@@ -906,6 +906,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
         {
             std::lock_guard lock(watches_mutex);
 
+            Int64 watch_callback_count = 0;
             for (auto & path_watches : watches)
             {
                 WatchResponse response;
@@ -915,6 +916,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
 
                 for (auto & callback : path_watches.second)
                 {
+                    watch_callback_count += 1;
                     if (callback)
                     {
                         try
@@ -929,7 +931,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 }
             }
 
-            CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, watches.size());
+            CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, watch_callback_count);
             watches.clear();
         }
 
