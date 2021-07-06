@@ -374,6 +374,10 @@ def create_table(self, name, statement, on_cluster=False):
     node = current().context.node
     try:
         with Given(f"I have a {name} table"):
+            if on_cluster:
+                node.query(f"DROP TABLE IF EXISTS {name} ON CLUSTER {on_cluster}")
+            else:
+                node.query(f"DROP TABLE IF EXISTS {name}")
             node.query(statement.format(name=name))
         yield name
     finally:
