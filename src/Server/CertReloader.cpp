@@ -51,8 +51,8 @@ void CertReloader::reload(const Poco::Util::AbstractConfiguration & config)
         LOG_INFO(log, "Reloading cert({}), key({})", cert_file, key_file);
         {
             std::unique_lock lock(mutex);
-            key.reset(new Poco::Crypto::RSAKey("", key_file));
-            cert.reset(new Poco::Crypto::X509Certificate(cert_file));
+            key = std::make_unique<Poco::Crypto::RSAKey>("", key_file);
+            cert = std::make_unique<Poco::Crypto::X509Certificate>(cert_file);
         }
         LOG_INFO(log, "Reloaded cert {}", cert_file);
     }
