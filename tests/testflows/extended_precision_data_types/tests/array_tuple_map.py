@@ -334,10 +334,10 @@ def map_func(self, data_type, node=None):
         execute_query(f"SELECT * FROM {table_name}")
 
     with Scenario(f"mapAdd with {data_type}"):
-        sql = f"SELECT mapAdd(([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
+        sql = (f"SELECT mapAdd(([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
             f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]),"
             f"([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
-            f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))"
+            f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))")
         if data_type.startswith("Decimal"):
             node.query(sql, exitcode=43, message="Exception:")
         else:
@@ -349,8 +349,10 @@ def map_func(self, data_type, node=None):
         table(name = table_name, data_type = f'Tuple(Array({data_type}), Array({data_type}))')
 
         with When("I insert the output into a table"):
-            sql = (f"INSERT INTO {table_name} SELECT mapAdd(([{to_data_type(data_type,1)},{to_data_type(data_type,2)}],"
-                f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]), ([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
+            sql = (f"INSERT INTO {table_name} SELECT mapAdd(("
+                f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
+                f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]),"
+                f"([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
                 f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))")
             exitcode, message = 0, None
 
@@ -361,7 +363,8 @@ def map_func(self, data_type, node=None):
         execute_query(f"""SELECT * FROM {table_name} ORDER BY a ASC""")
 
     with Scenario(f"mapSubtract with {data_type}"):
-        sql = (f"SELECT mapSubtract(([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
+        sql = (f"SELECT mapSubtract(("
+            f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
             f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]),"
             f"([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
             f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))")
