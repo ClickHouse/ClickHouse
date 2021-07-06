@@ -72,7 +72,6 @@ function drop_partition_thread()
     done
 }
 
-
 function optimize_thread()
 {
   while true; do
