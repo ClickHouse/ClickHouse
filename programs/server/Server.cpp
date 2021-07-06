@@ -1261,7 +1261,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
             });
 
-
             /// Interserver IO HTTP
             port_name = "interserver_http_port";
             createServer(listen_host, port_name, listen_try, [&](UInt16 port)
