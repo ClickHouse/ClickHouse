@@ -111,7 +111,7 @@
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
-            "with_coverage": true
+            "with_coverage": false
         },
         {
             "compiler": "clang-11",
@@ -145,6 +145,16 @@
         },
         {
             "compiler": "clang-11-freebsd",
+            "build-type": "",
+            "sanitizer": "",
+            "package-type": "binary",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "tidy": "disable",
+            "with_coverage": false
+        },
+        {
+            "compiler": "clang-11-darwin-aarch64",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",

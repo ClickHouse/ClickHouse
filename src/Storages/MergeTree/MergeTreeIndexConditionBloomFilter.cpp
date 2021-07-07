@@ -234,6 +234,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
 
     if (const auto * function = node->as<ASTFunction>())
     {
+        if (!function->arguments)
+            return false;
+
         const ASTs & arguments = function->arguments->children;
         for (const auto & arg : arguments)
         {
