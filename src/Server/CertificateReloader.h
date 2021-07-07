@@ -54,7 +54,7 @@ public:
     }
 
     /// Initialize the callback and perfom the initial cert loading
-    void init(const ::Poco::Util::AbstractConfiguration & config);
+    void init(const Poco::Util::AbstractConfiguration & config);
 
     /// Handle configuration reload
     void reload(const Poco::Util::AbstractConfiguration & config);
@@ -88,24 +88,22 @@ private:
 class CertificateReloader
 {
 public:
-    /// Singleton
     CertificateReloader(CertificateReloader const &) = delete;
     void operator=(CertificateReloader const &) = delete;
+
     static CertificateReloader & instance()
     {
         static CertificateReloader instance;
         return instance;
     }
 
-    /// Initialize the callback and perfom the initial cert loading
-    void init([[maybe_unused]] const ::Poco::Util::AbstractConfiguration & config) { LOG_WARNING(log, "Not reloading (SSL is disabled)."); }
+    void init(const Poco::Util::AbstractConfiguration &)
+    {
+    }
 
-    /// Handle configuration reload
-    void reload([[maybe_unused]] const Poco::Util::AbstractConfiguration & config){};
-
-private:
-    CertificateReloader() : log(&Poco::Logger::get("CertificateReloader")){};
-    Poco::Logger * log;
+    void reload(const Poco::Util::AbstractConfiguration &)
+    {
+    }
 };
 
 #endif
