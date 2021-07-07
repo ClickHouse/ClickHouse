@@ -258,6 +258,8 @@ public:
         return replicated_sends_throttler;
     }
 
+    bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -699,6 +701,8 @@ private:
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
+
+    std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(

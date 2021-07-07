@@ -507,7 +507,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         result_header = getSampleBlockImpl();
     };
 
-    analyze(settings.optimize_move_to_prewhere);
+    analyze(shouldMoveToPrewhere());
 
     bool need_analyze_again = false;
     if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
@@ -1533,16 +1533,22 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     }
 }
 
-void InterpreterSelectQuery::addPrewhereAliasActions()
+bool InterpreterSelectQuery::shouldMoveToPrewhere()
 {
     const Settings & settings = context->getSettingsRef();
+    const ASTSelectQuery & query = getSelectQuery();
+    return settings.optimize_move_to_prewhere && (!query.final() || settings.optimize_move_to_prewhere_if_final);
+}
+
+void InterpreterSelectQuery::addPrewhereAliasActions()
+{
     auto & expressions = analysis_result;
     if (expressions.filter_info)
     {
         if (!expressions.prewhere_info)
         {
             const bool does_storage_support_prewhere = !input && !input_pipe && storage && storage->supportsPrewhere();
-            if (does_storage_support_prewhere && settings.optimize_move_to_prewhere)
+            if (does_storage_support_prewhere && shouldMoveToPrewhere())
             {
                 /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
                 expressions.prewhere_info = std::make_shared<PrewhereInfo>(
@@ -2036,10 +2042,12 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         settings.group_by_two_level_threshold,
         settings.group_by_two_level_threshold_bytes,
         settings.max_bytes_before_external_group_by,
-        settings.empty_result_for_aggregation_by_empty_set,
+        settings.empty_result_for_aggregation_by_empty_set || (keys.empty() && query_analyzer->hasConstAggregationKeys()),
         context->getTemporaryVolume(),
         settings.max_threads,
-        settings.min_free_disk_space_for_temporary_data);
+        settings.min_free_disk_space_for_temporary_data,
+        settings.compile_aggregate_expressions,
+        settings.min_count_to_compile_aggregate_expression);
 
     SortDescription group_by_sort_description;
 
@@ -2141,7 +2149,9 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
         settings.empty_result_for_aggregation_by_empty_set,
         context->getTemporaryVolume(),
         settings.max_threads,
-        settings.min_free_disk_space_for_temporary_data);
+        settings.min_free_disk_space_for_temporary_data,
+        settings.compile_aggregate_expressions,
+        settings.min_count_to_compile_aggregate_expression);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 

@@ -39,6 +39,9 @@ public:
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
     off_t seek(off_t off, int whence) override;
 
+    /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
+    void rewind();
+
     off_t size();
 
     void setProgressCallback(ContextPtr context);

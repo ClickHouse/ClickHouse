@@ -281,11 +281,6 @@ public:
       */
     void insert(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
-    /** Delete the action with the specified part (as new_part_name) from the queue.
-      * Called for unreachable actions in the queue - old lost parts.
-      */
-    bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
-
     /** Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
       * If queue was not empty load() would not load duplicate records.
       * return true, if we update queue.
@@ -377,6 +372,11 @@ public:
 
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
+
+    /// Check that part produced by some entry in queue and get source parts for it.
+    /// If there are several entries return largest source_parts set. This rarely possible
+    /// for example after replica clone.
+    bool checkPartInQueueAndGetSourceParts(const String & part_name, Strings & source_parts) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
     /// Locks queue's mutex.

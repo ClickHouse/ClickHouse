@@ -27,8 +27,6 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-class CompiledExpressionCache;
-
 namespace JSONBuilder
 {
     class JSONMap;

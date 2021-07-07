@@ -168,9 +168,6 @@
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt.git
-[submodule "contrib/antlr4-runtime"]
-	path = contrib/antlr4-runtime
-	url = https://github.com/ClickHouse-Extras/antlr4-runtime.git
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
 	url = https://github.com/ClickHouse-Extras/sentry-native.git
