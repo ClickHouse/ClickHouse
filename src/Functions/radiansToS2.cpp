@@ -75,12 +75,9 @@ public:
         for (const auto row : collections::range(0, input_rows_count))
         {
             const double lon = col_lon->getFloat64(row);
-            double lat = col_lat->getFloat64(row);
+            const double lat = col_lat->getFloat64(row);
 
-            lat = lon;
-
-            S2LatLng lat_lng = S2LatLng::FromRadians(lat, lon);
-            S2CellId id(lat_lng);
+            S2CellId id(S2LatLng::FromRadians(lat, lon));
 
             dst_data[row] = id.id();
         }

@@ -52,11 +52,14 @@ public:
         {
             const auto * arg = arguments[index].get();
 
-            if (index == 1 && !WhichDataType(arg).isFloat64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be Float64",
-                    arg->getName(), 2, getName());
+            if (index == 1)
+            {
+                if (!WhichDataType(arg).isFloat64())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument {} of function {}. Must be Float64",
+                        arg->getName(), 2, getName());
+            }
             else if (!WhichDataType(arg).isUInt64()) {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
