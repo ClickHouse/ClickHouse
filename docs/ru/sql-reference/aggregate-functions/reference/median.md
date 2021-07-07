@@ -1,17 +1,18 @@
 # median {#median}
 
-Функции `median*` — алиасы для соответствущих функций `quantile*`. Они вычисляют медиану числовой последовательности.
+Функции `median*` — синонимы для соответствущих функций `quantile*`. Они вычисляют медиану числовой последовательности.
 
 Функции:
 
--   `median` — синоним [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
--   `medianDeterministic` — синоним [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md#quantiledeterministic).
--   `medianExact` — синоним [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact).
--   `medianExactWeighted` — синоним [quantileExactWeighted](../../../sql-reference/aggregate-functions/reference/quantileexactweighted.md#quantileexactweighted).
--   `medianTiming` — синоним [quantileTiming](../../../sql-reference/aggregate-functions/reference/quantiletiming.md#quantiletiming).
--   `medianTimingWeighted` — синоним [quantileTimingWeighted](../../../sql-reference/aggregate-functions/reference/quantiletimingweighted.md#quantiletimingweighted).
--   `medianTDigest` — синоним [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md#quantiletdigest).
--   `medianTDigestWeighted` — синоним [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md#quantiletdigestweighted).
+-   `median` — синоним для [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
+-   `medianDeterministic` — синоним для [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md#quantiledeterministic).
+-   `medianExact` — синоним для [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact).
+-   `medianExactWeighted` — синоним для [quantileExactWeighted](../../../sql-reference/aggregate-functions/reference/quantileexactweighted.md#quantileexactweighted).
+-   `medianTiming` — синоним для [quantileTiming](../../../sql-reference/aggregate-functions/reference/quantiletiming.md#quantiletiming).
+-   `medianTimingWeighted` — синоним для [quantileTimingWeighted](../../../sql-reference/aggregate-functions/reference/quantiletimingweighted.md#quantiletimingweighted).
+-   `medianTDigest` — синоним для [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md#quantiletdigest).
+-   `medianTDigestWeighted` — синоним для [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md#quantiletdigestweighted).
+-   `medianBFloat16` — синоним для [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16).
 
 **Пример**
 

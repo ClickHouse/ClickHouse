@@ -1604,4 +1604,9 @@ void StorageMergeTree::startBackgroundMovesIfNeeded()
         background_moves_executor.start();
 }
 
+std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const
+{
+    return std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
+}
+
 }
