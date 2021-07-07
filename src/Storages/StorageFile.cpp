@@ -502,7 +502,13 @@ Pipe StorageFile::read(
         {
             if (S_ISREG(this_ptr->table_fd))
             {
-                if (lseek(this_ptr->table_fd, this_ptr->table_fd_init_offset, SEEK_SET) < 0) {
+                if (this_ptr->table_fd_init_offset < 0)
+                {
+                    throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                }
+                int seekable_table_fd = dup(this_ptr->table_fd);
+                if (lseek(seekable_table_fd, this_ptr->table_fd_init_offset, SEEK_SET) < 0)
+                {
                     throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
                 }
             }
