@@ -23,6 +23,7 @@ RUN apt-get update \
         libboost-regex-dev \
         libboost-context-dev \
         libboost-coroutine-dev \
+        libboost-graph-dev \
         zlib1g-dev \
         liblz4-dev \
         libdouble-conversion-dev \
