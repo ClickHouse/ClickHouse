@@ -3180,3 +3180,54 @@ Default value: `1`.
 **Usage**
 
 If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
+
+## output_format_arrow_low_cardinality_as_dictionary {#output-format-arrow-low-cardinality-as-dictionary}
+
+Allows to convert the [LowCardinality](../sql-reference/data-types/lowcardinality.md) type to the `DICTIONARY` type of the [Arrow](../../interfaces/formats.md#data-format-arrow) format for `SELECT` queries.
+
+Possible values:
+
+-   0 — The `LowCardinality` type is not converted to the `DICTIONARY` type.
+-   1 — The `LowCardinality` type is converted to the `DICTIONARY` type.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE arrow_dicts (a LowCardinality(String), b Array(LowCardinality(String)), c Tuple(LowCardinality(String), LowCardinality(String))) ENGINE = Memory();
+INSERT INTO arrow_dicts VALUES ('1', ['a', 'b', 'c'], ('z', '6')), ('2', ['d', 'e'], ('x', '9'));
+SELECT * FROM arrow_dicts FORMAT Arrow SETTINGS output_format_arrow_low_cardinality_as_dictionary = 1;
+```
+
+Result:
+
+``` text
+ARROW1▒▒▒▒▒
+
+
+dcx▒▒▒▒▒▒▒@▒▒▒▒▒▒▒$▒▒▒4c.0p▒▒▒
+                              ▒▒▒
+                                ▒▒▒
+
+                                   bD▒▒▒
+                                       @ item
+                                          ▒▒▒▒▒▒▒
+                                                @a
+
+                                           ▒▒▒▒
+
+
+dcx▒▒▒▒▒▒▒@▒▒▒▒▒▒▒$▒▒▒4c.0p▒▒▒                \▒▒▒t▒@▒▒▒
+                              ▒▒▒
+                                ▒▒▒
+
+                                   bD▒▒▒
+                                       @ item
+                                          ▒▒▒▒▒▒▒
+                                                @a
+
+                                           ARROW1
+```
