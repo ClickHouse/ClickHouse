@@ -1013,7 +1013,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
     for (auto & part : broken_parts_to_detach)
-        part->renameToDetached("broken_on_start");
+        part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
 
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
@@ -1802,6 +1802,30 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (setting_name == "storage_policy")
                 checkStoragePolicy(getContext()->getStoragePolicy(new_value.safeGet<String>()));
         }
+
+        /// Check if it is safe to reset the settings
+        for (const auto & current_setting : current_changes)
+        {
+            const auto & setting_name = current_setting.name;
+            const Field * new_value = new_changes.tryGet(setting_name);
+            /// Prevent unsetting readonly setting
+            if (MergeTreeSettings::isReadonlySetting(setting_name) && !new_value)
+            {
+                throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'",
+                                ErrorCodes::READONLY_SETTING};
+            }
+
+            if (MergeTreeSettings::isPartFormatSetting(setting_name) && !new_value)
+            {
+                /// Use default settings + new and check if doesn't affect part format settings
+                auto copy = getDefaultSettings();
+                copy->applyChanges(new_changes);
+                String reason;
+                if (!canUsePolymorphicParts(*copy, &reason) && !reason.empty())
+                    throw Exception("Can't change settings. Reason: " + reason, ErrorCodes::NOT_IMPLEMENTED);
+            }
+
+        }
     }
 
     for (const auto & part : getDataPartsVector())
@@ -1959,12 +1983,12 @@ void MergeTreeData::changeSettings(
             }
         }
 
-        MergeTreeSettings copy = *getSettings();
-        copy.applyChanges(new_changes);
+        /// Reset to default settings before applying existing.
+        auto copy = getDefaultSettings();
+        copy->applyChanges(new_changes);
+        copy->sanityCheck(getContext()->getSettingsRef());
 
-        copy.sanityCheck(getContext()->getSettingsRef());
-
-        storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
+        storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         new_metadata.setSettingsChanges(new_settings);
         setInMemoryMetadata(new_metadata);
@@ -2156,8 +2180,7 @@ bool MergeTreeData::renameTempPartAndReplace(
 
     LOG_TRACE(log, "Renaming temporary part {} to {}.", part->relative_path, part_name);
 
-    auto it_duplicate = data_parts_by_info.find(part_info);
-    if (it_duplicate != data_parts_by_info.end())
+    if (auto it_duplicate = data_parts_by_info.find(part_info); it_duplicate != data_parts_by_info.end())
     {
         String message = "Part " + (*it_duplicate)->getNameWithState() + " already exists";
 
@@ -2332,7 +2355,37 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         if (part->info.partition_id != drop_range.partition_id)
             throw Exception("Unexpected partition_id of part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (part->info.min_block < drop_range.min_block)    /// NOTE Always false, because drop_range.min_block == 0
+        /// It's a DROP PART and it's already executed by fetching some covering part
+        bool is_drop_part = !drop_range.isFakeDropRangePart() && drop_range.min_block;
+
+        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block))
+        {
+            /// Why we check only min and max blocks here without checking merge
+            /// level? It's a tricky situation which can happen on a stale
+            /// replica. For example, we have parts all_1_1_0, all_2_2_0 and
+            /// all_3_3_0. Fast replica assign some merges (OPTIMIZE FINAL or
+            /// TTL) all_2_2_0 -> all_2_2_1 -> all_2_2_2. So it has set of parts
+            /// all_1_1_0, all_2_2_2 and all_3_3_0. After that it decides to
+            /// drop part all_2_2_2. Now set of parts is all_1_1_0 and
+            /// all_3_3_0. Now fast replica assign merge all_1_1_0 + all_3_3_0
+            /// to all_1_3_1 and finishes it. Slow replica pulls the queue and
+            /// have two contradictory tasks -- drop all_2_2_2 and merge/fetch
+            /// all_1_3_1. If this replica will fetch all_1_3_1 first and then tries
+            /// to drop all_2_2_2 after that it will receive the LOGICAL ERROR.
+            /// So here we just check that all_1_3_1 covers blocks from drop
+            /// all_2_2_2.
+            ///
+            /// NOTE: this helps only to avoid logical error during drop part.
+            /// We still get intersecting "parts" in queue.
+            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block;
+            if (is_covered_by_min_max_block)
+            {
+                LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
+                return {};
+            }
+        }
+
+        if (part->info.min_block < drop_range.min_block)
         {
             if (drop_range.min_block <= part->info.max_block)
             {
@@ -2659,7 +2712,6 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
-
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/) const
 {
@@ -2760,7 +2812,6 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(Merg
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
 }
-
 
 MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
 {
@@ -3941,15 +3992,9 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
         if (analysis_result.prewhere_info)
         {
-            const auto & prewhere_info = analysis_result.prewhere_info;
-            candidate.prewhere_info = std::make_shared<PrewhereInfo>();
-            candidate.prewhere_info->prewhere_column_name = prewhere_info->prewhere_column_name;
-            candidate.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
-            // std::cerr << fmt::format("remove prewhere column : {}", candidate.prewhere_info->remove_prewhere_column) << std::endl;
-            candidate.prewhere_info->row_level_column_name = prewhere_info->row_level_column_name;
-            candidate.prewhere_info->need_filter = prewhere_info->need_filter;
+            candidate.prewhere_info = analysis_result.prewhere_info;
 
-            auto prewhere_actions = prewhere_info->prewhere_actions->clone();
+            auto prewhere_actions = candidate.prewhere_info->prewhere_actions->clone();
             auto prewhere_required_columns = required_columns;
             // required_columns should not contain columns generated by prewhere
             for (const auto & column : prewhere_actions->getResultColumns())
@@ -3957,28 +4002,27 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             // std::cerr << fmt::format("prewhere_actions = \n{}", prewhere_actions->dumpDAG()) << std::endl;
             // Prewhere_action should not add missing keys.
             prewhere_required_columns = prewhere_actions->foldActionsByProjection(
-                prewhere_required_columns, projection.sample_block_for_keys, prewhere_info->prewhere_column_name, false);
+                prewhere_required_columns, projection.sample_block_for_keys, candidate.prewhere_info->prewhere_column_name, false);
             // std::cerr << fmt::format("prewhere_actions = \n{}", prewhere_actions->dumpDAG()) << std::endl;
             // std::cerr << fmt::format("prewhere_required_columns = \n{}", fmt::join(prewhere_required_columns, ", ")) << std::endl;
             if (prewhere_required_columns.empty())
                 return false;
-            candidate.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_actions, actions_settings);
+            candidate.prewhere_info->prewhere_actions = prewhere_actions;
 
-            if (prewhere_info->row_level_filter_actions)
+            if (candidate.prewhere_info->row_level_filter)
             {
-                auto row_level_filter_actions = prewhere_info->row_level_filter_actions->clone();
+                auto row_level_filter_actions = candidate.prewhere_info->row_level_filter->clone();
                 prewhere_required_columns = row_level_filter_actions->foldActionsByProjection(
-                    prewhere_required_columns, projection.sample_block_for_keys, prewhere_info->row_level_column_name, false);
+                    prewhere_required_columns, projection.sample_block_for_keys, candidate.prewhere_info->row_level_column_name, false);
                 // std::cerr << fmt::format("row_level_filter_required_columns = \n{}", fmt::join(prewhere_required_columns, ", ")) << std::endl;
                 if (prewhere_required_columns.empty())
                     return false;
-                candidate.prewhere_info->row_level_filter
-                    = std::make_shared<ExpressionActions>(row_level_filter_actions, actions_settings);
+                candidate.prewhere_info->row_level_filter = row_level_filter_actions;
             }
 
-            if (prewhere_info->alias_actions)
+            if (candidate.prewhere_info->alias_actions)
             {
-                auto alias_actions = prewhere_info->alias_actions->clone();
+                auto alias_actions = candidate.prewhere_info->alias_actions->clone();
                 // std::cerr << fmt::format("alias_actions = \n{}", alias_actions->dumpDAG()) << std::endl;
                 prewhere_required_columns
                     = alias_actions->foldActionsByProjection(prewhere_required_columns, projection.sample_block_for_keys, {}, false);
@@ -3986,7 +4030,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                 // std::cerr << fmt::format("alias_required_columns = \n{}", fmt::join(prewhere_required_columns, ", ")) << std::endl;
                 if (prewhere_required_columns.empty())
                     return false;
-                candidate.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(alias_actions, actions_settings);
+                candidate.prewhere_info->alias_actions = alias_actions;
             }
             required_columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
         }
@@ -4620,19 +4664,20 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     }
 }
 
-std::optional<JobAndPool> MergeTreeData::getDataMovingJob()
+bool MergeTreeData::scheduleDataMovingJob(IBackgroundJobExecutor & executor)
 {
     if (parts_mover.moves_blocker.isCancelled())
-        return {};
+        return false;
 
     auto moving_tagger = selectPartsForMove();
     if (moving_tagger->parts_to_move.empty())
-        return {};
+        return false;
 
-    return JobAndPool{[this, moving_tagger] () mutable
+    executor.execute({[this, moving_tagger] () mutable
     {
         return moveParts(moving_tagger);
-    }, PoolType::MOVE};
+    }, PoolType::MOVE});
+    return true;
 }
 
 bool MergeTreeData::areBackgroundMovesNeeded() const
