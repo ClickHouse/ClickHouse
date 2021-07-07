@@ -129,7 +129,7 @@ That dictionary source can be configured only via XML configuration. Creating di
 
 ## Executable Pool {#dicts-external_dicts_dict_sources-executable_pool}
 
-Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct` layouts. 
+Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct` layouts.
 
 Executable pool will spawn pool of processes with specified command and keep them running until they exit. The program should read data from STDIN while it is available and output result to STDOUT, and it can wait for next block of data on STDIN. ClickHouse will not close STDIN after processing a block of data but will pipe another chunk of data when needed. The executable script should be ready for this way of data processing — it should poll STDIN and flush data to STDOUT early.
 
@@ -581,6 +581,7 @@ Example of settings:
         <db>default</db>
         <table>ids</table>
         <where>id=10</where>
+        <secure>1</secure>
     </clickhouse>
 </source>
 ```
@@ -596,6 +597,7 @@ SOURCE(CLICKHOUSE(
     db 'default'
     table 'ids'
     where 'id=10'
+    secure 1
 ))
 ```
 
@@ -609,6 +611,7 @@ Setting fields:
 -   `table` – Name of the table.
 -   `where` – The selection criteria. May be omitted.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
+-   `secure` - Use ssl for connection.
 
 ### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
 
