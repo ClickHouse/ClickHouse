@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/Context.h>
 
 #include <unistd.h>
 
@@ -38,6 +39,12 @@ public:
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
     off_t seek(off_t off, int whence) override;
 
+    /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
+    void rewind();
+
+    off_t size();
+
+    void setProgressCallback(ContextPtr context);
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
     bool poll(size_t timeout_microseconds);

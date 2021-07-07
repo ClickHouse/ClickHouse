@@ -6,7 +6,12 @@
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <sys/stat.h>
+#include <Common/UnicodeBar.h>
+#include <Common/TerminalSize.h>
+#include <IO/Operators.h>
 
 
 namespace ProfileEvents
@@ -32,6 +37,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_SELECT;
+    extern const int CANNOT_FSTAT;
 }
 
 
@@ -143,7 +149,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         off_t res = ::lseek(fd, new_pos, SEEK_SET);
         if (-1 == res)
             throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
-                                   ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
         file_offset_of_buffer_end = new_pos;
 
         watch.stop();
@@ -151,6 +157,20 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         return res;
     }
+}
+
+
+void ReadBufferFromFileDescriptor::rewind()
+{
+    ProfileEvents::increment(ProfileEvents::Seek);
+    off_t res = ::lseek(fd, 0, SEEK_SET);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
+            ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+    /// Clearing the buffer with existing data. New data will be read on subsequent call to 'next'.
+    working_buffer.resize(0);
+    pos = working_buffer.begin();
 }
 
 
@@ -168,6 +188,30 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
         throwFromErrno("Cannot select", ErrorCodes::CANNOT_SELECT);
 
     return res > 0;
+}
+
+
+off_t ReadBufferFromFileDescriptor::size()
+{
+    struct stat buf;
+    int res = fstat(fd, &buf);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
+    return buf.st_size;
+}
+
+
+void ReadBufferFromFileDescriptor::setProgressCallback(ContextPtr context)
+{
+    auto file_progress_callback = context->getFileProgressCallback();
+
+    if (!file_progress_callback)
+        return;
+
+    setProfileCallback([file_progress_callback](const ProfileInfo & progress)
+    {
+        file_progress_callback(FileProgress(progress.bytes_read, 0));
+    });
 }
 
 }

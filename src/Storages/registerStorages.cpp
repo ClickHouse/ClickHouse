@@ -61,6 +61,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 
 #if USE_LIBPQXX
 void registerStoragePostgreSQL(StorageFactory & factory);
+void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 #endif
 
 #if USE_MYSQL || USE_LIBPQXX
@@ -123,6 +124,7 @@ void registerStorages()
 
     #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
+    registerStorageMaterializedPostgreSQL(factory);
     #endif
 
     #if USE_MYSQL || USE_LIBPQXX

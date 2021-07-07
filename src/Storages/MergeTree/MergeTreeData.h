@@ -57,6 +57,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
+class IBackgroundJobExecutor;
 
 namespace ErrorCodes
 {
@@ -402,6 +403,7 @@ public:
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
     DataParts getDataParts(const DataPartStates & affordable_states) const;
+
     /// Returns sorted list of the parts with specified states
     ///  out_states will contain snapshot of each part state
     DataPartsVector getDataPartsVector(
@@ -806,10 +808,10 @@ public:
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
-    /// Return main processing background job, like merge/mutate/fetch and so on
-    virtual std::optional<JobAndPool> getDataProcessingJob() = 0;
-    /// Return job to move parts between disks/volumes and so on.
-    std::optional<JobAndPool> getDataMovingJob();
+    /// Schedules background job to like merge/mutate/fetch an executor
+    virtual bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) = 0;
+    /// Schedules job to move parts between disks/volumes and so on.
+    bool scheduleDataMovingJob(IBackgroundJobExecutor & executor);
     bool areBackgroundMovesNeeded() const;
 
     /// Lock part in zookeeper for use common S3 data in several nodes
@@ -1085,6 +1087,9 @@ private:
 
     // Get partition matcher for FREEZE / UNFREEZE queries.
     MatcherFn getPartitionMatcher(const ASTPtr & partition, ContextPtr context) const;
+
+    /// Returns default settings for storage with possible changes from global config.
+    virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

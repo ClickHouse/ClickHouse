@@ -1,12 +1,10 @@
 #include <AggregateFunctions/AggregateFunctionResample.h>
 
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -53,7 +51,7 @@ public:
     {
         WhichDataType which{arguments.back()};
 
-        if (which.isNativeUInt() || which.isDateOrDateTime())
+        if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
         {
             UInt64 begin = params[params.size() - 3].safeGet<UInt64>();
             UInt64 end = params[params.size() - 2].safeGet<UInt64>();

@@ -5,10 +5,8 @@ from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
-node_memory = cluster.add_instance('node_memory', main_configs=['configs/enable_dictionaries.xml',
-                                   'configs/dictionaries/complex_key_cache_string.xml'])
-node_ssd = cluster.add_instance('node_ssd', main_configs=['configs/enable_dictionaries.xml',
-                                'configs/dictionaries/ssd_complex_key_cache_string.xml'])
+node_memory = cluster.add_instance('node_memory', dictionaries=['configs/dictionaries/complex_key_cache_string.xml'])
+node_ssd = cluster.add_instance('node_ssd', dictionaries=['configs/dictionaries/ssd_complex_key_cache_string.xml'])
 
 @pytest.fixture()
 def started_cluster():
@@ -23,7 +21,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
+@pytest.mark.skip(reason="SSD cache test can run on disk only")
 @pytest.mark.parametrize("type", ["memory", "ssd"])
 def test_memory_consumption(started_cluster, type):
     node = started_cluster.instances[f'node_{type}']

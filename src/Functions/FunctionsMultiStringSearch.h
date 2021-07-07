@@ -47,7 +47,7 @@ class FunctionsMultiStringSearch : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         if (Impl::is_using_hyperscan && !context->getSettingsRef().allow_hyperscan)
             throw Exception(
