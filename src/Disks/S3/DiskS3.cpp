@@ -883,6 +883,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
                 to_path /= from_path.parent_path().filename();
             else
                 to_path /= from_path.filename();
+            fs::create_directories(to_path);
             fs::copy(from_path, to_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
             fs::remove_all(from_path);
         }

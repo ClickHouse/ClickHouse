@@ -9,12 +9,13 @@ import time
 
 import helpers.client
 import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_instances_dir
 
 MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/dummy/configs/config.d/defaultS3.xml')
+
+CONFIG_PATH = os.path.join(SCRIPT_DIR, './{}/dummy/configs/config.d/defaultS3.xml'.format(get_instances_dir()))
 
 
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
@@ -645,3 +646,28 @@ def test_storage_s3_put_gzip(started_cluster, extension, method):
     f = gzip.GzipFile(fileobj=buf, mode="rb")
     uncompressed_content = f.read().decode()
     assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 708
+
+
+def test_truncate_table(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    name = "truncate"
+
+    instance.query("CREATE TABLE {} (id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV')".format(
+        name, started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, name))
+
+    instance.query("INSERT INTO {} SELECT number FROM numbers(10)".format(name))
+    result = instance.query("SELECT * FROM {}".format(name))
+    assert result == instance.query("SELECT number FROM numbers(10)")
+    instance.query("TRUNCATE TABLE {}".format(name))
+
+    minio = started_cluster.minio_client
+    timeout = 30
+    while timeout > 0:
+        if len(list(minio.list_objects(started_cluster.minio_bucket, 'truncate/'))) == 0:
+            return
+        timeout -= 1
+        time.sleep(1)
+    assert(len(list(minio.list_objects(started_cluster.minio_bucket, 'truncate/'))) == 0)
+    assert instance.query("SELECT * FROM {}".format(name)) == ""
+
