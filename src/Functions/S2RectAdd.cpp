@@ -57,7 +57,7 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument {} of function {}. Must be UInt64",
-                    arg->getName(), i, getName()
+                    arg->getName(), index, getName()
                     );
             }
         }

@@ -55,7 +55,7 @@ public:
             const auto * arg = arguments[index].get();
             if ((index == 1 || index == 3) && !WhichDataType(arg).isFloat64())
                 throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument {} of function {}. Must be Float64",
                     arg->getName(), index + 1, getName()
                 );
