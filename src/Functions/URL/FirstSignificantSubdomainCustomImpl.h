@@ -69,11 +69,11 @@ public:
 
         if (const ColumnConst * const_col = checkAndGetColumnConst<ColumnString>(column.get()))
         {
-            const String & data = const_col->getValue<String>();
-            const String & res = scalar(tld_lookup, data);
+            const ColumnString * col_str = checkAndGetColumn<ColumnString>(const_col->getDataColumn());
+            const std::string_view & sv = scalar(tld_lookup, col_str->getDataAt(0));
 
             auto col_res = ColumnString::create();
-            col_res->insert(res);
+            col_res->insert(sv);
 
             auto col_const_res = ColumnConst::create(std::move(col_res), input_rows_count);
             return col_const_res;
@@ -119,13 +119,12 @@ public:
         }
     }
 
-    static String scalar(FirstSignificantSubdomainCustomLookup & tld_lookup, const String & data)
+    static std::string_view scalar(FirstSignificantSubdomainCustomLookup & tld_lookup, const StringRef & data)
     {
         Pos start;
         size_t length;
-        Extractor::execute(tld_lookup, &data[0], data.size(), start, length);
-        String output(start, length);
-        return output;
+        Extractor::execute(tld_lookup, &data.data[0], data.size, start, length);
+        return {start, length};
     }
 };
 
