@@ -324,7 +324,7 @@ toJSONString(value)
 
 **Returned value**
 
--   JSON representation of a value. 
+-   JSON representation of the value. 
 
 Type: [String](../../sql-reference/data-types/string.md).
 
