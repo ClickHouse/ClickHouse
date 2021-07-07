@@ -1087,6 +1087,9 @@ private:
 
     // Get partition matcher for FREEZE / UNFREEZE queries.
     MatcherFn getPartitionMatcher(const ASTPtr & partition, ContextPtr context) const;
+
+    /// Returns default settings for storage with possible changes from global config.
+    virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

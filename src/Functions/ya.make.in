@@ -14,7 +14,7 @@ ADDINCL(
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
-    contrib/restricted/murmurhash
+    GLOBAL contrib/restricted/murmurhash
 )
 
 PEERDIR(
