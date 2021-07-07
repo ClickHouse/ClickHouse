@@ -96,7 +96,7 @@ public:
 
             if (synset)
             {
-                for (const auto &token : *synset)
+                for (const auto & token : *synset)
                     out_data.insert(Field(token.data(), token.size()));
 
                 current_offset += synset->size();

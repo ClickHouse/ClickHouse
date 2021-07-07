@@ -10,7 +10,7 @@ from helpers.cluster import ClickHouseCluster
 
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', base_config_dir='configs/')
+instance = cluster.add_instance('instance', main_configs=['configs/dicts_config.xml'])
 
 def copy_file_to_container(local_path, dist_path, container_id):
     os.system("docker cp {local} {cont_id}:{dist}".format(local=local_path, cont_id=container_id, dist=dist_path))

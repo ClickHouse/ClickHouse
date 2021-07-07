@@ -86,8 +86,8 @@ SynonymsExtensions::SynonymsExtensions(const Poco::Util::AbstractConfiguration &
     Poco::Util::AbstractConfiguration::Keys keys;
 
     if (!config.has(prefix))
-        throw Exception("You should specify list of synonyms extensions in " + prefix,
-            ErrorCodes::INVALID_CONFIG_PARAMETER);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "No synonims extensions specified in server config on prefix '{}'", prefix);
 
     config.keys(prefix, keys);
 
@@ -108,8 +108,7 @@ SynonymsExtensions::SynonymsExtensions(const Poco::Util::AbstractConfiguration &
             if (ext_type.empty())
                 throw Exception("Extension type in config is not specified here: " + prefix + "." + key + ".type",
                     ErrorCodes::INVALID_CONFIG_PARAMETER);
-            if (ext_type != "plain" &&
-                ext_type != "wordnet")
+            if (ext_type != "plain" && ext_type != "wordnet")
                 throw Exception("Unknown extension type in config: " + prefix + "." + key + ".type, must be 'plain' or 'wordnet'",
                     ErrorCodes::INVALID_CONFIG_PARAMETER);
 

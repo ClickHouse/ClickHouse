@@ -41,8 +41,7 @@ Lemmatizers::Lemmatizers(const Poco::Util::AbstractConfiguration & config)
     Poco::Util::AbstractConfiguration::Keys keys;
 
     if (!config.has(prefix))
-        throw Exception("You should specify list of lemmatizers in " + prefix,
-            ErrorCodes::INVALID_CONFIG_PARAMETER);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "No lemmatizers specified in server config on prefix '{}'", prefix);
 
     config.keys(prefix, keys);
 
