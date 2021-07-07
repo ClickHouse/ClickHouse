@@ -80,8 +80,13 @@ void SerializationMap::deserializeBinary(IColumn & column, ReadBuffer & istr) co
 }
 
 
-template <typename Writer>
-void SerializationMap::serializeTextImpl(const IColumn & column, size_t row_num, bool quote_key, WriteBuffer & ostr, Writer && writer) const
+template <typename KeyWriter, typename ValueWriter>
+void SerializationMap::serializeTextImpl(
+    const IColumn & column,
+    size_t row_num,
+    WriteBuffer & ostr,
+    KeyWriter && key_writer,
+    ValueWriter && value_writer) const
 {
     const auto & column_map = assert_cast<const ColumnMap &>(column);
 
@@ -98,17 +103,9 @@ void SerializationMap::serializeTextImpl(const IColumn & column, size_t row_num,
         if (i != offset)
             writeChar(',', ostr);
 
-        if (quote_key)
-        {
-            writeChar('"', ostr);
-            writer(key, nested_tuple.getColumn(0), i);
-            writeChar('"', ostr);
-        }
-        else
-            writer(key, nested_tuple.getColumn(0), i);
-
+        key_writer(key, nested_tuple.getColumn(0), i);
         writeChar(':', ostr);
-        writer(value, nested_tuple.getColumn(1), i);
+        value_writer(value, nested_tuple.getColumn(1), i);
     }
     writeChar('}', ostr);
 }
@@ -170,11 +167,12 @@ void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, 
 
 void SerializationMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeTextImpl(column, row_num, /*quote_key=*/ false, ostr,
-        [&](const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
-        {
-            subcolumn_serialization->serializeTextQuoted(subcolumn, pos, ostr, settings);
-        });
+    auto writer = [&](const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
+    {
+        subcolumn_serialization->serializeTextQuoted(subcolumn, pos, ostr, settings);
+    };
+
+    serializeTextImpl(column, row_num, ostr, writer, writer);
 }
 
 void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -188,11 +186,14 @@ void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, cons
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    /// We need to double-quote integer keys to produce valid JSON.
-    const auto & column_key = assert_cast<const ColumnMap &>(column).getNestedData().getColumn(0);
-    bool quote_key = !WhichDataType(column_key.getDataType()).isStringOrFixedString();
-
-    serializeTextImpl(column, row_num, quote_key, ostr,
+    serializeTextImpl(column, row_num, ostr,
+        [&](const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
+        {
+            /// We need to double-quote all keys (including integers) to produce valid JSON.
+            WriteBufferFromOwnString str_buf;
+            subcolumn_serialization->serializeText(subcolumn, pos, str_buf, settings);
+            writeJSONString(str_buf.str(), ostr, settings);
+        },
         [&](const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
         {
             subcolumn_serialization->serializeTextJSON(subcolumn, pos, ostr, settings);
