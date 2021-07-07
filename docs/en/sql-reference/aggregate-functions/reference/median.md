@@ -29,7 +29,7 @@ Input table:
 Query:
 
 ``` sql
-SELECT medianDeterministic(val, 1) FROM t
+SELECT medianDeterministic(val, 1) FROM t;
 ```
 
 Result:
