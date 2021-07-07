@@ -3183,7 +3183,7 @@ If the setting is set to `0`, the table function does not make Nullable columns 
 
 ## output_format_arrow_low_cardinality_as_dictionary {#output-format-arrow-low-cardinality-as-dictionary}
 
-Allows to convert the [LowCardinality](../sql-reference/data-types/lowcardinality.md) type to the `DICTIONARY` type of the [Arrow](../../interfaces/formats.md#data-format-arrow) format for `SELECT` queries.
+Allows to convert the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) type to the `DICTIONARY` type of the [Arrow](../../interfaces/formats.md#data-format-arrow) format for `SELECT` queries.
 
 Possible values:
 
