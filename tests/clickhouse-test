@@ -29,7 +29,7 @@ import string
 import multiprocessing
 from contextlib import closing
 
-DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_timeout (=120)"
+DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_timeout"
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
@@ -41,6 +41,7 @@ MESSAGES_TO_RETRY = [
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
+    "is already started to be removing by another replica right now",
     DISTRIBUTED_DDL_TIMEOUT_MSG # FIXME
 ]
 
@@ -647,7 +648,6 @@ class BuildFlags():
     RELEASE = 'release-build'
     DATABASE_ORDINARY = 'database-ordinary'
     POLYMORPHIC_PARTS = 'polymorphic-parts'
-    ANTLR = 'antlr'
     DATABASE_REPLICATED = 'database-replicated'
 
 
@@ -770,8 +770,6 @@ def main(args):
             Note: if you are using split build, you may have to specify -c option.")
 
     build_flags = collect_build_flags(args.client)
-    if args.antlr:
-        build_flags.append(BuildFlags.ANTLR)
     if args.replicated_database:
         build_flags.append(BuildFlags.DATABASE_REPLICATED)
 
@@ -1086,8 +1084,6 @@ if __name__ == '__main__':
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
     parser.add_argument('--db-engine', help='Database engine name')
     parser.add_argument('--replicated-database', action='store_true', default=False, help='Run tests with Replicated database engine')
-
-    parser.add_argument('--antlr', action='store_true', default=False, dest='antlr', help='Use new ANTLR parser in tests')
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")
@@ -1179,13 +1175,6 @@ if __name__ == '__main__':
             os.environ['CLICKHOUSE_URL_PARAMS'] = ''
 
         os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
-
-    if args.antlr:
-        if 'CLICKHOUSE_CLIENT_OPT' in os.environ:
-            os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
-        else:
-            os.environ['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
-        args.client += ' --use_antlr_parser=1'
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):

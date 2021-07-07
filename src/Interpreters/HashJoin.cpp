@@ -204,6 +204,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     if (table_join->dictionary_reader)
     {
+        LOG_DEBUG(log, "Performing join over dict");
         data->type = Type::DICT;
         std::get<MapsOne>(data->maps).create(Type::DICT);
         chooseMethod(key_columns, key_sizes); /// init key_sizes
@@ -319,30 +320,23 @@ public:
     using Mapped = RowRef;
     using FindResult = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped, true>;
 
-    KeyGetterForDict(const ColumnRawPtrs & key_columns_, const Sizes &, void *)
-        : key_columns(key_columns_)
-    {}
-
-    FindResult findKey(const TableJoin & table_join, size_t row, const Arena &)
+    KeyGetterForDict(const TableJoin & table_join, const ColumnRawPtrs & key_columns)
     {
-        const DictionaryReader & reader = *table_join.dictionary_reader;
-        if (!read_result)
-        {
-            reader.readKeys(*key_columns[0], read_result, found, positions);
-            result.block = &read_result;
+        table_join.dictionary_reader->readKeys(*key_columns[0], read_result, found, positions);
 
-            if (table_join.forceNullableRight())
-                for (auto & column : read_result)
-                    if (table_join.rightBecomeNullable(column.type))
-                        JoinCommon::convertColumnToNullable(column);
-        }
+        for (ColumnWithTypeAndName & column : read_result)
+            if (table_join.rightBecomeNullable(column.type))
+                JoinCommon::convertColumnToNullable(column);
+    }
 
+    FindResult findKey(void *, size_t row, const Arena &)
+    {
+        result.block = &read_result;
         result.row_num = positions[row];
         return FindResult(&result, found[row], 0);
     }
 
 private:
-    const ColumnRawPtrs & key_columns;
     Block read_result;
     Mapped result;
     ColumnVector<UInt8>::Container found;
@@ -851,6 +845,7 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool need_filter, bool has_null_map>
 NO_INLINE IColumn::Filter joinRightColumns(
+    KeyGetter && key_getter,
     const Map & map,
     AddedColumns & added_columns,
     const ConstNullMapPtr & null_map [[maybe_unused]],
@@ -879,8 +874,6 @@ NO_INLINE IColumn::Filter joinRightColumns(
 
     if constexpr (need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
-
-    auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(added_columns.key_columns, added_columns.key_sizes);
 
     IColumn::Offset current_offset = 0;
 
@@ -980,35 +973,51 @@ NO_INLINE IColumn::Filter joinRightColumns(
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
 IColumn::Filter joinRightColumnsSwitchNullability(
-    const Map & map, AddedColumns & added_columns, const ConstNullMapPtr & null_map, JoinStuff::JoinUsedFlags & used_flags)
+        KeyGetter && key_getter,
+        const Map & map,
+        AddedColumns & added_columns,
+        const ConstNullMapPtr & null_map,
+        JoinStuff::JoinUsedFlags & used_flags)
 {
     if (added_columns.need_filter)
     {
         if (null_map)
-            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, true>(map, added_columns, null_map, used_flags);
+            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, true>(
+                    std::forward<KeyGetter>(key_getter), map, added_columns, null_map, used_flags);
         else
-            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, false>(map, added_columns, nullptr, used_flags);
+            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, false>(
+                    std::forward<KeyGetter>(key_getter), map, added_columns, nullptr, used_flags);
     }
     else
     {
         if (null_map)
-            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, false, true>(map, added_columns, null_map, used_flags);
+            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, false, true>(
+                    std::forward<KeyGetter>(key_getter), map, added_columns, null_map, used_flags);
         else
-            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, false, false>(map, added_columns, nullptr, used_flags);
+            return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, false, false>(
+                    std::forward<KeyGetter>(key_getter), map, added_columns, nullptr, used_flags);
     }
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
 IColumn::Filter switchJoinRightColumns(
-    const Maps & maps_, AddedColumns & added_columns, HashJoin::Type type, const ConstNullMapPtr & null_map, JoinStuff::JoinUsedFlags & used_flags)
+    const Maps & maps_,
+    AddedColumns & added_columns,
+    HashJoin::Type type,
+    const ConstNullMapPtr & null_map,
+    JoinStuff::JoinUsedFlags & used_flags)
 {
+    constexpr bool is_asof_join = STRICTNESS == ASTTableJoin::Strictness::Asof;
     switch (type)
     {
     #define M(TYPE) \
         case HashJoin::Type::TYPE: \
-            return joinRightColumnsSwitchNullability<KIND, STRICTNESS,\
-                typename KeyGetterForType<HashJoin::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
-                *maps_.TYPE, added_columns, null_map, used_flags);
+        { \
+            using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type; \
+            auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(added_columns.key_columns, added_columns.key_sizes); \
+            return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetter>( \
+                std::move(key_getter), *maps_.TYPE, added_columns, null_map, used_flags); \
+        }
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
 
@@ -1025,8 +1034,12 @@ IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedCo
         STRICTNESS == ASTTableJoin::Strictness::Semi ||
         STRICTNESS == ASTTableJoin::Strictness::Anti))
     {
+        assert(added_columns.key_columns.size() == 1);
+
         JoinStuff::JoinUsedFlags flags;
-        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(table_join, added_columns, null_map, flags);
+        KeyGetterForDict key_getter(table_join, added_columns.key_columns);
+        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(
+                std::move(key_getter), nullptr, added_columns, null_map, flags);
     }
 
     throw Exception("Logical error: wrong JOIN combination", ErrorCodes::LOGICAL_ERROR);

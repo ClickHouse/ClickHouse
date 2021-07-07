@@ -8,7 +8,6 @@
 #include <Functions/materialize.h>
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionJIT.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
