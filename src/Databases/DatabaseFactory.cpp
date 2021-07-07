@@ -36,7 +36,8 @@
 
 #if USE_LIBPQXX
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
-#include <Storages/PostgreSQL/PoolWithFailover.h>
+#include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -99,14 +100,14 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const UUID & uuid = create.uuid;
 
     bool engine_may_have_arguments = engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "Lazy" ||
-                                     engine_name == "Replicated" || engine_name == "PostgreSQL";
+                                     engine_name == "Replicated" || engine_name == "PostgreSQL" || engine_name == "MaterializedPostgreSQL";
     if (engine_define->engine->arguments && !engine_may_have_arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
     bool has_unexpected_element = engine_define->engine->parameters || engine_define->partition_by ||
                                   engine_define->primary_key || engine_define->order_by ||
                                   engine_define->sample_by;
-    bool may_have_settings = endsWith(engine_name, "MySQL") || engine_name == "Replicated";
+    bool may_have_settings = endsWith(engine_name, "MySQL") || engine_name == "Replicated" || engine_name == "MaterializedPostgreSQL";
     if (has_unexpected_element || (!may_have_settings && engine_define->settings))
         throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
                         ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
@@ -262,6 +263,41 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         return std::make_shared<DatabasePostgreSQL>(
             context, metadata_path, engine_define, database_name, postgres_database_name, connection_pool, use_table_cache);
     }
+    else if (engine_name == "MaterializedPostgreSQL")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 4)
+        {
+            throw Exception(
+                    fmt::format("{} Database require host:port, database_name, username, password arguments ", engine_name),
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        ASTs & engine_args = engine->arguments->children;
+
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
+        const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
+        const auto & postgres_database_name = safeGetLiteralValue<String>(engine_args[1], engine_name);
+        const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
+        const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+
+        auto parsed_host_port = parseAddress(host_port, 5432);
+        auto connection_info = postgres::formatConnectionString(postgres_database_name, parsed_host_port.first, parsed_host_port.second, username, password);
+
+        auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
+
+        if (engine_define->settings)
+            postgresql_replica_settings->loadFromQuery(*engine_define);
+
+        return std::make_shared<DatabaseMaterializedPostgreSQL>(
+                context, metadata_path, uuid, engine_define, create.attach,
+                database_name, postgres_database_name, connection_info,
+                std::move(postgresql_replica_settings));
+    }
+
 
 #endif
 
