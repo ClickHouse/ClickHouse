@@ -367,6 +367,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Transform `DISTINCT ON expr` to `LIMIT 1 BY expr`
         limit_by_expression_list = distinct_on_expression_list;
         limit_by_length = std::make_shared<ASTLiteral>(Field{UInt8(1)});
+        distinct_on_expression_list = nullptr;
     }
 
     /// Because TOP n in totally equals LIMIT n
