@@ -1024,7 +1024,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             ReadBufferFromFile & in = *thermal[i];
 
             in.rewind();
-            uint64_t temperature = 0;
+            Int64 temperature = 0;
             readText(temperature, in);
             new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
         }
@@ -1041,7 +1041,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             for (const auto & [sensor_name, sensor_file] : sensors)
             {
                 sensor_file->rewind();
-                uint64_t temperature = 0;
+                Int64 temperature = 0;
                 readText(temperature, *sensor_file);
 
                 if (sensor_name.empty())
