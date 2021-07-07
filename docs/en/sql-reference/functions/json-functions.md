@@ -330,7 +330,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
-The first example serializes a [map](../../sql-reference/data-types/map.md).
+The first example serializes a [Map](../../sql-reference/data-types/map.md).
 The second example shows some special values wrapped into a [tuple](../../sql-reference/data-types/tuple.md).
 
 Query:
