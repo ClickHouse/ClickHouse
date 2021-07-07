@@ -309,7 +309,7 @@ Result:
 ## toJSONString {#tojsonstring}
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
-[64-bit integers](../../sql-reference/data-types/int-uint.md) or bigger (like `Int128`) are quoted by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
+64-bit [integers](../../sql-reference/data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are quoted by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
 When serializing an [Enum](../../sql-reference/data-types/enum.md) value the function outputs its name.
 
 **Syntax**
@@ -320,7 +320,7 @@ toJSONString(value)
 
 **Arguments**
 
--   `value` — Value to serialize.
+-   `value` — Value to serialize. Value may be of any data type.
 
 **Returned value**
 
@@ -331,7 +331,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 **Example**
 
 The first example serializes a [Map](../../sql-reference/data-types/map.md).
-The second example shows some special values wrapped into a [tuple](../../sql-reference/data-types/tuple.md).
+The second example shows some special values wrapped into a [Tuple](../../sql-reference/data-types/tuple.md).
 
 Query:
 
