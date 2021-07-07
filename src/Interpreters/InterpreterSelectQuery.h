@@ -61,10 +61,10 @@ public:
 
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
-            const ASTPtr & query_ptr_,
-            ContextPtr context_,
-            Pipe input_pipe_,
-            const SelectQueryOptions & = {});
+        const ASTPtr & query_ptr_,
+        ContextPtr context_,
+        Pipe input_pipe_,
+        const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
@@ -118,6 +118,7 @@ private:
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
     void addPrewhereAliasActions();
+    bool shouldMoveToPrewhere();
 
     Block getSampleBlockImpl();
 

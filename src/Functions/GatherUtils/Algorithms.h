@@ -1,11 +1,11 @@
 #pragma once
 
 #include <common/types.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include "Sources.h"
 #include "Sinks.h"
 #include <Core/AccurateComparison.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include "GatherUtils.h"
 
 
@@ -213,7 +213,7 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
     };
 
     size_t size_to_reserve = 0;
-    for (auto i : ext::range(0, sources_num))
+    for (auto i : collections::range(0, sources_num))
     {
         auto & source = array_sources[i];
         is_const[i] = source->isConst();
@@ -233,7 +233,7 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
 
     while (!sink.isEnd())
     {
-        for (auto i : ext::range(0, sources_num))
+        for (auto i : collections::range(0, sources_num))
         {
             auto & source = array_sources[i];
             if (is_const[i])
@@ -663,7 +663,7 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnU
 {
     auto size = result.size();
     auto & data = result.getData();
-    for (auto row : ext::range(0, size))
+    for (auto row : collections::range(0, size))
     {
         data[row] = static_cast<UInt8>(sliceHas<search_type>(first.getWhole(), second.getWhole()));
         first.next();

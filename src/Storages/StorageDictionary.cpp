@@ -215,23 +215,26 @@ LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
 
 void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 {
+    auto old_table_id = getStorageID();
+    IStorage::renameInMemory(new_table_id);
+
     if (configuration)
     {
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
 
         const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
-        external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
+        auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());
 
-        auto result = external_dictionaries_loader.getLoadResult(getStorageID().getInternalDictionaryName());
-        if (!result.object)
-            return;
+        if (result.object)
+        {
+            const auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
+            dictionary->updateDictionaryName(new_table_id);
+        }
 
-        const auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
-        dictionary->updateDictionaryName(new_table_id);
+        external_dictionaries_loader.reloadConfig(old_table_id.getInternalDictionaryName());
+        dictionary_name = new_table_id.getFullNameNotQuoted();
     }
-
-    IStorage::renameInMemory(new_table_id);
 }
 
 void registerStorageDictionary(StorageFactory & factory)
