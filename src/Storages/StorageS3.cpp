@@ -27,6 +27,8 @@
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
@@ -62,7 +64,7 @@ public:
 
         const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
 
-        /// We don't have to list bucket, because there is no asterics.
+        /// We don't have to list bucket, because there is no asterisks.
         if (key_prefix.size() == globbed_uri.key.size())
         {
             buffer.emplace_back(globbed_uri.key);
@@ -434,7 +436,31 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         max_single_part_upload_size);
 }
 
-void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentificaiton & upd)
+
+void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
+{
+    updateClientAndAuthSettings(local_context, client_auth);
+
+    Aws::S3::Model::ObjectIdentifier obj;
+    obj.SetKey(client_auth.uri.key);
+
+    Aws::S3::Model::Delete delkeys;
+    delkeys.AddObjects(std::move(obj));
+
+    Aws::S3::Model::DeleteObjectsRequest request;
+    request.SetBucket(client_auth.uri.bucket);
+    request.SetDelete(delkeys);
+
+    auto response = client_auth.client->DeleteObjects(request);
+    if (!response.IsSuccess())
+    {
+        const auto & err = response.GetError();
+        throw Exception(std::to_string(static_cast<int>(err.GetErrorType())) + ": " + err.GetMessage(), ErrorCodes::S3_ERROR);
+    }
+}
+
+
+void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentication & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
     if (upd.client && (!upd.access_key_id.empty() || settings == upd.auth_settings))

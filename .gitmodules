@@ -103,7 +103,7 @@
 	url = https://github.com/ClickHouse-Extras/fastops
 [submodule "contrib/orc"]
 	path = contrib/orc
-	url = https://github.com/apache/orc
+	url = https://github.com/ClickHouse-Extras/orc
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11.git
@@ -168,9 +168,6 @@
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt.git
-[submodule "contrib/antlr4-runtime"]
-	path = contrib/antlr4-runtime
-	url = https://github.com/ClickHouse-Extras/antlr4-runtime.git
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
 	url = https://github.com/ClickHouse-Extras/sentry-native.git

@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
-
 
 namespace ProfileEvents
 {
@@ -83,7 +83,8 @@ struct QueryLogElement
 
     static std::string name() { return "QueryLog"; }
 
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
