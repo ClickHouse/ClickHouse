@@ -170,7 +170,7 @@ def check_wrong_config(self, node, client, config_path, modify_file, log_error="
             config_contents = xmltree.tostring(root, encoding='utf8', method='xml').decode('utf-8')
             command = f"cat <<HEREDOC > {full_config_path}\n{config_contents}\nHEREDOC"
             node.command(command, steps=False, exitcode=0)
-            # time.sleep(1)
+            time.sleep(1)
 
         with Then(f"{preprocessed_name} should be updated", description=f"timeout {timeout}"):
             started = time.time()
@@ -183,6 +183,7 @@ def check_wrong_config(self, node, client, config_path, modify_file, log_error="
             assert exitcode == 0, error()
 
         with When("I restart ClickHouse to apply the config changes"):
+            node.cmd("kdestroy")
             if output:
                 node.restart(safe=False, wait_healthy=True)
             else:
@@ -201,7 +202,7 @@ def check_wrong_config(self, node, client, config_path, modify_file, log_error="
                         break
                     time.sleep(1)
                 else:
-                    assert False, error()
+                    assert output in r.output, error()
 
     finally:
         with Finally("I restore original config"):
