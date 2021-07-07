@@ -575,12 +575,12 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
     if constexpr (std::is_same_v<Impl, AndImpl>)
     {
         if (has_false_constant)
-            result_type->createColumnConst(0, static_cast<UInt8>(false));
+            result_column = result_type->createColumnConst(0, static_cast<UInt8>(false));
     }
     else if constexpr (std::is_same_v<Impl, OrImpl>)
     {
         if (has_true_constant)
-            result_type->createColumnConst(0, static_cast<UInt8>(true));
+            result_column = result_type->createColumnConst(0, static_cast<UInt8>(true));
     }
 
     return result_column;
