@@ -11,7 +11,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 namespace DB
 {
