@@ -153,7 +153,7 @@ Pipe StorageSystemDataSkippingIndices::read(
     size_t max_block_size,
     unsigned int /* num_streams */)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(metadata_snapshot, column_names);
 
     NameSet names_set(column_names.begin(), column_names.end());
 

@@ -21,7 +21,7 @@
 #include <Core/AccurateComparison.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <common/DateLUT.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
