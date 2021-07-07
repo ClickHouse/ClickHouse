@@ -80,10 +80,10 @@ public:
             cell_id.GetEdgeNeighbors(neighbors);
 
             dst_data.reserve(dst_data.size() + 4);
-            for (int i = 0; i < 4; ++i)
+            for (auto & neighbor : neighbors)
             {
                 ++current_offset;
-                dst_data.insert(neighbors[i].id());
+                dst_data.insert(neighbor.id());
             }
             dst_offsets[row] = current_offset;
         }

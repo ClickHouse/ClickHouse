@@ -68,7 +68,7 @@ public:
                 arg->getName(), 1, getName());
         }
 
-        DataTypePtr element = std::make_shared<DataTypeUInt64>();
+        DataTypePtr element = std::make_shared<DataTypeFloat64>();
 
         return std::make_shared<DataTypeTuple>(DataTypes{element, element});
     }
@@ -77,14 +77,14 @@ public:
     {
         const auto * col_id = arguments[0].column.get();
 
-        auto col_res_first = ColumnUInt32::create();
-        auto col_res_second = ColumnUInt32::create();
+        auto col_res_first = ColumnFloat64::create();
+        auto col_res_second = ColumnFloat64::create();
 
         auto & vec_res_first = col_res_first->getData();
-        vec_res_first.resize(input_rows_count);
+        vec_res_first.reserve(input_rows_count);
 
         auto & vec_res_second = col_res_second->getData();
-        vec_res_second.resize(input_rows_count);
+        vec_res_second.reserve(input_rows_count);
 
         for (const auto row : collections::range(0, input_rows_count))
         {
@@ -94,8 +94,8 @@ public:
             S2Point point = cell_id.ToPoint();
             S2LatLng ll(point);
 
-            vec_res_first[row] = ll.lng().degrees();
-            vec_res_second[row] = ll.lat().degrees();
+            vec_res_first.emplace_back(ll.lng().degrees());
+            vec_res_second.emplace_back(ll.lat().degrees());
         }
 
         return ColumnTuple::create(Columns{std::move(col_res_first), std::move(col_res_second)});
