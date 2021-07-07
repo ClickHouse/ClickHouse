@@ -272,7 +272,7 @@ MutationsInterpreter::MutationsInterpreter(
     : storage(std::move(storage_))
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
-    , context(context_)
+    , context(Context::createCopy(context_))
     , can_execute(can_execute_)
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits())
 {
@@ -388,7 +388,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     if (commands.empty())
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
-
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
@@ -425,8 +424,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(storage, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
-    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
-    auto dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
+    dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
     /// First, break a sequence of commands into stages.
     for (auto & command : commands)
@@ -849,8 +847,11 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
         }
     }
 
+    QueryPlanOptimizationSettings do_not_optimize_plan;
+    do_not_optimize_plan.optimize_plan = false;
+
     auto pipeline = plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
+        do_not_optimize_plan,
         BuildQueryPipelineSettings::fromContext(context));
 
     pipeline->addSimpleTransform([&](const Block & header)
@@ -918,6 +919,10 @@ const Block & MutationsInterpreter::getUpdatedHeader() const
     return *updated_header;
 }
 
+const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
+{
+    return dependencies;
+}
 
 size_t MutationsInterpreter::evaluateCommandsSize()
 {

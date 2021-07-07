@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 
 namespace DB
@@ -33,7 +33,7 @@ class FunctionRunningAccumulate : public IFunction
 {
 public:
     static constexpr auto name = "runningAccumulate";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionRunningAccumulate>();
     }

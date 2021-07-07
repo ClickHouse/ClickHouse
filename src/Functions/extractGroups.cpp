@@ -31,7 +31,7 @@ class FunctionExtractGroups : public IFunction
 {
 public:
     static constexpr auto name = "extractGroups";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionExtractGroups>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractGroups>(); }
 
     String getName() const override { return name; }
 

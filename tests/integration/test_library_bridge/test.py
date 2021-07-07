@@ -8,11 +8,8 @@ from helpers.cluster import ClickHouseCluster, run_and_check
 cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance('instance',
-        main_configs=[
-            'configs/enable_dict.xml',
-            'configs/config.d/config.xml',
-            'configs/dictionaries/dict1.xml',
-            'configs/log_conf.xml'])
+        dictionaries=['configs/dictionaries/dict1.xml'],
+        main_configs=['configs/config.d/config.xml'])
 
 @pytest.fixture(scope="module")
 def ch_cluster():

@@ -40,6 +40,8 @@ void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
+void registerFunctionsSQLJSON(FunctionFactory &);
+void registerFunctionToJSONString(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
 void registerFunctionsUnixTimestamp64(FunctionFactory & factory);
 void registerFunctionBitHammingDistance(FunctionFactory & factory);
@@ -98,6 +100,8 @@ void registerFunctions()
     registerFunctionsGeo(factory);
     registerFunctionsNull(factory);
     registerFunctionsJSON(factory);
+    registerFunctionsSQLJSON(factory);
+    registerFunctionToJSONString(factory);
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
     registerFunctionsUnixTimestamp64(factory);

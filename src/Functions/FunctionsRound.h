@@ -16,7 +16,7 @@
 #include <cmath>
 #include <type_traits>
 #include <array>
-#include <ext/bit_cast.h>
+#include <common/bit_cast.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
@@ -520,7 +520,7 @@ class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionRounding>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRounding>(); }
 
     String getName() const override
     {
@@ -629,7 +629,7 @@ class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionRoundDown>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRoundDown>(); }
 
     String getName() const override { return name; }
 
