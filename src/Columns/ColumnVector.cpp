@@ -15,8 +15,8 @@
 #include <Common/assert_cast.h>
 #include <common/sort.h>
 #include <common/unaligned.h>
-#include <ext/bit_cast.h>
-#include <ext/scope_guard.h>
+#include <common/bit_cast.h>
+#include <common/scope_guard.h>
 
 #include <cmath>
 #include <cstring>
@@ -303,7 +303,7 @@ template <typename T>
 UInt64 ColumnVector<T>::get64(size_t n [[maybe_unused]]) const
 {
     if constexpr (is_arithmetic_v<T>)
-        return ext::bit_cast<UInt64>(data[n]);
+        return bit_cast<UInt64>(data[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt64", TypeName<T>);
 }

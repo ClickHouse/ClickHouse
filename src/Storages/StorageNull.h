@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
@@ -15,9 +15,9 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull final : public ext::shared_ptr_helper<StorageNull>, public IStorage
+class StorageNull final : public shared_ptr_helper<StorageNull>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageNull>;
+    friend struct shared_ptr_helper<StorageNull>;
 public:
     std::string getName() const override { return "Null"; }
 

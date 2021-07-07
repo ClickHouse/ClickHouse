@@ -4,8 +4,8 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <ext/map.h>
-#include <ext/range.h>
+#include <common/map.h>
+#include <common/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>

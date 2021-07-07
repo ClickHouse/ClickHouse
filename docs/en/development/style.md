@@ -628,7 +628,7 @@ If the class is not intended for polymorphic use, you do not need to make functi
 
 **18.** Encodings.
 
-Use UTF-8 everywhere. Use `std::string`and`char *`. Do not use `std::wstring`and`wchar_t`.
+Use UTF-8 everywhere. Use `std::string` and `char *`. Do not use `std::wstring` and `wchar_t`.
 
 **19.** Logging.
 
@@ -749,17 +749,9 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
-**2.** If necessary, you can use any well-known libraries available in the OS package.
+**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse.
 
-If there is a good solution already available, then use it, even if it means you have to install another library.
-
-(But be prepared to remove bad libraries from code.)
-
-**3.** You can install a library that isn’t in the packages, if the packages do not have what you need or have an outdated version or the wrong type of compilation.
-
-**4.** If the library is small and does not have its own complex build system, put the source files in the `contrib` folder.
-
-**5.** Preference is always given to libraries that are already in use.
+**3.** Preference is always given to libraries that are already in use.
 
 ## General Recommendations {#general-recommendations-1}
 

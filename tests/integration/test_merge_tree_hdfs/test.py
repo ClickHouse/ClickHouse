@@ -58,8 +58,7 @@ def generate_values(date_str, count, sign=1):
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml",
-                                                   "configs/config.d/log_conf.xml"], with_hdfs=True)
+        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml"], with_hdfs=True)
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")

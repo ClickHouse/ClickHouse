@@ -1,5 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 #include <optional>
 #include <unordered_set>
 
@@ -234,7 +234,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
         if (given_select.prewhere())
             select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.prewhere()->clone());
-        // TODO will row policy filter work?
 
         // After overriding the group by clause, we finish the possible aggregations directly
         if (processed_stage >= QueryProcessingStage::Enum::WithMergeableState && given_select.groupBy())
@@ -302,6 +301,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     context->getTemporaryVolume(),
                     settings.max_threads,
                     settings.min_free_disk_space_for_temporary_data,
+                    settings.compile_expressions,
+                    settings.min_count_to_compile_aggregate_expression,
                     header_before_aggregation); // The source header is also an intermediate header
 
                 transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
@@ -330,7 +331,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.empty_result_for_aggregation_by_empty_set,
                     context->getTemporaryVolume(),
                     settings.max_threads,
-                    settings.min_free_disk_space_for_temporary_data);
+                    settings.min_free_disk_space_for_temporary_data,
+                    settings.compile_aggregate_expressions,
+                    settings.min_count_to_compile_aggregate_expression);
 
                 transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
             }

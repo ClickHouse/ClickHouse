@@ -362,6 +362,79 @@ SHOW [CURRENT] QUOTA
 SHOW ACCESS
 ```
 
+## SHOW CLUSTER(s) {#show-cluster-statement}
+
+Возвращает список кластеров. Все доступные кластеры перечислены в таблице [system.clusters](../../operations/system-tables/clusters.md).
+
+!!! info "Note"
+    По запросу `SHOW CLUSTER name` вы получите содержимое таблицы system.clusters для этого кластера.
+
+### Синтаксис {#show-cluster-syntax}
+
+``` sql
+SHOW CLUSTER '<name>'
+SHOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
+```
+### Примеры {#show-cluster-examples}
+
+Запрос:
+
+``` sql
+SHOW CLUSTERS;
+```
+
+Результат:
+
+```text
+┌─cluster──────────────────────────────────────┐
+│ test_cluster_two_shards                      │
+│ test_cluster_two_shards_internal_replication │
+│ test_cluster_two_shards_localhost            │
+│ test_shard_localhost                         │
+│ test_shard_localhost_secure                  │
+│ test_unavailable_shard                       │
+└──────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SHOW CLUSTERS LIKE 'test%' LIMIT 1;
+```
+
+Результат:
+
+```text
+┌─cluster─────────────────┐
+│ test_cluster_two_shards │
+└─────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SHOW CLUSTER 'test_shard_localhost' FORMAT Vertical;
+```
+
+Результат:
+
+```text
+Row 1:
+──────
+cluster:                 test_shard_localhost
+shard_num:               1
+shard_weight:            1
+replica_num:             1
+host_name:               localhost
+host_address:            127.0.0.1
+port:                    9000
+is_local:                1
+user:                    default
+default_database:
+errors_count:            0
+estimated_recovery_time: 0
+```
+
 ## SHOW SETTINGS {#show-settings}
 
 Возвращает список системных настроек и их значений. Использует данные из таблицы [system.settings](../../operations/system-tables/settings.md).
@@ -426,4 +499,3 @@ SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
 **См. также**
 
 -   Таблица [system.settings](../../operations/system-tables/settings.md)
-

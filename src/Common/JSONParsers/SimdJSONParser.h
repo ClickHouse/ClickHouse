@@ -50,6 +50,8 @@ struct SimdJSONParser
         ALWAYS_INLINE Array getArray() const;
         ALWAYS_INLINE Object getObject() const;
 
+        ALWAYS_INLINE simdjson::dom::element getElement() const { return element; }
+
     private:
         simdjson::dom::element element;
     };

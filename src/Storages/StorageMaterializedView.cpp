@@ -3,7 +3,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDropQuery.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -47,6 +46,17 @@ static inline String generateInnerTableName(const StorageID & view_id)
     return ".inner." + view_id.getTableName();
 }
 
+/// Remove columns from target_header that does not exists in src_header
+static void removeNonCommonColumns(const Block & src_header, Block & target_header)
+{
+    std::set<size_t> target_only_positions;
+    for (const auto & column : target_header)
+    {
+        if (!src_header.has(column.name))
+            target_only_positions.insert(target_header.getPositionByName(column.name));
+    }
+    target_header.erase(target_only_positions);
+}
 
 StorageMaterializedView::StorageMaterializedView(
     const StorageID & table_id_,
@@ -166,6 +176,17 @@ void StorageMaterializedView::read(
     {
         auto mv_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, local_context, processed_stage);
         auto target_header = query_plan.getCurrentDataStream().header;
+
+        /// No need to convert columns that does not exists in MV
+        removeNonCommonColumns(mv_header, target_header);
+
+        /// No need to convert columns that does not exists in the result header.
+        ///
+        /// Distributed storage may process query up to the specific stage, and
+        /// so the result header may not include all the columns from the
+        /// materialized view.
+        removeNonCommonColumns(target_header, mv_header);
+
         if (!blocksHaveEqualStructure(mv_header, target_header))
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
@@ -207,36 +228,6 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 }
 
 
-static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool no_delay)
-{
-    if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
-    {
-        /// We create and execute `drop` query for internal table.
-        auto drop_query = std::make_shared<ASTDropQuery>();
-        drop_query->database = target_table_id.database_name;
-        drop_query->table = target_table_id.table_name;
-        drop_query->kind = kind;
-        drop_query->no_delay = no_delay;
-        drop_query->if_exists = true;
-        ASTPtr ast_drop_query = drop_query;
-        /// FIXME We have to use global context to execute DROP query for inner table
-        /// to avoid "Not enough privileges" error if current user has only DROP VIEW ON mat_view_name privilege
-        /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
-        /// looks like expected behaviour and we have tests for it.
-        auto drop_context = Context::createCopy(global_context);
-        drop_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        if (auto txn = current_context->getZooKeeperMetadataTransaction())
-        {
-            /// For Replicated database
-            drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
-            drop_context->initZooKeeperMetadataTransaction(txn, true);
-        }
-        InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
-        drop_interpreter.execute();
-    }
-}
-
-
 void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
@@ -244,19 +235,19 @@ void StorageMaterializedView::drop()
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
 
-    dropInnerTable(true, getContext());
+    dropInnerTableIfAny(true, getContext());
 }
 
-void StorageMaterializedView::dropInnerTable(bool no_delay, ContextPtr local_context)
+void StorageMaterializedView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
 {
     if (has_inner_table && tryGetTargetTable())
-        executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
     if (has_inner_table)
-        executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, target_table_id, true);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, target_table_id, true);
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const

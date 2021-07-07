@@ -153,27 +153,12 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     }
 };
 
-template <typename A, typename B>
-struct NumIfImpl<A, B, NumberTraits::Error>
-{
-private:
-    [[noreturn]] static void throwError()
-    {
-        throw Exception("Incompatible types of arguments corresponding to two conditional branches", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-public:
-    template <typename... Args> static ColumnPtr vectorVector(Args &&...) { throwError(); }
-    template <typename... Args> static ColumnPtr vectorConstant(Args &&...) { throwError(); }
-    template <typename... Args> static ColumnPtr constantVector(Args &&...) { throwError(); }
-    template <typename... Args> static ColumnPtr constantConstant(Args &&...) { throwError(); }
-};
-
 
 class FunctionIf : public FunctionIfBase
 {
 public:
     static constexpr auto name = "if";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIf>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIf>(); }
 
 private:
     template <typename T0, typename T1>
@@ -193,52 +178,66 @@ private:
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     ColumnPtr executeRightType(
-            const ColumnUInt8 * cond_col,
-            const ColumnsWithTypeAndName & arguments,
-            const ColVecT0 * col_left) const
+        [[maybe_unused]] const ColumnUInt8 * cond_col,
+        [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
+        [[maybe_unused]] const ColVecT0 * col_left) const
     {
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
-        const IColumn * col_right_untyped = arguments[2].column.get();
-        UInt32 scale = decimalScale<T0, T1>(arguments);
-
-        if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+        if constexpr (std::is_same_v<ResultType, NumberTraits::Error>)
         {
-            return NumIfImpl<T0, T1, ResultType>::vectorVector(
-                cond_col->getData(), col_left->getData(), col_right_vec->getData(), scale);
+            return nullptr;
         }
-        else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+        else
         {
-            return NumIfImpl<T0, T1, ResultType>::vectorConstant(
-                cond_col->getData(), col_left->getData(), col_right_const->template getValue<T1>(), scale);
-        }
+            const IColumn * col_right_untyped = arguments[2].column.get();
+            UInt32 scale = decimalScale<T0, T1>(arguments);
 
-        return nullptr;
+            if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+            {
+                return NumIfImpl<T0, T1, ResultType>::vectorVector(
+                    cond_col->getData(), col_left->getData(), col_right_vec->getData(), scale);
+            }
+            else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+            {
+                return NumIfImpl<T0, T1, ResultType>::vectorConstant(
+                    cond_col->getData(), col_left->getData(), col_right_const->template getValue<T1>(), scale);
+            }
+
+            return nullptr;
+        }
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     ColumnPtr executeConstRightType(
-            const ColumnUInt8 * cond_col,
-            const ColumnsWithTypeAndName & arguments,
-            const ColumnConst * col_left) const
+        [[maybe_unused]] const ColumnUInt8 * cond_col,
+        [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
+        [[maybe_unused]] const ColumnConst * col_left) const
     {
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
-        const IColumn * col_right_untyped = arguments[2].column.get();
-        UInt32 scale = decimalScale<T0, T1>(arguments);
-
-        if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+        if constexpr (std::is_same_v<ResultType, NumberTraits::Error>)
         {
-            return NumIfImpl<T0, T1, ResultType>::constantVector(
-                cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), scale);
+            return nullptr;
         }
-        else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+        else
         {
-            return NumIfImpl<T0, T1, ResultType>::constantConstant(
-                cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), scale);
-        }
+            const IColumn * col_right_untyped = arguments[2].column.get();
+            UInt32 scale = decimalScale<T0, T1>(arguments);
 
-        return nullptr;
+            if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+            {
+                return NumIfImpl<T0, T1, ResultType>::constantVector(
+                    cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), scale);
+            }
+            else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+            {
+                return NumIfImpl<T0, T1, ResultType>::constantConstant(
+                    cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), scale);
+            }
+
+            return nullptr;
+        }
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
@@ -249,12 +248,14 @@ private:
         [[maybe_unused]] const ColumnArray * col_left_array,
         [[maybe_unused]] size_t input_rows_count) const
     {
-        if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
+        using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
+
+        if constexpr (std::is_same_v<ResultType, NumberTraits::Error>)
+        {
             return nullptr;
+        }
         else
         {
-            using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
-
             const IColumn * col_right_untyped = arguments[2].column.get();
 
             if (const auto * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped))
@@ -291,9 +292,9 @@ private:
 
                 return res;
             }
-        }
 
-        return nullptr;
+            return nullptr;
+        }
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
@@ -304,12 +305,14 @@ private:
         [[maybe_unused]] const ColumnConst * col_left_const_array,
         [[maybe_unused]] size_t input_rows_count) const
     {
-        if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
+        using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
+
+        if constexpr (std::is_same_v<ResultType, NumberTraits::Error>)
+        {
             return nullptr;
+        }
         else
         {
-            using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
-
             const IColumn * col_right_untyped = arguments[2].column.get();
 
             if (const auto * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped))
@@ -347,37 +350,34 @@ private:
 
                 return res;
             }
-        }
 
-        return nullptr;
+            return nullptr;
+        }
     }
 
     template <typename T0, typename T1>
-    ColumnPtr executeTyped(const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr executeTyped(
+        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
         using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
 
         const IColumn * col_left_untyped = arguments[1].column.get();
 
-        bool left_ok = false;
         ColumnPtr right_column = nullptr;
 
         if (const auto * col_left = checkAndGetColumn<ColVecT0>(col_left_untyped))
         {
-            left_ok = true;
             right_column = executeRightType<T0, T1, ColVecT0, ColVecT1>(cond_col, arguments, col_left);
         }
         else if (const auto * col_const_left = checkAndGetColumnConst<ColVecT0>(col_left_untyped))
         {
-            left_ok = true;
             right_column = executeConstRightType<T0, T1, ColVecT0, ColVecT1>(cond_col, arguments, col_const_left);
         }
         else if (const auto * col_arr_left = checkAndGetColumn<ColumnArray>(col_left_untyped))
         {
             if (auto col_arr_left_elems = checkAndGetColumn<ColVecT0>(&col_arr_left->getData()))
             {
-                left_ok = true;
                 right_column = executeRightTypeArray<T0, T1, ColVecT0, ColVecT1>(
                     cond_col, arguments, result_type, col_arr_left, input_rows_count);
             }
@@ -386,19 +386,10 @@ private:
         {
             if (checkColumn<ColVecT0>(&assert_cast<const ColumnArray &>(col_const_arr_left->getDataColumn()).getData()))
             {
-                left_ok = true;
                 right_column = executeConstRightTypeArray<T0, T1, ColVecT0, ColVecT1>(
                     cond_col, arguments, result_type, col_const_arr_left, input_rows_count);
             }
         }
-
-        if (!left_ok)
-            return nullptr;
-
-        const ColumnWithTypeAndName & right_column_typed = arguments[2];
-        if (!right_column)
-            throw Exception("Illegal column " + right_column_typed.column->getName() + " of third argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
 
         return right_column;
     }
@@ -643,7 +634,8 @@ private:
         return result_column;
     }
 
-    ColumnPtr executeForConstAndNullableCondition(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
+    ColumnPtr executeForConstAndNullableCondition(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
     {
         const ColumnWithTypeAndName & arg_cond = arguments[0];
         bool cond_is_null = arg_cond.column->onlyNull();
@@ -973,7 +965,8 @@ public:
             using T0 = typename Types::LeftType;
             using T1 = typename Types::RightType;
 
-            return (res = executeTyped<T0, T1>(cond_col, arguments, result_type, input_rows_count)) != nullptr;
+            res = executeTyped<T0, T1>(cond_col, arguments, result_type, input_rows_count);
+            return res != nullptr;
         };
 
         TypeIndex left_id = arg_then.type->getTypeId();
