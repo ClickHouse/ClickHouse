@@ -7,7 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include <common/logger_useful.h>
 
@@ -57,7 +57,7 @@ Block SQLiteBlockInputStream::readImpl()
 
         int column_count = sqlite3_column_count(compiled_statement.get());
 
-        for (const auto idx : ext::range(0, column_count))
+        for (const auto idx : collections::range(0, column_count))
         {
             if (description.types[idx].second)
             {
@@ -88,17 +88,34 @@ void SQLiteBlockInputStream::insertValue(
 {
     switch (type)
     {
-        case ValueType::vtUInt8: [[fallthrough]];
-        case ValueType::vtUInt16: [[fallthrough]];
-        case ValueType::vtUInt32: [[fallthrough]];
-        case ValueType::vtUInt64: [[fallthrough]];
-        case ValueType::vtInt8: [[fallthrough]];
-        case ValueType::vtInt16: [[fallthrough]];
-        case ValueType::vtInt32: [[fallthrough]];
-        case ValueType::vtInt64:
+        case ValueType::vtUInt8:
+            assert_cast<ColumnUInt8 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            break;
+        case ValueType::vtUInt16:
+            assert_cast<ColumnUInt16 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            break;
+        case ValueType::vtUInt32:
+            assert_cast<ColumnUInt32 &>(column).insertValue(sqlite3_column_int64(compiled_statement.get(), idx));
+            break;
+        case ValueType::vtUInt64:
+            /// There is no uint64 in sqlite3, only int and int64
             assert_cast<ColumnUInt64 &>(column).insertValue(sqlite3_column_int64(compiled_statement.get(), idx));
             break;
-        case ValueType::vtFloat32: [[fallthrough]];
+        case ValueType::vtInt8:
+            assert_cast<ColumnInt8 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            break;
+        case ValueType::vtInt16:
+            assert_cast<ColumnInt16 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            break;
+        case ValueType::vtInt32:
+            assert_cast<ColumnInt32 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            break;
+        case ValueType::vtInt64:
+            assert_cast<ColumnInt64 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            break;
+        case ValueType::vtFloat32:
+            assert_cast<ColumnFloat32 &>(column).insertValue(sqlite3_column_double(compiled_statement.get(), idx));
+            break;
         case ValueType::vtFloat64:
             assert_cast<ColumnFloat64 &>(column).insertValue(sqlite3_column_double(compiled_statement.get(), idx));
             break;

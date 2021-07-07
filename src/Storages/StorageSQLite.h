@@ -4,14 +4,14 @@
 
 #include <Storages/IStorage.h>
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 
 namespace DB
 {
-class StorageSQLite final : public ext::shared_ptr_helper<StorageSQLite>, public IStorage, public WithContext
+class StorageSQLite final : public shared_ptr_helper<StorageSQLite>, public IStorage, public WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageSQLite>;
+    friend struct shared_ptr_helper<StorageSQLite>;
 
 public:
     StorageSQLite(
