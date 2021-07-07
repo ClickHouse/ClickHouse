@@ -50,44 +50,22 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments != 4) {
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(number_of_arguments) + ", should be 4",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        }
-
-        const auto * arg = arguments[0].get();
-
-        if (!WhichDataType(arg).isUInt64()) {
-            throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        arg = arguments[1].get();
-
-        if (!WhichDataType(arg).isFloat64()) {
-            throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(2) + " of function " + getName() + ". Must be Float64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        arg = arguments[2].get();
-
-        if (!WhichDataType(arg).isUInt64()) {
-            throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(3) + " of function " + getName() + ". Must be UInt64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        arg = arguments[3].get();
-
-        if (!WhichDataType(arg).isFloat64()) {
-            throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(4) + " of function " + getName() + ". Must be Float64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        for (size_t index = 0; index < getNumberOfArguments(); ++index)
+        {
+            const auto * arg = arguments[index].get();
+            if ((index == 1 || index == 3) && !WhichDataType(arg).isFloat64())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+                    "Illegal type {} of argument {} of function {}. Must be Float64",
+                    arg->getName(), index + 1, getName()
+                );
+            else if (!WhichDataType(arg).isUInt64()) {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument {} of function {}. Must be UInt64",
+                    arg->getName(), index + 1, getName()
+                    );
+            }
         }
 
         DataTypePtr center = std::make_shared<DataTypeUInt64>();

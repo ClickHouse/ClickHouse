@@ -50,49 +50,16 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments != 4) {
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 4",
-                getName(), number_of_arguments);
-        }
-
-        const auto * arg = arguments[0].get();
-
-        if (!WhichDataType(arg).isUInt64()) {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-        }
-
-        arg = arguments[1].get();
-
-        if (!WhichDataType(arg).isUInt64()) {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 2, getName());
-        }
-
-        arg = arguments[2].get();
-
-        if (!WhichDataType(arg).isUInt64()) {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 3, getName());
-        }
-
-        arg = arguments[3].get();
-
-        if (!WhichDataType(arg).isUInt64()) {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 4, getName());
+        for (size_t i = 0; i < getNumberOfArguments(); ++i)
+        {
+            const auto * arg = arguments[i].get();
+            if (!WhichDataType(arg).isUInt64()) {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument {} of function {}. Must be UInt64",
+                    arg->getName(), i, getName()
+                    );
+            }
         }
 
         DataTypePtr element = std::make_shared<DataTypeUInt64>();
