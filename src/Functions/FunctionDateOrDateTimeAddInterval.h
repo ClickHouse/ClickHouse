@@ -487,7 +487,7 @@ public:
         {
             // TODO (vnemkov): what if there is an overload of Transform::execute() that returns DateTime64 from DateTime or Date ?
             // Shall we use the default scale or one from optional argument ?
-            if (arguments[0].type->getTypeId() == TypeIndex::DateTime64)
+            if (typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get()))
             {
                 const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
                 return std::make_shared<DataTypeDateTime64>(datetime64_type.getScale(), extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
