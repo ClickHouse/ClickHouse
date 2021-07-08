@@ -119,16 +119,6 @@ ClickHouse применяет настройку в тех случаях, ко�
 
 Значение по умолчанию: 0.
 
-## http_max_uri_size {#http-max-uri-size}
-
-Устанавливает максимальную длину URI в HTTP-запросе.
-
-Возможные значения:
-
--   Положительное целое.
-
-Значение по умолчанию: 1048576.
-
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 Включает или отключает HTTP-заголовки `X-ClickHouse-Progress` в ответах `clickhouse-server`.
@@ -347,31 +337,7 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
-Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](../../sql-reference/syntax.md#null-literal), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
-Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки. 
-
-Эта настройка используется для запросов [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) для текстовых входных форматов.
-
-Возможные значения:
-
--   0 — вставка `NULL` в столбец, не позволяющий хранить `NULL`, приведет к возникновению исключения.
--   1 — ячейки с `NULL` инициализируются значением столбца по умолчанию.
-
-Значение по умолчанию: `1`.
-
-## insert_null_as_default {#insert_null_as_default}
-
-Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable). 
-Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
-
-Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
-
-Возможные значения:
-
--   0 — вставка `NULL` в столбец, не позволяющий хранить `NULL`, приведет к возникновению исключения.
--   1 — вместо `NULL` вставляется значение столбца по умолчанию.
-
-Значение по умолчанию: `1`.
+Включает или отключает использование значений по умолчанию в случаях, когда во входных данных содержится `NULL`, но тип соответствующего столбца не `Nullable(T)` (для текстовых форматов).
 
 ## input_format_skip_unknown_fields {#settings-input-format-skip-unknown-fields}
 
@@ -878,6 +844,8 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: количество процессорных ядер без учёта Hyper-Threading.
 
+Если на сервере обычно исполняется менее одного запроса SELECT одновременно, то выставите этот параметр в значение чуть меньше количества реальных процессорных ядер.
+
 Для запросов, которые быстро завершаются из-за LIMIT-а, имеет смысл выставить max_threads поменьше. Например, если нужное количество записей находится в каждом блоке, то при max_threads = 8 будет считано 8 блоков, хотя достаточно было прочитать один.
 
 Чем меньше `max_threads`, тем меньше будет использоваться оперативки.
@@ -975,19 +943,6 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 Максимальное количество одновременных соединений с удалёнными серверами при распределённой обработке всех запросов к одной таблице типа Distributed. Рекомендуется выставлять не меньше, чем количество серверов в кластере.
 
 Значение по умолчанию: 1024.
-
-## max_distributed_depth {#max-distributed-depth}
-
-Ограничивает максимальную глубину рекурсивных запросов для [Distributed](../../engines/table-engines/special/distributed.md) таблиц.
-
-Если значение превышено, сервер генерирует исключение.
-
-Возможные значения:
-
--   Положительное целое число.
--   0 — глубина не ограничена.
-
-Значение по умолчанию: `5`.
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1798,7 +1753,7 @@ ClickHouse генерирует исключение
 
 ## background_pool_size {#background_pool_size}
 
-Задает количество потоков для выполнения фоновых операций в движках таблиц (например, слияния в таблицах c движком [MergeTree](../../engines/table-engines/mergetree-family/index.md)). Настройка применяется при запуске сервера ClickHouse и не может быть изменена во пользовательском сеансе. Настройка позволяет управлять загрузкой процессора и диска. Чем меньше пул, тем ниже нагрузка на CPU и диск, при этом фоновые процессы работают с меньшей интенсивностью, что в конечном итоге может повлиять на производительность запросов, потому что сервер будет обрабатывать больше кусков.
+Задает количество потоков для выполнения фоновых операций в движках таблиц (например, слияния в таблицах c движком [MergeTree](../../engines/table-engines/mergetree-family/index.md)). Настройка применяется при запуске сервера ClickHouse и не может быть изменена во пользовательском сеансе. Настройка позволяет управлять загрузкой процессора и диска. Чем меньше пулл, тем ниже нагрузка на CPU и диск, при этом фоновые процессы замедляются, что может повлиять на скорость выполнения запроса.
 
 Допустимые значения:
 
@@ -2078,17 +2033,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   Положительное целое число.
 
-Значение по умолчанию: 128.
-
-## background_fetches_pool_size {#background_fetches_pool_size}
-
-Задает количество потоков для скачивания кусков данных для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе. Для использования в продакшене с частыми небольшими вставками или медленным кластером ZooKeeper рекомендуется использовать значение по умолчанию.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 8.
+Значение по умолчанию: 16.
 
 ## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
 
@@ -2375,6 +2320,18 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
+
+## allow_experimental_bigint_types {#allow_experimental_bigint_types}
+
+Включает или отключает поддержку целочисленных значений, превышающих максимальное значение, допустимое для типа `int`.
+
+Возможные значения:
+
+-   1 — большие целочисленные значения поддерживаются.
+-   0 — большие целочисленные значения не поддерживаются.
+
+Значение по умолчанию: `0`.
+
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
@@ -2799,228 +2756,5 @@ SELECT * FROM test2;
 -   1 — запрос возвращает статус таблицы в целом.
 
 Значение по умолчанию: `0`.
-
-## prefer_column_name_to_alias {#prefer-column-name-to-alias}
-
-Включает или отключает замену названий столбцов на псевдонимы (alias) в выражениях и секциях запросов, см. [Примечания по использованию синонимов](../../sql-reference/syntax.md#syntax-expression_aliases). Включите эту настройку, чтобы синтаксис псевдонимов в ClickHouse был более совместим с большинством других СУБД.
-
-Возможные значения:
-
-- 0 — псевдоним подставляется вместо имени столбца.
-- 1 — псевдоним не подставляется вместо имени столбца.
-
-Значение по умолчанию: `0`.
-
-**Пример**
-
-Какие изменения привносит включение и выключение настройки: 
-
-Запрос:
-
-```sql
-SET prefer_column_name_to_alias = 0;
-SELECT avg(number) AS number, max(number) FROM numbers(10);
-```
-
-Результат:
-
-```text
-Received exception from server (version 21.5.1):
-Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
-```
-
-Запрос:
-
-```sql
-SET prefer_column_name_to_alias = 1;
-SELECT avg(number) AS number, max(number) FROM numbers(10);
-```
-
-Результат:
-
-```text
-┌─number─┬─max(number)─┐
-│    4.5 │           9 │
-└────────┴─────────────┘
-```
-
-## limit {#limit}
-
-Устанавливает максимальное количество строк, возвращаемых запросом. Ограничивает сверху значение, установленное в запросе в секции [LIMIT](../../sql-reference/statements/select/limit.md#limit-clause).
-
-Возможные значения:
-
--   0 — число строк не ограничено.
--   Положительное целое число.
-
-Значение по умолчанию: `0`.
-
-## offset {#offset}
-
-Устанавливает количество строк, которые необходимо пропустить перед началом возврата строк из запроса. Суммируется со значением, установленным в запросе в секции [OFFSET](../../sql-reference/statements/select/offset.md#offset-fetch).
-
-Возможные значения:
-
--   0 — строки не пропускаются.
--   Положительное целое число.
-
-Значение по умолчанию: `0`.
-
-**Пример**
-
-Исходная таблица:
-
-``` sql
-CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
-INSERT INTO test SELECT number FROM numbers(500);
-```
-
-Запрос:
-
-``` sql
-SET limit = 5;
-SET offset = 7;
-SELECT * FROM test LIMIT 10 OFFSET 100;
-```
-
-Результат:
-
-``` text
-┌───i─┐
-│ 107 │
-│ 108 │
-│ 109 │
-└─────┘
-```
-## http_connection_timeout {#http_connection_timeout}
-
-Тайм-аут для HTTP-соединения (в секундах).
-
-Возможные значения:
-
--   0 - бесконечный тайм-аут.
--   Любое положительное целое число.
-
-Значение по умолчанию: `1`.
-
-## http_send_timeout {#http_send_timeout}
-
-Тайм-аут для отправки данных через HTTP-интерфейс (в секундах).
-
-Возможные значения:
-
--   0 - бесконечный тайм-аут.
--   Любое положительное целое число.
-
-Значение по умолчанию: `1800`.
-
-## http_receive_timeout {#http_receive_timeout}
-
-Тайм-аут для получения данных через HTTP-интерфейс (в секундах).
-
-Возможные значения:
-
--   0 - бесконечный тайм-аут.
--   Любое положительное целое число.
-
-Значение по умолчанию: `1800`.
-
-## optimize_fuse_sum_count_avg {#optimize_fuse_sum_count_avg}
-
-Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
-
-Возможные значения:
-
--   0 — функции с одинаковым аргументом не объединяются.
--   1 — функции с одинаковым аргументом объединяются.
-
-Значение по умолчанию: `0`.
-
-**Пример**
-
-Запрос:
-
-``` sql
-CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
-SET optimize_fuse_sum_count_avg = 1;
-EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
-```
-
-Результат:
-
-``` text
-SELECT
-    sum(a),
-    sumCount(b).1,
-    sumCount(b).2,
-    (sumCount(b).1) / (sumCount(b).2)
-FROM fuse_tbl
-```
-
-## flatten_nested {#flatten-nested}
-
-Устанавливает формат данных у [вложенных](../../sql-reference/data-types/nested-data-structures/nested.md) столбцов.
-
-Возможные значения:
-
--   1 — вложенный столбец преобразуется к отдельным массивам.
--   0 — вложенный столбец преобразуется к массиву кортежей.
-
-Значение по умолчанию: `1`.
-
-**Использование**
-
-Если установлено значение `0`, можно использовать любой уровень вложенности.
-
-**Примеры**
-
-Запрос:
-
-``` sql
-SET flatten_nested = 1;
-
-CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
-
-SHOW CREATE TABLE t_nest;
-```
-
-Результат:
-
-``` text
-┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE default.t_nest
-(
-    `n.a` Array(UInt32),
-    `n.b` Array(UInt32)
-)
-ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS index_granularity = 8192 │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Запрос:
-
-``` sql
-SET flatten_nested = 0;
-
-CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
-
-SHOW CREATE TABLE t_nest;
-```
-
-Результат:
-
-``` text
-┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE default.t_nest
-(
-    `n` Nested(a UInt32, b UInt32)
-)
-ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS index_granularity = 8192 │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

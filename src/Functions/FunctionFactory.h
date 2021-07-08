@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/IFactoryWithAliases.h>
-#include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <functional>
 #include <memory>
@@ -19,7 +18,7 @@ namespace DB
   *  some dictionaries from Context.
   */
 class FunctionFactory : private boost::noncopyable,
-                        public IFactoryWithAliases<std::function<FunctionOverloadResolverPtr(ContextPtr)>>
+                        public IFactoryWithAliases<std::function<FunctionOverloadResolverImplPtr(ContextPtr)>>
 {
 public:
     static FunctionFactory & instance();
@@ -33,9 +32,8 @@ public:
     template <typename Function>
     void registerFunction(const std::string & name, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
-
-        if constexpr (std::is_base_of_v<IFunction, Function>)
-            registerFunction(name, &adaptFunctionToOverloadResolver<Function>, case_sensitiveness);
+        if constexpr (std::is_base_of<IFunction, Function>::value)
+            registerFunction(name, &createDefaultFunction<Function>, case_sensitiveness);
         else
             registerFunction(name, &Function::create, case_sensitiveness);
     }
@@ -50,15 +48,8 @@ public:
     FunctionOverloadResolverPtr tryGet(const std::string & name, ContextPtr context) const;
 
     /// The same methods to get developer interface implementation.
-    FunctionOverloadResolverPtr getImpl(const std::string & name, ContextPtr context) const;
-    FunctionOverloadResolverPtr tryGetImpl(const std::string & name, ContextPtr context) const;
-
-    /// Register a function by its name.
-    /// No locking, you must register all functions before usage of get.
-    void registerFunction(
-        const std::string & name,
-        Value creator,
-        CaseSensitiveness case_sensitiveness = CaseSensitive);
+    FunctionOverloadResolverImplPtr getImpl(const std::string & name, ContextPtr context) const;
+    FunctionOverloadResolverImplPtr tryGetImpl(const std::string & name, ContextPtr context) const;
 
 private:
     using Functions = std::unordered_map<std::string, Value>;
@@ -67,9 +58,9 @@ private:
     Functions case_insensitive_functions;
 
     template <typename Function>
-    static FunctionOverloadResolverPtr adaptFunctionToOverloadResolver(ContextPtr context)
+    static FunctionOverloadResolverImplPtr createDefaultFunction(ContextPtr context)
     {
-        return std::make_unique<FunctionToOverloadResolverAdaptor>(Function::create(context));
+        return std::make_unique<DefaultOverloadResolver>(Function::create(context));
     }
 
     const Functions & getMap() const override { return functions; }
@@ -77,6 +68,13 @@ private:
     const Functions & getCaseInsensitiveMap() const override { return case_insensitive_functions; }
 
     String getFactoryName() const override { return "FunctionFactory"; }
+
+    /// Register a function by its name.
+    /// No locking, you must register all functions before usage of get.
+    void registerFunction(
+            const std::string & name,
+            Value creator,
+            CaseSensitiveness case_sensitiveness = CaseSensitive);
 };
 
 }

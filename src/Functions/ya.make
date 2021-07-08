@@ -144,6 +144,7 @@ SRCS(
     array/arrayFirst.cpp
     array/arrayFirstIndex.cpp
     array/arrayFlatten.cpp
+    array/arrayFold.cpp
     array/arrayIntersect.cpp
     array/arrayJoin.cpp
     array/arrayMap.cpp
@@ -222,7 +223,6 @@ SRCS(
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
-    dateName.cpp
     date_trunc.cpp
     decodeXMLComponent.cpp
     decrypt.cpp
@@ -304,7 +304,6 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
-    indexHint.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -484,7 +483,6 @@ SRCS(
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp
-    toJSONString.cpp
     toLowCardinality.cpp
     toMinute.cpp
     toModifiedJulianDay.cpp
@@ -535,7 +533,6 @@ SRCS(
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
-    validateNestedArraySizes.cpp
     version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp

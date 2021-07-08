@@ -1,9 +1,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
-#include <common/defines.h>
 
 namespace DB
 {
@@ -47,28 +45,6 @@ QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines, const Build
         pipeline->init(Pipe(std::make_shared<NullSource>(output_stream->header)));
         processors = collector.detachProcessors();
         return pipeline;
-    }
-
-    for (auto & cur_pipeline : pipelines)
-    {
-#if !defined(NDEBUG)
-        assertCompatibleHeader(cur_pipeline->getHeader(), getOutputStream().header, "UnionStep");
-#endif
-        /// Headers for union must be equal.
-        /// But, just in case, convert it to the same header if not.
-        if (!isCompatibleHeader(cur_pipeline->getHeader(), getOutputStream().header))
-        {
-            auto converting_dag = ActionsDAG::makeConvertingActions(
-                cur_pipeline->getHeader().getColumnsWithTypeAndName(),
-                getOutputStream().header.getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
-
-            auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
-            cur_pipeline->addSimpleTransform([&](const Block & cur_header)
-            {
-                return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
-            });
-        }
     }
 
     *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), max_threads);

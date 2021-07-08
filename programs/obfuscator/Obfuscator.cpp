@@ -27,9 +27,9 @@
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
-#include <common/bit_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <ext/bit_cast.h>
 #include <memory>
 #include <cmath>
 #include <unistd.h>
@@ -254,9 +254,9 @@ Float transformFloatMantissa(Float x, UInt64 seed)
     using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
 
-    UInt x_uint = bit_cast<UInt>(x);
+    UInt x_uint = ext::bit_cast<UInt>(x);
     x_uint = feistelNetwork(x_uint, mantissa_num_bits, seed);
-    return bit_cast<Float>(x_uint);
+    return ext::bit_cast<Float>(x_uint);
 }
 
 
@@ -365,20 +365,16 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
     }
 }
 
-static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
+static void transformUUID(const UInt128 & src, UInt128 & dst, UInt64 seed)
 {
-    const UInt128 & src = src_uuid.toUnderType();
-    UInt128 & dst = dst_uuid.toUnderType();
-
     SipHash hash;
     hash.update(seed);
-    hash.update(reinterpret_cast<const char *>(&src), sizeof(UUID));
+    hash.update(reinterpret_cast<const char *>(&src), sizeof(UInt128));
 
     /// Saving version and variant from an old UUID
     hash.get128(reinterpret_cast<char *>(&dst));
-
-    dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
-    dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
+    dst.high = (dst.high & 0x1fffffffffffffffull) | (src.high & 0xe000000000000000ull);
+    dst.low = (dst.low & 0xffffffffffff0fffull) | (src.low & 0x000000000000f000ull);
 }
 
 class FixedStringModel : public IModel
@@ -430,10 +426,10 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnUUID & src_column = assert_cast<const ColumnUUID &>(column);
+        const ColumnUInt128 & src_column = assert_cast<const ColumnUInt128 &>(column);
         const auto & src_data = src_column.getData();
 
-        auto res_column = ColumnUUID::create();
+        auto res_column = ColumnUInt128::create();
         auto & res_data = res_column->getData();
 
         res_data.resize(src_data.size());
@@ -1133,7 +1129,7 @@ try
     }
 
     SharedContextHolder shared_context = Context::createShared();
-    auto context = Context::createGlobal(shared_context.get());
+    ContextPtr context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
