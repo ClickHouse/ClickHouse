@@ -1,6 +1,7 @@
 #include <Interpreters/WindowDescription.h>
 
 #include <Core/Field.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
@@ -160,7 +161,8 @@ void WindowFrame::checkValid() const
         bool begin_less_equal_end;
         if (begin_preceding && end_preceding)
         {
-            begin_less_equal_end = begin_offset.get<Int64>() >= end_offset.get<Int64>();
+            /// we can't compare Fields using operator<= if fields have different types
+            begin_less_equal_end = applyVisitor(FieldVisitorAccurateLessOrEqual(), end_offset, begin_offset);
         }
         else if (begin_preceding && !end_preceding)
         {
@@ -172,7 +174,7 @@ void WindowFrame::checkValid() const
         }
         else /* if (!begin_preceding && !end_preceding) */
         {
-            begin_less_equal_end = begin_offset.get<Int64>() <= end_offset.get<Int64>();
+            begin_less_equal_end = applyVisitor(FieldVisitorAccurateLessOrEqual(), begin_offset, end_offset);
         }
 
         if (!begin_less_equal_end)
