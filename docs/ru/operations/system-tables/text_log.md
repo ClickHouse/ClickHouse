@@ -50,3 +50,4 @@ source_file:             /ClickHouse/src/Interpreters/DNSCacheUpdater.cpp; void 
 source_line:             45
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/text_log) <!--hide-->

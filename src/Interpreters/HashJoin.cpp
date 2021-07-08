@@ -160,7 +160,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 {
     if (nullable)
     {
-        JoinCommon::convertColumnToNullable(column);
+        JoinCommon::convertColumnToNullable(column, true);
         if (column.type->isNullable() && !negative_null_map.empty())
         {
             MutableColumnPtr mutable_column = IColumn::mutate(std::move(column.column));
@@ -384,7 +384,7 @@ template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin:
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys256, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt256, Mapped, false, false, false, use_offset>;
+    using Type = ColumnsHashing::HashMethodKeysFixed<Value, DummyUInt256, Mapped, false, false, false, use_offset>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::hashed, Value, Mapped>
 {
@@ -680,17 +680,7 @@ namespace
 class AddedColumns
 {
 public:
-    struct TypeAndName
-    {
-        DataTypePtr type;
-        String name;
-        String qualified_name;
-
-        TypeAndName(DataTypePtr type_, const String & name_, const String & qualified_name_)
-            : type(type_), name(name_), qualified_name(qualified_name_)
-        {
-        }
-    };
+    using TypeAndNames = std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>>;
 
     AddedColumns(
         const Block & block_with_columns_to_add,
@@ -718,30 +708,27 @@ public:
 
         for (const auto & src_column : block_with_columns_to_add)
         {
-            /// Column names `src_column.name` and `qualified_name` can differ for StorageJoin,
-            /// because it uses not qualified right block column names
-            auto qualified_name = join.getTableJoin().renamedRightColumnName(src_column.name);
             /// Don't insert column if it's in left block
-            if (!block.has(qualified_name))
-                addColumn(src_column, qualified_name);
+            if (!block.has(src_column.name))
+                addColumn(src_column);
         }
 
         if (is_asof_join)
         {
             const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
-            addColumn(right_asof_column, right_asof_column.name);
+            addColumn(right_asof_column);
             left_asof_key = key_columns.back();
         }
 
         for (auto & tn : type_name)
-            right_indexes.push_back(saved_block_sample.getPositionByName(tn.name));
+            right_indexes.push_back(saved_block_sample.getPositionByName(tn.second));
     }
 
     size_t size() const { return columns.size(); }
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
-        return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
+        return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].first, type_name[i].second);
     }
 
     template <bool has_defaults>
@@ -781,7 +768,7 @@ public:
         if (lazy_defaults_count)
         {
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
-                JoinCommon::addDefaultValues(*columns[j], type_name[j].type, lazy_defaults_count);
+                JoinCommon::addDefaultValues(*columns[j], type_name[j].first, lazy_defaults_count);
             lazy_defaults_count = 0;
         }
     }
@@ -797,7 +784,7 @@ public:
     bool need_filter = false;
 
 private:
-    std::vector<TypeAndName> type_name;
+    TypeAndNames type_name;
     MutableColumns columns;
     std::vector<size_t> right_indexes;
     size_t lazy_defaults_count = 0;
@@ -807,11 +794,11 @@ private:
     const IColumn * left_asof_key = nullptr;
     bool is_join_get;
 
-    void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
+    void addColumn(const ColumnWithTypeAndName & src_column)
     {
         columns.push_back(src_column.column->cloneEmpty());
         columns.back()->reserve(src_column.column->size());
-        type_name.emplace_back(src_column.type, src_column.name, qualified_name);
+        type_name.emplace_back(src_column.type, src_column.name);
     }
 };
 
@@ -1116,13 +1103,7 @@ void HashJoin::joinBlockImpl(
 
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
-
-            auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
-            ColumnWithTypeAndName right_col(col.column, col.type, right_col_name);
-            if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
-                JoinCommon::changeLowCardinalityInplace(right_col);
-            right_col = correctNullability(std::move(right_col), is_nullable);
-            block.insert(right_col);
+            block.insert(correctNullability({col.column, col.type, right_key.name}, is_nullable));
         }
     }
     else if (has_required_right_keys)
@@ -1147,13 +1128,7 @@ void HashJoin::joinBlockImpl(
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
 
             ColumnPtr thin_column = filterWithBlanks(col.column, filter);
-
-            auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
-            ColumnWithTypeAndName right_col(thin_column, col.type, right_col_name);
-            if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
-                JoinCommon::changeLowCardinalityInplace(right_col);
-            right_col = correctNullability(std::move(right_col), is_nullable, null_map_filter);
-            block.insert(right_col);
+            block.insert(correctNullability({thin_column, col.type, right_key.name}, is_nullable, null_map_filter));
 
             if constexpr (need_replication)
                 right_keys_to_replicate.push_back(block.getPositionByName(right_key.name));
@@ -1358,12 +1333,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
 void HashJoin::joinTotals(Block & block) const
 {
-    Block sample_right_block = sample_block_with_columns_to_add.cloneEmpty();
-    /// For StorageJoin column names isn't qualified in sample_block_with_columns_to_add
-    for (auto & col : sample_right_block)
-        col.name = getTableJoin().renamedRightColumnName(col.name);
-
-    JoinCommon::joinTotals(totals, sample_right_block, *table_join, block);
+    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, *table_join, block);
 }
 
 
@@ -1556,7 +1526,6 @@ BlockInputStreamPtr HashJoin::createStreamWithNonJoinedRows(const Block & result
 void HashJoin::reuseJoinedData(const HashJoin & join)
 {
     data = join.data;
-    from_storage_join = true;
     joinDispatch(kind, strictness, data->maps, [this](auto kind_, auto strictness_, auto & map)
     {
         used_flags.reinit<kind_, strictness_>(map.getBufferSizeInCells(data->type) + 1);

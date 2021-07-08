@@ -28,8 +28,7 @@ RUN apt-get update -y \
             tree \
             unixodbc \
             wget \
-            mysql-client=5.7* \
-            postgresql-client
+            mysql-client=5.7*
 
 RUN pip3 install numpy scipy pandas
 
@@ -47,5 +46,4 @@ ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
 
 COPY run.sh /
-COPY process_functional_tests_result.py /
 CMD ["/bin/bash", "/run.sh"]

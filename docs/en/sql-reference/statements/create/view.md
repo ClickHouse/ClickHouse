@@ -15,7 +15,7 @@ Syntax:
 CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] AS SELECT ...
 ```
 
-Normal views do not store any data. They just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
+Normal views don’t store any data. They just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
 
 As an example, assume you’ve created a view:
 
@@ -50,9 +50,9 @@ When creating a materialized view with `TO [db].[table]`, you must not use `POPU
 A materialized view is implemented as follows: when inserting data to the table specified in `SELECT`, part of the inserted data is converted by this `SELECT` query, and the result is inserted in the view.
 
 !!! important "Important"
-    Materialized views in ClickHouse are implemented more like insert triggers. If there’s some aggregation in the view query, it’s applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) does not change the materialized view.
+    Materialized views in ClickHouse are implemented more like insert triggers. If there’s some aggregation in the view query, it’s applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) doesn’t change the materialized view.
 
-If you specify `POPULATE`, the existing table data is inserted in the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using POPULATE, since data inserted in the table during the view creation will not be inserted in it.
+If you specify `POPULATE`, the existing table data is inserted in the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **don’t recommend** using POPULATE, since data inserted in the table during the view creation will not be inserted in it.
 
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`… Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won’t be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
 
@@ -62,13 +62,13 @@ Note that materialized view is influenced by [optimize_on_insert](../../../opera
 
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
-To delete a view, use [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Although `DROP TABLE` works for VIEWs as well.
+There isn’t a separate query for deleting views. To delete a view, use [DROP TABLE](../../../sql-reference/statements/drop.md).
 
 ## Live View (Experimental) {#live-view}
 
 !!! important "Important"
     This is an experimental feature that may change in backwards-incompatible ways in the future releases.
-    Enable usage of live views and `WATCH` query using [allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view) setting. Input the command `set allow_experimental_live_view = 1`.
+    Enable usage of live views and `WATCH` query using `set allow_experimental_live_view = 1`.
 
 
 ```sql
@@ -90,9 +90,7 @@ Live views work similarly to how a query in a distributed table works. But inste
 
     See [WITH REFRESH](#live-view-with-refresh) to force periodic updates of a live view that in some cases can be used as a workaround.
 
-### Monitoring Changes {#live-view-monitoring}
-
-You can monitor changes in the `LIVE VIEW` query result using [WATCH](../../../sql-reference/statements/watch.md) query.
+You can watch for changes in the live view query result using the [WATCH](../../../sql-reference/statements/watch.md) query
 
 ```sql
 WATCH [db.]live_view
@@ -104,10 +102,11 @@ WATCH [db.]live_view
 CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
 ```
+
 Watch a live view while doing a parallel insert into the source table.
 
 ```sql
-WATCH lv;
+WATCH lv
 ```
 
 ```bash
@@ -129,16 +128,16 @@ INSERT INTO mt VALUES (2);
 INSERT INTO mt VALUES (3);
 ```
 
-Or add [EVENTS](../../../sql-reference/statements/watch.md#events-clause) clause to just get change events.
+or add [EVENTS](../../../sql-reference/statements/watch.md#events-clause) clause to just get change events.
 
 ```sql
-WATCH [db.]live_view EVENTS;
+WATCH [db.]live_view EVENTS
 ```
 
 **Example:**
 
 ```sql
-WATCH lv EVENTS;
+WATCH lv EVENTS
 ```
 
 ```bash
@@ -164,15 +163,15 @@ SELECT * FROM [db.]live_view WHERE ...
 
 You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
 
-### WITH TIMEOUT Clause {#live-view-with-timeout}
+### With Timeout {#live-view-with-timeout}
 
-When a live view is created with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query that was watching the live view. 
+When a live view is create with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query that was watching the live view. 
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
 ```
 
-If the timeout value is not specified then the value specified by the [temporary_live_view_timeout](../../../operations/settings/settings.md#temporary-live-view-timeout) setting is used.
+If the timeout value is not specified then the value specified by the `temporary_live_view_timeout` setting is used.
 
 **Example:**
 
@@ -181,7 +180,7 @@ CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
 ```
 
-### WITH REFRESH Clause {#live-view-with-refresh}
+### With Refresh {#live-view-with-refresh}
 
 When a live view is created with a `WITH REFRESH` clause then it will be automatically refreshed after the specified number of seconds elapse since the last refresh or trigger.
 
@@ -189,7 +188,7 @@ When a live view is created with a `WITH REFRESH` clause then it will be automat
 CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
 ```
 
-If the refresh value is not specified then the value specified by the [periodic_live_view_refresh](../../../operations/settings/settings.md#periodic-live-view-refresh) setting is used.
+If the refresh value is not specified then the value specified by the `periodic_live_view_refresh` setting is used.
 
 **Example:**
 
@@ -229,10 +228,10 @@ WATCH lv
 ```
 
 ```
-Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv does not exist.. 
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv doesn't exist.. 
 ```
 
-### Usage {#live-view-usage}
+### Usage
 
 Most common uses of live view tables include:
 
@@ -240,5 +239,16 @@ Most common uses of live view tables include:
 - Caching results of most frequent queries to provide immediate query results.
 - Watching for table changes and triggering a follow-up select queries.
 - Watching metrics from system tables using periodic refresh.
+
+### Settings {#live-view-settings}
+
+You can use the following settings to control the behaviour of live views.
+
+- `allow_experimental_live_view` - enable live views. Default is `0`.
+- `live_view_heartbeat_interval` - the heartbeat interval in seconds to indicate live query is alive. Default is `15` seconds.
+- `max_live_view_insert_blocks_before_refresh` - maximum number of inserted blocks after which
+   mergeable blocks are dropped and query is re-executed. Default is `64` inserts.
+- `temporary_live_view_timeout` - interval after which live view with timeout is deleted. Default is `5` seconds.
+- `periodic_live_view_refresh` - interval after which periodically refreshed live view is forced to refresh. Default is `60` seconds.
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/view/) <!--hide-->

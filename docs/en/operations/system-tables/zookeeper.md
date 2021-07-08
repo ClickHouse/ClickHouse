@@ -5,10 +5,10 @@ The query must either have a ‘path =’   condition or a `path IN`  condition 
 
 The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
 To output data for all root nodes, write path = ‘/’.
-If the path specified in ‘path’ does not exist, an exception will be thrown.
+If the path specified in ‘path’ doesn’t exist, an exception will be thrown.
 
 The query `SELECT * FROM system.zookeeper WHERE path IN ('/', '/clickhouse')` outputs data for all children on the `/` and `/clickhouse` node.
-If in the specified ‘path’ collection has does not exist path, an exception will be thrown.
+If in the specified ‘path’ collection has doesn't exist path, an exception will be thrown.
 It can be used to do a batch of ZooKeeper path queries.
 
 Columns:

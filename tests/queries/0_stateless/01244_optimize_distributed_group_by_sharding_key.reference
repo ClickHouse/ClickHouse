@@ -123,6 +123,3 @@ GROUP BY sharding_key, ...
 GROUP BY ..., sharding_key
 0	0
 1	0
-window functions
-0	0
-1	0
