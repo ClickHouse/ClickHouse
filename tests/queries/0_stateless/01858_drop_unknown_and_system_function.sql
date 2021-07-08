@@ -1,2 +1,2 @@
 drop function unknownFunc; -- { serverError 46 }
-drop function CAST; -- { serverError 591 }
+drop function CAST; -- { serverError 592 }
