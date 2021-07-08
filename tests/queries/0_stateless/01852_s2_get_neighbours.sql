@@ -1,1 +1,1 @@
-select S2GetNeighbors(5074766849661468672);
+select s2GetNeighbors(5074766849661468672);

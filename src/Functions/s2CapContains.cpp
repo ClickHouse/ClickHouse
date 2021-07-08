@@ -21,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -71,12 +70,11 @@ public:
                         "Illegal type {} of argument {} of function {}. Must be Float64",
                         arg->getName(), 2, getName());
             }
-            else if (!WhichDataType(arg).isUInt64()) {
+            else if (!WhichDataType(arg).isUInt64())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument {} of function {}. Must be UInt64",
                     arg->getName(), index + 1, getName());
-            }
         }
 
         return std::make_shared<DataTypeUInt8>();
@@ -97,6 +95,12 @@ public:
             const UInt64 center = col_center->getUInt(row);
             const Float64 degrees = col_degrees->getFloat64(row);
             const UInt64 point = col_point->getUInt(row);
+
+            if (isNaN(degrees))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan");
+
+            if (std::isinf(degrees))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be infinite");
 
             S1Angle angle = S1Angle::Degrees(degrees);
             S2Cap cap(S2CellId(center).ToPoint(), angle);

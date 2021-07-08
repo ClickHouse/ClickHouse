@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -67,13 +66,12 @@ public:
                         "Illegal type {} of argument {} of function {}. Must be Float64",
                         arg->getName(), index + 1, getName());
             }
-            else if (!WhichDataType(arg).isUInt64()) {
+            else if (!WhichDataType(arg).isUInt64())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument {} of function {}. Must be UInt64",
                     arg->getName(), index + 1, getName()
                     );
-            }
         }
 
         DataTypePtr center = std::make_shared<DataTypeUInt64>();
@@ -89,14 +87,14 @@ public:
         const auto * col_center2 = arguments[2].column.get();
         const auto * col_radius2 = arguments[3].column.get();
 
-        auto col_res_first = ColumnUInt64::create();
-        auto col_res_second = ColumnFloat64::create();
+        auto col_res_center = ColumnUInt64::create();
+        auto col_res_radius = ColumnFloat64::create();
 
-        auto & vec_res_first = col_res_first->getData();
-        vec_res_first.reserve(input_rows_count);
+        auto & vec_res_center = col_res_center->getData();
+        vec_res_center.reserve(input_rows_count);
 
-        auto & vec_res_second = col_res_second->getData();
-        vec_res_second.reserve(input_rows_count);
+        auto & vec_res_radius = col_res_radius->getData();
+        vec_res_radius.reserve(input_rows_count);
 
         for (const auto row : collections::range(0, input_rows_count))
         {
@@ -116,11 +114,11 @@ public:
 
             S2Cap cap_union = cap1.Union(cap2);
 
-            vec_res_first[row] = S2CellId(cap_union.center()).id();
-            vec_res_second[row] = cap_union.GetRadius().degrees();
+            vec_res_center.emplace_back(S2CellId(cap_union.center()).id());
+            vec_res_radius.emplace_back(cap_union.GetRadius().degrees());
         }
 
-        return ColumnTuple::create(Columns{std::move(col_res_first), std::move(col_res_second)});
+        return ColumnTuple::create(Columns{std::move(col_res_center), std::move(col_res_radius)});
     }
 
 };

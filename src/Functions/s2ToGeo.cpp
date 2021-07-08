@@ -22,7 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -54,12 +53,11 @@ public:
     {
         const auto * arg = arguments[0].get();
 
-        if (!WhichDataType(arg).isUInt64()) {
+        if (!WhichDataType(arg).isUInt64())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument {} of function {}. Must be Float64",
                 arg->getName(), 1, getName());
-        }
 
         DataTypePtr element = std::make_shared<DataTypeFloat64>();
 
