@@ -1106,16 +1106,16 @@ from numbers(10)
 window w as (order by number)
 order by number
 ;
-0   0  NULL   NULL  NULL 
-1   0     1   NULL  NULL
-2   0     1      2  NULL
-3   0     1      2     3
-4   0     1      2     3
-5   0     1      2     3
-6   0     1      2     3
-7   0     1      2     3
-8   0     1      2     3
-9   0     1      2     3
+0	0	\N	\N	\N
+1	0	1	\N	\N
+2	0	1	2	\N
+3	0	1	2	3
+4	0	1	2	3
+5	0	1	2	3
+6	0	1	2	3
+7	0	1	2	3
+8	0	1	2	3
+9	0	1	2	3
 -- nth_value with frame range specified
 select
     number,
@@ -1127,16 +1127,16 @@ from numbers(10)
 window w as (order by number range between 1 preceding and 1 following)
 order by number
 ;
-0   0   1 NULL  NULL
-1   0   1    2  NULL
-2   1   2    3  NULL
-3   2   3    4  NULL
-4   3   4    5  NULL
-5   4   5    6  NULL
-6   5   6    7  NULL
-7   6   7    8  NULL
-8   7   8    9  NULL
-9   8   9 NULL  NULL 
+0	0	1	\N	\N
+1	0	1	2	\N
+2	1	2	3	\N
+3	2	3	4	\N
+4	3	4	5	\N
+5	4	5	6	\N
+6	5	6	7	\N
+7	6	7	8	\N
+8	7	8	9	\N
+9	8	9	\N	\N
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.
 select count() over () from numbers(4) where number < 2;
