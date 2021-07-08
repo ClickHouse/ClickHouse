@@ -780,6 +780,29 @@
         "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
         "01748_dictionary_table_dot", // creates database
         "00950_dict_get",
+        "01683_flat_dictionary",
+        "01681_cache_dictionary_simple_key",
+        "01682_cache_dictionary_complex_key",
+        "01684_ssd_cache_dictionary_simple_key",
+        "01685_ssd_cache_dictionary_complex_key",
+        "01737_clickhouse_server_wait_server_pool_long", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
+        "01594_too_low_memory_limits", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
+        "01760_system_dictionaries",
+        "01760_polygon_dictionaries",
+        "01778_hierarchical_dictionaries",
+        "01780_clickhouse_dictionary_source_loop",
+        "01785_dictionary_element_count",
+        "01802_test_postgresql_protocol_with_row_policy", /// Creates database and users
+        "01804_dictionary_decimal256_type",
+        "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
+        "01821_table_comment",
+        "01710_projection_fetch",
+        "01824_prefer_global_in_and_join",
+        "01870_modulo_partition_key",
+        "01870_buffer_flush", // creates database
+        "01889_postgresql_protocol_null_fields",
+        "01889_check_row_policy_defined_using_user_function",
+        "01921_concurrent_ttl_and_normal_merges_zookeeper_long", // heavy test, better to run sequentially
         "01850_dist_INSERT_preserve_error" // uses cluster with different static databases shard_0/shard_1
     ]
 }
