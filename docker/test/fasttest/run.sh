@@ -387,6 +387,7 @@ function run_tests
         01852_s2_get_neighbours
         01853_s2_cells_intersect
         01854_s2_cap_contains
+        01854_s2_cap_union
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
