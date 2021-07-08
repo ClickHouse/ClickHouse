@@ -309,8 +309,8 @@ Result:
 ## toJSONString {#tojsonstring}
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
-64-bit [integers](../../sql-reference/data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are quoted by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
-When serializing an [Enum](../../sql-reference/data-types/enum.md) value the function outputs its name.
+64-bit [integers](../../sql-reference/data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
+When serializing an [Enum](../../sql-reference/data-types/enum.md) value, the function outputs its name.
 
 **Syntax**
 
@@ -330,19 +330,21 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
-The first example serializes a [Map](../../sql-reference/data-types/map.md).
-The second example shows some special values wrapped into a [Tuple](../../sql-reference/data-types/tuple.md).
+The example shows serialization of a [Map](../../sql-reference/data-types/map.md).
 
 Query:
 
 ``` sql
 SELECT toJSONString(map('key1', 1, 'key2', 2));
-SELECT toJSONString(tuple(NULL, NaN, inf, []));
 ```
 
 Result:
 
 ``` text
 {"key1":1,"key2":2}
-[null,"nan","inf",[]] 
 ```
+
+**See Also**
+
+-   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
+-   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
