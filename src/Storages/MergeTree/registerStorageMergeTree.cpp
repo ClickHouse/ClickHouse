@@ -116,8 +116,11 @@ static bool compareRetentions(const Graphite::Retention & a, const Graphite::Ret
   *     </default>
   * </graphite_rollup>
   */
-static void
-appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const String & config_element, Graphite::Patterns & patterns)
+static void appendGraphitePattern(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_element,
+    Graphite::Patterns & out_patterns,
+    ContextPtr context)
 {
     Graphite::Pattern pattern;
 
@@ -137,7 +140,7 @@ appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const St
             String aggregate_function_name;
             Array params_row;
             getAggregateFunctionNameAndParametersArray(
-                aggregate_function_name_with_params, aggregate_function_name, params_row, "GraphiteMergeTree storage initialization");
+                aggregate_function_name_with_params, aggregate_function_name, params_row, "GraphiteMergeTree storage initialization", context);
 
             /// TODO Not only Float64
             AggregateFunctionProperties properties;
@@ -181,7 +184,7 @@ appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const St
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
         std::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
 
-    patterns.emplace_back(pattern);
+    out_patterns.emplace_back(pattern);
 }
 
 static void setGraphitePatternsFromConfig(ContextPtr context, const String & config_element, Graphite::Params & params)
@@ -204,7 +207,7 @@ static void setGraphitePatternsFromConfig(ContextPtr context, const String & con
     {
         if (startsWith(key, "pattern"))
         {
-            appendGraphitePattern(config, config_element + "." + key, params.patterns);
+            appendGraphitePattern(config, config_element + "." + key, params.patterns, context);
         }
         else if (key == "default")
         {
@@ -219,7 +222,7 @@ static void setGraphitePatternsFromConfig(ContextPtr context, const String & con
     }
 
     if (config.has(config_element + ".default"))
-        appendGraphitePattern(config, config_element + "." + ".default", params.patterns);
+        appendGraphitePattern(config, config_element + "." + ".default", params.patterns, context);
 }
 
 

@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnCodec.h>
 #include <Storages/ColumnDefault.h>
@@ -54,7 +55,9 @@ class ColumnsDescription
 {
 public:
     ColumnsDescription() = default;
-    explicit ColumnsDescription(NamesAndTypesList ordinary_);
+    explicit ColumnsDescription(NamesAndTypesList ordinary);
+
+    explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false);

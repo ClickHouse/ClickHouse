@@ -48,6 +48,15 @@ public:
 
     String getName() const final { return "sumCount"; }
 
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        return false;
+    }
+
+#endif
+
 private:
     UInt32 scale;
 };

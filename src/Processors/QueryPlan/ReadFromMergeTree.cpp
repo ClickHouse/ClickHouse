@@ -94,6 +94,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , data(data_)
     , query_info(query_info_)
     , prewhere_info(getPrewhereInfo(query_info))
+    , actions_settings(ExpressionActionsSettings::fromContext(context_))
     , metadata_snapshot(std::move(metadata_snapshot_))
     , metadata_snapshot_base(std::move(metadata_snapshot_base_))
     , context(std::move(context_))
@@ -157,7 +158,7 @@ Pipe ReadFromMergeTree::readFromPool(
             i, pool, min_marks_for_concurrent_read, max_block_size,
             settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
             data, metadata_snapshot, use_uncompressed_cache,
-            prewhere_info, reader_settings, virt_column_names);
+            prewhere_info, actions_settings, reader_settings, virt_column_names);
 
         if (i == 0)
         {
@@ -180,7 +181,7 @@ ProcessorPtr ReadFromMergeTree::createSource(
     return std::make_shared<TSource>(
             data, metadata_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache,
-            prewhere_info, true, reader_settings, virt_column_names, part.part_index_in_query);
+            prewhere_info, actions_settings, true, reader_settings, virt_column_names, part.part_index_in_query);
 }
 
 Pipe ReadFromMergeTree::readInOrder(
