@@ -417,7 +417,7 @@ void IDiskRemote::removeDirectory(const String & path)
 
 DiskDirectoryIteratorPtr IDiskRemote::iterateDirectory(const String & path)
 {
-    String meta_path = metadata_path + path;
+    fs::path meta_path = fs::path(metadata_path) / path;
     if (fs::exists(meta_path) && fs::is_directory(meta_path))
         return std::make_unique<RemoteDiskDirectoryIterator>(meta_path, path);
     else
