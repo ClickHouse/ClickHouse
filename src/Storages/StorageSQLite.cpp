@@ -1,5 +1,6 @@
 #include "StorageSQLite.h"
 
+#if USE_SQLITE
 #include <DataStreams/SQLiteBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -38,6 +39,8 @@ StorageSQLite::StorageSQLite(
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 }
+
+
 Pipe StorageSQLite::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -67,6 +70,7 @@ Pipe StorageSQLite::read(
     return Pipe(
         std::make_shared<SourceFromInputStream>(std::make_shared<SQLiteBlockInputStream>(db_ptr, query, sample_block, max_block_size)));
 }
+
 
 class SQLiteBlockOutputStream : public IBlockOutputStream
 {
@@ -131,6 +135,7 @@ private:
     std::string remote_table_name;
 };
 
+
 BlockOutputStreamPtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
 {
     return std::make_shared<SQLiteBlockOutputStream>(*this, metadata_snapshot, db_ptr, remote_table_name);
@@ -174,3 +179,5 @@ void registerStorageSQLite(StorageFactory & factory)
 }
 
 }
+
+#endif

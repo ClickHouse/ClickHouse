@@ -68,6 +68,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageExternalDistributed(StorageFactory & factory);
 #endif
 
+#if USE_SQLITE
+    registerStorageSQLite(factory);
+#endif
+
 void registerStorages()
 {
     auto & factory = StorageFactory::instance();
@@ -90,7 +94,6 @@ void registerStorages()
     registerStorageMaterializedView(factory);
     registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
-    registerStorageSQLite(factory);
 
     #if USE_AWS_S3
     registerStorageS3(factory);

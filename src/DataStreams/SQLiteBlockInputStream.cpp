@@ -1,5 +1,7 @@
 #include "SQLiteBlockInputStream.h"
 
+#if USE_SQLITE
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
@@ -128,3 +130,5 @@ void SQLiteBlockInputStream::insertValue(
 }
 
 }
+
+#endif
