@@ -1634,7 +1634,7 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
     if (is_overflows)
         block.info.is_overflows = true;
 
-    if (!params.keep_state_after_read)
+    if (final && !params.keep_state_after_read)
         destroyWithoutKey(data_variants);
 
     return block;
