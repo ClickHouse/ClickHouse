@@ -22,15 +22,12 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class JoinedTables
 {
 public:
-    JoinedTables(ContextPtr context, const ASTSelectQuery & select_query);
+    JoinedTables(ContextPtr context, const ASTSelectQuery & select_query, bool include_all_columns_ = false);
 
-    void reset(const ASTSelectQuery & select_query)
-    {
-        *this = JoinedTables(Context::createCopy(context), select_query);
-    }
+    void reset(const ASTSelectQuery & select_query);
 
     StoragePtr getLeftTableStorage();
-    bool resolveTables(bool include_all_columns);
+    bool resolveTables();
 
     /// Make fake tables_with_columns[0] in case we have predefined input in InterpreterSelectQuery
     void makeFakeTable(StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const Block & source_header);
@@ -50,6 +47,7 @@ private:
     ContextPtr context;
     std::vector<const ASTTableExpression *> table_expressions;
     TablesWithColumns tables_with_columns;
+    const bool include_all_columns;
 
     /// Legacy (duplicated left table values)
     ASTPtr left_table_expression;

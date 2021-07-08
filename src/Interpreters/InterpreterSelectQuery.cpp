@@ -311,7 +311,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         ApplyWithSubqueryVisitor().visit(query_ptr);
     }
 
-    JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery());
+    JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols);
 
     bool got_storage_from_query = false;
     if (!has_input && !storage)
@@ -328,7 +328,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             metadata_snapshot = storage->getInMemoryMetadataPtr();
     }
 
-    if (has_input || !joined_tables.resolveTables(options.with_all_cols))
+    if (has_input || !joined_tables.resolveTables())
         joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
 
     /// Rewrite JOINs
@@ -337,7 +337,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context->getSettingsRef());
 
         joined_tables.reset(getSelectQuery());
-        joined_tables.resolveTables(options.with_all_cols);
+        joined_tables.resolveTables();
 
         if (storage && joined_tables.isLeftTableSubquery())
         {
