@@ -64,8 +64,6 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
         return std::make_shared<AggregateFunction<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(argument_types, params, pattern);
     else if (which.isDate())
         return std::make_shared<AggregateFunction<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(argument_types, params, pattern);
-//    else if (which.isDate32())
-//        return std::make_shared<AggregateFunction<DataTypeDate32::FieldType, Data<DataTypeDate32::FieldType>>>(argument_types, params, pattern);
 
     throw Exception{"Illegal type " + time_arg->getName() + " of first argument of aggregate function "
             + name + ", must be DateTime",
