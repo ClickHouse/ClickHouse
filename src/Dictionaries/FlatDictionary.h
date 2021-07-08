@@ -7,8 +7,13 @@
 
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block.h>
+#include <ext/range.h>
+#include <ext/size.h>
 
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -101,15 +106,37 @@ public:
 
 private:
     template <typename Value>
-    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
+    using ContainerType = PaddedPODArray<Value>;
 
     using NullableSet = HashSet<UInt64, DefaultHash<UInt64>>;
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::optional<NullableSet> is_nullable_set;
+        std::optional<NullableSet> nullable_set;
 
+        std::variant<
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            UInt128,
+            UInt256,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Int128,
+            Int256,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Decimal256,
+            Float32,
+            Float64,
+            UUID,
+            StringRef>
+            null_values;
         std::variant<
             ContainerType<UInt8>,
             ContainerType<UInt16>,
@@ -130,8 +157,7 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
-            ContainerType<StringRef>,
-            ContainerType<Array>>
+            ContainerType<StringRef>>
             container;
 
         std::unique_ptr<Arena> string_arena;
@@ -144,9 +170,9 @@ private:
 
     void calculateBytesAllocated();
 
-    Attribute createAttribute(const DictionaryAttribute & attribute);
+    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & keys,

@@ -183,9 +183,6 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 
     size_t bytesSize() const override { return CreateRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
-
-    /// During recovery from log we don't rehash ACLs
-    bool need_to_hash_acls = true;
 };
 
 struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
@@ -230,7 +227,7 @@ struct ZooKeeperExistsRequest final : ExistsRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return true; }
+    bool isReadRequest() const override { return !has_watch; }
 
     size_t bytesSize() const override { return ExistsRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
@@ -251,7 +248,7 @@ struct ZooKeeperGetRequest final : GetRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return true; }
+    bool isReadRequest() const override { return !has_watch; }
 
     size_t bytesSize() const override { return GetRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
@@ -294,7 +291,7 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
     ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return true; }
+    bool isReadRequest() const override { return !has_watch; }
 
     size_t bytesSize() const override { return ListRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
@@ -328,7 +325,7 @@ struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return true; }
+    bool isReadRequest() const override { return !has_watch; }
 
     size_t bytesSize() const override { return CheckRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
@@ -351,48 +348,6 @@ struct ZooKeeperErrorResponse final : ErrorResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Error; }
 
     size_t bytesSize() const override { return ErrorResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
-};
-
-struct ZooKeeperSetACLRequest final : SetACLRequest, ZooKeeperRequest
-{
-    OpNum getOpNum() const override { return OpNum::SetACL; }
-    void writeImpl(WriteBuffer & out) const override;
-    void readImpl(ReadBuffer & in) override;
-    ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return false; }
-
-    size_t bytesSize() const override { return SetACLRequest::bytesSize() + sizeof(xid); }
-
-    bool need_to_hash_acls = true;
-};
-
-struct ZooKeeperSetACLResponse final : SetACLResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override;
-    void writeImpl(WriteBuffer & out) const override;
-    OpNum getOpNum() const override { return OpNum::SetACL; }
-
-    size_t bytesSize() const override { return SetACLResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
-};
-
-struct ZooKeeperGetACLRequest final : GetACLRequest, ZooKeeperRequest
-{
-    OpNum getOpNum() const override { return OpNum::GetACL; }
-    void writeImpl(WriteBuffer & out) const override;
-    void readImpl(ReadBuffer & in) override;
-    ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return true; }
-
-    size_t bytesSize() const override { return GetACLRequest::bytesSize() + sizeof(xid); }
-};
-
-struct ZooKeeperGetACLResponse final : GetACLResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override;
-    void writeImpl(WriteBuffer & out) const override;
-    OpNum getOpNum() const override { return OpNum::GetACL; }
-
-    size_t bytesSize() const override { return GetACLResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
 
 struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest

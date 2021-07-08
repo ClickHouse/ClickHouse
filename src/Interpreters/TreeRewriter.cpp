@@ -742,7 +742,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (!columns.empty())
             required.insert(std::min_element(columns.begin(), columns.end())->name);
-        else if (!source_columns.empty())
+        else
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
@@ -924,28 +924,25 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, select_options.only_analyze);
 
-    TreeOptimizer::apply(query, result, tables_with_columns, getContext());
+    TreeOptimizer::apply(
+        query, result.aliases, source_columns_set, tables_with_columns, getContext(), result.metadata_snapshot, result.rewrite_subqueries);
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
-    setJoinStrictness(
-        *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join->table_join);
-
+    setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
+                        result.analyzed_join->table_join);
     collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
-
-    result.aggregates = getAggregates(query, *select_query);
-    result.window_function_asts = getWindowFunctions(query, *select_query);
-    result.collectUsedColumns(query, true);
-    result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
     if (settings.optimize_respect_aliases && result.metadata_snapshot)
     {
-        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
-        result.collectUsedColumns(query, true);
+        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), getContext());
     }
 
+    result.aggregates = getAggregates(query, *select_query);
+    result.window_function_asts = getWindowFunctions(query, *select_query);
+    result.collectUsedColumns(query, true);
     result.ast_join = select_query->join();
 
     if (result.optimize_trivial_count)

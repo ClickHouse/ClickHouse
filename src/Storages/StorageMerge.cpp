@@ -11,8 +11,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/addTypeConversionToAST.h>
-#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -22,7 +20,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <algorithm>
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -207,7 +205,7 @@ Pipe StorageMerge::read(
     if (selected_tables.empty())
         /// FIXME: do we support sampling in this case?
         return createSources(
-            {}, query_info, processed_stage, max_block_size, header, {}, {}, real_column_names, modified_context, 0, has_table_virtual_column);
+            {}, query_info, processed_stage, max_block_size, header, {}, real_column_names, modified_context, 0, has_table_virtual_column);
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
@@ -235,9 +233,6 @@ Pipe StorageMerge::read(
         query_info.input_order_info = input_sorting_info;
     }
 
-    auto sample_block = getInMemoryMetadataPtr()->getSampleBlock();
-    Names required_columns;
-
     for (const auto & table : selected_tables)
     {
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
@@ -251,51 +246,12 @@ Pipe StorageMerge::read(
         if (query_info.query->as<ASTSelectQuery>()->sampleSize() && !storage->supportsSampling())
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
-        Aliases aliases;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
-        auto storage_columns = storage_metadata_snapshot->getColumns();
-
-        if (processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty())
-        {
-            auto syntax_result = TreeRewriter(local_context).analyzeSelect(query_info.query, TreeRewriterResult({}, storage, storage_metadata_snapshot));
-            ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
-
-            ASTPtr column_expr;
-            for (const auto & column : real_column_names)
-            {
-                const auto column_default = storage_columns.getDefault(column);
-                bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
-
-                if (is_alias)
-                {
-                    column_expr = column_default->expression->clone();
-                    replaceAliasColumnsInQuery(column_expr, storage_metadata_snapshot->getColumns(),
-                                               syntax_result->array_join_result_to_source, local_context);
-
-                    auto column_description = storage_columns.get(column);
-                    column_expr = addTypeConversionToAST(std::move(column_expr), column_description.type->getName(),
-                                                         storage_metadata_snapshot->getColumns().getAll(), local_context);
-                    column_expr = setAlias(column_expr, column);
-
-                    auto type = sample_block.getByName(column).type;
-                    aliases.push_back({ .name = column, .type = type, .expression = column_expr->clone() });
-                }
-                else
-                    column_expr = std::make_shared<ASTIdentifier>(column);
-
-                required_columns_expr_list->children.emplace_back(std::move(column_expr));
-            }
-
-            syntax_result = TreeRewriter(local_context).analyze(required_columns_expr_list, storage_columns.getAllPhysical(),
-                                                                storage, storage_metadata_snapshot);
-            auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, local_context).getActionsDAG(true);
-            required_columns = alias_actions->getRequiredColumns().getNames();
-        }
 
         auto source_pipe = createSources(
             storage_metadata_snapshot, query_info, processed_stage,
-            max_block_size, header, aliases, table, required_columns.empty() ? real_column_names : required_columns,
-            modified_context, current_streams, has_table_virtual_column);
+            max_block_size, header, table, real_column_names, modified_context,
+            current_streams, has_table_virtual_column);
 
         pipes.emplace_back(std::move(source_pipe));
     }
@@ -316,10 +272,9 @@ Pipe StorageMerge::createSources(
     const QueryProcessingStage::Enum & processed_stage,
     const UInt64 max_block_size,
     const Block & header,
-    const Aliases & aliases,
     const StorageWithLockAndName & storage_with_lock,
     Names & real_column_names,
-    ContextMutablePtr modified_context,
+    ContextPtr modified_context,
     size_t streams_num,
     bool has_table_virtual_column,
     bool concat_streams)
@@ -414,7 +369,7 @@ Pipe StorageMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, metadata_snapshot, aliases, modified_context, modified_query_info.query, pipe, processed_stage);
+        convertingSourceStream(header, metadata_snapshot, modified_context, modified_query_info.query, pipe, processed_stage);
 
         pipe.addTableLock(struct_lock);
         pipe.addStorageHolder(storage);
@@ -537,7 +492,6 @@ void StorageMerge::alter(
 void StorageMerge::convertingSourceStream(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
-    const Aliases & aliases,
     ContextPtr local_context,
     ASTPtr & query,
     Pipe & pipe,
@@ -545,44 +499,23 @@ void StorageMerge::convertingSourceStream(
 {
     Block before_block_header = pipe.getHeader();
 
-    auto storage_sample_block = metadata_snapshot->getSampleBlock();
-    auto pipe_columns = pipe.getHeader().getNamesAndTypesList();
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            pipe.getHeader().getColumnsWithTypeAndName(),
+            header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
 
-    for (const auto & alias : aliases)
+    pipe.addSimpleTransform([&](const Block & stream_header)
     {
-        pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
-        ASTPtr expr = std::move(alias.expression);
-        auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
-        auto expression_analyzer = ExpressionAnalyzer{alias.expression, syntax_result, local_context};
-
-        auto dag = std::make_shared<ActionsDAG>(pipe_columns);
-        auto actions_dag = expression_analyzer.getActionsDAG(true, false);
-        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
-
-        pipe.addSimpleTransform([&](const Block & stream_header)
-        {
-            return std::make_shared<ExpressionTransform>(stream_header, actions);
-        });
-    }
-
-    {
-        auto convert_actions_dag = ActionsDAG::makeConvertingActions(pipe.getHeader().getColumnsWithTypeAndName(),
-                                                                     header.getColumnsWithTypeAndName(),
-                                                                     ActionsDAG::MatchColumnsMode::Name);
-        auto actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
-        pipe.addSimpleTransform([&](const Block & stream_header)
-        {
-            return std::make_shared<ExpressionTransform>(stream_header, actions);
-        });
-    }
-
+        return std::make_shared<ExpressionTransform>(stream_header, convert_actions);
+    });
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
 
     if (!where_expression)
         return;
 
-    for (size_t column_index : collections::range(0, header.columns()))
+    for (size_t column_index : ext::range(0, header.columns()))
     {
         ColumnWithTypeAndName header_column = header.getByPosition(column_index);
         ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);

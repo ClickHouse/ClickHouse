@@ -11,7 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB
@@ -179,7 +179,7 @@ String Cluster::Address::toFullString(bool use_compact_format) const
             // shard_num/replica_num like in system.clusters table
             throw Exception("shard_num/replica_num cannot be zero", ErrorCodes::LOGICAL_ERROR);
 
-        return fmt::format("shard{}_replica{}", shard_index, replica_index);
+        return "shard" + std::to_string(shard_index) + "_replica" + std::to_string(replica_index);
     }
     else
     {
@@ -199,7 +199,7 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
     const char * user_pw_end = strchr(full_string.data(), '@');
 
-    /// parsing with the new shard{shard_index}[_replica{replica_index}] format
+    /// parsing with the new [shard{shard_index}[_replica{replica_index}]] format
     if (!user_pw_end && startsWith(full_string, "shard"))
     {
         const char * underscore = strchr(full_string.data(), '_');
@@ -401,9 +401,6 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             bool internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
             ShardInfoInsertPathForInternalReplication insert_paths;
-            /// "_all_replicas" is a marker that will be replaced with all replicas
-            /// (for creating connections in the Distributed engine)
-            insert_paths.compact = fmt::format("shard{}_all_replicas", current_shard_num);
 
             for (const auto & replica_key : replica_keys)
             {
@@ -422,10 +419,20 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
                     if (internal_replication)
                     {
-                        auto dir_name = replica_addresses.back().toFullString(/* use_compact_format= */ false);
-                        if (!replica_addresses.back().is_local)
-                            concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
-                        concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
+                        /// use_compact_format=0
+                        {
+                            auto dir_name = replica_addresses.back().toFullString(false /* use_compact_format */);
+                            if (!replica_addresses.back().is_local)
+                                concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
+                            concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
+                        }
+                        /// use_compact_format=1
+                        {
+                            auto dir_name = replica_addresses.back().toFullString(true /* use_compact_format */);
+                            if (!replica_addresses.back().is_local)
+                                concatInsertPath(insert_paths.prefer_localhost_replica_compact, dir_name);
+                            concatInsertPath(insert_paths.no_prefer_localhost_replica_compact, dir_name);
+                        }
                     }
                 }
                 else
@@ -592,7 +599,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     UInt32 shard_num = 0;
     std::set<std::pair<String, int>> unique_hosts;
-    for (size_t shard_index : collections::range(0, from.shards_info.size()))
+    for (size_t shard_index : ext::range(0, from.shards_info.size()))
     {
         const auto & replicas = from.addresses_with_failover[shard_index];
         for (const auto & address : replicas)
@@ -653,17 +660,17 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
     const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)
     {
-        const auto & path = prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
-        if (path.size() > NAME_MAX)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Path '{}' for async distributed INSERT is too long (exceed {} limit)", path, NAME_MAX);
-        }
-        return path;
+        if (prefer_localhost_replica)
+            return paths.prefer_localhost_replica;
+        else
+            return paths.no_prefer_localhost_replica;
     }
     else
     {
-        return paths.compact;
+        if (prefer_localhost_replica)
+            return paths.prefer_localhost_replica_compact;
+        else
+            return paths.no_prefer_localhost_replica_compact;
     }
 }
 

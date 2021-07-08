@@ -62,7 +62,7 @@ StorageMergeTree::StorageMergeTree(
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata_,
     bool attach,
-    ContextMutablePtr context_,
+    ContextPtr context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
@@ -1001,13 +1001,13 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & executor) //-V657
+std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
 {
     if (shutdown_called)
-        return false;
+        return {};
 
     if (merger_mutator.merges_blocker.isCancelled())
-        return false;
+        return {};
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     std::shared_ptr<MergeMutateSelectedEntry> merge_entry, mutate_entry;
@@ -1017,25 +1017,21 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
     if (!merge_entry)
         mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
 
-    if (merge_entry)
+    if (merge_entry || mutate_entry)
     {
-        executor.execute({[this, metadata_snapshot, merge_entry, share_lock] () mutable
+        return JobAndPool{[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
         {
-            return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
-        }, PoolType::MERGE_MUTATE});
-        return true;
-    }
-    if (mutate_entry)
-    {
-        executor.execute({[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
-        {
-            return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-        }, PoolType::MERGE_MUTATE});
-        return true;
+            if (merge_entry)
+                return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
+            else if (mutate_entry)
+                return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
+
+            __builtin_unreachable();
+        }, PoolType::MERGE_MUTATE};
     }
     else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
     {
-        executor.execute({[this, share_lock] ()
+        return JobAndPool{[this, share_lock] ()
         {
             /// All use relative_data_path which changes during rename
             /// so execute under share lock.
@@ -1045,10 +1041,9 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
             clearOldMutations();
             clearEmptyParts();
             return true;
-        }, PoolType::MERGE_MUTATE});
-        return true;
+        }, PoolType::MERGE_MUTATE};
     }
-    return false;
+    return {};
 }
 
 Int64 StorageMergeTree::getCurrentMutationVersion(
@@ -1243,66 +1238,56 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, boo
     }
 }
 
-void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
+void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr local_context, bool throw_if_noop)
 {
-    if (auto part = outdatePart(part_name, /*force=*/ false))
-        dropPartsImpl({part}, /*detach=*/ false);
-
-    /// Else nothing to do, part was removed in some different way
-}
-
-void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr /*query_context*/)
-{
-    if (auto part = outdatePart(part_name, /*force=*/ true))
-        dropPartsImpl({part}, detach);
-}
-
-void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr local_context)
-{
-    DataPartsVector parts_to_remove;
-    /// New scope controls lifetime of merge_blocker.
     {
-        /// Asks to complete merges and does not allow them to start.
-        /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = stopMergesAndWait();
-        String partition_id = getPartitionIDFromQuery(partition, local_context);
-        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        MergeTreeData::DataPartsVector parts_to_remove;
+        auto metadata_snapshot = getInMemoryMetadataPtr();
 
-        /// TODO should we throw an exception if parts_to_remove is empty?
-        removePartsFromWorkingSet(parts_to_remove, true);
-    }
-
-    dropPartsImpl(std::move(parts_to_remove), detach);
-}
-
-void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach)
-{
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-
-    if (detach)
-    {
-        /// If DETACH clone parts to detached/ directory
-        /// NOTE: no race with background cleanup until we hold pointers to parts
-        for (const auto & part : parts_to_remove)
+        if (drop_part)
         {
-            LOG_INFO(log, "Detaching {}", part->relative_path);
-            part->makeCloneInDetached("", metadata_snapshot);
+            auto part = outdatePart(partition->as<ASTLiteral &>().value.safeGet<String>(), throw_if_noop);
+            /// Nothing to do, part was removed in some different way
+            if (!part)
+                return;
+
+            parts_to_remove.push_back(part);
         }
+        else
+        {
+            /// Asks to complete merges and does not allow them to start.
+            /// This protects against "revival" of data for a removed partition after completion of merge.
+            auto merge_blocker = stopMergesAndWait();
+            String partition_id = getPartitionIDFromQuery(partition, local_context);
+            parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+
+            /// TODO should we throw an exception if parts_to_remove is empty?
+            removePartsFromWorkingSet(parts_to_remove, true);
+        }
+
+        if (detach)
+        {
+            /// If DETACH clone parts to detached/ directory
+            /// NOTE: no race with background cleanup until we hold pointers to parts
+            for (const auto & part : parts_to_remove)
+            {
+                LOG_INFO(log, "Detaching {}", part->relative_path);
+                part->makeCloneInDetached("", metadata_snapshot);
+            }
+        }
+
+        if (deduplication_log)
+        {
+            for (const auto & part : parts_to_remove)
+                deduplication_log->dropPart(part->info);
+        }
+
+        if (detach)
+            LOG_INFO(log, "Detached {} parts.", parts_to_remove.size());
+        else
+            LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
     }
 
-    if (deduplication_log)
-    {
-        for (const auto & part : parts_to_remove)
-            deduplication_log->dropPart(part->info);
-    }
-
-    if (detach)
-        LOG_INFO(log, "Detached {} parts.", parts_to_remove.size());
-    else
-        LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
-
-    /// Need to destroy part objects before clearing them from filesystem.
-    parts_to_remove.clear();
     clearOldPartsFromFilesystem();
 }
 
@@ -1522,8 +1507,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         auto disk = part->volume->getDisk();
         String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = fs::path(part_path) / "checksums.txt";
-        String tmp_checksums_path = fs::path(part_path) / "checksums.txt.tmp";
+        String checksums_path = part_path + "checksums.txt";
+        String tmp_checksums_path = part_path + "checksums.txt.tmp";
         if (part->isStoredOnDisk() && !disk->exists(checksums_path))
         {
             try

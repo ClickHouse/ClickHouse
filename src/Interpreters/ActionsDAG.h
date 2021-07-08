@@ -88,6 +88,9 @@ public:
 
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
+        /// Some functions like `ignore()` always return constant but can't be replaced by constant it.
+        /// We calculate such constants in order to avoid unnecessary materialization, but prohibit it's folding.
+        bool allow_constant_folding = true;
 
         void toTree(JSONBuilder::JSONMap & map) const;
     };
@@ -212,7 +215,6 @@ public:
     /// Conversion should be possible with only usage of CAST function and renames.
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
     /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
-    /// @param new_names - Output parameter for new column names when add_casted_columns is used.
     static ActionsDAGPtr makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,

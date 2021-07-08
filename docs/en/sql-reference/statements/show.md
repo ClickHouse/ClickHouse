@@ -240,7 +240,7 @@ If user is not specified, the query returns privileges for the current user.
 
 Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
 
-`SHOW CREATE USER` does not output user passwords.
+`SHOW CREATE USER` doesn’t output user passwords.
 
 ### Syntax {#show-create-user-syntax}
 
@@ -366,9 +366,9 @@ Returns a list of clusters. All available clusters are listed in the [system.clu
 
 ``` sql
 SHOW CLUSTER '<name>'
-SHOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
+SWOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
 ```
-### Examples {#show-cluster-examples}
+### Examples 
 
 Query:
 

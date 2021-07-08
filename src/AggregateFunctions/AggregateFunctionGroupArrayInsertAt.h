@@ -9,8 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 
-#include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -21,7 +20,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {

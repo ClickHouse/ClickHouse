@@ -198,7 +198,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
-std::string PrewhereInfo::dump() const
+std::string PrewhereDAGInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
@@ -211,6 +211,11 @@ std::string PrewhereInfo::dump() const
     if (prewhere_actions)
     {
         ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
+    }
+
+    if (remove_columns_actions)
+    {
+        ss << "remove_columns_actions " << remove_columns_actions->dumpDAG() << "\n";
     }
 
     ss << "remove_prewhere_column " << remove_prewhere_column

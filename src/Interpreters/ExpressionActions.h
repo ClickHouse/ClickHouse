@@ -253,7 +253,7 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ActionsDAGPtr getLastActions(bool allow_empty = false)  // -V1071
+    ActionsDAGPtr getLastActions(bool allow_empty = false)
     {
         if (steps.empty())
         {

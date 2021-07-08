@@ -1,6 +1,4 @@
 #!/bin/bash
-# shellcheck disable=SC2094
-# shellcheck disable=SC2086
 
 set -x
 
@@ -39,17 +37,6 @@ function stop()
 
 function start()
 {
-    # Rename existing log file - it will be more convenient to read separate files for separate server runs.
-    if [ -f '/var/log/clickhouse-server/clickhouse-server.log' ]
-    then
-        log_file_counter=1
-        while [ -f "/var/log/clickhouse-server/clickhouse-server.log.${log_file_counter}" ]
-        do
-            log_file_counter=$((log_file_counter + 1))
-        done
-        mv '/var/log/clickhouse-server/clickhouse-server.log' "/var/log/clickhouse-server/clickhouse-server.log.${log_file_counter}"
-    fi
-
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
@@ -68,7 +55,6 @@ function start()
     done
 
     echo "
-set follow-fork-mode child
 handle all noprint
 handle SIGSEGV stop print
 handle SIGBUS stop print
@@ -104,7 +90,7 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-./stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
+./stress --hung-check --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
     && echo -e 'Test script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
@@ -154,11 +140,7 @@ zgrep -Fa "########################################" /test_output/* > /dev/null 
     && echo -e 'Killed by signal (output files)\tFAIL' >> /test_output/test_results.tsv
 
 # Put logs into /test_output/
-for log_file in /var/log/clickhouse-server/clickhouse-server.log*
-do
-    pigz < "${log_file}" > /test_output/"$(basename ${log_file})".gz
-done
-
+pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
 tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:

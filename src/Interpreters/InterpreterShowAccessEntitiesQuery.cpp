@@ -17,8 +17,8 @@ namespace ErrorCodes
 using EntityType = IAccessEntity::Type;
 
 
-InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-    : WithMutableContext(context_), query_ptr(query_ptr_)
+InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, ContextPtr context_)
+    : WithContext(context_), query_ptr(query_ptr_)
 {
 }
 
