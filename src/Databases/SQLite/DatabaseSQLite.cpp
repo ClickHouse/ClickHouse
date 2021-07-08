@@ -1,5 +1,7 @@
 #include "DatabaseSQLite.h"
 
+#if USE_SQLITE
+
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include <Interpreters/Context.h>
@@ -149,3 +151,5 @@ void DatabaseSQLite::shutdown()
 }
 
 }
+
+#endif

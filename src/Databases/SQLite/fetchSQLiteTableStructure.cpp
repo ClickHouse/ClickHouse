@@ -1,5 +1,7 @@
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 
+#if USE_SQLITE
+
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -86,3 +88,5 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
 }
 
 }
+
+#endif

@@ -6,7 +6,6 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Databases/SQLite/DatabaseSQLite.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -41,6 +40,10 @@
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
+#endif
+
+#if USE_SQLITE
+#include <Databases/SQLite/DatabaseSQLite.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -225,20 +228,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                                                     std::move(database_replicated_settings), context);
     }
 
-    else if (engine_name == "SQLite")
-    {
-        const ASTFunction * engine = engine_define->engine;
-
-        if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception("SQLite database requires 1 argument: database path", ErrorCodes::BAD_ARGUMENTS);
-
-        const auto & arguments = engine->arguments->children;
-
-        String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
-
-        return std::make_shared<DatabaseSQLite>(context, engine_define, database_path);
-    }
-
 #if USE_LIBPQXX
 
     else if (engine_name == "PostgreSQL")
@@ -316,6 +305,22 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     }
 
 
+#endif
+
+#if USE_SQLITE
+    else if (engine_name == "SQLite")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 1)
+            throw Exception("SQLite database requires 1 argument: database path", ErrorCodes::BAD_ARGUMENTS);
+
+        const auto & arguments = engine->arguments->children;
+
+        String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
+
+        return std::make_shared<DatabaseSQLite>(context, engine_define, database_path);
+    }
 #endif
 
     throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
