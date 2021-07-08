@@ -24,12 +24,6 @@ INSERT INTO tab VALUES (6), (6);
 SELECT * FROM tab;
 
 
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab ENGINE = AggregatingMemory() AS SELECT sum(x), x FROM numbers(1) ARRAY JOIN [number] AS x GROUP BY x;
-INSERT INTO tab SELECT number FROM numbers(4);
-SELECT * FROM tab ORDER BY x;
-
-
-DROP TABLE IF EXISTS abc;
-DROP TABLE IF EXISTS abc_sum;
-DROP TABLE IF EXISTS tab;
+CREATE TABLE tab_join ENGINE = AggregatingMemory() AS SELECT sum(x), x FROM numbers(1) ARRAY JOIN [number] AS x GROUP BY x;
+INSERT INTO tab_join SELECT number FROM numbers(4);
+SELECT * FROM tab_join ORDER BY x;
