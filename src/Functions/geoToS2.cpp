@@ -5,11 +5,10 @@
 #if USE_S2_GEOMETRY
 
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
+#include <Common/NaNUtils.h>
 #include <common/range.h>
 
 #include "s2_fwd.h"
@@ -28,15 +27,18 @@ namespace ErrorCodes
 namespace
 {
 
-/// TODO: Comment this
-class FunctionS2CellsIntersect : public IFunction
+/**
+ * Accepts points of the form (longitude, latitude)
+ * Returns s2 identifier
+ */
+class FunctionGeoToS2 : public IFunction
 {
 public:
-    static constexpr auto name = "S2CellsIntersect";
+    static constexpr auto name = "geoToS2";
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionS2CellsIntersect>();
+        return std::make_shared<FunctionGeoToS2>();
     }
 
     std::string getName() const override
@@ -53,33 +55,41 @@ public:
         for (size_t i = 0; i < getNumberOfArguments(); ++i)
         {
             const auto * arg = arguments[i].get();
-            if (!WhichDataType(arg).isUInt64()) {
+            if (!WhichDataType(arg).isFloat64()) {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be UInt64",
-                    arg->getName(), i, getName()
-                    );
+                    "Illegal type {} of argument {} of function {}. Must be Float64",
+                    arg->getName(), i, getName());
             }
         }
 
-        return std::make_shared<DataTypeUInt8>();
+        return std::make_shared<DataTypeUInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_id_first = arguments[0].column.get();
-        const auto * col_id_second = arguments[1].column.get();
+        const auto * col_lon = arguments[0].column.get();
+        const auto * col_lat = arguments[1].column.get();
 
-        auto dst = ColumnVector<UInt8>::create();
+        auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
         for (const auto row : collections::range(0, input_rows_count))
         {
-            const UInt64 id_first = col_id_first->getInt(row);
-            const UInt64 id_second = col_id_second->getInt(row);
+            const Float64 lon = col_lon->getFloat64(row);
+            const Float64 lat = col_lat->getFloat64(row);
 
-            dst_data[row] = S2CellId(id_first).intersects(S2CellId(id_second));
+            if (isNaN(lon) || isNaN(lat))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments must not be NaN");
+
+            /// S2 acceptes point as (latitude, longitude)
+            S2LatLng lat_lng = S2LatLng::FromDegrees(lat, lon);
+            S2CellId id(lat_lng);
+
+            dst_data[row] = id.id();
         }
 
         return dst;
@@ -89,9 +99,9 @@ public:
 
 }
 
-void registerFunctionS2CellsIntersect(FunctionFactory & factory)
+void registerFunctionGeoToS2(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionS2CellsIntersect>();
+    factory.registerFunction<FunctionGeoToS2>();
 }
 
 

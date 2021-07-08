@@ -43,10 +43,9 @@ void registerFunctionH3HexAreaM2(FunctionFactory &);
 #endif
 
 #if USE_S2_GEOMETRY
-void registerFunctionDegreesToS2(FunctionFactory &);
-void registerFunctionRadiansToS2(FunctionFactory &);
-void registerFunctionS2GetNeighbors(FunctionFactory &);
+void registerFunctionGeoToS2(FunctionFactory &);
 void registerFunctionS2ToGeo(FunctionFactory &);
+void registerFunctionS2GetNeighbors(FunctionFactory &);
 void registerFunctionS2CellsIntersect(FunctionFactory &);
 void registerFunctionS2CapContains(FunctionFactory &);
 void registerFunctionS2CapUnion(FunctionFactory &);
@@ -95,10 +94,9 @@ void registerFunctionsGeo(FunctionFactory & factory)
 #endif
 
 #if USE_S2_GEOMETRY
-    registerFunctionDegreesToS2(factory);
-    registerFunctionRadiansToS2(factory);
-    registerFunctionS2GetNeighbors(factory);
+    registerFunctionGeoToS2(factory);
     registerFunctionS2ToGeo(factory);
+    registerFunctionS2GetNeighbors(factory);
     registerFunctionS2CellsIntersect(factory);
     registerFunctionS2CapContains(factory);
     registerFunctionS2CapUnion(factory);

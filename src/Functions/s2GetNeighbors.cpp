@@ -4,17 +4,15 @@
 
 #if USE_S2_GEOMETRY
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <common/range.h>
 
 #include "s2_fwd.h"
-
-class S2CellId;
 
 namespace DB
 {
@@ -28,15 +26,18 @@ namespace ErrorCodes
 namespace
 {
 
-/// TODO: Comment this
-class FunctionS2ToGeo : public IFunction
+/**
+ * Each cell in s2 library is a quadrilateral bounded by four geodesics.
+ * So, each cell has 4 neighbors
+ */
+class FunctionS2GetNeighbors : public IFunction
 {
 public:
-    static constexpr auto name = "S2ToGeo";
+    static constexpr auto name = "s2GetNeighbors";
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionS2ToGeo>();
+        return std::make_shared<FunctionS2GetNeighbors>();
     }
 
     std::string getName() const override
@@ -50,15 +51,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments != 1) {
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(), number_of_arguments);
-        }
-
         const auto * arg = arguments[0].get();
 
         if (!WhichDataType(arg).isUInt64()) {
@@ -68,46 +60,46 @@ public:
                 arg->getName(), 1, getName());
         }
 
-        DataTypePtr element = std::make_shared<DataTypeFloat64>();
-
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col_id = arguments[0].column.get();
 
-        auto col_res_first = ColumnFloat64::create();
-        auto col_res_second = ColumnFloat64::create();
-
-        auto & vec_res_first = col_res_first->getData();
-        vec_res_first.reserve(input_rows_count);
-
-        auto & vec_res_second = col_res_second->getData();
-        vec_res_second.reserve(input_rows_count);
+        auto dst = ColumnArray::create(ColumnUInt64::create());
+        auto & dst_data = dst->getData();
+        auto & dst_offsets = dst->getOffsets();
+        dst_offsets.resize(input_rows_count);
+        size_t current_offset = 0;
 
         for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 id = col_id->getUInt(row);
 
             S2CellId cell_id(id);
-            S2Point point = cell_id.ToPoint();
-            S2LatLng ll(point);
+            S2CellId neighbors[4];
+            cell_id.GetEdgeNeighbors(neighbors);
 
-            vec_res_first.emplace_back(ll.lng().degrees());
-            vec_res_second.emplace_back(ll.lat().degrees());
+            dst_data.reserve(dst_data.size() + 4);
+            for (auto & neighbor : neighbors)
+            {
+                ++current_offset;
+                dst_data.insert(neighbor.id());
+            }
+            dst_offsets[row] = current_offset;
         }
 
-        return ColumnTuple::create(Columns{std::move(col_res_first), std::move(col_res_second)});
+        return dst;
     }
 
 };
 
 }
 
-void registerFunctionS2ToGeo(FunctionFactory & factory)
+void registerFunctionS2GetNeighbors(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionS2ToGeo>();
+    factory.registerFunction<FunctionS2GetNeighbors>();
 }
 
 

@@ -5,7 +5,9 @@
 #if USE_S2_GEOMETRY
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <common/range.h>
@@ -26,15 +28,17 @@ namespace ErrorCodes
 namespace
 {
 
-/// TODO: Comment this
-class FunctionDegreesToS2 : public IFunction
+/**
+ * Each cell in s2 library is a quadrilateral bounded by four geodesics.
+ */
+class FunctionS2CellsIntersect : public IFunction
 {
 public:
-    static constexpr auto name = "degreesToS2";
+    static constexpr auto name = "s2CellsIntersect";
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionDegreesToS2>();
+        return std::make_shared<FunctionS2CellsIntersect>();
     }
 
     std::string getName() const override
@@ -51,36 +55,32 @@ public:
         for (size_t i = 0; i < getNumberOfArguments(); ++i)
         {
             const auto * arg = arguments[i].get();
-            if (!WhichDataType(arg).isFloat64()) {
+            if (!WhichDataType(arg).isUInt64()) {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be Float64",
-                    arg->getName(), i, getName()
-                    );
+                    "Illegal type {} of argument {} of function {}. Must be UInt64",
+                    arg->getName(), i, getName());
             }
         }
 
-        return std::make_shared<DataTypeUInt64>();
+        return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_lon = arguments[0].column.get();
-        const auto * col_lat = arguments[1].column.get();
+        const auto * col_id_first = arguments[0].column.get();
+        const auto * col_id_second = arguments[1].column.get();
 
-        auto dst = ColumnVector<UInt64>::create();
+        auto dst = ColumnUInt8::create();
         auto & dst_data = dst->getData();
-        dst_data.resize(input_rows_count);
+        dst_data.reserve(input_rows_count);
 
         for (const auto row : collections::range(0, input_rows_count))
         {
-            const Float64 lon = col_lon->getFloat64(row);
-            const Float64 lat = col_lat->getFloat64(row);
+            const UInt64 id_first = col_id_first->getInt(row);
+            const UInt64 id_second = col_id_second->getInt(row);
 
-            S2LatLng lat_lng = S2LatLng::FromDegrees(lat, lon);
-            S2CellId id(lat_lng);
-
-            dst_data[row] = id.id();
+            dst_data.emplace_back(S2CellId(id_first).intersects(S2CellId(id_second)));
         }
 
         return dst;
@@ -90,9 +90,9 @@ public:
 
 }
 
-void registerFunctionDegreesToS2(FunctionFactory & factory)
+void registerFunctionS2CellsIntersect(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionDegreesToS2>();
+    factory.registerFunction<FunctionS2CellsIntersect>();
 }
 
 
