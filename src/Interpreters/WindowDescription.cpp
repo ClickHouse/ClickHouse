@@ -160,7 +160,7 @@ void WindowFrame::checkValid() const
         bool begin_less_equal_end;
         if (begin_preceding && end_preceding)
         {
-            begin_less_equal_end = begin_offset >= end_offset;
+            begin_less_equal_end = begin_offset.get<Int64>() >= end_offset.get<Int64>();
         }
         else if (begin_preceding && !end_preceding)
         {
@@ -172,7 +172,7 @@ void WindowFrame::checkValid() const
         }
         else /* if (!begin_preceding && !end_preceding) */
         {
-            begin_less_equal_end = begin_offset <= end_offset;
+            begin_less_equal_end = begin_offset.get<Int64>() <= end_offset.get<Int64>();
         }
 
         if (!begin_less_equal_end)
