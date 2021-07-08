@@ -261,3 +261,4 @@
 01852_s2_get_neighbours
 01853_s2_cells_intersect
 01854_s2_cap_contains
+01854_s2_cap_union
