@@ -469,6 +469,7 @@
         while (graph.firstChild) {
             graph.removeChild(graph.lastChild);
         }
+        graph.style.display = 'none';
 
         document.getElementById('data-unparsed').innerText = '';
         document.getElementById('data-unparsed').style.display = 'none';
@@ -627,9 +628,10 @@
 
         let render = new dagreD3.render();
 
-        render(d3.select("#graph"), graph);
-
         let svg = document.getElementById('graph');
+        svg.style.display = 'block';
+
+        render(d3.select("#graph"), graph);
 
         svg.style.width = graph.graph().width;
         svg.style.height = graph.graph().height;
