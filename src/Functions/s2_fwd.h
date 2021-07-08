@@ -1,4 +1,4 @@
-
+#pragma once
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
