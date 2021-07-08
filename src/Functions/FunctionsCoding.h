@@ -25,6 +25,7 @@
 #include <Common/hex.h>
 #include <Common/typeid_cast.h>
 #include <Common/BitHelpers.h>
+#include <Functions/FunctionFactory.h>
 
 #include <arpa/inet.h>
 #include <common/range.h>
@@ -954,6 +955,8 @@ public:
 template <typename Impl>
 class EncodeToBinaryRepr : public IFunction
 {
+private:
+    ContextPtr context;
 public:
     static constexpr auto name = Impl::name;
     static constexpr size_t word_size = Impl::word_size;
@@ -978,17 +981,28 @@ public:
             !which.isDateTime64() &&
             !which.isUInt() &&
             !which.isFloat() &&
-            !which.isDecimal())
+            !which.isDecimal() &&
+            !which.isAggregateFunction())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IColumn * column = arguments[0].column.get();
         ColumnPtr res_column;
+
+        WhichDataType which(column->getDataType());
+        if (which.isAggregateFunction())
+        {
+            auto to_string = FunctionFactory::instance().get("toString", context);
+            const ColumnPtr col = to_string->build(arguments)->execute(arguments, result_type, input_rows_count);
+            const auto * name_col = checkAndGetColumn<ColumnString>(col.get());
+            tryExecuteString(name_col, res_column);
+            return res_column;
+        }
 
         if (tryExecuteUInt<UInt8>(column, res_column) ||
             tryExecuteUInt<UInt16>(column, res_column) ||
