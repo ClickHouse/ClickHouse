@@ -13,8 +13,6 @@
 namespace DB
 {
 
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -215,9 +213,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
         }
         workspace.argument_columns.assign(f.argument_names.size(), nullptr);
 
-        /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
-        workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
-
+        workspace.window_function_impl = aggregate_function->asWindowFunction();
         if (!workspace.window_function_impl)
         {
             workspace.aggregate_function_state.reset(
@@ -1345,12 +1341,13 @@ struct WindowFunction
 {
     std::string name;
 
-    WindowFunction(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+    WindowFunction(const std::string & name_, const DataTypes & argument_types_,
+               const Array & parameters_)
         : IAggregateFunctionHelper<WindowFunction>(argument_types_, parameters_)
         , name(name_)
     {}
 
-    bool isOnlyWindowFunction() const override { return true; }
+    IWindowFunction * asWindowFunction() override { return this; }
 
     [[noreturn]] void fail() const
     {
@@ -1574,35 +1571,35 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     // instead of adding separate logic for them.
 
     factory.registerFunction("rank", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
+            const DataTypes & argument_types, const Array & parameters)
         {
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
         });
 
     factory.registerFunction("dense_rank", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
+            const DataTypes & argument_types, const Array & parameters)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
         });
 
     factory.registerFunction("row_number", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
+            const DataTypes & argument_types, const Array & parameters)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
         });
 
     factory.registerFunction("lagInFrame", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
+            const DataTypes & argument_types, const Array & parameters)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
         });
 
     factory.registerFunction("leadInFrame", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
+            const DataTypes & argument_types, const Array & parameters)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);

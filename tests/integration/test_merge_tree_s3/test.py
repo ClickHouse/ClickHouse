@@ -6,7 +6,10 @@ import threading
 import os
 
 import pytest
-from helpers.cluster import ClickHouseCluster, get_instances_dir
+from helpers.cluster import ClickHouseCluster
+
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler())
 
 
 # By default the exceptions that was throwed in threads will be ignored
@@ -30,7 +33,7 @@ class SafeThread(threading.Thread):
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, './{}/node/configs/config.d/storage_conf.xml'.format(get_instances_dir()))
+CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/node/configs/config.d/storage_conf.xml')
 
 
 def replace_config(old, new):

@@ -1,7 +1,7 @@
 #include "MySQLHandler.h"
 
 #include <limits>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <Columns/ColumnVector.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
@@ -219,7 +219,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
             int ret = socket().receiveBytes(buf + pos, packet_size - pos);
             if (ret == 0)
             {
-                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3", ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3.", ErrorCodes::CANNOT_READ_ALL_DATA);
             }
             pos += ret;
         }

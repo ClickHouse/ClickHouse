@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/File.h>
 #include <Common/typeid_cast.h>
 #include <DataStreams/ITTLAlgorithm.h>
 #include <DataStreams/OneBlockInputStream.h>
@@ -150,7 +151,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
-        result.emplace_back(Block(block), Row{});
+        result.emplace_back(Block(block), Row());
         return result;
     }
 

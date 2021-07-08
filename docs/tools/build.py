@@ -87,7 +87,6 @@ def build_for_lang(lang, args):
         website_url = 'https://clickhouse.tech'
         site_name = site_names.get(lang, site_names['en']) % ''
         site_name = site_name.replace('  ', ' ')
-
         raw_config = dict(
             site_name=site_name,
             site_url=f'{website_url}/docs/{lang}/',
@@ -95,7 +94,7 @@ def build_for_lang(lang, args):
             site_dir=site_dir,
             strict=True,
             theme=theme_cfg,
-            copyright='©2016–2021 Yandex LLC',
+            copyright='©2016–2020 Yandex LLC',
             use_directory_urls=True,
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',

@@ -1,3 +1,5 @@
+#include <Poco/File.h>
+
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -40,7 +42,7 @@ static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
 }
 
 
-InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
+InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_)
 {
 }
 

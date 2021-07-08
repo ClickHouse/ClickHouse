@@ -338,7 +338,7 @@ or
 
 ``` sql
 LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH ./user_files/test_dict))
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}
