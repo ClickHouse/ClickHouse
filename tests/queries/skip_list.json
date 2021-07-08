@@ -714,6 +714,8 @@
         "01804_dictionary_decimal256_type",
         "01870_modulo_partition_key",
         "01889_postgresql_protocol_null_fields",
+        "01889_check_row_policy_defined_using_user_function",
+        "01921_concurrent_ttl_and_normal_merges_zookeeper_long", // heavy test, better to run sequentially
         "01850_dist_INSERT_preserve_error" // uses cluster with different static databases shard_0/shard_1
     ]
 }
