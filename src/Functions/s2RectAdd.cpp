@@ -22,7 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -53,12 +52,11 @@ public:
         for (size_t index = 0; index < getNumberOfArguments(); ++index)
         {
             const auto * arg = arguments[index].get();
-            if (!WhichDataType(arg).isUInt64()) {
+            if (!WhichDataType(arg).isUInt64())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument {} of function {}. Must be UInt64",
                     arg->getName(), index, getName());
-            }
         }
 
         DataTypePtr element = std::make_shared<DataTypeUInt64>();
