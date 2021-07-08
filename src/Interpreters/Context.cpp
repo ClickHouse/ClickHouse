@@ -2717,7 +2717,7 @@ void Context::setMySQLProtocolContext(MySQLWireContext * mysql_context)
 
 MySQLWireContext * Context::getMySQLProtocolContext() const
 {
-    assert((mysql_protocol_context == nullptr) == (session_context.lock().get() == nullptr));
+    assert(!mysql_protocol_context || session_context.lock().get());
     return mysql_protocol_context;
 }
 
