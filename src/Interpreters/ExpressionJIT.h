@@ -5,60 +5,99 @@
 #endif
 
 #if USE_EMBEDDED_COMPILER
+#    include <set>
+#    include <Functions/IFunctionImpl.h>
+#    include <Interpreters/Context.h>
+#    include <Interpreters/ExpressionActions.h>
 #    include <Common/LRUCache.h>
-#    include <Common/HashTable/Hash.h>
+
 
 namespace DB
 {
 
-class CompiledFunction;
+using CompilableExpression = std::function<llvm::Value * (llvm::IRBuilderBase &, const ValuePlaceholders &)>;
 
-class CompiledFunctionCacheEntry
+struct LLVMModuleState;
+
+class LLVMFunction : public IFunctionBaseImpl
 {
+    std::string name;
+    DataTypes arg_types;
+
+    std::vector<FunctionBasePtr> originals;
+    CompilableExpression expression;
+
+    std::unique_ptr<LLVMModuleState> module_state;
+
 public:
-    CompiledFunctionCacheEntry(std::shared_ptr<CompiledFunction> compiled_function_, size_t compiled_function_size_)
-        : compiled_function(std::move(compiled_function_))
-        , compiled_function_size(compiled_function_size_)
-    {}
 
-    std::shared_ptr<CompiledFunction> getCompiledFunction() const { return compiled_function; }
-
-    size_t getCompiledFunctionSize() const { return compiled_function_size; }
-
-private:
-    std::shared_ptr<CompiledFunction> compiled_function;
-
-    size_t compiled_function_size;
-};
-
-struct CompiledFunctionWeightFunction
-{
-    size_t operator()(const CompiledFunctionCacheEntry & compiled_function) const
+    /// LLVMFunction is a compiled part of ActionsDAG.
+    /// We store this part as independent DAG with minial required information to compile it.
+    struct CompileNode
     {
-        return compiled_function.getCompiledFunctionSize();
-    }
+        enum class NodeType
+        {
+            INPUT = 0,
+            CONSTANT = 1,
+            FUNCTION = 2,
+        };
+
+        NodeType type;
+        DataTypePtr result_type;
+
+        /// For CONSTANT
+        ColumnPtr column;
+
+        /// For FUNCTION
+        FunctionBasePtr function;
+        std::vector<size_t> arguments;
+    };
+
+    /// DAG is represented as list of nodes stored in in-order traverse order.
+    /// Expression (a + 1) + (b + 1) will be represented like chain: a, 1, a + 1, b, b + 1, (a + 1) + (b + 1).
+    struct CompileDAG : public std::vector<CompileNode>
+    {
+        std::string dump() const;
+        UInt128 hash() const;
+    };
+
+    explicit LLVMFunction(const CompileDAG & dag);
+
+    bool isCompilable() const override { return true; }
+
+    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override;
+
+    String getName() const override { return name; }
+
+    const DataTypes & getArgumentTypes() const override { return arg_types; }
+
+    const DataTypePtr & getResultType() const override { return originals.back()->getResultType(); }
+
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override;
+
+    bool isDeterministic() const override;
+
+    bool isDeterministicInScopeOfQuery() const override;
+
+    bool isSuitableForConstantFolding() const override;
+
+    bool isInjective(const ColumnsWithTypeAndName & sample_block) const override;
+
+    bool hasInformationAboutMonotonicity() const override;
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override;
+
+    const LLVMModuleState * getLLVMModuleState() const { return module_state.get(); }
 };
 
 /** This child of LRUCache breaks one of it's invariants: total weight may be changed after insertion.
  * We have to do so, because we don't known real memory consumption of generated LLVM code for every function.
  */
-class CompiledExpressionCache : public LRUCache<UInt128, CompiledFunctionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>
+class CompiledExpressionCache : public LRUCache<UInt128, IFunctionBase, UInt128Hash>
 {
 public:
-    using Base = LRUCache<UInt128, CompiledFunctionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>;
+    using Base = LRUCache<UInt128, IFunctionBase, UInt128Hash>;
     using Base::Base;
-};
-
-class CompiledExpressionCacheFactory
-{
-private:
-    std::unique_ptr<CompiledExpressionCache> cache;
-
-public:
-    static CompiledExpressionCacheFactory & instance();
-
-    void init(size_t cache_size);
-    CompiledExpressionCache * tryGetCache();
 };
 
 }

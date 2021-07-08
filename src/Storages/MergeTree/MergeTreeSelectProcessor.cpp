@@ -23,7 +23,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MarkRanges mark_ranges_,
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
-    ExpressionActionsSettings actions_settings,
     bool check_columns_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
@@ -32,7 +31,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     :
     MergeTreeBaseSelectProcessor{
         metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
-        storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
+        storage_, metadata_snapshot_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
@@ -48,7 +47,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     size_t total_rows = data_part->index_granularity.getRowsCountInRanges(all_mark_ranges);
 
     if (!quiet)
-        LOG_DEBUG(log, "Reading {} ranges from part {}, approx. {} rows starting from {}",
+        LOG_TRACE(log, "Reading {} ranges from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
@@ -88,9 +87,9 @@ try
     if (!reader)
     {
         if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
+            owned_uncompressed_cache = storage.global_context.getUncompressedCache();
 
-        owned_mark_cache = storage.getContext()->getMarkCache();
+        owned_mark_cache = storage.global_context.getMarkCache();
 
         reader = data_part->getReader(task_columns.columns, metadata_snapshot, all_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);

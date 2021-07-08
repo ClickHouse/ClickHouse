@@ -105,7 +105,7 @@ struct DivideIntegralImpl
             auto res = checkedDivision(CastA(a), CastB(b));
 
             if constexpr (std::is_floating_point_v<decltype(res)>)
-                if (isNaN(res) || res >= static_cast<double>(std::numeric_limits<Result>::max()) || res <= std::numeric_limits<Result>::lowest())
+                if (isNaN(res) || res >= std::numeric_limits<Result>::max() || res <= std::numeric_limits<Result>::lowest())
                     throw Exception("Cannot perform integer division, because it will produce infinite or too large number",
                         ErrorCodes::ILLEGAL_DIVISION);
 
@@ -170,12 +170,6 @@ struct ModuloImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
 #endif
-};
-
-template <typename A, typename B>
-struct ModuloLegacyImpl : ModuloImpl<A, B>
-{
-    using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
 };
 
 }

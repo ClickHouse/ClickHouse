@@ -5,7 +5,7 @@
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
@@ -13,6 +13,7 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
+#include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
 namespace DB
 {
@@ -23,7 +24,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -161,12 +161,12 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     return res;
 }
 
-MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, ContextPtr context) const
+MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, const Context & context) const
 {
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    const auto * machine_learning_function = func.get();
+    auto * machine_learning_function = func.get();
     if (machine_learning_function)
     {
         if (data.size() == 1)
@@ -484,7 +484,7 @@ Arena & ColumnAggregateFunction::createOrGetArena()
 }
 
 
-static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, const IAggregateFunction * func)
+static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, IAggregateFunction * func)
 {
     data.push_back(arena.alignedAlloc(func->sizeOfData(), func->alignOfData()));
     try
@@ -551,11 +551,6 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
     func->deserialize(data.back(), read_buffer, &dst_arena);
 
     return read_buffer.position();
-}
-
-const char * ColumnAggregateFunction::skipSerializedInArena(const char *) const
-{
-    throw Exception("Method skipSerializedInArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void ColumnAggregateFunction::popBack(size_t n)
