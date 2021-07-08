@@ -92,7 +92,7 @@ class GCNOParser(BinaryParser):
             raise Exception("Invalid version")
 
     def load_file_header(self, f):
-        magic = self.read_quad_char(f).decode("utf-8")
+        magic = f.read(4).decode("utf-8")
 
         if magic == "gcno":
             self.is_le = False
@@ -158,8 +158,8 @@ class GCNOParser(BinaryParser):
         # ignore function id, line checksum, cfg checksum
         self.read_uint32(f), self.read_uint32(f), self.read_uint32(f)
 
-        name = self.read_padded_string(f)
-        filename = self.read_padded_string(f)
+        name = self.read_str(f)
+        filename = self.read_str(f)
 
         self.read_uint32(f)  # ignore start_line
 
@@ -174,7 +174,7 @@ class GCNOParser(BinaryParser):
 
             if line != 0:
                 line_set.append(line)
-            elif len(self.read_padded_string(f)) == 0:  # ignore line_str
+            elif len(self.read_str(f)) == 0:  # ignore line_str
                 return block_no, line_set
 
     def read_arcs_record(self, f, record_len):

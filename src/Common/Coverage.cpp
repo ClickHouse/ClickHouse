@@ -46,6 +46,13 @@ void Writer::countersCallback(bool * start, bool * end) noexcept
     current = {start, end};
 }
 
+
+void Writer::printErrnoAndThrow() const
+{
+    LOG_FATAL(base_log, "{}", strerror(errno));
+    throw;
+}
+
 void Writer::onServerInitialized()
 {
     // Writer constructor occurs before Poco internal structures initialization.
@@ -62,26 +69,20 @@ void Writer::onServerInitialized()
     struct sigaction test_change = { .sa_handler = [](int) { Writer::instance().onTestFinished(); } };
     struct sigaction shut_down = { .sa_handler = [](int) { Writer::instance().onShutRuntime(); } };
 
-    auto print_and_exit = [this]
-    {
-        LOG_FATAL(base_log, "{}", strerror(errno));
-        throw;
-    };
+    if (sigaction(SIGRTMIN + 1, &test_change, nullptr) == -1) printErrnoAndThrow();
+    if (sigaction(SIGRTMIN + 2, &shut_down, nullptr) == -1) printErrnoAndThrow();
 
-    if (sigaction(SIGRTMIN + 1, &test_change, nullptr) == -1) print_and_exit();
-    if (sigaction(SIGRTMIN + 2, &shut_down, nullptr) == -1) print_and_exit();
-
-    const int fd = open(report_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
-    if (fd == -1) print_and_exit();
+    report_file_fd = open(report_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
+    if (report_file_fd == -1) printErrnoAndThrow();
 
     LOG_INFO(base_log, "Opened report file {}", report_path);
 
-    if (ftruncate(fd, report_file_size) == -1) print_and_exit();
+    if (ftruncate(report_file_fd, report_file_size_upper_limit) == -1) printErrnoAndThrow();
 
-    report_file_ptr = mmap(nullptr, report_file_size, PROT_WRITE, MAP_SHARED, fd, 0 /*offset*/);
+    void * const ptr = mmap(nullptr, report_file_size_upper_limit, PROT_WRITE, MAP_SHARED, report_file_fd, 0);
+    if (ptr == MAP_FAILED) printErrnoAndThrow();
 
-    if (report_file_ptr == MAP_FAILED) print_and_exit();
-    if (close(fd) == -1) print_and_exit();
+    report_file_ptr = static_cast<uint32_t *>(ptr);
 
     mergeAndWriteHeader(symbolizeAddrsIntoLocalCaches());
 
@@ -178,10 +179,10 @@ void Writer::mergeAndWriteHeader(const LocalCaches& caches)
     LOG_INFO(base_log, "Found {} source files", source_files.size());
     assert(source_files.size() > 2000);
 
-    uint32_t * const report_ptr = static_cast<uint32_t *>(report_file_ptr);
+    uint32_t * const ptr = report_file_ptr;
 
-    report_ptr[0] = static_cast<uint32_t>(Magic::ReportHeader);
-    report_ptr[++report_file_pos] = source_files.size();
+    ptr[0] = static_cast<uint32_t>(Magic::ReportHeader);
+    ptr[++report_file_pos] = source_files.size();
 
     for (const auto& [path, instrumented_blocks] : source_files)
     {
@@ -190,42 +191,45 @@ void Writer::mergeAndWriteHeader(const LocalCaches& caches)
         const uint32_t path_padding = (path_mod4 == 0) ? 0 : (4 - path_mod4);
         const uint32_t path_word_len = (path_size + path_padding) / 4;
 
-        report_ptr[++report_file_pos] = path_word_len;
+        ptr[++report_file_pos] = path_word_len;
 
-        char * const report_ptr_char = reinterpret_cast<char *>(&report_ptr[++report_file_pos]);
+        char * const report_ptr_char = reinterpret_cast<char *>(&ptr[++report_file_pos]);
 
         memcpy(report_ptr_char, path.c_str(), path_size);
         memset(report_ptr_char + path_size, 0, path_padding);
 
         report_file_pos += path_word_len;
 
-        report_ptr[++report_file_pos] = instrumented_blocks.size();
+        ptr[report_file_pos] = instrumented_blocks.size(); // no increment here as already on empty position
 
         for (BBIndex index : instrumented_blocks)
         {
-            report_ptr[++report_file_pos] = index;
-            report_ptr[++report_file_pos] = instrumented_blocks_start_lines[index];
+            ptr[++report_file_pos] = index;
+            ptr[++report_file_pos] = instrumented_blocks_start_lines[index];
         }
     }
 }
 
 void Writer::onTestFinished()
 {
-    uint32_t * const report_ptr = reinterpret_cast<uint32_t*>(report_file_ptr);
-
-    report_ptr[++report_file_pos] = static_cast<uint32_t>(Magic::TestEntry);
+    report_file_ptr[++report_file_pos] = static_cast<uint32_t>(Magic::TestEntry);
 
     for (size_t bb_index = 0; bb_index < instrumented_basic_blocks; ++bb_index)
         if (current[bb_index])
         {
             current[bb_index] = false;
-            report_ptr[++report_file_pos] = bb_index;
+            report_file_ptr[++report_file_pos] = bb_index;
         }
 }
 
 void Writer::onShutRuntime()
 {
-    msync(report_file_ptr, report_file_size, MS_SYNC);
-    munmap(report_file_ptr, report_file_size);
+    msync(report_file_ptr, report_file_size_upper_limit, MS_SYNC);
+    munmap(report_file_ptr, report_file_size_upper_limit);
+
+    const size_t file_real_size = ++report_file_pos * sizeof(uint32_t);
+
+    if (ftruncate(report_file_fd, file_real_size) == -1) printErrnoAndThrow();
+    if (close(report_file_fd) == -1) printErrnoAndThrow();
 }
 }

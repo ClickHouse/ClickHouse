@@ -37,8 +37,9 @@ private:
 
     std::span<bool> current; /// Compiler-provided array of flags for each instrumented BB.
 
-    void * report_file_ptr{nullptr};
-    static constexpr size_t report_file_size = 150 * 1024 * 1024;
+    static constexpr size_t report_file_size_upper_limit = 150 * 1024 * 1024;
+    int report_file_fd {-1};
+    uint32_t * report_file_ptr {nullptr};
     size_t report_file_pos {0};
 
     using SourceSymbolizedData = std::vector<std::pair<BBIndex, Line>>;
@@ -47,5 +48,7 @@ private:
 
     LocalCaches symbolizeAddrsIntoLocalCaches();
     void mergeAndWriteHeader(const LocalCaches& caches);
+
+    [[noreturn]] void printErrnoAndThrow() const;
 };
 }
