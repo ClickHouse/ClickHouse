@@ -100,7 +100,7 @@ void WindowFrame::checkValid() const
                 && begin_offset.get<Int64>() < INT_MAX))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given.",
+                "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
                 toString(type),
                 applyVisitor(FieldVisitorToString(), begin_offset),
                 Field::Types::toString(begin_offset.getType()));
@@ -113,7 +113,7 @@ void WindowFrame::checkValid() const
                 && end_offset.get<Int64>() < INT_MAX))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given.",
+                "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
                 toString(type),
                 applyVisitor(FieldVisitorToString(), end_offset),
                 Field::Types::toString(end_offset.getType()));
