@@ -1265,23 +1265,7 @@ public:
         assert(2 == types.size() && 2 == values.size());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto * x = values[0];
-        auto * y = values[1];
-        if (!types[0]->equals(*types[1]))
-        {
-            llvm::Type * common;
-            if (x->getType()->isIntegerTy() && y->getType()->isIntegerTy())
-                common = b.getIntNTy(std::max(
-                    /// if one integer has a sign bit, make sure the other does as well. llvm generates optimal code
-                    /// (e.g. uses overflow flag on x86) for (word size + 1)-bit integer operations.
-                    x->getType()->getIntegerBitWidth() + (!typeIsSigned(*types[0]) && typeIsSigned(*types[1])),
-                    y->getType()->getIntegerBitWidth() + (!typeIsSigned(*types[1]) && typeIsSigned(*types[0]))));
-            else
-                /// (double, float) or (double, int_N where N <= double's mantissa width) -> double
-                common = b.getDoubleTy();
-            x = nativeCast(b, types[0], x, common);
-            y = nativeCast(b, types[1], y, common);
-        }
+        auto [x, y] = nativeCastToCommon(b, types[0], values[0], types[1], values[1]);
         auto * result = CompileOp<Op>::compile(b, x, y, typeIsSigned(*types[0]) || typeIsSigned(*types[1]));
         return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
     }

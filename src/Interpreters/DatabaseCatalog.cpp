@@ -28,6 +28,10 @@
 #    include <Storages/StorageMaterializeMySQL.h>
 #endif
 
+#if USE_LIBPQXX
+#    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace CurrentMetrics
@@ -234,6 +238,13 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             return {};
         }
 
+#if USE_LIBPQXX
+        if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
+        {
+            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext());
+        }
+#endif
+
 #if USE_MYSQL
         /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
         if (db_and_table.first->getEngineName() == "MaterializeMySQL")
@@ -244,6 +255,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #endif
         return db_and_table;
     }
+
 
     if (table_id.database_name == TEMPORARY_DATABASE)
     {

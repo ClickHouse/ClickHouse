@@ -92,22 +92,40 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
         }
 
         ASTPtr data_type = declare_column->data_type;
+        auto * data_type_function = data_type->as<ASTFunction>();
 
-        if (is_unsigned)
+        if (data_type_function)
         {
-            auto * data_type_function = data_type->as<ASTFunction>();
+            String type_name_upper = Poco::toUpper(data_type_function->name);
 
-            if (data_type_function)
+            if (is_unsigned)
             {
-                String type_name_upper = Poco::toUpper(data_type_function->name);
-
                 /// For example(in MySQL): CREATE TABLE test(column_name INT NOT NULL ... UNSIGNED)
-                if (type_name_upper.find("INT") != std::string::npos && !endsWith(type_name_upper, "SIGNED")
+                if (type_name_upper.find("INT") != String::npos && !endsWith(type_name_upper, "SIGNED")
                     && !endsWith(type_name_upper, "UNSIGNED"))
                     data_type_function->name = type_name_upper + " UNSIGNED";
             }
-        }
 
+            /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
+            /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
+            /// Elements on a position further than 32767 are assigned negative values, starting with -32768.
+            /// Note: Enum would be transformed to Enum8 if number of elements is less then 128, otherwise it would be transformed to Enum16.
+            if (type_name_upper.find("ENUM") != String::npos)
+            {
+                UInt16 i = 0;
+                for (ASTPtr & child : data_type_function->arguments->children)
+                {
+                    auto new_child = std::make_shared<ASTFunction>();
+                    new_child->name = "equals";
+                    auto * literal = child->as<ASTLiteral>();
+
+                    new_child->arguments = std::make_shared<ASTExpressionList>();
+                    new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(literal->value.get<String>()));
+                    new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(Int16(++i)));
+                    child = new_child;
+                }
+            }
+        }
         if (is_nullable)
             data_type = makeASTFunction("Nullable", data_type);
 
@@ -123,7 +141,6 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
             throw Exception("Columns of different size provided.", ErrorCodes::LOGICAL_ERROR);
 
     ColumnsDescription columns_description;
-    ColumnDescription column_description;
 
     for (
         auto [column_name_and_type, declare_column_ast] = std::tuple{columns_name_and_type.begin(), columns_definition->children.begin()};
@@ -139,10 +156,10 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
                 if (options->changes.count("comment"))
                     comment = options->changes.at("comment")->as<ASTLiteral>()->value.safeGet<String>();
 
-        column_description.name = column_name_and_type->name;
-        column_description.type = column_name_and_type->type;
+        ColumnDescription column_description(column_name_and_type->name, column_name_and_type->type);
         if (!comment.empty())
             column_description.comment = std::move(comment);
+
         columns_description.add(column_description);
     }
 
@@ -564,7 +581,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
         if (alter_command->type == MySQLParser::ASTAlterCommand::ADD_COLUMN)
         {
             const auto & additional_columns_name_and_type = getColumnsList(alter_command->additional_columns);
-            const auto & additional_columns = InterpreterCreateQuery::formatColumns(additional_columns_name_and_type);
+            const auto & additional_columns_description = createColumnsDescription(additional_columns_name_and_type, alter_command->additional_columns);
+            const auto & additional_columns = InterpreterCreateQuery::formatColumns(additional_columns_description);
 
             for (size_t index = 0; index < additional_columns_name_and_type.size(); ++index)
             {
@@ -658,7 +676,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 if (!alter_command->old_name.empty())
                     modify_columns.front().name = alter_command->old_name;
 
-                rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns)->children[0];
+                const auto & modify_columns_description = createColumnsDescription(modify_columns, alter_command->additional_columns);
+                rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns_description)->children[0];
 
                 if (!alter_command->column_name.empty())
                 {

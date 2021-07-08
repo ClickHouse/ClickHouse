@@ -65,7 +65,7 @@ By checking the row count:
 
 Query:
 
-``` sq;
+``` sql
 SELECT count() FROM recipes;
 ```
 
