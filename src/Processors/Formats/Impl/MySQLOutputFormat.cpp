@@ -25,7 +25,7 @@ void MySQLOutputFormat::setContext(ContextPtr context_)
     mysql_context = getContext()->getMySQLProtocolContext();
     if (!mysql_context)
     {
-        /// But it's also possible to specify MySQLWire as output format for clickhouse-client ot clickhouse-local.
+        /// But it's also possible to specify MySQLWire as output format for clickhouse-client or clickhouse-local.
         /// There is no MySQL protocol context in this case, so we create dummy one.
         own_mysql_context.emplace();
         mysql_context = &own_mysql_context.value();
