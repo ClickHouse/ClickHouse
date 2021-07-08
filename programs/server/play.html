@@ -613,10 +613,10 @@
         if (load_dagre_promise) { return load_dagre_promise; }
 
         load_dagre_promise = Promise.all([
-            loadJS('https://dagrejs.github.io/project/dagre/latest/dagre.min.js'),
-            loadJS('https://dagrejs.github.io/project/graphlib-dot/latest/graphlib-dot.min.js'),
-            loadJS('https://dagrejs.github.io/project/dagre-d3/latest/dagre-d3.min.js'),
-            loadJS('https://cdn.jsdelivr.net/npm/d3@7'),
+            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js'),
+            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js'),
+            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js'),
+            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0'),
         ]);
 
         return load_dagre_promise;
