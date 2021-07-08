@@ -385,6 +385,8 @@ void StorageAggregatingMemory::lazyInit()
                               query_context->getTemporaryVolume(),
                               settings.max_threads,
                               settings.min_free_disk_space_for_temporary_data,
+                              settings.compile_aggregate_expressions,
+                              settings.min_count_to_compile_aggregate_expression,
                               true);
 
     aggregator_transform = std::make_shared<AggregatingTransformParams>(params, false);
