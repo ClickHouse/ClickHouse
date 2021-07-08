@@ -65,6 +65,7 @@ struct ExpressionAnalyzerData
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
+    bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
     WindowDescriptions window_descriptions;
@@ -239,7 +240,7 @@ struct ExpressionAnalysisResult
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;
 
-    PrewhereDAGInfoPtr prewhere_info;
+    PrewhereInfoPtr prewhere_info;
     FilterDAGInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
@@ -309,6 +310,7 @@ public:
     bool hasTableJoin() const { return syntax->ast_join; }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
+    bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
@@ -357,8 +359,6 @@ private:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     JoinPtr appendJoin(ExpressionActionsChain & chain);
-    /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
-    void appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions_dag, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);

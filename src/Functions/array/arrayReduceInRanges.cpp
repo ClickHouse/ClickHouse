@@ -35,12 +35,13 @@ namespace ErrorCodes
   *
   * arrayReduceInRanges('agg', indices, lengths, arr1, ...)
   */
-class FunctionArrayReduceInRanges : public IFunction
+class FunctionArrayReduceInRanges : public IFunction, private WithContext
 {
 public:
     static const size_t minimum_step = 64;
     static constexpr auto name = "arrayReduceInRanges";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReduceInRanges>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayReduceInRanges>(context_); }
+    explicit FunctionArrayReduceInRanges(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
@@ -113,7 +114,7 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
         String aggregate_function_name;
         Array params_row;
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName());
+                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
 
         AggregateFunctionProperties properties;
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);

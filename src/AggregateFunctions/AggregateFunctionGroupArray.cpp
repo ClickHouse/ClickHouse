@@ -30,16 +30,16 @@ static IAggregateFunction * createWithNumericOrTimeType(const IDataType & argume
 
 
 template <typename Trait, typename ... TArgs>
-inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataTypePtr & argument_type, TArgs ... args)
+inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, std::forward<TArgs>(args)...))
+    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
         return AggregateFunctionPtr(res);
 
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::String)
-        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, std::forward<TArgs>(args)...);
+        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
 
-    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, std::forward<TArgs>(args)...);
+    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
 
     // Link list implementation doesn't show noticeable performance improvement
     // if (which.idx == TypeIndex::String)
@@ -79,9 +79,9 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (!limit_size)
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<false, Sampler::NONE>>(argument_types[0]);
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<false, Sampler::NONE>>(argument_types[0], parameters);
     else
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::NONE>>(argument_types[0], max_elems);
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::NONE>>(argument_types[0], parameters, max_elems);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArraySample(
@@ -114,7 +114,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
     else
         seed = thread_local_rng();
 
-    return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::RNG>>(argument_types[0], max_elems, seed);
+    return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::RNG>>(argument_types[0], parameters, max_elems, seed);
 }
 
 }
