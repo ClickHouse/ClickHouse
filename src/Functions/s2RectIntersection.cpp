@@ -28,15 +28,15 @@ namespace ErrorCodes
 namespace
 {
 
-/// TODO: Comment this
-class FunctionS2RectUnion : public IFunction
+
+class FunctionS2RectIntersection : public IFunction
 {
 public:
-    static constexpr auto name = "S2RectUnion";
+    static constexpr auto name = "S2RectIntersection";
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionS2RectUnion>();
+        return std::make_shared<FunctionS2RectIntersection>();
     }
 
     std::string getName() const override
@@ -57,8 +57,7 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument {} of function {}. Must be UInt64",
-                    arg->getName(), i, getName()
-                    );
+                    arg->getName(), i, getName());
             }
         }
 
@@ -78,10 +77,10 @@ public:
         auto col_res_second = ColumnUInt64::create();
 
         auto & vec_res_first = col_res_first->getData();
-        vec_res_first.resize(input_rows_count);
+        vec_res_first.reserve(input_rows_count);
 
         auto & vec_res_second = col_res_second->getData();
-        vec_res_second.resize(input_rows_count);
+        vec_res_second.reserve(input_rows_count);
 
         for (const auto row : collections::range(0, input_rows_count))
         {
@@ -90,18 +89,13 @@ public:
             const UInt64 lo2 = col_lo2->getUInt(row);
             const UInt64 hi2 = col_hi2->getUInt(row);
 
-            S2CellId id_lo1(lo1);
-            S2CellId id_hi1(hi1);
-            S2CellId id_lo2(lo2);
-            S2CellId id_hi2(hi2);
+            S2LatLngRect rect1(S2CellId(lo1).ToLatLng(), S2CellId(hi1).ToLatLng());
+            S2LatLngRect rect2(S2CellId(lo2).ToLatLng(), S2CellId(hi2).ToLatLng());
 
-            S2LatLngRect rect1(id_lo1.ToLatLng(), id_hi1.ToLatLng());
-            S2LatLngRect rect2(id_lo2.ToLatLng(), id_hi2.ToLatLng());
+            S2LatLngRect rect_intersection = rect1.Intersection(rect2);
 
-            S2LatLngRect rect_union = rect1.Union(rect2);
-
-            vec_res_first[row] = S2CellId(rect_union.lo()).id();
-            vec_res_second[row] = S2CellId(rect_union.hi()).id();
+            vec_res_first.emplace_back(S2CellId(rect_intersection.lo()).id());
+            vec_res_second.emplace_back(S2CellId(rect_intersection.hi()).id());
         }
 
         return ColumnTuple::create(Columns{std::move(col_res_first), std::move(col_res_second)});
@@ -111,9 +105,9 @@ public:
 
 }
 
-void registerFunctionS2RectUnion(FunctionFactory & factory)
+void registerFunctionS2RectIntersection(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionS2RectUnion>();
+    factory.registerFunction<FunctionS2RectIntersection>();
 }
 
 

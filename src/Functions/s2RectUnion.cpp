@@ -28,15 +28,15 @@ namespace ErrorCodes
 namespace
 {
 
-/// TODO: Comment this
-class FunctionS2RectAdd : public IFunction
+
+class FunctionS2RectUnion : public IFunction
 {
 public:
-    static constexpr auto name = "S2RectAdd";
+    static constexpr auto name = "S2RectUnion";
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionS2RectAdd>();
+        return std::make_shared<FunctionS2RectUnion>();
     }
 
     std::string getName() const override
@@ -50,15 +50,14 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (size_t index = 0; index < getNumberOfArguments(); ++index)
+        for (size_t i = 0; i < getNumberOfArguments(); ++i)
         {
-            const auto * arg = arguments[index].get();
+            const auto * arg = arguments[i].get();
             if (!WhichDataType(arg).isUInt64()) {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument {} of function {}. Must be UInt64",
-                    arg->getName(), index, getName()
-                    );
+                    arg->getName(), i + 1, getName());
             }
         }
 
@@ -69,35 +68,34 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_lo = arguments[0].column.get();
-        const auto * col_hi = arguments[1].column.get();
-        const auto * col_point = arguments[2].column.get();
+        const auto * col_lo1 = arguments[0].column.get();
+        const auto * col_hi1 = arguments[1].column.get();
+        const auto * col_lo2 = arguments[2].column.get();
+        const auto * col_hi2 = arguments[3].column.get();
 
         auto col_res_first = ColumnUInt64::create();
         auto col_res_second = ColumnUInt64::create();
 
         auto & vec_res_first = col_res_first->getData();
-        vec_res_first.resize(input_rows_count);
+        vec_res_first.reserve(input_rows_count);
 
         auto & vec_res_second = col_res_second->getData();
-        vec_res_second.resize(input_rows_count);
+        vec_res_second.reserve(input_rows_count);
 
         for (const auto row : collections::range(0, input_rows_count))
         {
-            const UInt64 lo = col_lo->getUInt(row);
-            const UInt64 hi = col_hi->getUInt(row);
-            const UInt64 point = col_point->getUInt(row);
+            const UInt64 lo1 = col_lo1->getUInt(row);
+            const UInt64 hi1 = col_hi1->getUInt(row);
+            const UInt64 lo2 = col_lo2->getUInt(row);
+            const UInt64 hi2 = col_hi2->getUInt(row);
 
-            S2CellId id_lo(lo);
-            S2CellId id_hi(hi);
-            S2CellId id_point(point);
+            S2LatLngRect rect1(S2CellId(lo1).ToLatLng(), S2CellId(hi1).ToLatLng());
+            S2LatLngRect rect2(S2CellId(lo2).ToLatLng(), S2CellId(hi2).ToLatLng());
 
-            S2LatLngRect rect(id_lo.ToLatLng(), id_hi.ToLatLng());
+            S2LatLngRect rect_union = rect1.Union(rect2);
 
-            rect.AddPoint(id_point.ToPoint());
-
-            vec_res_first[row] = S2CellId(rect.lo()).id();
-            vec_res_second[row] = S2CellId(rect.hi()).id();
+            vec_res_first.emplace_back(S2CellId(rect_union.lo()).id());
+            vec_res_second.emplace_back(S2CellId(rect_union.hi()).id());
         }
 
         return ColumnTuple::create(Columns{std::move(col_res_first), std::move(col_res_second)});
@@ -107,9 +105,9 @@ public:
 
 }
 
-void registerFunctionS2RectAdd(FunctionFactory & factory)
+void registerFunctionS2RectUnion(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionS2RectAdd>();
+    factory.registerFunction<FunctionS2RectUnion>();
 }
 
 

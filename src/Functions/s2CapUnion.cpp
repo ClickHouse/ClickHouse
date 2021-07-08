@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
+#include <Common/NaNUtils.h>
 #include <common/range.h>
 
 #include "s2_fwd.h"
@@ -28,11 +29,16 @@ namespace ErrorCodes
 namespace
 {
 
-/// TODO: Comment this
+/**
+ * The cap represents a portion of the sphere that has been cut off by a plane.
+ * See comment for s2CapContains function.
+ * This function returns the smallest cap that contains both of input caps.
+ * It is represented by identifier of the center and a radius.
+ */
 class FunctionS2CapUnion : public IFunction
 {
 public:
-    static constexpr auto name = "S2CapUnion";
+    static constexpr auto name = "s2CapUnion";
 
     static FunctionPtr create(ContextPtr)
     {
@@ -53,12 +59,14 @@ public:
         for (size_t index = 0; index < getNumberOfArguments(); ++index)
         {
             const auto * arg = arguments[index].get();
-            if ((index == 1 || index == 3) && !WhichDataType(arg).isFloat64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be Float64",
-                    arg->getName(), index + 1, getName()
-                );
+            if (index == 1 || index == 3)
+            {
+                if (!WhichDataType(arg).isFloat64())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument {} of function {}. Must be Float64",
+                        arg->getName(), index + 1, getName());
+            }
             else if (!WhichDataType(arg).isUInt64()) {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -85,10 +93,10 @@ public:
         auto col_res_second = ColumnFloat64::create();
 
         auto & vec_res_first = col_res_first->getData();
-        vec_res_first.resize(input_rows_count);
+        vec_res_first.reserve(input_rows_count);
 
         auto & vec_res_second = col_res_second->getData();
-        vec_res_second.resize(input_rows_count);
+        vec_res_second.reserve(input_rows_count);
 
         for (const auto row : collections::range(0, input_rows_count))
         {
@@ -96,6 +104,12 @@ public:
             const Float64 radius1 = col_radius1->getFloat64(row);
             const UInt64 center2 = col_center2->getUInt(row);
             const Float64 radius2 = col_radius2->getFloat64(row);
+
+            if (isNaN(radius1) || isNaN(radius2))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan");
+
+            if (std::isinf(radius1) || std::isinf(radius2))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be infinite");
 
             S2Cap cap1(S2CellId(center1).ToPoint(), S1Angle::Degrees(radius1));
             S2Cap cap2(S2CellId(center2).ToPoint(), S1Angle::Degrees(radius2));
