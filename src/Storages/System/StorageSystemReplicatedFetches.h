@@ -1,7 +1,7 @@
 #pragma once
 
 
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,9 +11,9 @@ namespace DB
 class Context;
 
 /// system.replicated_fetches table. Takes data from context.getReplicatedFetchList()
-class StorageSystemReplicatedFetches final : public shared_ptr_helper<StorageSystemReplicatedFetches>, public IStorageSystemOneBlock<StorageSystemReplicatedFetches >
+class StorageSystemReplicatedFetches final : public ext::shared_ptr_helper<StorageSystemReplicatedFetches>, public IStorageSystemOneBlock<StorageSystemReplicatedFetches >
 {
-    friend struct shared_ptr_helper<StorageSystemReplicatedFetches>;
+    friend struct ext::shared_ptr_helper<StorageSystemReplicatedFetches>;
 public:
     std::string getName() const override { return "SystemReplicatedFetches"; }
 

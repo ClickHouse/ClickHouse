@@ -146,7 +146,7 @@ public:
                     if (!outlen)
                     {
                         outlen = 0;
-                        dst_pos = savepoint; //-V1048
+                        dst_pos = savepoint;
                         // clean the symbol
                         dst_pos[0] = 0;
                     }

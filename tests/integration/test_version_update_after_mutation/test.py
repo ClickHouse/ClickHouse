@@ -33,28 +33,28 @@ def test_mutate_and_upgrade(start_cluster):
     node1.query("INSERT INTO mt VALUES ('2020-02-13', 1), ('2020-02-13', 2);")
 
     node1.query("ALTER TABLE mt DELETE WHERE id = 2", settings={"mutations_sync": "2"})
-    node2.query("SYSTEM SYNC REPLICA mt", timeout=15)
+    node2.query("SYSTEM SYNC REPLICA mt", timeout=5)
 
     node1.restart_with_latest_version(signal=9)
     node2.restart_with_latest_version(signal=9)
 
     # After hard restart table can be in readonly mode
-    exec_query_with_retry(node2, "INSERT INTO mt VALUES ('2020-02-13', 3)", retry_count=60)
-    exec_query_with_retry(node1, "SYSTEM SYNC REPLICA mt", retry_count=60)
+    exec_query_with_retry(node2, "INSERT INTO mt VALUES ('2020-02-13', 3)")
+    exec_query_with_retry(node1, "SYSTEM SYNC REPLICA mt")
 
     assert node1.query("SELECT COUNT() FROM mt") == "2\n"
     assert node2.query("SELECT COUNT() FROM mt") == "2\n"
 
-    node1.query("INSERT INTO mt VALUES ('2020-02-13', 4);")
+    exec_query_with_retry(node1, "INSERT INTO mt VALUES ('2020-02-13', 4)")
 
-    node2.query("SYSTEM SYNC REPLICA mt", timeout=15)
+    node2.query("SYSTEM SYNC REPLICA mt", timeout=5)
 
     assert node1.query("SELECT COUNT() FROM mt") == "3\n"
     assert node2.query("SELECT COUNT() FROM mt") == "3\n"
 
     node2.query("ALTER TABLE mt DELETE WHERE id = 3", settings={"mutations_sync": "2"})
 
-    node1.query("SYSTEM SYNC REPLICA mt", timeout=15)
+    node1.query("SYSTEM SYNC REPLICA mt", timeout=5)
 
     assert node1.query("SELECT COUNT() FROM mt") == "2\n"
     assert node2.query("SELECT COUNT() FROM mt") == "2\n"
@@ -79,10 +79,7 @@ def test_upgrade_while_mutation(start_cluster):
 
     node3.restart_with_latest_version(signal=9)
 
-    # checks for readonly
-    exec_query_with_retry(node3, "OPTIMIZE TABLE mt1", retry_count=60)
-
-    node3.query("ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
+    exec_query_with_retry(node3, "ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
     # will delete nothing, but previous async mutation will finish with this query
 
     assert_eq_with_retry(node3, "SELECT COUNT() from mt1", "50000\n")

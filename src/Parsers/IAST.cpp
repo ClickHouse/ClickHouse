@@ -53,7 +53,7 @@ IAST::Hash IAST::getTreeHash() const
     SipHash hash_state;
     updateTreeHash(hash_state);
     IAST::Hash res;
-    hash_state.get128(res);
+    hash_state.get128(res.first, res.second);
     return res;
 }
 
@@ -105,14 +105,6 @@ String IAST::getColumnName() const
 {
     WriteBufferFromOwnString write_buffer;
     appendColumnName(write_buffer);
-    return write_buffer.str();
-}
-
-
-String IAST::getColumnName(const Settings & settings) const
-{
-    WriteBufferFromOwnString write_buffer;
-    appendColumnName(write_buffer, settings);
     return write_buffer.str();
 }
 

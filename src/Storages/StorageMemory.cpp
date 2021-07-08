@@ -164,14 +164,12 @@ StorageMemory::StorageMemory(
     const StorageID & table_id_,
     ColumnsDescription columns_description_,
     ConstraintsDescription constraints_,
-    const String & comment,
     bool compress_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>()), compress(compress_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -263,7 +261,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
 
-    /// When max_threads > 1, the order of returning blocks is uncertain,
+    /// When max_threads > 1, the order of returning blocks is uncentain,
     /// which will lead to inconsistency after updateBlockData.
     auto new_context = Context::createCopy(context);
     new_context->setSetting("max_streams_to_max_threads_ratio", 1);
@@ -358,7 +356,7 @@ void registerStorageMemory(StorageFactory & factory)
         if (has_settings)
             settings.loadFromQuery(*args.storage_def);
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
+        return StorageMemory::create(args.table_id, args.columns, args.constraints, settings.compress);
     },
     {
         .supports_settings = true,

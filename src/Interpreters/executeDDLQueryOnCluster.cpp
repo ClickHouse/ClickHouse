@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataStreams/NullBlockOutputStream.h>
-#include <DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <filesystem>
 
@@ -102,10 +101,12 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     /// The current database in a distributed query need to be replaced with either
     /// the local current database or a shard's default database.
-    bool need_replace_current_database = std::any_of(
-        query_requires_access.begin(),
-        query_requires_access.end(),
-        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
+    bool need_replace_current_database
+        = (std::find_if(
+            query_requires_access.begin(),
+            query_requires_access.end(),
+            [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
+           != query_requires_access.end());
 
     bool use_local_default_database = false;
     const String & current_database = context->getCurrentDatabase();
@@ -174,15 +175,17 @@ BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & en
     if (context->getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
-    BlockInputStreamPtr stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, context, hosts_to_wait);
+    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, context, hosts_to_wait);
     if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
     {
         /// Wait for query to finish, but ignore output
-        auto null_output = std::make_shared<NullBlockOutputStream>(stream->getHeader());
-        stream = std::make_shared<NullAndDoCopyBlockInputStream>(std::move(stream), std::move(null_output));
+        NullBlockOutputStream output{Block{}};
+        copyData(*stream, output);
     }
-
-    io.in = std::move(stream);
+    else
+    {
+        io.in = std::move(stream);
+    }
     return io;
 }
 

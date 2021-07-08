@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
@@ -12,9 +12,9 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge final : public shared_ptr_helper<StorageMerge>, public IStorage, WithContext
+class StorageMerge final : public ext::shared_ptr_helper<StorageMerge>, public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageMerge>;
+    friend struct ext::shared_ptr_helper<StorageMerge>;
 public:
     std::string getName() const override { return "Merge"; }
 
@@ -27,8 +27,7 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
@@ -71,7 +70,6 @@ protected:
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
-        const String & comment,
         const String & source_database_,
         const Strings & source_tables_,
         ContextPtr context_);
@@ -79,19 +77,9 @@ protected:
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
-        const String & comment,
         const String & source_database_,
         const String & source_table_regexp_,
         ContextPtr context_);
-
-    struct AliasData
-    {
-        String name;
-        DataTypePtr type;
-        ASTPtr expression;
-    };
-
-    using Aliases = std::vector<AliasData>;
 
     Pipe createSources(
         const StorageMetadataPtr & metadata_snapshot,
@@ -99,16 +87,15 @@ protected:
         const QueryProcessingStage::Enum & processed_stage,
         UInt64 max_block_size,
         const Block & header,
-        const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
         Names & real_column_names,
-        ContextMutablePtr modified_context,
+        ContextPtr modified_context,
         size_t streams_num,
         bool has_table_virtual_column,
         bool concat_streams = false);
 
     void convertingSourceStream(
-        const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
+        const Block & header, const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context, ASTPtr & query,
         Pipe & pipe, QueryProcessingStage::Enum processed_stage);
 };

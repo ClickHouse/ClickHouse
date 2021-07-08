@@ -15,7 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <common/logger_useful.h>
 
 
@@ -37,7 +37,7 @@ PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
     , connection_holder(std::move(connection_holder_))
 {
     description.init(sample_block);
-    for (const auto idx : collections::range(0, description.sample_block.columns()))
+    for (const auto idx : ext::range(0, description.sample_block.columns()))
         if (description.types[idx].first == ValueType::vtArray)
             prepareArrayInfo(idx, description.sample_block.getByPosition(idx).type);
     /// pqxx::stream_from uses COPY command, will get error if ';' is present
@@ -70,7 +70,7 @@ Block PostgreSQLBlockInputStream::readImpl()
         if (!row)
             break;
 
-        for (const auto idx : collections::range(0, row->size()))
+        for (const auto idx : ext::range(0, row->size()))
         {
             const auto & sample = description.sample_block.getByPosition(idx);
 
@@ -157,13 +157,11 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
             assert_cast<ColumnFloat64 &>(column).insertValue(pqxx::from_string<double>(value));
             break;
         case ValueType::vtFixedString:[[fallthrough]];
-        case ValueType::vtEnum8:
-        case ValueType::vtEnum16:
         case ValueType::vtString:
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
         case ValueType::vtUUID:
-            assert_cast<ColumnUUID &>(column).insert(parse<UUID>(value.data(), value.size()));
+            assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
             break;
         case ValueType::vtDate:
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
@@ -172,7 +170,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
         {
             ReadBufferFromString in(value);
             time_t time = 0;
-            readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
+            readDateTimeText(time, in);
             if (time < 0)
                 time = 0;
             assert_cast<ColumnUInt32 &>(column).insertValue(time);
@@ -195,7 +193,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
 
             size_t dimension = 0, max_dimension = 0, expected_dimensions = array_info[idx].num_dimensions;
             const auto parse_value = array_info[idx].pqxx_parser;
-            std::vector<Row> dimensions(expected_dimensions + 1);
+            std::vector<std::vector<Field>> dimensions(expected_dimensions + 1);
 
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
@@ -212,8 +210,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
                 {
                     max_dimension = std::max(max_dimension, dimension);
 
-                    --dimension;
-                    if (dimension == 0)
+                    if (--dimension == 0)
                         break;
 
                     dimensions[dimension].emplace_back(Array(dimensions[dimension + 1].begin(), dimensions[dimension + 1].end()));
@@ -274,11 +271,11 @@ void PostgreSQLBlockInputStream::prepareArrayInfo(size_t column_idx, const DataT
     else if (which.isDate())
         parser = [](std::string & field) -> Field { return UInt16{LocalDate{field}.getDayNum()}; };
     else if (which.isDateTime())
-        parser = [nested](std::string & field) -> Field
+        parser = [](std::string & field) -> Field
         {
             ReadBufferFromString in(field);
             time_t time = 0;
-            readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(nested.get())->getTimeZone());
+            readDateTimeText(time, in);
             return time;
         };
     else if (which.isDecimal32())

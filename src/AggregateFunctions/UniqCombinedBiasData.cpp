@@ -2,7 +2,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace
 {

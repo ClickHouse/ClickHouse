@@ -1,10 +1,8 @@
 #include <Interpreters/WindowDescription.h>
 
 #include <Core/Field.h>
-#include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
-
 
 namespace DB
 {

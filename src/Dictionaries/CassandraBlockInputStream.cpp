@@ -110,8 +110,6 @@ void CassandraBlockInputStream::insertValue(IColumn & column, ValueType type, co
             assert_cast<ColumnFloat64 &>(column).insertValue(value);
             break;
         }
-        case ValueType::vtEnum8:
-        case ValueType::vtEnum16:
         case ValueType::vtString:
         {
             const char * value = nullptr;
@@ -140,7 +138,7 @@ void CassandraBlockInputStream::insertValue(IColumn & column, ValueType type, co
             cass_value_get_uuid(cass_value, &value);
             std::array<char, CASS_UUID_STRING_LENGTH> uuid_str;
             cass_uuid_string(value, uuid_str.data());
-            assert_cast<ColumnUUID &>(column).insert(parse<UUID>(uuid_str.data(), uuid_str.size()));
+            assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(uuid_str.data(), uuid_str.size()));
             break;
         }
         default:
