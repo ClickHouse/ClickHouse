@@ -332,7 +332,6 @@ SRCS(
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
-    leftPadString.cpp
     lengthUTF8.cpp
     less.cpp
     lessOrEquals.cpp
@@ -388,6 +387,7 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    padString.cpp
     partitionId.cpp
     pi.cpp
     plus.cpp
