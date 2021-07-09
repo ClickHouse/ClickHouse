@@ -47,6 +47,15 @@ public:
         return findByValue(value)->second;
     }
 
+    const StringRef & getNameForValue(const T & value, const StringRef & default_value) const
+    {
+        const auto it = value_to_name_map.find(value);
+        if (it == std::end(value_to_name_map))
+            return default_value;
+
+        return it->second;
+    }
+
     T getValue(StringRef field_name, bool try_treat_as_id = false) const;
 
     template <typename TValues>
