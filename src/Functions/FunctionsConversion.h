@@ -618,7 +618,9 @@ struct FormatImpl<DataTypeEnum<FieldType>>
 {
     static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
     {
-        writeString(type->getNameForValue(x), wb);
+        /// If we get column as nested from Nullable then Enum could contain unexpected value that is not from enumeration.
+        /// Add default value for such case, do not throw error, because it became NULL again after defaultImplementationForNulls.
+        writeString(type->getNameForValue(x, ""), wb);
     }
 };
 
