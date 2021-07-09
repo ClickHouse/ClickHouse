@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_STAT;
 }
 
 namespace
@@ -500,21 +501,25 @@ Pipe StorageFile::read(
         // if we do multiple reads from pipe, we want to check if pipe is a regular file or a pipe
         if (this_ptr->table_fd_was_used)
         {
-            if (S_ISREG(this_ptr->table_fd))
+            struct stat fd_stat;
+            if (fstat(this_ptr->table_fd, &fd_stat) == -1)
+            {
+                throw Exception("Cannot stat table file descriptor, inside " + this_ptr->getName(), ErrorCodes::CANNOT_STAT);
+            }
+            if (S_ISREG(fd_stat.st_mode))
             {
                 if (this_ptr->table_fd_init_offset < 0)
                 {
                     throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
                 }
-                int seekable_table_fd = dup(this_ptr->table_fd);
-                if (lseek(seekable_table_fd, this_ptr->table_fd_init_offset, SEEK_SET) < 0)
+                if (lseek(this_ptr->table_fd, this_ptr->table_fd_init_offset, SEEK_SET) < 0)
                 {
                     throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
                 }
             }
             else
             {
-                // else if fd is a pipeline, then throw an Exception
+                // else if fd is not a regular file, then throw an Exception
                 throw Exception("Cannot read from a pipeline twice", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
             }
         }
