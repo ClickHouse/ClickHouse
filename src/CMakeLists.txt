@@ -54,7 +54,6 @@ add_subdirectory (Dictionaries)
 add_subdirectory (Disks)
 add_subdirectory (Storages)
 add_subdirectory (Parsers)
-add_subdirectory (Parsers/New)
 add_subdirectory (IO)
 add_subdirectory (Functions)
 add_subdirectory (Interpreters)
@@ -86,6 +85,7 @@ if (USE_AMQPCPP)
 endif()
 
 if (USE_LIBPQXX)
+    add_headers_and_sources(dbms Core/PostgreSQL)
     add_headers_and_sources(dbms Databases/PostgreSQL)
     add_headers_and_sources(dbms Storages/PostgreSQL)
 endif()
@@ -222,12 +222,12 @@ endif()
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE clickhouse_parsers_new jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
+    target_link_libraries (dbms PRIVATE jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules} ${DBMS_COMMON_LIBRARIES})
-    target_link_libraries (clickhouse_interpreters PRIVATE clickhouse_parsers_new jemalloc libdivide)
+    target_link_libraries (clickhouse_interpreters PRIVATE jemalloc libdivide)
     list (APPEND all_modules dbms)
     # force all split libs to be linked
     if (OS_DARWIN)
@@ -255,27 +255,6 @@ target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR
 if (USE_EMBEDDED_COMPILER)
     dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
-endif ()
-
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
-    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
-    set_source_files_properties(
-        Dictionaries/FlatDictionary.cpp
-        Dictionaries/HashedDictionary.cpp
-        Dictionaries/CacheDictionary.cpp
-        Dictionaries/IPAddressDictionary.cpp
-        Dictionaries/RangeHashedDictionary.cpp
-        Dictionaries/ComplexKeyHashedDictionary.cpp
-        Dictionaries/ComplexKeyCacheDictionary.cpp
-        Dictionaries/ComplexKeyCacheDictionary_generate1.cpp
-        Dictionaries/ComplexKeyCacheDictionary_generate2.cpp
-        Dictionaries/ComplexKeyCacheDictionary_generate3.cpp
-        Dictionaries/ODBCBlockInputStream.cpp
-        Dictionaries/HTTPDictionarySource.cpp
-        Dictionaries/LibraryDictionarySource.cpp
-        Dictionaries/ExecutableDictionarySource.cpp
-        Dictionaries/ClickHouseDictionarySource.cpp
-        PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
 # Otherwise it will slow down stack traces printing too much.
@@ -496,6 +475,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
         -Wno-zero-as-null-pointer-constant
+        -Wno-covered-switch-default
         -Wno-undef
         -Wno-sign-compare
         -Wno-used-but-marked-unused

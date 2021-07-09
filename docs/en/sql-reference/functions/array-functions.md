@@ -11,17 +11,23 @@ Returns 1 for an empty array, or 0 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM table` transforms to `SELECT arr.size0 = 0 FROM TABLE`.
+
 ## notEmpty {#function-notempty}
 
 Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+
 ## length {#array_functions-length}
 
 Returns the number of items in the array.
 The result type is UInt64.
 The function also works for strings.
+
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT length(arr) FROM table` transforms to `SELECT arr.size0 FROM TABLE`.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
@@ -39,13 +45,44 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-## range(end), range(start, end \[, step\]) {#rangeend-rangestart-end-step}
 
-Returns an array of numbers from start to end-1 by step.
-If the argument `start` is not specified, defaults to 0.
-If the argument `step` is not specified, defaults to 1.
-It behaviors almost like pythonic `range`. But the difference is that all the arguments type must be `UInt` numbers.
-Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
+## range(end), range(\[start, \] end \[, step\]) {#range}
+
+Returns an array of `UInt` numbers from `start` to `end - 1` by `step`.
+
+**Syntax**
+``` sql
+range([start, ] end [, step])
+```
+
+**Arguments**
+
+-   `start` — The first element of the array. Optional, required if `step` is used. Default value: 0. [UInt](../data-types/int-uint.md)
+-   `end` — The number before which the array is constructed. Required. [UInt](../data-types/int-uint.md)
+-   `step` — Determines the incremental step between each element in the array. Optional. Default value: 1. [UInt](../data-types/int-uint.md)
+
+**Returned value**
+
+-   Array of `UInt` numbers from `start` to `end - 1` by `step`.
+
+**Implementation details**
+
+-   All arguments must be positive values: `start`, `end`, `step` are `UInt` data types, as well as elements of the returned array.
+-   An exception is thrown if query results in arrays with a total length of more than 100,000,000 elements.
+
+
+**Examples**
+
+Query:
+``` sql
+SELECT range(5), range(1, 5), range(1, 5, 2);
+```
+Result:
+```txt
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
+└─────────────┴─────────────┴────────────────┘
+```
 
 ## array(x1, …), operator \[x1, …\] {#arrayx1-operator-x1}
 
