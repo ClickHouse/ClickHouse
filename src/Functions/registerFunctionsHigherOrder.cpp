@@ -4,7 +4,6 @@ namespace DB
 class FunctionFactory;
 
 void registerFunctionArrayMap(FunctionFactory & factory);
-void registerFunctionArrayFold(FunctionFactory & factory);
 void registerFunctionArrayFilter(FunctionFactory & factory);
 void registerFunctionArrayCount(FunctionFactory & factory);
 void registerFunctionArrayExists(FunctionFactory & factory);
@@ -23,7 +22,6 @@ void registerFunctionArrayDifference(FunctionFactory & factory);
 void registerFunctionsHigherOrder(FunctionFactory & factory)
 {
     registerFunctionArrayMap(factory);
-    registerFunctionArrayFold(factory);
     registerFunctionArrayFilter(factory);
     registerFunctionArrayCount(factory);
     registerFunctionArrayExists(factory);

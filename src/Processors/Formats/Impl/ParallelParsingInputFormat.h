@@ -97,9 +97,6 @@ public:
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
 
-        segmentator_thread = ThreadFromGlobalPool(
-            &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
-
         LOG_TRACE(&Poco::Logger::get("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
 
@@ -205,6 +202,7 @@ private:
 
     Poco::Event first_parser_finished;
 
+    std::atomic<bool> parsing_started{false};
     std::atomic<bool> parsing_finished{false};
 
     /// There are multiple "parsers", that's why we use thread pool.

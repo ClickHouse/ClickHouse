@@ -31,7 +31,7 @@ KILL QUERY WHERE user='username' SYNC
 
 Read-only users can only stop their own queries.
 
-By default, the asynchronous version of queries is used (`ASYNC`), which doesn’t wait for confirmation that queries have stopped.
+By default, the asynchronous version of queries is used (`ASYNC`), which does not wait for confirmation that queries have stopped.
 
 The synchronous version (`SYNC`) waits for all queries to stop and displays information about each process as it stops.
 The response contains the `kill_status` column, which can take the following values:

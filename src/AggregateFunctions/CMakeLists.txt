@@ -1,7 +1,8 @@
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
+include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_aggregate_functions .)
 
 list(REMOVE_ITEM clickhouse_aggregate_functions_sources
+    IAggregateFunction.cpp
     AggregateFunctionFactory.cpp
     AggregateFunctionCombinatorFactory.cpp
     AggregateFunctionCount.cpp
@@ -24,6 +25,6 @@ list(REMOVE_ITEM clickhouse_aggregate_functions_headers
 add_library(clickhouse_aggregate_functions ${clickhouse_aggregate_functions_sources})
 target_link_libraries(clickhouse_aggregate_functions PRIVATE dbms PUBLIC ${CITYHASH_LIBRARIES})
 
-if(ENABLE_TESTS)
-    add_subdirectory(tests)
+if(ENABLE_EXAMPLES)
+    add_subdirectory(examples)
 endif()

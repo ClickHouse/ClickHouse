@@ -47,19 +47,22 @@ bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const St
 }
 
 MergeTreeData::DataPartsVector
-StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
+StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts) const
 {
+    if (require_projection_parts && data->getInMemoryMetadataPtr()->projections.empty())
+        return {};
+
     using State = MergeTreeData::DataPartState;
     if (need_inactive_parts)
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getDataPartsVector({State::Committed, State::Outdated}, &state);
+            return data->getDataPartsVector({State::Committed, State::Outdated}, &state, require_projection_parts);
 
-        return data->getAllDataPartsVector(&state);
+        return data->getAllDataPartsVector(&state, require_projection_parts);
     }
 
-    return data->getDataPartsVector({State::Committed}, &state);
+    return data->getDataPartsVector({State::Committed}, &state, require_projection_parts);
 }
 
 StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)

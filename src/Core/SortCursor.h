@@ -126,7 +126,7 @@ struct SortCursorImpl
 
 /// Prevent using pos instead of getRow()
 private:
-    size_t pos;
+    size_t pos = 0;
 };
 
 using SortCursorImpls = std::vector<SortCursorImpl>;

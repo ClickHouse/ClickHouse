@@ -9,7 +9,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -257,6 +257,88 @@ public:
             }
             else
                 token_end = end;
+        }
+
+        return true;
+    }
+};
+
+class SplitByRegexpImpl
+{
+private:
+    Regexps::Pool::Pointer re;
+    OptimizedRegularExpression::MatchVec matches;
+
+    Pos pos;
+    Pos end;
+public:
+    static constexpr auto name = "splitByRegexp";
+    static String getName() { return name; }
+    static size_t getNumberOfArguments() { return 2; }
+
+    /// Check the type of function arguments.
+    static void checkArguments(const DataTypes & arguments)
+    {
+        SplitByStringImpl::checkArguments(arguments);
+    }
+
+    /// Initialize by the function arguments.
+    void init(const ColumnsWithTypeAndName & arguments)
+    {
+        const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
+
+        if (!col)
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                            + " of first argument of function " + getName() + ". Must be constant string.",
+                            ErrorCodes::ILLEGAL_COLUMN);
+
+        if (!col->getValue<String>().empty())
+            re = Regexps::get<false, false>(col->getValue<String>());
+
+    }
+
+    /// Returns the position of the argument that is the column of strings
+    size_t getStringsArgumentPosition()
+    {
+        return 1;
+    }
+
+    /// Called for each next string.
+    void set(Pos pos_, Pos end_)
+    {
+        pos = pos_;
+        end = end_;
+    }
+
+    /// Get the next token, if any, or return false.
+    bool get(Pos & token_begin, Pos & token_end)
+    {
+        if (!re)
+        {
+            if (pos == end)
+                return false;
+
+            token_begin = pos;
+            pos += 1;
+            token_end = pos;
+        }
+        else
+        {
+            if (!pos || pos > end)
+                return false;
+
+            token_begin = pos;
+
+            if (!re->match(pos, end - pos, matches) || !matches[0].length)
+            {
+                token_end = end;
+                pos = end + 1;
+            }
+            else
+            {
+                token_end = pos + matches[0].offset;
+                pos = token_end + matches[0].length;
+            }
         }
 
         return true;
@@ -582,6 +664,7 @@ public:
 using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>;
 using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>;
 using FunctionSplitByString = FunctionTokens<SplitByStringImpl>;
+using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;
 using FunctionExtractAll = FunctionTokens<ExtractAllImpl>;
 
 }
