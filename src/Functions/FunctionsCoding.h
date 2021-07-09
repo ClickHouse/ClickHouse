@@ -19,13 +19,13 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
 #include <Common/hex.h>
 #include <Common/typeid_cast.h>
 #include <Common/BitHelpers.h>
-#include <Functions/FunctionFactory.h>
 
 #include <arpa/inet.h>
 #include <common/range.h>
@@ -955,8 +955,6 @@ public:
 template <typename Impl>
 class EncodeToBinaryRepr : public IFunction
 {
-private:
-    ContextPtr context;
 public:
     static constexpr auto name = Impl::name;
     static constexpr size_t word_size = Impl::word_size;
@@ -989,7 +987,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IColumn * column = arguments[0].column.get();
         ColumnPtr res_column;
@@ -997,10 +995,9 @@ public:
         WhichDataType which(column->getDataType());
         if (which.isAggregateFunction())
         {
-            auto to_string = FunctionFactory::instance().get("toString", context);
-            const ColumnPtr col = to_string->build(arguments)->execute(arguments, result_type, input_rows_count);
-            const auto * name_col = checkAndGetColumn<ColumnString>(col.get());
-            tryExecuteString(name_col, res_column);
+            const ColumnPtr to_string = castColumn(arguments[0], std::make_shared<DataTypeString>());
+            const auto * str_column = checkAndGetColumn<ColumnString>(to_string.get());
+            tryExecuteString(str_column, res_column);
             return res_column;
         }
 
