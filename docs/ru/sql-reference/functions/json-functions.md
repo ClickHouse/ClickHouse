@@ -306,3 +306,47 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello"
 │ [('d','"hello"'),('f','"world"')]                                                                     │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+
+## toJSONString {#tojsonstring}
+
+Сериализует значение в JSON представление. Поддерживаются различные типы данных и вложенные структуры.
+По умолчанию 64-битные [целые числа](../../sql-reference/data-types/int-uint.md) и более (например, `UInt64` или `Int128`) заключаются в кавычки. Настройка [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) управляет этим поведением.
+Когда сериализуется значение [Enum](../../sql-reference/data-types/enum.md), то функция выводит его имя.
+
+**Синтаксис**
+
+``` sql
+toJSONString(value)
+```
+
+**Аргументы**
+
+-   `value` — значение, которое необходимо сериализовать. Может быть любого типа.
+
+**Возвращаемое значение**
+
+-   JSON представление значения. 
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Пример показывает сериализацию [Map](../../sql-reference/data-types/map.md).
+
+Запрос:
+
+``` sql
+SELECT toJSONString(map('key1', 1, 'key2', 2));
+```
+
+Результат:
+
+``` text
+{"key1":1,"key2":2}
+```
+
+**Смотрите также**
+
+-   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
+-   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
