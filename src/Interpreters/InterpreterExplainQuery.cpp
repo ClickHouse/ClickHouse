@@ -243,7 +243,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
 BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
-    const auto & ast = query->as<ASTExplainQuery &>();
+    auto & ast = query->as<ASTExplainQuery &>();
 
     Block sample_block = getSampleBlock(ast.getKind());
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
@@ -341,6 +341,11 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
         QueryPlan plan;
 
+        // It should output the result even the format is Null, for example EXPLAIN ESTIMATES select * from x format Null;
+        if (ast.format && ast.foramt->getColumnName() == "Null")
+        {
+            ast.format = nullptr;
+        }
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
 
