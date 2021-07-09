@@ -105,11 +105,11 @@ clickhouse-client -nmT < tests/queries/0_stateless/01521_dummy_test.sql | tee te
 
 5) ensure everything is correct, if the test output is incorrect (due to some bug for example), adjust the reference file using text editor.
 
-####  How to create good test
+#### How to create a good test
 
-- test should be
+- A test should be
 	- minimal - create only tables related to tested functionality, remove unrelated columns and parts of query
-	- fast - should not take longer than few seconds (better subseconds)
+	- fast - should not take longer than a few seconds (better subseconds)
 	- correct - fails then feature is not working
         - deterministic
 	- isolated / stateless 
@@ -125,6 +125,17 @@ clickhouse-client -nmT < tests/queries/0_stateless/01521_dummy_test.sql | tee te
 - prefer sync mode of operations (mutations, merges, etc.)
 - use other SQL files in the `0_stateless` folder as an example
 - ensure the feature / feature combination you want to test is not yet covered with existing tests
+
+#### Test naming rules
+
+It's important to name tests correctly, so one could turn some tests subset off in clickhouse-test invocation.
+
+| Tester flag| What should be in test name | When flag should be added | Example of test with flag |
+|---|---|---|---|
+| `--[no-]zookeeper`| "zookeeper" or "replica" | Test uses tables from ReplicatedMergeTree family | |
+| `--[no-]shard` | "shard" or "distributed" or "global"| | |
+| `--[no-]long` | "long" or "deadlock" or "race" | Test runs longer than TODO seconds | |
+| `--[no-]pbi `| "pbi" | Test exploits Possibly Broken Invariants e.g. that CH is located in /var/lib/clickhouse | |
 
 #### Commit / push / create PR.
 
