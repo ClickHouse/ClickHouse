@@ -282,10 +282,11 @@ Pipe StorageMerge::read(
         Aliases aliases;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto storage_columns = storage_metadata_snapshot->getColumns();
+        auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot);
 
         if (processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty())
         {
-            auto syntax_result = TreeRewriter(local_context).analyzeSelect(query_info.query, TreeRewriterResult({}, storage, storage->getStorageSnapshot(storage_metadata_snapshot)));
+            auto syntax_result = TreeRewriter(local_context).analyzeSelect(query_info.query, TreeRewriterResult({}, storage, nested_storage_snaphsot));
             ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
 
             ASTPtr column_expr;
@@ -321,7 +322,7 @@ Pipe StorageMerge::read(
         }
 
         auto source_pipe = createSources(
-            storage_snapshot,
+            nested_storage_snaphsot,
             query_info,
             processed_stage,
             max_block_size,
