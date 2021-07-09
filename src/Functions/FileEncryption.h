@@ -171,7 +171,7 @@ protected:
 
     size_t Blocks(size_t pos) const { return pos / block_size; }
 
-    size_t PartBlockSize(size_t size, size_t off)
+    size_t PartBlockSize(size_t size, size_t off) const
     {
         assert(off < block_size);
         /// write the part as usual block
@@ -241,7 +241,7 @@ private:
     String EncryptNBytes(const char * data, size_t bytes, const InitVector & iv) const
     {
         String ciphertext(bytes, '\0');
-        auto ciphertext_ref = ciphertext.data();
+        auto * ciphertext_ref = ciphertext.data();
 
         auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
         auto * evp_ctx = evp_ctx_ptr.get();
@@ -267,7 +267,7 @@ private:
             reinterpret_cast<unsigned char*>(ciphertext_ref), &final_output_len) != 1)
             throw DB::Exception("Failed to fetch ciphertext", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
-        if (output_len < 0 || final_output_len < 0 || static_cast<size_t>(output_len + final_output_len) != bytes)
+        if (output_len < 0 || final_output_len < 0 || static_cast<size_t>(output_len) + static_cast<size_t>(final_output_len) != bytes)
             throw DB::Exception("Only part of the data was encrypted", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         return ciphertext;
@@ -315,7 +315,7 @@ private:
         for (size_t i = 0; i < size; ++i)
             ciphertext[i + off] = partial_block[i];
 
-        auto plaintext_ref = plaintext.data();
+        auto * plaintext_ref = plaintext.data();
         DecryptNBytes(plaintext_ref, ciphertext.data(), off + size, iv);
 
         for (size_t i = 0; i < size; ++i)
@@ -348,7 +348,7 @@ private:
             reinterpret_cast<unsigned char*>(to), &final_output_len) != 1)
             throw DB::Exception("Failed to fetch plaintext", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
-        if (output_len < 0 || final_output_len < 0 || static_cast<size_t>(output_len + final_output_len) != bytes)
+        if (output_len < 0 || final_output_len < 0 || static_cast<size_t>(output_len) + static_cast<size_t>(final_output_len) != bytes)
             throw DB::Exception("Only part of the data was decrypted", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
     }
 };
