@@ -50,18 +50,16 @@ def array_func(self, data_type, node=None):
             table(name = table_name, data_type = f'Array({data_type})')
 
             with When("I insert the output into the table"):
-                node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))")
+                node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,3)},"
+                    f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}))")
 
-            execute_query(f"""
-                SELECT * FROM {table_name} ORDER BY a ASC
-                """)
+            execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     for func in ['arraySplit((x, y) -> x=y, [0, 0, 0],']:
 
         with Scenario(f"Inline - {data_type} - {func})"):
-            execute_query(f"""
-                SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))
-                """)
+            execute_query(f"SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)},"
+                f"{to_data_type(data_type,1)}))")
 
         with Scenario(f"Table - {data_type} - {func})"):
             table_name = get_table_name()
@@ -69,18 +67,15 @@ def array_func(self, data_type, node=None):
             table(name = table_name, data_type = f'Array(Array({data_type}))')
 
             with When("I insert the output into the table"):
-                node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))")
+                node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,3)},"
+                    f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}))")
 
-            execute_query(f"""
-                SELECT * FROM {table_name} ORDER BY a ASC
-                """)
+            execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     for func in [f'arrayZip([{to_data_type(data_type,1)}],']:
 
         with Scenario(f"Inline - {data_type} - {func})"):
-            execute_query(f"""
-                SELECT {func}array({to_data_type(data_type,3)}))
-                """)
+            execute_query(f"SELECT {func}array({to_data_type(data_type,3)}))")
 
         with Scenario(f"Table - {data_type} - {func})"):
             table_name = get_table_name()
@@ -90,9 +85,7 @@ def array_func(self, data_type, node=None):
             with When("I insert the output into the table"):
                 node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,1)}))")
 
-            execute_query(f"""
-                SELECT * FROM {table_name} ORDER BY a ASC
-                """)
+            execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     for func in ['empty(',
         'notEmpty(',
@@ -125,20 +118,17 @@ def array_func(self, data_type, node=None):
                 table(name = table_name, data_type = data_type)
 
                 with When("I insert the output into the table"):
-                    node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))",
+                    node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,3)},"
+                        f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}))",
                         exitcode = 44, message = 'Exception:')
 
-                execute_query(f"""
-                    SELECT * FROM {table_name} ORDER BY a ASC
-                    """)
+                execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
         else:
 
             with Scenario(f"Inline - {data_type} - {func})"):
 
-                execute_query(f"""
-                    SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))
-                    """)
+                execute_query(f"SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))")
 
             with Scenario(f"Table - {data_type} - {func})"):
                 table_name = get_table_name()
@@ -146,11 +136,10 @@ def array_func(self, data_type, node=None):
                 table(name = table_name, data_type = data_type)
 
                 with When("I insert the output into the table"):
-                    node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))")
+                    node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,3)},"
+                        f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}))")
 
-                execute_query(f"""
-                    SELECT * FROM {table_name} ORDER BY a ASC
-                    """)
+                execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     for func in ['arrayDifference(',
         'arrayCumSum(',
@@ -171,12 +160,11 @@ def array_func(self, data_type, node=None):
             table(name = table_name, data_type = data_type)
 
             with When("I insert the output into the table"):
-                node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}))",
+                node.query(f"INSERT INTO {table_name} SELECT {func}array({to_data_type(data_type,3)},"
+                    f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}))",
                     exitcode = exitcode, message = 'Exception:')
 
-            execute_query(f"""
-                SELECT * FROM {table_name} ORDER BY a ASC
-                """)
+            execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     for func in ['arrayElement']:
 
@@ -192,20 +180,18 @@ def array_func(self, data_type, node=None):
             table(name = table_name, data_type = data_type)
 
             with When("I insert the output into the table"):
-                node.query(f"INSERT INTO {table_name} SELECT {func}(array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}), 1)")
+                node.query(f"INSERT INTO {table_name} SELECT {func}(array({to_data_type(data_type,3)},"
+                    f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}), 1)")
 
-            execute_query(f"""
-                SELECT * FROM {table_name} ORDER BY a ASC
-                """)
+            execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     for func in ['arrayPushBack',
         'arrayPushFront']:
 
         with Scenario(f"Inline - {data_type} - {func}"):
 
-            execute_query(f"""
-                SELECT {func}(array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}), {to_data_type(data_type,1)})
-                """)
+            execute_query(f"SELECT {func}(array({to_data_type(data_type,3)}, {to_data_type(data_type,2)},"
+                f"{to_data_type(data_type,1)}), {to_data_type(data_type,1)})")
 
         with Scenario(f"Table - {data_type} - {func}"):
             table_name = get_table_name()
@@ -213,20 +199,18 @@ def array_func(self, data_type, node=None):
             table(name = table_name, data_type = f'Array({data_type})')
 
             with When("I insert the output into the table"):
-                node.query(f"INSERT INTO {table_name} SELECT {func}(array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}), {to_data_type(data_type,1)})")
+                node.query(f"INSERT INTO {table_name} SELECT {func}(array({to_data_type(data_type,3)},"
+                    f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}), {to_data_type(data_type,1)})")
 
-            execute_query(f"""
-                SELECT * FROM {table_name} ORDER BY a ASC
-                """)
+            execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     for func in ['arrayResize',
         'arraySlice']:
 
         with Scenario(f"Inline - {data_type} - {func}"):
 
-            execute_query(f"""
-                SELECT {func}(array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}), 1)
-                """)
+            execute_query(f"SELECT {func}(array({to_data_type(data_type,3)},"
+                f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}), 1)")
 
         with Scenario(f"Table - {data_type} - {func}"):
             table_name = get_table_name()
@@ -234,20 +218,18 @@ def array_func(self, data_type, node=None):
             table(name = table_name, data_type = f'Array({data_type})')
 
             with When("I insert the output into the table"):
-                node.query(f"INSERT INTO {table_name} SELECT {func}(array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}), 1)")
+                node.query(f"INSERT INTO {table_name} SELECT {func}(array({to_data_type(data_type,3)},"
+                    f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}), 1)")
 
-            execute_query(f"""
-                SELECT * FROM {table_name} ORDER BY a ASC
-                """)
+            execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     for func in ['has',
         'indexOf',
         'countEqual']:
 
         with Scenario(f"Inline - {data_type} - {func}"):
-            execute_query(f"""
-                SELECT {func}(array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}), NULL)
-                """)
+            execute_query(f"SELECT {func}(array({to_data_type(data_type,3)},"
+                f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}), NULL)")
 
         with Scenario(f"Table - {data_type} - {func}"):
             table_name = get_table_name()
@@ -255,11 +237,10 @@ def array_func(self, data_type, node=None):
             table(name = table_name, data_type = data_type)
 
             with When("I insert the output into the table"):
-                node.query(f"INSERT INTO {table_name} SELECT {func}(array({to_data_type(data_type,3)}, {to_data_type(data_type,2)}, {to_data_type(data_type,1)}), NULL)")
+                node.query(f"INSERT INTO {table_name} SELECT {func}(array({to_data_type(data_type,3)},"
+                    f"{to_data_type(data_type,2)}, {to_data_type(data_type,1)}), NULL)")
 
-            execute_query(f"""
-                SELECT * FROM {table_name} ORDER BY a ASC
-                """)
+            execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
 @TestOutline(Suite)
 @Requirements(
@@ -281,11 +262,10 @@ def tuple_func(self, data_type, node=None):
         table(name = table_name, data_type = f'Tuple({data_type}, {data_type}, {data_type})')
 
         with When("I insert the output into a table"):
-            node.query(f"INSERT INTO {table_name} SELECT tuple({to_data_type(data_type,1)}, {to_data_type(data_type,1)}, {to_data_type(data_type,1)})")
+            node.query(f"INSERT INTO {table_name} SELECT tuple({to_data_type(data_type,1)},"
+                f"{to_data_type(data_type,1)}, {to_data_type(data_type,1)})")
 
-        execute_query(f"""
-            SELECT * FROM {table_name} ORDER BY a ASC
-            """)
+        execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     with Scenario(f"tupleElement with {data_type}"):
         node.query(f"SELECT tupleElement(({to_data_type(data_type,1)}, {to_data_type(data_type,1)}), 1)")
@@ -298,9 +278,7 @@ def tuple_func(self, data_type, node=None):
         with When("I insert the output into a table"):
             node.query(f"INSERT INTO {table_name} SELECT tupleElement(({to_data_type(data_type,1)}, {to_data_type(data_type,1)}), 1)")
 
-        execute_query(f"""
-            SELECT * FROM {table_name} ORDER BY a ASC
-            """)
+        execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     with Scenario(f"untuple with {data_type}"):
         node.query(f"SELECT untuple(({to_data_type(data_type,1)},))")
@@ -313,12 +291,11 @@ def tuple_func(self, data_type, node=None):
         with When("I insert the output into a table"):
             node.query(f"INSERT INTO {table_name} SELECT untuple(({to_data_type(data_type,1)},))")
 
-        execute_query(f"""
-            SELECT * FROM {table_name} ORDER BY a ASC
-            """)
+        execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     with Scenario(f"tupleHammingDistance with {data_type}"):
-        node.query(f"SELECT tupleHammingDistance(({to_data_type(data_type,1)}, {to_data_type(data_type,1)}), ({to_data_type(data_type,2)}, {to_data_type(data_type,2)}))")
+        node.query(f"SELECT tupleHammingDistance(({to_data_type(data_type,1)}, {to_data_type(data_type,1)}),"
+            f"({to_data_type(data_type,2)}, {to_data_type(data_type,2)}))")
 
     with Scenario(f"tupleHammingDistance with {data_type} on a table"):
         table_name = get_table_name()
@@ -326,11 +303,10 @@ def tuple_func(self, data_type, node=None):
         table(name = table_name, data_type = data_type)
 
         with When("I insert the output into a table"):
-            node.query(f"INSERT INTO {table_name} SELECT tupleHammingDistance(({to_data_type(data_type,1)}, {to_data_type(data_type,1)}), ({to_data_type(data_type,2)}, {to_data_type(data_type,2)}))")
+            node.query(f"INSERT INTO {table_name} SELECT tupleHammingDistance(({to_data_type(data_type,1)},"
+                f"{to_data_type(data_type,1)}), ({to_data_type(data_type,2)}, {to_data_type(data_type,2)}))")
 
-        execute_query(f"""
-            SELECT * FROM {table_name} ORDER BY a ASC
-            """)
+        execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
 @TestOutline(Suite)
 @Requirements(
@@ -355,13 +331,17 @@ def map_func(self, data_type, node=None):
         with When("I insert the output into a table"):
             node.query(f"INSERT INTO {table_name} SELECT map('key1', {to_data_type(data_type,1)}, 'key2', {to_data_type(data_type,2)})")
 
-        execute_query(f"""
-            SELECT * FROM {table_name}
-            """)
+        execute_query(f"SELECT * FROM {table_name}")
 
     with Scenario(f"mapAdd with {data_type}"):
-        node.query(f"SELECT mapAdd(([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]), ([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))",
-            exitcode = 44, message='Exception:')
+        sql = (f"SELECT mapAdd(([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
+            f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]),"
+            f"([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
+            f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))")
+        if data_type.startswith("Decimal"):
+            node.query(sql, exitcode=43, message="Exception:")
+        else:
+            execute_query(sql)
 
     with Scenario(f"mapAdd with {data_type} on a table"):
         table_name = get_table_name()
@@ -369,16 +349,30 @@ def map_func(self, data_type, node=None):
         table(name = table_name, data_type = f'Tuple(Array({data_type}), Array({data_type}))')
 
         with When("I insert the output into a table"):
-            node.query(f"INSERT INTO {table_name} SELECT mapAdd(([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]), ([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))",
-                exitcode = 44, message='Exception:')
+            sql = (f"INSERT INTO {table_name} SELECT mapAdd(("
+                f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
+                f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]),"
+                f"([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
+                f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))")
+            exitcode, message = 0, None
 
-        execute_query(f"""
-            SELECT * FROM {table_name} ORDER BY a ASC
-            """)
+            if data_type.startswith("Decimal"):
+                exitcode, message = 43, "Exception:"        
+            node.query(sql, exitcode=exitcode, message=message)
+
+        execute_query(f"""SELECT * FROM {table_name} ORDER BY a ASC""")
 
     with Scenario(f"mapSubtract with {data_type}"):
-        node.query(f"SELECT mapSubtract(([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]), ([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))",
-            exitcode = 44, message='Exception:')
+        sql = (f"SELECT mapSubtract(("
+            f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
+            f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]),"
+            f"([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}],"
+            f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))")
+
+        if data_type.startswith("Decimal"):
+            node.query(sql, exitcode=43, message="Exception:")
+        else:
+            execute_query(sql)
 
     with Scenario(f"mapSubtract with {data_type} on a table"):
         table_name = get_table_name()
@@ -386,15 +380,21 @@ def map_func(self, data_type, node=None):
         table(name = table_name, data_type = f'Tuple(Array({data_type}), Array({data_type}))')
 
         with When("I insert the output into a table"):
-            node.query(f"INSERT INTO {table_name} SELECT mapSubtract(([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]), ([{to_data_type(data_type,1)}, {to_data_type(data_type,2)}], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))",
-                exitcode = 44, message='Exception:')
+            sql = (f"INSERT INTO {table_name} SELECT mapSubtract(([{to_data_type(data_type,1)},"
+                f"{to_data_type(data_type,2)}], [{to_data_type(data_type,1)},"
+                f"{to_data_type(data_type,2)}]), ([{to_data_type(data_type,1)},"
+                f"{to_data_type(data_type,2)}], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}]))")
+            exitcode, message = 0, None
 
-        execute_query(f"""
-            SELECT * FROM {table_name} ORDER BY a ASC
-            """)
+            if data_type.startswith("Decimal"):
+                exitcode, message = 43, "Exception:"
+            node.query(sql, exitcode=exitcode, message=message)
+
+        execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     with Scenario(f"mapPopulateSeries with {data_type}"):
-        node.query(f"SELECT mapPopulateSeries([1,2,3], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}, {to_data_type(data_type,3)}], 5)",
+        node.query(f"SELECT mapPopulateSeries([1,2,3], [{to_data_type(data_type,1)},"
+            f"{to_data_type(data_type,2)}, {to_data_type(data_type,3)}], 5)",
             exitcode = 44, message='Exception:')
 
     with Scenario(f"mapPopulateSeries with {data_type} on a table"):
@@ -403,15 +403,15 @@ def map_func(self, data_type, node=None):
         table(name = table_name, data_type = f'Tuple(Array({data_type}), Array({data_type}))')
 
         with When("I insert the output into a table"):
-            node.query(f"INSERT INTO {table_name} SELECT mapPopulateSeries([1,2,3], [{to_data_type(data_type,1)}, {to_data_type(data_type,2)}, {to_data_type(data_type,3)}], 5)",
+            node.query(f"INSERT INTO {table_name} SELECT mapPopulateSeries([1,2,3],"
+                f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}, {to_data_type(data_type,3)}], 5)",
                 exitcode = 44, message='Exception:')
 
-        execute_query(f"""
-            SELECT * FROM {table_name} ORDER BY a ASC
-            """)
+        execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     with Scenario(f"mapContains with {data_type}"):
-        node.query(f"SELECT mapContains( map('key1', {to_data_type(data_type,1)}, 'key2', {to_data_type(data_type,2)}), 'key1')")
+        node.query(f"SELECT mapContains( map('key1', {to_data_type(data_type,1)},"
+            f"'key2', {to_data_type(data_type,2)}), 'key1')")
 
     with Scenario(f"mapContains with {data_type} on a table"):
         table_name = get_table_name()
@@ -419,11 +419,10 @@ def map_func(self, data_type, node=None):
         table(name = table_name, data_type = data_type)
 
         with When("I insert the output into a table"):
-            node.query(f"INSERT INTO {table_name} SELECT mapContains( map('key1', {to_data_type(data_type,1)}, 'key2', {to_data_type(data_type,2)}), 'key1')")
+            node.query(f"INSERT INTO {table_name} SELECT mapContains( map('key1', {to_data_type(data_type,1)},"
+                f"'key2', {to_data_type(data_type,2)}), 'key1')")
 
-        execute_query(f"""
-            SELECT * FROM {table_name} ORDER BY a ASC
-            """)
+        execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     with Scenario(f"mapKeys with {data_type}"):
         node.query(f"SELECT mapKeys( map('key1', {to_data_type(data_type,1)}, 'key2', {to_data_type(data_type,2)}))")
@@ -434,11 +433,10 @@ def map_func(self, data_type, node=None):
         table(name = table_name, data_type = 'Array(String)')
 
         with When("I insert the output into a table"):
-            node.query(f"INSERT INTO {table_name} SELECT mapKeys( map('key1', {to_data_type(data_type,1)}, 'key2', {to_data_type(data_type,2)}))")
+            node.query(f"INSERT INTO {table_name} SELECT mapKeys( map('key1', {to_data_type(data_type,1)},"
+                f"'key2', {to_data_type(data_type,2)}))")
 
-        execute_query(f"""
-            SELECT * FROM {table_name} ORDER BY a ASC
-            """)
+        execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     with Scenario(f"mapValues with {data_type}"):
         node.query(f"SELECT mapValues( map('key1', {to_data_type(data_type,1)}, 'key2', {to_data_type(data_type,2)}))")
@@ -449,11 +447,10 @@ def map_func(self, data_type, node=None):
         table(name = table_name, data_type = f'Array({data_type})')
 
         with When("I insert the output into a table"):
-            node.query(f"INSERT INTO {table_name} SELECT mapValues( map('key1', {to_data_type(data_type,1)}, 'key2', {to_data_type(data_type,2)}))")
+            node.query(f"INSERT INTO {table_name} SELECT mapValues( map('key1', {to_data_type(data_type,1)},"
+                f"'key2', {to_data_type(data_type,2)}))")
 
-        execute_query(f"""
-            SELECT * FROM {table_name} ORDER BY a ASC
-            """)
+        execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
 @TestFeature
 @Name("array, tuple, map")
@@ -465,7 +462,8 @@ def map_func(self, data_type, node=None):
     ('Decimal256(0)',),
 ])
 def feature(self, node="clickhouse1", stress=None, parallel=None):
-    """Check that array, tuple, and map functions work with extended precision data types.
+    """Check that array, tuple, and map functions work with
+    extended precision data types.
     """
     self.context.node = self.context.cluster.node(node)
 
@@ -481,4 +479,4 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
                 with Given("I allow experimental map type"):
                     allow_experimental_map_type()
 
-                    Suite(test=map_func)(data_type=data_type)
+                Suite(test=map_func)(data_type=data_type)

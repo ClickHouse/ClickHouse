@@ -1,7 +1,7 @@
-#include <Storages/PostgreSQL/PoolWithFailover.h>
+#include "PoolWithFailover.h"
+#include "Utils.h"
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
-#include <IO/Operators.h>
 
 namespace DB
 {
@@ -13,18 +13,6 @@ namespace ErrorCodes
 
 namespace postgres
 {
-
-String formatConnectionString(String dbname, String host, UInt16 port, String user, String password)
-{
-    DB::WriteBufferFromOwnString out;
-    out << "dbname=" << DB::quote << dbname
-        << " host=" << DB::quote << host
-        << " port=" << port
-        << " user=" << DB::quote << user
-        << " password=" << DB::quote << password
-        << " connect_timeout=10";
-    return out.str();
-}
 
 PoolWithFailover::PoolWithFailover(
         const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
@@ -58,14 +46,14 @@ PoolWithFailover::PoolWithFailover(
                 auto replica_user = config.getString(replica_name + ".user", user);
                 auto replica_password = config.getString(replica_name + ".password", password);
 
-                auto connection_string = formatConnectionString(db, replica_host, replica_port, replica_user, replica_password);
+                auto connection_string = formatConnectionString(db, replica_host, replica_port, replica_user, replica_password).first;
                 replicas_with_priority[priority].emplace_back(connection_string, pool_size);
             }
         }
     }
     else
     {
-        auto connection_string = formatConnectionString(db, host, port, user, password);
+        auto connection_string = formatConnectionString(db, host, port, user, password).first;
         replicas_with_priority[0].emplace_back(connection_string, pool_size);
     }
 }
@@ -85,7 +73,7 @@ PoolWithFailover::PoolWithFailover(
     for (const auto & [host, port] : addresses)
     {
         LOG_DEBUG(&Poco::Logger::get("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
-        auto connection_string = formatConnectionString(database, host, port, user, password);
+        auto connection_string = formatConnectionString(database, host, port, user, password).first;
         replicas_with_priority[0].emplace_back(connection_string, pool_size);
     }
 }
