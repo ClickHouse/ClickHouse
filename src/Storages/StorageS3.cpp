@@ -360,7 +360,7 @@ StorageS3::StorageS3(
 
 Pipe StorageS3::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -405,9 +405,9 @@ Pipe StorageS3::read(
             need_file_column,
             format_name,
             getName(),
-            metadata_snapshot->getSampleBlock(),
+            storage_snapshot->metadata->getSampleBlock(),
             local_context,
-            metadata_snapshot->getColumns(),
+            storage_snapshot->metadata->getColumns(),
             max_block_size,
             max_single_read_retries,
             compression_method,

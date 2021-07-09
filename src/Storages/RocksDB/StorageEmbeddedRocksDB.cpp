@@ -285,24 +285,24 @@ void StorageEmbeddedRocksDB::initDb()
 
 Pipe StorageEmbeddedRocksDB::read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams)
 {
-    check(metadata_snapshot, column_names);
+    storage_snapshot->check(column_names);
 
     FieldVectorPtr keys;
     bool all_scan = false;
 
-    auto primary_key_data_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
+    auto primary_key_data_type = storage_snapshot->metadata->getSampleBlock().getByName(primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info);
     if (all_scan)
     {
         auto reader = std::make_shared<EmbeddedRocksDBBlockInputStream>(
-                *this, metadata_snapshot, max_block_size);
+                *this, storage_snapshot->metadata, max_block_size);
         return Pipe(std::make_shared<SourceFromInputStream>(reader));
     }
     else
@@ -327,7 +327,7 @@ Pipe StorageEmbeddedRocksDB::read(
             size_t end = num_keys * (thread_idx + 1) / num_threads;
 
             pipes.emplace_back(std::make_shared<EmbeddedRocksDBSource>(
-                    *this, metadata_snapshot, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
+                    *this, storage_snapshot->metadata, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
         }
         return Pipe::unitePipes(std::move(pipes));
     }

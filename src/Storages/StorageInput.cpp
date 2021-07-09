@@ -54,7 +54,7 @@ void StorageInput::setInputStream(BlockInputStreamPtr input_stream_)
 
 Pipe StorageInput::read(
     const Names & /*column_names*/,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -68,7 +68,7 @@ Pipe StorageInput::read(
     {
         /// Send structure to the client.
         query_context->initializeInput(shared_from_this());
-        return Pipe(std::make_shared<StorageInputSource>(query_context, metadata_snapshot->getSampleBlock()));
+        return Pipe(std::make_shared<StorageInputSource>(query_context, storage_snapshot->metadata->getSampleBlock()));
     }
 
     if (!input_stream)

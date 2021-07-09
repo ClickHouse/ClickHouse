@@ -29,13 +29,12 @@ public:
 
     MemorySource(
         Names column_names_,
-        const StorageMemory & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
-        : SourceWithProgress(storage.getSampleBlockForColumns(metadata_snapshot, column_names_))
-        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
+        : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
+        , column_names_and_types(storage_snapshot->metadata->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
@@ -178,14 +177,14 @@ StorageMemory::StorageMemory(
 
 Pipe StorageMemory::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    check(metadata_snapshot, column_names);
+    storage_snapshot->check(column_names);
 
     if (delay_read_for_global_subqueries)
     {
@@ -199,8 +198,7 @@ Pipe StorageMemory::read(
 
         return Pipe(std::make_shared<MemorySource>(
             column_names,
-            *this,
-            metadata_snapshot,
+            storage_snapshot,
             nullptr /* data */,
             nullptr /* parallel execution index */,
             [this](std::shared_ptr<const Blocks> & data_to_initialize)
@@ -221,7 +219,7 @@ Pipe StorageMemory::read(
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, *this, metadata_snapshot, current_data, parallel_execution_index));
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, storage_snapshot, current_data, parallel_execution_index));
     }
 
     return Pipe::unitePipes(std::move(pipes));

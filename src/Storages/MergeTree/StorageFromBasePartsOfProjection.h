@@ -24,7 +24,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -35,6 +35,7 @@ public:
         QueryPlan query_plan = std::move(*MergeTreeDataSelectExecutor(storage).readFromParts(
             {},
             column_names,
+            storage_snapshot,
             metadata_snapshot,
             metadata_snapshot,
             query_info,

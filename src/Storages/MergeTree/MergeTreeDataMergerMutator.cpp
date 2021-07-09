@@ -15,6 +15,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
@@ -718,7 +719,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     Names all_column_names = metadata_snapshot->getColumns().getNamesOfPhysical();
     NamesAndTypesList storage_columns = metadata_snapshot->getColumns().getAllPhysical();
-    storage_columns = MergeTreeData::extendObjectColumns(parts, storage_columns, false);
+
+    auto object_types = MergeTreeData::getObjectTypes(parts, getNamesOfObjectColumns(storage_columns));
+    auto storage_snapshot = std::make_shared<StorageSnapshot>(data, metadata_snapshot, object_types, parts);
+    storage_columns = extendObjectColumns(storage_columns, object_types, false);
+
     const auto data_settings = data.getSettings();
 
     NamesAndTypesList gathering_columns;
@@ -858,8 +863,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     for (const auto & part : parts)
     {
+        /// TODO: Fix
         auto input = std::make_unique<MergeTreeSequentialSource>(
-            data, metadata_snapshot, part, merging_column_names, read_with_direct_io, true);
+            data, storage_snapshot, part, merging_column_names, read_with_direct_io, true);
 
         input->setProgressCallback(
             MergeProgressCallback(merge_entry, watch_prev_elapsed, horizontal_stage_progress));
@@ -1061,7 +1067,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
                 auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
-                    data, metadata_snapshot, parts[part_num], column_names, read_with_direct_io, true);
+                    data, storage_snapshot, parts[part_num], column_names, read_with_direct_io, true);
 
                 column_part_source->setProgressCallback(
                     MergeProgressCallback(merge_entry, watch_prev_elapsed, column_progress));

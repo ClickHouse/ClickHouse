@@ -607,9 +607,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    if (settings.optimize_functions_to_subcolumns && result.storage
-        && result.storage->supportsSubcolumns() && result.metadata_snapshot)
-        optimizeFunctionsToSubcolumns(query, result.metadata_snapshot);
+    if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
+        optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
@@ -668,7 +667,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Replace monotonous functions with its argument
     if (settings.optimize_monotonous_functions_in_order_by)
         optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns,
-            result.metadata_snapshot ? result.metadata_snapshot->getSortingKeyColumns() : Names{});
+            result.storage_snapshot ? result.storage_snapshot->metadata->getSortingKeyColumns() : Names{});
 
     /// Remove duplicate items from ORDER BY.
     /// Execute it after all order by optimizations,

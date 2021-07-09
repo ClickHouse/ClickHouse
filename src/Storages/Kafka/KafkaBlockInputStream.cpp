@@ -21,21 +21,21 @@ const auto MAX_FAILED_POLL_ATTEMPTS = 10;
 
 KafkaBlockInputStream::KafkaBlockInputStream(
     StorageKafka & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const std::shared_ptr<Context> & context_,
     const Names & columns,
     Poco::Logger * log_,
     size_t max_block_size_,
     bool commit_in_suffix_)
     : storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , context(context_)
     , column_names(columns)
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
-    , virtual_header(storage.getSampleBlockForColumns(metadata_snapshot, storage.getVirtualColumnNames()))
+    , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
+    , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
     , handle_error_mode(storage.getHandleKafkaErrorMode())
 {
 }
@@ -53,7 +53,7 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
 
 Block KafkaBlockInputStream::getHeader() const
 {
-    return storage.getSampleBlockForColumns(metadata_snapshot, column_names);
+    return storage_snapshot->getSampleBlockForColumns(column_names);
 }
 
 void KafkaBlockInputStream::readPrefixImpl()

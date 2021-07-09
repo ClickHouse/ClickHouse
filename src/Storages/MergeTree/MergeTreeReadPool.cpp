@@ -23,7 +23,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     const size_t min_marks_for_concurrent_read_,
     RangesInDataParts && parts_,
     const MergeTreeData & data_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const bool check_columns_,
     const Names & column_names_,
@@ -33,7 +33,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     : backoff_settings{backoff_settings_}
     , backoff_state{threads_}
     , data{data_}
-    , metadata_snapshot{metadata_snapshot_}
+    , storage_snapshot{storage_snapshot_}
     , column_names{column_names_}
     , do_not_steal_tasks{do_not_steal_tasks_}
     , predict_block_size_bytes{preferred_block_size_bytes_ > 0}
@@ -168,7 +168,7 @@ MarkRanges MergeTreeReadPool::getRestMarks(const IMergeTreeDataPart & part, cons
 
 Block MergeTreeReadPool::getHeader() const
 {
-    return data.getSampleBlockForColumns(metadata_snapshot, column_names);
+    return storage_snapshot->getSampleBlockForColumns(column_names);
 }
 
 void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
@@ -215,7 +215,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
     const RangesInDataParts & parts, const bool check_columns)
 {
     std::vector<size_t> per_part_sum_marks;
-    Block sample_block = metadata_snapshot->getSampleBlock();
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     for (const auto i : collections::range(0, parts.size()))
     {
@@ -229,7 +229,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
         per_part_sum_marks.push_back(sum_marks);
 
         auto [required_columns, required_pre_columns, should_reorder] =
-            getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info, check_columns);
+            getReadTaskColumns(data, storage_snapshot, part.data_part, column_names, prewhere_info, check_columns);
 
         /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
         const auto & required_column_names = required_columns.getNames();

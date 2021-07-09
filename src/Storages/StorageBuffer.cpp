@@ -134,9 +134,9 @@ StorageBuffer::StorageBuffer(
 class BufferSource : public SourceWithProgress
 {
 public:
-    BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage, const StorageMetadataPtr & metadata_snapshot)
-        : SourceWithProgress(storage.getSampleBlockForColumns(metadata_snapshot, column_names_))
-        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names_))
+    BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageSnapshotPtr & storage_snapshot)
+        : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
+        , column_names_and_types(storage_snapshot->metadata->getColumns().getAllWithSubcolumns().addTypes(column_names_))
         , buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
@@ -183,7 +183,7 @@ private:
 QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageMetadataPtr &,
+    const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
     if (destination_id)
@@ -193,7 +193,8 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        return destination->getQueryProcessingStage(local_context, to_stage, destination->getInMemoryMetadataPtr(), query_info);
+        const auto & destination_metadata = destination->getInMemoryMetadataPtr();
+        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata), query_info);
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -202,7 +203,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 
 Pipe StorageBuffer::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
@@ -210,7 +211,7 @@ Pipe StorageBuffer::read(
     const unsigned num_streams)
 {
     QueryPlan plan;
-    read(plan, column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
     return plan.convertToPipe(
         QueryPlanOptimizationSettings::fromContext(local_context),
         BuildQueryPipelineSettings::fromContext(local_context));
@@ -219,13 +220,15 @@ Pipe StorageBuffer::read(
 void StorageBuffer::read(
     QueryPlan & query_plan,
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
+    const auto & metadata_snapshot = storage_snapshot->metadata;
+
     if (destination_id)
     {
         auto destination = DatabaseCatalog::instance().getTable(destination_id, local_context);
@@ -236,6 +239,7 @@ void StorageBuffer::read(
         auto destination_lock = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
+        auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot);
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [metadata_snapshot, destination_metadata_snapshot](const String& column_name)
         {
@@ -252,7 +256,7 @@ void StorageBuffer::read(
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             destination->read(
-                query_plan, column_names, destination_metadata_snapshot, query_info,
+                query_plan, column_names, destination_snapshot, query_info,
                 local_context, processed_stage, max_block_size, num_streams);
         }
         else
@@ -287,7 +291,7 @@ void StorageBuffer::read(
             else
             {
                 destination->read(
-                        query_plan, columns_intersection, destination_metadata_snapshot, query_info,
+                        query_plan, columns_intersection, destination_snapshot, query_info,
                         local_context, processed_stage, max_block_size, num_streams);
 
                 if (query_plan.isInitialized())
@@ -344,7 +348,7 @@ void StorageBuffer::read(
         Pipes pipes_from_buffers;
         pipes_from_buffers.reserve(num_shards);
         for (auto & buf : buffers)
-            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this, metadata_snapshot));
+            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
     }

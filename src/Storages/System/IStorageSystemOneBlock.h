@@ -46,16 +46,16 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override
     {
-        check(metadata_snapshot, column_names);
+        storage_snapshot->check(column_names);
 
-        Block sample_block = metadata_snapshot->getSampleBlockWithVirtuals(getVirtuals());
+        Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
         fillData(res_columns, context, query_info);
 

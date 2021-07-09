@@ -112,16 +112,17 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot);
 
     Names column_names;
     column_names.push_back("a");
 
     SelectQueryInfo query_info;
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
-        context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
+        context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
     QueryPipeline pipeline;
-    pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
+    pipeline.init(table->read(column_names, storage_snapshot, query_info, context, stage, 8192, 1));
     BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     Block sample;

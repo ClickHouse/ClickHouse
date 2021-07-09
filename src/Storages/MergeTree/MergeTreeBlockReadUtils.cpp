@@ -265,7 +265,7 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
 MergeTreeReadTaskColumns getReadTaskColumns(
     const MergeTreeData & storage,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
     const PrewhereInfoPtr & prewhere_info,
@@ -275,7 +275,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     Names pre_column_names;
 
     /// inject columns required for defaults evaluation
-    bool should_reorder = !injectRequiredColumns(storage, metadata_snapshot, data_part, column_names).empty();
+    bool should_reorder = !injectRequiredColumns(storage, storage_snapshot->metadata, data_part, column_names).empty();
 
     if (prewhere_info)
     {
@@ -300,7 +300,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);
 
-        const auto injected_pre_columns = injectRequiredColumns(storage, metadata_snapshot, data_part, pre_column_names);
+        const auto injected_pre_columns = injectRequiredColumns(storage, storage_snapshot->metadata, data_part, pre_column_names);
         if (!injected_pre_columns.empty())
             should_reorder = true;
 
@@ -318,7 +318,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (check_columns)
     {
-        auto all_columns = storage.getColumns(metadata_snapshot,
+        auto all_columns = storage_snapshot->getColumns(
             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects());
 
         result.pre_columns = all_columns.addTypes(pre_column_names);

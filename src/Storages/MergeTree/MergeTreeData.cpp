@@ -3861,7 +3861,7 @@ using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 static void selectBestProjection(
     const MergeTreeDataSelectExecutor & reader,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
     const Names & required_columns,
     ProjectionCandidate & candidate,
@@ -3890,7 +3890,8 @@ static void selectBestProjection(
     auto sum_marks = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
-        metadata_snapshot,
+        storage_snapshot,
+        storage_snapshot->metadata,
         candidate.desc->metadata,
         query_info, // TODO syntax_analysis_result set in index
         query_context,
@@ -3908,8 +3909,9 @@ static void selectBestProjection(
         sum_marks += reader.estimateNumMarksToRead(
             normal_parts,
             required_columns,
-            metadata_snapshot,
-            metadata_snapshot,
+            storage_snapshot,
+            storage_snapshot->metadata,
+            storage_snapshot->metadata,
             query_info, // TODO syntax_analysis_result set in index
             query_context,
             settings.max_threads,
@@ -3926,8 +3928,9 @@ static void selectBestProjection(
 
 
 bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
-    ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const
+    ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, SelectQueryInfo & query_info) const
 {
+    const auto & metadata_snapshot = storage_snapshot->metadata;
     const auto & settings = query_context->getSettingsRef();
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections)
         return false;
@@ -4160,7 +4163,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             {
                 selectBestProjection(
                     reader,
-                    metadata_snapshot,
+                    storage_snapshot,
                     query_info,
                     analysis_result.required_columns,
                     candidate,
@@ -4181,6 +4184,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             min_sum_marks = reader.estimateNumMarksToRead(
                 parts,
                 analysis_result.required_columns,
+                storage_snapshot,
                 metadata_snapshot,
                 metadata_snapshot,
                 query_info, // TODO syntax_analysis_result set in index
@@ -4198,7 +4202,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                 {
                     selectBestProjection(
                         reader,
-                        metadata_snapshot,
+                        storage_snapshot,
                         query_info,
                         analysis_result.required_columns,
                         candidate,
@@ -4232,12 +4236,12 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     ContextPtr query_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
     if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
     {
-        if (getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
+        if (getQueryProcessingStageWithAggregateProjection(query_context, storage_snapshot, query_info))
         {
             if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
                 return QueryProcessingStage::Enum::WithMergeableState;
@@ -5101,27 +5105,13 @@ ReservationPtr MergeTreeData::balancedReservation(
     return reserved_space;
 }
 
-static NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list)
-{
-    NameSet res;
-    for (const auto & [name, type] : columns_list)
-        if (isObject(type))
-            res.insert(name);
-
-    return res;
-}
-
-static NamesAndTypesList extendObjectColumnsImpl(
-    const MergeTreeData::DataPartsVector & parts,
-    const NamesAndTypesList & columns_list,
-    const NameSet & requested_to_extend,
-    bool with_subcolumns)
+StorageSnapshot::NameToTypeMap MergeTreeData::getObjectTypes(const DataPartsVector & parts, const NameSet & object_names)
 {
     std::unordered_map<String, DataTypes> types_in_parts;
 
     if (parts.empty())
     {
-        for (const auto & name : requested_to_extend)
+        for (const auto & name : object_names)
             types_in_parts[name].push_back(std::make_shared<DataTypeTuple>(
                 DataTypes{std::make_shared<DataTypeUInt8>()},
                 Names{ColumnObject::COLUMN_NAME_DUMMY}));
@@ -5133,57 +5123,27 @@ static NamesAndTypesList extendObjectColumnsImpl(
             const auto & part_columns = part->getColumns();
             for (const auto & [name, type] : part_columns)
             {
-                if (requested_to_extend.count(name))
+                if (object_names.count(name))
                     types_in_parts[name].push_back(type);
             }
         }
     }
 
-    NamesAndTypesList result_columns;
-    for (const auto & column : columns_list)
-    {
-        auto it = types_in_parts.find(column.name);
-        if (it != types_in_parts.end())
-        {
-            auto expanded_type = getLeastCommonTypeForObject(it->second);
-            result_columns.emplace_back(column.name, expanded_type);
+    StorageSnapshot::NameToTypeMap object_types;
+    for (const auto & [name, types] : types_in_parts)
+        object_types.emplace(name, getLeastCommonTypeForObject(types));
 
-            if (with_subcolumns)
-            {
-                for (const auto & subcolumn : expanded_type->getSubcolumnNames())
-                {
-                    result_columns.emplace_back(column.name, subcolumn,
-                        expanded_type, expanded_type->getSubcolumnType(subcolumn));
-                }
-            }
-        }
-        else
-        {
-            result_columns.push_back(column);
-        }
-    }
-
-    return result_columns;
+    return object_types;
 }
 
-NamesAndTypesList MergeTreeData::extendObjectColumns(const DataPartsVector & parts, const NamesAndTypesList & columns_list, bool with_subcolumns)
+StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
 {
-    /// Firstly fast check without locking parts, if there are any Object columns.
-    NameSet requested_to_extend = getNamesOfObjectColumns(columns_list);
-    if (requested_to_extend.empty())
-        return columns_list;
+    auto parts = getDataPartsVector();
+    auto object_types = getObjectTypes(
+        parts,
+        getNamesOfObjectColumns(metadata_snapshot->getColumns().getAll()));
 
-    return extendObjectColumnsImpl(parts, columns_list, requested_to_extend, with_subcolumns);
-}
-
-NamesAndTypesList MergeTreeData::extendObjectColumns(const NamesAndTypesList & columns_list, bool with_subcolumns) const
-{
-    /// Firstly fast check without locking parts, if there are any Object columns.
-    NameSet requested_to_extend = getNamesOfObjectColumns(columns_list);
-    if (requested_to_extend.empty())
-        return columns_list;
-
-    return extendObjectColumnsImpl(getDataPartsVector(), columns_list, requested_to_extend, with_subcolumns);
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_types, parts);
 }
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()

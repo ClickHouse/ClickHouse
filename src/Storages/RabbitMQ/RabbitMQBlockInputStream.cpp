@@ -15,20 +15,20 @@ namespace DB
 
 RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     StorageRabbitMQ & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
     bool ack_in_suffix_)
     : storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
     , ack_in_suffix(ack_in_suffix_)
-    , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
+    , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , sample_block(non_virtual_header)
-    , virtual_header(storage.getSampleBlockForColumns(metadata_snapshot,
+    , virtual_header(storage_snapshot->getSampleBlockForColumns(
                 {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id", "_timestamp"}))
 {
     for (const auto & column : virtual_header)

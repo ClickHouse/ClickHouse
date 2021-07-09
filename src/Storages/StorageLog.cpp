@@ -648,19 +648,19 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 
 Pipe StorageLog::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    check(metadata_snapshot, column_names);
+    storage_snapshot->check(column_names);
 
     auto lock_timeout = getLockTimeout(context);
     loadMarks(lock_timeout);
 
-    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
+    auto all_columns = storage_snapshot->metadata->getColumns().getAllWithSubcolumns().addTypes(column_names);
     all_columns = Nested::convertToSubcolumns(all_columns);
 
     std::shared_lock lock(rwlock, lock_timeout);
@@ -669,7 +669,7 @@ Pipe StorageLog::read(
 
     Pipes pipes;
 
-    const Marks & marks = getMarksWithRealRowCount(metadata_snapshot);
+    const Marks & marks = getMarksWithRealRowCount(storage_snapshot->metadata);
     size_t marks_size = marks.size();
 
     if (num_streams > marks_size)

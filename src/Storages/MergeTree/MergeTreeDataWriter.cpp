@@ -273,7 +273,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
 {
     Block & block = block_with_partition.block;
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    auto extended_storage_columns = data.getColumns(metadata_snapshot,
+    auto storage_snapshot = data.getStorageSnapshot(metadata_snapshot);
+    auto extended_storage_columns = storage_snapshot->getColumns(
         GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
 
     convertObjectsToTuples(columns, block, extended_storage_columns);
