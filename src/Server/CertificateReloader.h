@@ -1,40 +1,28 @@
 #pragma once
 
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-
-#include <memory>
-#include <mutex>
-#include <shared_mutex>
-#include <string>
-#include <utility>
-
-#include <Poco/Logger.h>
-#include <Poco/Util/AbstractConfiguration.h>
-
-#include <common/logger_useful.h>
-
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
 
 #if USE_SSL
-#    include <openssl/ssl.h>
-#    include <openssl/x509v3.h>
-#    include <Poco/Crypto/RSAKey.h>
-#    include <Poco/Crypto/X509Certificate.h>
-#    include <Poco/Net/Context.h>
-#    include <Poco/Net/SSLManager.h>
-#    include <Poco/Net/Utility.h>
-#endif
+
+#include <string>
+#include <filesystem>
+
+#include <Poco/Logger.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <openssl/ssl.h>
+#include <openssl/x509v3.h>
+#include <Poco/Crypto/RSAKey.h>
+#include <Poco/Crypto/X509Certificate.h>
+#include <Common/MultiVersion.h>
+
 
 namespace DB
 {
-#if USE_SSL
 
 /// The CertificateReloader singleton performs 2 functions:
-/// 1. Dynamic reloading of TLS keypair when requested by main:
+/// 1. Dynamic reloading of TLS key-pair when requested by main:
 ///   Main notifies CertificateReloader when the config changes. On changed config,
 ///   CertificateReloader reloads certs from disk.
 /// 2. Implement `SSL_CTX_set_cert_cb` to set certificate for a new connection:
@@ -53,7 +41,7 @@ public:
         return instance;
     }
 
-    /// Initialize the callback and perfom the initial cert loading
+    /// Initialize the callback and perform the initial cert loading
     void init(const Poco::Util::AbstractConfiguration & config);
 
     /// Handle configuration reload
@@ -69,21 +57,39 @@ private:
     {
     }
 
-    mutable std::shared_mutex mutex;
     Poco::Logger * log = &Poco::Logger::get("CertificateReloader");
 
-    std::string cert_file;
-    stat_t cert_file_st;
-    std::unique_ptr<Poco::Crypto::X509Certificate> cert;
-    bool setCertificateFile(std::string cert_file);
+    struct File
+    {
+        const char * description;
+        File(const char * description_) : description(description_) {}
 
-    std::string key_file;
-    stat_t key_file_st;
-    std::unique_ptr<Poco::Crypto::RSAKey> key;
-    bool setKeyFile(std::string key_file);
+        std::string path;
+        std::filesystem::file_time_type modification_time;
+
+        bool changeIfModified(std::string new_path, Poco::Logger * logger);
+    };
+
+    File cert_file{"certificate"};
+    File key_file{"key"};
+
+    struct Data
+    {
+        Poco::Crypto::X509Certificate cert;
+        Poco::Crypto::RSAKey key;
+
+        Data(std::string cert_path, std::string key_path);
+    };
+
+    MultiVersion<Data> data;
 };
 
+}
+
 #else
+
+namespace DB
+{
 
 class CertificateReloader
 {
@@ -103,5 +109,6 @@ public:
     }
 };
 
-#endif
 }
+
+#endif
