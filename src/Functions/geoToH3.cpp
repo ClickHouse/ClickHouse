@@ -87,7 +87,7 @@ public:
             H3Index hindex;
             H3Error err = latLngToCell(&coord, res, &hindex);
             if (err)
-	            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect coordinates latitude: {}, longitude: {}, error: {}", coord.lat, coord.lon, err);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect coordinates latitude: {}, longitude: {}, error: {}", coord.lat, coord.lng, err);
 
             dst_data[row] = hindex;
         }
