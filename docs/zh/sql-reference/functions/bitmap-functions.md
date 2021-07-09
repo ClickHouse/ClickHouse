@@ -174,7 +174,7 @@ SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS re
     │ [3] │
     └─────┘
 
-## 位图 {#bitmapor}
+## 位图或 {#bitmapor}
 
 为两个位图对象进行或操作，返回一个新的位图对象。
 
