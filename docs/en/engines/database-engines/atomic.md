@@ -47,7 +47,7 @@ EXCHANGE TABLES new_table AND old_table;
 
 ### ReplicatedMergeTree in Atomic Database {#replicatedmergetree-in-atomic-database}
 
-For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) tables is recomended do not specify parameters of engine - path in ZooKeeper and replica name. In this case will be used parameters of the configuration [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). If you want specify parameters of engine explicitly than recomended to use {uuid} macros. This is useful so that unique paths are automatically generated for each table in the ZooKeeper.
+For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) tables, it is recommended to not specify engine parameters - path in ZooKeeper and replica name. In this case, configuration parameters will be used [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). If you want to specify engine parameters explicitly, it is recommended to use {uuid} macros. This is useful so that unique paths are automatically generated for each table in ZooKeeper.
 
 ## See Also
 

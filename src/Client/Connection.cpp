@@ -424,7 +424,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -680,8 +680,12 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
+        if (!elem->pipe)
+            elem->pipe = elem->creating_pipe_callback();
+
         QueryPipeline pipeline;
         pipeline.init(std::move(*elem->pipe));
+        elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
         pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr

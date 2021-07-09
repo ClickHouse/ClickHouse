@@ -52,7 +52,7 @@ public:
     Cluster & operator=(const Cluster &) = delete;
 
     /// is used to set a limit on the size of the timeout
-    static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
+    static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
 public:
     using SlotToShard = std::vector<UInt64>;
@@ -166,10 +166,8 @@ public:
         std::string prefer_localhost_replica;
         /// prefer_localhost_replica == 0 && use_compact_format_in_distributed_parts_names=0
         std::string no_prefer_localhost_replica;
-        /// prefer_localhost_replica == 1 && use_compact_format_in_distributed_parts_names=1
-        std::string prefer_localhost_replica_compact;
-        /// prefer_localhost_replica == 0 && use_compact_format_in_distributed_parts_names=1
-        std::string no_prefer_localhost_replica_compact;
+        /// use_compact_format_in_distributed_parts_names=1
+        std::string compact;
     };
 
     struct ShardInfo
