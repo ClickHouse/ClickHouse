@@ -25,6 +25,10 @@ namespace CurrentMetrics
     extern const Metric EphemeralNode;
 }
 
+namespace DB
+{
+    class ZooKeeperLog;
+}
 
 namespace zkutil
 {
@@ -82,7 +86,7 @@ public:
             <identity>user:password</identity>
         </zookeeper>
     */
-    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
@@ -298,6 +302,7 @@ private:
     std::mutex mutex;
 
     Poco::Logger * log = nullptr;
+    std::shared_ptr<DB::ZooKeeperLog> zk_log;
 };
 
 
