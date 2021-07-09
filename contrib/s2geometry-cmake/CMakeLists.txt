@@ -90,6 +90,8 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2wedge_relations.cc"
     "${S2_SOURCE_DIR}/s2/strings/ostringstream.cc"
     "${S2_SOURCE_DIR}/s2/strings/serialize.cc"
+    # ClickHouse doesn't use strings from abseil.
+    # So, there is no duplicate symbols.
     "${S2_SOURCE_DIR}/s2/third_party/absl/base/dynamic_annotations.cc"
     "${S2_SOURCE_DIR}/s2/third_party/absl/base/internal/raw_logging.cc"
     "${S2_SOURCE_DIR}/s2/third_party/absl/base/internal/throw_delegate.cc"
