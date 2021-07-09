@@ -1,4 +1,3 @@
-#include <cmath>
 #include <map>
 #include <set>
 #include <optional>
@@ -7,7 +6,6 @@
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Util/Application.h>
-#include "common/types.h"
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
@@ -79,7 +77,6 @@
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <filesystem>
-#include <vector>
 
 
 namespace fs = std::filesystem;
@@ -720,6 +717,12 @@ void Context::setDictionariesLibPath(const String & path)
 {
     auto lock = getLock();
     shared->dictionaries_lib_path = path;
+}
+
+void Context::addWarningMessage(const String & msg)
+{
+    auto lock = getLock();
+    shared->addWarningMessage(msg);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)

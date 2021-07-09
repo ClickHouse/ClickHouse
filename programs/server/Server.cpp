@@ -480,10 +480,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (ThreadFuzzer::instance().isEffective())
         LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
-#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
-    LOG_WARNING(log, "Server was built in debug mode. It will work slowly.");
-#endif
-
 #if defined(SANITIZER)
     LOG_WARNING(log, "Server was built with sanitizer. It will work slowly.");
 #endif
@@ -496,6 +492,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
+
+#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
+    global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
+#endif
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
