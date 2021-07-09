@@ -81,9 +81,10 @@ public:
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
     const StorageID getStorageID() const { return data.getStorageID(); }
-    Int64 getSelectedParts() const { return selected_parts; }
-    Int64 getSelectedRows() const { return selected_rows; }
-    Int64 getSelectedMarks() const { return selected_marks; }
+    UInt64 getSelectedParts() const { return selected_parts; }
+    UInt64 getSelectedRows() const { return selected_rows; }
+    UInt64 getSelectedMarks() const { return selected_marks; }
+    UInt64 getSelectedBytes() const { return selected_bytes; }
 private:
     const MergeTreeReaderSettings reader_settings;
 
@@ -110,9 +111,10 @@ private:
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
 
     Poco::Logger * log;
-    Int64 selected_parts = 0;
-    Int64 selected_rows = 0;
-    Int64 selected_marks = 0;
+    UInt64 selected_parts = 0;
+    UInt64 selected_rows = 0;
+    UInt64 selected_marks = 0;
+    UInt64 selected_bytes = 0;
 
     Pipe read(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
     Pipe readFromPool(RangesInDataParts parts_with_ranges, Names required_columns, size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);

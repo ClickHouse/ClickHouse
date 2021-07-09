@@ -118,6 +118,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     {
         selected_marks += p->getMarksCount();
         selected_rows += p->rows_count;
+        selected_bytes += p->getBytesOnDisk();
     }
 }
 
