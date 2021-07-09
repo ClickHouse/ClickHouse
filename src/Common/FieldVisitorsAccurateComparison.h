@@ -117,4 +117,16 @@ public:
     }
 };
 
+
+class FieldVisitorAccurateLessOrEqual : public StaticVisitor<bool>
+{
+public:
+    template <typename T, typename U>
+    bool operator()(const T & l, const U & r) const
+    {
+        auto less_cmp = FieldVisitorAccurateLess();
+        return !less_cmp(r, l);
+    }
+};
+
 }
