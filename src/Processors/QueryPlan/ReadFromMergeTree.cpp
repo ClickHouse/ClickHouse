@@ -74,6 +74,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     Names virt_column_names_,
     const MergeTreeData & data_,
     const SelectQueryInfo & query_info_,
+    StorageSnapshotPtr storage_snapshot_,
     StorageMetadataPtr metadata_snapshot_,
     StorageMetadataPtr metadata_snapshot_base_,
     ContextPtr context_,
@@ -83,7 +84,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
     Poco::Logger * log_)
     : ISourceStep(DataStream{.header = MergeTreeBaseSelectProcessor::transformHeader(
-        data_.getSampleBlockForColumns(metadata_snapshot_, real_column_names_),
+        storage_snapshot_->getSampleBlockForColumns(real_column_names_),
         getPrewhereInfo(query_info_),
         data_.getPartitionValueType(),
         virt_column_names_)})
@@ -95,6 +96,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , query_info(query_info_)
     , prewhere_info(getPrewhereInfo(query_info))
     , actions_settings(ExpressionActionsSettings::fromContext(context_))
+    , storage_snapshot(std::move(storage_snapshot_))
     , metadata_snapshot(std::move(metadata_snapshot_))
     , metadata_snapshot_base(std::move(metadata_snapshot_base_))
     , context(std::move(context_))
@@ -141,7 +143,7 @@ Pipe ReadFromMergeTree::readFromPool(
         min_marks_for_concurrent_read,
         std::move(parts_with_range),
         data,
-        metadata_snapshot,
+        storage_snapshot,
         prewhere_info,
         true,
         required_columns,
@@ -157,7 +159,7 @@ Pipe ReadFromMergeTree::readFromPool(
         auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
             i, pool, min_marks_for_concurrent_read, max_block_size,
             settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
-            data, metadata_snapshot, use_uncompressed_cache,
+            data, storage_snapshot, use_uncompressed_cache,
             prewhere_info, actions_settings, reader_settings, virt_column_names);
 
         if (i == 0)
@@ -179,7 +181,7 @@ ProcessorPtr ReadFromMergeTree::createSource(
     bool use_uncompressed_cache)
 {
     return std::make_shared<TSource>(
-            data, metadata_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
+            data, storage_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache,
             prewhere_info, actions_settings, true, reader_settings, virt_column_names, part.part_index_in_query);
 }
@@ -784,7 +786,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
     }
 
-    data.check(metadata_snapshot, result.column_names_to_read);
+    storage_snapshot->check(result.column_names_to_read);
 
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();

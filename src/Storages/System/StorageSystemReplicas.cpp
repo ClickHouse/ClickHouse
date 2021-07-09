@@ -58,14 +58,14 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 
 Pipe StorageSystemReplicas::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    check(metadata_snapshot, column_names);
+    storage_snapshot->check(column_names);
 
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -145,7 +145,7 @@ Pipe StorageSystemReplicas::read(
         col_engine = filtered_block.getByName("engine").column;
     }
 
-    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = storage_snapshot->metadata->getSampleBlock().cloneEmptyColumns();
 
     for (size_t i = 0, size = col_database->size(); i < size; ++i)
     {
@@ -186,8 +186,6 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.zookeeper_exception);
     }
 
-    Block header = metadata_snapshot->getSampleBlock();
-
     Columns fin_columns;
     fin_columns.reserve(res_columns.size());
 
@@ -201,7 +199,7 @@ Pipe StorageSystemReplicas::read(
     UInt64 num_rows = fin_columns.at(0)->size();
     Chunk chunk(std::move(fin_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(storage_snapshot->metadata->getSampleBlock(), std::move(chunk)));
 }
 
 

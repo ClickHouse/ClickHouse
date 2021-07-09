@@ -480,16 +480,16 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 
 Pipe StorageTinyLog::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    check(metadata_snapshot, column_names);
+    storage_snapshot->check(column_names);
 
-    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
+    auto all_columns = storage_snapshot->metadata->getColumns().getAllWithSubcolumns().addTypes(column_names);
 
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.

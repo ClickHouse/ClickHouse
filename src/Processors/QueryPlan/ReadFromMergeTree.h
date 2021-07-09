@@ -60,6 +60,7 @@ public:
         Names virt_column_names_,
         const MergeTreeData & data_,
         const SelectQueryInfo & query_info_,
+        StorageSnapshotPtr storage_snapshot,
         StorageMetadataPtr metadata_snapshot_,
         StorageMetadataPtr metadata_snapshot_base_,
         ContextPtr context_,
@@ -92,6 +93,7 @@ private:
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
 
+    StorageSnapshotPtr storage_snapshot;
     StorageMetadataPtr metadata_snapshot;
     StorageMetadataPtr metadata_snapshot_base;
 

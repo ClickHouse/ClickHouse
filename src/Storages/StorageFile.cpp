@@ -271,26 +271,26 @@ public:
 
     static Block getBlockForSource(
         const StorageFilePtr & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const ColumnsDescription & columns_description,
         const FilesInfoPtr & files_info)
     {
         if (storage->isColumnOriented())
-            return storage->getSampleBlockForColumns(metadata_snapshot, columns_description.getNamesOfPhysical());
+            return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
         else
-            return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
+            return getHeader(storage_snapshot->metadata, files_info->need_path_column, files_info->need_file_column);
     }
 
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_)
-        : SourceWithProgress(getBlockForSource(storage_, metadata_snapshot_, columns_description_, files_info_))
+        : SourceWithProgress(getBlockForSource(storage_, storage_snapshot_, columns_description_, files_info_))
         , storage(std::move(storage_))
-        , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(storage_snapshot_)
         , files_info(std::move(files_info_))
         , columns_description(std::move(columns_description_))
         , context(context_)
@@ -379,8 +379,8 @@ public:
                 auto get_block_for_format = [&]() -> Block
                 {
                     if (storage->isColumnOriented())
-                        return storage->getSampleBlockForColumns(metadata_snapshot, columns_description.getNamesOfPhysical());
-                    return metadata_snapshot->getSampleBlock();
+                        return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+                    return storage_snapshot->metadata->getSampleBlock();
                 };
 
                 auto format = FormatFactory::instance().getInput(
@@ -434,7 +434,7 @@ public:
 
 private:
     std::shared_ptr<StorageFile> storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     FilesInfoPtr files_info;
     String current_path;
     Block sample_block;
@@ -454,7 +454,7 @@ private:
 
 Pipe StorageFile::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -469,7 +469,7 @@ Pipe StorageFile::read(
         if (paths.size() == 1 && !fs::exists(paths[0]))
         {
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
-                return Pipe(std::make_shared<NullSource>(getSampleBlockForColumns(metadata_snapshot, column_names)));
+                return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
             else
                 throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
         }
@@ -505,12 +505,12 @@ Pipe StorageFile::read(
         {
             if (isColumnOriented())
                 return ColumnsDescription{
-                    getSampleBlockForColumns(metadata_snapshot, column_names).getNamesAndTypesList()};
+                    storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
             else
-                return metadata_snapshot->getColumns();
+                return storage_snapshot->metadata->getColumns();
         };
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format()));
+            this_ptr, storage_snapshot, context, max_block_size, files_info, get_columns_for_format()));
     }
 
     return Pipe::unitePipes(std::move(pipes));

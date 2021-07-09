@@ -258,7 +258,7 @@ NamesAndTypesList StorageMaterializedPostgreSQL::getVirtuals() const
 
 Pipe StorageMaterializedPostgreSQL::read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
@@ -267,7 +267,7 @@ Pipe StorageMaterializedPostgreSQL::read(
 {
     auto materialized_table_lock = lockForShare(String(), context_->getSettingsRef().lock_acquire_timeout);
     auto nested_table = getNested();
-    return readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
+    return readFinalFromNestedStorage(nested_table, column_names,
             query_info, context_, processed_stage, max_block_size, num_streams);
 }
 

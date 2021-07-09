@@ -11,15 +11,15 @@ namespace ErrorCodes
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     MergeTreeData::DataPartPtr data_part_,
     Names columns_to_read_,
     bool read_with_direct_io_,
     bool take_column_types_from_storage,
     bool quiet)
-    : SourceWithProgress(storage_.getSampleBlockForColumns(metadata_snapshot_, columns_to_read_))
+    : SourceWithProgress(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
     , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , data_part(std::move(data_part_))
     , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
@@ -39,12 +39,13 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
-    injectRequiredColumns(storage, metadata_snapshot, data_part, columns_to_read);
+    injectRequiredColumns(storage, storage_snapshot->metadata, data_part, columns_to_read);
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        auto physical_columns = storage.getColumns(metadata_snapshot,
+        auto physical_columns = storage_snapshot->getColumns(
             GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
+
         columns_for_reader = physical_columns.addTypes(columns_to_read);
     }
     else
@@ -61,7 +62,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         .save_marks_in_cache = false
     };
 
-    reader = data_part->getReader(columns_for_reader, metadata_snapshot,
+    reader = data_part->getReader(columns_for_reader, storage_snapshot->metadata,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
         /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
 }

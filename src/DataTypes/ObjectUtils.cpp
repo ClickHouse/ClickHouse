@@ -190,6 +190,45 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
     return std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
 }
 
+NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list)
+{
+    NameSet res;
+    for (const auto & [name, type] : columns_list)
+        if (isObject(type))
+            res.insert(name);
+
+    return res;
+}
+
+NamesAndTypesList extendObjectColumns(const NamesAndTypesList & columns_list, const NameToTypeMap & object_types, bool with_subcolumns)
+{
+    NamesAndTypesList result_columns;
+    for (const auto & column : columns_list)
+    {
+        auto it = object_types.find(column.name);
+        if (it != object_types.end())
+        {
+            const auto & object_type = it->second;
+            result_columns.emplace_back(column.name, object_type);
+
+            if (with_subcolumns)
+            {
+                for (const auto & subcolumn : object_type->getSubcolumnNames())
+                {
+                    result_columns.emplace_back(column.name, subcolumn,
+                        object_type, object_type->getSubcolumnType(subcolumn));
+                }
+            }
+        }
+        else
+        {
+            result_columns.push_back(column);
+        }
+    }
+
+    return result_columns;
+}
+
 void finalizeObjectColumns(MutableColumns & columns)
 {
     for (auto & column : columns)

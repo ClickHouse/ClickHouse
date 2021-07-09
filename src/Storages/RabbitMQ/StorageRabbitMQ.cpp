@@ -595,7 +595,7 @@ void StorageRabbitMQ::unbindExchange()
 
 Pipe StorageRabbitMQ::read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & /* query_info */,
         ContextPtr local_context,
         QueryProcessingStage::Enum /* processed_stage */,
@@ -608,7 +608,7 @@ Pipe StorageRabbitMQ::read(
     if (num_created_consumers == 0)
         return {};
 
-    auto sample_block = getSampleBlockForColumns(metadata_snapshot, column_names);
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
     auto block_size = getMaxBlockSize();
 
@@ -625,7 +625,7 @@ Pipe StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(
-                *this, metadata_snapshot, modified_context, column_names, block_size);
+            *this, storage_snapshot, modified_context, column_names, block_size);
 
         auto converting_stream = std::make_shared<ConvertingBlockInputStream>(
             rabbit_stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Name);
@@ -903,9 +903,9 @@ bool StorageRabbitMQ::streamToViews()
     InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
     auto block_io = interpreter.execute();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr());
     auto column_names = block_io.out->getHeader().getNames();
-    auto sample_block = getSampleBlockForColumns(metadata_snapshot, column_names);
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
     auto block_size = getMaxBlockSize();
 
@@ -916,7 +916,7 @@ bool StorageRabbitMQ::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto stream = std::make_shared<RabbitMQBlockInputStream>(
-                *this, metadata_snapshot, rabbitmq_context, column_names, block_size, false);
+                *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL

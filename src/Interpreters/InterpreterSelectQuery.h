@@ -203,6 +203,7 @@ private:
 
     Poco::Logger * log;
     StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
 };
 
 }

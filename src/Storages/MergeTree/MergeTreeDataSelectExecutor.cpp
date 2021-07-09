@@ -124,7 +124,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 
 QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
     ContextPtr context,
     const UInt64 max_block_size,
@@ -133,12 +133,15 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     const auto & settings = context->getSettingsRef();
-    auto parts = data.getDataPartsVector();
+    const auto & parts = storage_snapshot->parts;
+    const auto & metadata_snapshot = storage_snapshot->metadata;
+
     if (!query_info.projection)
     {
         auto plan = readFromParts(
             parts,
             column_names_to_return,
+            storage_snapshot,
             metadata_snapshot,
             metadata_snapshot,
             query_info,
@@ -185,6 +188,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         auto plan = readFromParts(
             projection_parts,
             query_info.projection->required_columns,
+            storage_snapshot,
             metadata_snapshot,
             query_info.projection->desc->metadata,
             query_info,
@@ -1086,6 +1090,7 @@ static void selectColumnNames(
 size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
+    const StorageSnapshotPtr & storage_snapshot,
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -1116,7 +1121,7 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
         real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
     }
 
-    data.check(metadata_snapshot, real_column_names);
+    storage_snapshot->check(real_column_names);
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
@@ -1166,6 +1171,7 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
 QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
+    const StorageSnapshotPtr & storage_snapshot,
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -1192,6 +1198,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         virt_column_names,
         data,
         query_info,
+        storage_snapshot,
         metadata_snapshot,
         metadata_snapshot_base,
         context,

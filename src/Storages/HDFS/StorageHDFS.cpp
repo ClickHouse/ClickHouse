@@ -274,7 +274,7 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
 
 Pipe StorageHDFS::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -309,7 +309,7 @@ Pipe StorageHDFS::read(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<HDFSSource>(
-                sources_info, uri_without_path, format_name, compression_method, metadata_snapshot->getSampleBlock(), context_, max_block_size));
+                sources_info, uri_without_path, format_name, compression_method, storage_snapshot->metadata->getSampleBlock(), context_, max_block_size));
 
     return Pipe::unitePipes(std::move(pipes));
 }

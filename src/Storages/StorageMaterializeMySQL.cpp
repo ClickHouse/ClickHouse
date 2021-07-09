@@ -38,7 +38,7 @@ StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_stora
 
 Pipe StorageMaterializeMySQL::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -47,7 +47,7 @@ Pipe StorageMaterializeMySQL::read(
 {
     /// If the background synchronization thread has exception.
     rethrowSyncExceptionIfNeed(database);
-    return readFinalFromNestedStorage(nested_storage, column_names, metadata_snapshot,
+    return readFinalFromNestedStorage(nested_storage, column_names,
             query_info, context, processed_stage, max_block_size, num_streams);
 }
 

@@ -363,12 +363,12 @@ public:
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
     bool getQueryProcessingStageWithAggregateProjection(
-        ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const;
+        ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, SelectQueryInfo & query_info) const;
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr query_context,
         QueryProcessingStage::Enum to_stage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & info) const override;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
@@ -393,6 +393,8 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -635,8 +637,7 @@ public:
         return column_sizes;
     }
 
-    NamesAndTypesList extendObjectColumns(const NamesAndTypesList & columns_list, bool with_subcolumns) const override;
-    static NamesAndTypesList extendObjectColumns(const DataPartsVector & parts, const NamesAndTypesList & columns_list, bool with_subcolumns);
+    static StorageSnapshot::NameToTypeMap getObjectTypes(const DataPartsVector & parts, const NameSet & object_names);
 
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
