@@ -92,4 +92,13 @@ void StorageSnapshot::check(const Names & column_names) const
     }
 }
 
+DataTypePtr StorageSnapshot::getConcreteType(const String & column_name) const
+{
+    auto it = object_types.find(column_name);
+    if (it != object_types.end())
+        return it->second;
+
+    return metadata->getColumns().get(column_name).type;
+}
+
 }
