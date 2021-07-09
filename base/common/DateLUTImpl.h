@@ -1096,7 +1096,7 @@ public:
         return lut[new_index].date + time;
     }
 
-    inline NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int32 delta) const
     {
         return addDays(t, delta * 7);
     }
