@@ -716,9 +716,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             {
                 ProcStatValuesOther delta_values = current_other_values - proc_stat_values_other;
 
-                new_values["OSInterrupts"] = delta_values.interrupts * multiplier;
-                new_values["OSContextSwitches"] = delta_values.context_switches * multiplier;
-                new_values["OSProcessesCreated"] = delta_values.processes_created * multiplier;
+                new_values["OSInterrupts"] = delta_values.interrupts;
+                new_values["OSContextSwitches"] = delta_values.context_switches;
+                new_values["OSProcessesCreated"] = delta_values.processes_created;
 
                 /// Also write values normalized to 0..1 by diving to the number of CPUs.
                 /// These values are good to be averaged across the cluster of non-uniform servers.
@@ -1024,7 +1024,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             ReadBufferFromFile & in = *thermal[i];
 
             in.rewind();
-            uint64_t temperature = 0;
+            Int64 temperature = 0;
             readText(temperature, in);
             new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
         }
@@ -1041,7 +1041,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             for (const auto & [sensor_name, sensor_file] : sensors)
             {
                 sensor_file->rewind();
-                uint64_t temperature = 0;
+                Int64 temperature = 0;
                 readText(temperature, *sensor_file);
 
                 if (sensor_name.empty())
