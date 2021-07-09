@@ -31,7 +31,7 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
 
 void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    for (const auto & name_and_cluster : context->getClusters().getContainer())
+    for (const auto & name_and_cluster : context->getClusters()->getContainer())
         writeCluster(res_columns, name_and_cluster);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();

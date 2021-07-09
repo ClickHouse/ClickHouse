@@ -30,6 +30,7 @@ SRCS(
     MergeTree/BackgroundJobsExecutor.cpp
     MergeTree/BoolMask.cpp
     MergeTree/DataPartsExchange.cpp
+    MergeTree/DropPartsRanges.cpp
     MergeTree/EphemeralLockInZooKeeper.cpp
     MergeTree/IMergeTreeDataPart.cpp
     MergeTree/IMergeTreeDataPartWriter.cpp
@@ -158,6 +159,7 @@ SRCS(
     System/StorageSystemContributors.generated.cpp
     System/StorageSystemCurrentRoles.cpp
     System/StorageSystemDDLWorkerQueue.cpp
+    System/StorageSystemDataSkippingIndices.cpp
     System/StorageSystemDataTypeFamilies.cpp
     System/StorageSystemDatabases.cpp
     System/StorageSystemDetachedParts.cpp

@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/TreeRewriter.h>
@@ -32,7 +31,6 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Storages/IStorage.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -510,14 +508,10 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 }
 
 /// Find the columns that are obtained by JOIN.
-void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & select_query,
+void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_join,
                           const TablesWithColumns & tables, const Aliases & aliases)
 {
-    const ASTTablesInSelectQueryElement * node = select_query.join();
-    if (!node || tables.size() < 2)
-        return;
-
-    const auto & table_join = node->table_join->as<ASTTableJoin &>();
+    assert(tables.size() >= 2);
 
     if (table_join.using_expression_list)
     {
@@ -742,7 +736,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (!columns.empty())
             required.insert(std::min_element(columns.begin(), columns.end())->name);
-        else
+        else if (!source_columns.empty())
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
@@ -896,9 +890,15 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     if (tables_with_columns.size() > 1)
     {
-        result.analyzed_join->columns_from_joined_table = tables_with_columns[1].columns;
+        const auto & right_table = tables_with_columns[1];
+        auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
+        cols_from_joined = right_table.columns;
+        /// query can use materialized or aliased columns from right joined table,
+        /// we want to request it for right table
+        cols_from_joined.insert(cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
+
         result.analyzed_join->deduplicateAndQualifyColumnNames(
-            source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
+            source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
@@ -932,7 +932,16 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     setJoinStrictness(
         *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join->table_join);
 
-    collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
+    if (const auto * join_ast = select_query->join(); join_ast && tables_with_columns.size() >= 2)
+    {
+        auto & table_join_ast = join_ast->table_join->as<ASTTableJoin &>();
+        if (table_join_ast.using_expression_list && result.metadata_snapshot)
+            replaceAliasColumnsInQuery(table_join_ast.using_expression_list, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
+        if (table_join_ast.on_expression && result.metadata_snapshot)
+            replaceAliasColumnsInQuery(table_join_ast.on_expression, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
+
+        collectJoinedColumns(*result.analyzed_join, table_join_ast, tables_with_columns, result.aliases);
+    }
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);

@@ -4,7 +4,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_hdfs=True, main_configs=['configs/log_conf.xml'])
+node1 = cluster.add_instance('node1', with_hdfs=True)
 
 
 @pytest.fixture(scope="module")
@@ -14,7 +14,6 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
 
 def test_read_write_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
@@ -235,7 +234,7 @@ def test_virtual_columns(started_cluster):
     expected = "1\tfile1\thdfs://hdfs1:9000//file1\n2\tfile2\thdfs://hdfs1:9000//file2\n3\tfile3\thdfs://hdfs1:9000//file3\n"
     assert node1.query("select id, _file as file_name, _path as file_path from virtual_cols order by id") == expected
 
-    
+
 def test_read_files_with_spaces(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -244,6 +243,18 @@ def test_read_files_with_spaces(started_cluster):
     hdfs_api.write_data("/test test test 3.txt", "3\n")
     node1.query("create table test (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/test*', 'TSV')")
     assert node1.query("select * from test order by id") == "1\n2\n3\n"
+
+
+def test_truncate_table(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    node1.query(
+        "create table test_truncate (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/tr', 'TSV')")
+    node1.query("insert into test_truncate values (1, 'Mark', 72.53)")
+    assert hdfs_api.read_data("/tr") == "1\tMark\t72.53\n"
+    assert node1.query("select * from test_truncate") == "1\tMark\t72.53\n"
+    node1.query("truncate table test_truncate")
+    assert node1.query("select * from test_truncate") == ""
+    node1.query("drop table test_truncate")
 
 
 if __name__ == '__main__':

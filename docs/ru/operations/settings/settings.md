@@ -348,7 +348,7 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
 Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](../../sql-reference/syntax.md#null-literal), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
-Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки. 
+Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
 Эта настройка используется для запросов [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) для текстовых входных форматов.
 
@@ -361,7 +361,7 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 ## insert_null_as_default {#insert_null_as_default}
 
-Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable). 
+Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
 Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
 Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
@@ -1181,22 +1181,22 @@ load_balancing = round_robin
 !!! warning "Предупреждение"
     Параллельное выполнение запроса может привести к неверному результату, если в запросе есть объединение или подзапросы и при этом таблицы не удовлетворяют определенным требованиям. Подробности смотрите в разделе [Распределенные подзапросы и max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries).
 
+## compile_expressions {#compile-expressions}
 
-## compile {#compile}
+Включает или выключает компиляцию часто используемых функций и операторов. Компиляция производится в нативный код платформы с помощью LLVM во время выполнения.
 
-Включить компиляцию запросов. По умолчанию - 0 (выключено).
+Возможные значения:
 
-Компиляция предусмотрена только для части конвейера обработки запроса - для первой стадии агрегации (GROUP BY).
-В случае, если эта часть конвейера была скомпилирована, запрос может работать быстрее, за счёт разворачивания коротких циклов и инлайнинга вызовов агрегатных функций. Максимальный прирост производительности (до четырёх раз в редких случаях) достигается на запросах с несколькими простыми агрегатными функциями. Как правило, прирост производительности незначителен. В очень редких случаях возможно замедление выполнения запроса.
+- 0 — компиляция выключена.
+- 1 — компиляция включена.
 
-## min_count_to_compile {#min-count-to-compile}
+Значение по умолчанию: `1`.
 
-После скольких раз, когда скомпилированный кусок кода мог пригодиться, выполнить его компиляцию. По умолчанию - 3.
-Для тестирования можно установить значение 0: компиляция выполняется синхронно, и запрос ожидает окончания процесса компиляции перед продолжением выполнения. Во всех остальных случаях используйте значения, начинающиеся с 1. Как правило, компиляция занимает по времени около 5-10 секунд.
-В случае, если значение равно 1 или больше, компиляция выполняется асинхронно, в отдельном потоке. При готовности результата, он сразу же будет использован, в том числе, уже выполняющимися в данный момент запросами.
+## min_count_to_compile_expression {#min-count-to-compile-expression}
 
-Скомпилированный код требуется для каждого разного сочетания используемых в запросе агрегатных функций и вида ключей в GROUP BY.
-Результаты компиляции сохраняются в директории build в виде .so файлов. Количество результатов компиляции не ограничено, так как они не занимают много места. При перезапуске сервера, старые результаты будут использованы, за исключением случая обновления сервера - тогда старые результаты удаляются.
+Минимальное количество выполнений одного и того же выражения до его компиляции.
+
+Значение по умолчанию: `3`.
 
 ## input_format_skip_unknown_fields {#input-format-skip-unknown-fields}
 
@@ -1605,6 +1605,28 @@ ClickHouse генерирует исключение
 -   0 — генерирование исключения выключено.
 
 Значение по умолчанию: 0.
+
+## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
+
+Включает или отключает оптимизацию путем преобразования некоторых функций к чтению подстолбцов, таким образом уменьшая объем данных для чтения.
+
+Могут быть преобразованы следующие функции:
+
+-   [length](../../sql-reference/functions/array-functions.md#array_functions-length) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [empty](../../sql-reference/functions/array-functions.md#function-empty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size).
+-   [isNull](../../sql-reference/operators/index.md#operator-is-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [isNotNull](../../sql-reference/operators/index.md#is-not-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [count](../../sql-reference/aggregate-functions/reference/count.md) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) к чтению подстолбца [keys](../../sql-reference/data-types/map.md#map-subcolumns).
+-   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) к чтению подстолбца [values](../../sql-reference/data-types/map.md#map-subcolumns).
+
+Возможные значения:
+
+-   0 — оптимизация отключена.
+-   1 — оптимизация включена.
+
+Значение по умолчанию: `0`.
 
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
@@ -2721,7 +2743,7 @@ SELECT * FROM test2;
 - 0 — запрос `INSERT` добавляет данные в конец файла после существующих.
 - 1 — `INSERT` удаляет имеющиеся в файле данные и замещает их новыми.
 
-Значение по умолчанию: `0`. 
+Значение по умолчанию: `0`.
 
 ## allow_experimental_geo_types {#allow-experimental-geo-types}
 
@@ -2735,7 +2757,7 @@ SELECT * FROM test2;
 
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
-Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`. 
+Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`.
 
 Возможные значения:
 
@@ -2813,7 +2835,7 @@ SELECT * FROM test2;
 
 **Пример**
 
-Какие изменения привносит включение и выключение настройки: 
+Какие изменения привносит включение и выключение настройки:
 
 Запрос:
 
@@ -2957,4 +2979,83 @@ SELECT
 FROM fuse_tbl
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
+## flatten_nested {#flatten-nested}
+
+Устанавливает формат данных у [вложенных](../../sql-reference/data-types/nested-data-structures/nested.md) столбцов.
+
+Возможные значения:
+
+-   1 — вложенный столбец преобразуется к отдельным массивам.
+-   0 — вложенный столбец преобразуется к массиву кортежей.
+
+Значение по умолчанию: `1`.
+
+**Использование**
+
+Если установлено значение `0`, можно использовать любой уровень вложенности.
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SET flatten_nested = 1;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Результат:
+
+``` text
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n.a` Array(UInt32),
+    `n.b` Array(UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SET flatten_nested = 0;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Результат:
+
+``` text
+┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n` Nested(a UInt32, b UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## external_table_functions_use_nulls {#external-table-functions-use-nulls}
+
+Определяет, как табличные функции [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) и [odbc](../../sql-reference/table-functions/odbc.md)] используют Nullable столбцы.
+
+Возможные значения:
+
+-   0 — табличная функция явно использует Nullable столбцы.
+-   1 — табличная функция неявно использует Nullable столбцы.
+
+Значение по умолчанию: `1`.
+
+**Использование**
+
+Если установлено значение `0`, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
