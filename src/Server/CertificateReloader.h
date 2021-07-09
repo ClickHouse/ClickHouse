@@ -88,9 +88,6 @@ private:
 class CertificateReloader
 {
 public:
-    CertificateReloader(CertificateReloader const &) = delete;
-    void operator=(CertificateReloader const &) = delete;
-
     static CertificateReloader & instance()
     {
         static CertificateReloader instance;
