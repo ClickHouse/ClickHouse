@@ -79,9 +79,12 @@ public:
             const Float64 lat = col_lat->getFloat64(row);
 
             if (isNaN(lon) || isNaN(lat))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments must not be NaN");
+
+            if (!(isFinite(lon) && isFinite(lat)))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments must not be infinite");
 
             /// S2 acceptes point as (latitude, longitude)
             S2LatLng lat_lng = S2LatLng::FromDegrees(lat, lon);
