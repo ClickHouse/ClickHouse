@@ -51,6 +51,8 @@ struct StorageSnapshot
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
     void check(const Names & column_names) const;
+
+    DataTypePtr getConcreteType(const String & column_name) const;
 };
 
 using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;

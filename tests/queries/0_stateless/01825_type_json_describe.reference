@@ -1,0 +1,3 @@
+data	Object(\'json\')					
+data	Tuple(k1 Int8)					
+data	Tuple(k1 String, k2 Array(Int8))					
