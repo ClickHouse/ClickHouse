@@ -387,6 +387,7 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    padString.cpp
     partitionId.cpp
     pi.cpp
     plus.cpp
