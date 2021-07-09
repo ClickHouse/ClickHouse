@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <Access/RowPolicy.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
@@ -318,6 +319,7 @@ public:
     String getFlagsPath() const;
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
+    std::vector<String> getWarnings() const;
 
     VolumePtr getTemporaryVolume() const;
 
