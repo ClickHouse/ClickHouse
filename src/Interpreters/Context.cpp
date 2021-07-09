@@ -1,3 +1,4 @@
+#include <cmath>
 #include <map>
 #include <set>
 #include <optional>
@@ -6,6 +7,7 @@
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Util/Application.h>
+#include "common/types.h"
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
@@ -77,6 +79,7 @@
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <filesystem>
+#include <vector>
 
 
 namespace fs = std::filesystem;
@@ -386,6 +389,7 @@ struct ContextSharedPart
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::unique_ptr<SystemLogs> system_logs;                /// Used to log queries and operations on parts
     std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
+    std::vector<String> warnings_logs;                      /// Store warning messages
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
@@ -514,6 +518,12 @@ struct ContextSharedPart
 
         trace_collector.emplace(std::move(trace_log));
     }
+
+    void addWarningMessage(const String& message)
+    {
+        log->warning(message);
+        warnings_logs.push_back(message);
+    }
 };
 
 
@@ -633,6 +643,12 @@ String Context::getDictionariesLibPath() const
 {
     auto lock = getLock();
     return shared->dictionaries_lib_path;
+}
+
+std::vector<String> Context::getWarnings() const
+{
+    auto lock = getLock();
+    return shared->warnings_logs;
 }
 
 VolumePtr Context::getTemporaryVolume() const
