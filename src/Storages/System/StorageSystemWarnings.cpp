@@ -8,14 +8,14 @@ namespace DB
 NamesAndTypesList StorageSystemWarnings::getNamesAndTypes()
 {
     return {
-        {"description", std::make_shared<DataTypeString>()},
+        {"message", std::make_shared<DataTypeString>()},
     };
 }
 
 void StorageSystemWarnings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     for (auto& warning : context->getWarnings()) {
-        res_columns[0]->insert(warning);
+        res_columns[0]->insert("Warning: " + warning);
     }
 }
 
