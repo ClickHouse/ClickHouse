@@ -113,6 +113,12 @@ ReadFromMergeTree::ReadFromMergeTree(
         auto type = std::make_shared<DataTypeFloat64>();
         output_stream->header.insert({type->createColumn(), type, "_sample_factor"});
     }
+    selected_parts = prepared_parts.size();
+    for (auto & p : prepared_parts)
+    {
+        selected_marks += p->getMarksCount();
+        selected_rows += p->rows_count;
+    }
 }
 
 Pipe ReadFromMergeTree::readFromPool(
