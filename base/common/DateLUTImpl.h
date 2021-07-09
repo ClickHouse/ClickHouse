@@ -1098,7 +1098,7 @@ public:
 
     inline NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int32 delta) const
     {
-        return addDays(t, delta * 7);
+        return addDays(t, static_cast<Int64>(delta) * 7);
     }
 
     inline UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -1165,12 +1165,12 @@ public:
 
     inline Time NO_SANITIZE_UNDEFINED addQuarters(Time t, Int32 delta) const
     {
-        return addMonths(t, delta * 3);
+        return addMonths(t, static_cast<Int64>(delta) * 3);
     }
 
     inline ExtendedDayNum addQuarters(ExtendedDayNum d, Int32 delta) const
     {
-        return addMonths(d, delta * 3);
+        return addMonths(d, static_cast<Int64>(delta) * 3);
     }
 
     template <typename DateOrTime>
