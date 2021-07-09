@@ -155,7 +155,6 @@ namespace ActionLocks
 
 
 static const auto QUEUE_UPDATE_ERROR_SLEEP_MS        = 1 * 1000;
-static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
@@ -3347,7 +3346,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     if (create_result != CreateMergeEntryResult::Ok
         && create_result != CreateMergeEntryResult::LogUpdated)
     {
-        merge_selecting_task->scheduleAfter(MERGE_SELECTING_SLEEP_MS);
+        merge_selecting_task->scheduleAfter(storage_settings_ptr->merge_selecting_sleep_ms);
     }
     else
     {
