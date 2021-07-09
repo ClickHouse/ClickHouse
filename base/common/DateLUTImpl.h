@@ -1163,12 +1163,12 @@ public:
         return toDayNum(addMonthsIndex(d, delta));
     }
 
-    inline Time NO_SANITIZE_UNDEFINED addQuarters(Time t, Int64 delta) const
+    inline Time NO_SANITIZE_UNDEFINED addQuarters(Time t, Int32 delta) const
     {
         return addMonths(t, delta * 3);
     }
 
-    inline ExtendedDayNum addQuarters(ExtendedDayNum d, Int64 delta) const
+    inline ExtendedDayNum addQuarters(ExtendedDayNum d, Int32 delta) const
     {
         return addMonths(d, delta * 3);
     }
