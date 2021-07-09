@@ -27,7 +27,6 @@ void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
-void registerStorageSQLite(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
@@ -69,8 +68,9 @@ void registerStorageExternalDistributed(StorageFactory & factory);
 #endif
 
 #if USE_SQLITE
-    registerStorageSQLite(factory);
+void registerStorageSQLite(StorageFactory & factory);
 #endif
+
 
 void registerStorages()
 {
@@ -132,6 +132,10 @@ void registerStorages()
 
     #if USE_MYSQL || USE_LIBPQXX
     registerStorageExternalDistributed(factory);
+    #endif
+
+    #if USE_SQLITE
+    registerStorageSQLite(factory);
     #endif
 }
 
