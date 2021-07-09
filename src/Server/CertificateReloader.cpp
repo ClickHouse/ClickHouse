@@ -1,8 +1,13 @@
 #include "CertificateReloader.h"
-#include <common/errnoToString.h>
-
 
 #if USE_SSL
+
+#include <common/logger_useful.h>
+#include <common/errnoToString.h>
+#include <Poco/Net/Context.h>
+#include <Poco/Net/SSLManager.h>
+#include <Poco/Net/Utility.h>
+
 
 namespace DB
 {
@@ -12,98 +17,82 @@ namespace ErrorCodes
     extern const int CANNOT_STAT;
 }
 
+
+/// This is callback for OpenSSL. It will be called on every connection to obtain a certificate and private key.
 int CertificateReloader::setCertificate(SSL * ssl)
 {
-    std::shared_lock lock(mutex);
-    SSL_use_certificate(ssl, const_cast<X509 *>(cert->certificate()));
-    SSL_use_RSAPrivateKey(ssl, key->impl()->getRSA());
+    auto current = data.get();
+    if (!current)
+        return -1;
+
+    SSL_use_certificate(ssl, const_cast<X509 *>(current->cert.certificate()));
+    SSL_use_RSAPrivateKey(ssl, current->key.impl()->getRSA());
 
     int err = SSL_check_private_key(ssl);
     if (err != 1)
     {
         std::string msg = Poco::Net::Utility::getLastError();
-        LOG_ERROR(log, "Unusable keypair {}", msg);
+        LOG_ERROR(log, "Unusable key-pair {}", msg);
         return -1;
     }
+
     return 1;
 }
+
 
 void CertificateReloader::init(const Poco::Util::AbstractConfiguration & config)
 {
     LOG_DEBUG(log, "Initializing certificate reloader.");
 
+    reload(config);
+
+    /// Set a callback for OpenSSL to allow get the updated cert and key.
+
     SSL_CTX_set_cert_cb(
         Poco::Net::SSLManager::instance().defaultClientContext()->sslContext(),
         [](SSL * ssl, void * arg) { return reinterpret_cast<CertificateReloader *>(arg)->setCertificate(ssl); },
         static_cast<void *>(this));
-
-    reload(config);
 }
+
 
 void CertificateReloader::reload(const Poco::Util::AbstractConfiguration & config)
 {
-    LOG_DEBUG(log, "Handling certificate reload.");
-    const auto cert_file_ = config.getString("openSSL.server.certificateFile", "");
-    const auto key_file_ = config.getString("openSSL.server.privateKeyFile", "");
+    /// If at least one of the files is modified - recreate
 
-    bool changed = false;
-    changed |= setKeyFile(key_file_);
-    changed |= setCertificateFile(cert_file_);
+    std::string new_cert_path = config.getString("openSSL.server.certificateFile", "");
+    std::string new_key_path = config.getString("openSSL.server.privateKeyFile", "");
 
-    if (changed)
+    if (cert_file.changeIfModified(std::move(new_cert_path), log)
+        || key_file.changeIfModified(std::move(new_key_path), log))
     {
-        LOG_INFO(log, "Reloading certificate ({}) and key ({}).", cert_file, key_file);
-        {
-            std::unique_lock lock(mutex);
-            key = std::make_unique<Poco::Crypto::RSAKey>(/* public key */ "", /* private key */ key_file);
-            cert = std::make_unique<Poco::Crypto::X509Certificate>(cert_file);
-        }
-        LOG_INFO(log, "Reloaded certificate ({}).", cert_file);
+        LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", cert_file.path, key_file.path);
+        data.set(std::make_unique<const Data>(cert_file.path, key_file.path));
+        LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", cert_file.path, key_file.path);
     }
 }
 
-bool CertificateReloader::setKeyFile(const std::string key_file_)
+
+CertificateReloader::Data::Data(std::string cert_path, std::string key_path)
+    : cert(cert_path), key(/* public key */ "", /* private key */ key_path)
 {
-    if (key_file_.empty())
-        return false;
-
-    stat_t st;
-    int res = stat(key_file_.c_str(), &st);
-    if (res == -1)
-    {
-        LOG_ERROR(log, "Cannot obtain stat for key file {}, skipping update. {}", key_file_, errnoToString(ErrorCodes::CANNOT_STAT));
-        return false;
-    }
-
-    /// NOTE: if file changed twice in a second, the update will be missed.
-
-    if (st.st_mtime != key_file_st.st_mtime || key_file != key_file_)
-    {
-        key_file = key_file_;
-        key_file_st = st;
-        return true;
-    }
-
-    return false;
 }
 
-bool CertificateReloader::setCertificateFile(const std::string cert_file_)
-{
-    if (cert_file_.empty())
-        return false;
 
-    stat_t st;
-    int res = stat(cert_file_.c_str(), &st);
-    if (res == -1)
+bool CertificateReloader::File::changeIfModified(std::string new_path, Poco::Logger * logger)
+{
+    std::error_code ec;
+    std::filesystem::file_time_type new_modification_time = std::filesystem::last_write_time(new_path, ec);
+    if (ec)
     {
-        LOG_ERROR(log, "Cannot obtain stat for certificate file {}, skipping update. {}", cert_file_, errnoToString(ErrorCodes::CANNOT_STAT));
+        LOG_ERROR(logger, "Cannot obtain modification time for {} file {}, skipping update. {}",
+            description, new_path, errnoToString(ErrorCodes::CANNOT_STAT, ec.value()));
         return false;
     }
 
-    if (st.st_mtime != cert_file_st.st_mtime || cert_file != cert_file_)
+    if (new_path != path || new_modification_time != modification_time)
     {
-        cert_file = cert_file_;
-        cert_file_st = st;
+        path = new_path;
+        modification_time = new_modification_time;
         return true;
     }
 
