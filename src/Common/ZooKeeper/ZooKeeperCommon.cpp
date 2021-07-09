@@ -588,6 +588,7 @@ void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
     for (const auto & request : requests)
     {
         auto * req = dynamic_cast<ZooKeeperRequest *>(request.get());
+        assert(req);
         assert(!req->xid || req->xid == xid);
         req->xid = xid;
         req->createLogElements(elems);
@@ -662,6 +663,7 @@ void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t idx) co
     for (const auto & response : responses)
     {
         auto * resp = dynamic_cast<ZooKeeperResponse *>(response.get());
+        assert(resp);
         assert(!resp->xid || resp->xid == xid);
         assert(!resp->zxid || resp->zxid == zxid);
         resp->xid = xid;

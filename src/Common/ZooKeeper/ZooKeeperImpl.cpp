@@ -793,7 +793,7 @@ void ZooKeeper::receiveEvent()
         if (length != actual_length)
             throw Exception("Response length doesn't match. Expected: " + DB::toString(length) + ", actual: " + DB::toString(actual_length), Error::ZMARSHALLINGERROR);
 
-        logOperationIfNeeded(request_info.request, response);
+        logOperationIfNeeded(request_info.request, response);   //-V614
     }
     catch (...)
     {
