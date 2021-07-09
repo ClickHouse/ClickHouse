@@ -716,9 +716,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             {
                 ProcStatValuesOther delta_values = current_other_values - proc_stat_values_other;
 
-                new_values["OSInterrupts"] = delta_values.interrupts * multiplier;
-                new_values["OSContextSwitches"] = delta_values.context_switches * multiplier;
-                new_values["OSProcessesCreated"] = delta_values.processes_created * multiplier;
+                new_values["OSInterrupts"] = delta_values.interrupts;
+                new_values["OSContextSwitches"] = delta_values.context_switches;
+                new_values["OSProcessesCreated"] = delta_values.processes_created;
 
                 /// Also write values normalized to 0..1 by diving to the number of CPUs.
                 /// These values are good to be averaged across the cluster of non-uniform servers.
