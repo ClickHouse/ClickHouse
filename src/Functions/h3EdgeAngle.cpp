@@ -66,7 +66,7 @@ public:
                     + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             // Numerical constant is 180 degrees / pi / Earth radius, Earth radius is from h3 sources
-            Float64 res = 8.99320592271288084e-6 * edgeLengthM(resolution);
+            Float64 res = 8.99320592271288084e-6 * getHexagonEdgeLengthAvgM(resolution);
 
             dst_data[row] = res;
         }
