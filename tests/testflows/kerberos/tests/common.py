@@ -184,10 +184,12 @@ def check_wrong_config(self, node, client, config_path, modify_file, log_error="
 
         with When("I restart ClickHouse to apply the config changes"):
             node.cmd("kdestroy")
+            # time.sleep(1)
             if output:
                 node.restart(safe=False, wait_healthy=True)
             else:
                 node.restart(safe=False, wait_healthy=False)
+
 
         if output != "":
             with Then(f"check {output} is in output"):
