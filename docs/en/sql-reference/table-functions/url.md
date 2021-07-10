@@ -55,6 +55,3 @@ Using URL with patterns to read `table-08.csv`, `table-09.csv`, `table-10.csv` f
 ``` sql
 SELECT * FROM url('https://replica{0|1}.local/table-{08..10}.csv', 'CSV', 'column1 String, column2 Uint32');
 ```
-
-
-[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/url/) <!--hide-->
