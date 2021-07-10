@@ -405,6 +405,24 @@ struct KeeperStorageGetRequest final : public KeeperStorageRequest
     }
 };
 
+namespace
+{
+    /// Garbage required to apply log to "fuzzy" zookeeper snapshot
+    void updateParentPzxid(const std::string & child_path, int64_t zxid, KeeperStorage::Container & container)
+    {
+        auto parent_path = parentPath(child_path);
+        auto parent_it = container.find(parent_path);
+        if (parent_it != container.end())
+        {
+            container.updateValue(parent_path, [zxid](KeeperStorage::Node & parent)
+            {
+                if (parent.stat.pzxid < zxid)
+                    parent.stat.pzxid = zxid;
+            });
+        }
+    }
+}
+
 struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
@@ -420,21 +438,6 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
 
         const auto & session_auths = storage.session_and_auth[session_id];
         return checkACL(Coordination::ACL::Delete, node_acls, session_auths);
-    }
-
-    /// Garbage required to apply log to "fuzzy" zookeeper snapshot
-    void updateParentPzxid(const std::string & child_path, int64_t zxid, KeeperStorage::Container & container) const
-    {
-        auto parent_path = parentPath(child_path);
-        auto parent_it = container.find(parent_path);
-        if (parent_it != container.end())
-        {
-            container.updateValue(parent_path, [zxid](KeeperStorage::Node & parent)
-            {
-                if (parent.stat.pzxid < zxid)
-                    parent.stat.pzxid = zxid;
-            });
-        }
     }
 
     using KeeperStorageRequest::KeeperStorageRequest;
