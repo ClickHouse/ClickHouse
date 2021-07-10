@@ -32,7 +32,7 @@ XML substitution example:
     <profiles from_zk="/profiles-in-zookeeper" />
 
     <users>
-        <!-- Replaces `include` element with hte subtree found at `/users-in-zookeeper` ZK path. -->
+        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
