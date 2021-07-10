@@ -10,13 +10,9 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
-#include <sys/random.h>
-
-#include <limits>
 #include <cassert>
 #include <cmath>
-
-#include <errno.h>
+#include <random>
 
 
 namespace DB
@@ -92,24 +88,21 @@ String ReadIV(size_t size, DB::ReadBuffer & in)
 String GetRandomString(size_t size)
 {
     String iv(size, 0);
-    int ret = 0;
-    size_t cur = 0;
 
-    while (cur < size)
+    std::random_device rd;
+    std::mt19937 gen{rd()};
+    std::uniform_int_distribution<size_t> dis;
+
+    char * ptr = iv.data();
+    while (size)
     {
-        ret = getrandom(iv.data() + cur, size - cur, 0);
-        if (ret < 0)
-        {
-            if (errno == EINTR) continue;
-            else break;
-        }
-        cur += ret;
-        ret = 0;
+        auto value = dis(gen);
+        size_t n = std::min(size, sizeof(value));
+        memcpy(ptr, &value, n);
+        ptr += n;
+        size -= n;
     }
 
-    if (ret < 0)
-        throw DB::Exception("Failed to generate IV string with size " + std::to_string(size),
-                            DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
     return iv;
 }
 
