@@ -81,9 +81,6 @@
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
 #   include "Common/config_version.h"
-#   if USE_OPENCL
-#       include "Common/BitonicSort.h" // Y_IGNORE
-#   endif
 #endif
 
 #if defined(OS_LINUX)
@@ -839,7 +836,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
+
+#if USE_SSL
             CertificateReloader::instance().reload(*config);
+#endif
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
