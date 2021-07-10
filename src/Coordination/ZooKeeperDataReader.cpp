@@ -181,7 +181,7 @@ void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::st
     /// We have incorrect state of storage where some random log entries from future were applied....
     ///
     /// In ZooKeeper they say that their transactions log is idempotent and can be applied to "fuzzy" state as is.
-    /// It's true but there is no any general invariant which produces this property. They just have banch of ad-hoc "if" which detects
+    /// It's true but there is no any general invariant which produces this property. They just have ad-hoc "if's" which detects
     /// "fuzzy" state inconsistencies and apply log records in special way. Several examples:
     /// https://github.com/apache/zookeeper/blob/master/zookeeper-server/src/main/java/org/apache/zookeeper/server/DataTree.java#L453-L463
     /// https://github.com/apache/zookeeper/blob/master/zookeeper-server/src/main/java/org/apache/zookeeper/server/DataTree.java#L476-L480
