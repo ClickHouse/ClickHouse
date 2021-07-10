@@ -22,6 +22,23 @@ Some settings specified in the main configuration file can be overridden in othe
 
 The config can also define “substitutions”. If an element has the `incl` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include_from](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-include_from) element in the server config. The substitution values are specified in `/yandex/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify the `optional="true"` attribute (for example, settings for [macros](../operations/server-configuration-parameters/settings.md)).
 
+If you want to replace an entire element with a substitution use `include` as element name.
+
+XML substitution example:
+
+```xml
+<yandex>
+    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
+    <profiles from_zk="/profiles-in-zookeeper" />
+
+    <users>
+        <!-- Replaces `include` element with hte subtree found at `/users-in-zookeeper` ZK path. -->
+        <include from_zk="/users-in-zookeeper" />
+        <include from_zk="/other-users-in-zookeeper" />
+    </users>
+</yandex>
+```
+
 Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
 
 ## User Settings {#user-settings}
@@ -31,6 +48,8 @@ The `config.xml` file can specify a separate config with user settings, profiles
 Users configuration can be splitted into separate files similar to `config.xml` and `config.d/`.
 Directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
 Directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
+
+Note that configuration files are first merged taking into account [Override](#override) settings and includes are processed after that.
 
 ## XML example {#example}
 
