@@ -41,6 +41,9 @@ public:
 
     void shutdown() override {}
 
+protected:
+    ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
+
 private:
     ASTPtr database_engine_define;
 
@@ -53,6 +56,8 @@ private:
     NameSet fetchTablesList() const;
 
     StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
+
+    ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };
 
 }
