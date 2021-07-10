@@ -227,8 +227,8 @@
             {function}(WatchID),
             {function}(CounterID),
             {function}(ClientIP),
-            {function}(GoodEvent),
-            {function}(CounterClass)
+            {function}(IPNetworkID),
+            {function}(SearchEngineID)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
@@ -240,8 +240,8 @@
             {function}(CounterID),
             sum(toUInt256(ClientIP)),
             {function}(ClientIP),
-            {function}(GoodEvent),
-            {function}(CounterClass)
+            {function}(IPNetworkID),
+            {function}(SearchEngineID)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
@@ -276,8 +276,8 @@
             {function}If(WatchID, predicate),
             {function}If(CounterID, predicate),
             {function}If(ClientIP, predicate),
-            {function}If(GoodEvent, predicate),
-            {function}If(CounterClass, predicate)
+            {function}If(IPNetworkID, predicate),
+            {function}If(SearchEngineID, predicate)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
@@ -290,8 +290,8 @@
             {function}If(CounterID, predicate),
             sumIf(toUInt256(ClientIP), predicate),
             {function}If(ClientIP, predicate),
-            {function}If(GoodEvent, predicate),
-            {function}If(CounterClass, predicate)
+            {function}If(IPNetworkID, predicate),
+            {function}If(SearchEngineID, predicate)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
