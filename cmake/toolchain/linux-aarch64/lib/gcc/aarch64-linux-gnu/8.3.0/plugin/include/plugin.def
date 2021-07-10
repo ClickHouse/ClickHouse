@@ -1,0 +1,108 @@
+/* This file contains the definitions for plugin events in GCC.
+   Copyright (C) 2009-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* Called before parsing the body of a function.  */
+DEFEVENT (PLUGIN_START_PARSE_FUNCTION)
+
+/* After finishing parsing a function. */
+DEFEVENT (PLUGIN_FINISH_PARSE_FUNCTION)
+
+/* To hook into pass manager.  */
+DEFEVENT (PLUGIN_PASS_MANAGER_SETUP)
+
+/* After finishing parsing a type.  */
+DEFEVENT (PLUGIN_FINISH_TYPE)
+
+/* After finishing parsing a declaration. */
+DEFEVENT (PLUGIN_FINISH_DECL)
+
+/* Useful for summary processing.  */
+DEFEVENT (PLUGIN_FINISH_UNIT)
+
+/* Allows to see low level AST in C and C++ frontends. */
+DEFEVENT (PLUGIN_PRE_GENERICIZE)
+
+/* Called before GCC exits.  */
+DEFEVENT (PLUGIN_FINISH)
+
+/* Information about the plugin. */
+DEFEVENT (PLUGIN_INFO)
+
+/* Called at start of GCC Garbage Collection. */
+DEFEVENT (PLUGIN_GGC_START)
+
+/* Extend the GGC marking. */
+DEFEVENT (PLUGIN_GGC_MARKING)
+
+/* Called at end of GGC. */
+DEFEVENT (PLUGIN_GGC_END)
+
+/* Register an extra GGC root table. */
+DEFEVENT (PLUGIN_REGISTER_GGC_ROOTS)
+
+/* Called during attribute registration.  */
+DEFEVENT (PLUGIN_ATTRIBUTES)
+
+/* Called before processing a translation unit.  */
+DEFEVENT (PLUGIN_START_UNIT)
+
+/* Called during pragma registration.  */
+DEFEVENT (PLUGIN_PRAGMAS)
+
+/* Called before first pass from all_passes.  */
+DEFEVENT (PLUGIN_ALL_PASSES_START)
+
+/* Called after last pass from all_passes.  */
+DEFEVENT (PLUGIN_ALL_PASSES_END)
+
+/* Called before first ipa pass.  */
+DEFEVENT (PLUGIN_ALL_IPA_PASSES_START)
+
+/* Called after last ipa pass.  */
+DEFEVENT (PLUGIN_ALL_IPA_PASSES_END)
+
+/* Allows to override pass gate decision for current_pass.  */
+DEFEVENT (PLUGIN_OVERRIDE_GATE)
+
+/* Called before executing a pass.  */
+DEFEVENT (PLUGIN_PASS_EXECUTION)
+
+/* Called before executing subpasses of a GIMPLE_PASS in
+   execute_ipa_pass_list.  */
+DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_START)
+
+/* Called after executing subpasses of a GIMPLE_PASS in
+   execute_ipa_pass_list.  */
+DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END)
+
+/* Called when a pass is first instantiated.  */
+DEFEVENT (PLUGIN_NEW_PASS)
+
+/* Called when a file is #include-d or given via the #line directive.
+   this could happen many times.  The event data is the included file path,
+   as a const char* pointer.  */
+DEFEVENT (PLUGIN_INCLUDE_FILE)
+
+/* When adding a new hard-coded plugin event, don't forget to edit in
+   file plugin.c the functions register_callback and
+   invoke_plugin_callbacks_full accordingly!  */
+
+/* After the hard-coded events above, plugins can dynamically allocate events
+   at run time.
+   PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */

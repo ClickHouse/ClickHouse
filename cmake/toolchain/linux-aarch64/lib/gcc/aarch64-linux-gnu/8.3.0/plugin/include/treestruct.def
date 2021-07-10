@@ -1,0 +1,71 @@
+/* This file contains the definitions for the tree structure
+   enumeration used in GCC.
+
+Copyright (C) 2005-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* The format of this file is
+
+   DEFTREESTRUCT(enumeration value, printable name).
+
+   Each enumeration value should correspond with a single member of
+   union tree_node.
+
+   These enumerator values are used in order to distinguish members of
+   union tree_node for garbage collection purposes, as well as
+   specifying what structures contain what other structures in the
+   tree_contains_struct array.  */
+DEFTREESTRUCT(TS_BASE, "base")
+DEFTREESTRUCT(TS_TYPED, "typed")
+DEFTREESTRUCT(TS_COMMON, "common")
+DEFTREESTRUCT(TS_INT_CST, "integer cst")
+DEFTREESTRUCT(TS_POLY_INT_CST, "poly_int_cst")
+DEFTREESTRUCT(TS_REAL_CST, "real cst")
+DEFTREESTRUCT(TS_FIXED_CST, "fixed cst")
+DEFTREESTRUCT(TS_VECTOR, "vector")
+DEFTREESTRUCT(TS_STRING, "string")
+DEFTREESTRUCT(TS_COMPLEX, "complex")
+DEFTREESTRUCT(TS_IDENTIFIER, "identifier")
+DEFTREESTRUCT(TS_DECL_MINIMAL, "decl minimal")
+DEFTREESTRUCT(TS_DECL_COMMON, "decl common")
+DEFTREESTRUCT(TS_DECL_WRTL, "decl with RTL")
+DEFTREESTRUCT(TS_DECL_NON_COMMON, "decl non-common")
+DEFTREESTRUCT(TS_DECL_WITH_VIS, "decl with visibility")
+DEFTREESTRUCT(TS_FIELD_DECL, "field decl")
+DEFTREESTRUCT(TS_VAR_DECL, "var decl")
+DEFTREESTRUCT(TS_PARM_DECL, "parm decl")
+DEFTREESTRUCT(TS_LABEL_DECL, "label decl")
+DEFTREESTRUCT(TS_RESULT_DECL, "result decl")
+DEFTREESTRUCT(TS_CONST_DECL, "const decl")
+DEFTREESTRUCT(TS_TYPE_DECL, "type decl")
+DEFTREESTRUCT(TS_FUNCTION_DECL, "function decl")
+DEFTREESTRUCT(TS_TRANSLATION_UNIT_DECL, "translation-unit decl")
+DEFTREESTRUCT(TS_TYPE_COMMON, "type common")
+DEFTREESTRUCT(TS_TYPE_WITH_LANG_SPECIFIC, "type with lang-specific")
+DEFTREESTRUCT(TS_TYPE_NON_COMMON, "type non-common")
+DEFTREESTRUCT(TS_LIST, "list")
+DEFTREESTRUCT(TS_VEC, "vec")
+DEFTREESTRUCT(TS_EXP, "exp")
+DEFTREESTRUCT(TS_SSA_NAME, "ssa name")
+DEFTREESTRUCT(TS_BLOCK, "block")
+DEFTREESTRUCT(TS_BINFO, "binfo")
+DEFTREESTRUCT(TS_STATEMENT_LIST, "statement list")
+DEFTREESTRUCT(TS_CONSTRUCTOR, "constructor")
+DEFTREESTRUCT(TS_OMP_CLAUSE, "omp clause")
+DEFTREESTRUCT(TS_OPTIMIZATION, "optimization options")
+DEFTREESTRUCT(TS_TARGET_OPTION, "target options")

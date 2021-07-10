@@ -1,0 +1,44 @@
+/* Copyright (C) 2015-2018 Free Software Foundation, Inc.
+   Contributed by ARM Ltd.
+
+   This file is part of GCC.
+
+   GCC is free software; you can redistribute it and/or modify it
+   under the terms of the GNU General Public License as published
+   by the Free Software Foundation; either version 3, or (at your
+   option) any later version.
+
+   GCC is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+   or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
+   License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with GCC; see the file COPYING3.  If not see
+   <http://www.gnu.org/licenses/>.  */
+
+/* Additional control over certain tuning parameters.  Before including
+   this file, define a macro:
+
+     AARCH64_EXTRA_TUNING_OPTION (name, internal_name)
+
+   Where:
+
+     NAME is a string giving a friendly name for the tuning flag.
+     INTERNAL_NAME gives the internal name suitable for appending to
+     AARCH64_TUNE_ to give an enum name. */
+
+AARCH64_EXTRA_TUNING_OPTION ("rename_fma_regs", RENAME_FMA_REGS)
+
+/* Don't create non-8 byte aligned load/store pair.  That is if the
+two load/stores are not at least 8 byte aligned don't create load/store
+pairs.   */
+AARCH64_EXTRA_TUNING_OPTION ("slow_unaligned_ldpw", SLOW_UNALIGNED_LDPW)
+
+/* Some of the optional shift to some arthematic instructions are
+   considered cheap.  Logical shift left <=4 with or without a
+   zero extend are considered cheap.  Sign extend; non logical shift left
+   are not considered cheap.  */
+AARCH64_EXTRA_TUNING_OPTION ("cheap_shift_extend", CHEAP_SHIFT_EXTEND)
+
+#undef AARCH64_EXTRA_TUNING_OPTION

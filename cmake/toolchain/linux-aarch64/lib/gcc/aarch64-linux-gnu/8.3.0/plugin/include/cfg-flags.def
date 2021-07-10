@@ -1,0 +1,191 @@
+/* Flags on basic blocks and edges.
+   Copyright (C) 2012-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* This file defines flags that may appear on basic blocks or on
+   edges.  Source files define DEF_BASIC_BLOCK_FLAG or DEF_EDGE_FLAG
+   appropriately before including this file.  */
+
+#if !defined(DEF_BASIC_BLOCK_FLAG) && !defined(DEF_EDGE_FLAG)
+#error "You must define DEF_BASIC_BLOCK_FLAG or DEF_EDGE_FLAG"
+#endif
+
+#ifdef DEF_BASIC_BLOCK_FLAG
+
+/* Masks for basic_block.flags.
+
+   The format of this file is: DEF_BASIC_BLOCK_FLAG(NAME, IDX).
+   NAME is the name of the basic block flag.  A flag BB_#NAME will be
+   created and the name is used in dump_edge_info.
+   IDX is a sequence number that is used to determine the value
+   of the flag, which is 1 << IDX).
+
+   BB_HOT_PARTITION and BB_COLD_PARTITION should be preserved throughout
+   the compilation, so they are never cleared.
+
+   All other flags may be cleared by clear_bb_flags().  It is generally
+   a bad idea to rely on any flags being up-to-date.  */
+
+/* Only set on blocks that have just been created by create_bb.  */
+DEF_BASIC_BLOCK_FLAG(NEW, 0)
+
+/* Set by find_unreachable_blocks.  Do not rely on this being set in any
+   pass.  */
+DEF_BASIC_BLOCK_FLAG(REACHABLE, 1)
+
+/* Set for blocks in an irreducible loop by loop analysis.  */
+DEF_BASIC_BLOCK_FLAG(IRREDUCIBLE_LOOP, 2)
+
+/* Set on blocks that may actually not be single-entry single-exit block.  */
+DEF_BASIC_BLOCK_FLAG(SUPERBLOCK, 3)
+
+/* Set on basic blocks that the scheduler should not touch.  This is used
+   by SMS to prevent other schedulers from messing with the loop schedule.  */
+DEF_BASIC_BLOCK_FLAG(DISABLE_SCHEDULE, 4)
+
+/* Set on blocks that should be put in a hot section.  */
+DEF_BASIC_BLOCK_FLAG(HOT_PARTITION, 5)
+
+/* Set on blocks that should be put in a cold section.  */
+DEF_BASIC_BLOCK_FLAG(COLD_PARTITION, 6)
+
+/* Set on block that was duplicated.  */
+DEF_BASIC_BLOCK_FLAG(DUPLICATED, 7)
+
+/* Set if the label at the top of this block is the target of a non-local goto.  */
+DEF_BASIC_BLOCK_FLAG(NON_LOCAL_GOTO_TARGET, 8)
+
+/* Set on blocks that are in RTL format.  */
+DEF_BASIC_BLOCK_FLAG(RTL, 9) 
+
+/* Set on blocks that are forwarder blocks.
+   Only used in cfgcleanup.c.  */
+DEF_BASIC_BLOCK_FLAG(FORWARDER_BLOCK, 10)
+
+/* Set on blocks that cannot be threaded through.
+   Only used for jump threading.  */
+DEF_BASIC_BLOCK_FLAG(NONTHREADABLE_BLOCK, 11)
+
+/* Set on blocks that were modified in some way.  This bit is set in
+   df_set_bb_dirty, but not cleared by df_analyze, so it can be used
+   to test whether a block has been modified prior to a df_analyze call.  */
+DEF_BASIC_BLOCK_FLAG(MODIFIED, 12)
+
+/* A general visited flag for passes to use.  */
+DEF_BASIC_BLOCK_FLAG(VISITED, 13)
+
+/* Set on blocks that are in a transaction.  This is calculated on
+   demand, and is available after calling compute_transaction_bits().  */
+DEF_BASIC_BLOCK_FLAG(IN_TRANSACTION, 14)
+
+#endif
+
+#ifdef DEF_EDGE_FLAG
+
+/* Masks for edge.flags.
+
+   The format of this file is: DEF_EDGE_FLAG(NAME, IDX, STRING).
+   NAME is the name of the edge flag.  A flag EDGE_#NAME will be
+   created and the name is used in dump_edge_info.
+   IDX is a sequence number that is used to determine the value
+   of the flag, which is 1 << IDX).  */
+
+/* 'Straight line' flow.  In GIMPLE and in cfglayout mode, all normal
+   edges are fallthru edges.  In cfgrtl mode, this flag really means
+   that control flow falls through to the next basic block in the line.  */
+DEF_EDGE_FLAG(FALLTHRU, 0)
+
+/* Strange flow, like a computed jump or exception handling.  Usually
+   this means that the edge cannot be split.  */
+DEF_EDGE_FLAG(ABNORMAL, 1)
+
+/* Edge out of a basic block that ends with a CALL_INSN with abnormal
+   exit, like an exception or a non-local goto.
+   ABNORMAL_CALL edges also have ABNORMAL set.
+   This flag is only used for the RTL CFG.  */
+DEF_EDGE_FLAG(ABNORMAL_CALL, 2)
+
+/* Exception edge.  Exception handling edges represent possible control
+   transfers from a trapping instruction to an exception handler.
+   EH edges also have ABNORMAL set for the RTL CFG.  */
+DEF_EDGE_FLAG(EH, 3)
+
+/* Never merge blocks via this edge.  This is used for exception handling,
+   to prevent merging away edges to the post-landing-pad basic block.
+   This flag is only used for the RTL CFG.  */
+DEF_EDGE_FLAG(PRESERVE, 4)
+
+/* Not a real edge.  This is used to connect parts of the CFG that do
+   not halt, such as infinite loops and noreturn functions, to the
+   EXIT_BLOCK, so that traversing of the reverse CFG is possible.  */
+DEF_EDGE_FLAG(FAKE, 5)
+
+/* A back edge, marked in a depth-first search of the CFG.  Back edges
+   are hints that this edge may be part of a loop in the CFG.  */
+DEF_EDGE_FLAG(DFS_BACK, 6)
+
+/* Edge in a part of the CFG that is an irreducible loop.  */
+DEF_EDGE_FLAG(IRREDUCIBLE_LOOP, 7)
+
+/* Edge taken when controlling predicate is nonzero.
+   This is only used for the GIMPLE CFG.  */
+DEF_EDGE_FLAG(TRUE_VALUE, 8)
+
+/* Edge taken when controlling predicate is zero.
+   This is only used for the GIMPLE CFG.  */
+DEF_EDGE_FLAG(FALSE_VALUE, 9)
+
+/* Edge is executable.  This is only used in GIMPLE SSA-CCP and VRP.
+   This is only used for the GIMPLE CFG.  */
+DEF_EDGE_FLAG(EXECUTABLE, 10)
+
+/* Edge crosses between hot and cold sections, when we do partitioning.
+   This flag is only used for the RTL CFG.  */
+DEF_EDGE_FLAG(CROSSING, 11)
+
+/* Edge from a sibcall CALL_INSN to exit.
+   SIBCALL edges also have ABNORMAL set.
+   This flag is only used for the RTL CFG.  */
+DEF_EDGE_FLAG(SIBCALL, 12)
+
+/* Candidate for straight line flow.  Only used in bb-reorder.c.
+   This flag is only used for the RTL CFG.  */
+DEF_EDGE_FLAG(CAN_FALLTHRU, 13)
+
+/* Exit of a loop.  This is only used in ifcvt.c.
+   This flag is only used for the RTL CFG.  */
+DEF_EDGE_FLAG(LOOP_EXIT, 14)
+
+/* Uninstrumented edge out of a GIMPLE_TRANSACTION statement.  */
+DEF_EDGE_FLAG(TM_UNINSTRUMENTED, 15)
+
+/* Abort (over) edge out of a GIMPLE_TRANSACTION statement.  */
+DEF_EDGE_FLAG(TM_ABORT, 16)
+
+/* An edge we should ignore.  It should be entirely local to
+   passes.  ie, it is never set on any edge upon the completion
+   of any pass.  */
+DEF_EDGE_FLAG(IGNORE, 17)
+
+#endif
+
+/*
+Local variables:
+mode:c
+End:
+*/

@@ -128,9 +128,6 @@ website/package-lock.json
 
 /compile_commands.json
 
-# Toolchains
-/cmake/toolchain/*
-
 # ANTLR extension cache
 .antlr
 

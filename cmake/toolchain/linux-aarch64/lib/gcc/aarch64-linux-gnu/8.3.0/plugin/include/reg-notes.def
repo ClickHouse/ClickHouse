@@ -1,0 +1,244 @@
+/* Register note definitions.
+   Copyright (C) 2004-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* This file defines all the codes that may appear on individual
+   EXPR_LIST, INSN_LIST and INT_LIST rtxes in the REG_NOTES chain of an insn.
+   The codes are stored in the mode field of the rtx.  Source files
+   define DEF_REG_NOTE appropriately before including this file.
+
+   CFA related notes meant for RTX_FRAME_RELATED_P instructions
+   should be declared with REG_CFA_NOTE macro instead of REG_NOTE.  */
+
+/* Shorthand.  */
+#define REG_NOTE(NAME) DEF_REG_NOTE (REG_##NAME)
+#ifndef REG_CFA_NOTE
+# define REG_CFA_NOTE(NAME) REG_NOTE (NAME)
+#endif
+
+/* REG_DEP_TRUE is used in scheduler dependencies lists to represent a
+   read-after-write dependency (i.e. a true data dependency).  This is
+   here, not grouped with REG_DEP_ANTI and REG_DEP_OUTPUT, because some
+   passes use a literal 0 for it.  */
+REG_NOTE (DEP_TRUE)
+
+/* The value in REG dies in this insn (i.e., it is not needed past
+   this insn).  If REG is set in this insn, the REG_DEAD note may,
+   but need not, be omitted.  */
+REG_NOTE (DEAD)
+
+/* The REG is autoincremented or autodecremented in this insn.  */
+REG_NOTE (INC)
+
+/* Describes the insn as a whole; it says that the insn sets a
+   register to a constant value or to be equivalent to a memory
+   address.  If the register is spilled to the stack then the constant
+   value should be substituted for it.  The contents of the REG_EQUIV
+   is the constant value or memory address, which may be different
+   from the source of the SET although it has the same value.  A
+   REG_EQUIV note may also appear on an insn which copies a register
+   parameter to a pseudo-register, if there is a memory address which
+   could be used to hold that pseudo-register throughout the function.  */
+REG_NOTE (EQUIV)
+
+/* Like REG_EQUIV except that the destination is only momentarily
+   equal to the specified rtx.  Therefore, it cannot be used for
+   substitution; but it can be used for cse.  */
+REG_NOTE (EQUAL)
+
+/* The register is always nonnegative during the containing loop.
+   This is used in branches so that decrement and branch instructions
+   terminating on zero can be matched.  There must be an insn pattern
+   in the md file named `decrement_and_branch_until_zero' or else this
+   will never be added to any instructions.  */
+REG_NOTE (NONNEG)
+
+/* Identifies a register set in this insn and never used.  */
+REG_NOTE (UNUSED)
+
+/* REG_CC_SETTER and REG_CC_USER link a pair of insns that set and use
+   CC0, respectively.  Normally, these are required to be consecutive
+   insns, but we permit putting a cc0-setting insn in the delay slot
+   of a branch as long as only one copy of the insn exists.  In that
+   case, these notes point from one to the other to allow code
+   generation to determine what any require information and to
+   properly update CC_STATUS.  These notes are INSN_LISTs.  */
+REG_NOTE (CC_SETTER)
+REG_NOTE (CC_USER)
+
+/* Points to a CODE_LABEL.  Used by JUMP_INSNs to say that the CODE_LABEL
+   contained in the REG_LABEL_TARGET note is a possible jump target of
+   this insn.  This note is an INSN_LIST.  */
+REG_NOTE (LABEL_TARGET)
+
+/* Points to a CODE_LABEL.  Used by any insn to say that the CODE_LABEL
+   contained in the REG_LABEL_OPERAND note is used by the insn, but as an
+   operand, not as a jump target (though it may indirectly be a jump
+   target for a later jump insn).  This note is an INSN_LIST.  */
+REG_NOTE (LABEL_OPERAND)
+
+/* REG_DEP_OUTPUT and REG_DEP_ANTI are used in scheduler dependencies lists
+   to represent write-after-write and write-after-read dependencies
+   respectively.  */
+REG_NOTE (DEP_OUTPUT)
+REG_NOTE (DEP_ANTI)
+REG_NOTE (DEP_CONTROL)
+
+/* REG_BR_PROB is attached to JUMP_INSNs.  It has an
+   integer value (in an INT_LIST).  For jumps, it is the probability
+   that this is a taken branch. The integer represents a value of
+   profile_probability type. Use to_reg_br_prob_note and from_reg_br_prob_note
+   to extract the actual value.  */
+REG_NOTE (BR_PROB)
+
+/* Attached to a call insn; indicates that the call is malloc-like and
+   that the pointer returned cannot alias anything else.  */
+REG_NOTE (NOALIAS)
+
+/* REG_BR_PRED is attached to JUMP_INSNs.  It contains
+   CONCAT of two integer value.  First specifies the branch predictor
+   that added the note, second specifies the predicted hitrate of
+   branch in a fixed point arithmetic based on REG_BR_PROB_BASE.  */
+REG_NOTE (BR_PRED)
+
+/* Attached to insns that are RTX_FRAME_RELATED_P, but are too complex
+   for DWARF to interpret what they imply.  The attached rtx is used
+   instead of intuition.  */
+REG_CFA_NOTE (FRAME_RELATED_EXPR)
+
+/* Attached to insns that are RTX_FRAME_RELATED_P, but are too complex
+   for FRAME_RELATED_EXPR intuition.  The insn's first pattern must be
+   a SET, and the destination must be the CFA register.  The attached
+   rtx is an expression that defines the CFA.  In the simplest case, the
+   rtx could be just the stack_pointer_rtx; more common would be a PLUS
+   with a base register and a constant offset.  In the most complicated
+   cases, this will result in a DW_CFA_def_cfa_expression with the rtx
+   expression rendered in a dwarf location expression.  */
+REG_CFA_NOTE (CFA_DEF_CFA)
+
+/* Attached to insns that are RTX_FRAME_RELATED_P, but are too complex
+   for FRAME_RELATED_EXPR intuition.  This note adjusts the expression
+   from which the CFA is computed.  The attached rtx defines a new CFA
+   expression, relative to the old CFA expression.  This rtx must be of
+   the form (SET new-cfa-reg (PLUS old-cfa-reg const_int)).  If the note
+   rtx is NULL, we use the first SET of the insn.  */
+REG_CFA_NOTE (CFA_ADJUST_CFA)
+
+/* Similar to FRAME_RELATED_EXPR, with the additional information that
+   this is a save to memory, i.e. will result in DW_CFA_offset or the
+   like.  The pattern or the insn should be a simple store relative to
+   the CFA.  */
+REG_CFA_NOTE (CFA_OFFSET)
+
+/* Similar to FRAME_RELATED_EXPR, with the additional information that this
+   is a save to a register, i.e. will result in DW_CFA_register.  The insn
+   or the pattern should be simple reg-reg move.  */
+REG_CFA_NOTE (CFA_REGISTER)
+
+/* Attached to insns that are RTX_FRAME_RELATED_P, but are too complex
+   for FRAME_RELATED_EXPR intuition.  This is a save to memory, i.e. will
+   result in a DW_CFA_expression.  The pattern or the insn should be a
+   store of a register to an arbitrary (non-validated) memory address.  */
+REG_CFA_NOTE (CFA_EXPRESSION)
+
+/* Attached to insns that are RTX_FRAME_RELATED_P, but are too complex
+   for FRAME_RELATED_EXPR intuition.  The DWARF expression computes the value of
+   the given register.  */
+REG_CFA_NOTE (CFA_VAL_EXPRESSION)
+
+/* Attached to insns that are RTX_FRAME_RELATED_P, with the information
+   that this is a restore operation, i.e. will result in DW_CFA_restore
+   or the like.  Either the attached rtx, or the destination of the insn's
+   first pattern is the register to be restored.  */
+REG_CFA_NOTE (CFA_RESTORE)
+
+/* Attached to insns that are RTX_FRAME_RELATED_P, marks insn that sets
+   vDRAP from DRAP.  If vDRAP is a register, vdrap_reg is initalized
+   to the argument, if it is a MEM, it is ignored.  */
+REG_CFA_NOTE (CFA_SET_VDRAP)
+
+/* Attached to insns that are RTX_FRAME_RELATED_P, indicating a window
+   save operation, i.e. will result in a DW_CFA_GNU_window_save.
+   The argument is ignored.  */
+REG_CFA_NOTE (CFA_WINDOW_SAVE)
+
+/* Attached to insns that are RTX_FRAME_RELATED_P, marks the insn as
+   requiring that all queued information should be flushed *before* insn,
+   regardless of what is visible in the rtl.  The argument is ignored.
+   This is normally used for a call instruction which is not exposed to
+   the rest of the compiler as a CALL_INSN.  */
+REG_CFA_NOTE (CFA_FLUSH_QUEUE)
+
+/* Attached to insns that are RTX_FRAME_RELATED_P, toggling the mangling status
+   of return address.  Currently it's only used by AArch64.  The argument is
+   ignored.  */
+REG_CFA_NOTE (CFA_TOGGLE_RA_MANGLE)
+
+/* Indicates what exception region an INSN belongs in.  This is used
+   to indicate what region to which a call may throw.  REGION 0
+   indicates that a call cannot throw at all.  REGION -1 indicates
+   that it cannot throw, nor will it execute a non-local goto.  */
+REG_NOTE (EH_REGION)
+
+/* Used by haifa-sched to save NOTE_INSN notes across scheduling.  */
+REG_NOTE (SAVE_NOTE)
+
+/* Indicates that a call does not return.  */
+REG_NOTE (NORETURN)
+
+/* Indicates that an indirect jump is a non-local goto instead of a
+   computed goto.  */
+REG_NOTE (NON_LOCAL_GOTO)
+
+/* This kind of note is generated at each to `setjmp', and similar
+   functions that can return twice.  */
+REG_NOTE (SETJMP)
+
+/* This kind of note is generated at each transactional memory
+   builtin, to indicate we need to generate transaction restart
+   edges for this insn.  */
+REG_NOTE (TM)
+
+/* Indicates the cumulative offset of the stack pointer accounting
+   for pushed arguments.  This will only be generated when
+   ACCUMULATE_OUTGOING_ARGS is false.  */
+REG_NOTE (ARGS_SIZE)
+
+/* Used for communication between IRA and caller-save.c, indicates
+   that the return value of a call can be used to reinitialize a
+   pseudo reg.  */
+REG_NOTE (RETURNED)
+
+/* Indicates the instruction is a stack check probe that should not
+   be combined with other stack adjustments.  */
+REG_NOTE (STACK_CHECK)
+
+/* Used to mark a call with the function decl called by the call.
+   The decl might not be available in the call due to splitting of the call
+   insn.  This note is a SYMBOL_REF.  */
+REG_NOTE (CALL_DECL)
+
+/* Indicate that a call should not be verified for control-flow consistency.
+   The target address of the call is assumed as a valid address and no check
+   to validate a branch to the target address is needed.  The call is marked
+   when a called function has a 'notrack' attribute.  This note is used by the
+   compiler when the option -fcf-protection=branch is specified.  */
+REG_NOTE (CALL_NOCF_CHECK)
+
+/* The values passed to callee, for debuginfo purposes.  */
+REG_NOTE (CALL_ARG_LOCATION)

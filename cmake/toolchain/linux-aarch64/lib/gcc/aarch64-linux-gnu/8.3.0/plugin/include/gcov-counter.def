@@ -1,0 +1,54 @@
+/* Definitions for the gcov counters in the GNU compiler.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* Before including this file, define a macro:
+
+     DEF_GCOV_COUNTER(COUNTER, NAME, FN_TYPE)
+
+   This macro will be expanded to all supported gcov counters, their
+   names, or the type of handler functions.  FN_TYPE will be
+   expanded to a handler function, like in gcov_merge, it is
+   expanded to __gcov_merge ## FN_TYPE.  */
+
+/* Arc transitions.  */
+DEF_GCOV_COUNTER(GCOV_COUNTER_ARCS, "arcs", _add)
+
+/* Histogram of value inside an interval.  */
+DEF_GCOV_COUNTER(GCOV_COUNTER_V_INTERVAL, "interval", _add)
+
+/* Histogram of exact power2 logarithm of a value.  */
+DEF_GCOV_COUNTER(GCOV_COUNTER_V_POW2, "pow2", _add)
+
+/* The most common value of expression.  */
+DEF_GCOV_COUNTER(GCOV_COUNTER_V_SINGLE, "single", _single)
+
+/* The most common indirect address.  */
+DEF_GCOV_COUNTER(GCOV_COUNTER_V_INDIR, "indirect_call", _single)
+
+/* Compute average value passed to the counter.  */
+DEF_GCOV_COUNTER(GCOV_COUNTER_AVERAGE, "average", _add)
+
+/* IOR of the all values passed to counter.  */
+DEF_GCOV_COUNTER(GCOV_COUNTER_IOR, "ior", _ior)
+
+/* Time profile collecting first run of a function */
+DEF_GCOV_COUNTER(GCOV_TIME_PROFILER, "time_profiler", _time_profile)
+
+/* Top N value tracking for indirect calls.  */
+DEF_GCOV_COUNTER(GCOV_COUNTER_ICALL_TOPNV, "indirect_call_topn", _icall_topn)

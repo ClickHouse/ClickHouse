@@ -1,0 +1,158 @@
+/* -*-C-*-
+
+   This file contains definitions of the various C++ operators,
+   including both overloadable operators (like `+') and
+   non-overloadable operators (like the `?:' ternary operator).
+   Written by Mark Mitchell <mark@codesourcery.com>
+
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3, or (at your option)
+any later version.
+
+GCC is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* The DEF_OPERATOR macro takes the following arguments:
+
+   NAME
+
+     The name of the operator, as a C string, but without the
+     preceding `operator'.  This is the name that would be given in
+     the source program.  For `operator +', for example, this would be
+     `+'.
+
+   CODE
+
+     The tree_code for this operator.  For `operator +', for example,
+     this would be PLUS_EXPR.  Because there are no tree codes for
+     assignment operators, the same tree-codes are reused; i.e.,
+     `operator +' will also have PLUS_EXPR as its CODE.
+
+   MANGLING
+
+     The mangling prefix for the operator, as a C string, and as
+     mangled under the new ABI.  For `operator +', for example, this
+     would be "pl".
+
+   FLAGS
+
+     ovl_op_flags bits.  Postincrement and postdecrement operators are
+     marked as binary.
+
+   Before including this file, you should define DEF_OPERATOR
+   to take these arguments.
+
+   There is code (such as in grok_op_properties) that depends on the
+   order the operators are presented in this file.  Unary_ops must
+   preceed a matching binary op (i.e. '+').  Assignment operators must
+   be last, after OPERATOR_TRANSITION.  */
+
+/* Use DEF_ASSN_OPERATOR to define an assignment operator.  Its
+   arguments are as for DEF_OPERATOR, but there is no need to provide
+   FLAGS (OVL_OP_FLAG_BINARY).  */
+
+#ifndef DEF_ASSN_OPERATOR
+#define DEF_ASSN_OPERATOR(NAME, CODE, MANGLING) \
+  DEF_OPERATOR(NAME, CODE, MANGLING, OVL_OP_FLAG_BINARY)
+#endif
+
+/* Memory allocation operators.  ARITY has special meaning. */
+DEF_OPERATOR ("new", NEW_EXPR, "nw", OVL_OP_FLAG_ALLOC)
+DEF_OPERATOR ("new []", VEC_NEW_EXPR, "na",
+	      OVL_OP_FLAG_ALLOC | OVL_OP_FLAG_VEC)
+DEF_OPERATOR ("delete", DELETE_EXPR, "dl",
+	      OVL_OP_FLAG_ALLOC | OVL_OP_FLAG_DELETE)
+DEF_OPERATOR ("delete []", VEC_DELETE_EXPR, "da",
+	      OVL_OP_FLAG_ALLOC | OVL_OP_FLAG_DELETE | OVL_OP_FLAG_VEC)
+
+/* Unary operators.  */
+DEF_OPERATOR ("+", UNARY_PLUS_EXPR, "ps", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("-", NEGATE_EXPR, "ng", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("&", ADDR_EXPR, "ad", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("*", INDIRECT_REF, "de", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("~", BIT_NOT_EXPR, "co", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("!", TRUTH_NOT_EXPR, "nt", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("++", PREINCREMENT_EXPR, "pp", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("--", PREDECREMENT_EXPR, "mm", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("->", COMPONENT_REF, "pt", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("sizeof", SIZEOF_EXPR, "sz", OVL_OP_FLAG_UNARY)
+
+/* These are extensions.  */
+DEF_OPERATOR ("alignof", ALIGNOF_EXPR, "az", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("__imag__", IMAGPART_EXPR, "v18__imag__", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR ("__real__", REALPART_EXPR, "v18__real__", OVL_OP_FLAG_UNARY)
+
+/* Binary operators.  */
+DEF_OPERATOR ("+", PLUS_EXPR, "pl", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("-", MINUS_EXPR, "mi", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("*", MULT_EXPR, "ml", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("/", TRUNC_DIV_EXPR, "dv", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("%", TRUNC_MOD_EXPR, "rm", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("&", BIT_AND_EXPR, "an", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("|", BIT_IOR_EXPR, "or", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("^", BIT_XOR_EXPR, "eo", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("<<", LSHIFT_EXPR, "ls", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR (">>", RSHIFT_EXPR, "rs", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("==", EQ_EXPR, "eq", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("!=", NE_EXPR, "ne", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("<", LT_EXPR, "lt", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR (">", GT_EXPR, "gt", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("<=", LE_EXPR, "le", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR (">=", GE_EXPR, "ge", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("&&", TRUTH_ANDIF_EXPR, "aa", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("||", TRUTH_ORIF_EXPR, "oo", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR (",", COMPOUND_EXPR, "cm", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("->*", MEMBER_REF, "pm", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR (".*", DOTSTAR_EXPR, "ds", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("[]", ARRAY_REF, "ix", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("++", POSTINCREMENT_EXPR, "pp", OVL_OP_FLAG_BINARY)
+DEF_OPERATOR ("--", POSTDECREMENT_EXPR, "mm", OVL_OP_FLAG_BINARY)
+
+/* Miscellaneous.  */
+DEF_OPERATOR ("?:", COND_EXPR, "qu", OVL_OP_FLAG_NONE)
+DEF_OPERATOR ("()", CALL_EXPR, "cl", OVL_OP_FLAG_NONE)
+
+/* Operators needed for mangling.  */
+DEF_OPERATOR (NULL, CAST_EXPR, "cv", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR (NULL, DYNAMIC_CAST_EXPR, "dc", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR (NULL, REINTERPRET_CAST_EXPR, "rc", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR (NULL, CONST_CAST_EXPR, "cc", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR (NULL, STATIC_CAST_EXPR, "sc", OVL_OP_FLAG_UNARY)
+DEF_OPERATOR (NULL, SCOPE_REF, "sr", OVL_OP_FLAG_NONE)
+DEF_OPERATOR (NULL, EXPR_PACK_EXPANSION, "sp", OVL_OP_FLAG_NONE)
+DEF_OPERATOR (NULL, UNARY_LEFT_FOLD_EXPR, "fl", OVL_OP_FLAG_NONE)
+DEF_OPERATOR (NULL, UNARY_RIGHT_FOLD_EXPR, "fr", OVL_OP_FLAG_NONE)
+DEF_OPERATOR (NULL, BINARY_LEFT_FOLD_EXPR, "fL", OVL_OP_FLAG_NONE)
+DEF_OPERATOR (NULL, BINARY_RIGHT_FOLD_EXPR, "fR", OVL_OP_FLAG_NONE)
+
+#ifdef OPERATOR_TRANSITION
+OPERATOR_TRANSITION
+#undef OPERATOR_TRANSITION
+#endif
+
+/* Assignment operators.  */
+DEF_ASSN_OPERATOR ("=", NOP_EXPR, "aS")
+DEF_ASSN_OPERATOR ("+=", PLUS_EXPR, "pL")
+DEF_ASSN_OPERATOR ("-=", MINUS_EXPR, "mI")
+DEF_ASSN_OPERATOR ("*=", MULT_EXPR, "mL")
+DEF_ASSN_OPERATOR ("/=", TRUNC_DIV_EXPR, "dV")
+DEF_ASSN_OPERATOR ("%=", TRUNC_MOD_EXPR, "rM")
+DEF_ASSN_OPERATOR ("&=", BIT_AND_EXPR, "aN")
+DEF_ASSN_OPERATOR ("|=", BIT_IOR_EXPR, "oR")
+DEF_ASSN_OPERATOR ("^=", BIT_XOR_EXPR, "eO")
+DEF_ASSN_OPERATOR ("<<=", LSHIFT_EXPR, "lS")
+DEF_ASSN_OPERATOR (">>=", RSHIFT_EXPR, "rS")
+
+#undef DEF_ASSN_OPERATOR
+#undef DEF_OPERATOR

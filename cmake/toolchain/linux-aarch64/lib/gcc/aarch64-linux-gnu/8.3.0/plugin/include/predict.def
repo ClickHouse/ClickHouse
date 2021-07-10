@@ -1,0 +1,222 @@
+/* Definitions for the branch prediction routines in the GNU compiler.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* Before including this file, you should define a macro:
+
+     DEF_PREDICTOR (ENUM, NAME, HITRATE)
+
+   This macro will be called once for each predictor.  The ENUM will
+   be of type `enum predictor', and will enumerate all supported
+   predictors.  The order of DEF_PREDICTOR calls is important, as
+   in the first match combining heuristics, the predictor appearing
+   first in this file will win.
+
+   NAME is used in the debugging output to determine predictor type.
+
+   HITRATE is the probability that edge predicted by predictor as taken
+   will be really taken (so it should be always above
+   REG_BR_PROB_BASE / 2).  */
+
+
+/* A value used as final outcome of all heuristics.  */
+DEF_PREDICTOR (PRED_COMBINED, "combined", PROB_ALWAYS, 0)
+
+/* An outcome estimated by Dempster-Shaffer theory.  */
+DEF_PREDICTOR (PRED_DS_THEORY, "DS theory", PROB_ALWAYS, 0)
+
+/* A combined heuristics using probability determined by first
+   matching heuristics from this list.  */
+DEF_PREDICTOR (PRED_FIRST_MATCH, "first match", PROB_ALWAYS, 0)
+
+/* Heuristic applying when no heuristic below applies.  */
+DEF_PREDICTOR (PRED_NO_PREDICTION, "no prediction", PROB_ALWAYS, 0)
+
+/* Mark unconditional jump as taken.  */
+DEF_PREDICTOR (PRED_UNCONDITIONAL, "unconditional jump", PROB_ALWAYS,
+	       PRED_FLAG_FIRST_MATCH)
+
+/* Use number of loop iterations determined by # of iterations
+   analysis to set probability.  We don't want to use Dempster-Shaffer
+   theory here, as the predictions is exact.  */
+DEF_PREDICTOR (PRED_LOOP_ITERATIONS, "loop iterations", PROB_UNINITIALIZED,
+	       PRED_FLAG_FIRST_MATCH)
+
+/* Assume that any given atomic operation has low contention,
+   and thus the compare-and-swap operation succeeds. */
+DEF_PREDICTOR (PRED_COMPARE_AND_SWAP, "compare and swap", PROB_VERY_LIKELY,
+	       PRED_FLAG_FIRST_MATCH)
+
+/* Hints dropped by user via __builtin_expect feature.  Note: the
+   probability of PROB_VERY_LIKELY is now overwritten by param
+   builtin_expect_probability with a default value of HITRATE(90).
+   Refer to param.def for details.  */
+DEF_PREDICTOR (PRED_BUILTIN_EXPECT, "__builtin_expect", PROB_VERY_LIKELY,
+	       PRED_FLAG_FIRST_MATCH)
+
+/* Use number of loop iterations guessed by the contents of the loop.  */
+DEF_PREDICTOR (PRED_LOOP_ITERATIONS_GUESSED, "guessed loop iterations",
+	       PROB_UNINITIALIZED, PRED_FLAG_FIRST_MATCH)
+
+/* Use number of loop iterations guessed by the contents of the loop.  */
+DEF_PREDICTOR (PRED_LOOP_ITERATIONS_MAX, "guessed loop iterations",
+	       PROB_UNINITIALIZED, PRED_FLAG_FIRST_MATCH)
+
+/* Branch containing goto is probably not taken.  */
+DEF_PREDICTOR (PRED_CONTINUE, "continue", HITRATE (67), 0)
+
+/* Branch to basic block containing call marked by noreturn attribute.  */
+DEF_PREDICTOR (PRED_NORETURN, "noreturn call", PROB_VERY_LIKELY,
+	       PRED_FLAG_FIRST_MATCH)
+
+/* Branch to basic block containing call marked by cold function attribute.  */
+DEF_PREDICTOR (PRED_COLD_FUNCTION, "cold function call", PROB_VERY_LIKELY,
+	       PRED_FLAG_FIRST_MATCH)
+
+/* Edge causing loop to terminate is probably not taken.  */
+DEF_PREDICTOR (PRED_LOOP_EXIT, "loop exit", HITRATE (89),
+	       PRED_FLAG_FIRST_MATCH)
+
+/* Same as LOOP_EXIT but for loops containing recursive call.  */
+DEF_PREDICTOR (PRED_LOOP_EXIT_WITH_RECURSION, "loop exit with recursion",
+	       HITRATE (78), PRED_FLAG_FIRST_MATCH)
+
+/* Edge causing loop to terminate by computing value used by later
+   conditional.  */
+DEF_PREDICTOR (PRED_LOOP_EXTRA_EXIT, "extra loop exit", HITRATE (67),
+	       PRED_FLAG_FIRST_MATCH)
+
+/* Pointers are usually not NULL.  */
+DEF_PREDICTOR (PRED_POINTER, "pointer", HITRATE (70), 0)
+DEF_PREDICTOR (PRED_TREE_POINTER, "pointer (on trees)", HITRATE (70), 0)
+
+/* NE is probable, EQ not etc...  */
+DEF_PREDICTOR (PRED_OPCODE_POSITIVE, "opcode values positive", HITRATE (59), 0)
+DEF_PREDICTOR (PRED_OPCODE_NONEQUAL, "opcode values nonequal", HITRATE (66), 0)
+DEF_PREDICTOR (PRED_FPOPCODE, "fp_opcode", HITRATE (90), 0)
+DEF_PREDICTOR (PRED_TREE_OPCODE_POSITIVE, "opcode values positive (on trees)",
+	       HITRATE (59), 0)
+DEF_PREDICTOR (PRED_TREE_OPCODE_NONEQUAL, "opcode values nonequal (on trees)",
+	       HITRATE (66), 0)
+DEF_PREDICTOR (PRED_TREE_FPOPCODE, "fp_opcode (on trees)", HITRATE (90), 0)
+
+/* Branch guarding call is probably taken.  */
+DEF_PREDICTOR (PRED_CALL, "call", HITRATE (67), 0)
+
+/* Call predictors are for now ignored, lets leave the predictor
+   to measure its benefit.  */
+DEF_PREDICTOR (PRED_INDIR_CALL, "indirect call", PROB_EVEN, 0)
+DEF_PREDICTOR (PRED_POLYMORPHIC_CALL, "polymorphic call", PROB_EVEN, 0)
+DEF_PREDICTOR (PRED_RECURSIVE_CALL, "recursive call", PROB_EVEN, 0)
+
+/* Branch causing function to terminate is probably not taken.  */
+DEF_PREDICTOR (PRED_TREE_EARLY_RETURN, "early return (on trees)", HITRATE (66),
+	       0)
+
+/* Branch containing goto is probably not taken.  */
+DEF_PREDICTOR (PRED_GOTO, "goto", HITRATE (66), 0)
+
+/* Branch ending with return constant is probably not taken.  */
+DEF_PREDICTOR (PRED_CONST_RETURN, "const return", HITRATE (65), 0)
+
+/* Branch ending with return negative constant is probably not taken.  */
+DEF_PREDICTOR (PRED_NEGATIVE_RETURN, "negative return", HITRATE (98), 0)
+
+/* Branch ending with return; is probably not taken */
+DEF_PREDICTOR (PRED_NULL_RETURN, "null return", HITRATE (71), 0)
+
+/* Branches to compare induction variable to a loop bound is
+   extremely likely.  */
+DEF_PREDICTOR (PRED_LOOP_IV_COMPARE_GUESS, "guess loop iv compare",
+	       HITRATE (64), 0)
+
+/* Use number of loop iterations determined by # of iterations analysis
+   to set probability of branches that compares IV to loop bound variable.  */
+DEF_PREDICTOR (PRED_LOOP_IV_COMPARE, "loop iv compare", PROB_UNINITIALIZED,
+	       PRED_FLAG_FIRST_MATCH)
+
+/* In the following code
+   for (loop1)
+     if (cond)
+       for (loop2)
+	 body;
+   guess that cond is unlikely.  */
+DEF_PREDICTOR (PRED_LOOP_GUARD, "loop guard", HITRATE (73), 0)
+
+/* Same but for loops containing recursion.  */
+DEF_PREDICTOR (PRED_LOOP_GUARD_WITH_RECURSION, "loop guard with recursion",
+	       HITRATE (85), 0)
+
+/* Branches to hot labels are likely.  */
+DEF_PREDICTOR (PRED_HOT_LABEL, "hot label", HITRATE (85), 0)
+
+/* Branches to cold labels are extremely unlikely.  */
+DEF_PREDICTOR (PRED_COLD_LABEL, "cold label", PROB_VERY_LIKELY,
+	       PRED_FLAG_FIRST_MATCH)
+
+
+/* The following predictors are used in Fortran. */
+
+/* Branch leading to an integer overflow are extremely unlikely.  */
+DEF_PREDICTOR (PRED_FORTRAN_OVERFLOW, "Fortran overflow", PROB_ALWAYS,
+	       PRED_FLAG_FIRST_MATCH)
+
+/* Branch leading to a failure status are unlikely.  This can occur for out
+   of memory.  This predictor only occurs when the user explicitly asked
+   for a return status.  By default, the code aborts,
+   which is handled via PRED_NORETURN.  */
+DEF_PREDICTOR (PRED_FORTRAN_FAIL_ALLOC, "Fortran fail alloc",
+	       PROB_VERY_LIKELY, 0)
+
+/* Predictor is used for an allocation of an already allocated memory or
+   deallocating an already deallocated allocatable.  */
+DEF_PREDICTOR (PRED_FORTRAN_REALLOC, "Fortran repeated allocation/deallocation",
+	       PROB_LIKELY, 0)
+
+/* Branch leading to an I/O failure status are unlikely.  This predictor is
+   used for I/O failures such as for invalid unit numbers.  This predictor
+   only occurs when the user explicitly asked for a return status.  By default,
+   the code aborts, which is handled via PRED_NORETURN.  */
+DEF_PREDICTOR (PRED_FORTRAN_FAIL_IO, "Fortran fail IO", HITRATE (85), 0)
+
+/* Branch leading to a run-time warning message which is printed only once
+   are unlikely.  The print-warning branch itself can be likely or unlikely.  */
+DEF_PREDICTOR (PRED_FORTRAN_WARN_ONCE, "Fortran warn once", HITRATE (75), 0)
+
+/* Branch belonging to a zero-sized array.  */
+DEF_PREDICTOR (PRED_FORTRAN_SIZE_ZERO, "Fortran zero-sized array", \
+	       HITRATE (99), 0)
+
+/* Branch belonging to an invalid bound index, in a context where it is
+   standard conform and well defined but rather pointless and, hence, rather
+   unlikely to occur.  */
+DEF_PREDICTOR (PRED_FORTRAN_INVALID_BOUND, "Fortran invalid bound", \
+	       HITRATE (90), 0)
+
+/* Branch belonging to the handling of absent optional arguments.  This
+   predictor is used when an optional dummy argument, associated with an
+   absent argument, is passed on as actual argument to another procedure,
+   which in turn has an optional argument.  */
+DEF_PREDICTOR (PRED_FORTRAN_ABSENT_DUMMY, "Fortran absent dummy", \
+	       HITRATE (60), 0)
+
+/* Fortran DO statement generates a pre-header guard:
+   empty = (step > 0 ? to < from : to > from), which can be predicted
+   to be very likely.  */
+DEF_PREDICTOR (PRED_FORTRAN_LOOP_PREHEADER, "Fortran loop preheader", \
+	       HITRATE (99), 0)

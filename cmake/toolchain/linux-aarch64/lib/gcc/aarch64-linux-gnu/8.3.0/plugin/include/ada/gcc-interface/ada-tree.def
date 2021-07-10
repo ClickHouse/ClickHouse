@@ -1,0 +1,79 @@
+/****************************************************************************
+ *                                                                          *
+ *                         GNAT COMPILER COMPONENTS                         *
+ *                                                                          *
+ *                       GNAT-SPECIFIC GCC TREE CODES                       *
+ *                                                                          *
+ *                              Specification                               *
+ *                                                                          *
+ *            Copyright (C) 1992-2009, Free Software Foundation, Inc.       *
+ *                                                                          *
+ * GNAT is free software;  you can  redistribute it  and/or modify it under *
+ * terms of the  GNU General Public License as published  by the Free Soft- *
+ * ware  Foundation;  either version 3,  or (at your option) any later ver- *
+ * sion.  GNAT is distributed in the hope that it will be useful, but WITH- *
+ * OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY *
+ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License *
+ * for  more details.  You should have received a copy of the GNU General   *
+ * Public License along with GCC; see the file COPYING3.  If not see        *
+ * <http://www.gnu.org/licenses/>.                                          *
+ *                                                                          *
+ * GNAT was originally developed  by the GNAT team at  New York University. *
+ * Extensive contributions were provided by Ada Core Technologies Inc.      *
+ *                                                                          *
+ ****************************************************************************/
+
+/* A type that is an unconstrained array.  This node is never passed to GCC.
+   TREE_TYPE is the type of the fat pointer and TYPE_OBJECT_RECORD_TYPE is
+   the type of a record containing the template and data.  */
+DEFTREECODE (UNCONSTRAINED_ARRAY_TYPE, "unconstrained_array_type", tcc_type, 0)
+
+/* A reference to an unconstrained array.  This node only exists as an
+   intermediate node during the translation of a GNAT tree to a GCC tree;
+   it is never passed to GCC.  The only field used is operand 0, which
+   is the fat pointer object.  */
+DEFTREECODE (UNCONSTRAINED_ARRAY_REF, "unconstrained_array_ref",
+	     tcc_reference, 1)
+
+/* An expression that returns an RTL suitable for its type.  Operand 0
+   is an expression to be evaluated for side effects only.  */
+DEFTREECODE (NULL_EXPR, "null_expr", tcc_expression, 1)
+
+/* Same as PLUS_EXPR, except that no modulo reduction is applied.
+   This is used for loops and never shows up in the tree.  */
+DEFTREECODE (PLUS_NOMOD_EXPR, "plus_nomod_expr", tcc_binary, 2)
+
+/* Same as MINUS_EXPR, except that no modulo reduction is applied.
+   This is used for loops and never shows up in the tree.  */
+DEFTREECODE (MINUS_NOMOD_EXPR, "minus_nomod_expr", tcc_binary, 2)
+
+/* An expression that computes an exponentiation.  Operand 0 is the base and
+   Operand 1 is the exponent.  This node is never passed to GCC: it is only
+   used internally to describe fixed point types scale factors.  */
+DEFTREECODE (POWER_EXPR, "power_expr", tcc_binary, 2)
+
+/* Same as ADDR_EXPR, except that if the operand represents a bit field,
+   return the address of the byte containing the bit.  This is used
+   for the Address attribute and never shows up in the tree.  */
+DEFTREECODE (ATTR_ADDR_EXPR, "attr_addr_expr", tcc_reference, 1)
+
+/* Here are the tree codes for the statement types known to Ada.  These
+   must be at the end of this file to allow IS_ADA_STMT to work.  */
+
+/* This is how record_code_position and insert_code_for work.  The former
+   makes this tree node, whose operand is a statement.  The latter inserts
+   the actual statements into this node.  Gimplification consists of
+   just returning the inner statement.  */
+DEFTREECODE (STMT_STMT, "stmt_stmt", tcc_statement, 1)
+
+/* A loop.  LOOP_STMT_COND is the test to exit the loop.  LOOP_STMT_UPDATE
+   is the statement to update the loop iteration variable at the continue
+   point.  LOOP_STMT_BODY are the statements in the body of the loop.  And
+   LOOP_STMT_LABEL points to the LABEL_DECL of the end label of the loop.  */
+DEFTREECODE (LOOP_STMT, "loop_stmt", tcc_statement, 4)
+
+/* Conditionally exit a loop.  EXIT_STMT_COND is the condition, which, if
+   true, will cause the loop to be exited.  If no condition is specified,
+   the loop is unconditionally exited.  EXIT_STMT_LABEL is the end label
+   corresponding to the loop to exit.  */
+DEFTREECODE (EXIT_STMT, "exit_stmt", tcc_statement, 2)

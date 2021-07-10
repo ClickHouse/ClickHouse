@@ -1,0 +1,98 @@
+/* Insn note definitions.
+   Copyright (C) 2004-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* This file defines all the codes that may appear in the
+   NOTE_LINE_NUMBER field of a NOTE insn for kinds of notes that are
+   not line numbers.  Source files define DEF_INSN_NOTE appropriately
+   before including this file.
+
+   We are slowly removing the concept of insn-chain notes from the
+   compiler.  Adding new codes to this file is STRONGLY DISCOURAGED.
+   If you think you need one, look for other ways to express what you
+   mean, such as register notes or bits in the basic-block structure.  */
+
+/* Shorthand.  */
+#define INSN_NOTE(NAME) DEF_INSN_NOTE (NOTE_INSN_##NAME)
+
+/* This note is used to get rid of an insn when it isn't safe to patch
+   the insn out of the chain.  */
+INSN_NOTE (DELETED)
+
+/* Generated in place of user-declared labels when they are deleted.  */
+INSN_NOTE (DELETED_LABEL)
+/* Similarly, but for labels that have been present in debug stmts
+   earlier and thus will only appear with -g.  These must use different
+   label namespace.  */
+INSN_NOTE (DELETED_DEBUG_LABEL)
+
+/* These are used to mark the beginning and end of a lexical block.
+   See NOTE_BLOCK and reorder_blocks.  */
+INSN_NOTE (BLOCK_BEG)
+INSN_NOTE (BLOCK_END)
+
+/* This note indicates the start of the real body of the function,
+   i.e. the point just after all of the parms have been moved into
+   their homes, etc.  */
+INSN_NOTE (FUNCTION_BEG)
+
+/* This marks the point immediately after the last prologue insn.  */
+INSN_NOTE (PROLOGUE_END)
+
+/* This marks the point immediately prior to the first epilogue insn.  */
+INSN_NOTE (EPILOGUE_BEG)
+
+/* These note where exception handling regions begin and end.
+   Uses NOTE_EH_HANDLER to identify the region in question.  */
+INSN_NOTE (EH_REGION_BEG)
+INSN_NOTE (EH_REGION_END)
+
+/* The location of a variable.  */
+INSN_NOTE (VAR_LOCATION)
+
+/* The beginning of a statement.  */
+INSN_NOTE (BEGIN_STMT)
+
+/* The entry point for an inlined function.  Its NOTE_BLOCK references
+   the lexical block whose abstract origin is the inlined function.  */
+INSN_NOTE (INLINE_ENTRY)
+
+/* Record the struct for the following basic block.  Uses
+   NOTE_BASIC_BLOCK.  FIXME: Redundant with the basic block pointer
+   now included in every insn.  NOTE: If there's no CFG anymore, in other words,
+   if BLOCK_FOR_INSN () == NULL, NOTE_BASIC_BLOCK cannot be considered reliable
+   anymore.  */
+INSN_NOTE (BASIC_BLOCK)
+
+/* Mark the inflection point in the instruction stream where we switch
+   between hot and cold text sections.  */
+INSN_NOTE (SWITCH_TEXT_SECTIONS)
+
+/* When emitting dwarf2 frame information, contains a directive that
+   should be emitted.  */
+INSN_NOTE (CFI)
+
+/* When emitting dwarf2 frame information, contains the number of a debug
+   label that should be emitted.  */
+INSN_NOTE (CFI_LABEL)
+
+/* This note indicates that the function context must be updated if
+   the Setjmp/Longjmp exception mechanism is used.  */
+INSN_NOTE (UPDATE_SJLJ_CONTEXT)
+
+#undef INSN_NOTE

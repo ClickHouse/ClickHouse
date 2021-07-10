@@ -1,0 +1,39 @@
+/* Copyright (C) 2015-2018 Free Software Foundation, Inc.
+   Contributed by ARM Ltd.
+
+   This file is part of GCC.
+
+   GCC is free software; you can redistribute it and/or modify it
+   under the terms of the GNU General Public License as published
+   by the Free Software Foundation; either version 3, or (at your
+   option) any later version.
+
+   GCC is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+   or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
+   License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with GCC; see the file COPYING3.  If not see
+   <http://www.gnu.org/licenses/>.  */
+
+/* Pairs of instructions which can be fused. before including this file,
+   define a macro:
+
+     AARCH64_FUSION_PAIR (name, internal_name)
+
+   Where:
+
+     NAME is a string giving a friendly name for the instructions to fuse.
+     INTERNAL_NAME gives the internal name suitable for appending to
+     AARCH64_FUSE_ to give an enum name. */
+
+AARCH64_FUSION_PAIR ("mov+movk", MOV_MOVK)
+AARCH64_FUSION_PAIR ("adrp+add", ADRP_ADD)
+AARCH64_FUSION_PAIR ("movk+movk", MOVK_MOVK)
+AARCH64_FUSION_PAIR ("adrp+ldr", ADRP_LDR)
+AARCH64_FUSION_PAIR ("cmp+branch", CMP_BRANCH)
+AARCH64_FUSION_PAIR ("aes+aesmc", AES_AESMC)
+AARCH64_FUSION_PAIR ("alu+branch", ALU_BRANCH)
+
+#undef AARCH64_FUSION_PAIR

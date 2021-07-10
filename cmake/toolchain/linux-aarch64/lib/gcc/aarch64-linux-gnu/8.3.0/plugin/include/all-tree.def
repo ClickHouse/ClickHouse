@@ -1,0 +1,6 @@
+#include "tree.def"
+END_OF_BASE_TREE_CODES
+#include "c-family/c-common.def"
+#include "ada/gcc-interface/ada-tree.def"
+#include "cp/cp-tree.def"
+#include "objc/objc-tree.def"

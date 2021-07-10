@@ -1,0 +1,514 @@
+/* Description of pass structure
+   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/*
+ Macros that should be defined when using this file:
+   INSERT_PASSES_AFTER (PASS)
+   PUSH_INSERT_PASSES_WITHIN (PASS)
+   POP_INSERT_PASSES ()
+   NEXT_PASS (PASS)
+   TERMINATE_PASS_LIST (PASS)
+ */
+
+ /* All passes needed to lower the function into shape optimizers can
+    operate on.  These passes are always run first on the function, but
+    backend might produce already lowered functions that are not processed
+    by these passes.  */
+  INSERT_PASSES_AFTER (all_lowering_passes)
+  NEXT_PASS (pass_warn_unused_result);
+  NEXT_PASS (pass_diagnose_omp_blocks);
+  NEXT_PASS (pass_diagnose_tm_blocks);
+  NEXT_PASS (pass_lower_omp);
+  NEXT_PASS (pass_lower_cf);
+  NEXT_PASS (pass_lower_tm);
+  NEXT_PASS (pass_refactor_eh);
+  NEXT_PASS (pass_lower_eh);
+  NEXT_PASS (pass_build_cfg);
+  NEXT_PASS (pass_warn_function_return);
+  NEXT_PASS (pass_expand_omp);
+  NEXT_PASS (pass_sprintf_length, false);
+  NEXT_PASS (pass_walloca, /*strict_mode_p=*/true);
+  NEXT_PASS (pass_build_cgraph_edges);
+  TERMINATE_PASS_LIST (all_lowering_passes)
+
+  /* Interprocedural optimization passes.  */
+  INSERT_PASSES_AFTER (all_small_ipa_passes)
+  NEXT_PASS (pass_ipa_free_lang_data);
+  NEXT_PASS (pass_ipa_function_and_variable_visibility);
+  NEXT_PASS (pass_ipa_chkp_versioning);
+  NEXT_PASS (pass_ipa_chkp_early_produce_thunks);
+  NEXT_PASS (pass_build_ssa_passes);
+  PUSH_INSERT_PASSES_WITHIN (pass_build_ssa_passes)
+      NEXT_PASS (pass_fixup_cfg);
+      NEXT_PASS (pass_build_ssa);
+      NEXT_PASS (pass_warn_nonnull_compare);
+      NEXT_PASS (pass_ubsan);
+      NEXT_PASS (pass_early_warn_uninitialized);
+      NEXT_PASS (pass_nothrow);
+      NEXT_PASS (pass_rebuild_cgraph_edges);
+  POP_INSERT_PASSES ()
+
+  NEXT_PASS (pass_chkp_instrumentation_passes);
+  PUSH_INSERT_PASSES_WITHIN (pass_chkp_instrumentation_passes)
+      NEXT_PASS (pass_fixup_cfg);
+      NEXT_PASS (pass_chkp);
+      NEXT_PASS (pass_rebuild_cgraph_edges);
+  POP_INSERT_PASSES ()
+
+  NEXT_PASS (pass_local_optimization_passes);
+  PUSH_INSERT_PASSES_WITHIN (pass_local_optimization_passes)
+      NEXT_PASS (pass_fixup_cfg);
+      NEXT_PASS (pass_rebuild_cgraph_edges);
+      NEXT_PASS (pass_local_fn_summary);
+      NEXT_PASS (pass_early_inline);
+      NEXT_PASS (pass_all_early_optimizations);
+      PUSH_INSERT_PASSES_WITHIN (pass_all_early_optimizations)
+	  NEXT_PASS (pass_remove_cgraph_callee_edges);
+	  NEXT_PASS (pass_object_sizes, true /* insert_min_max_p */);
+	  /* Don't record nonzero bits before IPA to avoid
+	     using too much memory.  */
+	  NEXT_PASS (pass_ccp, false /* nonzero_p */);
+	  /* After CCP we rewrite no longer addressed locals into SSA
+	     form if possible.  */
+	  NEXT_PASS (pass_forwprop);
+          NEXT_PASS (pass_early_thread_jumps);
+	  NEXT_PASS (pass_sra_early);
+	  /* pass_build_ealias is a dummy pass that ensures that we
+	     execute TODO_rebuild_alias at this point.  */
+	  NEXT_PASS (pass_build_ealias);
+	  NEXT_PASS (pass_fre);
+	  NEXT_PASS (pass_early_vrp);
+	  NEXT_PASS (pass_merge_phi);
+          NEXT_PASS (pass_dse);
+	  NEXT_PASS (pass_cd_dce);
+	  NEXT_PASS (pass_early_ipa_sra);
+	  NEXT_PASS (pass_tail_recursion);
+	  NEXT_PASS (pass_convert_switch);
+	  NEXT_PASS (pass_cleanup_eh);
+	  NEXT_PASS (pass_profile);
+	  NEXT_PASS (pass_local_pure_const);
+	  /* Split functions creates parts that are not run through
+	     early optimizations again.  It is thus good idea to do this
+	      late.  */
+	  NEXT_PASS (pass_split_functions);
+	  NEXT_PASS (pass_strip_predict_hints);
+      POP_INSERT_PASSES ()
+      NEXT_PASS (pass_release_ssa_names);
+      NEXT_PASS (pass_rebuild_cgraph_edges);
+      NEXT_PASS (pass_local_fn_summary);
+  POP_INSERT_PASSES ()
+
+  NEXT_PASS (pass_ipa_oacc);
+  PUSH_INSERT_PASSES_WITHIN (pass_ipa_oacc)
+      NEXT_PASS (pass_ipa_pta);
+      /* Pass group that runs when the function is an offloaded function
+	 containing oacc kernels loops.	 */
+      NEXT_PASS (pass_ipa_oacc_kernels);
+      PUSH_INSERT_PASSES_WITHIN (pass_ipa_oacc_kernels)
+	  NEXT_PASS (pass_oacc_kernels);
+	  PUSH_INSERT_PASSES_WITHIN (pass_oacc_kernels)
+	      NEXT_PASS (pass_ch);
+	      NEXT_PASS (pass_fre);
+	      /* We use pass_lim to rewrite in-memory iteration and reduction
+		 variable accesses in loops into local variables accesses.  */
+	      NEXT_PASS (pass_lim);
+	      NEXT_PASS (pass_dominator, false /* may_peel_loop_headers_p */);
+	      NEXT_PASS (pass_dce);
+	      NEXT_PASS (pass_parallelize_loops, true /* oacc_kernels_p */);
+	      NEXT_PASS (pass_expand_omp_ssa);
+	      NEXT_PASS (pass_rebuild_cgraph_edges);
+	  POP_INSERT_PASSES ()
+      POP_INSERT_PASSES ()
+  POP_INSERT_PASSES ()
+
+  NEXT_PASS (pass_target_clone);
+  NEXT_PASS (pass_ipa_chkp_produce_thunks);
+  NEXT_PASS (pass_ipa_auto_profile);
+  NEXT_PASS (pass_ipa_tree_profile);
+  PUSH_INSERT_PASSES_WITHIN (pass_ipa_tree_profile)
+      NEXT_PASS (pass_feedback_split_functions);
+  POP_INSERT_PASSES ()
+  NEXT_PASS (pass_ipa_free_fn_summary, true /* small_p */);
+  NEXT_PASS (pass_ipa_increase_alignment);
+  NEXT_PASS (pass_ipa_tm);
+  NEXT_PASS (pass_ipa_lower_emutls);
+  TERMINATE_PASS_LIST (all_small_ipa_passes)
+
+  INSERT_PASSES_AFTER (all_regular_ipa_passes)
+  NEXT_PASS (pass_ipa_whole_program_visibility);
+  NEXT_PASS (pass_ipa_profile);
+  NEXT_PASS (pass_ipa_icf);
+  NEXT_PASS (pass_ipa_devirt);
+  NEXT_PASS (pass_ipa_cp);
+  NEXT_PASS (pass_ipa_cdtor_merge);
+  NEXT_PASS (pass_ipa_hsa);
+  NEXT_PASS (pass_ipa_fn_summary);
+  NEXT_PASS (pass_ipa_inline);
+  NEXT_PASS (pass_ipa_pure_const);
+  NEXT_PASS (pass_ipa_free_fn_summary, false /* small_p */);
+  NEXT_PASS (pass_ipa_reference);
+  /* This pass needs to be scheduled after any IP code duplication.   */
+  NEXT_PASS (pass_ipa_single_use);
+  /* Comdat privatization come last, as direct references to comdat local
+     symbols are not allowed outside of the comdat group.  Privatizing early
+     would result in missed optimizations due to this restriction.  */
+  NEXT_PASS (pass_ipa_comdats);
+  TERMINATE_PASS_LIST (all_regular_ipa_passes)
+
+  /* Simple IPA passes executed after the regular passes.  In WHOPR mode the
+     passes are executed after partitioning and thus see just parts of the
+     compiled unit.  */
+  INSERT_PASSES_AFTER (all_late_ipa_passes)
+  NEXT_PASS (pass_materialize_all_clones);
+  NEXT_PASS (pass_ipa_pta);
+  NEXT_PASS (pass_omp_simd_clone);
+  TERMINATE_PASS_LIST (all_late_ipa_passes)
+
+  /* These passes are run after IPA passes on every function that is being
+     output to the assembler file.  */
+  INSERT_PASSES_AFTER (all_passes)
+  NEXT_PASS (pass_fixup_cfg);
+  NEXT_PASS (pass_lower_eh_dispatch);
+  NEXT_PASS (pass_oacc_device_lower);
+  NEXT_PASS (pass_omp_device_lower);
+  NEXT_PASS (pass_omp_target_link);
+  NEXT_PASS (pass_all_optimizations);
+  PUSH_INSERT_PASSES_WITHIN (pass_all_optimizations)
+      NEXT_PASS (pass_remove_cgraph_callee_edges);
+      /* Initial scalar cleanups before alias computation.
+	 They ensure memory accesses are not indirect wherever possible.  */
+      NEXT_PASS (pass_strip_predict_hints);
+      NEXT_PASS (pass_ccp, true /* nonzero_p */);
+      NEXT_PASS (pass_post_ipa_warn);
+      /* After CCP we rewrite no longer addressed locals into SSA
+	 form if possible.  */
+      NEXT_PASS (pass_complete_unrolli);
+      NEXT_PASS (pass_backprop);
+      NEXT_PASS (pass_phiprop);
+      NEXT_PASS (pass_forwprop);
+      NEXT_PASS (pass_object_sizes, false /* insert_min_max_p */);
+      /* pass_build_alias is a dummy pass that ensures that we
+	 execute TODO_rebuild_alias at this point.  */
+      NEXT_PASS (pass_build_alias);
+      NEXT_PASS (pass_return_slot);
+      NEXT_PASS (pass_fre);
+      NEXT_PASS (pass_merge_phi);
+      NEXT_PASS (pass_thread_jumps);
+      NEXT_PASS (pass_vrp, true /* warn_array_bounds_p */);
+      NEXT_PASS (pass_chkp_opt);
+      NEXT_PASS (pass_dce);
+      NEXT_PASS (pass_stdarg);
+      NEXT_PASS (pass_call_cdce);
+      NEXT_PASS (pass_cselim);
+      NEXT_PASS (pass_copy_prop);
+      NEXT_PASS (pass_tree_ifcombine);
+      NEXT_PASS (pass_merge_phi);
+      NEXT_PASS (pass_phiopt);
+      NEXT_PASS (pass_tail_recursion);
+      NEXT_PASS (pass_ch);
+      NEXT_PASS (pass_lower_complex);
+      NEXT_PASS (pass_sra);
+      /* The dom pass will also resolve all __builtin_constant_p calls
+         that are still there to 0.  This has to be done after some
+	 propagations have already run, but before some more dead code
+	 is removed, and this place fits nicely.  Remember this when
+	 trying to move or duplicate pass_dominator somewhere earlier.  */
+      NEXT_PASS (pass_thread_jumps);
+      NEXT_PASS (pass_dominator, true /* may_peel_loop_headers_p */);
+      /* At this point the majority of const/copy propagations
+	 are exposed.  Go ahead and identify paths that should never
+	 be executed in a conforming program and isolate those paths.
+
+	 This will expose more degenerate PHIs in the main path and
+	 expose more PRE/DOM optimization opportunities.  */
+      NEXT_PASS (pass_isolate_erroneous_paths);
+      /* The only const/copy propagation opportunities left after
+	 DOM and erroneous path isolation should be due to degenerate PHI nodes.
+	 So rather than run the full propagators, run a specialized pass which
+	 only examines PHIs to discover const/copy propagation
+	 opportunities.  */
+      NEXT_PASS (pass_phi_only_cprop);
+      NEXT_PASS (pass_dse);
+      NEXT_PASS (pass_reassoc, true /* insert_powi_p */);
+      NEXT_PASS (pass_dce);
+      NEXT_PASS (pass_forwprop);
+      NEXT_PASS (pass_phiopt);
+      NEXT_PASS (pass_ccp, true /* nonzero_p */);
+      /* After CCP we rewrite no longer addressed locals into SSA
+	 form if possible.  */
+      NEXT_PASS (pass_cse_sincos);
+      NEXT_PASS (pass_optimize_bswap);
+      NEXT_PASS (pass_laddress);
+      NEXT_PASS (pass_lim);
+      NEXT_PASS (pass_walloca, false);
+      NEXT_PASS (pass_pre);
+      NEXT_PASS (pass_sink_code);
+      NEXT_PASS (pass_sancov);
+      NEXT_PASS (pass_asan);
+      NEXT_PASS (pass_tsan);
+      NEXT_PASS (pass_dce);
+      /* Pass group that runs when 1) enabled, 2) there are loops
+	 in the function.  Make sure to run pass_fix_loops before
+	 to discover/remove loops before running the gate function
+	 of pass_tree_loop.  */
+      NEXT_PASS (pass_fix_loops);
+      NEXT_PASS (pass_tree_loop);
+      PUSH_INSERT_PASSES_WITHIN (pass_tree_loop)
+	  NEXT_PASS (pass_tree_loop_init);
+	  NEXT_PASS (pass_tree_unswitch);
+	  NEXT_PASS (pass_scev_cprop);
+	  NEXT_PASS (pass_loop_split);
+	  NEXT_PASS (pass_loop_jam);
+	  /* All unswitching, final value replacement and splitting can expose
+	     empty loops.  Remove them now.  */
+	  NEXT_PASS (pass_cd_dce);
+	  NEXT_PASS (pass_iv_canon);
+	  NEXT_PASS (pass_loop_distribution);
+	  NEXT_PASS (pass_linterchange);
+	  NEXT_PASS (pass_copy_prop);
+	  NEXT_PASS (pass_graphite);
+	  PUSH_INSERT_PASSES_WITHIN (pass_graphite)
+	      NEXT_PASS (pass_graphite_transforms);
+	      NEXT_PASS (pass_lim);
+	      NEXT_PASS (pass_copy_prop);
+	      NEXT_PASS (pass_dce);
+	  POP_INSERT_PASSES ()
+	  NEXT_PASS (pass_parallelize_loops, false /* oacc_kernels_p */);
+	  NEXT_PASS (pass_expand_omp_ssa);
+	  NEXT_PASS (pass_ch_vect);
+	  NEXT_PASS (pass_if_conversion);
+	  /* pass_vectorize must immediately follow pass_if_conversion.
+	     Please do not add any other passes in between.  */
+	  NEXT_PASS (pass_vectorize);
+          PUSH_INSERT_PASSES_WITHIN (pass_vectorize)
+	      NEXT_PASS (pass_dce);
+          POP_INSERT_PASSES ()
+          NEXT_PASS (pass_predcom);
+	  NEXT_PASS (pass_complete_unroll);
+	  NEXT_PASS (pass_slp_vectorize);
+	  NEXT_PASS (pass_loop_prefetch);
+	  /* Run IVOPTs after the last pass that uses data-reference analysis
+	     as that doesn't handle TARGET_MEM_REFs.  */
+	  NEXT_PASS (pass_iv_optimize);
+	  NEXT_PASS (pass_lim);
+	  NEXT_PASS (pass_tree_loop_done);
+      POP_INSERT_PASSES ()
+      /* Pass group that runs when pass_tree_loop is disabled or there
+         are no loops in the function.  */
+      NEXT_PASS (pass_tree_no_loop);
+      PUSH_INSERT_PASSES_WITHIN (pass_tree_no_loop)
+	  NEXT_PASS (pass_slp_vectorize);
+      POP_INSERT_PASSES ()
+      NEXT_PASS (pass_simduid_cleanup);
+      NEXT_PASS (pass_lower_vector_ssa);
+      NEXT_PASS (pass_cse_reciprocals);
+      NEXT_PASS (pass_sprintf_length, true);
+      NEXT_PASS (pass_reassoc, false /* insert_powi_p */);
+      NEXT_PASS (pass_strength_reduction);
+      NEXT_PASS (pass_split_paths);
+      NEXT_PASS (pass_tracer);
+      NEXT_PASS (pass_thread_jumps);
+      NEXT_PASS (pass_dominator, false /* may_peel_loop_headers_p */);
+      NEXT_PASS (pass_strlen);
+      NEXT_PASS (pass_thread_jumps);
+      NEXT_PASS (pass_vrp, false /* warn_array_bounds_p */);
+      /* The only const/copy propagation opportunities left after
+	 DOM and VRP should be due to degenerate PHI nodes.  So rather than
+	 run the full propagators, run a specialized pass which
+	 only examines PHIs to discover const/copy propagation
+	 opportunities.  */
+      NEXT_PASS (pass_warn_restrict);
+      NEXT_PASS (pass_phi_only_cprop);
+      NEXT_PASS (pass_dse);
+      NEXT_PASS (pass_cd_dce);
+      NEXT_PASS (pass_forwprop);
+      NEXT_PASS (pass_phiopt);
+      NEXT_PASS (pass_fold_builtins);
+      NEXT_PASS (pass_optimize_widening_mul);
+      NEXT_PASS (pass_store_merging);
+      NEXT_PASS (pass_tail_calls);
+      /* If DCE is not run before checking for uninitialized uses,
+	 we may get false warnings (e.g., testsuite/gcc.dg/uninit-5.c).
+	 However, this also causes us to misdiagnose cases that should be
+	 real warnings (e.g., testsuite/gcc.dg/pr18501.c).  */
+      NEXT_PASS (pass_dce);
+      /* Split critical edges before late uninit warning to reduce the
+         number of false positives from it.  */
+      NEXT_PASS (pass_split_crit_edges);
+      NEXT_PASS (pass_late_warn_uninitialized);
+      NEXT_PASS (pass_uncprop);
+      NEXT_PASS (pass_local_pure_const);
+  POP_INSERT_PASSES ()
+  NEXT_PASS (pass_all_optimizations_g);
+  PUSH_INSERT_PASSES_WITHIN (pass_all_optimizations_g)
+      NEXT_PASS (pass_remove_cgraph_callee_edges);
+      NEXT_PASS (pass_strip_predict_hints);
+      /* Lower remaining pieces of GIMPLE.  */
+      NEXT_PASS (pass_lower_complex);
+      NEXT_PASS (pass_lower_vector_ssa);
+      /* Perform simple scalar cleanup which is constant/copy propagation.  */
+      NEXT_PASS (pass_ccp, true /* nonzero_p */);
+      NEXT_PASS (pass_post_ipa_warn);
+      NEXT_PASS (pass_object_sizes);
+      /* Fold remaining builtins.  */
+      NEXT_PASS (pass_fold_builtins);
+      NEXT_PASS (pass_sprintf_length, true);
+      /* Copy propagation also copy-propagates constants, this is necessary
+         to forward object-size and builtin folding results properly.  */
+      NEXT_PASS (pass_copy_prop);
+      NEXT_PASS (pass_dce);
+      NEXT_PASS (pass_sancov);
+      NEXT_PASS (pass_asan);
+      NEXT_PASS (pass_tsan);
+      /* ???  We do want some kind of loop invariant motion, but we possibly
+         need to adjust LIM to be more friendly towards preserving accurate
+	 debug information here.  */
+      /* Split critical edges before late uninit warning to reduce the
+         number of false positives from it.  */
+      NEXT_PASS (pass_split_crit_edges);
+      NEXT_PASS (pass_late_warn_uninitialized);
+      NEXT_PASS (pass_uncprop);
+      NEXT_PASS (pass_local_pure_const);
+  POP_INSERT_PASSES ()
+  NEXT_PASS (pass_tm_init);
+  PUSH_INSERT_PASSES_WITHIN (pass_tm_init)
+      NEXT_PASS (pass_tm_mark);
+      NEXT_PASS (pass_tm_memopt);
+      NEXT_PASS (pass_tm_edges);
+  POP_INSERT_PASSES ()
+  NEXT_PASS (pass_simduid_cleanup);
+  NEXT_PASS (pass_vtable_verify);
+  NEXT_PASS (pass_lower_vaarg);
+  NEXT_PASS (pass_lower_vector);
+  NEXT_PASS (pass_lower_complex_O0);
+  NEXT_PASS (pass_sancov_O0);
+  NEXT_PASS (pass_lower_switch);
+  NEXT_PASS (pass_asan_O0);
+  NEXT_PASS (pass_tsan_O0);
+  NEXT_PASS (pass_sanopt);
+  NEXT_PASS (pass_cleanup_eh);
+  NEXT_PASS (pass_lower_resx);
+  NEXT_PASS (pass_nrv);
+  NEXT_PASS (pass_cleanup_cfg_post_optimizing);
+  NEXT_PASS (pass_warn_function_noreturn);
+  NEXT_PASS (pass_gen_hsail);
+
+  NEXT_PASS (pass_expand);
+
+  NEXT_PASS (pass_rest_of_compilation);
+  PUSH_INSERT_PASSES_WITHIN (pass_rest_of_compilation)
+      NEXT_PASS (pass_instantiate_virtual_regs);
+      NEXT_PASS (pass_into_cfg_layout_mode);
+      NEXT_PASS (pass_jump);
+      NEXT_PASS (pass_lower_subreg);
+      NEXT_PASS (pass_df_initialize_opt);
+      NEXT_PASS (pass_cse);
+      NEXT_PASS (pass_rtl_fwprop);
+      NEXT_PASS (pass_rtl_cprop);
+      NEXT_PASS (pass_rtl_pre);
+      NEXT_PASS (pass_rtl_hoist);
+      NEXT_PASS (pass_rtl_cprop);
+      NEXT_PASS (pass_rtl_store_motion);
+      NEXT_PASS (pass_cse_after_global_opts);
+      NEXT_PASS (pass_rtl_ifcvt);
+      NEXT_PASS (pass_reginfo_init);
+      /* Perform loop optimizations.  It might be better to do them a bit
+	 sooner, but we want the profile feedback to work more
+	 efficiently.  */
+      NEXT_PASS (pass_loop2);
+      PUSH_INSERT_PASSES_WITHIN (pass_loop2)
+	  NEXT_PASS (pass_rtl_loop_init);
+	  NEXT_PASS (pass_rtl_move_loop_invariants);
+	  NEXT_PASS (pass_rtl_unroll_loops);
+	  NEXT_PASS (pass_rtl_doloop);
+	  NEXT_PASS (pass_rtl_loop_done);
+      POP_INSERT_PASSES ()
+      NEXT_PASS (pass_web);
+      NEXT_PASS (pass_rtl_cprop);
+      NEXT_PASS (pass_cse2);
+      NEXT_PASS (pass_rtl_dse1);
+      NEXT_PASS (pass_rtl_fwprop_addr);
+      NEXT_PASS (pass_inc_dec);
+      NEXT_PASS (pass_initialize_regs);
+      NEXT_PASS (pass_ud_rtl_dce);
+      NEXT_PASS (pass_combine);
+      NEXT_PASS (pass_if_after_combine);
+      NEXT_PASS (pass_partition_blocks);
+      NEXT_PASS (pass_outof_cfg_layout_mode);
+      NEXT_PASS (pass_split_all_insns);
+      NEXT_PASS (pass_lower_subreg2);
+      NEXT_PASS (pass_df_initialize_no_opt);
+      NEXT_PASS (pass_stack_ptr_mod);
+      NEXT_PASS (pass_mode_switching);
+      NEXT_PASS (pass_match_asm_constraints);
+      NEXT_PASS (pass_sms);
+      NEXT_PASS (pass_live_range_shrinkage);
+      NEXT_PASS (pass_sched);
+      NEXT_PASS (pass_early_remat);
+      NEXT_PASS (pass_ira);
+      NEXT_PASS (pass_reload);
+      NEXT_PASS (pass_postreload);
+      PUSH_INSERT_PASSES_WITHIN (pass_postreload)
+	  NEXT_PASS (pass_postreload_cse);
+	  NEXT_PASS (pass_gcse2);
+	  NEXT_PASS (pass_split_after_reload);
+	  NEXT_PASS (pass_ree);
+	  NEXT_PASS (pass_compare_elim_after_reload);
+	  NEXT_PASS (pass_branch_target_load_optimize1);
+	  NEXT_PASS (pass_thread_prologue_and_epilogue);
+	  NEXT_PASS (pass_rtl_dse2);
+	  NEXT_PASS (pass_stack_adjustments);
+	  NEXT_PASS (pass_jump2);
+	  NEXT_PASS (pass_duplicate_computed_gotos);
+	  NEXT_PASS (pass_sched_fusion);
+	  NEXT_PASS (pass_peephole2);
+	  NEXT_PASS (pass_if_after_reload);
+	  NEXT_PASS (pass_regrename);
+	  NEXT_PASS (pass_cprop_hardreg);
+	  NEXT_PASS (pass_fast_rtl_dce);
+	  NEXT_PASS (pass_reorder_blocks);
+	  NEXT_PASS (pass_branch_target_load_optimize2);
+	  NEXT_PASS (pass_leaf_regs);
+	  NEXT_PASS (pass_split_before_sched2);
+	  NEXT_PASS (pass_sched2);
+	  NEXT_PASS (pass_stack_regs);
+	  PUSH_INSERT_PASSES_WITHIN (pass_stack_regs)
+	      NEXT_PASS (pass_split_before_regstack);
+	      NEXT_PASS (pass_stack_regs_run);
+	  POP_INSERT_PASSES ()
+      POP_INSERT_PASSES ()
+      NEXT_PASS (pass_late_compilation);
+      PUSH_INSERT_PASSES_WITHIN (pass_late_compilation)
+	  NEXT_PASS (pass_compute_alignments);
+	  NEXT_PASS (pass_variable_tracking);
+	  NEXT_PASS (pass_free_cfg);
+	  NEXT_PASS (pass_machine_reorg);
+	  NEXT_PASS (pass_cleanup_barriers);
+	  NEXT_PASS (pass_delay_slots);
+	  NEXT_PASS (pass_split_for_shorten_branches);
+	  NEXT_PASS (pass_convert_to_eh_region_ranges);
+	  NEXT_PASS (pass_shorten_branches);
+	  NEXT_PASS (pass_set_nothrow_function_flags);
+	  NEXT_PASS (pass_dwarf2_frame);
+	  NEXT_PASS (pass_final);
+      POP_INSERT_PASSES ()
+      NEXT_PASS (pass_df_finish);
+  POP_INSERT_PASSES ()
+  NEXT_PASS (pass_clean_state);
+  TERMINATE_PASS_LIST (all_passes)

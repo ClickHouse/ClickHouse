@@ -1,0 +1,62 @@
+/* This file contains the definitions and documentation for the
+   additional tree codes used in the GNU C compiler (see tree.def
+   for the standard codes).
+   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+   Written by Benjamin Chelf <chelf@codesourcery.com>
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* Tree nodes used in the C frontend.  These are also shared with the
+   C++ and Objective C frontends.  */
+
+/* A C_MAYBE_CONST_EXPR, currently only used for C and Objective C,
+   tracks information about constancy of an expression and VLA type
+   sizes or VM expressions from typeof that need to be evaluated
+   before the main expression.  It is used during parsing and removed
+   in c_fully_fold.  C_MAYBE_CONST_EXPR_PRE is the expression to
+   evaluate first, if not NULL; C_MAYBE_CONST_EXPR_EXPR is the main
+   expression.  If C_MAYBE_CONST_EXPR_INT_OPERANDS is set then the
+   expression may be used in an unevaluated part of an integer
+   constant expression, but not in an evaluated part.  If
+   C_MAYBE_CONST_EXPR_NON_CONST is set then the expression contains
+   something that cannot occur in an evaluated part of a constant
+   expression (or outside of sizeof in C90 mode); otherwise it does
+   not.  */
+DEFTREECODE (C_MAYBE_CONST_EXPR, "c_maybe_const_expr", tcc_expression, 2)
+
+/* An EXCESS_PRECISION_EXPR, currently only used for C and Objective
+   C, represents an expression evaluated in greater range or precision
+   than its type.  The type of the EXCESS_PRECISION_EXPR is the
+   semantic type while the operand represents what is actually being
+   evaluated.  */
+DEFTREECODE (EXCESS_PRECISION_EXPR, "excess_precision_expr", tcc_expression, 1)
+
+/* Used to represent a user-defined literal.
+   The operands are an IDENTIFIER for the suffix, the VALUE of the literal,
+   and for numeric literals the original string representation of the
+   number.  */
+DEFTREECODE (USERDEF_LITERAL, "userdef_literal", tcc_exceptional, 3)
+
+/* Represents a 'sizeof' expression during C++ template expansion,
+   or for the purpose of -Wsizeof-pointer-memaccess warning.  */
+DEFTREECODE (SIZEOF_EXPR, "sizeof_expr", tcc_expression, 1)
+
+/*
+Local variables:
+mode:c
+End:
+*/

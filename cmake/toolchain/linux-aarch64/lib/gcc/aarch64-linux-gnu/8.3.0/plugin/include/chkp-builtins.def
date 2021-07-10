@@ -1,0 +1,71 @@
+/* This file contains the definitions and documentation for the
+   builtins used in the GNU compiler.
+   Copyright (C) 2013-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* Before including this file, you should define macros:
+
+      DEF_BUILTIN_STUB(ENUM, NAME)
+      DEF_CHKP_BUILTIN(ENUM, NAME, TYPE, ATTRS)
+
+   See builtins.def for details.  */
+
+/* Following builtins are used by compiler for Pointer Bounds Checker
+   instrumentation.  Currently these generic builtins are not
+   implemented and target has to provide his own version.  See
+   builtin_chkp_function target hook documentation for more details.  */
+DEF_BUILTIN_STUB (BUILT_IN_CHKP_INTERSECT, "__chkp_intersect")
+DEF_BUILTIN_STUB (BUILT_IN_CHKP_SIZEOF, "__chkp_sizeof")
+DEF_BUILTIN_STUB (BUILT_IN_CHKP_NARROW, "__chkp_narrow")
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_BNDCL, "__chkp_bndcl", BT_FN_VOID_PTR_BND, ATTR_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_BNDCU, "__chkp_bndcu", BT_FN_VOID_PTR_BND, ATTR_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_BNDSTX, "__chkp_bndstx", BT_FN_VOID_CONST_PTR_BND_CONST_PTR, ATTR_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_BNDLDX, "__chkp_bndldx", BT_FN_CONST_PTR_CONST_PTR_CONST_PTR, ATTR_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_BNDRET, "__chkp_bndret", BT_FN_BND_CONST_PTR, ATTR_CONST_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_BNDMK, "__chkp_bndmk", BT_FN_BND_CONST_PTR_SIZE, ATTR_CONST_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_EXTRACT_LOWER, "__chkp_extract_lower", BT_FN_CONST_PTR_BND, ATTR_CONST_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_EXTRACT_UPPER, "__chkp_extract_upper", BT_FN_CONST_PTR_BND, ATTR_CONST_NOTHROW_LEAF_LIST)
+
+/* Pointer Bounds Checker builtins for users.
+   All builtins calls are expanded in the
+   Pointer Bounds Checker pass.  */
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_SET_PTR_BOUNDS, "__bnd_set_ptr_bounds", BT_FN_PTR_CONST_PTR_SIZE, ATTR_CONST_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_INIT_PTR_BOUNDS, "__bnd_init_ptr_bounds", BT_FN_PTR_CONST_PTR, ATTR_CONST_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_NULL_PTR_BOUNDS, "__bnd_null_ptr_bounds", BT_FN_PTR_CONST_PTR, ATTR_CONST_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_COPY_PTR_BOUNDS, "__bnd_copy_ptr_bounds", BT_FN_PTR_CONST_PTR_CONST_PTR, ATTR_CONST_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_NARROW_PTR_BOUNDS, "__bnd_narrow_ptr_bounds", BT_FN_PTR_CONST_PTR_CONST_PTR_SIZE, ATTR_CONST_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_STORE_PTR_BOUNDS, "__bnd_store_ptr_bounds", BT_FN_VOID_PTRPTR_CONST_PTR, ATTR_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_CHECK_PTR_LBOUNDS, "__bnd_chk_ptr_lbounds", BT_FN_VOID_CONST_PTR, ATTR_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_CHECK_PTR_UBOUNDS, "__bnd_chk_ptr_ubounds", BT_FN_VOID_CONST_PTR, ATTR_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_CHECK_PTR_BOUNDS, "__bnd_chk_ptr_bounds", BT_FN_VOID_CONST_PTR_SIZE, ATTR_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_GET_PTR_LBOUND, "__bnd_get_ptr_lbound", BT_FN_CONST_PTR_CONST_PTR, ATTR_CONST_NOTHROW_LEAF_LIST)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_GET_PTR_UBOUND, "__bnd_get_ptr_ubound", BT_FN_CONST_PTR_CONST_PTR, ATTR_CONST_NOTHROW_LEAF_LIST)
+
+/* Pointer Bounds Checker specific versions of string functions.  */
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMCPY_NOBND, "chkp_memcpy_nobnd", BT_FN_PTR_PTR_CONST_PTR_SIZE, ATTR_RET1_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMCPY_NOCHK, "chkp_memcpy_nochk", BT_FN_PTR_PTR_CONST_PTR_SIZE, ATTR_RET1_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMCPY_NOBND_NOCHK, "chkp_memcpy_nobnd_nochk", BT_FN_PTR_PTR_CONST_PTR_SIZE, ATTR_RET1_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMMOVE_NOBND, "chkp_memmove_nobnd", BT_FN_PTR_PTR_CONST_PTR_SIZE, ATTR_RET1_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMMOVE_NOCHK, "chkp_memmove_nochk", BT_FN_PTR_PTR_CONST_PTR_SIZE, ATTR_RET1_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMMOVE_NOBND_NOCHK, "chkp_memmove_nobnd_nochk", BT_FN_PTR_PTR_CONST_PTR_SIZE, ATTR_RET1_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMPCPY_NOBND, "chkp_mempcpy_nobnd", BT_FN_PTR_PTR_CONST_PTR_SIZE, ATTR_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMPCPY_NOCHK, "chkp_mempcpy_nochk", BT_FN_PTR_PTR_CONST_PTR_SIZE, ATTR_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMPCPY_NOBND_NOCHK, "chkp_mempcpy_nobnd_nochk", BT_FN_PTR_PTR_CONST_PTR_SIZE, ATTR_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMSET_NOBND, "chkp_memset_nobnd", BT_FN_PTR_PTR_INT_SIZE, ATTR_RET1_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMSET_NOCHK, "chkp_memset_nochk", BT_FN_PTR_PTR_INT_SIZE, ATTR_RET1_NOTHROW_NONNULL_LEAF)
+DEF_CHKP_BUILTIN (BUILT_IN_CHKP_MEMSET_NOBND_NOCHK, "chkp_memset_nobnd_nochk", BT_FN_PTR_PTR_INT_SIZE, ATTR_RET1_NOTHROW_NONNULL_LEAF)

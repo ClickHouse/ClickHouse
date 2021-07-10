@@ -1,0 +1,395 @@
+/* This file contains the definitions of the GIMPLE IR tuples used in GCC.
+
+   Copyright (C) 2007-2018 Free Software Foundation, Inc.
+   Contributed by Aldy Hernandez <aldyh@redhat.com>
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* The format of this file is
+   DEFGSCODE(GIMPLE_symbol, printable name, GSS_symbol).  */
+
+
+/* Error marker.  This is used in similar ways as ERROR_MARK in tree.def.  */
+DEFGSCODE(GIMPLE_ERROR_MARK, "gimple_error_mark", GSS_BASE)
+
+/* IMPORTANT.  Do not rearrange the codes between GIMPLE_COND and
+   GIMPLE_RETURN.  The ordering is exposed by gimple_has_ops calls.
+   These are all the GIMPLE statements with register operands.  */
+
+/* GIMPLE_COND <COND_CODE, OP1, OP2, TRUE_LABEL, FALSE_LABEL>
+   represents the conditional jump:
+
+   if (OP1 COND_CODE OP2) goto TRUE_LABEL else goto FALSE_LABEL
+
+   COND_CODE is the tree code used as the comparison predicate.  It
+   must be of class tcc_comparison.
+
+   OP1 and OP2 are the operands used in the comparison.  They must be
+   accepted by is_gimple_operand.
+
+   TRUE_LABEL and FALSE_LABEL are the LABEL_DECL nodes used as the
+   jump target for the comparison.  */
+DEFGSCODE(GIMPLE_COND, "gimple_cond", GSS_WITH_OPS)
+
+/* GIMPLE_DEBUG represents a debug statement.  */
+DEFGSCODE(GIMPLE_DEBUG, "gimple_debug", GSS_WITH_OPS)
+
+/* GIMPLE_GOTO <TARGET> represents unconditional jumps.
+   TARGET is a LABEL_DECL or an expression node for computed GOTOs.  */
+DEFGSCODE(GIMPLE_GOTO, "gimple_goto", GSS_WITH_OPS)
+
+/* GIMPLE_LABEL <LABEL> represents label statements.  LABEL is a
+   LABEL_DECL representing a jump target.  */
+DEFGSCODE(GIMPLE_LABEL, "gimple_label", GSS_WITH_OPS)
+
+/* GIMPLE_SWITCH <INDEX, DEFAULT_LAB, LAB1, ..., LABN> represents the
+   multiway branch:
+
+   switch (INDEX)
+   {
+     case LAB1: ...; break;
+     ...
+     case LABN: ...; break;
+     default: ...
+   }
+
+   INDEX is the variable evaluated to decide which label to jump to.
+
+   DEFAULT_LAB, LAB1 ... LABN are the tree nodes representing case labels.
+   They must be CASE_LABEL_EXPR nodes.  */
+DEFGSCODE(GIMPLE_SWITCH, "gimple_switch", GSS_WITH_OPS)
+
+/* IMPORTANT.
+
+   Do not rearrange the codes between GIMPLE_ASSIGN and GIMPLE_RETURN.
+   It's exposed by GIMPLE_RANGE_CHECK calls. These are all the GIMPLE
+   statements with memory and register operands.  */
+
+/* GIMPLE_ASSIGN <SUBCODE, LHS, RHS1[, RHS2]> represents the assignment
+   statement
+
+   LHS = RHS1 SUBCODE RHS2.
+
+   SUBCODE is the tree code for the expression computed by the RHS of the
+   assignment.  It must be one of the tree codes accepted by
+   get_gimple_rhs_class.  If LHS is not a gimple register according to
+   is_gimple_reg, SUBCODE must be of class GIMPLE_SINGLE_RHS.
+
+   LHS is the operand on the LHS of the assignment.  It must be a tree node
+   accepted by is_gimple_lvalue.
+
+   RHS1 is the first operand on the RHS of the assignment.  It must always be
+   present.  It must be a tree node accepted by is_gimple_val.
+
+   RHS2 is the second operand on the RHS of the assignment.  It must be a tree
+   node accepted by is_gimple_val.  This argument exists only if SUBCODE is
+   of class GIMPLE_BINARY_RHS.  */
+DEFGSCODE(GIMPLE_ASSIGN, "gimple_assign", GSS_WITH_MEM_OPS)
+
+/* GIMPLE_ASM <STRING, I1, ..., IN, O1, ... OM, C1, ..., CP>
+   represents inline assembly statements.
+
+   STRING is the string containing the assembly statements.
+   I1 ... IN are the N input operands.
+   O1 ... OM are the M output operands.
+   C1 ... CP are the P clobber operands.
+   L1 ... LQ are the Q label operands.  */
+DEFGSCODE(GIMPLE_ASM, "gimple_asm", GSS_ASM)
+
+/* GIMPLE_CALL <FN, LHS, ARG1, ..., ARGN[, CHAIN]> represents function
+   calls.
+
+   FN is the callee.  It must be accepted by is_gimple_call_addr.
+
+   LHS is the operand where the return value from FN is stored.  It may
+   be NULL.
+
+   ARG1 ... ARGN are the arguments.  They must all be accepted by
+   is_gimple_operand.
+
+    CHAIN is the optional static chain link for nested functions.  */
+DEFGSCODE(GIMPLE_CALL, "gimple_call", GSS_CALL)
+
+/* GIMPLE_TRANSACTION <BODY, LABEL> represents __transaction_atomic and
+   __transaction_relaxed blocks.
+   BODY is the sequence of statements inside the transaction.
+   LABEL is a label for the statement immediately following the
+   transaction.  This is before RETURN so that it has MEM_OPS,
+   so that it can clobber global memory.  */
+DEFGSCODE(GIMPLE_TRANSACTION, "gimple_transaction", GSS_TRANSACTION)
+
+/* GIMPLE_RETURN <RETVAL> represents return statements.
+
+   RETVAL is the value to return or NULL.  If a value is returned it
+   must be accepted by is_gimple_operand.  */
+DEFGSCODE(GIMPLE_RETURN, "gimple_return", GSS_WITH_MEM_OPS)
+
+/* GIMPLE_BIND <VARS, BLOCK, BODY> represents a lexical scope.
+   VARS is the set of variables declared in that scope.
+   BLOCK is the symbol binding block used for debug information.
+   BODY is the sequence of statements in the scope.  */
+DEFGSCODE(GIMPLE_BIND, "gimple_bind", GSS_BIND)
+
+/* GIMPLE_CATCH <TYPES, HANDLER> represents a typed exception handler.
+   TYPES is the type (or list of types) handled.  HANDLER is the
+   sequence of statements that handle these types.  */
+DEFGSCODE(GIMPLE_CATCH, "gimple_catch", GSS_CATCH)
+
+/* GIMPLE_EH_FILTER <TYPES, FAILURE> represents an exception
+   specification.  TYPES is a list of allowed types and FAILURE is the
+   sequence of statements to execute on failure.  */
+DEFGSCODE(GIMPLE_EH_FILTER, "gimple_eh_filter", GSS_EH_FILTER)
+
+/* GIMPLE_EH_MUST_NOT_THROW <DECL> represents an exception barrier.
+   DECL is a noreturn function decl taking no arguments that will
+   be invoked if an exception propagates to this point.  */
+DEFGSCODE(GIMPLE_EH_MUST_NOT_THROW, "gimple_eh_must_not_throw", GSS_EH_MNT)
+
+/* GIMPLE_EH_ELSE <N_BODY, E_BODY> must be the sole contents of
+   a GIMPLE_TRY_FINALLY node.  For all normal exits from the try block,
+   N_BODY is run; for all exception exits from the try block,
+   E_BODY is run.  */
+DEFGSCODE(GIMPLE_EH_ELSE, "gimple_eh_else", GSS_EH_ELSE)
+
+/* GIMPLE_RESX resumes execution after an exception.  */
+DEFGSCODE(GIMPLE_RESX, "gimple_resx", GSS_EH_CTRL)
+
+/* GIMPLE_EH_DISPATCH demultiplexes an exception edge based on
+   the FILTER argument.  */
+DEFGSCODE(GIMPLE_EH_DISPATCH, "gimple_eh_dispatch", GSS_EH_CTRL)
+
+/* GIMPLE_PHI <RESULT, ARG1, ..., ARGN> represents the PHI node
+
+   RESULT = PHI <ARG1, ..., ARGN>
+
+   RESULT is the SSA name created by this PHI node.
+
+   ARG1 ... ARGN are the arguments to the PHI node.  N must be
+   exactly the same as the number of incoming edges to the basic block
+   holding the PHI node.  Every argument is either an SSA name or a
+   tree node of class tcc_constant.  */
+DEFGSCODE(GIMPLE_PHI, "gimple_phi", GSS_PHI)
+
+/* GIMPLE_TRY <TRY_KIND, EVAL, CLEANUP>
+   represents a try/catch or a try/finally statement.
+
+   TRY_KIND is either GIMPLE_TRY_CATCH or GIMPLE_TRY_FINALLY.
+
+   EVAL is the sequence of statements to execute on entry to GIMPLE_TRY.
+
+   CLEANUP is the sequence of statements to execute according to
+   TRY_KIND.  If TRY_KIND is GIMPLE_TRY_CATCH, CLEANUP is only exected
+   if an exception is thrown during execution of EVAL.  If TRY_KIND is
+   GIMPLE_TRY_FINALLY, CLEANUP is always executed after executing EVAL
+   (regardless of whether EVAL finished normally, or jumped out or an
+   exception was thrown).  */
+DEFGSCODE(GIMPLE_TRY, "gimple_try", GSS_TRY)
+
+/* GIMPLE_NOP represents the "do nothing" statement.  */
+DEFGSCODE(GIMPLE_NOP, "gimple_nop", GSS_BASE)
+
+
+/* IMPORTANT.
+
+   Do not rearrange any of the GIMPLE_OMP_* codes.  This ordering is
+   exposed by the range check in gimple_omp_subcode().  */
+
+
+/* Tuples used for lowering of OMP_ATOMIC.  Although the form of the OMP_ATOMIC
+   expression is very simple (just in form mem op= expr), various implicit
+   conversions may cause the expression to become more complex, so that it does
+   not fit the gimple grammar very well.  To overcome this problem, OMP_ATOMIC
+   is rewritten as a sequence of two codes in gimplification:
+
+   GIMPLE_OMP_LOAD (tmp, mem)
+   val = some computations involving tmp;
+   GIMPLE_OMP_STORE (val).  */
+DEFGSCODE(GIMPLE_OMP_ATOMIC_LOAD, "gimple_omp_atomic_load",
+	  GSS_OMP_ATOMIC_LOAD)
+DEFGSCODE(GIMPLE_OMP_ATOMIC_STORE, "gimple_omp_atomic_store",
+	  GSS_OMP_ATOMIC_STORE_LAYOUT)
+
+/* GIMPLE_OMP_CONTINUE marks the location of the loop or sections
+   iteration in partially lowered OpenMP code.  */
+DEFGSCODE(GIMPLE_OMP_CONTINUE, "gimple_omp_continue", GSS_OMP_CONTINUE)
+
+/* GIMPLE_OMP_CRITICAL <NAME, BODY> represents
+
+   #pragma omp critical [name]
+
+   NAME is the name given to the critical section.
+   BODY is the sequence of statements that are inside the critical section.  */
+DEFGSCODE(GIMPLE_OMP_CRITICAL, "gimple_omp_critical", GSS_OMP_CRITICAL)
+
+/* GIMPLE_OMP_FOR <BODY, CLAUSES, INDEX, INITIAL, FINAL, COND, INCR, PRE_BODY>
+   represents
+
+   PRE_BODY
+   #pragma omp for [clause1 ... clauseN]
+   for (INDEX = INITIAL; INDEX COND FINAL; INDEX {+=,-=} INCR)
+   BODY
+
+   Likewise for:
+   #pragma acc loop [clause1 ... clauseN]
+
+   BODY is the loop body.
+
+   CLAUSES is the list of clauses.
+
+   INDEX must be an integer or pointer variable, which is implicitly thread
+   private.  It must be accepted by is_gimple_operand.
+
+   INITIAL is the initial value given to INDEX. It must be
+   accepted by is_gimple_operand.
+
+   FINAL is the final value that INDEX should take. It must
+   be accepted by is_gimple_operand.
+
+   COND is the condition code for the controlling predicate.  It must
+   be one of { <, >, <=, >= }
+
+   INCR is the loop index increment.  It must be tree node of type
+   tcc_constant.
+
+   PRE_BODY is a landing pad filled by the gimplifier with things from
+   INIT, COND, and INCR that are technically part of the OMP_FOR
+   structured block, but are evaluated before the loop body begins.
+
+   INITIAL, FINAL and INCR are required to be loop invariant integer
+   expressions that are evaluated without any synchronization.
+   The evaluation order, frequency of evaluation and side-effects are
+   unspecified by the standards.  */
+DEFGSCODE(GIMPLE_OMP_FOR, "gimple_omp_for", GSS_OMP_FOR)
+
+/* GIMPLE_OMP_MASTER <BODY> represents #pragma omp master.
+   BODY is the sequence of statements to execute in the master section.  */
+DEFGSCODE(GIMPLE_OMP_MASTER, "gimple_omp_master", GSS_OMP)
+
+/* GIMPLE_OMP_TASKGROUP <BODY> represents #pragma omp taskgroup.
+   BODY is the sequence of statements to execute in the taskgroup section.  */
+DEFGSCODE(GIMPLE_OMP_TASKGROUP, "gimple_omp_taskgroup", GSS_OMP)
+
+/* GIMPLE_OMP_PARALLEL <BODY, CLAUSES, CHILD_FN, DATA_ARG> represents
+
+   #pragma omp parallel [CLAUSES]
+   BODY
+
+   BODY is a the sequence of statements to be executed by all threads.
+
+   CLAUSES is an OMP_CLAUSE chain with all the clauses.
+
+   CHILD_FN is set when outlining the body of the parallel region.
+   All the statements in BODY are moved into this newly created
+   function when converting OMP constructs into low-GIMPLE.
+
+   DATA_ARG is a local variable in the parent function containing data
+   to be shared with CHILD_FN.  This is used to implement all the data
+   sharing clauses.  */
+DEFGSCODE(GIMPLE_OMP_PARALLEL, "gimple_omp_parallel", GSS_OMP_PARALLEL_LAYOUT)
+
+/* GIMPLE_OMP_TASK <BODY, CLAUSES, CHILD_FN, DATA_ARG, COPY_FN,
+		    ARG_SIZE, ARG_ALIGN> represents
+
+   #pragma omp task [CLAUSES]
+   BODY
+
+   BODY is a the sequence of statements to be executed by all threads.
+
+   CLAUSES is an OMP_CLAUSE chain with all the clauses.
+
+   CHILD_FN is set when outlining the body of the explicit task region.
+   All the statements in BODY are moved into this newly created
+   function when converting OMP constructs into low-GIMPLE.
+
+   DATA_ARG is a local variable in the parent function containing data
+   to be shared with CHILD_FN.  This is used to implement all the data
+   sharing clauses.
+
+   COPY_FN is set when outlining the firstprivate var initialization.
+   All the needed statements are emitted into the newly created
+   function, or when only memcpy is needed, it is NULL.
+
+   ARG_SIZE and ARG_ALIGN are the size and alignment of the incoming
+   data area allocated by GOMP_task and passed to CHILD_FN.  */
+DEFGSCODE(GIMPLE_OMP_TASK, "gimple_omp_task", GSS_OMP_TASK)
+
+/* OMP_RETURN marks the end of an OpenMP directive.  */
+DEFGSCODE(GIMPLE_OMP_RETURN, "gimple_omp_return", GSS_OMP_ATOMIC_STORE_LAYOUT)
+
+/* OMP_SECTION <BODY> represents #pragma omp section.
+   BODY is the sequence of statements in the section body.  */
+DEFGSCODE(GIMPLE_OMP_SECTION, "gimple_omp_section", GSS_OMP)
+
+/* OMP_SECTIONS <BODY, CLAUSES, CONTROL> represents #pragma omp sections.
+
+   BODY is the sequence of statements in the sections body.
+   CLAUSES is an OMP_CLAUSE chain holding the list of associated clauses.
+   CONTROL is a VAR_DECL used for deciding which of the sections
+   to execute.  */
+DEFGSCODE(GIMPLE_OMP_SECTIONS, "gimple_omp_sections", GSS_OMP_SECTIONS)
+
+/* GIMPLE_OMP_SECTIONS_SWITCH is a marker placed immediately after
+   OMP_SECTIONS.  It represents the GIMPLE_SWITCH used to decide which
+   branch is taken.  */
+DEFGSCODE(GIMPLE_OMP_SECTIONS_SWITCH, "gimple_omp_sections_switch", GSS_BASE)
+
+/* GIMPLE_OMP_SINGLE <BODY, CLAUSES> represents #pragma omp single
+   BODY is the sequence of statements inside the single section.
+   CLAUSES is an OMP_CLAUSE chain holding the associated clauses.  */
+DEFGSCODE(GIMPLE_OMP_SINGLE, "gimple_omp_single", GSS_OMP_SINGLE_LAYOUT)
+
+/* GIMPLE_OMP_TARGET <BODY, CLAUSES, CHILD_FN> represents
+   #pragma acc {kernels,parallel,data,enter data,exit data,update}
+   #pragma omp target {,data,update}
+   BODY is the sequence of statements inside the construct
+   (NULL for some variants).
+   CLAUSES is an OMP_CLAUSE chain holding the associated clauses.
+   CHILD_FN is set when outlining the body of the offloaded region.
+   All the statements in BODY are moved into this newly created
+   function when converting OMP constructs into low-GIMPLE.
+   DATA_ARG is a vec of 3 local variables in the parent function
+   containing data to be mapped to CHILD_FN.  This is used to
+   implement the MAP clauses.  */
+DEFGSCODE(GIMPLE_OMP_TARGET, "gimple_omp_target", GSS_OMP_PARALLEL_LAYOUT)
+
+/* GIMPLE_OMP_TEAMS <BODY, CLAUSES> represents #pragma omp teams
+   BODY is the sequence of statements inside the single section.
+   CLAUSES is an OMP_CLAUSE chain holding the associated clauses.  */
+DEFGSCODE(GIMPLE_OMP_TEAMS, "gimple_omp_teams", GSS_OMP_SINGLE_LAYOUT)
+
+/* GIMPLE_OMP_ORDERED <BODY, CLAUSES> represents #pragma omp ordered.
+   BODY is the sequence of statements to execute in the ordered section.
+   CLAUSES is an OMP_CLAUSE chain holding the associated clauses.  */
+DEFGSCODE(GIMPLE_OMP_ORDERED, "gimple_omp_ordered", GSS_OMP_SINGLE_LAYOUT)
+
+/* GIMPLE_OMP_GRID_BODY <BODY> represents a parallel loop lowered for execution
+   on a GPU.  It is an artificial statement created by omp lowering.  */
+DEFGSCODE(GIMPLE_OMP_GRID_BODY, "gimple_omp_gpukernel", GSS_OMP)
+
+/* GIMPLE_PREDICT <PREDICT, OUTCOME> specifies a hint for branch prediction.
+
+   PREDICT is one of the predictors from predict.def.
+
+   OUTCOME is NOT_TAKEN or TAKEN.  */
+DEFGSCODE(GIMPLE_PREDICT, "gimple_predict", GSS_BASE)
+
+/*  This node represents a cleanup expression.  It is ONLY USED INTERNALLY
+    by the gimplifier as a placeholder for cleanups, and its uses will be
+    cleaned up by the time gimplification is done.
+
+    This tuple should not exist outside of the gimplifier proper.  */
+DEFGSCODE(GIMPLE_WITH_CLEANUP_EXPR, "gimple_with_cleanup_expr", GSS_WCE)

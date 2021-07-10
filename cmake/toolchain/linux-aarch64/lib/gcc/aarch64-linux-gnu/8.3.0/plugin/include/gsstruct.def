@@ -1,0 +1,53 @@
+/* This file contains the definitions for the gimple IR structure
+   enumeration used in GCC.
+
+   Copyright (C) 2007-2018 Free Software Foundation, Inc.
+   Contributed by Aldy Hernandez <aldyh@redhat.com>
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* The format of this file is
+   DEFGSSTRUCT(GSS enumeration value, structure name, has-tree-operands).
+   Each enum value should correspond with a single member of the union
+   gimple_statement_d.  */
+
+DEFGSSTRUCT(GSS_BASE, gimple, false)
+DEFGSSTRUCT(GSS_WITH_OPS, gimple_statement_with_ops, true)
+DEFGSSTRUCT(GSS_WITH_MEM_OPS_BASE, gimple_statement_with_memory_ops_base, false)
+DEFGSSTRUCT(GSS_WITH_MEM_OPS, gimple_statement_with_memory_ops, true)
+DEFGSSTRUCT(GSS_CALL, gcall, true)
+DEFGSSTRUCT(GSS_ASM, gasm, true)
+DEFGSSTRUCT(GSS_BIND, gbind, false)
+DEFGSSTRUCT(GSS_PHI, gphi, false)
+DEFGSSTRUCT(GSS_TRY, gtry, false)
+DEFGSSTRUCT(GSS_CATCH, gcatch, false)
+DEFGSSTRUCT(GSS_EH_FILTER, geh_filter, false)
+DEFGSSTRUCT(GSS_EH_MNT, geh_mnt, false)
+DEFGSSTRUCT(GSS_EH_CTRL, gimple_statement_eh_ctrl, false)
+DEFGSSTRUCT(GSS_EH_ELSE, geh_else, false)
+DEFGSSTRUCT(GSS_WCE, gimple_statement_wce, false)
+DEFGSSTRUCT(GSS_OMP, gimple_statement_omp, false)
+DEFGSSTRUCT(GSS_OMP_CRITICAL, gomp_critical, false)
+DEFGSSTRUCT(GSS_OMP_FOR, gomp_for, false)
+DEFGSSTRUCT(GSS_OMP_PARALLEL_LAYOUT, gimple_statement_omp_parallel_layout, false)
+DEFGSSTRUCT(GSS_OMP_TASK, gomp_task, false)
+DEFGSSTRUCT(GSS_OMP_SECTIONS, gomp_sections, false)
+DEFGSSTRUCT(GSS_OMP_SINGLE_LAYOUT, gimple_statement_omp_single_layout, false)
+DEFGSSTRUCT(GSS_OMP_CONTINUE, gomp_continue, false)
+DEFGSSTRUCT(GSS_OMP_ATOMIC_LOAD, gomp_atomic_load, false)
+DEFGSSTRUCT(GSS_OMP_ATOMIC_STORE_LAYOUT, gomp_atomic_store, false)
+DEFGSSTRUCT(GSS_TRANSACTION, gtransaction, false)

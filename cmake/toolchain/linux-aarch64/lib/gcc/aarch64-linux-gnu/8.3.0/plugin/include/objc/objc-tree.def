@@ -1,0 +1,76 @@
+/* This file contains the definitions and documentation for the
+   additional tree codes used in the Objective C front end (see tree.def
+   for the standard codes).
+   Copyright (C) 1990-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3, or (at your option)
+any later version.
+
+GCC is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+
+/* Objective-C types.  */
+DEFTREECODE (CLASS_INTERFACE_TYPE, "class_interface_type", tcc_type, 0)
+DEFTREECODE (CLASS_IMPLEMENTATION_TYPE, "class_implementation_type",
+	     tcc_type, 0)
+DEFTREECODE (CATEGORY_INTERFACE_TYPE, "category_interface_type", tcc_type, 0)
+DEFTREECODE (CATEGORY_IMPLEMENTATION_TYPE,"category_implementation_type",
+	     tcc_type, 0)
+DEFTREECODE (PROTOCOL_INTERFACE_TYPE, "protocol_interface_type", tcc_type, 0)
+
+/* Objective-C decls.  */
+DEFTREECODE (KEYWORD_DECL, "keyword_decl", tcc_declaration, 0)
+DEFTREECODE (INSTANCE_METHOD_DECL, "instance_method_decl", tcc_declaration, 0)
+DEFTREECODE (CLASS_METHOD_DECL, "class_method_decl", tcc_declaration, 0)
+DEFTREECODE (PROPERTY_DECL, "property_decl", tcc_declaration, 0)
+
+/* Objective-C expressions.  */
+DEFTREECODE (MESSAGE_SEND_EXPR, "message_send_expr", tcc_expression, 3)
+DEFTREECODE (CLASS_REFERENCE_EXPR, "class_reference_expr", tcc_expression, 1)
+
+/* This tree is used to represent the expression 'object.property',
+   where 'object' is an Objective-C object and 'property' is an
+   Objective-C property.  Operand 0 is the object (the tree
+   representing the expression), and Operand 1 is the property (the
+   PROPERTY_DECL).  Operand 2 is the 'getter' call, ready to be used;
+   we pregenerate it because it is hard to generate it properly later
+   on.  Operand 3 records whether using the 'getter' call should
+   generate a deprecation warning or not.
+
+   A PROPERTY_REF tree needs to be transformed into 'setter' and
+   'getter' calls at some point; at the moment this happens in two
+   places:
+
+     * if we detect that a modify expression is being applied to a
+       PROPERTY_REF, then we transform that into a 'getter' call (this
+       happens in build_modify_expr() or cp_build_modify_expr()).
+
+    * else, it will remain as a PROPERTY_REF until we get to
+      gimplification; at that point, we convert each PROPERTY_REF into
+      a 'getter' call during ObjC/ObjC++ gimplify.  At that point, it
+      is quite hard to build a 'getter' call, but we have already built
+      it and we just need to swap Operand 2 in, and emit the deprecation
+      warnings from Operand 3 if needed.
+
+  Please note that when the Objective-C 2.0 "dot-syntax" 'object.component'
+  is encountered, where 'component' is not a property but there are valid
+  setter/getter methods for it, an artificial PROPERTY_DECL is generated
+  and used in the PROPERTY_REF.  */
+DEFTREECODE (PROPERTY_REF, "property_ref", tcc_expression, 4)
+
+/*
+Local variables:
+mode:c
+End:
+*/

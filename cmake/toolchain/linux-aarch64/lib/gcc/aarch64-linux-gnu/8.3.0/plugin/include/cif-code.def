@@ -1,0 +1,141 @@
+/* This file contains the definitions of the cgraph_inline_failed_t
+   enums used in GCC.
+
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
+   Contributed by Doug Kwan <dougkwan@google.com>
+
+This file is part of GCC.
+
+GCC is free software you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* The format of this file is
+   DEFCIFCODE(code, string).
+
+   Where symbol is the enumeration name without the ``''.
+   The argument STRING is a explain the failure.  Except for OK,
+   which is a NULL pointer.  */
+
+/* Inlining successful.  This must be the first code.  */
+DEFCIFCODE(OK, CIF_FINAL_NORMAL, NULL)
+
+/* Inlining failed for an unspecified reason.  */
+DEFCIFCODE(UNSPECIFIED, CIF_FINAL_ERROR, "")
+
+/* Function has not be considered for inlining.  This is the code for
+   functions that have not been rejected for inlining yet.  */
+DEFCIFCODE(FUNCTION_NOT_CONSIDERED, CIF_FINAL_NORMAL,
+	   N_("function not considered for inlining"))
+
+/* Caller is compiled with optimizations disabled.  */
+DEFCIFCODE(FUNCTION_NOT_OPTIMIZED, CIF_FINAL_ERROR,
+	   N_("caller is not optimized"))
+
+/* Inlining failed owing to unavailable function body.  */
+DEFCIFCODE(BODY_NOT_AVAILABLE, CIF_FINAL_ERROR,
+	   N_("function body not available"))
+
+/* Extern inline function that has been redefined.  */
+DEFCIFCODE(REDEFINED_EXTERN_INLINE, CIF_FINAL_ERROR,
+	   N_("redefined extern inline functions are not considered for "
+	      "inlining"))
+
+/* Function is not inlinable.  */
+DEFCIFCODE(FUNCTION_NOT_INLINABLE, CIF_FINAL_ERROR,
+	   N_("function not inlinable"))
+
+/* Function is overwritable.  */
+DEFCIFCODE(OVERWRITABLE, CIF_FINAL_ERROR,
+	   N_("function body can be overwritten at link time"))
+
+/* Function is not an inlining candidate.  */
+DEFCIFCODE(FUNCTION_NOT_INLINE_CANDIDATE, CIF_FINAL_NORMAL,
+	   N_("function not inline candidate"))
+
+/* Inlining failed because of various limit parameters.  */
+DEFCIFCODE(LARGE_FUNCTION_GROWTH_LIMIT, CIF_FINAL_NORMAL,
+	   N_("--param large-function-growth limit reached"))
+DEFCIFCODE(LARGE_STACK_FRAME_GROWTH_LIMIT, CIF_FINAL_NORMAL,
+	   N_("--param large-stack-frame-growth limit reached"))
+DEFCIFCODE(MAX_INLINE_INSNS_SINGLE_LIMIT, CIF_FINAL_NORMAL,
+	   N_("--param max-inline-insns-single limit reached"))
+DEFCIFCODE(MAX_INLINE_INSNS_AUTO_LIMIT, CIF_FINAL_NORMAL,
+	   N_("--param max-inline-insns-auto limit reached"))
+DEFCIFCODE(INLINE_UNIT_GROWTH_LIMIT, CIF_FINAL_NORMAL,
+	   N_("--param inline-unit-growth limit reached"))
+
+/* Recursive inlining.  */
+DEFCIFCODE(RECURSIVE_INLINING, CIF_FINAL_NORMAL,
+	   N_("recursive inlining"))
+
+/* Call is unlikely.  */
+DEFCIFCODE(UNLIKELY_CALL, CIF_FINAL_NORMAL,
+	   N_("call is unlikely and code size would grow"))
+
+/* Function is not declared as inline.  */
+DEFCIFCODE(NOT_DECLARED_INLINED, CIF_FINAL_NORMAL,
+	   N_("function not declared inline and code size would grow"))
+
+/* Caller and callee disagree on the arguments.  */
+DEFCIFCODE(MISMATCHED_ARGUMENTS, CIF_FINAL_ERROR,
+	   N_("mismatched arguments"))
+
+/* Caller and callee disagree on the arguments.  */
+DEFCIFCODE(LTO_MISMATCHED_DECLARATIONS, CIF_FINAL_ERROR,
+	   N_("mismatched declarations during linktime optimization"))
+
+/* Caller is variadic thunk.  */
+DEFCIFCODE(VARIADIC_THUNK, CIF_FINAL_ERROR,
+	   N_("variadic thunk call"))
+
+/* Call was originally indirect.  */
+DEFCIFCODE(ORIGINALLY_INDIRECT_CALL, CIF_FINAL_NORMAL,
+	   N_("originally indirect function call not considered for inlining"))
+
+/* Ths edge represents an indirect edge with a yet-undetermined callee .  */
+DEFCIFCODE(INDIRECT_UNKNOWN_CALL, CIF_FINAL_NORMAL,
+	   N_("indirect function call with a yet undetermined callee"))
+
+/* We can't inline different EH personalities together.  */
+DEFCIFCODE(EH_PERSONALITY, CIF_FINAL_ERROR,
+	   N_("exception handling personality mismatch"))
+
+/* We can't inline if the callee can throw non-call exceptions but the
+   caller cannot.  */
+DEFCIFCODE(NON_CALL_EXCEPTIONS, CIF_FINAL_ERROR,
+	   N_("non-call exception handling mismatch"))
+
+/* We can't inline because of mismatched target specific options.  */
+DEFCIFCODE(TARGET_OPTION_MISMATCH, CIF_FINAL_ERROR,
+	   N_("target specific option mismatch"))
+
+/* We can't inline because of mismatched optimization levels.  */
+DEFCIFCODE(OPTIMIZATION_MISMATCH, CIF_FINAL_ERROR,
+	   N_("optimization level attribute mismatch"))
+
+/* We can't inline because the callee refers to comdat-local symbols.  */
+DEFCIFCODE(USES_COMDAT_LOCAL, CIF_FINAL_ERROR,
+	   N_("callee refers to comdat-local symbols"))
+
+/* We can't inline because of mismatched caller/callee attributes.  */
+DEFCIFCODE(ATTRIBUTE_MISMATCH, CIF_FINAL_ERROR,
+	   N_("function attribute mismatch"))
+
+/* We proved that the call is unreachable.  */
+DEFCIFCODE(UNREACHABLE, CIF_FINAL_ERROR,
+	   N_("unreachable"))
+
+/* We can't inline because of instrumentation thunk.  */
+DEFCIFCODE(CHKP, CIF_FINAL_ERROR,
+	   N_("caller is instrumentation thunk"))

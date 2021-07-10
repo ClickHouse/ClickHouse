@@ -1,0 +1,394 @@
+/* Definitions for operation tables, or "optabs".
+   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* The entries in optabs.def are categorized:
+     C: A "conversion" optab, which uses two modes; has libcall data.
+     N: A "normal" optab, which uses one mode; has libcall data.
+     D: A "direct" optab, which uses one mode; does not have libcall data.
+     V: An "oVerflow" optab.  Like N, but does not record its code in
+        code_to_optab.
+
+     CX, NX, VX: An extra pattern entry for a conversion or normal optab.
+
+   These patterns may be present in the MD file with names that contain
+   the mode(s) used and the name of the operation.  This array contains
+   a list of optabs that need to be initialized.  Within each name,
+   $a and $b are used to match a short mode name (the part of the mode
+   name not including `mode' and converted to lower-case).
+
+   $I means that only full integer modes should be considered for the
+   next mode, and $F means that only float modes should be considered.
+   $P means that both full and partial integer modes should be considered.
+   $Q means that only fixed-point modes should be considered.
+
+   The pattern may be NULL if the optab exists only for the libcalls
+   that we plan to attach to it, and there are no named patterns in
+   the md files.  */
+
+/* The extension libcalls are used for float extension.  */
+OPTAB_CL(sext_optab, "extend$b$a2", SIGN_EXTEND, "extend", gen_extend_conv_libfunc)
+OPTAB_CL(trunc_optab, "trunc$b$a2", TRUNCATE, "trunc", gen_trunc_conv_libfunc)
+OPTAB_CL(zext_optab, "zero_extend$b$a2", ZERO_EXTEND, NULL, NULL)
+
+OPTAB_CL(sfix_optab, "fix$F$b$I$a2", FIX, "fix", gen_fp_to_int_conv_libfunc)
+OPTAB_CL(ufix_optab, "fixuns$F$b$a2", UNSIGNED_FIX, "fixuns", gen_fp_to_int_conv_libfunc)
+OPTAB_CL(sfloat_optab, "float$I$b$F$a2", FLOAT, "float", gen_int_to_fp_conv_libfunc)
+OPTAB_CL(ufloat_optab, "floatuns$I$b$F$a2", UNSIGNED_FLOAT, NULL, gen_ufloat_conv_libfunc)
+
+OPTAB_CL(lrint_optab, "lrint$F$b$I$a2", UNKNOWN, "lrint", gen_int_to_fp_nondecimal_conv_libfunc)
+OPTAB_CL(lround_optab, "lround$F$b$I$a2", UNKNOWN, "lround", gen_int_to_fp_nondecimal_conv_libfunc)
+OPTAB_CL(lfloor_optab, "lfloor$F$b$I$a2", UNKNOWN, "lfloor", gen_int_to_fp_nondecimal_conv_libfunc)
+OPTAB_CL(lceil_optab, "lceil$F$b$I$a2", UNKNOWN, "lceil", gen_int_to_fp_nondecimal_conv_libfunc)
+
+/* Conversions for fixed-point modes and other modes.  */
+OPTAB_CL(fract_optab, "fract$b$a2", FRACT_CONVERT, "fract", gen_fract_conv_libfunc)
+OPTAB_CL(fractuns_optab, "fractuns$I$b$Q$a2", UNSIGNED_FRACT_CONVERT, "fractuns", gen_fractuns_conv_libfunc)
+OPTAB_CX(fractuns_optab, "fractuns$Q$b$I$a2")
+OPTAB_CL(satfract_optab, "satfract$b$Q$a2", SAT_FRACT, "satfract", gen_satfract_conv_libfunc)
+OPTAB_CL(satfractuns_optab, "satfractuns$I$b$Q$a2", UNSIGNED_SAT_FRACT, "satfractuns", gen_satfractuns_conv_libfunc)
+
+OPTAB_CD(sfixtrunc_optab, "fix_trunc$F$b$I$a2")
+OPTAB_CD(ufixtrunc_optab, "fixuns_trunc$F$b$I$a2")
+
+/* Misc optabs that use two modes; model them as "conversions".  */
+OPTAB_CD(smul_widen_optab, "mul$b$a3")
+OPTAB_CD(umul_widen_optab, "umul$b$a3")
+OPTAB_CD(usmul_widen_optab, "usmul$b$a3")
+OPTAB_CD(smadd_widen_optab, "madd$b$a4")
+OPTAB_CD(umadd_widen_optab, "umadd$b$a4")
+OPTAB_CD(ssmadd_widen_optab, "ssmadd$b$a4")
+OPTAB_CD(usmadd_widen_optab, "usmadd$b$a4")
+OPTAB_CD(smsub_widen_optab, "msub$b$a4")
+OPTAB_CD(umsub_widen_optab, "umsub$b$a4")
+OPTAB_CD(ssmsub_widen_optab, "ssmsub$b$a4")
+OPTAB_CD(usmsub_widen_optab, "usmsub$a$b4")
+OPTAB_CD(vec_load_lanes_optab, "vec_load_lanes$a$b")
+OPTAB_CD(vec_store_lanes_optab, "vec_store_lanes$a$b")
+OPTAB_CD(vec_mask_load_lanes_optab, "vec_mask_load_lanes$a$b")
+OPTAB_CD(vec_mask_store_lanes_optab, "vec_mask_store_lanes$a$b")
+OPTAB_CD(vcond_optab, "vcond$a$b")
+OPTAB_CD(vcondu_optab, "vcondu$a$b")
+OPTAB_CD(vcondeq_optab, "vcondeq$a$b")
+OPTAB_CD(vcond_mask_optab, "vcond_mask_$a$b")
+OPTAB_CD(vec_cmp_optab, "vec_cmp$a$b")
+OPTAB_CD(vec_cmpu_optab, "vec_cmpu$a$b")
+OPTAB_CD(vec_cmpeq_optab, "vec_cmpeq$a$b")
+OPTAB_CD(maskload_optab, "maskload$a$b")
+OPTAB_CD(maskstore_optab, "maskstore$a$b")
+OPTAB_CD(vec_extract_optab, "vec_extract$a$b")
+OPTAB_CD(vec_init_optab, "vec_init$a$b")
+
+OPTAB_CD (while_ult_optab, "while_ult$a$b")
+
+OPTAB_NL(add_optab, "add$P$a3", PLUS, "add", '3', gen_int_fp_fixed_libfunc)
+OPTAB_NX(add_optab, "add$F$a3")
+OPTAB_NX(add_optab, "add$Q$a3")
+OPTAB_VL(addv_optab, "addv$I$a3", PLUS, "add", '3', gen_intv_fp_libfunc)
+OPTAB_VX(addv_optab, "add$F$a3")
+OPTAB_NL(ssadd_optab, "ssadd$Q$a3", SS_PLUS, "ssadd", '3', gen_signed_fixed_libfunc)
+OPTAB_NL(usadd_optab, "usadd$Q$a3", US_PLUS, "usadd", '3', gen_unsigned_fixed_libfunc)
+OPTAB_NL(sub_optab, "sub$P$a3", MINUS, "sub", '3', gen_int_fp_fixed_libfunc)
+OPTAB_NX(sub_optab, "sub$F$a3")
+OPTAB_NX(sub_optab, "sub$Q$a3")
+OPTAB_VL(subv_optab, "subv$I$a3", MINUS, "sub", '3', gen_intv_fp_libfunc)
+OPTAB_VX(subv_optab, "sub$F$a3")
+OPTAB_NL(sssub_optab, "sssub$Q$a3", SS_MINUS, "sssub", '3', gen_signed_fixed_libfunc)
+OPTAB_NL(ussub_optab, "ussub$Q$a3", US_MINUS, "ussub", '3', gen_unsigned_fixed_libfunc)
+OPTAB_NL(smul_optab, "mul$Q$a3", MULT, "mul", '3', gen_int_fp_fixed_libfunc)
+OPTAB_NX(smul_optab, "mul$P$a3")
+OPTAB_NX(smul_optab, "mul$F$a3")
+OPTAB_VL(smulv_optab, "mulv$I$a3", MULT, "mul", '3', gen_intv_fp_libfunc)
+OPTAB_VX(smulv_optab, "mul$F$a3")
+OPTAB_NL(ssmul_optab, "ssmul$Q$a3", SS_MULT, "ssmul", '3', gen_signed_fixed_libfunc)
+OPTAB_NL(usmul_optab, "usmul$Q$a3", US_MULT, "usmul", '3', gen_unsigned_fixed_libfunc)
+OPTAB_NL(sdiv_optab, "div$a3", DIV, "div", '3', gen_int_fp_signed_fixed_libfunc)
+OPTAB_VL(sdivv_optab, "divv$I$a3", DIV, "divv", '3', gen_int_libfunc)
+OPTAB_VX(sdivv_optab, "div$F$a3")
+OPTAB_NL(ssdiv_optab, "ssdiv$Q$a3", SS_DIV, "ssdiv", '3', gen_signed_fixed_libfunc)
+OPTAB_NL(udiv_optab, "udiv$I$a3", UDIV, "udiv", '3', gen_int_unsigned_fixed_libfunc)
+OPTAB_NX(udiv_optab, "udiv$Q$a3")
+OPTAB_NL(usdiv_optab, "usdiv$Q$a3", US_DIV, "usdiv", '3', gen_unsigned_fixed_libfunc)
+OPTAB_NC(sdivmod_optab, "divmod$a4", UNKNOWN) 
+OPTAB_NC(udivmod_optab, "udivmod$a4", UNKNOWN)
+OPTAB_NL(smod_optab, "mod$a3", MOD, "mod", '3', gen_int_libfunc)
+OPTAB_NL(umod_optab, "umod$a3", UMOD, "umod", '3', gen_int_libfunc)
+OPTAB_NL(ftrunc_optab, "ftrunc$F$a2", UNKNOWN, "ftrunc", '2', gen_fp_libfunc)
+OPTAB_NL(and_optab, "and$a3", AND, "and", '3', gen_int_libfunc)
+OPTAB_NL(ior_optab, "ior$a3", IOR, "ior", '3', gen_int_libfunc)
+OPTAB_NL(xor_optab, "xor$a3", XOR, "xor", '3', gen_int_libfunc)
+OPTAB_NL(ashl_optab, "ashl$a3", ASHIFT, "ashl", '3', gen_int_fixed_libfunc)
+OPTAB_NL(ssashl_optab, "ssashl$Q$a3", SS_ASHIFT, "ssashl", '3', gen_signed_fixed_libfunc)
+OPTAB_NL(usashl_optab, "usashl$Q$a3", US_ASHIFT, "usashl", '3', gen_unsigned_fixed_libfunc)
+OPTAB_NL(ashr_optab, "ashr$a3", ASHIFTRT, "ashr", '3', gen_int_signed_fixed_libfunc)
+OPTAB_NL(lshr_optab, "lshr$a3", LSHIFTRT, "lshr", '3', gen_int_unsigned_fixed_libfunc)
+OPTAB_NC(rotl_optab, "rotl$a3", ROTATE)
+OPTAB_NC(rotr_optab, "rotr$a3", ROTATERT)
+OPTAB_VC(vashl_optab, "vashl$a3", ASHIFT)
+OPTAB_VC(vashr_optab, "vashr$a3", ASHIFTRT)
+OPTAB_VC(vlshr_optab, "vlshr$a3", LSHIFTRT)
+OPTAB_VC(vrotl_optab, "vrotl$a3", ROTATE)
+OPTAB_VC(vrotr_optab, "vrotr$a3", ROTATERT)
+OPTAB_NL(smin_optab, "smin$a3", SMIN, "min", '3', gen_int_fp_libfunc)
+OPTAB_NL(smax_optab, "smax$a3", SMAX, "max", '3', gen_int_fp_libfunc)
+OPTAB_NL(umin_optab, "umin$I$a3", UMIN, "umin", '3', gen_int_libfunc)
+OPTAB_NL(umax_optab, "umax$I$a3", UMAX, "umax", '3', gen_int_libfunc)
+
+OPTAB_NL(neg_optab, "neg$P$a2", NEG, "neg", '2', gen_int_fp_fixed_libfunc)
+OPTAB_NX(neg_optab, "neg$F$a2")
+OPTAB_NX(neg_optab, "neg$Q$a2")
+OPTAB_VL(negv_optab, "negv$I$a2", NEG, "neg", '2', gen_intv_fp_libfunc)
+OPTAB_VX(negv_optab, "neg$F$a2")
+OPTAB_NL(ssneg_optab, "ssneg$Q$a2", SS_NEG, "ssneg", '2', gen_signed_fixed_libfunc)
+OPTAB_NL(usneg_optab, "usneg$Q$a2", US_NEG, "usneg", '2', gen_unsigned_fixed_libfunc)
+OPTAB_NC(abs_optab, "abs$P$a2", ABS)
+OPTAB_NX(abs_optab, "abs$F$a2")
+OPTAB_VC(absv_optab, "absv$I$a2", ABS)
+OPTAB_VX(absv_optab, "abs$F$a2")
+OPTAB_NL(one_cmpl_optab, "one_cmpl$a2", NOT, "one_cmpl", '2', gen_int_libfunc)
+OPTAB_NC(bswap_optab, "bswap$a2", BSWAP)
+OPTAB_NL(ffs_optab, "ffs$a2", FFS, "ffs", '2', gen_int_libfunc)
+OPTAB_NL(clz_optab, "clz$a2", CLZ, "clz", '2', gen_int_libfunc)
+OPTAB_NL(ctz_optab, "ctz$a2", CTZ, "ctz", '2', gen_int_libfunc)
+OPTAB_NL(clrsb_optab, "clrsb$a2", CLRSB, "clrsb", '2', gen_int_libfunc)
+OPTAB_NL(popcount_optab, "popcount$a2", POPCOUNT, "popcount", '2', gen_int_libfunc)
+OPTAB_NL(parity_optab, "parity$a2", PARITY, "parity", '2', gen_int_libfunc)
+
+/* Comparison libcalls for integers MUST come in pairs, signed/unsigned.  */
+OPTAB_NL(cmp_optab, NULL, UNKNOWN, "cmp", '2', gen_int_fp_fixed_libfunc)
+OPTAB_NL(ucmp_optab, NULL, UNKNOWN, "ucmp", '2', gen_int_libfunc)
+
+/* EQ etc are floating point comparisons.  */
+OPTAB_NL(eq_optab, NULL, EQ, "eq", '2', gen_fp_libfunc)
+OPTAB_NL(ne_optab, NULL, NE, "ne", '2', gen_fp_libfunc)
+OPTAB_NL(gt_optab, NULL, GT, "gt", '2', gen_fp_libfunc)
+OPTAB_NL(ge_optab, NULL, GE, "ge", '2', gen_fp_libfunc)
+OPTAB_NL(lt_optab, NULL, LT, "lt", '2', gen_fp_libfunc)
+OPTAB_NL(le_optab, NULL, LE, "le", '2', gen_fp_libfunc)
+OPTAB_NL(unord_optab, NULL, UNORDERED, "unord", '2', gen_fp_libfunc)
+
+OPTAB_NL(powi_optab, NULL, UNKNOWN, "powi", '2', gen_fp_libfunc)
+
+/* These are all initialized individually, on a per-host basis.  */
+OPTAB_NC(sqrt_optab, "sqrt$a2", SQRT)
+OPTAB_NC(sync_old_add_optab, "sync_old_add$I$a", UNKNOWN)
+OPTAB_NC(sync_old_sub_optab, "sync_old_sub$I$a", UNKNOWN)
+OPTAB_NC(sync_old_ior_optab, "sync_old_ior$I$a", UNKNOWN)
+OPTAB_NC(sync_old_and_optab, "sync_old_and$I$a", UNKNOWN)
+OPTAB_NC(sync_old_xor_optab, "sync_old_xor$I$a", UNKNOWN)
+OPTAB_NC(sync_old_nand_optab, "sync_old_nand$I$a", UNKNOWN)
+OPTAB_NC(sync_new_add_optab, "sync_new_add$I$a", UNKNOWN)
+OPTAB_NC(sync_new_sub_optab, "sync_new_sub$I$a", UNKNOWN)
+OPTAB_NC(sync_new_ior_optab, "sync_new_ior$I$a", UNKNOWN)
+OPTAB_NC(sync_new_and_optab, "sync_new_and$I$a", UNKNOWN)
+OPTAB_NC(sync_new_xor_optab, "sync_new_xor$I$a", UNKNOWN)
+OPTAB_NC(sync_new_nand_optab, "sync_new_nand$I$a", UNKNOWN)
+OPTAB_NC(sync_compare_and_swap_optab, "sync_compare_and_swap$I$a", UNKNOWN)
+OPTAB_NC(sync_lock_test_and_set_optab, "sync_lock_test_and_set$I$a", UNKNOWN)
+
+OPTAB_DC(mov_optab, "mov$a", SET)
+OPTAB_DC(movstrict_optab, "movstrict$a", STRICT_LOW_PART)
+OPTAB_D (movmisalign_optab, "movmisalign$a")
+OPTAB_D (storent_optab, "storent$a")
+OPTAB_D (insv_optab, "insv$a")
+OPTAB_D (extv_optab, "extv$a")
+OPTAB_D (extzv_optab, "extzv$a")
+OPTAB_D (insvmisalign_optab, "insvmisalign$a")
+OPTAB_D (extvmisalign_optab, "extvmisalign$a")
+OPTAB_D (extzvmisalign_optab, "extzvmisalign$a")
+OPTAB_D (push_optab, "push$a1")
+OPTAB_D (reload_in_optab, "reload_in$a")
+OPTAB_D (reload_out_optab, "reload_out$a")
+
+OPTAB_DC(cbranch_optab, "cbranch$a4", COMPARE)
+OPTAB_D (addcc_optab, "add$acc")
+OPTAB_D (negcc_optab, "neg$acc")
+OPTAB_D (notcc_optab, "not$acc")
+OPTAB_D (movcc_optab, "mov$acc")
+OPTAB_D (cond_add_optab, "cond_add$a")
+OPTAB_D (cond_sub_optab, "cond_sub$a")
+OPTAB_D (cond_and_optab, "cond_and$a")
+OPTAB_D (cond_ior_optab, "cond_ior$a")
+OPTAB_D (cond_xor_optab, "cond_xor$a")
+OPTAB_D (cond_smin_optab, "cond_smin$a")
+OPTAB_D (cond_smax_optab, "cond_smax$a")
+OPTAB_D (cond_umin_optab, "cond_umin$a")
+OPTAB_D (cond_umax_optab, "cond_umax$a")
+OPTAB_D (cmov_optab, "cmov$a6")
+OPTAB_D (cstore_optab, "cstore$a4")
+OPTAB_D (ctrap_optab, "ctrap$a4")
+OPTAB_D (addv4_optab, "addv$I$a4")
+OPTAB_D (subv4_optab, "subv$I$a4")
+OPTAB_D (mulv4_optab, "mulv$I$a4")
+OPTAB_D (uaddv4_optab, "uaddv$I$a4")
+OPTAB_D (usubv4_optab, "usubv$I$a4")
+OPTAB_D (umulv4_optab, "umulv$I$a4")
+OPTAB_D (negv3_optab, "negv$I$a3")
+OPTAB_D (addptr3_optab, "addptr$a3")
+
+OPTAB_D (smul_highpart_optab, "smul$a3_highpart")
+OPTAB_D (umul_highpart_optab, "umul$a3_highpart")
+
+OPTAB_D (cmpmem_optab, "cmpmem$a")
+OPTAB_D (cmpstr_optab, "cmpstr$a")
+OPTAB_D (cmpstrn_optab, "cmpstrn$a")
+OPTAB_D (movmem_optab, "movmem$a")
+OPTAB_D (setmem_optab, "setmem$a")
+OPTAB_D (strlen_optab, "strlen$a")
+
+OPTAB_DC(fma_optab, "fma$a4", FMA)
+OPTAB_D (fms_optab, "fms$a4")
+OPTAB_D (fnma_optab, "fnma$a4")
+OPTAB_D (fnms_optab, "fnms$a4")
+
+OPTAB_D (rint_optab, "rint$a2")
+OPTAB_D (round_optab, "round$a2")
+OPTAB_D (floor_optab, "floor$a2")
+OPTAB_D (ceil_optab, "ceil$a2")
+OPTAB_D (btrunc_optab, "btrunc$a2")
+OPTAB_D (nearbyint_optab, "nearbyint$a2")
+
+OPTAB_D (acos_optab, "acos$a2")
+OPTAB_D (asin_optab, "asin$a2")
+OPTAB_D (atan2_optab, "atan2$a3")
+OPTAB_D (atan_optab, "atan$a2")
+OPTAB_D (copysign_optab, "copysign$F$a3")
+OPTAB_D (xorsign_optab, "xorsign$F$a3")
+OPTAB_D (cos_optab, "cos$a2")
+OPTAB_D (exp10_optab, "exp10$a2")
+OPTAB_D (exp2_optab, "exp2$a2")
+OPTAB_D (exp_optab, "exp$a2")
+OPTAB_D (expm1_optab, "expm1$a2")
+OPTAB_D (fmod_optab, "fmod$a3")
+OPTAB_D (ilogb_optab, "ilogb$a2")
+OPTAB_D (isinf_optab, "isinf$a2")
+OPTAB_D (ldexp_optab, "ldexp$a3")
+OPTAB_D (log10_optab, "log10$a2")
+OPTAB_D (log1p_optab, "log1p$a2")
+OPTAB_D (log2_optab, "log2$a2")
+OPTAB_D (log_optab, "log$a2")
+OPTAB_D (logb_optab, "logb$a2")
+OPTAB_D (pow_optab, "pow$a3")
+OPTAB_D (remainder_optab, "remainder$a3")
+OPTAB_D (rsqrt_optab, "rsqrt$a2")
+OPTAB_D (scalb_optab, "scalb$a3")
+OPTAB_D (signbit_optab, "signbit$F$a2")
+OPTAB_D (significand_optab, "significand$a2")
+OPTAB_D (sin_optab, "sin$a2")
+OPTAB_D (sincos_optab, "sincos$a3")
+OPTAB_D (tan_optab, "tan$a2")
+
+/* C99 implementations of fmax/fmin.  */
+OPTAB_D (fmax_optab, "fmax$a3")
+OPTAB_D (fmin_optab, "fmin$a3")
+
+/* Vector reduction to a scalar.  */
+OPTAB_D (reduc_smax_scal_optab, "reduc_smax_scal_$a")
+OPTAB_D (reduc_smin_scal_optab, "reduc_smin_scal_$a")
+OPTAB_D (reduc_plus_scal_optab, "reduc_plus_scal_$a")
+OPTAB_D (reduc_umax_scal_optab, "reduc_umax_scal_$a")
+OPTAB_D (reduc_umin_scal_optab, "reduc_umin_scal_$a")
+OPTAB_D (reduc_and_scal_optab,  "reduc_and_scal_$a")
+OPTAB_D (reduc_ior_scal_optab,  "reduc_ior_scal_$a")
+OPTAB_D (reduc_xor_scal_optab,  "reduc_xor_scal_$a")
+OPTAB_D (fold_left_plus_optab, "fold_left_plus_$a")
+
+OPTAB_D (extract_last_optab, "extract_last_$a")
+OPTAB_D (fold_extract_last_optab, "fold_extract_last_$a")
+
+OPTAB_D (sdot_prod_optab, "sdot_prod$I$a")
+OPTAB_D (ssum_widen_optab, "widen_ssum$I$a3")
+OPTAB_D (udot_prod_optab, "udot_prod$I$a")
+OPTAB_D (usum_widen_optab, "widen_usum$I$a3")
+OPTAB_D (usad_optab, "usad$I$a")
+OPTAB_D (ssad_optab, "ssad$I$a")
+OPTAB_D (vec_pack_sfix_trunc_optab, "vec_pack_sfix_trunc_$a")
+OPTAB_D (vec_pack_ssat_optab, "vec_pack_ssat_$a")
+OPTAB_D (vec_pack_trunc_optab, "vec_pack_trunc_$a")
+OPTAB_D (vec_pack_ufix_trunc_optab, "vec_pack_ufix_trunc_$a")
+OPTAB_D (vec_pack_usat_optab, "vec_pack_usat_$a")
+OPTAB_D (vec_perm_optab, "vec_perm$a")
+OPTAB_D (vec_realign_load_optab, "vec_realign_load_$a")
+OPTAB_D (vec_set_optab, "vec_set$a")
+OPTAB_D (vec_shr_optab, "vec_shr_$a")
+OPTAB_D (vec_unpacks_float_hi_optab, "vec_unpacks_float_hi_$a")
+OPTAB_D (vec_unpacks_float_lo_optab, "vec_unpacks_float_lo_$a")
+OPTAB_D (vec_unpacks_hi_optab, "vec_unpacks_hi_$a")
+OPTAB_D (vec_unpacks_lo_optab, "vec_unpacks_lo_$a")
+OPTAB_D (vec_unpacku_float_hi_optab, "vec_unpacku_float_hi_$a")
+OPTAB_D (vec_unpacku_float_lo_optab, "vec_unpacku_float_lo_$a")
+OPTAB_D (vec_unpacku_hi_optab, "vec_unpacku_hi_$a")
+OPTAB_D (vec_unpacku_lo_optab, "vec_unpacku_lo_$a")
+OPTAB_D (vec_widen_smult_even_optab, "vec_widen_smult_even_$a")
+OPTAB_D (vec_widen_smult_hi_optab, "vec_widen_smult_hi_$a")
+OPTAB_D (vec_widen_smult_lo_optab, "vec_widen_smult_lo_$a")
+OPTAB_D (vec_widen_smult_odd_optab, "vec_widen_smult_odd_$a")
+OPTAB_D (vec_widen_sshiftl_hi_optab, "vec_widen_sshiftl_hi_$a")
+OPTAB_D (vec_widen_sshiftl_lo_optab, "vec_widen_sshiftl_lo_$a")
+OPTAB_D (vec_widen_umult_even_optab, "vec_widen_umult_even_$a")
+OPTAB_D (vec_widen_umult_hi_optab, "vec_widen_umult_hi_$a")
+OPTAB_D (vec_widen_umult_lo_optab, "vec_widen_umult_lo_$a")
+OPTAB_D (vec_widen_umult_odd_optab, "vec_widen_umult_odd_$a")
+OPTAB_D (vec_widen_ushiftl_hi_optab, "vec_widen_ushiftl_hi_$a")
+OPTAB_D (vec_widen_ushiftl_lo_optab, "vec_widen_ushiftl_lo_$a")
+
+OPTAB_D (sync_add_optab, "sync_add$I$a")
+OPTAB_D (sync_and_optab, "sync_and$I$a")
+OPTAB_D (sync_ior_optab, "sync_ior$I$a")
+OPTAB_D (sync_lock_release_optab, "sync_lock_release$I$a")
+OPTAB_D (sync_nand_optab, "sync_nand$I$a")
+OPTAB_D (sync_sub_optab, "sync_sub$I$a")
+OPTAB_D (sync_xor_optab, "sync_xor$I$a")
+
+OPTAB_D (atomic_add_fetch_optab, "atomic_add_fetch$I$a")
+OPTAB_D (atomic_add_optab, "atomic_add$I$a")
+OPTAB_D (atomic_and_fetch_optab, "atomic_and_fetch$I$a")
+OPTAB_D (atomic_and_optab, "atomic_and$I$a")
+OPTAB_D (atomic_bit_test_and_set_optab, "atomic_bit_test_and_set$I$a")
+OPTAB_D (atomic_bit_test_and_complement_optab, "atomic_bit_test_and_complement$I$a")
+OPTAB_D (atomic_bit_test_and_reset_optab, "atomic_bit_test_and_reset$I$a")
+OPTAB_D (atomic_compare_and_swap_optab, "atomic_compare_and_swap$I$a")
+OPTAB_D (atomic_exchange_optab,	 "atomic_exchange$I$a")
+OPTAB_D (atomic_fetch_add_optab, "atomic_fetch_add$I$a")
+OPTAB_D (atomic_fetch_and_optab, "atomic_fetch_and$I$a")
+OPTAB_D (atomic_fetch_nand_optab, "atomic_fetch_nand$I$a")
+OPTAB_D (atomic_fetch_or_optab, "atomic_fetch_or$I$a")
+OPTAB_D (atomic_fetch_sub_optab, "atomic_fetch_sub$I$a")
+OPTAB_D (atomic_fetch_xor_optab, "atomic_fetch_xor$I$a")
+OPTAB_D (atomic_load_optab, "atomic_load$I$a")
+OPTAB_D (atomic_nand_fetch_optab, "atomic_nand_fetch$I$a")
+OPTAB_D (atomic_nand_optab, "atomic_nand$I$a")
+OPTAB_D (atomic_or_fetch_optab, "atomic_or_fetch$I$a")
+OPTAB_D (atomic_or_optab, "atomic_or$I$a")
+OPTAB_D (atomic_store_optab, "atomic_store$I$a")
+OPTAB_D (atomic_sub_fetch_optab, "atomic_sub_fetch$I$a")
+OPTAB_D (atomic_sub_optab, "atomic_sub$I$a")
+OPTAB_D (atomic_xor_fetch_optab, "atomic_xor_fetch$I$a")
+OPTAB_D (atomic_xor_optab, "atomic_xor$I$a")
+
+OPTAB_D (get_thread_pointer_optab, "get_thread_pointer$I$a")
+OPTAB_D (set_thread_pointer_optab, "set_thread_pointer$I$a")
+
+OPTAB_D (gather_load_optab, "gather_load$a")
+OPTAB_D (mask_gather_load_optab, "mask_gather_load$a")
+OPTAB_D (scatter_store_optab, "scatter_store$a")
+OPTAB_D (mask_scatter_store_optab, "mask_scatter_store$a")
+
+OPTAB_DC (vec_duplicate_optab, "vec_duplicate$a", VEC_DUPLICATE)
+OPTAB_DC (vec_series_optab, "vec_series$a", VEC_SERIES)
+OPTAB_D (vec_shl_insert_optab, "vec_shl_insert_$a")

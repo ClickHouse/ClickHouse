@@ -1,0 +1,106 @@
+/* Target instruction definitions.
+   Copyright (C) 2015-2018 Free Software Foundation, Inc.
+
+   This program is free software; you can redistribute it and/or modify it
+   under the terms of the GNU General Public License as published by the
+   Free Software Foundation; either version 3, or (at your option) any
+   later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; see the file COPYING3.  If not see
+   <http://www.gnu.org/licenses/>.  */
+
+/* This file has one entry for each public pattern name that the target
+   can provide.  It is only used if no distinction between operand modes
+   is necessary.  If separate patterns are needed for different modes
+   (so as to distinguish addition of QImode values from addition of
+   HImode values, for example) then an optab should be used instead.
+
+   Each entry has the form:
+
+     DEF_TARGET_INSN (name, prototype)
+
+   where NAME is the name of the pattern and PROTOTYPE is its C prototype.
+   The prototype should use parameter names of the form "x0", "x1", etc.
+   for the operands that the .md pattern is required to have, followed by
+   parameter names of the form "optN" for operands that the .md pattern
+   may choose to ignore.  Patterns that never take operands should have
+   a prototype "(void)".
+
+   Pattern names should be documented in md.texi rather than here.  */
+DEF_TARGET_INSN (allocate_stack, (rtx x0, rtx x1))
+DEF_TARGET_INSN (atomic_test_and_set, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (builtin_longjmp, (rtx x0))
+DEF_TARGET_INSN (builtin_setjmp_receiver, (rtx x0))
+DEF_TARGET_INSN (builtin_setjmp_setup, (rtx x0))
+DEF_TARGET_INSN (canonicalize_funcptr_for_compare, (rtx x0, rtx x1))
+DEF_TARGET_INSN (call, (rtx x0, rtx opt1, rtx opt2, rtx opt3))
+DEF_TARGET_INSN (call_pop, (rtx x0, rtx opt1, rtx opt2, rtx opt3))
+DEF_TARGET_INSN (call_value, (rtx x0, rtx x1, rtx opt2, rtx opt3, rtx opt4))
+DEF_TARGET_INSN (call_value_pop, (rtx x0, rtx x1, rtx opt2, rtx opt3,
+				  rtx opt4))
+DEF_TARGET_INSN (casesi, (rtx x0, rtx x1, rtx x2, rtx x3, rtx x4))
+DEF_TARGET_INSN (check_stack, (rtx x0))
+DEF_TARGET_INSN (clear_cache, (rtx x0, rtx x1))
+DEF_TARGET_INSN (doloop_begin, (rtx x0, rtx x1))
+DEF_TARGET_INSN (doloop_end, (rtx x0, rtx x1))
+DEF_TARGET_INSN (eh_return, (rtx x0))
+DEF_TARGET_INSN (epilogue, (void))
+DEF_TARGET_INSN (exception_receiver, (void))
+DEF_TARGET_INSN (extv, (rtx x0, rtx x1, rtx x2, rtx x3))
+DEF_TARGET_INSN (extzv, (rtx x0, rtx x1, rtx x2, rtx x3))
+DEF_TARGET_INSN (indirect_jump, (rtx x0))
+DEF_TARGET_INSN (insv, (rtx x0, rtx x1, rtx x2, rtx x3))
+DEF_TARGET_INSN (jump, (rtx x0))
+DEF_TARGET_INSN (load_multiple, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (mem_thread_fence, (rtx x0))
+DEF_TARGET_INSN (memory_barrier, (void))
+DEF_TARGET_INSN (memory_blockage, (void))
+DEF_TARGET_INSN (movstr, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (nonlocal_goto, (rtx x0, rtx x1, rtx x2, rtx x3))
+DEF_TARGET_INSN (nonlocal_goto_receiver, (void))
+DEF_TARGET_INSN (oacc_dim_pos, (rtx x0, rtx x1))
+DEF_TARGET_INSN (oacc_dim_size, (rtx x0, rtx x1))
+DEF_TARGET_INSN (oacc_fork, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (oacc_join, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (omp_simt_enter, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (omp_simt_exit, (rtx x0))
+DEF_TARGET_INSN (omp_simt_lane, (rtx x0))
+DEF_TARGET_INSN (omp_simt_last_lane, (rtx x0, rtx x1))
+DEF_TARGET_INSN (omp_simt_ordered, (rtx x0, rtx x1))
+DEF_TARGET_INSN (omp_simt_vote_any, (rtx x0, rtx x1))
+DEF_TARGET_INSN (omp_simt_xchg_bfly, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (omp_simt_xchg_idx, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (prefetch, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (probe_stack, (rtx x0))
+DEF_TARGET_INSN (probe_stack_address, (rtx x0))
+DEF_TARGET_INSN (prologue, (void))
+DEF_TARGET_INSN (ptr_extend, (rtx x0, rtx x1))
+DEF_TARGET_INSN (reload_load_address, (rtx x0, rtx x1))
+DEF_TARGET_INSN (restore_stack_block, (rtx x0, rtx x1))
+DEF_TARGET_INSN (restore_stack_function, (rtx x0, rtx x1))
+DEF_TARGET_INSN (restore_stack_nonlocal, (rtx x0, rtx x1))
+DEF_TARGET_INSN (return, (void))
+DEF_TARGET_INSN (save_stack_block, (rtx x0, rtx x1))
+DEF_TARGET_INSN (save_stack_function, (rtx x0, rtx x1))
+DEF_TARGET_INSN (save_stack_nonlocal, (rtx x0, rtx x1))
+DEF_TARGET_INSN (sibcall, (rtx x0, rtx opt1, rtx opt2, rtx opt3))
+DEF_TARGET_INSN (sibcall_epilogue, (void))
+DEF_TARGET_INSN (sibcall_value, (rtx x0, rtx x1, rtx opt2, rtx opt3,
+				 rtx opt4))
+DEF_TARGET_INSN (simple_return, (void))
+DEF_TARGET_INSN (split_stack_prologue, (void))
+DEF_TARGET_INSN (split_stack_space_check, (rtx x0, rtx x1))
+DEF_TARGET_INSN (stack_protect_set, (rtx x0, rtx x1))
+DEF_TARGET_INSN (stack_protect_test, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (store_multiple, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (tablejump, (rtx x0, rtx x1))
+DEF_TARGET_INSN (trap, (void))
+DEF_TARGET_INSN (unique, (void))
+DEF_TARGET_INSN (untyped_call, (rtx x0, rtx x1, rtx x2))
+DEF_TARGET_INSN (untyped_return, (rtx x0, rtx x1))

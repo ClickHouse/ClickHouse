@@ -1,0 +1,105 @@
+/* Copyright (C) 2011-2018 Free Software Foundation, Inc.
+   Contributed by ARM Ltd.
+
+   This file is part of GCC.
+
+   GCC is free software; you can redistribute it and/or modify it
+   under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 3, or (at your option)
+   any later version.
+
+   GCC is distributed in the hope that it will be useful, but
+   WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with GCC; see the file COPYING3.  If not see
+   <http://www.gnu.org/licenses/>.  */
+
+/* This is a list of cores that implement AArch64.
+
+   Before using #include to read this file, define a macro:
+
+      AARCH64_CORE(CORE_NAME, CORE_IDENT, SCHEDULER_IDENT, ARCH_IDENT, FLAGS, COSTS, IMP, PART, VARIANT)
+
+   The CORE_NAME is the name of the core, represented as a string constant.
+   The CORE_IDENT is the name of the core, represented as an identifier.
+   The SCHEDULER_IDENT is the name of the core for which scheduling decisions
+   will be made, represented as an identifier.
+   ARCH_IDENT is the architecture implemented by the chip as specified in
+   aarch64-arches.def.
+   FLAGS are the bitwise-or of the traits that apply to that core.
+   This need not include flags implied by the architecture.
+   COSTS is the name of the rtx_costs routine to use.
+   IMP is the implementer ID of the CPU vendor.  On a GNU/Linux system it
+   can be found in /proc/cpuinfo. A partial list of implementer IDs is
+   given in the ARM Architecture Reference Manual ARMv8, for
+   ARMv8-A architecture profile.
+   PART is the part number of the CPU.  On a GNU/Linux system it can be
+   found in /proc/cpuinfo.  For big.LITTLE systems this should use the
+   macro AARCH64_BIG_LITTLE where the big part number comes as the first
+   argument to the macro and little is the second.
+   VARIANT is the variant of the CPU.  In a GNU/Linux system it can found
+   in /proc/cpuinfo.  If this is -1, this means it can match any variant.  */
+
+/* ARMv8-A Architecture Processors.  */
+
+/* ARM ('A') cores. */
+AARCH64_CORE("cortex-a35",  cortexa35, cortexa53, 8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC, cortexa35, 0x41, 0xd04, -1)
+AARCH64_CORE("cortex-a53",  cortexa53, cortexa53, 8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC, cortexa53, 0x41, 0xd03, -1)
+AARCH64_CORE("cortex-a57",  cortexa57, cortexa57, 8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC, cortexa57, 0x41, 0xd07, -1)
+AARCH64_CORE("cortex-a72",  cortexa72, cortexa57, 8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC, cortexa72, 0x41, 0xd08, -1)
+AARCH64_CORE("cortex-a73",  cortexa73, cortexa57, 8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC, cortexa73, 0x41, 0xd09, -1)
+
+/* Cavium ('C') cores. */
+AARCH64_CORE("thunderx",      thunderx,      thunderx,  8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC | AARCH64_FL_CRYPTO, thunderx,  0x43, 0x0a0, -1)
+/* Do not swap around "thunderxt88p1" and "thunderxt88",
+   this order is required to handle variant correctly. */
+AARCH64_CORE("thunderxt88p1", thunderxt88p1, thunderx,  8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC | AARCH64_FL_CRYPTO,	thunderxt88,  0x43, 0x0a1, 0)
+AARCH64_CORE("thunderxt88",   thunderxt88,   thunderx,  8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC | AARCH64_FL_CRYPTO, thunderxt88,  0x43, 0x0a1, -1)
+AARCH64_CORE("thunderxt81",   thunderxt81,   thunderx,  8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC | AARCH64_FL_CRYPTO, thunderx,  0x43, 0x0a2, -1)
+AARCH64_CORE("thunderxt83",   thunderxt83,   thunderx,  8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC | AARCH64_FL_CRYPTO, thunderx,  0x43, 0x0a3, -1)
+
+/* APM ('P') cores. */
+AARCH64_CORE("xgene1",      xgene1,    xgene1,    8A,  AARCH64_FL_FOR_ARCH8, xgene1, 0x50, 0x000, -1)
+
+/* Qualcomm ('Q') cores. */
+AARCH64_CORE("falkor",      falkor,    falkor,    8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC | AARCH64_FL_CRYPTO | AARCH64_FL_RDMA, qdf24xx,   0x51, 0xC00, -1)
+AARCH64_CORE("qdf24xx",     qdf24xx,   falkor,    8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC | AARCH64_FL_CRYPTO | AARCH64_FL_RDMA, qdf24xx,   0x51, 0xC00, -1)
+
+/* Samsung ('S') cores. */
+AARCH64_CORE("exynos-m1",   exynosm1,  exynosm1,  8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC | AARCH64_FL_CRYPTO, exynosm1,  0x53, 0x001, -1)
+
+/* ARMv8.1-A Architecture Processors.  */
+
+/* Broadcom ('B') cores. */
+AARCH64_CORE("thunderx2t99p1",  thunderx2t99p1, thunderx2t99, 8_1A,  AARCH64_FL_FOR_ARCH8_1 | AARCH64_FL_CRYPTO, thunderx2t99, 0x42, 0x516, -1)
+AARCH64_CORE("vulcan",  vulcan, thunderx2t99, 8_1A,  AARCH64_FL_FOR_ARCH8_1 | AARCH64_FL_CRYPTO, thunderx2t99, 0x42, 0x516, -1)
+
+/* Cavium ('C') cores. */
+AARCH64_CORE("thunderx2t99",  thunderx2t99,  thunderx2t99, 8_1A,  AARCH64_FL_FOR_ARCH8_1 | AARCH64_FL_CRYPTO, thunderx2t99, 0x43, 0x0af, -1)
+
+/* ARMv8.2-A Architecture Processors.  */
+
+/* ARM ('A') cores. */
+AARCH64_CORE("cortex-a55",  cortexa55, cortexa53, 8_2A,  AARCH64_FL_FOR_ARCH8_2 | AARCH64_FL_F16 | AARCH64_FL_RCPC | AARCH64_FL_DOTPROD, cortexa53, 0x41, 0xd05, -1)
+AARCH64_CORE("cortex-a75",  cortexa75, cortexa57, 8_2A,  AARCH64_FL_FOR_ARCH8_2 | AARCH64_FL_F16 | AARCH64_FL_RCPC | AARCH64_FL_DOTPROD, cortexa73, 0x41, 0xd0a, -1)
+
+/* ARMv8.3-A Architecture Processors.  */
+
+/* Qualcomm ('Q') cores. */
+AARCH64_CORE("saphira",     saphira,    falkor,    8_3A,  AARCH64_FL_FOR_ARCH8_3 | AARCH64_FL_CRYPTO | AARCH64_FL_RCPC, saphira,   0x51, 0xC01, -1)
+
+/* ARMv8-A big.LITTLE implementations.  */
+
+AARCH64_CORE("cortex-a57.cortex-a53",  cortexa57cortexa53, cortexa53, 8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC, cortexa57, 0x41, AARCH64_BIG_LITTLE (0xd07, 0xd03), -1)
+AARCH64_CORE("cortex-a72.cortex-a53",  cortexa72cortexa53, cortexa53, 8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC, cortexa72, 0x41, AARCH64_BIG_LITTLE (0xd08, 0xd03), -1)
+AARCH64_CORE("cortex-a73.cortex-a35",  cortexa73cortexa35, cortexa53, 8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC, cortexa73, 0x41, AARCH64_BIG_LITTLE (0xd09, 0xd04), -1)
+AARCH64_CORE("cortex-a73.cortex-a53",  cortexa73cortexa53, cortexa53, 8A,  AARCH64_FL_FOR_ARCH8 | AARCH64_FL_CRC, cortexa73, 0x41, AARCH64_BIG_LITTLE (0xd09, 0xd03), -1)
+
+/* ARM DynamIQ big.LITTLE configurations.  */
+
+AARCH64_CORE("cortex-a75.cortex-a55",  cortexa75cortexa55, cortexa53, 8_2A,  AARCH64_FL_FOR_ARCH8_2 | AARCH64_FL_F16 | AARCH64_FL_RCPC | AARCH64_FL_DOTPROD, cortexa73, 0x41, AARCH64_BIG_LITTLE (0xd0a, 0xd05), -1)
+
+#undef AARCH64_CORE

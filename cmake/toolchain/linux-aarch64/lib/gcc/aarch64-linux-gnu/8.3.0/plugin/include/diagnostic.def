@@ -1,0 +1,50 @@
+/* Copyright (C) 2001-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+/* DK_UNSPECIFIED must be first so it has a value of zero.  We never
+   assign this kind to an actual diagnostic, we only use this in
+   variables that can hold a kind, to mean they have yet to have a
+   kind specified.  I.e. they're uninitialized.  Within the diagnostic
+   machinery, this kind also means "don't change the existing kind",
+   meaning "no change is specified".  */
+DEFINE_DIAGNOSTIC_KIND (DK_UNSPECIFIED, "", NULL)
+
+/* If a diagnostic is set to DK_IGNORED, it won't get reported at all.
+   This is used by the diagnostic machinery when it wants to disable a
+   diagnostic without disabling the option which causes it.  */
+DEFINE_DIAGNOSTIC_KIND (DK_IGNORED, "", NULL)
+
+/* The remainder are real diagnostic types.  */
+DEFINE_DIAGNOSTIC_KIND (DK_FATAL, "fatal error: ", "error")
+DEFINE_DIAGNOSTIC_KIND (DK_ICE, "internal compiler error: ", "error")
+DEFINE_DIAGNOSTIC_KIND (DK_ERROR, "error: ", "error")
+DEFINE_DIAGNOSTIC_KIND (DK_SORRY, "sorry, unimplemented: ", "error")
+DEFINE_DIAGNOSTIC_KIND (DK_WARNING, "warning: ", "warning")
+DEFINE_DIAGNOSTIC_KIND (DK_ANACHRONISM, "anachronism: ", "warning")
+DEFINE_DIAGNOSTIC_KIND (DK_NOTE, "note: ", "note")
+DEFINE_DIAGNOSTIC_KIND (DK_DEBUG, "debug: ", "note")
+/* These two would be re-classified as DK_WARNING or DK_ERROR, so the
+prefix does not matter.  */
+DEFINE_DIAGNOSTIC_KIND (DK_PEDWARN, "pedwarn: ", NULL)
+DEFINE_DIAGNOSTIC_KIND (DK_PERMERROR, "permerror: ", NULL)
+/* This one is just for counting DK_WARNING promoted to DK_ERROR
+   due to -Werror and -Werror=warning.  */
+DEFINE_DIAGNOSTIC_KIND (DK_WERROR, "error: ", NULL)
+/* This is like DK_ICE, but backtrace is not printed.  Used in the driver
+   when reporting fatal signal in the compiler.  */
+DEFINE_DIAGNOSTIC_KIND (DK_ICE_NOBT, "internal compiler error: ", "error")

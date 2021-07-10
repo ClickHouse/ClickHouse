@@ -1,0 +1,197 @@
+/* This file contains the list of the debug counter for GCC.
+   Copyright (C) 2006-2018 Free Software Foundation, Inc.
+
+This file is part of GCC.
+
+GCC is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 3, or (at your option) any later
+version.
+
+GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License
+along with GCC; see the file COPYING3.  If not see
+<http://www.gnu.org/licenses/>.  */
+
+
+/* A debug counter provides you a way to count an event
+   and return false after the counter has exceeded the threshold
+   specified by the option.
+
+   What is it used for ?
+
+   This is primarily used to speed up the search for the bad transformation
+   an optimization pass does. By doing a binary search on N,
+   you can quickly narrow down to one transformation
+   which is bad, or which triggers the bad behavior downstream
+   (usually in the form of the badly generated code).
+
+   How does it work ?
+
+   Every time dbg_cnt(named-counter) is called,
+   the counter is incremented for the named-counter.
+   And the incremented value is compared against the threshold (limit)
+   specified by the option.
+   dbg_cnt () returns true if it is at or below threshold, and false if above.
+
+   How to add a new one ?
+
+   To add a new counter, simply add an entry below with some descriptive name,
+   and add call(s) to dbg_cnt(your-counter-name) in appropriate places.
+   Usually, you want to control at the finest granularity
+   any particular transformation can happen.
+   e.g. for each instruction in a dead code elimination,
+   or for each copy instruction in register coalescing,
+   or constant-propagation for each insn,
+   or a block straightening, etc.
+   See dce.c for an example. With the dbg_cnt () call in dce.c,
+   now a developer can use -fdbg-cnt=dce:N
+   to stop doing the dead code elimination after N times.
+
+   How to use it ?
+
+   By default, all limits are UINT_MAX.
+   Since debug count is unsigned int, <= UINT_MAX returns true always.
+   i.e.  dbg_cnt() returns true always regardless of the counter value
+   (although it still counts the event).
+   Use -fdbg-cnt=counter1:N,counter2:M,...
+   which sets the limit for counter1 to N, and the limit for counter2 to M, etc.
+   e.g. setting a limit to zero will make dbg_cnt () return false *always*.
+
+   The following shell file can then be used to binary search for
+   exact transformation that causes the bug.  A second shell script
+   should be written, say "tryTest", which exits with 1 if the
+   compiled program fails and exits with 0 if the program succeeds.
+   This shell script should take 1 parameter, the value to be passed
+   to set the counter of the compilation command in tryTest.  Then,
+   assuming that the following script is called binarySearch,
+   the command:
+
+	binarySearch tryTest
+
+   will automatically find the highest value of the counter for which
+   the program fails.  If tryTest never fails, binarySearch will
+   produce unpredictable results as it will try to find an upper bound
+   that does not exist.
+
+   When dbgcnt does hits the limit, it writes a comment in the current
+   dump_file of the form:
+
+       ***dbgcnt: limit reached for %s.***
+
+   Assuming that the dump file is logging the analysis/transformations
+   it is making, this pinpoints the exact position in the log file
+   where the problem transformation is being logged.
+
+=====================================
+#!/bin/bash
+
+while getopts "l:u:i:" opt
+do
+    case $opt in
+        l) lb="$OPTARG";;
+        u) ub="$OPTARG";;
+        i) init="$OPTARG";;
+        ?) usage; exit 3;;
+    esac
+done
+
+shift $(($OPTIND - 1))
+echo $@
+cmd=${1+"${@}"}
+
+lb=${lb:=0}
+init=${init:=100}
+
+$cmd $lb
+lb_val=$?
+if [ -z "$ub" ]; then
+    # find the upper bound
+    ub=$(($init + $lb))
+    true
+    while [ $? -eq $lb_val ]; do
+        ub=$(($ub * 10))
+        #ub=`expr $ub \* 10`
+        $cmd $ub
+    done
+fi
+
+echo command: $cmd
+
+true
+while [ `expr $ub - $lb` -gt 1 ]; do
+    try=$(($lb + ( $ub - $lb ) / 2))
+    $cmd $try
+    if [ $? -eq $lb_val ]; then
+        lb=$try
+    else
+        ub=$try
+    fi
+done
+
+echo lbound: $lb
+echo ubound: $ub
+
+=====================================
+
+*/
+
+/* Debug counter definitions.  */
+DEBUG_COUNTER (asan_use_after_scope)
+DEBUG_COUNTER (auto_inc_dec)
+DEBUG_COUNTER (ccp)
+DEBUG_COUNTER (cfg_cleanup)
+DEBUG_COUNTER (cprop)
+DEBUG_COUNTER (cse2_move2add)
+DEBUG_COUNTER (dce)
+DEBUG_COUNTER (dce_fast)
+DEBUG_COUNTER (dce_ud)
+DEBUG_COUNTER (delete_trivial_dead)
+DEBUG_COUNTER (devirt)
+DEBUG_COUNTER (df_byte_scan)
+DEBUG_COUNTER (dse)
+DEBUG_COUNTER (dse1)
+DEBUG_COUNTER (dse2)
+DEBUG_COUNTER (eipa_sra)
+DEBUG_COUNTER (gcse2_delete)
+DEBUG_COUNTER (global_alloc_at_func)
+DEBUG_COUNTER (global_alloc_at_reg)
+DEBUG_COUNTER (graphite_scop)
+DEBUG_COUNTER (hoist)
+DEBUG_COUNTER (hoist_insn)
+DEBUG_COUNTER (ia64_sched2)
+DEBUG_COUNTER (if_after_combine)
+DEBUG_COUNTER (if_after_reload)
+DEBUG_COUNTER (if_conversion)
+DEBUG_COUNTER (if_conversion_tree)
+DEBUG_COUNTER (ira_move)
+DEBUG_COUNTER (local_alloc_for_sched)
+DEBUG_COUNTER (merged_ipa_icf)
+DEBUG_COUNTER (postreload_cse)
+DEBUG_COUNTER (pre)
+DEBUG_COUNTER (pre_insn)
+DEBUG_COUNTER (prefetch)
+DEBUG_COUNTER (registered_jump_thread)
+DEBUG_COUNTER (sched2_func)
+DEBUG_COUNTER (sched_block)
+DEBUG_COUNTER (sched_breakdep)
+DEBUG_COUNTER (sched_func)
+DEBUG_COUNTER (sched_insn)
+DEBUG_COUNTER (sched_region)
+DEBUG_COUNTER (sel_sched_cnt)
+DEBUG_COUNTER (sel_sched_insn_cnt)
+DEBUG_COUNTER (sel_sched_region_cnt)
+DEBUG_COUNTER (sms_sched_loop)
+DEBUG_COUNTER (split_for_sched2)
+DEBUG_COUNTER (store_motion)
+DEBUG_COUNTER (stv_conversion)
+DEBUG_COUNTER (tail_call)
+DEBUG_COUNTER (treepre_insert)
+DEBUG_COUNTER (tree_sra)
+DEBUG_COUNTER (vect_loop)
+DEBUG_COUNTER (vect_slp)
+DEBUG_COUNTER (dom_unreachable_edges)
