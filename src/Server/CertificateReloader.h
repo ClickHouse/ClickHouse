@@ -22,11 +22,11 @@ namespace DB
 {
 
 /// The CertificateReloader singleton performs 2 functions:
-/// 1. Dynamic reloading of TLS key-pair when requested by main:
-///   Main notifies CertificateReloader when the config changes. On changed config,
-///   CertificateReloader reloads certs from disk.
+/// 1. Dynamic reloading of TLS key-pair when requested by server:
+///   Server config reloader notifies CertificateReloader when the config changes.
+///   On changed config, CertificateReloader reloads certs from disk.
 /// 2. Implement `SSL_CTX_set_cert_cb` to set certificate for a new connection:
-///   OpenSSL invokes `cert_reloader_dispatch_set_cert` to setup a connection.
+///   OpenSSL invokes a callback to setup a connection.
 class CertificateReloader
 {
 public:
@@ -47,9 +47,7 @@ public:
     /// Handle configuration reload
     void reload(const Poco::Util::AbstractConfiguration & config);
 
-    /// Add cert, key to SSL* connection. SetCertificate runs in an IO thread during
-    /// connection setup. SetCertificate is
-    /// establishing a new TLS connection.
+    /// A callback for OpenSSL
     int setCertificate(SSL * ssl);
 
 private:
