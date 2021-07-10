@@ -1150,7 +1150,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, "{}", getExceptionMessage(exception, true));
+        LOG_ERROR(log, getExceptionMessage(exception, true));
 
         if (responder && !responder_finished)
         {
