@@ -19,6 +19,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
@@ -978,7 +979,8 @@ public:
             !which.isDateTime64() &&
             !which.isUInt() &&
             !which.isFloat() &&
-            !which.isDecimal())
+            !which.isDecimal() &&
+            !which.isAggregateFunction())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -989,6 +991,15 @@ public:
     {
         const IColumn * column = arguments[0].column.get();
         ColumnPtr res_column;
+
+        WhichDataType which(column->getDataType());
+        if (which.isAggregateFunction())
+        {
+            const ColumnPtr to_string = castColumn(arguments[0], std::make_shared<DataTypeString>());
+            const auto * str_column = checkAndGetColumn<ColumnString>(to_string.get());
+            tryExecuteString(str_column, res_column);
+            return res_column;
+        }
 
         if (tryExecuteUInt<UInt8>(column, res_column) ||
             tryExecuteUInt<UInt16>(column, res_column) ||

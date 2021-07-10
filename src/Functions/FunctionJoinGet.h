@@ -28,7 +28,7 @@ public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
