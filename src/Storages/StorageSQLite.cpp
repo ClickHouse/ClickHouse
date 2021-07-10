@@ -1,6 +1,7 @@
 #include "StorageSQLite.h"
 
 #if USE_SQLITE
+#include <common/range.h>
 #include <DataStreams/SQLiteBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -12,10 +13,11 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <common/range.h>
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -23,7 +25,7 @@ namespace ErrorCodes
 
 StorageSQLite::StorageSQLite(
     const StorageID & table_id_,
-    std::shared_ptr<sqlite3> db_ptr_,
+    SQLitePtr sqlite_db_,
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -32,7 +34,7 @@ StorageSQLite::StorageSQLite(
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
     , global_context(context_)
-    , db_ptr(db_ptr_)
+    , sqlite_db(sqlite_db_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -67,8 +69,8 @@ Pipe StorageSQLite::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(
-        std::make_shared<SourceFromInputStream>(std::make_shared<SQLiteBlockInputStream>(db_ptr, query, sample_block, max_block_size)));
+    return Pipe(std::make_shared<SourceFromInputStream>(
+                std::make_shared<SQLiteBlockInputStream>(sqlite_db, query, sample_block, max_block_size)));
 }
 
 
@@ -78,23 +80,21 @@ public:
     explicit SQLiteBlockOutputStream(
         const StorageSQLite & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        std::shared_ptr<sqlite3> connection_,
-        const std::string & remote_table_name_)
+        StorageSQLite::SQLitePtr sqlite_db_,
+        const String & remote_table_name_)
         : storage{storage_}
         , metadata_snapshot(metadata_snapshot_)
-        , connection(connection_)
+        , sqlite_db(sqlite_db_)
         , remote_table_name(remote_table_name_)
     {
     }
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-
-    void writePrefix() override { }
-
     void write(const Block & block) override
     {
         WriteBufferFromOwnString sqlbuf;
+
         sqlbuf << "INSERT INTO ";
         sqlbuf << doubleQuoteString(remote_table_name);
         sqlbuf << " (";
@@ -108,15 +108,13 @@ public:
 
         sqlbuf << ") VALUES ";
 
-        auto writer
-            = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
         writer->write(block);
 
         sqlbuf << ";";
 
         char * err_message = nullptr;
-
-        int status = sqlite3_exec(connection.get(), sqlbuf.str().c_str(), nullptr, nullptr, &err_message);
+        int status = sqlite3_exec(sqlite_db.get(), sqlbuf.str().c_str(), nullptr, nullptr, &err_message);
 
         if (status != SQLITE_OK)
         {
@@ -126,56 +124,47 @@ public:
         }
     }
 
-    void writeSuffix() override { }
-
 private:
     const StorageSQLite & storage;
     StorageMetadataPtr metadata_snapshot;
-    std::shared_ptr<sqlite3> connection;
-    std::string remote_table_name;
+    StorageSQLite::SQLitePtr sqlite_db;
+    String remote_table_name;
 };
 
 
 BlockOutputStreamPtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
 {
-    return std::make_shared<SQLiteBlockOutputStream>(*this, metadata_snapshot, db_ptr, remote_table_name);
+    return std::make_shared<SQLiteBlockOutputStream>(*this, metadata_snapshot, sqlite_db, remote_table_name);
 }
+
 
 void registerStorageSQLite(StorageFactory & factory)
 {
-    factory.registerStorage(
-        "SQLite",
-        [](const StorageFactory::Arguments & args) -> StoragePtr {
-            ASTs & engine_args = args.engine_args;
+    factory.registerStorage("SQLite", [](const StorageFactory::Arguments & args) -> StoragePtr
+    {
+        ASTs & engine_args = args.engine_args;
 
-            if (engine_args.size() != 2)
-                throw Exception(
-                    "SQLite database requires 2 arguments: database path, table name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (engine_args.size() != 2)
+            throw Exception("SQLite database requires 2 arguments: database path, table name",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            for (auto & engine_arg : engine_args)
-                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-            const auto database_path = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-            const auto table_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        const auto database_path = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        const auto table_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-            sqlite3 * tmp_db_ptr = nullptr;
-            int status = sqlite3_open(database_path.c_str(), &tmp_db_ptr);
-            if (status != SQLITE_OK)
-            {
-                throw Exception(status, sqlite3_errstr(status));
-            }
+        sqlite3 * tmp_sqlite_db = nullptr;
+        int status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
+        if (status != SQLITE_OK)
+            throw Exception(status, sqlite3_errstr(status));
 
-            return StorageSQLite::create(
-                args.table_id,
-                std::shared_ptr<sqlite3>(tmp_db_ptr, sqlite3_close),
-                table_name,
-                args.columns,
-                args.constraints,
-                args.getContext());
-        },
-        {
-            .source_access_type = AccessType::SQLITE,
-        });
+        return StorageSQLite::create(args.table_id, std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close),
+                                     table_name, args.columns, args.constraints, args.getContext());
+    },
+    {
+        .source_access_type = AccessType::SQLITE,
+    });
 }
 
 }

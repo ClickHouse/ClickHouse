@@ -5,23 +5,25 @@
 #endif
 
 #if USE_SQLITE
-#include <sqlite3.h>
-
+#include <common/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
-#include <common/shared_ptr_helper.h>
+#include <sqlite3.h>
 
 
 namespace DB
 {
+
 class StorageSQLite final : public shared_ptr_helper<StorageSQLite>, public IStorage, public WithContext
 {
-    friend struct shared_ptr_helper<StorageSQLite>;
+friend struct shared_ptr_helper<StorageSQLite>;
 
 public:
+    using SQLitePtr = std::shared_ptr<sqlite3>;
+
     StorageSQLite(
         const StorageID & table_id_,
-        std::shared_ptr<sqlite3> db_ptr_,
+        SQLitePtr sqlite_db_,
         const String & remote_table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -43,7 +45,7 @@ public:
 private:
     String remote_table_name;
     ContextPtr global_context;
-    std::shared_ptr<sqlite3> db_ptr;
+    SQLitePtr sqlite_db;
 };
 
 }

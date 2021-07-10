@@ -5,22 +5,26 @@
 #endif
 
 #if USE_SQLITE
-
-#include <sqlite3.h>
-
 #include <Core/ExternalResultDescription.h>
 #include <DataStreams/IBlockInputStream.h>
+
+#include <sqlite3.h>
 
 
 namespace DB
 {
 class SQLiteBlockInputStream : public IBlockInputStream
 {
+using SQLitePtr = std::shared_ptr<sqlite3>;
+
 public:
-    SQLiteBlockInputStream(
-        std::shared_ptr<sqlite3> connection_, const std::string & query_str_, const Block & sample_block, UInt64 max_block_size_);
+    SQLiteBlockInputStream(SQLitePtr sqlite_db_,
+                           const String & query_str_,
+                           const Block & sample_block,
+                           UInt64 max_block_size_);
 
     String getName() const override { return "SQLite"; }
+
     Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
 private:
@@ -32,17 +36,19 @@ private:
     };
 
     void readPrefix() override;
+
     Block readImpl() override;
+
     void readSuffix() override;
 
-    void insertValue(IColumn & column,
-                     const ExternalResultDescription::ValueType type, size_t idx);
+    void insertValue(IColumn & column, const ExternalResultDescription::ValueType type, size_t idx);
 
     String query_str;
-    const UInt64 max_block_size;
+    UInt64 max_block_size;
+
     ExternalResultDescription description;
 
-    std::shared_ptr<sqlite3> connection;
+    SQLitePtr sqlite_db;
     std::unique_ptr<sqlite3_stmt, StatementDeleter> compiled_statement;
 };
 
