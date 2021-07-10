@@ -53,7 +53,6 @@ RUN apt-get update \
         libgrpc++-dev \
         rapidjson-dev \
         libsnappy-dev \
-        libparquet-dev \
         libthrift-dev \
         libutf8proc-dev \
         libbz2-dev \
