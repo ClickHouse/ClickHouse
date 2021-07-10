@@ -25,16 +25,14 @@ url(URL, format, structure)
 
 A table with the specified format and structure and with data from the defined `URL`.
 
-**Globs in URL**
+**Patterns in URL**
 
-Curly brackets in a URL are used to generate a set of shards or specify a failover addresses. 
+Patterns in curly brackets `{ }` are used to generate a set of shards or specify failover addresses. Multiple patterns are allowed in a single URL. The following pattern types are supported.
 
-- {*a*,*b*} - any number of variants separated by a comma. This pattern generates address with *a* and address with *b*.
-- {*n*..*m*} - a range of numbers. It generates addresses with an increasing indices from *n* to *m*.
-- {*0n*..*m*} - a range of numbers with leading zeroes. It preserves leading zeroes in indices.
-- {*a*|*b*} - any number of variants separated by a `|`. Specify a failover: variant *b* is used if address with *a* is not available.
-
-Several curly brackets may be used inside a single URL
+- {*a*,*b*} - Any number of variants separated by a comma. The pattern is replaced with `a` in the first shard address and it is replaced with `b` in the second shard address and so on.
+- {*n*..*m*} - A range of numbers. This pattern generates shard addresses with incrementing indices from *n* to *m*.
+- {*0n*..*0m*} - A range of numbers with leading zeroes. This modification preserves leading zeroes in indices.
+- {*a*|*b*} - Any number of variants separated by a `|`. The pattern specifies a failover: the URL address with *b* is used if the address with *a* is not available.
 
 **Examples**
 
@@ -52,10 +50,10 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-This query reads `table-08.csv`, `table-09.csv`, `table-10.csv` from `replica0.local`. If it fails it tries `replica1.local`. `replica2.local` is the last failover option.
+Using URL with patterns to read `table-08.csv`, `table-09.csv`, `table-10.csv` from `replica0.local`. If reading fails ClickHouse tries to read tables from `replica1.local`.
 
 ``` sql
-SELECT * FROM url('https://replica{0|1|2}.local/table-{08..10}.csv', 'CSV', 'column1 String, column2 Uint32') 3;
+SELECT * FROM url('https://replica{0|1}.local/table-{08..10}.csv', 'CSV', 'column1 String, column2 Uint32');
 ```
 
 
