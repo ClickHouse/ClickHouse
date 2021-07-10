@@ -1,39 +1,46 @@
 #include "SQLiteBlockInputStream.h"
 
 #if USE_SQLITE
+#include <common/range.h>
+#include <common/logger_useful.h>
+#include <Common/assert_cast.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <common/range.h>
 
-#include <common/logger_useful.h>
+#include <DataTypes/DataTypeNullable.h>
+
 
 namespace DB
 {
+
 SQLiteBlockInputStream::SQLiteBlockInputStream(
-    std::shared_ptr<sqlite3> connection_, const std::string & query_str_, const Block & sample_block, const UInt64 max_block_size_)
-    : query_str(query_str_), max_block_size(max_block_size_), connection(std::move(connection_))
+            SQLitePtr sqlite_db_,
+            const String & query_str_,
+            const Block & sample_block,
+            const UInt64 max_block_size_)
+    : query_str(query_str_)
+    , max_block_size(max_block_size_)
+    , sqlite_db(std::move(sqlite_db_))
 {
     description.init(sample_block);
 }
 
+
 void SQLiteBlockInputStream::readPrefix()
 {
     sqlite3_stmt * compiled_stmt = nullptr;
-    int status = sqlite3_prepare_v2(connection.get(), query_str.c_str(), query_str.size() + 1, &compiled_stmt, nullptr);
+    int status = sqlite3_prepare_v2(sqlite_db.get(), query_str.c_str(), query_str.size() + 1, &compiled_stmt, nullptr);
 
     if (status != SQLITE_OK)
-    {
         throw Exception(status, sqlite3_errstr(status));
-    }
 
     compiled_statement = std::unique_ptr<sqlite3_stmt, StatementDeleter>(compiled_stmt, StatementDeleter());
 }
+
 
 Block SQLiteBlockInputStream::readImpl()
 {
@@ -48,17 +55,20 @@ Block SQLiteBlockInputStream::readImpl()
         int status = sqlite3_step(compiled_statement.get());
 
         if (status == SQLITE_BUSY)
+        {
             continue;
+        }
         else if (status == SQLITE_DONE)
         {
             compiled_statement.reset();
             break;
         }
         else if (status != SQLITE_ROW)
-            throw Exception(status, sqlite3_errstr(status), sqlite3_errmsg(connection.get()));
+        {
+            throw Exception(status, sqlite3_errstr(status), sqlite3_errmsg(sqlite_db.get()));
+        }
 
         int column_count = sqlite3_column_count(compiled_statement.get());
-
         for (const auto idx : collections::range(0, column_count))
         {
             if (description.types[idx].second)
@@ -79,14 +89,16 @@ Block SQLiteBlockInputStream::readImpl()
 
     return description.sample_block.cloneWithColumns(std::move(columns));
 }
+
+
 void SQLiteBlockInputStream::readSuffix()
 {
     if (compiled_statement)
         compiled_statement.reset();
 }
 
-void SQLiteBlockInputStream::insertValue(
-    IColumn & column, const ExternalResultDescription::ValueType type, size_t idx)
+
+void SQLiteBlockInputStream::insertValue(IColumn & column, const ExternalResultDescription::ValueType type, size_t idx)
 {
     switch (type)
     {
