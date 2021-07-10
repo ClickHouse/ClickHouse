@@ -342,7 +342,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         QueryPlan plan;
 
         // It should output the result even the format is Null, for example EXPLAIN ESTIMATES select * from x format Null;
-        if (ast.format && ast.foramt->getColumnName() == "Null")
+        if (ast.format && ast.format->getColumnName() == "Null")
         {
             ast.format = nullptr;
         }
