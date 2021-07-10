@@ -86,29 +86,4 @@ private:
 
 }
 
-#else
-
-namespace DB
-{
-
-class CertificateReloader
-{
-public:
-    static CertificateReloader & instance()
-    {
-        static CertificateReloader instance;
-        return instance;
-    }
-
-    void init(const Poco::Util::AbstractConfiguration &)
-    {
-    }
-
-    void reload(const Poco::Util::AbstractConfiguration &)
-    {
-    }
-};
-
-}
-
 #endif
