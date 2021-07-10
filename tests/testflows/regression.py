@@ -7,9 +7,14 @@ append_path(sys.path, ".")
 from helpers.common import Pool, join, run_scenario
 from helpers.argparser import argparser
 
+xfails = {
+    "kerberos/config/principal and realm specified/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/26197")],
+}
+
 @TestModule
 @Name("clickhouse")
 @ArgumentParser(argparser)
+@XFails(xfails)
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """ClickHouse regression.
     """

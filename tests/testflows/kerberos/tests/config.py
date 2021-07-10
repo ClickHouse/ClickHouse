@@ -146,6 +146,7 @@ def multiple_principal(self):
 
 
 @TestFeature
+@Name("config")
 def config(self):
     """Perform ClickHouse Kerberos authentication testing for incorrect configuration files
     """
