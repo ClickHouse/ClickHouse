@@ -15,6 +15,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SQLITE_ENGINE_ERROR;
+    extern const int UNKNOWN_TABLE;
+}
+
 DatabaseSQLite::DatabaseSQLite(
         ContextPtr context_,
         const ASTStorage * database_engine_define_,
@@ -25,10 +31,14 @@ DatabaseSQLite::DatabaseSQLite(
     , log(&Poco::Logger::get("DatabaseSQLite"))
 {
     sqlite3 * tmp_sqlite_db = nullptr;
-
     int status = sqlite3_open(database_path_.c_str(), &tmp_sqlite_db);
+
     if (status != SQLITE_OK)
-        throw Exception(status, sqlite3_errstr(status));
+    {
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                        "Cannot access sqlite database. Error status: {}. Message: {}",
+                        status, sqlite3_errstr(status));
+    }
 
     sqlite_db = std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
 }
@@ -73,7 +83,9 @@ std::unordered_set<std::string> DatabaseSQLite::fetchTablesList() const
     {
         String err_msg(err_message);
         sqlite3_free(err_message);
-        throw Exception(status, "SQLITE_ERR {}: {}", status, err_msg);
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                        "Cannot fetch sqlite database tables. Error status: {}. Message: {}",
+                        status, err_msg);
     }
 
     return tables;
@@ -97,7 +109,9 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
     {
         String err_msg(err_message);
         sqlite3_free(err_message);
-        throw Exception(status, "SQLITE_ERR {}: {}", status, err_msg);
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                        "Cannot check sqlite table. Error status: {}. Message: {}",
+                        status, err_msg);
     }
 
     return (count != 0);
@@ -155,7 +169,8 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     if (!storage)
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "SQLite table {}.{} does not exist", database_name, table_name);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "SQLite table {}.{} does not exist",
+                            database_name, table_name);
         return nullptr;
     }
 

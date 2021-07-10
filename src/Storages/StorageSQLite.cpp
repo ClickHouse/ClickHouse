@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SQLITE_ENGINE_ERROR;
 }
 
 StorageSQLite::StorageSQLite(
@@ -120,7 +121,9 @@ public:
         {
             String err_msg(err_message);
             sqlite3_free(err_message);
-            throw Exception(status, "SQLITE_ERR {}: {}", status, err_msg);
+            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                            "Failed to execute sqlite INSERT query. Status: {}. Message: {}",
+                            status, err_msg);
         }
     }
 
@@ -157,7 +160,9 @@ void registerStorageSQLite(StorageFactory & factory)
         sqlite3 * tmp_sqlite_db = nullptr;
         int status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
         if (status != SQLITE_OK)
-            throw Exception(status, sqlite3_errstr(status));
+            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                            "Failed to open sqlite database. Status: {}. Message: {}",
+                            status, sqlite3_errstr(status));
 
         return StorageSQLite::create(args.table_id, std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close),
                                      table_name, args.columns, args.constraints, args.getContext());
