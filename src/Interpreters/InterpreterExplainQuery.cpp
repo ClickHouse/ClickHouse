@@ -243,7 +243,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
 BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
-    auto & ast = query->as<ASTExplainQuery &>();
+    const auto & ast = query->as<const ASTExplainQuery &>();
 
     Block sample_block = getSampleBlock(ast.getKind());
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
@@ -336,22 +336,17 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     else if (ast.getKind() == ASTExplainQuery::QueryEstimates)
     {
         if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
-            throw Exception("Only SELECT is supported for EXPLAIN ESTIMATES query", ErrorCodes::INCORRECT_QUERY);
+            throw Exception("Only SELECT is supported for EXPLAIN ESTIMATE query", ErrorCodes::INCORRECT_QUERY);
 
         auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
         QueryPlan plan;
 
-        // It should output the result even the format is Null, for example EXPLAIN ESTIMATES select * from x format Null;
-        if (ast.format && ast.format->getColumnName() == "Null")
-        {
-            ast.format = nullptr;
-        }
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
 
         if (settings.optimize)
             plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
-        plan.explainEstimates(res_columns);
+        plan.explainEstimate(res_columns);
     }
     if (ast.getKind() != ASTExplainQuery::QueryEstimates)
     {
