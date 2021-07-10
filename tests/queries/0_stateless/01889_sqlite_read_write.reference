@@ -1,6 +1,29 @@
-1	hi
-2	bye
-1
-2
-hi
-bye
+show database tables:
+table1
+table2
+describe table:
+col1	Nullable(String)					
+col2	Nullable(Int64)					
+col1	Nullable(Int64)					
+col2	Nullable(String)					
+describe table:
+CREATE TABLE SQLite.table1\n(\n    `col1` Nullable(String),\n    `col2` Nullable(Int64)\n)\nENGINE = SQLite
+CREATE TABLE SQLite.table2\n(\n    `col1` Nullable(Int64),\n    `col2` Nullable(String)\n)\nENGINE = SQLite
+select *:
+line1	1
+line2	2
+line3	3
+1	text1
+2	text2
+3	text3
+test insert:
+line4	4
+4	text4
+after delete:
+after detach:
+line1	1
+line2	2
+line3	3
+1	text1
+2	text2
+3	text3
