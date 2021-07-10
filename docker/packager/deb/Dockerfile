@@ -31,10 +31,6 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
-RUN  export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && wget -nv -O /tmp/arrow-keyring.deb "https://apache.bintray.com/arrow/ubuntu/apache-arrow-archive-keyring-latest-${CODENAME}.deb" \
-    && dpkg -i /tmp/arrow-keyring.deb
-
 # Libraries from OS are only needed to test the "unbundled" build (this is not used in production).
 RUN apt-get update \
     && apt-get install \
