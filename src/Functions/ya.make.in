@@ -3,13 +3,12 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 CFLAGS(
-    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
+    -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
     library/cpp/consistent_hashing
     contrib/libs/farmhash
-    contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
