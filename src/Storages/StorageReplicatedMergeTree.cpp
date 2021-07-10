@@ -552,6 +552,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
                 break;
         }
 
+        /// This replica inactive, don't check anything
+        if (!inactive_replicas.empty() && inactive_replicas.count(replica))
+            break;
+
         /// It maybe already removed from zk, but local in-memory mutations
         /// state was not updated.
         if (!getZooKeeper()->exists(fs::path(zookeeper_path) / "mutations" / mutation_id))
@@ -2104,6 +2108,10 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
         try
         {
             String part_name = entry.actual_new_part_name.empty() ? entry.new_part_name : entry.actual_new_part_name;
+
+            if (!entry.actual_new_part_name.empty())
+                LOG_DEBUG(log, "Will fetch part {} instead of {}", entry.actual_new_part_name, entry.new_part_name);
+
             if (!fetchPart(part_name, metadata_snapshot, fs::path(zookeeper_path) / "replicas" / replica, false, entry.quorum))
                 return false;
         }
@@ -6983,6 +6991,14 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         {
             if (throw_if_noop)
                 throw Exception("Part " + part_name + " not found locally, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
+            return false;
+        }
+
+        if (merge_pred.hasDropRange(part->info))
+        {
+            if (throw_if_noop)
+                throw Exception("Already has DROP RANGE for part " + part_name + " in queue.", ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+
             return false;
         }
 
