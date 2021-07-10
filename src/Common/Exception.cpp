@@ -435,6 +435,11 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
 
         stream << "Code: " << e.code() << ", e.displayText() = " << text;
 
+        if (!text.empty() && text.back() != '.')
+            stream << '.';
+
+        stream << " (" << ErrorCodes::getName(e.code()) << ")";
+
         if (with_stacktrace && !has_embedded_stack_trace)
             stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
     }
