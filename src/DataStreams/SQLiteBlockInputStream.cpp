@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SQLITE_ENGINE_ERROR;
+}
+
 SQLiteBlockInputStream::SQLiteBlockInputStream(
             SQLitePtr sqlite_db_,
             const String & query_str_,
@@ -36,7 +41,9 @@ void SQLiteBlockInputStream::readPrefix()
     int status = sqlite3_prepare_v2(sqlite_db.get(), query_str.c_str(), query_str.size() + 1, &compiled_stmt, nullptr);
 
     if (status != SQLITE_OK)
-        throw Exception(status, sqlite3_errstr(status));
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                        "Cannot prepate sqlite statement. Status: {}. Message: {}",
+                        status, sqlite3_errstr(status));
 
     compiled_statement = std::unique_ptr<sqlite3_stmt, StatementDeleter>(compiled_stmt, StatementDeleter());
 }
@@ -65,7 +72,9 @@ Block SQLiteBlockInputStream::readImpl()
         }
         else if (status != SQLITE_ROW)
         {
-            throw Exception(status, sqlite3_errstr(status), sqlite3_errmsg(sqlite_db.get()));
+            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                            "Expected SQLITE_ROW status, but got status {}. Error: {}, Message: {}",
+                            status, sqlite3_errstr(status), sqlite3_errmsg(sqlite_db.get()));
         }
 
         int column_count = sqlite3_column_count(compiled_statement.get());
