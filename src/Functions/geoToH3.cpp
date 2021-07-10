@@ -83,7 +83,7 @@ public:
             LatLng coord;
             coord.lng = degsToRads(lon);
             coord.lat = degsToRads(lat);
- 
+
             H3Index hindex;
             H3Error err = latLngToCell(&coord, res, &hindex);
             if (err)
