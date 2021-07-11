@@ -1,34 +1,25 @@
 #pragma once
 
-#if USE_SSL
+#if !defined(ARCADIA_BUILD)
+#include <Common/config.h>
+#endif
 
+#if USE_SSL
 #include <Disks/IDisk.h>
 #include <Disks/DiskDecorator.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFileBase.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+class ReadBufferFromFileBase;
+class WriteBufferFromFileBase;
 
 class DiskEncrypted : public DiskDecorator
 {
 public:
-    DiskEncrypted(const String & name_, DiskPtr disk_, const String & key_, const String & path_)
-        : DiskDecorator(disk_)
-        , name(name_), key(key_), disk_path(path_)
-        , disk_absolute_path(delegate->getPath() + disk_path)
-    {
-        initialize();
-    }
+    DiskEncrypted(const String & name_, DiskPtr disk_, const String & key_, const String & path_);
 
     const String & getName() const override { return name; }
-
     const String & getPath() const override { return disk_absolute_path; }
 
     ReservationPtr reserve(UInt64 bytes) override;
@@ -216,26 +207,15 @@ public:
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
-
 private:
+    void initialize();
+
     String wrappedPath(const String & path) const
     {
         // if path starts_with disk_path -> got already wrapped path
-        if (!disk_path.empty() && path.rfind(disk_path, 0) == 0)
+        if (!disk_path.empty() && path.starts_with(disk_path))
             return path;
         return disk_path + path;
-    }
-
-    void initialize()
-    {
-        // use wrapped_disk as an EncryptedDisk store
-        if (disk_path.empty())
-            return;
-
-        if (disk_path.back() != '/')
-            throw Exception("Disk path must ends with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
-
-        delegate->createDirectories(disk_path);
     }
 
     String name;
@@ -245,6 +225,5 @@ private:
 };
 
 }
-
 
 #endif
