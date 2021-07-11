@@ -27,9 +27,11 @@ ${CLICKHOUSE_CLIENT} --query="select 'select *:'";
 ${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_database.table1 ORDER BY col2'
 ${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_database.table2 ORDER BY col1;'
 
+sudo chmod 777 $CUR_DIR
 sqlite3 $CUR_DIR/db2 'DROP TABLE IF EXISTS table3'
 sqlite3 $CUR_DIR/db2 'CREATE TABLE table3 (col1 text, col2 int)'
 sqlite3 $CUR_DIR/db2 'INSERT INTO table3 VALUES (NULL, 2)'
+sudo chmod 665 ${DATA_FILE2}
 
 ${CLICKHOUSE_CLIENT} --query='DROP DATABASE IF EXISTS sqlite_database_2'
 ${CLICKHOUSE_CLIENT} --query="CREATE DATABASE sqlite_database_2 ENGINE = SQLite('${DATA_FILE2}')"
