@@ -932,7 +932,7 @@ public:
             return LUTIndex(0);
         auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
         UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
-        return LUTIndex{index < DATE_LUT_SIZE ? index : DATE_LUT_SIZE - 1};
+        return LUTIndex{index & date_lut_mask};
     }
 
     /// Create DayNum from year, month, day of month.
