@@ -1,6 +1,7 @@
 #include <Client/IClient.h>
 
 #include <iostream>
+#include <iomanip>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -12,6 +13,12 @@
 #include <Common/TerminalSize.h>
 #include <common/argsToConfig.h>
 #include <Common/clearPasswordFromCommandLine.h>
+#include <Common/filesystemHelpers.h>
+#include <common/LineReader.h>
+#include <Common/Config/configReadClient.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 
 namespace DB
@@ -21,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int UNRECOGNIZED_ARGUMENTS;
 }
+
 
 /// Should we celebrate a bit?
 bool IClient::isNewYearMode()
@@ -34,6 +42,7 @@ bool IClient::isNewYearMode()
     LocalDate now(current_time);
     return (now.month() == 12 && now.day() >= 20) || (now.month() == 1 && now.day() <= 5);
 }
+
 
 bool IClient::isChineseNewYearMode(const String & local_tz)
 {
@@ -103,6 +112,7 @@ bool IClient::isChineseNewYearMode(const String & local_tz)
     }
     return false;
 }
+
 
 #if USE_REPLXX
 void IClient::highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
@@ -176,6 +186,7 @@ void IClient::highlight(const String & query, std::vector<replxx::Replxx::Color>
 }
 #endif
 
+
 void IClient::clearTerminal()
 {
     /// Clear from cursor until end of screen.
@@ -186,10 +197,158 @@ void IClient::clearTerminal()
                     "\033[?25h";
 }
 
+
 static void showClientVersion()
 {
     std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
+
+
+void IClient::runInteractive()
+{
+    if (config().has("query_id"))
+        throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+    if (print_time_to_stderr)
+        throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+
+    /// Initialize DateLUT here to avoid counting time spent here as query execution time.
+    const auto local_tz = DateLUT::instance().getTimeZone();
+
+    suggest.emplace();
+    loadSuggestionDataIfPossible();
+
+    if (home_path.empty())
+    {
+        const char * home_path_cstr = getenv("HOME");
+        if (home_path_cstr)
+            home_path = home_path_cstr;
+
+        configReadClient(config(), home_path);
+    }
+
+    /// Load command history if present.
+    if (config().has("history_file"))
+        history_file = config().getString("history_file");
+    else
+    {
+        auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+        if (history_file_from_env)
+            history_file = history_file_from_env;
+        else if (!home_path.empty())
+            history_file = home_path + "/.clickhouse-client-history";
+    }
+
+    if (!history_file.empty() && !fs::exists(history_file))
+    {
+        /// Avoid TOCTOU issue.
+        try
+        {
+            FS::createFile(history_file);
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.getErrno() != EEXIST)
+                throw;
+        }
+    }
+
+    LineReader::Patterns query_extenders = {"\\"};
+    LineReader::Patterns query_delimiters = {";", "\\G"};
+
+#if USE_REPLXX
+    replxx::Replxx::highlighter_callback_t highlight_callback{};
+    if (config().getBool("highlight", true))
+        highlight_callback = highlight;
+
+    ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
+
+#elif defined(USE_READLINE) && USE_READLINE
+    ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
+#else
+    LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
+#endif
+
+    /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
+    ///  disabled, so that we are able to paste and execute multiline queries in a whole
+    ///  instead of erroring out, while be less intrusive.
+    if (config().has("multiquery") && !config().has("multiline"))
+        lr.enableBracketedPaste();
+
+    do
+    {
+        auto input = lr.readLine(prompt(), ":-] ");
+        if (input.empty())
+            break;
+
+        has_vertical_output_suffix = false;
+        if (input.ends_with("\\G"))
+        {
+            input.resize(input.size() - 2);
+            has_vertical_output_suffix = true;
+        }
+
+        if (!processQueryFromInteractive(input))
+            break;
+    }
+    while (true);
+
+    if (isNewYearMode())
+        std::cout << "Happy new year." << std::endl;
+    else if (isChineseNewYearMode(local_tz))
+        std::cout << "Happy Chinese new year. 春节快乐!" << std::endl;
+    else
+        std::cout << "Bye." << std::endl;
+}
+
+
+int IClient::mainImpl()
+{
+    if (isInteractive())
+        is_interactive = true;
+
+    if (config().has("query") && !queries_files.empty())
+        throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+
+    std::cout << std::fixed << std::setprecision(3);
+    std::cerr << std::fixed << std::setprecision(3);
+
+    if (is_interactive)
+    {
+
+        clearTerminal();
+        showClientVersion();
+    }
+    else
+    {
+        need_render_progress = config().getBool("progress", false);
+        echo_queries = config().getBool("echo", false);
+        ignore_error = config().getBool("ignore-error", false);
+    }
+
+    return childMainImpl();
+}
+
+
+int IClient::main(const std::vector<std::string> & /*args*/)
+{
+    try
+    {
+        return mainImpl();
+    }
+    catch (const Exception & e)
+    {
+        processMainImplException(e);
+
+        /// If exception code isn't zero, we should return non-zero return code anyway.
+        return e.code() ? e.code() : -1;
+    }
+    catch (...)
+    {
+        std::cerr << getCurrentExceptionMessage(false) << std::endl;
+        return getCurrentExceptionCode();
+    }
+}
+
 
 void IClient::init(int argc, char ** argv)
 {
@@ -250,7 +409,8 @@ void IClient::init(int argc, char ** argv)
     processOptions(options_description, options, external_tables_arguments);
 
     argsToConfig(common_arguments, config(), 100);
-    clearPasswordFromCommandLine(argc, argv);
+    if (supportPasswordOption())
+        clearPasswordFromCommandLine(argc, argv);
 }
 
 }

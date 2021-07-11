@@ -12,6 +12,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -191,15 +192,27 @@ static void attachSystemTables(ContextPtr context)
     attachSystemTablesLocal(*system_database);
 }
 
+void LocalServer::processMainImplException(const Exception &)
+{
+    try
+    {
+        cleanup();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
-int LocalServer::main(const std::vector<std::string> & /*args*/)
-try
+    std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+}
+
+int LocalServer::childMainImpl()
 {
     Poco::Logger * log = &logger();
     ThreadStatus thread_status;
     UseSSL use_ssl;
 
-    if (!config().has("query") && !config().has("table-structure") && !config().has("queries-file")) /// Nothing to process
+    if (!is_interactive && !config().has("query") && !config().has("table-structure") && !config().has("queries-file")) /// Nothing to process
     {
         if (config().hasOption("verbose"))
             std::cerr << "There are no queries to process." << '\n';
@@ -208,9 +221,19 @@ try
     }
 
     if (config().has("query") && config().has("queries-file"))
-    {
         throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
-    }
+
+    echo_queries = config().hasOption("echo") || config().hasOption("verbose");
+
+    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+    server_display_name = config().getString("display_name", getFQDNOrHostName());
+
+    /// Prompt may contain the following substitutions in a form of {name}.
+    std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
+
+    /// Quite suboptimal.
+    for (const auto & [key, value] : prompt_substitutions)
+        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
@@ -301,7 +324,40 @@ try
         attachSystemTables(global_context);
     }
 
-    processQueries();
+    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
+    /// so we can't reuse it safely as a query context and need a copy here
+    query_context = Context::createCopy(global_context);
+
+    query_context->makeSessionContext();
+    query_context->makeQueryContext();
+
+    query_context->setUser("default", "", Poco::Net::SocketAddress{});
+    query_context->setCurrentQueryId("");
+    applyCmdSettings(query_context);
+
+    /// Use the same query_id (and thread group) for all queries
+    CurrentThread::QueryScope query_scope_holder(query_context);
+
+    if (need_render_progress)
+    {
+        query_context->setProgressCallback([&](const Progress & value)
+        {
+            /// Write progress only if progress was updated
+            if (progress_indication.updateProgress(value))
+                progress_indication.writeProgress();
+        });
+
+        progress_indication.setFileProgressCallback(query_context);
+    }
+
+    if (is_interactive)
+    {
+        runInteractive();
+    }
+    else
+    {
+        processQueries();
+    }
 
     global_context->shutdown();
     global_context.reset();
@@ -311,23 +367,6 @@ try
 
     return Application::EXIT_OK;
 }
-catch (const Exception & e)
-{
-    try
-    {
-        cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
-
-    /// If exception code isn't zero, we should return non-zero return code anyway.
-    return e.code() ? e.code() : -1;
-}
-
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
@@ -351,6 +390,37 @@ std::string LocalServer::getInitialCreateTableQuery()
     "; ";
 }
 
+void LocalServer::processQuery(const String & query, std::exception_ptr exception)
+{
+    written_first_block = false;
+    progress_indication.resetProgress();
+
+    ReadBufferFromString read_buf(query);
+    WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
+
+    if (echo_queries)
+    {
+        writeString(query, write_buf);
+        writeChar('\n', write_buf);
+        write_buf.next();
+    }
+
+    try
+    {
+        std::cerr << "executing query\n";
+        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {});
+    }
+    catch (...)
+    {
+        if (!config().hasOption("ignore-error"))
+            throw;
+
+        if (!exception)
+            exception = std::current_exception();
+
+        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+    }
+}
 
 void LocalServer::processQueries()
 {
@@ -375,69 +445,11 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
-    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
-    /// so we can't reuse it safely as a query context and need a copy here
-    auto context = Context::createCopy(global_context);
-
-    context->makeSessionContext();
-    context->makeQueryContext();
-
-    context->setUser("default", "", Poco::Net::SocketAddress{});
-    context->setCurrentQueryId("");
-    applyCmdSettings(context);
-
-    /// Use the same query_id (and thread group) for all queries
-    CurrentThread::QueryScope query_scope_holder(context);
-
-    ///Set progress show
-    need_render_progress = config().getBool("progress", false);
-
-    if (need_render_progress)
-    {
-        context->setProgressCallback([&](const Progress & value)
-        {
-            /// Write progress only if progress was updated
-            if (progress_indication.updateProgress(value))
-                progress_indication.writeProgress();
-        });
-    }
-
-    bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
-
-    if (need_render_progress)
-        progress_indication.setFileProgressCallback(context);
-
     std::exception_ptr exception;
 
     for (const auto & query : queries)
     {
-        written_first_block = false;
-        progress_indication.resetProgress();
-
-        ReadBufferFromString read_buf(query);
-        WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
-
-        if (echo_queries)
-        {
-            writeString(query, write_buf);
-            writeChar('\n', write_buf);
-            write_buf.next();
-        }
-
-        try
-        {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {});
-        }
-        catch (...)
-        {
-            if (!config().hasOption("ignore-error"))
-                throw;
-
-            if (!exception)
-                exception = std::current_exception();
-
-            std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
-        }
+        processQuery(query, exception);
     }
 
     if (exception)
@@ -464,14 +476,12 @@ static const char * minimal_default_user_xml =
 "    </quotas>"
 "</yandex>";
 
-
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
     std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }
-
 
 void LocalServer::setupUsers()
 {
@@ -533,6 +543,12 @@ static std::string getHelpFooter()
             " BY mem_total DESC FORMAT PrettyCompact\"";
 }
 
+bool LocalServer::isInteractive()
+{
+    /// Nothing to process
+    return stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
+}
+
 void LocalServer::printHelpMessage(const OptionsDescription & options_description)
 {
     std::cout << getHelpHeader() << "\n";
@@ -569,7 +585,6 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("version,V", "print version information and exit")
         ("progress", "print progress of queries execution")
         ;
-
 }
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & arguments, std::vector<Arguments> &)
@@ -621,6 +636,9 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setBool("ignore-error", true);
     if (options.count("no-system-tables"))
         config().setBool("no-system-tables", true);
+
+    if (options.count("queries-file"))
+        queries_files = options["queries-file"].as<std::vector<std::string>>();
 }
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
