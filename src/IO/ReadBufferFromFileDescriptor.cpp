@@ -162,7 +162,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         watch.stop();
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-        file_offset_of_buffer_end = new_pos;
+        file_offset_of_buffer_end = seek_pos;
 
         if (offset_after_seek_pos > 0)
             ignore(offset_after_seek_pos);
