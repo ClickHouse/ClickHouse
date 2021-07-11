@@ -8,7 +8,7 @@ Columns:
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
 -   `name` ([String](../../sql-reference/data-types/string.md)) — Index name.
 -   `type` ([String](../../sql-reference/data-types/string.md)) — Index type.
--   `expr` ([String](../../sql-reference/data-types/string.md)) — The expression is used to calculate the index.
+-   `expr` ([String](../../sql-reference/data-types/string.md)) — Expression for the index calculation.
 -   `granularity` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of granules in the block.
 
 **Example**
