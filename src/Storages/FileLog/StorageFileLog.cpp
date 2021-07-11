@@ -38,9 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -270,7 +268,8 @@ void registerStorageFileLog(StorageFactory & factory)
         size_t args_count = engine_args.size();
 
         if (args_count != 2)
-            throw Exception("Arguments size of StorageFileLog should be 2, path and format name", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(
+                "Arguments size of StorageFileLog should be 2, path and format name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         auto path_ast = evaluateConstantExpressionAsLiteral(engine_args[0], args.getContext());
         auto format_ast = evaluateConstantExpressionAsLiteral(engine_args[1], args.getContext());

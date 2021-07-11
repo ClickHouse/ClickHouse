@@ -4,6 +4,7 @@
 #include <Poco/Foundation.h>
 #include <Poco/Path.h>
 
+#include <memory>
 #include <mutex>
 
 class FileLogDirectoryWatcher
