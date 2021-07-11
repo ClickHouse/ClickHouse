@@ -56,10 +56,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         auto align_up = [=](size_t value) { return (value + min_alignment - 1) / min_alignment * min_alignment; };
 
-        if (alignment % min_alignment)
-        {
+        if (alignment == 0)
+            alignment = min_alignment;
+        else if (alignment % min_alignment)
             alignment = align_up(alignment);
-        }
 
         if (buffer_size % min_alignment)
         {
