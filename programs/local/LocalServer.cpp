@@ -48,6 +48,7 @@
 
 namespace fs = std::filesystem;
 
+
 namespace DB
 {
 
@@ -102,10 +103,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 }
 
-void LocalServer::applyCmdSettings(ContextMutablePtr context)
-{
-    context->applySettingsChanges(cmd_settings.changes());
-}
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
@@ -192,6 +189,20 @@ static void attachSystemTables(ContextPtr context)
     attachSystemTablesLocal(*system_database);
 }
 
+
+void LocalServer::cleanup()
+{
+    // Delete the temporary directory if needed.
+    if (temporary_directory_to_delete)
+    {
+        const auto dir = *temporary_directory_to_delete;
+        temporary_directory_to_delete.reset();
+        LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
+        remove_all(dir);
+    }
+}
+
+
 void LocalServer::processMainImplException(const Exception &)
 {
     try
@@ -205,6 +216,167 @@ void LocalServer::processMainImplException(const Exception &)
 
     std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
 }
+
+
+void LocalServer::reportQueryError() const
+{
+}
+
+
+std::string LocalServer::getInitialCreateTableQuery()
+{
+    if (!config().has("table-structure"))
+        return {};
+
+    auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
+    auto table_structure = config().getString("table-structure");
+    auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
+
+    String table_file;
+    if (!config().has("table-file") || config().getString("table-file") == "-")
+    {
+        /// Use Unix tools stdin naming convention
+        table_file = "stdin";
+    }
+    else
+    {
+        /// Use regular file
+        table_file = quoteString(config().getString("table-file"));
+    }
+
+    return fmt::format("CREATE TABLE {} ({}) ENGINE = File({}, {});",
+                       table_name, table_structure, data_format, table_file);
+}
+
+
+void LocalServer::processQuery(const String & query, std::exception_ptr exception)
+{
+    written_first_block = false;
+    progress_indication.resetProgress();
+
+    ReadBufferFromString read_buf(query);
+    WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
+
+    if (echo_queries)
+    {
+        writeString(query, write_buf);
+        writeChar('\n', write_buf);
+        write_buf.next();
+    }
+
+    std::function<void()> finalize_progress;
+    if (need_render_progress)
+    {
+        /// Set finalizing callback for progress, which is called right before finalizing query output.
+        finalize_progress = [&]()
+        {
+            progress_indication.clearProgressOutput();
+        };
+    }
+
+    try
+    {
+        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, finalize_progress);
+    }
+    catch (...)
+    {
+        if (!config().hasOption("ignore-error"))
+            throw;
+
+        if (!exception)
+            exception = std::current_exception();
+
+        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+    }
+}
+
+
+void LocalServer::processQueries()
+{
+    String initial_create_query = getInitialCreateTableQuery();
+    String queries_str = initial_create_query;
+
+    if (config().has("query"))
+        queries_str += config().getRawString("query");
+    else
+    {
+        String queries_from_file;
+        ReadBufferFromFile in(config().getString("queries-file"));
+        readStringUntilEOF(queries_from_file, in);
+        queries_str += queries_from_file;
+    }
+
+    const auto & settings = global_context->getSettingsRef();
+
+    std::vector<String> queries;
+    auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
+
+    if (!parse_res.second)
+        throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
+
+    std::exception_ptr exception;
+
+    for (const auto & query : queries)
+    {
+        processQuery(query, exception);
+    }
+
+    if (exception)
+        std::rethrow_exception(exception);
+}
+
+
+static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
+{
+    std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::XML::InputSource input_source{ss};
+    return {new Poco::Util::XMLConfiguration{&input_source}};
+}
+
+
+void LocalServer::setupUsers()
+{
+    static const char * minimal_default_user_xml =
+        "<yandex>"
+        "    <profiles>"
+        "        <default></default>"
+        "    </profiles>"
+        "    <users>"
+        "        <default>"
+        "            <password></password>"
+        "            <networks>"
+        "                <ip>::/0</ip>"
+        "            </networks>"
+        "            <profile>default</profile>"
+        "            <quota>default</quota>"
+        "        </default>"
+        "    </users>"
+        "    <quotas>"
+        "        <default></default>"
+        "    </quotas>"
+        "</yandex>";
+
+    ConfigurationPtr users_config;
+
+    if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
+    {
+        const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
+        ConfigProcessor config_processor(users_config_path);
+        const auto loaded_config = config_processor.loadConfig();
+        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
+        users_config = loaded_config.configuration;
+    }
+    else
+    {
+        users_config = getConfigurationFromXMLString(minimal_default_user_xml);
+    }
+
+    if (users_config)
+        global_context->setUsersConfig(users_config);
+    else
+        throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
+}
+
 
 int LocalServer::childMainImpl()
 {
@@ -370,164 +542,6 @@ int LocalServer::childMainImpl()
     return Application::EXIT_OK;
 }
 
-std::string LocalServer::getInitialCreateTableQuery()
-{
-    if (!config().has("table-structure"))
-        return {};
-
-    auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
-    auto table_structure = config().getString("table-structure");
-    auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
-    String table_file;
-    if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
-        table_file = "stdin";
-    else /// Use regular file
-        table_file = quoteString(config().getString("table-file"));
-
-    return
-    "CREATE TABLE " + table_name +
-        " (" + table_structure + ") " +
-    "ENGINE = "
-        "File(" + data_format + ", " + table_file + ")"
-    "; ";
-}
-
-void LocalServer::processQuery(const String & query, std::exception_ptr exception)
-{
-    written_first_block = false;
-    progress_indication.resetProgress();
-
-    ReadBufferFromString read_buf(query);
-    WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
-
-    if (echo_queries)
-    {
-        writeString(query, write_buf);
-        writeChar('\n', write_buf);
-        write_buf.next();
-    }
-
-    std::function<void()> finalize_progress;
-    if (need_render_progress)
-    {
-        /// Set finalizing callback for progress, which is called right before finalizing query output.
-        finalize_progress = [&]()
-        {
-            progress_indication.clearProgressOutput();
-        };
-    }
-
-    try
-    {
-        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, finalize_progress);
-    }
-    catch (...)
-    {
-        if (!config().hasOption("ignore-error"))
-            throw;
-
-        if (!exception)
-            exception = std::current_exception();
-
-        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
-    }
-}
-
-void LocalServer::processQueries()
-{
-    String initial_create_query = getInitialCreateTableQuery();
-    String queries_str = initial_create_query;
-
-    if (config().has("query"))
-        queries_str += config().getRawString("query");
-    else
-    {
-        String queries_from_file;
-        ReadBufferFromFile in(config().getString("queries-file"));
-        readStringUntilEOF(queries_from_file, in);
-        queries_str += queries_from_file;
-    }
-
-    const auto & settings = global_context->getSettingsRef();
-
-    std::vector<String> queries;
-    auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
-
-    if (!parse_res.second)
-        throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
-
-    std::exception_ptr exception;
-
-    for (const auto & query : queries)
-    {
-        processQuery(query, exception);
-    }
-
-    if (exception)
-        std::rethrow_exception(exception);
-}
-
-static const char * minimal_default_user_xml =
-"<yandex>"
-"    <profiles>"
-"        <default></default>"
-"    </profiles>"
-"    <users>"
-"        <default>"
-"            <password></password>"
-"            <networks>"
-"                <ip>::/0</ip>"
-"            </networks>"
-"            <profile>default</profile>"
-"            <quota>default</quota>"
-"        </default>"
-"    </users>"
-"    <quotas>"
-"        <default></default>"
-"    </quotas>"
-"</yandex>";
-
-static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
-{
-    std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::XML::InputSource input_source{ss};
-    return {new Poco::Util::XMLConfiguration{&input_source}};
-}
-
-void LocalServer::setupUsers()
-{
-    ConfigurationPtr users_config;
-
-    if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
-    {
-        const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-        ConfigProcessor config_processor(users_config_path);
-        const auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
-        users_config = loaded_config.configuration;
-    }
-    else
-    {
-        users_config = getConfigurationFromXMLString(minimal_default_user_xml);
-    }
-
-    if (users_config)
-        global_context->setUsersConfig(users_config);
-    else
-        throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
-}
-
-void LocalServer::cleanup()
-{
-    // Delete the temporary directory if needed.
-    if (temporary_directory_to_delete)
-    {
-        const auto dir = *temporary_directory_to_delete;
-        temporary_directory_to_delete.reset();
-        LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
-        remove_all(dir);
-    }
-}
 
 static std::string getHelpHeader()
 {
@@ -544,6 +558,7 @@ static std::string getHelpHeader()
         "Either through corresponding command line parameters --table --structure --input-format and --file.";
 }
 
+
 static std::string getHelpFooter()
 {
     return
@@ -554,11 +569,13 @@ static std::string getHelpFooter()
             " BY mem_total DESC FORMAT PrettyCompact\"";
 }
 
+
 bool LocalServer::isInteractive()
 {
     /// Nothing to process
     return stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
 }
+
 
 void LocalServer::printHelpMessage(const OptionsDescription & options_description)
 {
@@ -566,6 +583,7 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
 }
+
 
 void LocalServer::addOptions(OptionsDescription & options_description)
 {
@@ -598,11 +616,26 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ;
 }
 
+
+void LocalServer::applyCmdSettings(ContextMutablePtr context)
+{
+    context->applySettingsChanges(cmd_settings.changes());
+}
+
+
+void LocalServer::applyCmdOptions(ContextMutablePtr context)
+{
+    context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    applyCmdSettings(context);
+}
+
+
 void LocalServer::readArguments(int argc, char ** argv, Arguments & arguments, std::vector<Arguments> &)
 {
     for (int arg_num = 1; arg_num < argc; ++arg_num)
         arguments.emplace_back(argv[arg_num]);
 }
+
 
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &)
 {
@@ -652,13 +685,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         queries_files = options["queries-file"].as<std::vector<std::string>>();
 }
 
-void LocalServer::applyCmdOptions(ContextMutablePtr context)
-{
-    context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
-    applyCmdSettings(context);
 }
 
-}
 
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"

@@ -2,21 +2,30 @@
 
 #include <iostream>
 #include <iomanip>
+#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
 #endif
+
 #include <common/DateLUT.h>
 #include <common/LocalDate.h>
-#include <Parsers/Lexer.h>
+#include <common/LineReader.h>
+#include <common/argsToConfig.h>
+
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
-#include <common/argsToConfig.h>
 #include <Common/clearPasswordFromCommandLine.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
-#include <common/LineReader.h>
 #include <Common/Config/configReadClient.h>
-#include <filesystem>
+
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/ASTInsertQuery.h>
+
+#include <IO/WriteBufferFromOStream.h>
 
 namespace fs = std::filesystem;
 
@@ -188,20 +197,28 @@ void IClient::highlight(const String & query, std::vector<replxx::Replxx::Color>
 #endif
 
 
-void IClient::clearTerminal()
+bool IClient::processQueryText(const String & text)
 {
-    /// Clear from cursor until end of screen.
-    /// It is needed if garbage is left in terminal.
-    /// Show cursor. It can be left hidden by invocation of previous programs.
-    /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
-    std::cout << "\033[0J"
-                    "\033[?25h";
-}
+    if (exit_strings.end() != exit_strings.find(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+        return false;
 
+    if (!config().has("multiquery"))
+    {
+        assert(!query_fuzzer_runs);
+        processTextAsSingleQuery(text);
 
-static void showClientVersion()
-{
-    std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+        return true;
+    }
+
+    // if (query_fuzzer_runs)
+    // {
+    //     processWithFuzzing(text);
+    //     return true;
+    // }
+
+    // return processMultiQuery(text);
+
+    return false;
 }
 
 
@@ -299,6 +316,23 @@ void IClient::runInteractive()
         std::cout << "Happy Chinese new year. 春节快乐!" << std::endl;
     else
         std::cout << "Bye." << std::endl;
+}
+
+
+void IClient::clearTerminal()
+{
+    /// Clear from cursor until end of screen.
+    /// It is needed if garbage is left in terminal.
+    /// Show cursor. It can be left hidden by invocation of previous programs.
+    /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
+    std::cout << "\033[0J"
+                    "\033[?25h";
+}
+
+
+static void showClientVersion()
+{
+    std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
 
