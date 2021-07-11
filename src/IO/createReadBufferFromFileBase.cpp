@@ -3,8 +3,6 @@
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <Common/ProfileEvents.h>
 
-#include <fcntl.h>
-
 
 namespace ProfileEvents
 {
@@ -38,30 +36,63 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    auto res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, flags, existing_memory, alignment);
-
+#if defined(OS_LINUX) || defined(__FreeBSD__)
     if (direct_io_threshold && estimated_size >= direct_io_threshold)
     {
-#if defined(OS_LINUX)
-        /** We don't use O_DIRECT because it is tricky and previous implementation has a bug.
-          * Instead, we advise the OS that the data should not be cached.
-          * This is not exactly the same for two reasons:
-          * - extra copying from page cache to userspace is not eliminated;
-          * - if data is already in cache, it is purged.
+        /** O_DIRECT
+          * The O_DIRECT flag may impose alignment restrictions on the length and address of user-space buffers and the file offset of I/Os.
+          * In Linux alignment restrictions vary by filesystem and kernel version and might be absent entirely.
+          * However there is currently no filesystem-independent interface for an application to discover these restrictions
+          * for a given file or filesystem. Some filesystems provide their own interfaces for doing so, for example the
+          * XFS_IOC_DIOINFO operation in xfsctl(3).
           *
-          * NOTE: Better to rewrite it with userspace page cache.
+          * Under Linux 2.4, transfer sizes, and the alignment of the user buffer and the file offset must all be
+          * multiples of the logical block size of the filesystem. Since Linux 2.6.0, alignment to the logical block size
+          * of the underlying storage (typically 512 bytes) suffices.
+          *
+          * - man 2 open
           */
+        constexpr size_t min_alignment = DEFAULT_AIO_FILE_BLOCK_SIZE;
 
-        if (0 != posix_fadvise(res->getFD(), 0, 0, POSIX_FADV_DONTNEED))
-            LOG_WARNING(&Poco::Logger::get("createReadBufferFromFileBase"),
-                "Cannot request 'posix_fadvise' with POSIX_FADV_DONTNEED for file {}", filename);
+        auto align_up = [=](size_t value) { return (value + min_alignment - 1) / min_alignment * min_alignment; };
+
+        if (alignment % min_alignment)
+        {
+            alignment = align_up(alignment);
+        }
+
+        if (buffer_size % min_alignment)
+        {
+            existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned size.
+            buffer_size = align_up(buffer_size);
+        }
+
+        if (reinterpret_cast<uintptr_t>(existing_memory) % min_alignment)
+        {
+            existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned offset.
+        }
+
+        /// Attempt to open a file with O_DIRECT
+        try
+        {
+            auto res = std::make_unique<ReadBufferFromFile>(
+                filename, buffer_size, (flags == -1 ? O_RDONLY | O_CLOEXEC : flags) | O_DIRECT, existing_memory, alignment);
+            ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
+            return res;
+        }
+        catch (const ErrnoException &)
+        {
+            /// Fallback to cached IO if O_DIRECT is not supported.
+            ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIOFailed);
+        }
     }
 #else
     (void)direct_io_threshold;
+    (void)estimated_size;
 #endif
 
-    return res;
+    ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    return std::make_unique<ReadBufferFromFile>(filename, buffer_size, flags, existing_memory, alignment);
 }
 
 }
