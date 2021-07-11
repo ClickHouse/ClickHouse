@@ -57,11 +57,17 @@ protected:
         if (exit_strings.end() != exit_strings.find(trim(input, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
             return false;
 
-        std::exception_ptr e;
-        processQuery(input, e);
-
+        processQueryText(input);
         return true;
     }
+
+    void processTextAsSingleQuery(const String & input) override
+    {
+        std::exception_ptr e;
+        processQuery(input, e);
+    }
+
+    void reportQueryError() const override;
 
     void printHelpMessage(const OptionsDescription & options_description) override;
 

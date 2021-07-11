@@ -1,4 +1,3 @@
-#include "QueryFuzzer.h"
 #include "TestHint.h"
 
 #include <stdlib.h>
@@ -33,7 +32,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/PODArray.h>
 #include <Client/IClient.h>
-//#include <Core/Types.h>
+#include <Client/QueryFuzzer.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
 #include <IO/ReadBufferFromFile.h>
@@ -75,7 +74,6 @@
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
-//#include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
@@ -141,12 +139,6 @@ private:
     std::vector<std::string> interleave_queries_files;
 
     std::unique_ptr<Connection> connection; /// Connection to DB.
-    String full_query; /// Current query as it was given to the client.
-
-    // Current query as it will be sent to the server. It may differ from the
-    // full query for INSERT queries, for which the data that follows the query
-    // is stripped and sent separately.
-    String query_to_send;
 
     String format; /// Query results output format.
     bool is_default_format = true; /// false, if format is set in the config or command line.
@@ -179,18 +171,11 @@ private:
     /// How many rows have been read or written.
     size_t processed_rows = 0;
 
-    /// Parsed query. Is used to determine some settings (e.g. format, output file).
-    ASTPtr parsed_query;
-
     /// The last exception that was received from the server. Is used for the
     /// return code in batch mode.
     std::unique_ptr<Exception> server_exception;
     /// Likewise, the last exception that occurred on the client.
     std::unique_ptr<Exception> client_exception;
-
-    /// If the last query resulted in exception. `server_exception` or
-    /// `client_exception` must be set.
-    bool have_error = false;
 
     UInt64 server_revision = 0;
     String server_version;
@@ -202,9 +187,6 @@ private:
     NameToNameMap query_parameters;
 
     ConnectionParameters connection_parameters;
-
-    QueryFuzzer fuzzer;
-    int query_fuzzer_runs = 0;
 
     /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
     std::vector<std::pair<String, String>> query_id_formats;
@@ -539,27 +521,6 @@ private:
             processQueryText(text);
     }
 
-    bool processQueryText(const String & text)
-    {
-        if (exit_strings.end() != exit_strings.find(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
-            return false;
-
-        if (!config().has("multiquery"))
-        {
-            assert(!query_fuzzer_runs);
-            processTextAsSingleQuery(text);
-            return true;
-        }
-
-        if (query_fuzzer_runs)
-        {
-            processWithFuzzing(text);
-            return true;
-        }
-
-        return processMultiQuery(text);
-    }
-
     // Consumes trailing semicolons and tries to consume the same-line trailing
     // comment.
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth)
@@ -605,7 +566,7 @@ private:
         }
     }
 
-    void reportQueryError() const
+    void reportQueryError() const override
     {
         if (server_exception)
         {
@@ -1205,9 +1166,9 @@ private:
         return true;
     }
 
-    void processTextAsSingleQuery(const String & text_)
+    void processTextAsSingleQuery(const String & text) override
     {
-        full_query = text_;
+        full_query = text;
 
         /// Some parts of a query (result output and formatting) are executed
         /// client-side. Thus we need to parse the query.
@@ -1237,13 +1198,14 @@ private:
         }
     }
 
-    // Parameters are in global variables:
-    // 'parsed_query' -- the query AST,
-    // 'query_to_send' -- the query text that is sent to server,
-    // 'full_query' -- for INSERT queries, contains the query and the data that
-    // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
     void processParsedSingleQuery(std::optional<bool> echo_query = {})
     {
+        // Parameters are in global variables:
+        // 'parsed_query' -- the query AST,
+        // 'query_to_send' -- the query text that is sent to server,
+        // 'full_query' -- for INSERT queries, contains the query and the data that
+        // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
+
         resetOutput();
         client_exception.reset();
         server_exception.reset();

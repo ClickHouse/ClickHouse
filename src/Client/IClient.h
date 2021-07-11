@@ -15,6 +15,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ProgressIndication.h>
 #include <Client/Suggest.h>
+#include <Client/QueryFuzzer.h>
 
 
 namespace DB
@@ -22,6 +23,7 @@ namespace DB
 
 class IClient : public Poco::Util::Application
 {
+
 public:
     using Arguments = std::vector<std::string>;
 
@@ -53,6 +55,9 @@ protected:
     /// Settings specified via command line args
     Settings cmd_settings;
 
+    QueryFuzzer fuzzer;
+    int query_fuzzer_runs = 0;
+
     /// If not empty, queries will be read from these files
     std::vector<String> queries_files;
 
@@ -68,6 +73,18 @@ protected:
     String prompt_by_server_display_name;
     String server_display_name;
 
+    /// Current query as it was given to the client.
+    String full_query;
+    /// Parsed query. Is used to determine some settings (e.g. format, output file).
+    ASTPtr parsed_query;
+    // Current query as it will be executed either on server on in clickhouse-local.
+    // It may differ from the full query for INSERT queries, for which the data that follows
+    // the query is stripped and sent separately.
+    String query_to_send;
+    /// If the last query resulted in exception. `server_exception` or
+    /// `client_exception` must be set.
+    bool have_error = false;
+
     static bool isNewYearMode();
 
     static bool isChineseNewYearMode(const String & local_tz);
@@ -76,19 +93,27 @@ protected:
     static void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors);
 #endif
 
+    bool processMultiQuery(const String & all_queries_text);
+
+    bool processQueryText(const String & text);
+
     static void clearTerminal();
 
     void runInteractive();
 
-    virtual int childMainImpl() = 0;
+    virtual void processTextAsSingleQuery(const String & input) = 0;
 
-    virtual void processMainImplException(const Exception & e) = 0;
+    virtual void reportQueryError() const = 0;
 
-    virtual bool isInteractive() = 0;
+    virtual bool processQueryFromInteractive(const String & input) = 0;
 
     virtual void loadSuggestionDataIfPossible() {}
 
-    virtual bool processQueryFromInteractive(const String & input) = 0;
+    virtual bool isInteractive() = 0;
+
+    virtual void processMainImplException(const Exception & e) = 0;
+
+    virtual int childMainImpl() = 0;
 
     virtual void readArguments(int argc, char ** argv,
                                Arguments & common_arguments, std::vector<Arguments> &) = 0;
@@ -118,6 +143,9 @@ private:
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
 
+    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+
+    void processParsedSingleQuery(std::optional<bool> echo_query = {});
 };
 
 }

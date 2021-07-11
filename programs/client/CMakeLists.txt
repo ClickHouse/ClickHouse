@@ -1,6 +1,5 @@
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
-    QueryFuzzer.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK
