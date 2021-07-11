@@ -932,7 +932,8 @@ public:
             return LUTIndex(0);
         auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
         UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
-        return LUTIndex{index & date_lut_mask};
+        /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2283-11-11)
+        return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
 
     /// Create DayNum from year, month, day of month.
