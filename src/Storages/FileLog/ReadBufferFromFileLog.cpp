@@ -14,7 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMMIT_OFFSET;
 }
 
 ReadBufferFromFileLog::ReadBufferFromFileLog(

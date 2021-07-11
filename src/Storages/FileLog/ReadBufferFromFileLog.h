@@ -25,7 +25,7 @@ public:
     ~ReadBufferFromFileLog() override = default;
 
     void open();
-    void close(); 
+    void close();
 
     auto pollTimeout() const { return poll_timeout; }
 
