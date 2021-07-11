@@ -1088,7 +1088,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 }
 
 
-void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds)
+void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -1097,9 +1097,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
 
     const auto settings = getSettings();
     time_t current_time = time(nullptr);
-    ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
-        ? current_time - custom_directories_lifetime_seconds
-        : current_time - settings->temporary_directories_lifetime.totalSeconds();
+    ssize_t deadline = current_time - custom_directories_lifetime_seconds;
 
     /// Delete temporary directories older than a day.
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
