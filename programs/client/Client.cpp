@@ -3,14 +3,6 @@
 #include "Suggest.h"
 #include "TestHint.h"
 
-#if USE_REPLXX
-#   include <common/ReplxxLineReader.h>
-#elif defined(USE_READLINE) && USE_READLINE
-#   include <common/ReadlineLineReader.h>
-#else
-#   include <common/LineReader.h>
-#endif
-
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -25,7 +17,11 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
-#include <Poco/Util/Application.h>
+//#include <Poco/Util/Application.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
+#include <Common/TerminalSize.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
@@ -37,10 +33,10 @@
 #include <Common/Throttler.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Common/clearPasswordFromCommandLine.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/PODArray.h>
-#include <Core/Types.h>
+#include <Client/IClient.h>
+//#include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
 #include <IO/ReadBufferFromFile.h>
@@ -82,15 +78,11 @@
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
-#include <Common/TerminalSize.h>
+//#include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/ProgressIndication.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -143,23 +135,12 @@ static bool queryHasWithClause(const IAST * ast)
 }
 
 
-class Client : public Poco::Util::Application
+class Client : public IClient
 {
 public:
     Client() = default;
 
 private:
-    using StringSet = std::unordered_set<String>;
-    StringSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж",
-                           "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
-    bool is_interactive = true; /// Use either interactive line editing interface or batch mode.
-    bool echo_queries = false; /// Print queries before execution in batch mode.
-    bool ignore_error
-        = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
-    bool print_time_to_stderr = false; /// Output execution time to stderr in batch mode.
-    bool stdin_is_a_tty = false; /// stdin is a terminal.
-    bool stdout_is_a_tty = false; /// stdout is a terminal.
-
     /// If not empty, queries will be read from these files
     std::vector<std::string> queries_files;
     /// If not empty, run queries from these files before processing every file from 'queries_files'.
@@ -332,159 +313,6 @@ private:
         }
     }
 
-    /// Should we celebrate a bit?
-    static bool isNewYearMode()
-    {
-        time_t current_time = time(nullptr);
-
-        /// It's bad to be intrusive.
-        if (current_time % 3 != 0)
-            return false;
-
-        LocalDate now(current_time);
-        return (now.month() == 12 && now.day() >= 20) || (now.month() == 1 && now.day() <= 5);
-    }
-
-    static bool isChineseNewYearMode(const String & local_tz)
-    {
-        /// Days of Dec. 20 in Chinese calendar starting from year 2019 to year 2105
-        static constexpr UInt16 chineseNewYearIndicators[]
-            = {18275, 18659, 19014, 19368, 19752, 20107, 20491, 20845, 21199, 21583, 21937, 22292, 22676, 23030, 23414, 23768, 24122, 24506,
-               24860, 25215, 25599, 25954, 26308, 26692, 27046, 27430, 27784, 28138, 28522, 28877, 29232, 29616, 29970, 30354, 30708, 31062,
-               31446, 31800, 32155, 32539, 32894, 33248, 33632, 33986, 34369, 34724, 35078, 35462, 35817, 36171, 36555, 36909, 37293, 37647,
-               38002, 38386, 38740, 39095, 39479, 39833, 40187, 40571, 40925, 41309, 41664, 42018, 42402, 42757, 43111, 43495, 43849, 44233,
-               44587, 44942, 45326, 45680, 46035, 46418, 46772, 47126, 47510, 47865, 48249, 48604, 48958, 49342};
-
-        /// All time zone names are acquired from https://www.iana.org/time-zones
-        static constexpr const char * chineseNewYearTimeZoneIndicators[] = {
-            /// Time zones celebrating Chinese new year.
-            "Asia/Shanghai",
-            "Asia/Chongqing",
-            "Asia/Harbin",
-            "Asia/Urumqi",
-            "Asia/Hong_Kong",
-            "Asia/Chungking",
-            "Asia/Macao",
-            "Asia/Macau",
-            "Asia/Taipei",
-            "Asia/Singapore",
-
-            /// Time zones celebrating Chinese new year but with different festival names. Let's not print the message for now.
-            // "Asia/Brunei",
-            // "Asia/Ho_Chi_Minh",
-            // "Asia/Hovd",
-            // "Asia/Jakarta",
-            // "Asia/Jayapura",
-            // "Asia/Kashgar",
-            // "Asia/Kuala_Lumpur",
-            // "Asia/Kuching",
-            // "Asia/Makassar",
-            // "Asia/Pontianak",
-            // "Asia/Pyongyang",
-            // "Asia/Saigon",
-            // "Asia/Seoul",
-            // "Asia/Ujung_Pandang",
-            // "Asia/Ulaanbaatar",
-            // "Asia/Ulan_Bator",
-        };
-        static constexpr size_t M = sizeof(chineseNewYearTimeZoneIndicators) / sizeof(chineseNewYearTimeZoneIndicators[0]);
-
-        time_t current_time = time(nullptr);
-
-        if (chineseNewYearTimeZoneIndicators + M
-            == std::find_if(chineseNewYearTimeZoneIndicators, chineseNewYearTimeZoneIndicators + M, [&local_tz](const char * tz)
-                            {
-                                return tz == local_tz;
-                            }))
-            return false;
-
-        /// It's bad to be intrusive.
-        if (current_time % 3 != 0)
-            return false;
-
-        auto days = DateLUT::instance().toDayNum(current_time).toUnderType();
-        for (auto d : chineseNewYearIndicators)
-        {
-            /// Let's celebrate until Lantern Festival
-            if (d <= days && d + 25 >= days)
-                return true;
-            else if (d > days)
-                return false;
-        }
-        return false;
-    }
-
-#if USE_REPLXX
-    static void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
-    {
-        using namespace replxx;
-
-        static const std::unordered_map<TokenType, Replxx::Color> token_to_color
-            = {{TokenType::Whitespace, Replxx::Color::DEFAULT},
-               {TokenType::Comment, Replxx::Color::GRAY},
-               {TokenType::BareWord, Replxx::Color::DEFAULT},
-               {TokenType::Number, Replxx::Color::GREEN},
-               {TokenType::StringLiteral, Replxx::Color::CYAN},
-               {TokenType::QuotedIdentifier, Replxx::Color::MAGENTA},
-               {TokenType::OpeningRoundBracket, Replxx::Color::BROWN},
-               {TokenType::ClosingRoundBracket, Replxx::Color::BROWN},
-               {TokenType::OpeningSquareBracket, Replxx::Color::BROWN},
-               {TokenType::ClosingSquareBracket, Replxx::Color::BROWN},
-               {TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE},
-               {TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE},
-
-               {TokenType::Comma, Replxx::Color::INTENSE},
-               {TokenType::Semicolon, Replxx::Color::INTENSE},
-               {TokenType::Dot, Replxx::Color::INTENSE},
-               {TokenType::Asterisk, Replxx::Color::INTENSE},
-               {TokenType::Plus, Replxx::Color::INTENSE},
-               {TokenType::Minus, Replxx::Color::INTENSE},
-               {TokenType::Slash, Replxx::Color::INTENSE},
-               {TokenType::Percent, Replxx::Color::INTENSE},
-               {TokenType::Arrow, Replxx::Color::INTENSE},
-               {TokenType::QuestionMark, Replxx::Color::INTENSE},
-               {TokenType::Colon, Replxx::Color::INTENSE},
-               {TokenType::Equals, Replxx::Color::INTENSE},
-               {TokenType::NotEquals, Replxx::Color::INTENSE},
-               {TokenType::Less, Replxx::Color::INTENSE},
-               {TokenType::Greater, Replxx::Color::INTENSE},
-               {TokenType::LessOrEquals, Replxx::Color::INTENSE},
-               {TokenType::GreaterOrEquals, Replxx::Color::INTENSE},
-               {TokenType::Concatenation, Replxx::Color::INTENSE},
-               {TokenType::At, Replxx::Color::INTENSE},
-               {TokenType::DoubleAt, Replxx::Color::MAGENTA},
-
-               {TokenType::EndOfStream, Replxx::Color::DEFAULT},
-
-               {TokenType::Error, Replxx::Color::RED},
-               {TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED},
-               {TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED},
-               {TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED},
-               {TokenType::ErrorSinglePipeMark, Replxx::Color::RED},
-               {TokenType::ErrorWrongNumber, Replxx::Color::RED},
-               { TokenType::ErrorMaxQuerySizeExceeded,
-                 Replxx::Color::RED }};
-
-        const Replxx::Color unknown_token_color = Replxx::Color::RED;
-
-        Lexer lexer(query.data(), query.data() + query.size());
-        size_t pos = 0;
-
-        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
-        {
-            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
-            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
-            {
-                if (token_to_color.find(token.type) != token_to_color.end())
-                    colors[pos + code_point_index] = token_to_color.at(token.type);
-                else
-                    colors[pos + code_point_index] = unknown_token_color;
-            }
-
-            pos += utf8_len;
-        }
-    }
-#endif
 
     int mainImpl()
     {
@@ -1672,8 +1500,6 @@ private:
             std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
             /// Write final progress if it makes sense to do so.
             writeFinalProgress();
-
-            std::cout << std::endl << std::endl;
         }
         else if (print_time_to_stderr)
         {
@@ -2371,22 +2197,9 @@ private:
         std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
 
-    static void clearTerminal()
-    {
-        /// Clear from cursor until end of screen.
-        /// It is needed if garbage is left in terminal.
-        /// Show cursor. It can be left hidden by invocation of previous programs.
-        /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
-        std::cout << "\033[0J"
-                     "\033[?25h";
-    }
-
 public:
-    void init(int argc, char ** argv)
+    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments) override
     {
-        /// Don't parse options with Poco library. We need more sophisticated processing.
-        stopOptionsProcessing();
-
         /** We allow different groups of arguments:
           * - common arguments;
           * - arguments for any number of external tables each in form "--external args...",
@@ -2394,10 +2207,6 @@ public:
           * - param arguments for prepared statements.
           * Split these groups before processing.
           */
-        using Arguments = std::vector<std::string>;
-
-        Arguments common_arguments{""}; /// 0th argument is ignored.
-        std::vector<Arguments> external_tables_arguments;
 
         bool in_external_group = false;
         for (int arg_num = 1; arg_num < argc; ++arg_num)
@@ -2467,18 +2276,23 @@ public:
             }
         }
 
-        stdin_is_a_tty = isatty(STDIN_FILENO);
-        stdout_is_a_tty = isatty(STDOUT_FILENO);
+    }
 
-        uint64_t terminal_width = 0;
-        if (stdin_is_a_tty)
-            terminal_width = getTerminalWidth();
+    void printHelpMessage(const OptionsDescription & options_description) override
+    {
+        std::cout << options_description.main_description.value() << "\n";
+        std::cout << options_description.external_description.value() << "\n";
+        std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    }
 
+    void addOptions(OptionsDescription & options_description) override
+    {
         namespace po = boost::program_options;
 
         /// Main commandline options related to client functionality and all parameters from Settings.
-        po::options_description main_description = createOptionsDescription("Main options", terminal_width);
-        main_description.add_options()
+
+        options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
+        options_description.main_description->add_options()
             ("help", "produce help message")
             ("config-file,C", po::value<std::string>(), "config-file path")
             ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
@@ -2530,58 +2344,39 @@ public:
             ("history_file", po::value<std::string>(), "path to history file")
         ;
 
-        Settings cmd_settings;
-        cmd_settings.addProgramOptions(main_description);
-
         /// Commandline options related to external tables.
-        po::options_description external_description = createOptionsDescription("External tables options", terminal_width);
-        external_description.add_options()("file", po::value<std::string>(), "data file or - for stdin")(
-            "name",
-            po::value<std::string>()->default_value("_data"),
-            "name of the table")("format", po::value<std::string>()->default_value("TabSeparated"), "data format")("structure", po::value<std::string>(), "structure")("types", po::value<std::string>(), "types");
 
-        /// Parse main commandline options.
-        po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
-        auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-        // unrecognized_options[0] is "", I don't understand why we need "" as the first argument which unused
-        if (unrecognized_options.size() > 1)
-        {
-            throw Exception("Unrecognized option '" + unrecognized_options[1] + "'", ErrorCodes::UNRECOGNIZED_ARGUMENTS);
-        }
-        po::variables_map options;
-        po::store(parsed, options);
-        po::notify(options);
+        options_description.external_description.emplace(createOptionsDescription("External tables options", terminal_width));
+        options_description.external_description->add_options()
+        (
+            "file", po::value<std::string>(), "data file or - for stdin"
+        )
+        (
+            "name", po::value<std::string>()->default_value("_data"), "name of the table"
+        )
+        (
+            "format", po::value<std::string>()->default_value("TabSeparated"), "data format"
+        )
+        (
+            "structure", po::value<std::string>(), "structure"
+        )
+        (
+            "types", po::value<std::string>(), "types"
+        );
+    }
 
-        if (options.count("version") || options.count("V"))
-        {
-            showClientVersion();
-            exit(0);
-        }
-
-        if (options.count("version-clean"))
-        {
-            std::cout << VERSION_STRING;
-            exit(0);
-        }
-
-        /// Output of help message.
-        if (options.count("help")
-            || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
-        {
-            std::cout << main_description << "\n";
-            std::cout << external_description << "\n";
-            std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
-            exit(0);
-        }
-
-        if (options.count("log-level"))
-            Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+    void processOptions(const OptionsDescription & options_description,
+                        const CommandLineOptions & options,
+                        const std::vector<Arguments> & external_tables_arguments) override
+    {
+        namespace po = boost::program_options;
 
         size_t number_of_external_tables_with_stdin_source = 0;
         for (size_t i = 0; i < external_tables_arguments.size(); ++i)
         {
             /// Parse commandline options related to external tables.
-            po::parsed_options parsed_tables = po::command_line_parser(external_tables_arguments[i]).options(external_description).run();
+            po::parsed_options parsed_tables = po::command_line_parser(external_tables_arguments[i]).options(
+                options_description.external_description.value()).run();
             po::variables_map external_options;
             po::store(parsed_tables, external_options);
 
@@ -2713,13 +2508,10 @@ public:
         {
             context->getClientInfo().client_trace_context.tracestate = options["opentelemetry-tracestate"].as<std::string>();
         }
-
-        argsToConfig(common_arguments, config(), 100);
-
-        clearPasswordFromCommandLine(argc, argv);
     }
 };
 }
+
 
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"

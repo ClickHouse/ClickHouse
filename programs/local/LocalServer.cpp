@@ -21,6 +21,7 @@
 #include <Common/UnicodeBar.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
+#include <loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -87,7 +88,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
         // force enable logging
         config().setString("logger", "logger");
         // sensitive data rules are not used here
-        buildLoggers(config(), logger(), "clickhouse-local");
+        // buildLoggers(config(), logger(), "clickhouse-local");
     }
     else
     {
@@ -507,11 +508,6 @@ void LocalServer::cleanup()
     }
 }
 
-static void showClientVersion()
-{
-    std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << '\n';
-}
-
 static std::string getHelpHeader()
 {
     return
@@ -537,15 +533,17 @@ static std::string getHelpFooter()
             " BY mem_total DESC FORMAT PrettyCompact\"";
 }
 
-void LocalServer::init(int argc, char ** argv)
+void LocalServer::printHelpMessage(const OptionsDescription & options_description)
 {
-    namespace po = boost::program_options;
+    std::cout << getHelpHeader() << "\n";
+    std::cout << options_description.main_description.value() << "\n";
+    std::cout << getHelpFooter() << "\n";
+}
 
-    /// Don't parse options with Poco library, we prefer neat boost::program_options
-    stopOptionsProcessing();
-
-    po::options_description description = createOptionsDescription("Main options", getTerminalWidth());
-    description.add_options()
+void LocalServer::addOptions(OptionsDescription & options_description)
+{
+    options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
+    options_description.main_description->add_options()
         ("help", "produce help message")
         ("config-file,c", po::value<std::string>(), "config-file path")
         ("query,q", po::value<std::string>(), "query")
@@ -572,28 +570,16 @@ void LocalServer::init(int argc, char ** argv)
         ("progress", "print progress of queries execution")
         ;
 
-    cmd_settings.addProgramOptions(description);
+}
 
-    /// Parse main commandline options.
-    po::parsed_options parsed = po::command_line_parser(argc, argv).options(description).run();
-    po::variables_map options;
-    po::store(parsed, options);
-    po::notify(options);
+void LocalServer::readArguments(int argc, char ** argv, Arguments & arguments, std::vector<Arguments> &)
+{
+    for (int arg_num = 1; arg_num < argc; ++arg_num)
+        arguments.emplace_back(argv[arg_num]);
+}
 
-    if (options.count("version") || options.count("V"))
-    {
-        showClientVersion();
-        exit(0);
-    }
-
-    if (options.empty() || options.count("help"))
-    {
-        std::cout << getHelpHeader() << "\n";
-        std::cout << description << "\n";
-        std::cout << getHelpFooter() << "\n";
-        exit(0);
-    }
-
+void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &)
+{
     /// Save received data into the internal config.
     if (options.count("config-file"))
         config().setString("config-file", options["config-file"].as<std::string>());
@@ -635,11 +621,6 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("ignore-error", true);
     if (options.count("no-system-tables"))
         config().setBool("no-system-tables", true);
-
-    std::vector<std::string> arguments;
-    for (int arg_num = 1; arg_num < argc; ++arg_num)
-        arguments.emplace_back(argv[arg_num]);
-    argsToConfig(arguments, config(), 100);
 }
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)

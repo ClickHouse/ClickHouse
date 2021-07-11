@@ -8,6 +8,7 @@
 #include <loggers/Loggers.h>
 #include <Poco/Util/Application.h>
 #include <Common/ProgressIndication.h>
+#include <Client/IClient.h>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ namespace DB
 /// Lightweight Application for clickhouse-local
 /// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
 /// Quiet mode by default
-class LocalServer : public Poco::Util::Application, public Loggers
+class LocalServer : public IClient
 {
 public:
     LocalServer();
@@ -23,8 +24,6 @@ public:
     void initialize(Poco::Util::Application & self) override;
 
     int main(const std::vector<std::string> & args) override;
-
-    void init(int argc, char ** argv);
 
     ~LocalServer() override;
 
@@ -44,11 +43,18 @@ private:
 
 
 protected:
+    void printHelpMessage(const OptionsDescription & options_description) override;
+
+    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &) override;
+
+    void addOptions(OptionsDescription & options_description) override;
+
+    void processOptions(const OptionsDescription & options_description,
+                        const CommandLineOptions & options,
+                        const std::vector<Arguments> &) override;
+
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
-
-    /// Settings specified via command line args
-    Settings cmd_settings;
 
     bool need_render_progress = false;
 
