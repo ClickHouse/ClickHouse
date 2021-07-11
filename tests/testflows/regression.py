@@ -18,7 +18,7 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
 
     self.context.stress = stress
     self.context.parallel = parallel
-    # debug comment 1
+    # debug comment 2
     tasks = []
     with Pool(8) as pool:
         try:
