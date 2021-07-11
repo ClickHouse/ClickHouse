@@ -358,6 +358,10 @@ public:
       */
     virtual bool useDefaultImplementationForConstants() const { return false; }
 
+    /** Some arguments could remain constant during this implementation.
+      */
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
     /** If function arguments has single low cardinality column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all low cardinality columns to ordinary columns.
       * Returns ColumnLowCardinality if at least one argument is ColumnLowCardinality.
@@ -366,10 +370,6 @@ public:
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
-
-    /** Some arguments could remain constant during this implementation.
-      */
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
     /** True if function can be called on default arguments (include Nullable's) and won't throw.
       * Counterexample: modulo(0, 0)

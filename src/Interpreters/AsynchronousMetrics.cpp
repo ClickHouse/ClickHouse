@@ -1179,7 +1179,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                     total_number_of_parts += table_merge_tree->getPartsCount();
                 }
 
-                if (StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+                if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
                     StorageReplicatedMergeTree::Status status;
                     table_replicated_merge_tree->getStatus(status, false);
