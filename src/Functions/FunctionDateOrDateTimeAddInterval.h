@@ -485,8 +485,6 @@ public:
         }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
-            // TODO (vnemkov): what if there is an overload of Transform::execute() that returns DateTime64 from DateTime or Date ?
-            // Shall we use the default scale or one from optional argument ?
             if (typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get()))
             {
                 const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
