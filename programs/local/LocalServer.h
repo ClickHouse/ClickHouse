@@ -23,8 +23,6 @@ public:
 
     void initialize(Poco::Util::Application & self) override;
 
-    int main(const std::vector<std::string> & args) override;
-
     ~LocalServer() override;
 
 private:
@@ -35,14 +33,35 @@ private:
     std::string getInitialCreateTableQuery();
 
     void tryInitPath();
+
     void applyCmdOptions(ContextMutablePtr context);
+
     void applyCmdSettings(ContextMutablePtr context);
+
     void processQueries();
+
     void setupUsers();
+
     void cleanup();
 
 
 protected:
+    void processMainImplException(const Exception & e) override;
+
+    int childMainImpl() override;
+
+    bool isInteractive() override;
+
+    bool processQueryFromInteractive(const String & input) override
+    {
+        std::exception_ptr e;
+        processQuery(input, e);
+
+        /// For clickhouse local it is ok, to return true here - i.e. interactive
+        /// mode will only be stopped by exit command.
+        return true;
+    }
+
     void printHelpMessage(const OptionsDescription & options_description) override;
 
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &) override;
@@ -53,16 +72,17 @@ protected:
                         const CommandLineOptions & options,
                         const std::vector<Arguments> &) override;
 
+    bool supportPasswordOption() override { return false; }
+
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
-    bool need_render_progress = false;
-
-    bool written_first_block = false;
-
-    ProgressIndication progress_indication;
-
     std::optional<std::filesystem::path> temporary_directory_to_delete;
+
+private:
+    ContextMutablePtr query_context;
+
+    void processQuery(const String & query, std::exception_ptr exception);
 };
 
 }

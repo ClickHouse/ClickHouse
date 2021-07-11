@@ -1,6 +1,4 @@
-#include "ConnectionParameters.h"
 #include "QueryFuzzer.h"
-#include "Suggest.h"
 #include "TestHint.h"
 
 #include <stdlib.h>
@@ -17,7 +15,6 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
-//#include <Poco/Util/Application.h>
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
 #endif
@@ -80,7 +77,6 @@
 #include <common/argsToConfig.h>
 //#include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/ProgressIndication.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
 
@@ -141,8 +137,6 @@ public:
     Client() = default;
 
 private:
-    /// If not empty, queries will be read from these files
-    std::vector<std::string> queries_files;
     /// If not empty, run queries from these files before processing every file from 'queries_files'.
     std::vector<std::string> interleave_queries_files;
 
@@ -160,8 +154,6 @@ private:
     String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
-
-    bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
     SharedContextHolder shared_context = Context::createShared();
     ContextMutablePtr context = Context::createGlobal(shared_context.get());
@@ -182,14 +174,7 @@ private:
     String server_logs_file;
     BlockOutputStreamPtr logs_out_stream;
 
-    String home_path;
-
     String current_profile;
-
-    String prompt_by_server_display_name;
-
-    /// Path to a file containing command history.
-    String history_file;
 
     /// How many rows have been read or written.
     size_t processed_rows = 0;
@@ -209,15 +194,6 @@ private:
 
     UInt64 server_revision = 0;
     String server_version;
-    String server_display_name;
-
-    /// true by default - for interactive mode, might be changed when --progress option is checked for
-    /// non-interactive mode.
-    bool need_render_progress = true;
-
-    bool written_first_block = false;
-
-    ProgressIndication progress_indication;
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
@@ -230,11 +206,11 @@ private:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
-    std::optional<Suggest> suggest;
-
     /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
     std::vector<std::pair<String, String>> query_id_formats;
     QueryProcessingStage::Enum query_processing_stage;
+
+    bool supportPasswordOption() override { return true; }
 
     void initialize(Poco::Util::Application & self) override
     {
@@ -273,55 +249,32 @@ private:
             query_id_formats.emplace_back("Query id:", " {query_id}\n");
     }
 
-
-    int main(const std::vector<std::string> & /*args*/) override
+    void processMainImplException(const Exception & e) override
     {
-        try
+        bool print_stack_trace = config().getBool("stacktrace", false);
+
+        std::string text = e.displayText();
+
+        /** If exception is received from server, then stack trace is embedded in message.
+            * If exception is thrown on client, then stack trace is in separate field.
+            */
+
+        auto embedded_stack_trace_pos = text.find("Stack trace");
+        if (std::string::npos != embedded_stack_trace_pos && !print_stack_trace)
+            text.resize(embedded_stack_trace_pos);
+
+        std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
+
+        /// Don't print the stack trace on the client if it was logged on the server.
+        /// Also don't print the stack trace in case of network errors.
+        if (print_stack_trace && e.code() != ErrorCodes::NETWORK_ERROR && std::string::npos == embedded_stack_trace_pos)
         {
-            return mainImpl();
-        }
-        catch (const Exception & e)
-        {
-            bool print_stack_trace = config().getBool("stacktrace", false);
-
-            std::string text = e.displayText();
-
-            /** If exception is received from server, then stack trace is embedded in message.
-              * If exception is thrown on client, then stack trace is in separate field.
-              */
-
-            auto embedded_stack_trace_pos = text.find("Stack trace");
-            if (std::string::npos != embedded_stack_trace_pos && !print_stack_trace)
-                text.resize(embedded_stack_trace_pos);
-
-            std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
-
-            /// Don't print the stack trace on the client if it was logged on the server.
-            /// Also don't print the stack trace in case of network errors.
-            if (print_stack_trace && e.code() != ErrorCodes::NETWORK_ERROR && std::string::npos == embedded_stack_trace_pos)
-            {
-                std::cerr << "Stack trace:" << std::endl << e.getStackTraceString();
-            }
-
-            /// If exception code isn't zero, we should return non-zero return code anyway.
-            return e.code() ? e.code() : -1;
-        }
-        catch (...)
-        {
-            std::cerr << getCurrentExceptionMessage(false) << std::endl;
-            return getCurrentExceptionCode();
+            std::cerr << "Stack trace:" << std::endl << e.getStackTraceString();
         }
     }
 
-
-    int mainImpl()
+    bool isInteractive() override
     {
-        UseSSL use_ssl;
-
-        registerFormats();
-        registerFunctions();
-        registerAggregateFunctions();
-
         /// Batch mode is enabled if one of the following is true:
         /// - -e (--query) command line option is present.
         ///   The value of the option is used as the text of query (or of multiple queries).
@@ -329,168 +282,67 @@ private:
         /// - stdin is not a terminal. In this case queries are read from it.
         /// - -qf (--queries-file) command line option is present.
         ///   The value of the option is used as file with query (or of multiple queries) to execute.
-        if (!stdin_is_a_tty || config().has("query") || !queries_files.empty())
-            is_interactive = false;
 
-        if (config().has("query") && !queries_files.empty())
+        return stdin_is_a_tty && !config().has("query") && queries_files.empty();
+    }
+
+    void loadSuggestionDataIfPossible() override
+    {
+        if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
         {
-            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+            /// Load suggestion data from the server.
+            suggest->load(connection_parameters, config().getInt("suggestion_limit"));
+        }
+    }
+
+    bool processQueryFromInteractive(const String & input) override
+    {
+        try
+        {
+            return processQueryText(input);
+        }
+        catch (const Exception & e)
+        {
+            // We don't need to handle the test hints in the interactive
+            // mode.
+            std::cerr << std::endl
+                        << "Exception on client:" << std::endl
+                        << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+
+            if (config().getBool("stacktrace", false))
+                std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
+
+            std::cerr << std::endl;
+
+            client_exception = std::make_unique<Exception>(e);
         }
 
-        std::cout << std::fixed << std::setprecision(3);
-        std::cerr << std::fixed << std::setprecision(3);
-
-        if (is_interactive)
+        if (client_exception)
         {
-            clearTerminal();
-            showClientVersion();
+            /// client_exception may have been set above or elsewhere.
+            /// Client-side exception during query execution can result in the loss of
+            /// sync in the connection protocol.
+            /// So we reconnect and allow to enter the next query.
+            connect();
         }
 
-        is_default_format = !config().has("vertical") && !config().has("format");
-        if (config().has("vertical"))
-            format = config().getString("format", "Vertical");
-        else
-            format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
+        /// Continue processing queries.
+        return true;
+    }
 
-        format_max_block_size = config().getInt("format_max_block_size", context->getSettingsRef().max_block_size);
+    int childMainImpl() override
+    {
+        UseSSL use_ssl;
 
-        insert_format = "Values";
-
-        /// Setting value from cmd arg overrides one from config
-        if (context->getSettingsRef().max_insert_block_size.changed)
-            insert_format_max_block_size = context->getSettingsRef().max_insert_block_size;
-        else
-            insert_format_max_block_size = config().getInt("insert_format_max_block_size", context->getSettingsRef().max_insert_block_size);
-
-        if (!is_interactive)
-        {
-            need_render_progress = config().getBool("progress", false);
-            echo_queries = config().getBool("echo", false);
-            ignore_error = config().getBool("ignore-error", false);
-        }
-
-        ClientInfo & client_info = context->getClientInfo();
-        client_info.setInitialQuery();
-        client_info.quota_key = config().getString("quota_key", "");
+        registerFormats();
+        registerFunctions();
+        registerAggregateFunctions();
 
         connect();
 
-        /// Initialize DateLUT here to avoid counting time spent here as query execution time.
-        const auto local_tz = DateLUT::instance().getTimeZone();
-
         if (is_interactive)
         {
-            if (config().has("query_id"))
-                throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
-            if (print_time_to_stderr)
-                throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
-
-            suggest.emplace();
-            if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
-            {
-                /// Load suggestion data from the server.
-                suggest->load(connection_parameters, config().getInt("suggestion_limit"));
-            }
-
-            /// Load command history if present.
-            if (config().has("history_file"))
-                history_file = config().getString("history_file");
-            else
-            {
-                auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
-                if (history_file_from_env)
-                    history_file = history_file_from_env;
-                else if (!home_path.empty())
-                    history_file = home_path + "/.clickhouse-client-history";
-            }
-
-            if (!history_file.empty() && !fs::exists(history_file))
-            {
-                /// Avoid TOCTOU issue.
-                try
-                {
-                    FS::createFile(history_file);
-                }
-                catch (const ErrnoException & e)
-                {
-                    if (e.getErrno() != EEXIST)
-                        throw;
-                }
-            }
-
-            LineReader::Patterns query_extenders = {"\\"};
-            LineReader::Patterns query_delimiters = {";", "\\G"};
-
-#if USE_REPLXX
-            replxx::Replxx::highlighter_callback_t highlight_callback{};
-            if (config().getBool("highlight"))
-                highlight_callback = highlight;
-
-            ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
-
-#elif defined(USE_READLINE) && USE_READLINE
-            ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
-#else
-            LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
-#endif
-
-            /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
-            ///  disabled, so that we are able to paste and execute multiline queries in a whole
-            ///  instead of erroring out, while be less intrusive.
-            if (config().has("multiquery") && !config().has("multiline"))
-                lr.enableBracketedPaste();
-
-            do
-            {
-                auto input = lr.readLine(prompt(), ":-] ");
-                if (input.empty())
-                    break;
-
-                has_vertical_output_suffix = false;
-                if (input.ends_with("\\G"))
-                {
-                    input.resize(input.size() - 2);
-                    has_vertical_output_suffix = true;
-                }
-
-                try
-                {
-                    if (!processQueryText(input))
-                        break;
-                }
-                catch (const Exception & e)
-                {
-                    // We don't need to handle the test hints in the interactive
-                    // mode.
-                    std::cerr << std::endl
-                              << "Exception on client:" << std::endl
-                              << "Code: " << e.code() << ". " << e.displayText() << std::endl;
-
-                    if (config().getBool("stacktrace", false))
-                        std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
-
-                    std::cerr << std::endl;
-
-                    client_exception = std::make_unique<Exception>(e);
-                }
-
-                if (client_exception)
-                {
-                    /// client_exception may have been set above or elsewhere.
-                    /// Client-side exception during query execution can result in the loss of
-                    /// sync in the connection protocol.
-                    /// So we reconnect and allow to enter the next query.
-                    connect();
-                }
-            } while (true);
-
-            if (isNewYearMode())
-                std::cout << "Happy new year." << std::endl;
-            else if (isChineseNewYearMode(local_tz))
-                std::cout << "Happy Chinese new year. 春节快乐!" << std::endl;
-            else
-                std::cout << "Bye." << std::endl;
-            return 0;
+            runInteractive();
         }
         else
         {
@@ -513,11 +365,10 @@ private:
                 // case so that at least we don't lose an error.
                 return -1;
             }
-
-            return 0;
         }
-    }
 
+        return 0;
+    }
 
     void connect()
     {
@@ -611,12 +462,10 @@ private:
             }
         }
 
-        Strings keys;
-
         prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
 
+        Strings keys;
         config().keys("prompt_by_server_display_name", keys);
-
         for (const String & key : keys)
         {
             if (key != "default" && server_display_name.find(key) != std::string::npos)
@@ -646,13 +495,6 @@ private:
         for (const auto & [key, value] : prompt_substitutions)
             boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
     }
-
-
-    inline String prompt() const
-    {
-        return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
-    }
-
 
     void nonInteractive()
     {
@@ -2192,11 +2034,6 @@ private:
         }
     }
 
-    static void showClientVersion()
-    {
-        std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
-    }
-
 public:
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments) override
     {
@@ -2508,6 +2345,26 @@ public:
         {
             context->getClientInfo().client_trace_context.tracestate = options["opentelemetry-tracestate"].as<std::string>();
         }
+
+        is_default_format = !config().has("vertical") && !config().has("format");
+        if (config().has("vertical"))
+            format = config().getString("format", "Vertical");
+        else
+            format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
+
+        format_max_block_size = config().getInt("format_max_block_size", context->getSettingsRef().max_block_size);
+
+        insert_format = "Values";
+
+        /// Setting value from cmd arg overrides one from config
+        if (context->getSettingsRef().max_insert_block_size.changed)
+            insert_format_max_block_size = context->getSettingsRef().max_insert_block_size;
+        else
+            insert_format_max_block_size = config().getInt("insert_format_max_block_size", context->getSettingsRef().max_insert_block_size);
+
+        ClientInfo & client_info = context->getClientInfo();
+        client_info.setInitialQuery();
+        client_info.quota_key = config().getString("quota_key", "");
     }
 };
 }
