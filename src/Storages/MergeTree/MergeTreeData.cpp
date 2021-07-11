@@ -1,3 +1,4 @@
+#include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
 #include <Compression/CompressedReadBuffer.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
@@ -26,6 +27,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -104,6 +106,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
@@ -125,12 +128,34 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
-
+using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key)
 {
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+
+    const auto & sampling_key = metadata.getSamplingKey();
+    DataTypePtr sampling_column_type = sampling_key.data_types[0];
+
+    RelativeSize size_of_universum = 0;
+    if (sampling_key.data_types.size() == 1)
+    {
+        if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
+            size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
+        else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
+            size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
+        else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
+            size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
+        else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
+            size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
+    }
+
+    if (size_of_universum == RelativeSize(0))
+        throw Exception(
+            "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
+            + ". Must be one unsigned integer type",
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 }
 
 MergeTreeData::MergeTreeData(
