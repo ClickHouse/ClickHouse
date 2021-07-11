@@ -1,8 +1,8 @@
 #include <IO/FileEncryptionCommon.h>
 
 #if USE_SSL
-#include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
@@ -23,244 +23,281 @@ namespace FileEncryption
 
 namespace
 {
-    String toBigEndianString(UInt128 value)
+    constexpr const size_t kBlockSize = 16;
+
+    size_t blockOffset(size_t pos) { return pos % kBlockSize; }
+    size_t blocks(size_t pos) { return pos / kBlockSize; }
+
+    size_t partBlockSize(size_t size, size_t off)
     {
-        WriteBufferFromOwnString out;
-        writeBinaryBigEndian(value, out);
-        return std::move(out.str());
+        assert(off < kBlockSize);
+        /// write the part as usual block
+        if (off == 0)
+            return 0;
+        return off + size <= kBlockSize ? size : (kBlockSize - off) % kBlockSize;
     }
 
-    UInt128 fromBigEndianString(const String & str)
+    size_t encryptBlocks(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, WriteBuffer & out)
     {
-        ReadBufferFromMemory in{str.data(), str.length()};
-        UInt128 result;
-        readBinaryBigEndian(result, in);
-        return result;
+        const uint8_t * in = reinterpret_cast<const uint8_t *>(data);
+        size_t in_size = 0;
+        size_t out_size = 0;
+
+        while (in_size < size)
+        {
+            out.nextIfAtEnd();
+            size_t part_size = std::min(size - in_size, out.available());
+            uint8_t * ciphertext = reinterpret_cast<uint8_t *>(out.position());
+            int ciphertext_size = 0;
+            if (!EVP_EncryptUpdate(evp_ctx, ciphertext, &ciphertext_size, &in[in_size], part_size))
+                throw Exception("Failed to encrypt", ErrorCodes::DATA_ENCRYPTION_ERROR);
+
+            in_size += part_size;
+            if (ciphertext_size)
+            {
+                out.position() += ciphertext_size;
+                out_size += ciphertext_size;
+            }
+        }
+
+        return out_size;
+    }
+
+    size_t encryptBlockWithPadding(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, size_t pad_left, WriteBuffer & out)
+    {
+        assert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
+        uint8_t padded_data[kBlockSize] = {};
+        memcpy(&padded_data[pad_left], data, size);
+        size_t padded_data_size = pad_left + size;
+
+        uint8_t ciphertext[kBlockSize];
+        int ciphertext_size = 0;
+        if (!EVP_EncryptUpdate(evp_ctx, ciphertext, &ciphertext_size, padded_data, padded_data_size))
+            throw Exception("Failed to encrypt", ErrorCodes::DATA_ENCRYPTION_ERROR);
+
+        if (!ciphertext_size)
+            return 0;
+
+        if (static_cast<size_t>(ciphertext_size) < pad_left)
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Unexpected size of encrypted data: {} < {}", ciphertext_size, pad_left);
+
+        uint8_t * ciphertext_begin = &ciphertext[pad_left];
+        ciphertext_size -= pad_left;
+        out.write(reinterpret_cast<const char *>(ciphertext_begin), ciphertext_size);
+        return ciphertext_size;
+    }
+
+    size_t encryptFinal(EVP_CIPHER_CTX * evp_ctx, WriteBuffer & out)
+    {
+        uint8_t ciphertext[kBlockSize];
+        int ciphertext_size = 0;
+        if (!EVP_EncryptFinal_ex(evp_ctx,
+                                 ciphertext, &ciphertext_size))
+            throw Exception("Failed to finalize encrypting", ErrorCodes::DATA_ENCRYPTION_ERROR);
+        if (ciphertext_size)
+            out.write(reinterpret_cast<const char *>(ciphertext), ciphertext_size);
+        return ciphertext_size;
+    }
+
+    size_t decryptBlocks(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, char * out)
+    {
+        const uint8_t * in = reinterpret_cast<const uint8_t *>(data);
+        uint8_t * plaintext = reinterpret_cast<uint8_t *>(out);
+        int plaintext_size = 0;
+        if (!EVP_DecryptUpdate(evp_ctx, plaintext, &plaintext_size, in, size))
+            throw Exception("Failed to decrypt", ErrorCodes::DATA_ENCRYPTION_ERROR);
+        return plaintext_size;
+    }
+
+    size_t decryptBlockWithPadding(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, size_t pad_left, char * out)
+    {
+        assert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
+        uint8_t padded_data[kBlockSize] = {};
+        memcpy(&padded_data[pad_left], data, size);
+        size_t padded_data_size = pad_left + size;
+
+        uint8_t plaintext[kBlockSize];
+        int plaintext_size = 0;
+        if (!EVP_DecryptUpdate(evp_ctx, plaintext, &plaintext_size, padded_data, padded_data_size))
+            throw Exception("Failed to decrypt", ErrorCodes::DATA_ENCRYPTION_ERROR);
+
+        if (!plaintext_size)
+            return 0;
+
+        if (static_cast<size_t>(plaintext_size) < pad_left)
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Unexpected size of decrypted data: {} < {}", plaintext_size, pad_left);
+
+        const uint8_t * plaintext_begin = &plaintext[pad_left];
+        plaintext_size -= pad_left;
+        memcpy(out, plaintext_begin, plaintext_size);
+        return plaintext_size;
+    }
+
+    size_t decryptFinal(EVP_CIPHER_CTX * evp_ctx, char * out)
+    {
+        uint8_t plaintext[kBlockSize];
+        int plaintext_size = 0;
+        if (!EVP_DecryptFinal_ex(evp_ctx, plaintext, &plaintext_size))
+            throw Exception("Failed to finalize decrypting", ErrorCodes::DATA_ENCRYPTION_ERROR);
+        if (plaintext_size)
+            memcpy(out, plaintext, plaintext_size);
+        return plaintext_size;
     }
 }
 
-InitVector::InitVector(const String & iv_) : iv(fromBigEndianString(iv_)) {}
-
-const String & InitVector::str() const
+String InitVector::toString() const
 {
-    local = toBigEndianString(iv + counter);
-    return local;
+    static_assert(sizeof(counter) == InitVector::kSize);
+    WriteBufferFromOwnString out;
+    writeBinaryBigEndian(counter, out);
+    return std::move(out.str());
 }
 
-Encryption::Encryption(const String & iv_, const EncryptionKey & key_, size_t offset_)
-    : evp_cipher(defaultCipher())
-    , init_vector(iv_)
-    , key(key_)
-    , block_size(cipherIVLength(evp_cipher))
+InitVector InitVector::fromString(const String & str)
 {
-    if (iv_.size() != cipherIVLength(evp_cipher))
-        throw DB::Exception("Expected iv with size " + std::to_string(cipherIVLength(evp_cipher)) + ", got iv with size " + std::to_string(iv_.size()),
-                            DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
-    if (key_.size() != cipherKeyLength(evp_cipher))
-        throw DB::Exception("Expected key with size " + std::to_string(cipherKeyLength(evp_cipher)) + ", got iv with size " + std::to_string(key_.size()),
-                            DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    offset = offset_;
+    if (str.length() != InitVector::kSize)
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Expected iv with size {}, got iv with size {}", InitVector::kSize, str.length());
+    ReadBufferFromMemory in{str.data(), str.length()};
+    UInt128 counter;
+    readBinaryBigEndian(counter, in);
+    return InitVector{counter};
 }
 
-size_t Encryption::partBlockSize(size_t size, size_t off) const
+void InitVector::read(ReadBuffer & in)
 {
-    assert(off < block_size);
-    /// write the part as usual block
-    if (off == 0)
-        return 0;
-    return off + size <= block_size ? size : (block_size - off) % block_size;
+    readBinaryBigEndian(counter, in);
 }
 
-void Encryptor::encrypt(const char * plaintext, WriteBuffer & buf, size_t size)
+void InitVector::write(WriteBuffer & out) const
 {
-    if (!size)
-        return;
-
-    auto iv = InitVector(init_vector);
-    auto off = blockOffset(offset);
-    iv.set(blocks(offset));
-
-    size_t part_size = partBlockSize(size, off);
-    if (off)
-    {
-        buf.write(encryptPartialBlock(plaintext, part_size, iv, off).data(), part_size);
-        offset += part_size;
-        size -= part_size;
-        iv.inc();
-    }
-
-    if (size)
-    {
-        buf.write(encryptNBytes(plaintext + part_size, size, iv).data(), size);
-        offset += size;
-    }
+    writeBinaryBigEndian(counter, out);
 }
 
-String Encryptor::encryptPartialBlock(const char * partial_block, size_t size, const InitVector & iv, size_t off) const
+InitVector InitVector::random()
 {
-    if (size > block_size)
-        throw Exception("Expected partial block, got block with size > block_size: size = " + std::to_string(size) + " and offset = " + std::to_string(off),
-                            ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    String plaintext(block_size, '\0');
-    for (size_t i = 0; i < size; ++i)
-        plaintext[i + off] = partial_block[i];
-
-    return String(encryptNBytes(plaintext.data(), block_size, iv), off, size);
-}
-
-String Encryptor::encryptNBytes(const char * data, size_t bytes, const InitVector & iv) const
-{
-    String ciphertext(bytes, '\0');
-    auto * ciphertext_ref = ciphertext.data();
-
-    auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-    auto * evp_ctx = evp_ctx_ptr.get();
-
-    if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
-        throw Exception("Failed to initialize encryption context with cipher", ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
-        reinterpret_cast<const unsigned char*>(key.str().data()),
-        reinterpret_cast<const unsigned char*>(iv.str().data())) != 1)
-        throw Exception("Failed to set key and IV for encryption", ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    int output_len = 0;
-    if (EVP_EncryptUpdate(evp_ctx,
-        reinterpret_cast<unsigned char*>(ciphertext_ref), &output_len,
-        reinterpret_cast<const unsigned char*>(data), static_cast<int>(bytes)) != 1)
-        throw Exception("Failed to encrypt", ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    ciphertext_ref += output_len;
-
-    int final_output_len = 0;
-    if (EVP_EncryptFinal_ex(evp_ctx,
-        reinterpret_cast<unsigned char*>(ciphertext_ref), &final_output_len) != 1)
-        throw Exception("Failed to fetch ciphertext", ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    if (output_len < 0 || final_output_len < 0 || static_cast<size_t>(output_len) + static_cast<size_t>(final_output_len) != bytes)
-        throw Exception("Only part of the data was encrypted", ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    return ciphertext;
-}
-
-void Decryptor::decrypt(const char * ciphertext, BufferBase::Position buf, size_t size, size_t off)
-{
-    if (!size)
-        return;
-
-    auto iv = InitVector(init_vector);
-    iv.set(blocks(off));
-    off = blockOffset(off);
-
-    size_t part_size = partBlockSize(size, off);
-    if (off)
-    {
-        decryptPartialBlock(buf, ciphertext, part_size, iv, off);
-        size -= part_size;
-        if (part_size + off == block_size)
-            iv.inc();
-    }
-
-    if (size)
-        decryptNBytes(buf, ciphertext + part_size, size, iv);
-}
-
-void Decryptor::decryptPartialBlock(BufferBase::Position & to, const char * partial_block, size_t size, const InitVector & iv, size_t off) const
-{
-    if (size > block_size)
-        throw Exception("Expecter partial block, got block with size > block_size: size = " + std::to_string(size) + " and offset = " + std::to_string(off),
-                            ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    String ciphertext(block_size, '\0');
-    String plaintext(block_size, '\0');
-    for (size_t i = 0; i < size; ++i)
-        ciphertext[i + off] = partial_block[i];
-
-    auto * plaintext_ref = plaintext.data();
-    decryptNBytes(plaintext_ref, ciphertext.data(), off + size, iv);
-
-    for (size_t i = 0; i < size; ++i)
-        *(to++) = plaintext[i + off];
-}
-
-void Decryptor::decryptNBytes(BufferBase::Position & to, const char * data, size_t bytes, const InitVector & iv) const
-{
-    auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-    auto * evp_ctx = evp_ctx_ptr.get();
-
-    if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
-        throw Exception("Failed to initialize decryption context with cipher", ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
-        reinterpret_cast<const unsigned char*>(key.str().data()),
-        reinterpret_cast<const unsigned char*>(iv.str().data())) != 1)
-        throw Exception("Failed to set key and IV for decryption", ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    int output_len = 0;
-    if (EVP_DecryptUpdate(evp_ctx,
-        reinterpret_cast<unsigned char*>(to), &output_len,
-        reinterpret_cast<const unsigned char*>(data), static_cast<int>(bytes)) != 1)
-        throw Exception("Failed to decrypt", ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    to += output_len;
-
-    int final_output_len = 0;
-    if (EVP_DecryptFinal_ex(evp_ctx,
-        reinterpret_cast<unsigned char*>(to), &final_output_len) != 1)
-        throw Exception("Failed to fetch plaintext", ErrorCodes::DATA_ENCRYPTION_ERROR);
-
-    if (output_len < 0 || final_output_len < 0 || static_cast<size_t>(output_len) + static_cast<size_t>(final_output_len) != bytes)
-        throw Exception("Only part of the data was decrypted", ErrorCodes::DATA_ENCRYPTION_ERROR);
-}
-
-String readIV(size_t size, ReadBuffer & in)
-{
-    String iv(size, 0);
-    in.readStrict(reinterpret_cast<char *>(iv.data()), size);
-    return iv;
-}
-
-String randomString(size_t size)
-{
-    String iv(size, 0);
-
     std::random_device rd;
     std::mt19937 gen{rd()};
-    std::uniform_int_distribution<size_t> dis;
+    std::uniform_int_distribution<UInt128::base_type> dis;
+    UInt128 counter;
+    for (size_t i = 0; i != std::size(counter.items); ++i)
+        counter.items[i] = dis(gen);
+    return InitVector{counter};
+}
 
-    char * ptr = iv.data();
-    while (size)
+
+Encryptor::Encryptor(const String & key_, const InitVector & iv_)
+    : key(key_)
+    , init_vector(iv_)
+{
+    if (key_.length() == 16)
+        evp_cipher = EVP_aes_128_ctr();
+    else if (key_.length() == 24)
+        evp_cipher = EVP_aes_192_ctr();
+    else if (key_.length() == 32)
+        evp_cipher = EVP_aes_256_ctr();
+    else
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Key length {} is not supported, supported only keys of length 128, 192, or 256 bits", key_.length());
+
+    size_t cipher_key_length = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
+    if (cipher_key_length != key_.length())
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Got unexpected key length from cipher: {} != {}", cipher_key_length, key_.length());
+
+    size_t cipher_iv_length = static_cast<size_t>(EVP_CIPHER_iv_length(evp_cipher));
+    if (cipher_iv_length != InitVector::kSize)
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Got unexpected init vector's length from cipher: {} != {}", cipher_iv_length, InitVector::kSize);
+}
+
+void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
+{
+    if (!size)
+        return;
+
+    auto current_iv = (init_vector + blocks(offset)).toString();
+
+    auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
+    auto * evp_ctx = evp_ctx_ptr.get();
+
+    if (!EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr))
+        throw Exception("Failed to initialize encryption context with cipher", ErrorCodes::DATA_ENCRYPTION_ERROR);
+
+    if (!EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
+                            reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())))
+        throw Exception("Failed to set key and IV for encryption", ErrorCodes::DATA_ENCRYPTION_ERROR);
+
+    size_t in_size = 0;
+    size_t out_size = 0;
+
+    auto off = blockOffset(offset);
+    if (off)
     {
-        auto value = dis(gen);
-        size_t n = std::min(size, sizeof(value));
-        memcpy(ptr, &value, n);
-        ptr += n;
-        size -= n;
+        size_t in_part_size = partBlockSize(size, off);
+        size_t out_part_size = encryptBlockWithPadding(evp_ctx, &data[in_size], in_part_size, off, out);
+        in_size += in_part_size;
+        out_size += out_part_size;
     }
 
-    return iv;
+    if (in_size < size)
+    {
+        size_t in_part_size = size - in_size;
+        size_t out_part_size = encryptBlocks(evp_ctx, &data[in_size], in_part_size, out);
+        in_size += in_part_size;
+        out_size += out_part_size;
+    }
+
+    out_size += encryptFinal(evp_ctx, out);
+
+    if (out_size != in_size)
+        throw Exception("Only part of the data was encrypted", ErrorCodes::DATA_ENCRYPTION_ERROR);
+    offset += in_size;
 }
 
-void writeIV(const String & iv, WriteBuffer & out)
+void Encryptor::decrypt(const char * data, size_t size, char * out)
 {
-    out.write(iv.data(), iv.length());
+    if (!size)
+        return;
+
+    auto current_iv = (init_vector + blocks(offset)).toString();
+
+    auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
+    auto * evp_ctx = evp_ctx_ptr.get();
+
+    if (!EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr))
+        throw Exception("Failed to initialize decryption context with cipher", ErrorCodes::DATA_ENCRYPTION_ERROR);
+
+    if (!EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
+                            reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())))
+        throw Exception("Failed to set key and IV for decryption", ErrorCodes::DATA_ENCRYPTION_ERROR);
+
+    size_t in_size = 0;
+    size_t out_size = 0;
+
+    auto off = blockOffset(offset);
+    if (off)
+    {
+        size_t in_part_size = partBlockSize(size, off);
+        size_t out_part_size = decryptBlockWithPadding(evp_ctx, &data[in_size], in_part_size, off, &out[out_size]);
+        in_size += in_part_size;
+        out_size += out_part_size;
+    }
+
+    if (in_size < size)
+    {
+        size_t in_part_size = size - in_size;
+        size_t out_part_size = decryptBlocks(evp_ctx, &data[in_size], in_part_size, &out[out_size]);
+        in_size += in_part_size;
+        out_size += out_part_size;
+    }
+
+    out_size += decryptFinal(evp_ctx, &out[out_size]);
+
+    if (out_size != in_size)
+        throw Exception("Only part of the data was decrypted", ErrorCodes::DATA_ENCRYPTION_ERROR);
+    offset += in_size;
 }
 
-size_t cipherKeyLength(const EVP_CIPHER * evp_cipher)
+bool isKeyLengthSupported(size_t key_length)
 {
-    return static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
-}
-
-size_t cipherIVLength(const EVP_CIPHER * evp_cipher)
-{
-    return static_cast<size_t>(EVP_CIPHER_iv_length(evp_cipher));
-}
-
-const EVP_CIPHER * defaultCipher()
-{
-    return EVP_aes_128_ctr();
+    return (key_length == 16) || (key_length == 24) || (key_length == 32);
 }
 
 }
