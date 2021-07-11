@@ -168,7 +168,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     for (size_t i = 0; i <= arg_types.size(); ++i)
     {
         const auto & type = i == arg_types.size() ? function.getResultType() : arg_types[i];
-        auto * data = b.CreateLoad(data_type, b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
+        auto * data = b.CreateLoad(data_type, b.CreateConstInBoundsGEP1_64(data_type, columns_arg, i));
         columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(type))->getPointerTo());
         columns[i].null_init = type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
     }
@@ -236,9 +236,9 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     auto * cur_block = b.GetInsertBlock();
     for (auto & col : columns)
     {
-        col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
+        col.data->addIncoming(b.CreateConstInBoundsGEP1_64(nullptr, col.data, 1), cur_block);
         if (col.null)
-            col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
+            col.null->addIncoming(b.CreateConstInBoundsGEP1_64(nullptr, col.null, 1), cur_block);
     }
 
     auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1));
@@ -295,7 +295,7 @@ static void compileCreateAggregateStatesFunctions(llvm::Module & module, const s
     {
         size_t aggregate_function_offset = function_to_compile.aggregate_data_offset;
         const auto * aggregate_function = function_to_compile.function;
-        auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_arg, aggregate_function_offset);
+        auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_place_arg, aggregate_function_offset);
         aggregate_function->compileCreate(b, aggregation_place_with_offset);
     }
 
@@ -338,7 +338,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
         for (size_t column_argument_index = 0; column_argument_index < function_arguments_size; ++column_argument_index)
         {
             const auto & argument_type = argument_types[column_argument_index];
-            auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, previous_columns_size + column_argument_index));
+            auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_64(column_data_type, columns_arg, previous_columns_size + column_argument_index));
             data_placeholder.data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(argument_type))->getPointerTo());
             data_placeholder.null_init = argument_type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
             columns.emplace_back(data_placeholder);
@@ -408,7 +408,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
             arguments_values[column_argument_index] = nullable_value;
         }
 
-        auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregation_place, aggregate_function_offset);
+        auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregation_place, aggregate_function_offset);
         aggregate_function_ptr->compileAdd(b, aggregation_place_with_offset, arguments_types, arguments_values);
 
         previous_columns_size += function_arguments_size;
@@ -419,13 +419,13 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
     auto * cur_block = b.GetInsertBlock();
     for (auto & col : columns)
     {
-        col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
+        col.data->addIncoming(b.CreateConstInBoundsGEP1_64(nullptr, col.data, 1), cur_block);
 
         if (col.null)
-            col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
+            col.null->addIncoming(b.CreateConstInBoundsGEP1_64(nullptr, col.null, 1), cur_block);
     }
 
-    places_phi->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, places_phi, 1), cur_block);
+    places_phi->addIncoming(b.CreateConstInBoundsGEP1_64(nullptr, places_phi, 1), cur_block);
 
     auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1));
     counter_phi->addIncoming(value, cur_block);
@@ -457,8 +457,8 @@ static void compileMergeAggregatesStates(llvm::Module & module, const std::vecto
         size_t aggregate_function_offset = function_to_compile.aggregate_data_offset;
         const auto * aggregate_function_ptr = function_to_compile.function;
 
-        auto * aggregate_data_place_merge_dst_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_dst_arg, aggregate_function_offset);
-        auto * aggregate_data_place_merge_src_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_src_arg, aggregate_function_offset);
+        auto * aggregate_data_place_merge_dst_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_place_dst_arg, aggregate_function_offset);
+        auto * aggregate_data_place_merge_src_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_place_src_arg, aggregate_function_offset);
 
         aggregate_function_ptr->compileMerge(b, aggregate_data_place_merge_dst_with_offset, aggregate_data_place_merge_src_with_offset);
     }
@@ -490,7 +490,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     for (size_t i = 0; i < functions.size(); ++i)
     {
         auto return_type = functions[i].function->getReturnType();
-        auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, i));
+        auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_64(column_data_type, columns_arg, i));
         columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(return_type))->getPointerTo());
         columns[i].null_init = return_type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
     }
@@ -526,7 +526,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
         const auto * aggregate_function_ptr = functions[i].function;
 
         auto * aggregate_data_place = b.CreateLoad(b.getInt8Ty()->getPointerTo(), aggregate_data_place_phi);
-        auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place, aggregate_function_offset);
+        auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_place, aggregate_function_offset);
 
         auto * final_value = aggregate_function_ptr->compileGetResult(b, aggregation_place_with_offset);
 
@@ -546,16 +546,16 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     auto * cur_block = b.GetInsertBlock();
     for (auto & col : columns)
     {
-        col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
+        col.data->addIncoming(b.CreateConstInBoundsGEP1_64(nullptr, col.data, 1), cur_block);
 
         if (col.null)
-            col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
+            col.null->addIncoming(b.CreateConstInBoundsGEP1_64(nullptr, col.null, 1), cur_block);
     }
 
     auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1), "", true, true);
     counter_phi->addIncoming(value, cur_block);
 
-    aggregate_data_place_phi->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_phi, 1), cur_block);
+    aggregate_data_place_phi->addIncoming(b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_place_phi, 1), cur_block);
 
     b.CreateCondBr(b.CreateICmpEQ(value, rows_count_arg), end, loop);
 

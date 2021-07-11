@@ -646,3 +646,28 @@ def test_storage_s3_put_gzip(started_cluster, extension, method):
     f = gzip.GzipFile(fileobj=buf, mode="rb")
     uncompressed_content = f.read().decode()
     assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 708
+
+
+def test_truncate_table(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    name = "truncate"
+
+    instance.query("CREATE TABLE {} (id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV')".format(
+        name, started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, name))
+
+    instance.query("INSERT INTO {} SELECT number FROM numbers(10)".format(name))
+    result = instance.query("SELECT * FROM {}".format(name))
+    assert result == instance.query("SELECT number FROM numbers(10)")
+    instance.query("TRUNCATE TABLE {}".format(name))
+
+    minio = started_cluster.minio_client
+    timeout = 30
+    while timeout > 0:
+        if len(list(minio.list_objects(started_cluster.minio_bucket, 'truncate/'))) == 0:
+            return
+        timeout -= 1
+        time.sleep(1)
+    assert(len(list(minio.list_objects(started_cluster.minio_bucket, 'truncate/'))) == 0)
+    assert instance.query("SELECT * FROM {}".format(name)) == ""
+
