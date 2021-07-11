@@ -59,7 +59,7 @@ public:
         {
             const UInt64 hindex = col_hindex->getUInt(row);
 
-            UInt8 is_valid = h3IsValid(hindex) == 0 ? 0 : 1;
+            UInt8 is_valid = isValidCell(hindex) == 0 ? 0 : 1;
 
             dst_data[row] = is_valid;
         }
