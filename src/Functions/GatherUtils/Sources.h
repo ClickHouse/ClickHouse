@@ -755,6 +755,7 @@ struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 {
     using Slice = GenericValueSlice;
     using SinkType = GenericArraySink;
+    using Column = IColumn;
 
     const IColumn * column;
     size_t total_rows;
