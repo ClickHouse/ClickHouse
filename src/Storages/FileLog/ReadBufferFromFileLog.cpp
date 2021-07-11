@@ -202,19 +202,21 @@ void ReadBufferFromFileLog::watchFunc()
         {
             switch (event.type)
             {
-                LOG_TRACE(log, "New event {} watched.", event.callback);
 
                 case Poco::DirectoryWatcher::DW_ITEM_ADDED:
+                    LOG_TRACE(log, "New event {} watched.", event.callback);
                     file_status[event.path].reader = std::ifstream(event.path);
                     break;
 
                 case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
+                    LOG_TRACE(log, "New event {} watched.", event.callback);
                     file_status[event.path].status = FileStatus::UPDATED;
                     break;
 
                 case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
                 case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
                 case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
+                    LOG_TRACE(log, "New event {} watched.", event.callback);
                     file_status[event.path].status = FileStatus::REMOVED;
                     break;
             }
