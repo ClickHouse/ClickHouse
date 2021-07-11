@@ -526,9 +526,8 @@ public:
     void clearOldWriteAheadLogs();
 
     /// Delete all directories which names begin with "tmp"
-    /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
-    /// Must be called with locked lockForShare() because use relative_data_path.
-    void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
+    /// Must be called with locked lockForShare() because it's using relative_data_path.
+    void clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
 
     void clearEmptyParts();
 
