@@ -338,8 +338,10 @@ int LocalServer::childMainImpl()
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(query_context);
 
+    std::function<void()> finalize_progress;
     if (need_render_progress)
     {
+        /// Set progress callback, which can be run from multiple threads.
         query_context->setProgressCallback([&](const Progress & value)
         {
             /// Write progress only if progress was updated
@@ -347,6 +349,13 @@ int LocalServer::childMainImpl()
                 progress_indication.writeProgress();
         });
 
+        /// Set finalizing callback for progress, which is called right before finalizing query output.
+        finalize_progress = [&]()
+        {
+            progress_indication.clearProgressOutput();
+        };
+
+        /// Set callback for file processing progress.
         progress_indication.setFileProgressCallback(query_context);
     }
 
@@ -408,7 +417,7 @@ void LocalServer::processQuery(const String & query, std::exception_ptr exceptio
     try
     {
         std::cerr << "executing query\n";
-        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {});
+        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {}, finalize_progress);
     }
     catch (...)
     {
