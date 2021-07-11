@@ -5,11 +5,11 @@
 #if USE_SSL
 #include <gtest/gtest.h>
 #include <IO/WriteBufferFromString.h>
-#include <Functions/FileEncryption.h>
+#include <IO/FileEncryptionCommon.h>
 
 
-using namespace FileEncryption;
 using namespace DB;
+using namespace DB::FileEncryption;
 
 struct InitVectorTestParam
 {
@@ -45,19 +45,19 @@ TEST_P(InitVectorTest, InitVector)
     const auto & param = GetParam();
 
     auto iv = InitVector(param.init);
-    ASSERT_EQ(param.init, iv.GetRef());
+    ASSERT_EQ(param.init, iv.str());
 
-    iv.Inc();
-    ASSERT_EQ(param.after_inc, iv.GetRef());
+    iv.inc();
+    ASSERT_EQ(param.after_inc, iv.str());
 
-    iv.Inc(param.adder);
-    ASSERT_EQ(param.after_add, iv.GetRef());
+    iv.inc(param.adder);
+    ASSERT_EQ(param.after_add, iv.str());
 
-    iv.Set(param.setter);
-    ASSERT_EQ(param.after_set, iv.GetRef());
+    iv.set(param.setter);
+    ASSERT_EQ(param.after_set, iv.str());
 
-    iv.Set(0);
-    ASSERT_EQ(param.init, iv.GetRef());
+    iv.set(0);
+    ASSERT_EQ(param.init, iv.str());
 }
 
 
@@ -107,7 +107,7 @@ TEST(FileEncryption, Encryption)
     {
         auto buf = WriteBufferFromString(result);
         auto encryptor = Encryptor(iv, key, 0);
-        encryptor.Encrypt(input.data(), buf, i);
+        encryptor.encrypt(input.data(), buf, i);
         ASSERT_EQ(expected.substr(0, i), result.substr(0, i));
     }
 
@@ -117,7 +117,7 @@ TEST(FileEncryption, Encryption)
     {
         auto buf = WriteBufferFromString(result);
         auto encryptor = Encryptor(iv, key, offset);
-        encryptor.Encrypt(input.data(), buf, i);
+        encryptor.encrypt(input.data(), buf, i);
         ASSERT_EQ(offset_expected.substr(0, i), result.substr(0, i));
     }
 }
@@ -134,7 +134,7 @@ TEST(FileEncryption, Decryption)
 
     for (size_t i = 0; i <= expected.size(); ++i)
     {
-        decryptor.Decrypt(input.data(), result.data(), i, 0);
+        decryptor.decrypt(input.data(), result.data(), i, 0);
         ASSERT_EQ(expected.substr(0, i), result.substr(0, i));
     }
 
@@ -142,7 +142,7 @@ TEST(FileEncryption, Decryption)
     String offset_input = "\x6c\x67\xe4\xf5\x8f\x86\xb0\x19\xe5\xcd\x53\x59\xe0\xc6\x01\x5e\xc1\xfd\x60\x9d";
     for (size_t i = 0; i <= expected.size(); ++i)
     {
-        decryptor.Decrypt(offset_input.data(), result.data(), i, offset);
+        decryptor.decrypt(offset_input.data(), result.data(), i, offset);
         ASSERT_EQ(expected.substr(0, i), result.substr(0, i));
     }
 }

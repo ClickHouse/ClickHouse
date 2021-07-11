@@ -1,17 +1,10 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Disks/DiskEncrypted.h>
 
 #if USE_SSL
-
-#include <Interpreters/Context.h>
-
-#include "Disks/DiskFactory.h"
-#include "DiskEncrypted.h"
-
-#include <Functions/FileEncryption.h>
-#include <IO/ReadEncryptedBuffer.h>
-#include <IO/WriteEncryptedBuffer.h>
+#include <Disks/DiskFactory.h>
+#include <IO/FileEncryptionCommon.h>
+#include <IO/ReadBufferFromEncryptedFile.h>
+#include <IO/WriteBufferFromEncryptedFile.h>
 
 
 namespace DB
@@ -21,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int LOGICAL_ERROR;
 }
 
 using DiskEncryptedPtr = std::shared_ptr<DiskEncrypted>;
@@ -60,6 +54,26 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
 }
 
+DiskEncrypted::DiskEncrypted(const String & name_, DiskPtr disk_, const String & key_, const String & path_)
+    : DiskDecorator(disk_)
+    , name(name_), key(key_), disk_path(path_)
+    , disk_absolute_path(delegate->getPath() + disk_path)
+{
+    initialize();
+}
+
+void DiskEncrypted::initialize()
+{
+    // use wrapped_disk as an EncryptedDisk store
+    if (disk_path.empty())
+        return;
+
+    if (disk_path.back() != '/')
+        throw Exception("Disk path must ends with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
+
+    delegate->createDirectories(disk_path);
+}
+
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const String & path,
     size_t buf_size,
@@ -76,35 +90,32 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
 
     if (exists(path) && getFileSize(path))
     {
-        iv = ReadIV(kIVSize, *buffer);
+        iv = readIV(kIVSize, *buffer);
         offset = kIVSize;
     }
     else
-        iv = GetRandomString(kIVSize);
+        iv = randomString(kIVSize);
 
-    return std::make_unique<ReadEncryptedBuffer>(buf_size, std::move(buffer), iv, key, offset);
+    return std::make_unique<ReadBufferFromEncryptedFile>(buf_size, std::move(buffer), iv, key, offset);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(
-    const String & path,
-    size_t buf_size,
-    WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     String iv;
-    size_t offset = 0;
+    size_t start_offset = 0;
     auto wrapped_path = wrappedPath(path);
 
     if (mode == WriteMode::Append && exists(path) && getFileSize(path))
     {
         auto read_buffer = delegate->readFile(wrapped_path, kIVSize);
-        iv = ReadIV(kIVSize, *read_buffer);
-        offset = getFileSize(path);
+        iv = readIV(kIVSize, *read_buffer);
+        start_offset = getFileSize(path);
     }
     else
-        iv = GetRandomString(kIVSize);
+        iv = randomString(kIVSize);
 
     auto buffer = delegate->writeFile(wrapped_path, buf_size, mode);
-    return std::make_unique<WriteEncryptedBuffer>(buf_size, std::move(buffer), iv, key, offset);
+    return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), iv, key, start_offset);
 }
 
 
@@ -168,8 +179,8 @@ void registerDiskEncrypted(DiskFactory & factory)
         String key = config.getString(config_prefix + ".key", "");
         if (key.empty())
             throw Exception("Encrypted disk key can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-        if (key.size() != CipherKeyLength(DefaultCipher()))
-            throw Exception("Expected key with size " + std::to_string(CipherKeyLength(DefaultCipher())) + ", got key with size " + std::to_string(key.size()),
+        if (key.size() != cipherKeyLength(defaultCipher()))
+            throw Exception("Expected key with size " + std::to_string(cipherKeyLength(defaultCipher())) + ", got key with size " + std::to_string(key.size()),
                             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
         auto wrapped_disk = map.find(wrapped_disk_name);
