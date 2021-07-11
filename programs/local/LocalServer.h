@@ -54,11 +54,12 @@ protected:
 
     bool processQueryFromInteractive(const String & input) override
     {
+        if (exit_strings.end() != exit_strings.find(trim(input, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+            return false;
+
         std::exception_ptr e;
         processQuery(input, e);
 
-        /// For clickhouse local it is ok, to return true here - i.e. interactive
-        /// mode will only be stopped by exit command.
         return true;
     }
 

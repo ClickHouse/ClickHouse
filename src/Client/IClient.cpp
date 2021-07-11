@@ -130,6 +130,7 @@ void IClient::highlight(const String & query, std::vector<replxx::Replxx::Color>
             {TokenType::ClosingRoundBracket, Replxx::Color::BROWN},
             {TokenType::OpeningSquareBracket, Replxx::Color::BROWN},
             {TokenType::ClosingSquareBracket, Replxx::Color::BROWN},
+            {TokenType::DoubleColon, Replxx::Color::BROWN},
             {TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE},
             {TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE},
 
