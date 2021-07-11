@@ -148,8 +148,6 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         size_t offset_after_seek_pos = new_pos - seek_pos;
 
-        assert(new_offset_in_buffer < required_alignment);
-
         ProfileEvents::increment(ProfileEvents::Seek);
         Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
