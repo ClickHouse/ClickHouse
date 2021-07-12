@@ -39,6 +39,18 @@ Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on t
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
+Supports multiple replicas that must be listed by `|`. For example:
+
+```sql
+SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
+or
+
+```sql
+SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
 **Returned Value**
 
 A table object with the same columns as the original MySQL table.

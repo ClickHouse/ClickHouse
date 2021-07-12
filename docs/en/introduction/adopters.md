@@ -59,6 +59,7 @@ toc_title: Adopters
 | <a href="https://www.huya.com/" class="favicon">HUYA</a> | Video Streaming | Analytics | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/7.%20ClickHouse万亿数据分析实践%20李本旺(sundy-li)%20虎牙.pdf) |
 | <a href="https://www.the-ica.com/" class="favicon">ICA</a> | FinTech | Risk Management | — | — | [Blog Post in English, Sep 2020](https://altinity.com/blog/clickhouse-vs-redshift-performance-for-fintech-risk-management?utm_campaign=ClickHouse%20vs%20RedShift&utm_content=143520807&utm_medium=social&utm_source=twitter&hss_channel=tw-3894792263) |
 | <a href="https://www.idealista.com" class="favicon">Idealista</a> | Real Estate | Analytics | — | — | [Blog Post in English, April 2019](https://clickhouse.tech/blog/en/clickhouse-meetup-in-madrid-on-april-2-2019) |
+| <a href="https://infobaleen.com" class="favicon">Infobaleen</a> | AI markting tool  | Analytics | — | — | [Official site](https://infobaleen.com) |
 | <a href="https://www.infovista.com/" class="favicon">Infovista</a> | Networks | Analytics | — | — | [Slides in English, October 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup30/infovista.pdf) |
 | <a href="https://www.innogames.com" class="favicon">InnoGames</a> | Games | Metrics, Logging | — | — | [Slides in Russian, September 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup28/graphite_and_clickHouse.pdf) |
 | <a href="https://instabug.com/" class="favicon">Instabug</a> | APM Platform | Main product | — | — | [A quote from Co-Founder](https://altinity.com/) |
@@ -110,7 +111,7 @@ toc_title: Adopters
 | <a href="https://www.semrush.com/" class="favicon">SEMrush</a> | Marketing | Main product | — | — | [Slides in Russian, August 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup17/5_semrush.pdf) |
 | <a href="https://sentry.io/" class="favicon">Sentry</a> | Software Development | Main product | — | — | [Blog Post in English, May 2019](https://blog.sentry.io/2019/05/16/introducing-snuba-sentrys-new-search-infrastructure) |
 | <a href="https://seo.do/" class="favicon">seo.do</a> | Analytics | Main product | — | — | [Slides in English, November 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup35/CH%20Presentation-%20Metehan%20Çetinkaya.pdf) |
-| <a href="http://www.sgk.gov.tr/wps/portal/sgk/tr" class="favicon">SGK</a> | Goverment Social Security | Analytics | — | — | [Slides in English, November 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup35/ClickHouse%20Meetup-Ramazan%20POLAT.pdf) |
+| <a href="http://www.sgk.gov.tr/wps/portal/sgk/tr" class="favicon">SGK</a> | Government Social Security | Analytics | — | — | [Slides in English, November 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup35/ClickHouse%20Meetup-Ramazan%20POLAT.pdf) |
 | <a href="http://english.sina.com/index.html" class="favicon">Sina</a> | News | — | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/6.%20ClickHouse最佳实践%20高鹏_新浪.pdf) |
 | <a href="https://smi2.ru/" class="favicon">SMI2</a> | News | Analytics | — | — | [Blog Post in Russian, November 2017](https://habr.com/ru/company/smi2/blog/314558/) |
 | <a href="https://www.spark.co.nz/" class="favicon">Spark New Zealand</a> | Telecommunications | Security Operations | — | — | [Blog Post, Feb 2020](https://blog.n0p.me/2020/02/2020-02-05-dnsmonster/) |
@@ -154,5 +155,7 @@ toc_title: Adopters
 | <a href="https://www.hydrolix.io/" class="favicon">Hydrolix</a> | Cloud data platform | Main product | — | — | [Documentation](https://docs.hydrolix.io/guide/query) |
 | <a href="https://www.argedor.com/en/clickhouse/" class="favicon">Argedor</a> | ClickHouse support | — | — | — | [Official website](https://www.argedor.com/en/clickhouse/) |
 | <a href="https://signoz.io/" class="favicon">SigNoz</a> | Observability Platform | Main Product | — | — | [Source code](https://github.com/SigNoz/signoz) |
+| <a href="https://chelpipegroup.com/" class="favicon">ChelPipe Group</a> | Analytics | — | — | — | [Blog post, June 2021](https://vc.ru/trade/253172-tyazhelomu-proizvodstvu-user-friendly-sayt-internet-magazin-trub-dlya-chtpz) |
+| <a href="https://zagravagames.com/en/" class="favicon">Zagrava Trading</a> | — | — | — | — | [Job offer, May 2021](https://twitter.com/datastackjobs/status/1394707267082063874) |
 
 [Original article](https://clickhouse.tech/docs/en/introduction/adopters/) <!--hide-->
