@@ -151,7 +151,7 @@ public:
             throw DB::Exception("Expected key with size " + std::to_string(CipherKeyLength(evp_cipher)) + ", got iv with size " + std::to_string(key_.Size()),
                                 DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
-        offset = BlockOffset(offset_);
+        offset = offset_;
     }
 
 protected:
@@ -202,7 +202,6 @@ public:
             buf.write(EncryptPartialBlock(plaintext, part_size, iv, off).data(), part_size);
             offset += part_size;
             size -= part_size;
-            plaintext += part_size;
             iv.Inc();
         }
 
