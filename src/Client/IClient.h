@@ -84,7 +84,7 @@ protected:
     // Current query as it will be executed either on server on in clickhouse-local.
     // It may differ from the full query for INSERT queries, for which the data that follows
     // the query is stripped and sent separately.
-    String query_to_send;
+    String query_to_execute;
 
     /// If the last query resulted in exception. `server_exception` or
     /// `client_exception` must be set.
@@ -137,11 +137,15 @@ protected:
 
     void resetOutput();
 
-    virtual void processOrdinaryQuery() = 0;
+    virtual void executeSingleQueryPrefix() {}
 
-    void processParsedSingleQuery(std::optional<bool> echo_query = {});
+    virtual void executeSingleQueryImpl() = 0;
 
-    virtual void processTextAsSingleQuery(const String & input) = 0;
+    virtual void executeSingleQuerySuffix() {}
+
+    void processQuery(const String & query);
+
+    void executeSingleQuery(std::optional<bool> echo_query_ = {});
 
     virtual bool processQueryFromInteractive(const String & input) = 0;
 
@@ -183,14 +187,14 @@ protected:
 
     virtual void setDatabase(const String &) {}
 
-    virtual void processInsertQuery() {}
-
 private:
 
     inline String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
+
+    void outputQueryInfo(bool echo_query_);
 };
 
 }
