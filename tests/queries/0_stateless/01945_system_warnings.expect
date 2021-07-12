@@ -19,17 +19,17 @@ spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \
 expect ":) "
 
 #find out BUILD TYPE
-send -- "SELECT value FROM system.build_options WHERE name='BUILD_TYPE'"
+send -- "SELECT value FROM system.build_options WHERE name='BUILD_TYPE'\r"
 expect {
     "Debug" {
         # Check debug message in system.warnings
-        send -- "SELECT message FROM system.warnings WHERE message='Server was built in debug mode. It will work slowly.'"
+        send -- "SELECT message FROM system.warnings WHERE message='Server was built in debug mode. It will work slowly.'\r"
         expect "Server was built in debug mode. It will work slowly."
         expect ":) "
     }
     "RelWithDebInfo" {
         # Check empty to find out existence
-        send -- "SELECT message FROM system.warnings WHERE 0=1"
+        send -- "SELECT message FROM system.warnings WHERE 0=1\r"
         expect "Ok."
         expect ":) "
     }
