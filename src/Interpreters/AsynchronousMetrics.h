@@ -82,25 +82,25 @@ private:
 #if defined(OS_LINUX)
     MemoryStatisticsOS memory_stat;
 
-    std::optional<ReadBufferFromFile> meminfo;
-    std::optional<ReadBufferFromFile> loadavg;
-    std::optional<ReadBufferFromFile> proc_stat;
-    std::optional<ReadBufferFromFile> cpuinfo;
-    std::optional<ReadBufferFromFile> file_nr;
-    std::optional<ReadBufferFromFile> uptime;
-    std::optional<ReadBufferFromFile> net_dev;
+    std::optional<ReadBufferFromFilePRead> meminfo;
+    std::optional<ReadBufferFromFilePRead> loadavg;
+    std::optional<ReadBufferFromFilePRead> proc_stat;
+    std::optional<ReadBufferFromFilePRead> cpuinfo;
+    std::optional<ReadBufferFromFilePRead> file_nr;
+    std::optional<ReadBufferFromFilePRead> uptime;
+    std::optional<ReadBufferFromFilePRead> net_dev;
 
-    std::vector<std::unique_ptr<ReadBufferFromFile>> thermal;
+    std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal;
 
     std::unordered_map<String /* device name */,
         std::unordered_map<String /* label name */,
-            std::unique_ptr<ReadBufferFromFile>>> hwmon_devices;
+            std::unique_ptr<ReadBufferFromFilePRead>>> hwmon_devices;
 
     std::vector<std::pair<
-        std::unique_ptr<ReadBufferFromFile> /* correctable errors */,
-        std::unique_ptr<ReadBufferFromFile> /* uncorrectable errors */>> edac;
+        std::unique_ptr<ReadBufferFromFilePRead> /* correctable errors */,
+        std::unique_ptr<ReadBufferFromFilePRead> /* uncorrectable errors */>> edac;
 
-    std::unordered_map<String /* device name */, std::unique_ptr<ReadBufferFromFile>> block_devs;
+    std::unordered_map<String /* device name */, std::unique_ptr<ReadBufferFromFilePRead>> block_devs;
 
     /// TODO: socket statistics.
 
