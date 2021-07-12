@@ -28,6 +28,11 @@ public:
     Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
 private:
+    void insertDefaultSQLiteValue(IColumn & column, const IColumn & sample_column)
+    {
+        column.insertFrom(sample_column, 0);
+    }
+
     using ValueType = ExternalResultDescription::ValueType;
 
     struct StatementDeleter

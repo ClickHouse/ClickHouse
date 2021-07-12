@@ -80,6 +80,14 @@ Block SQLiteBlockInputStream::readImpl()
         int column_count = sqlite3_column_count(compiled_statement.get());
         for (const auto idx : collections::range(0, column_count))
         {
+            const auto & sample = description.sample_block.getByPosition(idx);
+
+            if (sqlite3_column_type(compiled_statement.get(), idx) == SQLITE_NULL)
+            {
+                insertDefaultSQLiteValue(*columns[idx], *sample.column);
+                continue;
+            }
+
             if (description.types[idx].second)
             {
                 ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
