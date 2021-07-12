@@ -159,18 +159,10 @@ private:
 
     bool supportPasswordOption() const override { return true; }
 
-    bool splitQueryIntoParts() const override { return true; }
-
     void reconnectIfNeeded() override
     {
         if (!connection->checkConnected())
             connect();
-    }
-
-    void setDatabase(const String & new_database) override
-    {
-        /// If the connection initiates the reconnection, it uses its variable.
-        connection->setDefaultDatabase(new_database);
     }
 
     void initialize(Poco::Util::Application & self) override
@@ -197,17 +189,6 @@ private:
         /// Set path for format schema files
         if (config().has("format_schema_path"))
             global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
-
-        /// Initialize query_id_formats if any
-        if (config().has("query_id_formats"))
-        {
-            Poco::Util::AbstractConfiguration::Keys keys;
-            config().keys("query_id_formats", keys);
-            for (const auto & name : keys)
-                query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
-        }
-        if (query_id_formats.empty())
-            query_id_formats.emplace_back("Query id:", " {query_id}\n");
     }
 
     void processMainImplException(const Exception & e) override
@@ -655,7 +636,7 @@ private:
                 parsed_query = ast_to_process;
                 query_to_execute = parsed_query->formatForErrorMessage();
 
-                executeSingleQuery();
+                executeParsedQuery();
             }
             catch (...)
             {
@@ -920,7 +901,7 @@ private:
         }
     }
 
-    void executeSingleQueryPrefix() override
+    void executeParsedQueryPrefix() override
     {
         auto query = query_to_execute;
         /// Some parts of a query (result output and formatting) are executed
@@ -937,7 +918,7 @@ private:
             query_to_execute = full_query.substr(0, insert->data - query.data());
     }
 
-    void executeSingleQueryImpl() override
+    void executeParsedQueryImpl() override
     {
         client_exception.reset();
         server_exception.reset();
@@ -986,7 +967,7 @@ private:
         }
     }
 
-    void executeSingleQuerySuffix() override
+    void executeParsedQuerySuffix() override
     {
         /// Do not change context (current DB, settings) in case of an exception.
         if (!have_error)
@@ -1008,7 +989,8 @@ private:
                 const String & new_database = use_query->database;
                 /// If the client initiates the reconnection, it takes the settings from the config.
                 config().setString("database", new_database);
-                setDatabase(new_database);
+                /// If the connection initiates the reconnection, it uses its variable.
+                connection->setDefaultDatabase(new_database);
             }
         }
     }

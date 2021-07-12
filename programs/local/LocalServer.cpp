@@ -249,20 +249,10 @@ std::string LocalServer::getInitialCreateTableQuery()
 }
 
 
-void LocalServer::executeSingleQueryImpl()
+void LocalServer::executeParsedQueryImpl()
 {
-    written_first_block = false;
-    progress_indication.resetProgress();
-
     ReadBufferFromString read_buf(query_to_execute);
     WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
-
-    if (echo_queries)
-    {
-        writeString(query_to_execute, write_buf);
-        writeChar('\n', write_buf);
-        write_buf.next();
-    }
 
     std::function<void()> finalize_progress;
     if (need_render_progress)
@@ -315,10 +305,7 @@ void LocalServer::processQueries()
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
     for (const auto & query : queries)
-    {
-        query_to_execute = query;
-        executeSingleQueryImpl();
-    }
+        prepareAndExecuteQuery(query);
 
     if (exception)
         std::rethrow_exception(exception);

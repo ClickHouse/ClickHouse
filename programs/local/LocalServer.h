@@ -54,15 +54,10 @@ protected:
 
     bool processQueryFromInteractive(const String & input) override
     {
-        if (exit_strings.end() != exit_strings.find(trim(input, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
-            return false;
-
-        query_to_execute = input;
-        executeSingleQueryImpl();
-        return true;
+        return processQueryText(input);
     }
 
-    void executeSingleQueryImpl() override;
+    void executeParsedQueryImpl() override;
 
     void reportQueryError() const override;
 
@@ -77,8 +72,6 @@ protected:
                         const std::vector<Arguments> &) override;
 
     bool supportPasswordOption() const override { return false; }
-
-    bool splitQueryIntoParts() const override { return false; }
 
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 
