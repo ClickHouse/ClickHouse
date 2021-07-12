@@ -4,6 +4,7 @@
 
 #include <map>
 #include <cassert>
+#include <chrono>
 
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -525,7 +526,7 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, ContextPtr co
 
 IStorage::ColumnSizeByName StorageTinyLog::getColumnSizes() const
 {
-    std::shared_lock lock(rwlock, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+    std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
     ColumnSizeByName column_sizes;
     FileChecker::Map file_sizes = file_checker.getFileSizes();
     
@@ -539,7 +540,7 @@ IStorage::ColumnSizeByName StorageTinyLog::getColumnSizes() const
         };
 
         ISerialization::SubstreamPath substream_path;
-        auto serialization = type->getDefaultSerialization();
+        auto serialization = column.type->getDefaultSerialization();
         serialization->enumerateStreams(stream_callback, substream_path);
     }
 
