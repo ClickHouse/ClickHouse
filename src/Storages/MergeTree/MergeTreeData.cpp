@@ -129,11 +129,14 @@ namespace ErrorCodes
 }
 
 using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
-static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key)
+static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+
+    if (!check_sample_column_is_correct)
+        return;
 
     const auto & sampling_key = metadata.getSamplingKey();
     DataTypePtr sampling_column_type = sampling_key.data_types[0];
@@ -225,7 +228,8 @@ MergeTreeData::MergeTreeData(
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
         /// This is for backward compatibility.
-        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key);
+        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key,
+                              settings->check_sample_column_is_correct);
     }
 
     checkTTLExpressions(metadata_, metadata_);
@@ -1700,7 +1704,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "ALTER MODIFY SAMPLE BY is not supported for default-partitioned tables created with the old syntax",
                     ErrorCodes::BAD_ARGUMENTS);
 
-            checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key);
+            checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key,
+                                  getSettings()->check_sample_column_is_correct);
         }
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
         {
