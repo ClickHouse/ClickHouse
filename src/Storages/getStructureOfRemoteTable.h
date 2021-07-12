@@ -8,6 +8,7 @@
 
 namespace DB
 {
+
 class Context;
 struct StorageID;
 
@@ -18,5 +19,10 @@ ColumnsDescription getStructureOfRemoteTable(
     const StorageID & table_id,
     ContextPtr context,
     const ASTPtr & table_func_ptr = nullptr);
+
+std::vector<NamesAndTypesList> getExtendedColumnsOfRemoteTables(
+    const Cluster & cluster,
+    const StorageID & remote_table_id,
+    ContextPtr context);
 
 }

@@ -60,6 +60,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     ColumnsDescription res;
 
     auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef());
+    new_context->setSetting("describe_extend_object_types", true);
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     Block sample_block
@@ -148,6 +149,69 @@ ColumnsDescription getStructureOfRemoteTable(
     throw NetException(
         "All attempts to get table structure failed. Log: \n\n" + fail_messages + "\n",
         ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
+}
+
+std::vector<NamesAndTypesList> getExtendedColumnsOfRemoteTables(
+    const Cluster & cluster,
+    const StorageID & remote_table_id,
+    ContextPtr context)
+{
+    const auto & shards_info = cluster.getShardsInfo();
+    auto query = "DESC TABLE " + remote_table_id.getFullTableName();
+
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef());
+    new_context->setSetting("describe_extend_object_types", true);
+
+    /// Expect only needed columns from the result of DESC TABLE.
+    Block sample_block
+    {
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "name" },
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "type" },
+    };
+
+    auto execute_query_on_shard = [&](const auto & shard_info)
+    {
+        /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
+        auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
+
+        input->setPoolMode(PoolMode::GET_ONE);
+        input->setMainTable(remote_table_id);
+        input->readPrefix();
+
+        NamesAndTypesList res;
+        while (auto block = input->read())
+        {
+            const auto & name_col = *block.getByName("name").column;
+            const auto & type_col = *block.getByName("type").column;
+
+            size_t size = name_col.size();
+            for (size_t i = 0; i < size; ++i)
+            {
+                auto name = name_col[i].template get<const String &>();
+                auto type_name = type_col[i].template get<const String &>();
+
+                res.emplace_back(std::move(name), DataTypeFactory::instance().get(type_name));
+            }
+        }
+
+        return res;
+    };
+
+    std::vector<NamesAndTypesList> columns;
+    for (const auto & shard_info : shards_info)
+    {
+        auto res = execute_query_on_shard(shard_info);
+
+        /// Expect at least some columns.
+        /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
+        if (!res.empty())
+            columns.emplace_back(std::move(res));
+    }
+
+    if (columns.empty())
+        throw NetException("All attempts to get table structure failed", ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
+
+    return columns;
 }
 
 }

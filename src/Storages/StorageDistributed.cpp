@@ -9,10 +9,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/ObjectUtils.h>
 
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/getStructureOfRemoteTable.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -557,6 +559,32 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::WithMergeableState;
+}
+
+StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
+{
+    auto names_of_objects = getNamesOfObjectColumns(metadata_snapshot->getColumns().getAllPhysical());
+    if (names_of_objects.empty())
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+
+    auto columns_in_tables = getExtendedColumnsOfRemoteTables(*getCluster(), StorageID{remote_database, remote_table}, getContext());
+    assert(!columns_in_tables.empty());
+
+    std::unordered_map<String, DataTypes> types_in_tables;
+    for (const auto & columns : columns_in_tables)
+    {
+        for (const auto & [name, type] : columns)
+        {
+            if (names_of_objects.count(name))
+                types_in_tables[name].push_back(type);
+        }
+    }
+
+    StorageSnapshot::NameToTypeMap object_types;
+    for (const auto & [name, types] : types_in_tables)
+        object_types.emplace(name, getLeastCommonTypeForObject(types));
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_types);
 }
 
 Pipe StorageDistributed::read(
