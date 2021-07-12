@@ -725,14 +725,16 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
     std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
     ColumnSizeByName column_sizes;
     FileChecker::Map file_sizes = file_checker.getFileSizes();
-    
+
     for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
     {
-        ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
+        ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
         {
             String stream_name = ISerialization::getFileNameForStream(column, substream_path);
             ColumnSize & size = column_sizes[column.name];
-            size.data_compressed += file_sizes[stream_name];
+            auto it = files.find(stream_name);
+            if (it != files.end())
+                size.data_compressed += file_sizes[fileName(it->second.data_file_path)];
         };
 
         ISerialization::SubstreamPath substream_path;
