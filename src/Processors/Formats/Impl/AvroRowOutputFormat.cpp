@@ -57,7 +57,7 @@ class AvroSerializerTraits
 public:
     bool isStringAsString(const String & column_name)
     {
-        return RE2::PartialMatch/*FullMatch*/(column_name, string_to_string_regexp);
+        return RE2::FullMatch(column_name, string_to_string_regexp);
     }
 
     AvroSerializerTraits(const FormatSettings & settings_)
@@ -192,17 +192,17 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::String:
             if (traits->isStringAsString(column_name))
                 return {avro::StringSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
-                           {
-                               const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-                               encoder.encodeString(s.toString());
-                           }
+                    {
+                        const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+                        encoder.encodeString(s.toString());
+                    }
                 };
             else
                 return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
-                           {
-                               const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-                               encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data), s.size);
-                           }
+                    {
+                        const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+                        encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data), s.size);
+                    }
                 };
         case TypeIndex::FixedString:
         {
