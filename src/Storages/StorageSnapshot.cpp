@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
 {
-    auto all_columns = metadata->getColumns().get(options);
+    auto all_columns = getMetadataForQuery()->getColumns().get(options);
 
     if (options.with_virtuals)
     {

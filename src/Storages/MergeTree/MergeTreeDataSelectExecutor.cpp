@@ -134,7 +134,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 {
     const auto & settings = context->getSettingsRef();
     const auto & parts = storage_snapshot->parts;
-    const auto & metadata_snapshot = storage_snapshot->metadata;
+    const auto & metadata_for_reading = storage_snapshot->getMetadataForQuery();
 
     if (!query_info.projection)
     {
@@ -142,8 +142,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             parts,
             column_names_to_return,
             storage_snapshot,
-            metadata_snapshot,
-            metadata_snapshot,
             query_info,
             context,
             max_block_size,
@@ -151,7 +149,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_numbers_to_read);
 
         if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
-            && !metadata_snapshot->projections.empty())
+            && !metadata_for_reading->projections.empty())
             throw Exception(
                 "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
                 ErrorCodes::PROJECTION_NOT_USED);
@@ -189,8 +187,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             projection_parts,
             query_info.projection->required_columns,
             storage_snapshot,
-            metadata_snapshot,
-            query_info.projection->desc->metadata,
             query_info,
             context,
             max_block_size,
@@ -1090,8 +1086,6 @@ static void selectColumnNames(
 size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
-    const StorageSnapshotPtr & storage_snapshot,
-    const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     ContextPtr context,
@@ -1114,14 +1108,14 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     if (part_values && part_values->empty())
         return 0;
 
+    auto physical_columns = metadata_snapshot->getColumns().getAllPhysical();
+
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
     if (real_column_names.empty())
-    {
-        NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
-        real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
-    }
+        real_column_names.push_back(ExpressionActions::getSmallestColumn(physical_columns));
 
-    storage_snapshot->check(real_column_names);
+    /// TODO: do we support dynamic columns here?
+    metadata_snapshot->check(physical_columns.addTypes(real_column_names));
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
@@ -1140,7 +1134,7 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     ReadFromMergeTree::IndexStats index_stats;
 
     filterPartsByPartition(
-        parts, part_values, metadata_snapshot_base, data, query_info,
+        parts, part_values, metadata_snapshot, data, query_info,
         context, max_block_numbers_to_read.get(), log, index_stats);
 
     auto sampling = MergeTreeDataSelectExecutor::getSampling(
@@ -1172,8 +1166,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
     const StorageSnapshotPtr & storage_snapshot,
-    const StorageMetadataPtr & metadata_snapshot_base,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     ContextPtr context,
     const UInt64 max_block_size,
@@ -1199,8 +1191,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         data,
         query_info,
         storage_snapshot,
-        metadata_snapshot,
-        metadata_snapshot_base,
         context,
         max_block_size,
         num_streams,

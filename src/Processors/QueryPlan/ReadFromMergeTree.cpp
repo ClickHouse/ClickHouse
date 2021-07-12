@@ -75,8 +75,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     const MergeTreeData & data_,
     const SelectQueryInfo & query_info_,
     StorageSnapshotPtr storage_snapshot_,
-    StorageMetadataPtr metadata_snapshot_,
-    StorageMetadataPtr metadata_snapshot_base_,
     ContextPtr context_,
     size_t max_block_size_,
     size_t num_streams_,
@@ -97,8 +95,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , prewhere_info(getPrewhereInfo(query_info))
     , actions_settings(ExpressionActionsSettings::fromContext(context_))
     , storage_snapshot(std::move(storage_snapshot_))
-    , metadata_snapshot(std::move(metadata_snapshot_))
-    , metadata_snapshot_base(std::move(metadata_snapshot_base_))
+    , metadata_for_reading(storage_snapshot->getMetadataForQuery())
     , context(std::move(context_))
     , max_block_size(max_block_size_)
     , requested_num_streams(num_streams_)
@@ -464,7 +461,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     {
         SortDescription sort_description;
         for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
-            sort_description.emplace_back(metadata_snapshot->getSortingKey().column_names[j],
+            sort_description.emplace_back(metadata_for_reading->getSortingKey().column_names[j],
                                           input_order_info->direction, 1);
 
         auto sorting_key_expr = std::make_shared<ExpressionActions>(sorting_key_prefix_expr);
@@ -691,7 +688,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         }
 
         auto sorting_expr = std::make_shared<ExpressionActions>(
-            metadata_snapshot->getSortingKey().expression->getActionsDAG().clone());
+            metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
 
         pipe.addSimpleTransform([sorting_expr](const Block & header)
         {
@@ -708,12 +705,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             continue;
         }
 
-        Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+        Names sort_columns = metadata_for_reading->getSortingKeyColumns();
         SortDescription sort_description;
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 
-        Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
+        Names partition_key_columns = metadata_for_reading->getPartitionKey().column_names;
 
         const auto & header = pipe.getHeader();
         for (size_t i = 0; i < sort_columns_size; ++i)
@@ -753,7 +750,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             out_projection = createProjection(pipe.getHeader());
 
         auto sorting_expr = std::make_shared<ExpressionActions>(
-            metadata_snapshot->getSortingKey().expression->getActionsDAG().clone());
+            metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
 
         pipe.addSimpleTransform([sorting_expr](const Block & header)
         {
@@ -782,14 +779,14 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
     if (result.column_names_to_read.empty())
     {
-        NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
+        NamesAndTypesList available_real_columns = metadata_for_reading->getColumns().getAllPhysical();
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
     }
 
     storage_snapshot->check(result.column_names_to_read);
 
     // Build and check if primary key is used when necessary
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto & primary_key = metadata_for_reading->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
     KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
 
@@ -805,12 +802,12 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
     MergeTreeDataSelectExecutor::filterPartsByPartition(
-        parts, part_values, metadata_snapshot_base, data, query_info, context,
+        parts, part_values, storage_snapshot->metadata, data, query_info, context,
         max_block_numbers_to_read.get(), log, result.index_stats);
 
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
-        select, metadata_snapshot->getColumns().getAllPhysical(), parts, key_condition,
-        data, metadata_snapshot, context, sample_factor_column_queried, log);
+        select, metadata_for_reading->getColumns().getAllPhysical(), parts, key_condition,
+        data, metadata_for_reading, context, sample_factor_column_queried, log);
 
     if (result.sampling.read_nothing)
         return result;
@@ -823,7 +820,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 
     result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
         std::move(parts),
-        metadata_snapshot,
+        metadata_for_reading,
         query_info,
         context,
         key_condition,
@@ -913,7 +910,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
     if (select.final())
     {
         /// Add columns needed to calculate the sorting expression and the sign.
-        std::vector<String> add_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
+        std::vector<String> add_columns = metadata_for_reading->getColumnsRequiredForSortingKey();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
         if (!data.merging_params.sign_column.empty())
@@ -932,10 +929,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
     else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
     {
         size_t prefix_size = input_order_info->order_key_prefix_descr.size();
-        auto order_key_prefix_ast = metadata_snapshot->getSortingKey().expression_list_ast->clone();
+        auto order_key_prefix_ast = metadata_for_reading->getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
-        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
+        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata_for_reading->getColumns().getAllPhysical());
         auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
 
         pipe = spreadMarkRangesAmongStreamsWithOrder(

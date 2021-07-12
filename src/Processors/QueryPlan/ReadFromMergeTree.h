@@ -61,8 +61,6 @@ public:
         const MergeTreeData & data_,
         const SelectQueryInfo & query_info_,
         StorageSnapshotPtr storage_snapshot,
-        StorageMetadataPtr metadata_snapshot_,
-        StorageMetadataPtr metadata_snapshot_base_,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_,
@@ -94,8 +92,7 @@ private:
     ExpressionActionsSettings actions_settings;
 
     StorageSnapshotPtr storage_snapshot;
-    StorageMetadataPtr metadata_snapshot;
-    StorageMetadataPtr metadata_snapshot_base;
+    StorageMetadataPtr metadata_for_reading;
 
     ContextPtr context;
 
