@@ -18,15 +18,21 @@ set basedir [file dirname $argv0]
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
 expect ":) "
 
-
+#find out BUILD TYPE
 send -- "SELECT value FROM system.build_options WHERE name='BUILD_TYPE'"
 expect {
     "Debug" {
+        # Check debug message in system.warnings
         send -- "SELECT message FROM system.warnings WHERE message='Server was built in debug mode. It will work slowly.'"
         expect "Server was built in debug mode. It will work slowly."
         expect ":) "
     }
-    "RelWithDebInfo"
+    "RelWithDebInfo" {
+        # Check empty to find out existence
+        send -- "SELECT message FROM system.warnings WHERE 0=1"
+        expect "Ok."
+        expect ":) "
+    }
 }
 
 # Finish test
