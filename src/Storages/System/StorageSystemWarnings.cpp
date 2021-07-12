@@ -1,10 +1,8 @@
-#include <memory>
-#include <Storages/System/StorageSystemWarnings.h>
 #include <Interpreters/Context.h>
+#include <Storages/System/StorageSystemWarnings.h>
 
-namespace DB 
+namespace DB
 {
-
 NamesAndTypesList StorageSystemWarnings::getNamesAndTypes()
 {
     return {
@@ -14,9 +12,8 @@ NamesAndTypesList StorageSystemWarnings::getNamesAndTypes()
 
 void StorageSystemWarnings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    for (auto& warning : context->getWarnings()) {
+    for (const auto & warning : context->getWarnings())
         res_columns[0]->insert(warning);
-    }
 }
 
 }
