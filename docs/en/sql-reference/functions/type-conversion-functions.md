@@ -465,7 +465,7 @@ Result:
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Converts an input value to a specified data type. Unlike the [reinterpret](#type_conversion_function-reinterpret) function, type conversion is performed in a natural way. If conversion can not be done then an exception is raised.
+Converts an input value to the specified data type. Unlike the [reinterpret](#type_conversion_function-reinterpret) function, type conversion is performed in a natural way. If conversion can not be done then an exception is raised.
 Several syntax variants are supported.
 
 **Syntax**
