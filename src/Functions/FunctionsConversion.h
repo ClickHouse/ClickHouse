@@ -693,7 +693,10 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
         const DateLUTImpl * time_zone = nullptr;
         /// For argument of DateTime type, second argument with time zone could be specified.
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
-            time_zone = &extractTimeZoneFromFunctionArguments(arguments, 1, 0);
+        {
+            auto non_null_args = createBlockWithNestedColumns(arguments);
+            time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
+        }
 
         if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
         {
@@ -1518,6 +1521,9 @@ private:
         if (arguments.empty())
             throw Exception{"Function " + getName() + " expects at least 1 argument",
                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+
+        if (result_type->onlyNull())
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
