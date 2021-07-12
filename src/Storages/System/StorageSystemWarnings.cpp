@@ -15,7 +15,7 @@ NamesAndTypesList StorageSystemWarnings::getNamesAndTypes()
 void StorageSystemWarnings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     for (auto& warning : context->getWarnings()) {
-        res_columns[0]->insert("Warning: " + warning);
+        res_columns[0]->insert(warning);
     }
 }
 
