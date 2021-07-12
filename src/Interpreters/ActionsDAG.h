@@ -103,6 +103,9 @@ private:
     bool project_input = false;
     bool projected_output = false;
 
+    bool is_deterministic = true;
+    String non_deterministic_function;  /// For exception message.
+
 public:
     ActionsDAG() = default;
     ActionsDAG(ActionsDAG &&) = default;
@@ -175,6 +178,8 @@ public:
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
+    bool isDeterministic() const; /// All functions are 'isDeterministic'.
+    void assertDeterministic() const; /// Throw if not isDeterministic.
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression);

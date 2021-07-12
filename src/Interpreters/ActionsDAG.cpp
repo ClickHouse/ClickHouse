@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int BAD_ARGUMENTS;
 }
 
 const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
@@ -202,6 +203,14 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.function_base = function->build(arguments);
     node.result_type = node.function_base->getResultType();
     node.function = node.function_base->prepare(arguments);
+
+    std::cerr << node.function_base->getName() << ": " << node.function_base->isDeterministic() << "\n";
+
+    if (is_deterministic && !node.function_base->isDeterministic())
+    {
+        is_deterministic = false;
+        non_deterministic_function = node.function_base->getName();
+    }
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
     if (node.function_base->isSuitableForConstantFolding())
@@ -979,6 +988,25 @@ bool ActionsDAG::trivial() const
             return false;
 
     return true;
+}
+
+bool ActionsDAG::isDeterministic() const
+{
+    std::cerr << "isDeterministic: " << is_deterministic << "\n";
+
+    /// We cannot calculate it on the fly as above because non-deterministic
+    /// but isDeterministicInScopeOfQuery/isSuitableForConstantFolding
+    /// functions can be already constant folded.
+    return is_deterministic;
+}
+
+void ActionsDAG::assertDeterministic() const
+{
+    std::cerr << "isDeterministic: " << is_deterministic << "\n";
+
+    if (!is_deterministic)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expression must be deterministic but it contains non-deterministic function {}", non_deterministic_function);
 }
 
 void ActionsDAG::addMaterializingOutputActions()
