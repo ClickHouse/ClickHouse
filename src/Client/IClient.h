@@ -16,6 +16,7 @@
 #include <Common/ProgressIndication.h>
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
+#include <Common/ShellCommand.h>
 
 
 namespace DB
@@ -55,6 +56,9 @@ protected:
     /// Settings specified via command line args
     Settings cmd_settings;
 
+    SharedContextHolder shared_context = Context::createShared();
+    ContextMutablePtr global_context = Context::createGlobal(shared_context.get());
+
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
@@ -81,9 +85,37 @@ protected:
     // It may differ from the full query for INSERT queries, for which the data that follows
     // the query is stripped and sent separately.
     String query_to_send;
+
     /// If the last query resulted in exception. `server_exception` or
     /// `client_exception` must be set.
     bool have_error = false;
+    /// The last exception that was received from the server. Is used for the
+    /// return code in batch mode.
+    std::unique_ptr<Exception> server_exception;
+    /// Likewise, the last exception that occurred on the client.
+    std::unique_ptr<Exception> client_exception;
+
+    /// Buffer that reads from stdin in batch mode.
+    ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
+    /// Console output.
+    WriteBufferFromFileDescriptor std_out{STDOUT_FILENO};
+    std::unique_ptr<ShellCommand> pager_cmd;
+    /// The user can specify to redirect query output to a file.
+    std::optional<WriteBufferFromFile> out_file_buf;
+    BlockOutputStreamPtr block_out_stream;
+    /// The user could specify special file for server logs (stderr by default)
+    std::unique_ptr<WriteBuffer> out_logs_buf;
+    String server_logs_file;
+    BlockOutputStreamPtr logs_out_stream;
+
+    /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
+    std::vector<std::pair<String, String>> query_id_formats;
+    QueryProcessingStage::Enum query_processing_stage;
+
+    /// How many rows have been read or written.
+    size_t processed_rows = 0;
+
+    String current_profile;
 
     static bool isNewYearMode();
 
@@ -101,13 +133,23 @@ protected:
 
     void runInteractive();
 
-    virtual void processTextAsSingleQuery(const String & input) = 0;
+    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
 
-    virtual void reportQueryError() const = 0;
+    void resetOutput();
+
+    virtual void processOrdinaryQuery() = 0;
+
+    void processParsedSingleQuery(std::optional<bool> echo_query = {});
+
+    virtual void processTextAsSingleQuery(const String & input) = 0;
 
     virtual bool processQueryFromInteractive(const String & input) = 0;
 
+    virtual void reportQueryError() const = 0;
+
     virtual void loadSuggestionDataIfPossible() {}
+
+    virtual void reconnectIfNeeded() {}
 
     virtual bool isInteractive() = 0;
 
@@ -135,17 +177,20 @@ protected:
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
 
-    virtual bool supportPasswordOption() = 0;
+    virtual bool supportPasswordOption() const = 0;
+
+    virtual bool splitQueryIntoParts() const = 0;
+
+    virtual void setDatabase(const String &) {}
+
+    virtual void processInsertQuery() {}
 
 private:
+
     inline String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
-
-    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
-
-    void processParsedSingleQuery(std::optional<bool> echo_query = {});
 };
 
 }

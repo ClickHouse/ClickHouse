@@ -67,6 +67,12 @@ protected:
         processQuery(input, e);
     }
 
+    void processOrdinaryQuery() override
+    {
+        std::exception_ptr e;
+        processQuery(query_to_send, e);
+    }
+
     void reportQueryError() const override;
 
     void printHelpMessage(const OptionsDescription & options_description) override;
@@ -79,10 +85,9 @@ protected:
                         const CommandLineOptions & options,
                         const std::vector<Arguments> &) override;
 
-    bool supportPasswordOption() override { return false; }
+    bool supportPasswordOption() const override { return false; }
 
-    SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
+    bool splitQueryIntoParts() const override { return false; }
 
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 
