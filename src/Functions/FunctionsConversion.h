@@ -576,58 +576,77 @@ template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64
 
 /** Transformation of numbers, dates, datetimes to strings: through formatting.
   */
-template <typename DataType>
+template <typename DataType, bool throws>
 struct FormatImpl
 {
-    static void execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType *, const DateLUTImpl *)
+    static bool execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType *, const DateLUTImpl *)
     {
         writeText(x, wb);
+        return true;
     }
 };
 
-template <>
-struct FormatImpl<DataTypeDate>
+template <bool throws>
+struct FormatImpl<DataTypeDate, throws>
 {
-    static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
+    static bool execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
     {
         writeDateText(DayNum(x), wb);
+        return true;
     }
 };
 
-template <>
-struct FormatImpl<DataTypeDateTime>
+template <bool throws>
+struct FormatImpl<DataTypeDateTime, throws>
 {
-    static void execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime *, const DateLUTImpl * time_zone)
+    static bool execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime *, const DateLUTImpl * time_zone)
     {
         writeDateTimeText(x, wb, *time_zone);
+        return true;
     }
 };
 
-template <>
-struct FormatImpl<DataTypeDateTime64>
+template <bool throws>
+struct FormatImpl<DataTypeDateTime64, throws>
 {
-    static void execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 * type, const DateLUTImpl * time_zone)
+    static bool execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 * type, const DateLUTImpl * time_zone)
     {
         writeDateTimeText(DateTime64(x), type->getScale(), wb, *time_zone);
+        return true;
     }
 };
 
 
 template <typename FieldType>
-struct FormatImpl<DataTypeEnum<FieldType>>
+struct FormatImpl<DataTypeEnum<FieldType>, false>
 {
-    static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
+    static bool execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
+    {
+        StringRef res;
+        bool is_ok = type->getNameForValue(x, res);
+        if (is_ok)
+            writeString(res, wb);
+        return is_ok;
+    }
+};
+
+template <typename FieldType>
+struct FormatImpl<DataTypeEnum<FieldType>, true>
+{
+    static bool execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
     {
         writeString(type->getNameForValue(x), wb);
+        return true;
     }
 };
 
-template <typename FieldType>
-struct FormatImpl<DataTypeDecimal<FieldType>>
+template <typename FieldType, bool throws>
+struct FormatImpl<DataTypeDecimal<FieldType>, throws>
 {
-    static void execute(const FieldType x, WriteBuffer & wb, const DataTypeDecimal<FieldType> * type, const DateLUTImpl *)
+    static bool execute(const FieldType x, WriteBuffer & wb, const DataTypeDecimal<FieldType> * type, const DateLUTImpl *)
     {
         writeText(x, type->getScale(), wb);
+        return true;
     }
 };
 
@@ -695,16 +714,14 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
             for (size_t i = 0; i < size; ++i)
             {
-                try
+                if (null_map)
                 {
-                    FormatImpl<FromDataType>::execute(vec_from[i], write_buffer, &type, time_zone);
+                    bool is_ok = FormatImpl<FromDataType, false>::execute(vec_from[i], write_buffer, &type, time_zone);
+                    null_map->getData()[i] |= !is_ok;
                 }
-                catch (DB::Exception &)
+                else
                 {
-                    if (null_map)
-                        null_map->getData()[i] = 1;
-                    else
-                        throw;
+                    FormatImpl<FromDataType, true>::execute(vec_from[i], write_buffer, &type, time_zone);
                 }
                 writeChar(0, write_buffer);
                 offsets_to[i] = write_buffer.count();
