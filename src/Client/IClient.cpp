@@ -325,20 +325,9 @@ void IClient::resetOutput()
 }
 
 
-void IClient::processParsedSingleQuery(std::optional<bool> echo_query_)
+void IClient::outputQueryInfo(bool echo_query_)
 {
-    // Parameters are in global variables:
-    // 'parsed_query' -- the query AST,
-    // 'query_to_send' -- the query text that is sent to server,
-    // 'full_query' -- for INSERT queries, contains the query and the data that
-    // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
-
-    resetOutput();
-    client_exception.reset();
-    server_exception.reset();
-    have_error = false;
-
-    if (echo_query_.value_or(echo_queries))
+    if (echo_query_)
     {
         writeString(full_query, std_out);
         writeChar('\n', std_out);
@@ -357,87 +346,50 @@ void IClient::processParsedSingleQuery(std::optional<bool> echo_query_)
             std_out.next();
         }
     }
+}
 
+
+void IClient::processQuery(const String & query)
+{
+    /* Parameters are in global variables:
+     * 'parsed_query' -- the query AST,
+     * 'query_to_execute' -- the query text that is sent to server,
+     * 'full_query' -- for INSERT queries, contains the query and the data that
+     * follows it. Its memory is referenced by ASTInsertQuery::begin, end.
+     **/
+
+    full_query = query_to_execute = query;
+    executeSingleQuery();
+}
+
+
+void IClient::executeSingleQuery(std::optional<bool> echo_query_)
+{
+    have_error = false;
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
 
-    {
-        /// Temporarily apply query settings to context.
-        std::optional<Settings> old_settings;
-        SCOPE_EXIT_SAFE({
-            if (old_settings)
-                global_context->setSettings(*old_settings);
-        });
-        auto apply_query_settings = [&](const IAST & settings_ast)
-        {
-            if (!old_settings)
-                old_settings.emplace(global_context->getSettingsRef());
-            global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-        };
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (insert && insert->settings_ast)
-            apply_query_settings(*insert->settings_ast);
-        /// FIXME: try to prettify this cast using `as<>()`
-        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
-        if (with_output && with_output->settings_ast)
-            apply_query_settings(*with_output->settings_ast);
+    resetOutput();
+    outputQueryInfo(echo_query_.value_or(echo_queries));
 
-        reconnectIfNeeded();
-
-        ASTPtr input_function;
-        if (insert && insert->select)
-            insert->tryFindInputFunction(input_function);
-
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (splitQueryIntoParts() && insert && (!insert->select || input_function) && !insert->watch)
-        {
-            if (input_function && insert->format.empty())
-                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
-
-            processInsertQuery();
-        }
-        else
-            processOrdinaryQuery();
-    }
-
-    /// Do not change context (current DB, settings) in case of an exception.
-    if (!have_error)
-    {
-        if (const auto * set_query = parsed_query->as<ASTSetQuery>())
-        {
-            /// Save all changes in settings to avoid losing them if the connection is lost.
-            for (const auto & change : set_query->changes)
-            {
-                if (change.name == "profile")
-                    current_profile = change.value.safeGet<String>();
-                else
-                    global_context->applySettingChange(change);
-            }
-        }
-
-        if (const auto * use_query = parsed_query->as<ASTUseQuery>())
-        {
-            const String & new_database = use_query->database;
-            /// If the client initiates the reconnection, it takes the settings from the config.
-            config().setString("database", new_database);
-            setDatabase(new_database);
-        }
-    }
+    executeSingleQueryPrefix();
+    executeSingleQueryImpl();
+    executeSingleQuerySuffix();
 
     if (is_interactive)
     {
         std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
-
-        /// Write final progress if it makes sense to do so.
         progress_indication.writeFinalProgress();
-
         std::cout << std::endl << std::endl;
     }
     else if (print_time_to_stderr)
     {
         std::cerr << progress_indication.elapsedSeconds() << "\n";
     }
+
+    if (have_error)
+        reportQueryError();
 }
 
 
@@ -452,7 +404,7 @@ bool IClient::processMultiQuery(const String & all_queries_text)
         /// disable logs if expects errors
         TestHint test_hint(test_mode, all_queries_text);
         if (test_hint.clientError() || test_hint.serverError())
-            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+            processQuery("SET send_logs_level = 'fatal'");
     }
 
     bool echo_query = echo_queries;
@@ -557,11 +509,11 @@ bool IClient::processMultiQuery(const String & all_queries_text)
         {
             this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
             insert_ast->end = this_query_end;
-            query_to_send = all_queries_text.substr(this_query_begin - all_queries_text.data(), insert_ast->data - this_query_begin);
+            query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), insert_ast->data - this_query_begin);
         }
         else
         {
-            query_to_send = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+            query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
         }
 
         // Try to include the trailing comment with test hints. It is just
@@ -599,7 +551,7 @@ bool IClient::processMultiQuery(const String & all_queries_text)
 
         try
         {
-            processParsedSingleQuery(echo_query);
+            executeSingleQuery(echo_query);
         }
         catch (...)
         {
@@ -724,7 +676,7 @@ bool IClient::processQueryText(const String & text)
     if (!config().has("multiquery"))
     {
         assert(!query_fuzzer_runs);
-        processTextAsSingleQuery(text);
+        processQuery(text);
 
         return true;
     }

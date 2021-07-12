@@ -57,21 +57,12 @@ protected:
         if (exit_strings.end() != exit_strings.find(trim(input, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
             return false;
 
-        processQueryText(input);
+        query_to_execute = input;
+        executeSingleQueryImpl();
         return true;
     }
 
-    void processTextAsSingleQuery(const String & input) override
-    {
-        std::exception_ptr e;
-        processQuery(input, e);
-    }
-
-    void processOrdinaryQuery() override
-    {
-        std::exception_ptr e;
-        processQuery(query_to_send, e);
-    }
+    void executeSingleQueryImpl() override;
 
     void reportQueryError() const override;
 
@@ -93,6 +84,8 @@ protected:
 
 private:
     ContextMutablePtr query_context;
+
+    std::exception_ptr exception;
 
     void processQuery(const String & query, std::exception_ptr exception);
 };
