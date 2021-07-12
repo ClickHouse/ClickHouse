@@ -418,7 +418,6 @@ void MergeTreeData::checkProperties(
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);
-
 }
 
 void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach)
@@ -3335,20 +3334,25 @@ MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_st
     return res;
 }
 
-std::vector<DetachedPartInfo>
-MergeTreeData::getDetachedParts() const
+std::vector<DetachedPartInfo> MergeTreeData::getDetachedParts() const
 {
     std::vector<DetachedPartInfo> res;
 
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
-        for (auto it = disk->iterateDirectory(fs::path(path) / MergeTreeData::DETACHED_DIR_NAME); it->isValid(); it->next())
-        {
-            res.emplace_back();
-            auto & part = res.back();
+        String detached_path = fs::path(path) / MergeTreeData::DETACHED_DIR_NAME;
 
-            DetachedPartInfo::tryParseDetachedPartName(it->name(), part, format_version);
-            part.disk = disk->getName();
+        /// Note: we don't care about TOCTOU issue here.
+        if (disk->exists(detached_path))
+        {
+            for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
+            {
+                res.emplace_back();
+                auto & part = res.back();
+
+                DetachedPartInfo::tryParseDetachedPartName(it->name(), part, format_version);
+                part.disk = disk->getName();
+            }
         }
     }
     return res;
