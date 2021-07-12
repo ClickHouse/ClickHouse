@@ -28,6 +28,7 @@
 #include <Processors/Pipe.h>
 
 #include <cassert>
+#include <chrono>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -721,19 +722,24 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr contex
 
 IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 {
-    std::shared_lock lock(rwlock, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+    std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
     ColumnSizeByName column_sizes;
-    for (const auto & it : files) 
+    FileChecker::Map file_sizes = file_checker.getFileSizes();
+    
+    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
     {
-        const String & name = column_names_by_idx[it.second.column_index];
-        if (!it.second.marks.empty())
+        ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
         {
-            ColumnSize & size = column_sizes[name];
-            size.data_compressed += it.second.marks.back().offset;
-            size.marks += it.second.marks.size() * sizeof(Mark);
-        }
-            
+            String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+            ColumnSize & size = column_sizes[column.name];
+            size.data_compressed += file_sizes[stream_name];
+        };
+
+        ISerialization::SubstreamPath substream_path;
+        auto serialization = column.type->getDefaultSerialization();
+        serialization->enumerateStreams(stream_callback, substream_path);
     }
+
     return column_sizes;
 }
 
