@@ -45,6 +45,7 @@ public:
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
     bool supportsSubcolumns() const override { return true; }
+    ColumnSizeByName getColumnSizes() const override;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),

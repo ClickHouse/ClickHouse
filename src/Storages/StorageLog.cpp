@@ -719,6 +719,24 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr contex
 }
 
 
+IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
+{
+    std::shared_lock lock(rwlock);
+    ColumnSizeByName column_sizes;
+    for (const auto & it : files) 
+    {
+        const String & name = column_names_by_idx[it.second.column_index];
+        if (!it.second.marks.empty())
+        {
+            ColumnSize & size = column_sizes[name];
+            size.data_compressed += it.second.marks.back().offset;
+            size.marks += it.second.marks.size() * sizeof(Mark);
+        }
+            
+    }
+    return column_sizes;
+}
+
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
