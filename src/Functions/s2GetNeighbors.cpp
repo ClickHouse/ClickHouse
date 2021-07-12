@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -76,6 +77,10 @@ public:
             const UInt64 id = col_id->getUInt(row);
 
             S2CellId cell_id(id);
+
+            if (!cell_id.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cell is not valid");
+
             S2CellId neighbors[4];
             cell_id.GetEdgeNeighbors(neighbors);
 

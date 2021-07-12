@@ -14,14 +14,13 @@
 
 #include "s2_fwd.h"
 
-class S2CellId;
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -31,7 +30,7 @@ namespace
 class FunctionS2RectUnion : public IFunction
 {
 public:
-    static constexpr auto name = "S2RectUnion";
+    static constexpr auto name = "s2RectUnion";
 
     static FunctionPtr create(ContextPtr)
     {
@@ -82,13 +81,19 @@ public:
 
         for (const auto row : collections::range(0, input_rows_count))
         {
-            const UInt64 lo1 = col_lo1->getUInt(row);
-            const UInt64 hi1 = col_hi1->getUInt(row);
-            const UInt64 lo2 = col_lo2->getUInt(row);
-            const UInt64 hi2 = col_hi2->getUInt(row);
+            const auto lo1 = S2CellId(col_lo1->getUInt(row));
+            const auto hi1 = S2CellId(col_hi1->getUInt(row));
+            const auto lo2 = S2CellId(col_lo2->getUInt(row));
+            const auto hi2 = S2CellId(col_hi2->getUInt(row));
 
-            S2LatLngRect rect1(S2CellId(lo1).ToLatLng(), S2CellId(hi1).ToLatLng());
-            S2LatLngRect rect2(S2CellId(lo2).ToLatLng(), S2CellId(hi2).ToLatLng());
+            if (!lo1.is_valid() || !hi1.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "First rectangle is not valid");
+
+            if (!lo2.is_valid() || !hi2.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second rectangle is not valid");
+
+            S2LatLngRect rect1(lo1.ToLatLng(), hi1.ToLatLng());
+            S2LatLngRect rect2(lo2.ToLatLng(), hi2.ToLatLng());
 
             S2LatLngRect rect_union = rect1.Union(rect2);
 

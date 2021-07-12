@@ -15,14 +15,13 @@
 
 #include "s2_fwd.h"
 
-class S2CellId;
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -98,19 +97,25 @@ public:
 
         for (const auto row : collections::range(0, input_rows_count))
         {
-            const UInt64 center1 = col_center1->getUInt(row);
-            const Float64 radius1 = col_radius1->getFloat64(row);
-            const UInt64 center2 = col_center2->getUInt(row);
-            const Float64 radius2 = col_radius2->getFloat64(row);
+            const UInt64 first_center = col_center1->getUInt(row);
+            const Float64 first_radius = col_radius1->getFloat64(row);
+            const UInt64 second_center = col_center2->getUInt(row);
+            const Float64 second_radius = col_radius2->getFloat64(row);
 
-            if (isNaN(radius1) || isNaN(radius2))
+            if (isNaN(first_radius) || isNaN(second_radius))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan");
 
-            if (std::isinf(radius1) || std::isinf(radius2))
+            if (std::isinf(first_radius) || std::isinf(second_radius))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be infinite");
 
-            S2Cap cap1(S2CellId(center1).ToPoint(), S1Angle::Degrees(radius1));
-            S2Cap cap2(S2CellId(center2).ToPoint(), S1Angle::Degrees(radius2));
+            auto first_center_cell = S2CellId(first_center);
+            auto second_center_cell = S2CellId(second_center);
+
+            if (!first_center_cell.is_valid() || !second_center_cell.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Center of the cap is not valid");
+
+            S2Cap cap1(first_center_cell.ToPoint(), S1Angle::Degrees(first_radius));
+            S2Cap cap2(second_center_cell.ToPoint(), S1Angle::Degrees(second_radius));
 
             S2Cap cap_union = cap1.Union(cap2);
 
