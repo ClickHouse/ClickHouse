@@ -744,9 +744,11 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 /// Generic conversion of any type to String.
 struct ConvertImplGenericToString
 {
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
     {
-        const auto & col_with_type_and_name = arguments[0];
+        ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
+
+        const auto & col_with_type_and_name = columnGetNested(arguments[0]);
         const IDataType & type = *col_with_type_and_name.type;
         const IColumn & col_from = *col_with_type_and_name.column;
 
@@ -772,6 +774,9 @@ struct ConvertImplGenericToString
         }
 
         write_buffer.finalize();
+
+        if (result_type->isNullable() && null_map)
+            return ColumnNullable::create(std::move(col_to), std::move(null_map));
         return col_to;
     }
 };
@@ -1605,7 +1610,7 @@ private:
             /// Generic conversion of any type to String.
             if (std::is_same_v<ToDataType, DataTypeString>)
             {
-                return ConvertImplGenericToString::execute(arguments);
+                return ConvertImplGenericToString::execute(arguments, result_type);
             }
             else
                 throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
