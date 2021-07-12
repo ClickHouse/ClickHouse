@@ -11,23 +11,33 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Poco/String.h>
+
 
 namespace DB
 {
-static DataTypePtr convertSQLiteDataType(std::string type /* , bool is_nullable */)
+
+namespace ErrorCodes
+{
+    extern const int SQLITE_ENGINE_ERROR;
+}
+
+static DataTypePtr convertSQLiteDataType(String type)
 {
     DataTypePtr res;
+    type = Poco::toLower(type);
 
-    std::transform(std::begin(type), std::end(type), std::begin(type), tolower);
-
-    // https://www.sqlite.org/datatype3.html#determination_of_column_affinity
-    if (type.find("int") != std::string::npos)
+    if (type == "tinyint")
+        res = std::make_shared<DataTypeInt8>();
+    else if (type == "smallint")
+        res = std::make_shared<DataTypeInt16>();
+    else if (type.starts_with("int") || type == "mediumint")
+        res = std::make_shared<DataTypeInt32>();
+    else if (type == "bigint")
         res = std::make_shared<DataTypeInt64>();
-    else if (
-        type.find("char") != std::string::npos || type.find("clob") != std::string::npos || type.find("text") != std::string::npos
-        || type.empty() || type.find("blob") != std::string::npos)
-        res = std::make_shared<DataTypeString>();
-    else if (type.find("real") != std::string::npos || type.find("floa") != std::string::npos || type.find("doub") != std::string::npos)
+    else if (type == "float")
+        res = std::make_shared<DataTypeFloat32>();
+    else if (type.starts_with("double") || type == "real")
         res = std::make_shared<DataTypeFloat64>();
     else
         res = std::make_shared<DataTypeString>(); // No decimal when fetching data through API
@@ -35,15 +45,15 @@ static DataTypePtr convertSQLiteDataType(std::string type /* , bool is_nullable 
     return res;
 }
 
-std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connection, const String & sqlite_table_name /* , bool use_nulls */)
+
+std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connection, const String & sqlite_table_name)
 {
     auto columns = NamesAndTypesList();
+    auto query = fmt::format("pragma table_info({});", quoteString(sqlite_table_name));
 
-    std::string query = fmt::format("pragma table_info({});", quoteString(sqlite_table_name));
-
-    auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** col_names) -> int {
+    auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** col_names) -> int
+    {
         NameAndTypePair name_and_type;
-
         bool is_nullable = false;
 
         for (int i = 0; i < col_num; ++i)
@@ -71,14 +81,16 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
     };
 
     char * err_message = nullptr;
-
     int status = sqlite3_exec(connection, query.c_str(), callback_get_data, &columns, &err_message);
 
     if (status != SQLITE_OK)
     {
         String err_msg(err_message);
         sqlite3_free(err_message);
-        throw Exception(status, "SQLITE_ERR {}: {}", status, err_msg);
+
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                        "Failed to fetch SQLite data. Status: {}. Message: {}",
+                        status, err_msg);
     }
 
     if (columns.empty())
