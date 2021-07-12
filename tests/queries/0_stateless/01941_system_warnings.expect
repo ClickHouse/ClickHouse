@@ -24,7 +24,7 @@ expect {
     "Debug" {
         send -- "SELECT message FROM system.warnings WHERE message='Server was built in debug mode. It will work slowly.'"
         expect "Server was built in debug mode. It will work slowly."
-        puts 2
+        expect ":) "
     }
     "RelWithDebInfo"
 }
