@@ -534,11 +534,6 @@ bool ExpressionActions::hasArrayJoin() const
     return getActionsDAG().hasArrayJoin();
 }
 
-bool ExpressionActions::isDeterministic() const
-{
-    return getActionsDAG().isDeterministic();
-}
-
 void ExpressionActions::assertDeterministic() const
 {
     getActionsDAG().assertDeterministic();

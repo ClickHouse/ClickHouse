@@ -203,14 +203,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.function_base = function->build(arguments);
     node.result_type = node.function_base->getResultType();
     node.function = node.function_base->prepare(arguments);
-
-    std::cerr << node.function_base->getName() << ": " << node.function_base->isDeterministic() << "\n";
-
-    if (is_deterministic && !node.function_base->isDeterministic())
-    {
-        is_deterministic = false;
-        non_deterministic_function = node.function_base->getName();
-    }
+    node.is_deterministic = node.function_base->isDeterministic();
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
     if (node.function_base->isSuitableForConstantFolding())
@@ -435,6 +428,16 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
         {
             /// Constant folding.
             node->type = ActionsDAG::ActionType::COLUMN;
+
+            for (const auto & child : node->children)
+            {
+                if (!child->is_deterministic)
+                {
+                    node->is_deterministic = false;
+                    break;
+                }
+            }
+
             node->children.clear();
         }
 
@@ -990,23 +993,12 @@ bool ActionsDAG::trivial() const
     return true;
 }
 
-bool ActionsDAG::isDeterministic() const
-{
-    std::cerr << "isDeterministic: " << is_deterministic << "\n";
-
-    /// We cannot calculate it on the fly as above because non-deterministic
-    /// but isDeterministicInScopeOfQuery/isSuitableForConstantFolding
-    /// functions can be already constant folded.
-    return is_deterministic;
-}
-
 void ActionsDAG::assertDeterministic() const
 {
-    std::cerr << "isDeterministic: " << is_deterministic << "\n";
-
-    if (!is_deterministic)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Expression must be deterministic but it contains non-deterministic function {}", non_deterministic_function);
+    for (const auto & node : nodes)
+        if (!node.is_deterministic)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expression must be deterministic but it contains non-deterministic part `{}`", node.result_name);
 }
 
 void ActionsDAG::addMaterializingOutputActions()

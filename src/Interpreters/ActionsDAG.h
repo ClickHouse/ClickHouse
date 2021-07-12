@@ -83,6 +83,9 @@ public:
         ExecutableFunctionPtr function;
         /// If function is a compiled statement.
         bool is_function_compiled = false;
+        /// It is deterministic (See IFunction::isDeterministic).
+        /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
+        bool is_deterministic = true;
 
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
@@ -102,9 +105,6 @@ private:
 
     bool project_input = false;
     bool projected_output = false;
-
-    bool is_deterministic = true;
-    String non_deterministic_function;  /// For exception message.
 
 public:
     ActionsDAG() = default;
@@ -178,7 +178,6 @@ public:
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
-    bool isDeterministic() const; /// All functions are 'isDeterministic'.
     void assertDeterministic() const; /// Throw if not isDeterministic.
 
 #if USE_EMBEDDED_COMPILER
