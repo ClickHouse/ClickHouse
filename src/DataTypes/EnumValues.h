@@ -42,18 +42,21 @@ public:
         return it;
     }
 
+    /// throws exception if value is not valid
     const StringRef & getNameForValue(const T & value) const
     {
         return findByValue(value)->second;
     }
 
-    const StringRef & getNameForValue(const T & value, const StringRef & default_value) const
+    /// returns false if value is not valid
+    bool getNameForValue(const T & value, StringRef & result) const
     {
         const auto it = value_to_name_map.find(value);
         if (it == std::end(value_to_name_map))
-            return default_value;
+            return false;
 
-        return it->second;
+        result = it->second;
+        return true;
     }
 
     T getValue(StringRef field_name, bool try_treat_as_id = false) const;
