@@ -22,7 +22,7 @@ IBackgroundJobExecutor::IBackgroundJobExecutor(
     : WithContext(global_context_)
     , sleep_settings(sleep_settings_)
     , rng(randomSeed())
-    , pool_for_merges(1)
+    , pool_for_merges(16)
 {
     for (const auto & pool_config : pools_configs_)
     {

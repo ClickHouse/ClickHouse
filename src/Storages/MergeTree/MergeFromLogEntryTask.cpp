@@ -148,13 +148,15 @@ bool MergeFromLogEntryTask::executeImpl()
             }
 
             state = State::SUCCESS;
-            return false;
+            return true;
         }
         case State::CANT_MERGE_NEED_FETCH :
         {
             /// MAYBE FIXME
             storage.executeFetch(*entry);
-            return false;
+
+            state = State::SUCCESS;
+            return true;
         }
         case State::SUCCESS :
         {
