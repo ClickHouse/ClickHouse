@@ -33,7 +33,7 @@ SELECTS_SQL = {
                "ORDER BY node"),
 }
 
-EXCEPTION_NETWORK = 'e.displayText() = DB::NetException: '
+EXCEPTION_NETWORK = 'DB::NetException: '
 EXCEPTION_TIMEOUT = 'Timeout exceeded while reading from socket ('
 EXCEPTION_CONNECT = 'Timeout: connect timed out: '
 
