@@ -38,10 +38,10 @@ class InitVector
 public:
     InitVector(String iv_) : iv(FromBigEndianString(iv_)) { }
 
-    const char * GetRef() const
+    const String & GetRef() const
     {
         local = ToBigEndianString(iv + counter);
-        return local.data();
+        return local;
     }
 
     void Inc() { ++counter; }
@@ -75,7 +75,7 @@ class EncryptionKey
 public:
     EncryptionKey(String key_) : key(key_) { }
     size_t Size() const { return key.size(); }
-    const char * GetRef() const { return key.data(); }
+    const String & GetRef() const { return key; }
 
 private:
     String key;
@@ -238,8 +238,8 @@ private:
             throw DB::Exception("Failed to initialize encryption context with cipher", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
-            reinterpret_cast<const unsigned char*>(key.GetRef()),
-            reinterpret_cast<const unsigned char*>(iv.GetRef())) != 1)
+            reinterpret_cast<const unsigned char*>(key.GetRef().data()),
+            reinterpret_cast<const unsigned char*>(iv.GetRef().data())) != 1)
             throw DB::Exception("Failed to set key and IV for encryption", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         int output_len = 0;
@@ -319,8 +319,8 @@ private:
             throw DB::Exception("Failed to initialize decryption context with cipher", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
-            reinterpret_cast<const unsigned char*>(key.GetRef()),
-            reinterpret_cast<const unsigned char*>(iv.GetRef())) != 1)
+            reinterpret_cast<const unsigned char*>(key.GetRef().data()),
+            reinterpret_cast<const unsigned char*>(iv.GetRef().data())) != 1)
             throw DB::Exception("Failed to set key and IV for decryption", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         int output_len = 0;
