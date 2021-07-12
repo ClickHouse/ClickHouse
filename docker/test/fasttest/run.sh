@@ -113,6 +113,7 @@ function start_server
     echo "ClickHouse server pid '$server_pid' started and responded"
 
     echo "
+set follow-fork-mode child
 handle all noprint
 handle SIGSEGV stop print
 handle SIGBUS stop print
@@ -159,7 +160,6 @@ function clone_submodules
 
         SUBMODULES_TO_UPDATE=(
             contrib/abseil-cpp
-            contrib/antlr4-runtime
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
@@ -373,14 +373,11 @@ function run_tests
         # Depends on AWS
         01801_s3_cluster
 
-        # Depends on LLVM JIT
-        01072_nullable_jit
-        01852_jit_if
-        01865_jit_comparison_constant_result
-        01871_merge_tree_compile_expressions
-
         # needs psql
         01889_postgresql_protocol_null_fields
+
+        # needs pv
+        01923_network_receive_time_metric_insert
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
