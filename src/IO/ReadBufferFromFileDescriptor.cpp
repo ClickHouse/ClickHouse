@@ -128,8 +128,8 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    // file_offset_of_buffer_end corresponds to working_buffer.end(); it's a past-the-end pos,
-    // so the second inequality is strict.
+    /// file_offset_of_buffer_end corresponds to working_buffer.end(); it's a past-the-end pos,
+    /// so the second inequality is strict.
     if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
         && new_pos < file_offset_of_buffer_end)
     {
@@ -142,18 +142,28 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     }
     else
     {
+        size_t seek_pos = required_alignment > 1
+            ? new_pos / required_alignment * required_alignment
+            : new_pos;
+
+        size_t offset_after_seek_pos = new_pos - seek_pos;
+
         ProfileEvents::increment(ProfileEvents::Seek);
         Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
         pos = working_buffer.end();
-        off_t res = ::lseek(fd, new_pos, SEEK_SET);
+        off_t res = ::lseek(fd, seek_pos, SEEK_SET);
         if (-1 == res)
             throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
                 ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-        file_offset_of_buffer_end = new_pos;
 
         watch.stop();
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+
+        file_offset_of_buffer_end = seek_pos;
+
+        if (offset_after_seek_pos > 0)
+            ignore(offset_after_seek_pos);
 
         return res;
     }
