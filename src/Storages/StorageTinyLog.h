@@ -45,6 +45,7 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
+    ColumnSizeByName getColumnSizes() const override;
 protected:
     StorageTinyLog(
         DiskPtr disk_,
