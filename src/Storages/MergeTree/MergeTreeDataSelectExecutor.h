@@ -50,8 +50,6 @@ public:
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
-        const StorageMetadataPtr & metadata_snapshot_base,
-        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,
@@ -64,8 +62,6 @@ public:
     size_t estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        const StorageMetadataPtr & storage_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,

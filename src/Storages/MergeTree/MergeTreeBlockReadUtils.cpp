@@ -275,7 +275,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     Names pre_column_names;
 
     /// inject columns required for defaults evaluation
-    bool should_reorder = !injectRequiredColumns(storage, storage_snapshot->metadata, data_part, column_names).empty();
+    bool should_reorder = !injectRequiredColumns(storage, storage_snapshot->getMetadataForQuery(), data_part, column_names).empty();
 
     if (prewhere_info)
     {
@@ -300,7 +300,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);
 
-        const auto injected_pre_columns = injectRequiredColumns(storage, storage_snapshot->metadata, data_part, pre_column_names);
+        const auto injected_pre_columns = injectRequiredColumns(storage, storage_snapshot->getMetadataForQuery(), data_part, pre_column_names);
         if (!injected_pre_columns.empty())
             should_reorder = true;
 

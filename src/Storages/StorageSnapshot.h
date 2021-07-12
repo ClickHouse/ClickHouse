@@ -19,6 +19,9 @@ struct StorageSnapshot
     const NameToTypeMap object_types;
     const DataPartsVector parts;
 
+    /// TODO: fix
+    mutable const ProjectionDescription * projection = nullptr;
+
     StorageSnapshot(
         const IStorage & storage_,
         const StorageMetadataPtr & metadata_)
@@ -53,6 +56,10 @@ struct StorageSnapshot
     void check(const Names & column_names) const;
 
     DataTypePtr getConcreteType(const String & column_name) const;
+
+    void addProjection(const ProjectionDescription * projection_) const { projection = projection_; }
+
+    StorageMetadataPtr getMetadataForQuery() const { return (projection ? projection->metadata : metadata); }
 };
 
 using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;

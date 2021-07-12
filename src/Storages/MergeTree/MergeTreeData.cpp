@@ -3890,8 +3890,6 @@ static void selectBestProjection(
     auto sum_marks = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
-        storage_snapshot,
-        storage_snapshot->metadata,
         candidate.desc->metadata,
         query_info, // TODO syntax_analysis_result set in index
         query_context,
@@ -3909,8 +3907,6 @@ static void selectBestProjection(
         sum_marks += reader.estimateNumMarksToRead(
             normal_parts,
             required_columns,
-            storage_snapshot,
-            storage_snapshot->metadata,
             storage_snapshot->metadata,
             query_info, // TODO syntax_analysis_result set in index
             query_context,
@@ -4184,8 +4180,6 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             min_sum_marks = reader.estimateNumMarksToRead(
                 parts,
                 analysis_result.required_columns,
-                storage_snapshot,
-                metadata_snapshot,
                 metadata_snapshot,
                 query_info, // TODO syntax_analysis_result set in index
                 query_context,

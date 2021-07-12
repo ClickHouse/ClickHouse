@@ -620,7 +620,10 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         /// TODO how can we make IN index work if we cache parts before selecting a projection?
         /// XXX Used for IN set index analysis. Is this a proper way?
         if (query_info.projection)
+        {
             metadata_snapshot->selected_projection = query_info.projection->desc;
+            storage_snapshot->addProjection(query_info.projection->desc);
+        }
     }
 
     /// Do I need to perform the first part of the pipeline?
@@ -1965,8 +1968,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
         {
-            /// TODO: fix.
-            // const auto & metadata = query_info.projection ? query_info.projection->desc->metadata : metadata_snapshot;
             auto header = storage_snapshot->getSampleBlockForColumns(required_columns);
             addEmptySourceToQueryPlan(query_plan, header, query_info, context);
         }

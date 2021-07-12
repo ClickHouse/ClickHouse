@@ -37,8 +37,6 @@ public:
                                                   parts,
                                                   column_names,
                                                   storage_snapshot,
-                                                  storage_snapshot->metadata,
-                                                  storage_snapshot->metadata,
                                                   query_info,
                                                   context,
                                                   max_block_size,
