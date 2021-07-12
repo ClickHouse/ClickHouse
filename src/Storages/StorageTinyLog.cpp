@@ -527,6 +527,9 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, ContextPtr co
 IStorage::ColumnSizeByName StorageTinyLog::getColumnSizes() const
 {
     std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        
     ColumnSizeByName column_sizes;
     FileChecker::Map file_sizes = file_checker.getFileSizes();
 
