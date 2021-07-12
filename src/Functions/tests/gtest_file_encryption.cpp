@@ -1,3 +1,7 @@
+#if !defined(ARCADIA_BUILD)
+#include <Common/config.h>
+#endif
+
 #if USE_SSL
 #include <gtest/gtest.h>
 #include <IO/WriteBufferFromString.h>
@@ -76,16 +80,16 @@ INSTANTIATE_TEST_SUITE_P(InitVectorInputs,
             1024,
             string_ends_with(16, "\x1"),
             string_ends_with(16, "\x56"),
-            string_ends_with(16, "\x4\0"),
+            string_ends_with(16, String("\x4\0", 2)),
         },
         {
             "Long init vector test",
             "\xa8\x65\x9c\x73\xf8\x5d\x83\xb4\x5c\xa6\x8c\x19\xf4\x77\x80\xe1",
-            UInt128(3349249125638641) * 1815701,
+            3349249125638641,
             1698923461902341,
             "\xa8\x65\x9c\x73\xf8\x5d\x83\xb4\x5c\xa6\x8c\x19\xf4\x77\x80\xe2",
-            "\xa8\x65\x9c\x73\xf8\x5d\x84\xfe\x06\xbd\x44\xb7\x0b\x0c\x76\x27",
-            "\xa8\x65\x9c\x73\xf8\x5d\x83\xb4\x5c\xac\x95\x43\x65\xea\x00\xe6",
+            "\xa8\x65\x9c\x73\xf8\x5d\x83\xb4\x5c\xb2\x72\x39\xc8\xdd\x62\xd3",
+            String("\xa8\x65\x9c\x73\xf8\x5d\x83\xb4\x5c\xac\x95\x43\x65\xea\x00\xe6", 16)
         },
     })
 );
