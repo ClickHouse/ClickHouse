@@ -39,7 +39,7 @@ SELECT first, second, result FROM (
     ORDER BY s2_index
  );
 
-SELECT s2ToGeo(toUInt64(-1));
+SELECT s2ToGeo(toUInt64(-1)); -- { serverError 36 }
 SELECT s2ToGeo(nan); -- { serverError 43 }
 SELECT geoToS2(toFloat64(toUInt64(-1)), toFloat64(toUInt64(-1)));
 SELECT geoToS2(nan, nan); -- { serverError 43 }
