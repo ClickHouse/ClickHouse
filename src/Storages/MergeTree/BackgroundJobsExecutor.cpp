@@ -22,6 +22,7 @@ IBackgroundJobExecutor::IBackgroundJobExecutor(
     : WithContext(global_context_)
     , sleep_settings(sleep_settings_)
     , rng(randomSeed())
+    , pool_for_merges(1)
 {
     for (const auto & pool_config : pools_configs_)
     {
@@ -159,10 +160,10 @@ catch (...) /// Exception while we looking for a task, reschedule
 }
 
 
-void IBackgroundJobExecutor::execute(std::shared_ptr<PriorityJobContainer::JobWithPriority> merge_task)
+void IBackgroundJobExecutor::execute(BackgroundTaskPtr merge_task)
 {
     /// TODO: try catch
-    pool_for_merges.scheduleOrThrowOnError(merge_task);
+    pool_for_merges.schedule(merge_task);
     scheduleTask(/* with_backoff = */ false);
 }
 

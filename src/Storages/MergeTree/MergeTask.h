@@ -21,7 +21,20 @@ class BackgroundTask
 {
 public:
     virtual bool execute() = 0;
+
+    explicit BackgroundTask(int priority_) : priority(priority_) {}
+
     virtual ~BackgroundTask() = default;
+
+    bool operator> (const BackgroundTask & rhs) const
+     {
+         return priority > rhs.priority;
+     }
+
+     UInt64 getPriority() const { return priority; }
+
+private:
+    int priority = 0;
 };
 
 
@@ -59,7 +72,7 @@ enum class VecticalMergeOneColumnState
     NEED_FINISH
 };
 
-class MergeTask : public BackgroundTask
+class MergeTask
 {
 public:
 
@@ -101,7 +114,7 @@ public:
         return promise.get_future();
     }
 
-    bool execute() override;
+    bool execute();
 
     void prepare();
 

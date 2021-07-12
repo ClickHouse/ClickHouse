@@ -13,60 +13,6 @@
 #include <Common/ThreadStatus.h>
 #include <common/scope_guard.h>
 
-
-class QueueJobContainer
-{
-public:
-    using Job = std::function<void()>;
-
-    template <typename... Args>
-    void emplace(Args && ... args);
-
-    bool empty() const;
-    Job pop();
-
-    static bool executeJobOrThrowOnError(Job && job);
-
-private:
-    std::queue<Job> jobs;
-};
-
-
-class PriorityJobContainer
-{
-public:
-    struct JobWithPriority
-    {
-        int priority;
-
-        explicit JobWithPriority(int priority_) : priority(priority_) {}
-
-        bool operator< (const JobWithPriority & rhs) const
-        {
-            return priority < rhs.priority;
-        }
-
-        virtual bool execute() = 0;
-        virtual ~JobWithPriority() = default;
-    };
-
-    using Job = std::shared_ptr<JobWithPriority>;
-
-    void emplace(Job job);
-
-    bool empty() const;
-    Job pop();
-
-    bool executeJobOrThrowOnError(Job && job);
-
-private:
-    /// Use mutex, because executeJobOrThrowOnError will be called without external lock
-    /// But we will touch `jobs` in this method
-    mutable std::mutex mutex;
-    std::priority_queue<Job> jobs;
-};
-
-
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
   * - catches exceptions and rethrows on wait.
@@ -77,12 +23,11 @@ private:
   *
   * Thread: std::thread or something with identical interface.
   */
-template <typename Thread, typename JobContainer>
+template <typename Thread>
 class ThreadPoolImpl
 {
 public:
-
-    using Job = typename JobContainer::Job;
+    using Job = std::function<void()>;
 
     /// Maximum number of threads is based on the number of physical cores.
     ThreadPoolImpl();
@@ -97,13 +42,17 @@ public:
     /// If any thread was throw an exception, first exception will be rethrown from this method,
     ///  and exception will be cleared.
     /// Also throws an exception if cannot create thread.
+    /// Priority: greater is higher.
     /// NOTE: Probably you should call wait() if exception was thrown. If some previously scheduled jobs are using some objects,
     /// located on stack of current thread, the stack must not be unwinded until all jobs finished. However,
     /// if ThreadPool is a local object, it will wait for all scheduled jobs in own destructor.
-    void scheduleOrThrowOnError(Job job);
+    void scheduleOrThrowOnError(Job job, int priority = 0);
 
-    /// Similar to scheduleOrThrowOnError(...).
-    bool trySchedule(Job job) noexcept;
+    /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
+    bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0) noexcept;
+
+    /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
+    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -140,12 +89,27 @@ private:
     bool shutdown = false;
     const bool shutdown_on_exception = true;
 
-    JobContainer jobs;
+    struct JobWithPriority
+    {
+        Job job;
+        int priority;
+
+        JobWithPriority(Job job_, int priority_)
+            : job(job_), priority(priority_) {}
+
+        bool operator< (const JobWithPriority & rhs) const
+        {
+            return priority < rhs.priority;
+        }
+    };
+
+    std::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::exception_ptr first_exception;
 
+
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job);
+    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
@@ -154,7 +118,7 @@ private:
 
 
 /// ThreadPool with std::thread for threads.
-using FreeThreadPool = ThreadPoolImpl<std::thread, QueueJobContainer>;
+using FreeThreadPool = ThreadPoolImpl<std::thread>;
 
 
 /** Global ThreadPool that can be used as a singleton.
@@ -192,14 +156,14 @@ public:
 class ThreadFromGlobalPool
 {
 public:
-    ThreadFromGlobalPool() = default;
+    ThreadFromGlobalPool() {}
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
         : state(std::make_shared<Poco::Event>())
     {
         /// NOTE: If this will throw an exception, the destructor won't be called.
-        GlobalThreadPool::instance().scheduleOrThrowOnError([
+        GlobalThreadPool::instance().scheduleOrThrow([
             state = state,
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
@@ -266,7 +230,4 @@ private:
 
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
-using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool, QueueJobContainer>;
-
-/// Specific thread pool for background merges planning
-using PrioritizedThreadPool = ThreadPoolImpl<ThreadFromGlobalPool, PriorityJobContainer>;
+using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;

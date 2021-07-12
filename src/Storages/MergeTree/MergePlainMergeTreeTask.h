@@ -50,7 +50,7 @@ struct MergeMutateSelectedEntry
 };
 
 
-class MergePlainMergeTreeTask : public PriorityJobContainer::JobWithPriority
+class MergePlainMergeTreeTask : public BackgroundTask
 {
 
 public:
@@ -61,7 +61,7 @@ public:
         NamesPtr deduplicate_by_columns_,
         std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry_,
         TableLockHolder & table_lock_holder_)
-        : PriorityJobContainer::JobWithPriority(0) // FIXME: equal priority
+        : BackgroundTask(0) // FIXME: equal priority
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , deduplicate(deduplicate_)

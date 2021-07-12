@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/MergeExecutor.h>
 #include <Common/ThreadPool.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <pcg_random.hpp>
@@ -79,7 +80,7 @@ private:
     std::atomic<size_t> no_work_done_count{0};
 
     /// Pool for merges
-    PrioritizedThreadPool pool_for_merges;
+    MergeExecutor pool_for_merges;
     /// Pools where we execute background jobs
     std::unordered_map<PoolType, ThreadPool> pools;
 
@@ -108,7 +109,7 @@ public:
     void execute(JobAndPool job_and_pool);
 
     /// Execute mergetask
-    void execute(std::shared_ptr<PriorityJobContainer::JobWithPriority> merge_task);
+    void execute(BackgroundTaskPtr merge_task);
 
     /// Just call finish
     virtual ~IBackgroundJobExecutor();

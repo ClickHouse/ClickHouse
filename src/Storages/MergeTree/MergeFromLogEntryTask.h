@@ -12,7 +12,7 @@ namespace DB
 class StorageReplicatedMergeTree;
 
 
-class MergeFromLogEntryTask : public PriorityJobContainer::JobWithPriority
+class MergeFromLogEntryTask : public BackgroundTask
 {
 public:
     MergeFromLogEntryTask(ReplicatedMergeTreeLogEntry::Ptr entry_, StorageReplicatedMergeTree & storage_);
