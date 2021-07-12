@@ -223,3 +223,53 @@ SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num;
 ## bitmaskToArray(num) {#bitmasktoarraynum}
 
 Принимает целое число. Возвращает массив чисел типа UInt64, содержащий степени двойки, в сумме дающих исходное число; числа в массиве идут по возрастанию.
+
+## bitPositionsToArray(num) {#bitpositionstoarraynum}
+
+Принимает целое число и приводит его к беззнаковому виду. Возвращает массив `UInt64` чисел, который содержит список позиций битов `arg`, равных `1`, в порядке возрастания.
+
+**Синтаксис**
+
+```sql
+bitPositionsToArray(arg)
+```
+
+**Аргументы**
+
+-   `arg` — целое значение. [Int/UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Массив, содержащий список позиций битов, равных `1`, в порядке возрастания.
+
+Тип: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT bitPositionsToArray(toInt8(1)) AS bit_positions;
+```
+
+Результат:
+
+``` text
+┌─bit_positions─┐
+│ [0]           │
+└───────────────┘
+```
+
+Запрос:
+
+``` sql
+select bitPositionsToArray(toInt8(-1)) as bit_positions;
+```
+
+Результат:
+
+``` text
+┌─bit_positions─────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
+```

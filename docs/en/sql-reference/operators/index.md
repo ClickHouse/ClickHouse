@@ -211,17 +211,17 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 6
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
 -   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
 
-## Logical Negation Operator {#logical-negation-operator}
-
-`NOT a` – The `not(a)` function.
-
 ## Logical AND Operator {#logical-and-operator}
 
-`a AND b` – The`and(a, b)` function.
+Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
 
 ## Logical OR Operator {#logical-or-operator}
 
-`a OR b` – The `or(a, b)` function.
+Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with the function [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
+
+## Logical Negation Operator {#logical-negation-operator}
+
+Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
 
 ## Conditional Operator {#conditional-operator}
 
@@ -283,6 +283,8 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
     -   `0` otherwise.
 -   For other values, the `IS NULL` operator always returns `0`.
 
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
+
 <!-- -->
 
 ``` sql
@@ -313,3 +315,5 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 │ 2 │ 3 │
 └───┴───┘
 ```
+
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
