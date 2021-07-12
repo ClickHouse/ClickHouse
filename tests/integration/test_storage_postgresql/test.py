@@ -1,55 +1,37 @@
-import time
-
+import logging
 import pytest
 import psycopg2
 from multiprocessing.dummy import Pool
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=["configs/log_conf.xml"], with_postgres=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/log_conf.xml'], with_postgres_cluster=True)
 
-def get_postgres_conn(cluster, ip, database=False):
-    if database == True:
-        conn_string = f"host={ip} port='{cluster.postgres_port}' dbname='clickhouse' user='postgres' password='mysecretpassword'"
-    else:
-        conn_string = f"host={ip} port='{cluster.postgres_port}' user='postgres' password='mysecretpassword'"
-
-    conn = psycopg2.connect(conn_string)
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    conn.autocommit = True
-    return conn
-
 def create_postgres_db(conn, name):
     cursor = conn.cursor()
     cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
     cursor.execute("CREATE DATABASE {}".format(name))
+    cursor.execute("SET search_path to {}".format(name))
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-        postgres_conn = get_postgres_conn(cluster, ip=cluster.postgres_ip)
-        print("postgres connected")
-        create_postgres_db(postgres_conn, 'clickhouse')
+        create_postgres_db(cluster.postgres_conn, 'clickhouse')
+        logging.debug("postgres db created")
 
-        postgres_conn = get_postgres_conn(cluster, ip=cluster.postgres2_ip)
-        print("postgres2 connected")
-        create_postgres_db(postgres_conn, 'clickhouse')
+        create_postgres_db(cluster.postgres2_conn, 'clickhouse')
+        logging.debug("postgres2 db created")
 
-        postgres_conn = get_postgres_conn(cluster, ip=cluster.postgres3_ip)
-        print("postgres2 connected")
-        create_postgres_db(postgres_conn, 'clickhouse')
+        create_postgres_db(cluster.postgres3_conn, 'clickhouse')
+        logging.debug("postgres3 db created")
 
-        postgres_conn = get_postgres_conn(cluster, ip=cluster.postgres4_ip)
-        print("postgres2 connected")
-        create_postgres_db(postgres_conn, 'clickhouse')
+        create_postgres_db(cluster.postgres4_conn, 'clickhouse')
+        logging.debug("postgres4 db created")
 
-        print("postgres connected")
         yield cluster
 
     finally:
@@ -57,11 +39,11 @@ def started_cluster():
 
 
 def test_postgres_select_insert(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
-    cursor = conn.cursor()
+    cursor = started_cluster.postgres_conn.cursor()
     table_name = 'test_many'
     table = f'''postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'clickhouse', '{table_name}', 'postgres', 'mysecretpassword')'''
-    cursor.execute('CREATE TABLE IF NOT EXISTS {} (a integer, b text, c integer)'.format(table_name))
+    cursor.execute('DROP TABLE IF EXISTS {} '.format(table_name))
+    cursor.execute('CREATE TABLE {} (a integer, b text, c integer)'.format(table_name))
 
     result = node1.query('''
         INSERT INTO TABLE FUNCTION {}
@@ -77,8 +59,7 @@ def test_postgres_select_insert(started_cluster):
 
 
 def test_postgres_conversions(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
-    cursor = conn.cursor()
+    cursor = started_cluster.postgres_conn.cursor()
     cursor.execute(
         '''CREATE TABLE IF NOT EXISTS test_types (
         a smallint, b integer, c bigint, d real, e double precision, f serial, g bigserial,
@@ -158,8 +139,7 @@ def test_postgres_conversions(started_cluster):
 
 
 def test_non_default_scema(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
-    cursor = conn.cursor()
+    cursor = started_cluster.postgres_conn.cursor()
     cursor.execute('CREATE SCHEMA test_schema')
     cursor.execute('CREATE TABLE test_schema.test_table (a integer)')
     cursor.execute('INSERT INTO test_schema.test_table SELECT i FROM generate_series(0, 99) as t(i)')
@@ -195,8 +175,7 @@ def test_non_default_scema(started_cluster):
 
 
 def test_concurrent_queries(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
-    cursor = conn.cursor()
+    cursor = started_cluster.postgres_conn.cursor()
 
     node1.query('''
         CREATE TABLE test_table (key UInt32, value UInt32)
@@ -212,7 +191,7 @@ def test_concurrent_queries(started_cluster):
     p = busy_pool.map_async(node_select, range(20))
     p.wait()
     count =  node1.count_in_log('New connection to postgres1:5432')
-    print(count, prev_count)
+    logging.debug(count, prev_count)
     # 16 is default size for connection pool
     assert(int(count) <= int(prev_count) + 16)
 
@@ -224,7 +203,7 @@ def test_concurrent_queries(started_cluster):
     p = busy_pool.map_async(node_insert, range(5))
     p.wait()
     result = node1.query("SELECT count() FROM test_table", user='default')
-    print(result)
+    logging.debug(result)
     assert(int(result) == 5 * 5 * 1000)
 
     def node_insert_select(_):
@@ -236,27 +215,22 @@ def test_concurrent_queries(started_cluster):
     p = busy_pool.map_async(node_insert_select, range(5))
     p.wait()
     result = node1.query("SELECT count() FROM test_table", user='default')
-    print(result)
+    logging.debug(result)
     assert(int(result) == 5 * 5 * 1000  * 2)
 
     node1.query('DROP TABLE test_table;')
     cursor.execute('DROP TABLE test_table;')
 
     count =  node1.count_in_log('New connection to postgres1:5432')
-    print(count, prev_count)
+    logging.debug(count, prev_count)
     assert(int(count) <= int(prev_count) + 16)
 
 
 def test_postgres_distributed(started_cluster):
-    conn0 = get_postgres_conn(started_cluster, started_cluster.postgres_ip, database=True)
-    conn1 = get_postgres_conn(started_cluster, started_cluster.postgres2_ip, database=True)
-    conn2 = get_postgres_conn(started_cluster, started_cluster.postgres3_ip, database=True)
-    conn3 = get_postgres_conn(started_cluster, started_cluster.postgres4_ip, database=True)
-
-    cursor0 = conn0.cursor()
-    cursor1 = conn1.cursor()
-    cursor2 = conn2.cursor()
-    cursor3 = conn3.cursor()
+    cursor0 = started_cluster.postgres_conn.cursor()
+    cursor1 = started_cluster.postgres_conn2.cursor()
+    cursor2 = started_cluster.postgres_conn3.cursor()
+    cursor3 = started_cluster.postgres_conn4.cursor()
     cursors = [cursor0, cursor1, cursor2, cursor3]
 
     for i in range(4):
@@ -309,13 +283,12 @@ def test_postgres_distributed(started_cluster):
 
 
 def test_datetime_with_timezone(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
-    cursor = conn.cursor()
+    cursor = postgres_conn.cursor()
     cursor.execute("CREATE TABLE test_timezone (ts timestamp without time zone, ts_z timestamp with time zone)")
     cursor.execute("insert into test_timezone select '2014-04-04 20:00:00', '2014-04-04 20:00:00'::timestamptz at time zone 'America/New_York';")
     cursor.execute("select * from test_timezone")
     result = cursor.fetchall()[0]
-    print(result[0], str(result[1])[:-6])
+    logging.debug(result[0], str(result[1])[:-6])
     node1.query("create table test_timezone ( ts DateTime, ts_z DateTime('America/New_York')) ENGINE PostgreSQL('postgres1:5432', 'clickhouse', 'test_timezone', 'postgres', 'mysecretpassword');")
     assert(node1.query("select ts from test_timezone").strip() == str(result[0]))
     # [:-6] because 2014-04-04 16:00:00+00:00 -> 2014-04-04 16:00:00
