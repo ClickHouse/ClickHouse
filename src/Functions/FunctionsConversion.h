@@ -618,9 +618,7 @@ struct FormatImpl<DataTypeEnum<FieldType>>
 {
     static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
     {
-        /// If we get column as nested from Nullable then Enum could contain unexpected value that is not from enumeration.
-        /// Add default value for such case, do not throw error, because it became NULL again after defaultImplementationForNulls.
-        writeString(type->getNameForValue(x, ""), wb);
+        writeString(type->getNameForValue(x), wb);
     }
 };
 
@@ -644,6 +642,16 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name, Con
     }
 };
 
+static ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
+{
+    ColumnUInt8::MutablePtr null_map = nullptr;
+    if (const auto * col_null = checkAndGetColumn<ColumnNullable>(col.get()))
+    {
+        null_map = ColumnUInt8::create();
+        null_map->insertRangeFrom(col_null->getNullMapColumn(), 0, col_null->size());
+    }
+    return null_map;
+}
 
 template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, DataTypeString>, DataTypeString>, Name, ConvertDefaultBehaviorTag>
@@ -653,7 +661,9 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
-        const auto & col_with_type_and_name = arguments[0];
+        ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
+
+        const auto & col_with_type_and_name =  columnGetNested(arguments[0]);
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
         const DateLUTImpl * time_zone = nullptr;
@@ -685,12 +695,25 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
             for (size_t i = 0; i < size; ++i)
             {
-                FormatImpl<FromDataType>::execute(vec_from[i], write_buffer, &type, time_zone);
+                try
+                {
+                    FormatImpl<FromDataType>::execute(vec_from[i], write_buffer, &type, time_zone);
+                }
+                catch (DB::Exception &)
+                {
+                    if (null_map)
+                        null_map->getData()[i] = 1;
+                    else
+                        throw;
+                }
                 writeChar(0, write_buffer);
                 offsets_to[i] = write_buffer.count();
             }
 
             write_buffer.finalize();
+
+            if (null_map)
+                return ColumnNullable::create(std::move(col_to), std::move(null_map));
             return col_to;
         }
         else
@@ -1400,7 +1423,11 @@ public:
     /// Function actually uses default implementation for nulls,
     /// but we need to know if return type is Nullable or not,
     /// so we use checked_return_type only to intercept the first call to getReturnTypeImpl(...).
-    bool useDefaultImplementationForNulls() const override { return checked_return_type; }
+    bool useDefaultImplementationForNulls() const override
+    {
+        bool to_nullable_string = to_nullable && std::is_same_v<ToDataType, DataTypeString>;
+        return checked_return_type && !to_nullable_string;
+    }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
@@ -1465,7 +1492,7 @@ private:
             throw Exception{"Function " + getName() + " expects at least 1 argument",
                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
-        const IDataType * from_type = arguments[0].type.get();
+        const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
         auto call = [&](const auto & types, const auto & tag) -> bool
