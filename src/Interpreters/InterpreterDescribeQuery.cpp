@@ -100,7 +100,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     {
         res_columns[0]->insert(column.name);
 
-        if (settings.describe_extend_object_type && storage_snapshot)
+        if (settings.describe_extend_object_types && storage_snapshot)
             res_columns[1]->insert(storage_snapshot->getConcreteType(column.name)->getName());
         else
             res_columns[1]->insert(column.type->getName());
