@@ -576,77 +576,82 @@ template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64
 
 /** Transformation of numbers, dates, datetimes to strings: through formatting.
   */
-template <typename DataType, bool throws>
+template <typename DataType>
 struct FormatImpl
 {
-    static bool execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType *, const DateLUTImpl *)
+    template <typename ReturnType = void>
+    static ReturnType execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType *, const DateLUTImpl *)
     {
         writeText(x, wb);
-        return true;
+        return ReturnType(true);
     }
 };
 
-template <bool throws>
-struct FormatImpl<DataTypeDate, throws>
+template <>
+struct FormatImpl<DataTypeDate>
 {
-    static bool execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
+    template <typename ReturnType = void>
+    static ReturnType execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
     {
         writeDateText(DayNum(x), wb);
-        return true;
+        return ReturnType(true);
     }
 };
 
-template <bool throws>
-struct FormatImpl<DataTypeDateTime, throws>
+template <>
+struct FormatImpl<DataTypeDateTime>
 {
-    static bool execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime *, const DateLUTImpl * time_zone)
+    template <typename ReturnType = void>
+    static ReturnType execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime *, const DateLUTImpl * time_zone)
     {
         writeDateTimeText(x, wb, *time_zone);
-        return true;
+        return ReturnType(true);
     }
 };
 
-template <bool throws>
-struct FormatImpl<DataTypeDateTime64, throws>
+template <>
+struct FormatImpl<DataTypeDateTime64>
 {
-    static bool execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 * type, const DateLUTImpl * time_zone)
+    template <typename ReturnType = void>
+    static ReturnType execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 * type, const DateLUTImpl * time_zone)
     {
         writeDateTimeText(DateTime64(x), type->getScale(), wb, *time_zone);
-        return true;
+        return ReturnType(true);
     }
 };
 
 
 template <typename FieldType>
-struct FormatImpl<DataTypeEnum<FieldType>, false>
+struct FormatImpl<DataTypeEnum<FieldType>>
 {
-    static bool execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
+    template <typename ReturnType = void>
+    static ReturnType execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
     {
-        StringRef res;
-        bool is_ok = type->getNameForValue(x, res);
-        if (is_ok)
-            writeString(res, wb);
-        return is_ok;
+        static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+        if constexpr (throw_exception)
+        {
+            writeString(type->getNameForValue(x), wb);
+        }
+        else
+        {
+            StringRef res;
+            bool is_ok = type->getNameForValue(x, res);
+            if (is_ok)
+                writeString(res, wb);
+            return ReturnType(is_ok);
+        }
     }
 };
 
 template <typename FieldType>
-struct FormatImpl<DataTypeEnum<FieldType>, true>
+struct FormatImpl<DataTypeDecimal<FieldType>>
 {
-    static bool execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
-    {
-        writeString(type->getNameForValue(x), wb);
-        return true;
-    }
-};
-
-template <typename FieldType, bool throws>
-struct FormatImpl<DataTypeDecimal<FieldType>, throws>
-{
-    static bool execute(const FieldType x, WriteBuffer & wb, const DataTypeDecimal<FieldType> * type, const DateLUTImpl *)
+    template <typename ReturnType = void>
+    static ReturnType execute(const FieldType x, WriteBuffer & wb, const DataTypeDecimal<FieldType> * type, const DateLUTImpl *)
     {
         writeText(x, type->getScale(), wb);
-        return true;
+        return ReturnType(true);
     }
 };
 
@@ -716,12 +721,12 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
             {
                 if (null_map)
                 {
-                    bool is_ok = FormatImpl<FromDataType, false>::execute(vec_from[i], write_buffer, &type, time_zone);
+                    bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                     null_map->getData()[i] |= !is_ok;
                 }
                 else
                 {
-                    FormatImpl<FromDataType, true>::execute(vec_from[i], write_buffer, &type, time_zone);
+                    FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
                 }
                 writeChar(0, write_buffer);
                 offsets_to[i] = write_buffer.count();
