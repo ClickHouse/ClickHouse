@@ -344,23 +344,24 @@ void IDiskRemote::replaceFile(const String & from_path, const String & to_path)
 }
 
 
-void IDiskRemote::removeFileIfExists(const String & path)
-{
-    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
-    if (fs::exists(fs::path(metadata_path) / path))
-    {
-        removeMeta(path, fs_paths_keeper);
-        removeFromRemoteFS(fs_paths_keeper);
-    }
-}
-
-
 void IDiskRemote::removeSharedFile(const String & path, bool keep_in_remote_fs)
 {
     RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
     removeMeta(path, fs_paths_keeper);
     if (!keep_in_remote_fs)
         removeFromRemoteFS(fs_paths_keeper);
+}
+
+
+void IDiskRemote::removeSharedFileIfExists(const String & path, bool keep_in_remote_fs)
+{
+    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
+    if (fs::exists(fs::path(metadata_path) / path))
+    {
+        removeMeta(path, fs_paths_keeper);
+        if (!keep_in_remote_fs)
+            removeFromRemoteFS(fs_paths_keeper);
+    }
 }
 
 

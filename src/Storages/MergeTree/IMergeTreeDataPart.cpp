@@ -1103,7 +1103,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
 
 std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
-    /// NOTE: It's needed for S3 zero-copy replication
+    /// NOTE: It's needed for zero-copy replication
     if (force_keep_shared_data)
         return true;
 

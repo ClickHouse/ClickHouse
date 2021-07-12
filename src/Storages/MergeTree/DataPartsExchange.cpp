@@ -43,7 +43,6 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int INCORRECT_PART_TYPE;
     extern const int ZERO_COPY_REPLICATION_ERROR;
-    extern const int NO_RESERVATIONS_PROVIDED;
 }
 
 namespace DataPartsExchange

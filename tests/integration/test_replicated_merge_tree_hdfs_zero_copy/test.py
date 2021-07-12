@@ -49,6 +49,19 @@ def cluster():
         cluster.shutdown()
 
 
+@pytest.fixture(autouse=True)
+def cleanup_after_test(cluster):
+    try:
+        yield
+    finally:
+        for instance in cluster.instances.values():
+            instance.query("DROP TABLE IF EXISTS hdfs_test NO DELAY")
+            instance.query("DROP TABLE IF EXISTS single_node_move_test NO DELAY")
+            instance.query("DROP TABLE IF EXISTS move_test NO DELAY")
+            instance.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+            instance.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+
+
 def test_hdfs_zero_copy_replication_insert(cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
@@ -75,8 +88,6 @@ def test_hdfs_zero_copy_replication_insert(cluster):
 
     wait_for_hdfs_objects(cluster, "/clickhouse1", SHARDS * FILES_OVERHEAD_PER_TABLE + FILES_OVERHEAD_PER_PART_COMPACT)
 
-    node1.query("DROP TABLE IF EXISTS hdfs_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS hdfs_test NO DELAY")
 
 
 @pytest.mark.parametrize(
@@ -88,7 +99,6 @@ def test_hdfs_zero_copy_replication_insert(cluster):
 def test_hdfs_zero_copy_replication_single_move(cluster, storage_policy, init_objects):
     node1 = cluster.instances["node1"]
 
-    node1.query("DROP TABLE IF EXISTS single_node_move_test NO DELAY")
     node1.query(
         Template("""
         CREATE TABLE single_node_move_test (dt DateTime, id Int64)
@@ -110,8 +120,6 @@ def test_hdfs_zero_copy_replication_single_move(cluster, storage_policy, init_ob
     node1.query("ALTER TABLE single_node_move_test MOVE PARTITION ID 'all' TO VOLUME 'main'")
     assert node1.query("SELECT id FROM single_node_move_test ORDER BY dt FORMAT Values") == "(10),(11)"
 
-    node1.query("DROP TABLE IF EXISTS single_node_move_test NO DELAY")
-
 
 @pytest.mark.parametrize(
     ("storage_policy", "init_objects"),
@@ -123,8 +131,6 @@ def test_hdfs_zero_copy_replication_move(cluster, storage_policy, init_objects):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS move_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS move_test NO DELAY")
     node1.query(
         Template("""
         CREATE TABLE move_test ON CLUSTER test_cluster (dt DateTime, id Int64)
@@ -151,9 +157,6 @@ def test_hdfs_zero_copy_replication_move(cluster, storage_policy, init_objects):
     assert node2.query("SELECT id FROM move_test ORDER BY dt FORMAT Values") == "(10),(11)"
     wait_for_hdfs_objects(cluster, "/clickhouse1", init_objects + FILES_OVERHEAD_PER_PART_COMPACT)
 
-    node1.query("DROP TABLE IF EXISTS move_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS move_test NO DELAY")
-
 
 @pytest.mark.parametrize(
     ("storage_policy"), ["hybrid", "tiered", "tiered_copy"]
@@ -162,8 +165,6 @@ def test_hdfs_zero_copy_with_ttl_move(cluster, storage_policy):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
     node1.query(
         Template("""
         CREATE TABLE ttl_move_test ON CLUSTER test_cluster (dt DateTime, id Int64)
@@ -185,16 +186,10 @@ def test_hdfs_zero_copy_with_ttl_move(cluster, storage_policy):
     assert node1.query("SELECT id FROM ttl_move_test ORDER BY id FORMAT Values") == "(10),(11)"
     assert node2.query("SELECT id FROM ttl_move_test ORDER BY id FORMAT Values") == "(10),(11)"
 
-    node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
-
 
 def test_hdfs_zero_copy_with_ttl_delete(cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
-
-    node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
 
     node1.query(
         """
@@ -216,6 +211,3 @@ def test_hdfs_zero_copy_with_ttl_delete(cluster):
     assert node2.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1)"
     assert node1.query("SELECT id FROM ttl_delete_test ORDER BY id FORMAT Values") == "(11)"
     assert node2.query("SELECT id FROM ttl_delete_test ORDER BY id FORMAT Values") == "(11)"
-
-    node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
