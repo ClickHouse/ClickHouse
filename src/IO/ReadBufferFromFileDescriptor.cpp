@@ -181,6 +181,7 @@ void ReadBufferFromFileDescriptor::rewind()
     /// Clearing the buffer with existing data. New data will be read on subsequent call to 'next'.
     working_buffer.resize(0);
     pos = working_buffer.begin();
+    file_offset_of_buffer_end = 0;
 }
 
 
