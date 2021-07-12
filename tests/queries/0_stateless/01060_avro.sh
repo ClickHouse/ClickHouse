@@ -101,10 +101,10 @@ B_NEEDLE="'\"name\":\"b\",\"type\":\"string\"'"
 PATTERNQUERY="select 'русская строка' as a, 'русская строка' as b format Avro SETTINGS output_format_avro_string_column_pattern ="
 
 PATTERNPATTERN="'a'"
-${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"
+${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | tr -d '\n' | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"
 
 PATTERNPATTERN="'a|b'"
-${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"
+${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | tr -d '\n' | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"
 
 PATTERNPATTERN="'.*'"
-${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"
+${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | tr -d '\n' | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"

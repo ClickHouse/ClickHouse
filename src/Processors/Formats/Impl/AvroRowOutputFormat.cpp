@@ -55,12 +55,7 @@ namespace ErrorCodes
 class AvroSerializerTraits
 {
 public:
-    bool isStringAsString(const String & column_name)
-    {
-        return RE2::FullMatch(column_name, string_to_string_regexp);
-    }
-
-    AvroSerializerTraits(const FormatSettings & settings_)
+    explicit AvroSerializerTraits(const FormatSettings & settings_)
         : string_to_string_regexp(settings_.avro.string_column_pattern)
     {
         if (!string_to_string_regexp.ok())
@@ -68,6 +63,11 @@ public:
                 "Avro: cannot compile re2: " + settings_.avro.string_column_pattern + ", error: " + string_to_string_regexp.error()
                     + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
                 DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+    }
+
+    bool isStringAsString(const String & column_name)
+    {
+        return RE2::FullMatch(column_name, string_to_string_regexp);
     }
 
     ~AvroSerializerTraits()
