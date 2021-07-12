@@ -721,7 +721,7 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr contex
 
 IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 {
-    std::shared_lock lock(rwlock);
+    std::shared_lock lock(rwlock, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     ColumnSizeByName column_sizes;
     for (const auto & it : files) 
     {

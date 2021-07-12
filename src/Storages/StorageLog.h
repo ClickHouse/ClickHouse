@@ -88,7 +88,7 @@ private:
     DiskPtr disk;
     String table_path;
 
-    std::shared_timed_mutex rwlock;
+    mutable std::shared_timed_mutex rwlock;
 
     Files files;
 
