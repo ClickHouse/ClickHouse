@@ -523,6 +523,29 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, ContextPtr co
     return file_checker.check();
 }
 
+IStorage::ColumnSizeByName StorageTinyLog::getColumnSizes() const
+{
+    std::shared_lock lock(rwlock, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+    ColumnSizeByName column_sizes;
+    FileChecker::Map file_sizes = file_checker.getFileSizes();
+    
+    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
+    {
+        ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
+        {
+            String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+            ColumnSize & size = column_sizes[column.name];
+            size.data_compressed += file_sizes[stream_name];
+        };
+
+        ISerialization::SubstreamPath substream_path;
+        auto serialization = type->getDefaultSerialization();
+        serialization->enumerateStreams(stream_callback, substream_path);
+    }
+
+    return column_sizes;
+}
+
 void StorageTinyLog::truncate(
     const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
