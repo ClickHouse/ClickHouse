@@ -7,8 +7,8 @@ CREATE TABLE test_tiny_log (x UInt8, s String, a Array(Nullable(String))) ENGINE
 INSERT INTO test_log VALUES (64, 'Value1', ['Value2', 'Value3', NULL]);
 INSERT INTO test_tiny_log VALUES (64, 'Value1', ['Value2', 'Value3', NULL]);
 
-SELECT data_compressed_bytes FROM system.columns WHERE table = 'test_log';
-SELECT data_compressed_bytes FROM system.columns WHERE table = 'test_tiny_log';
+SELECT data_compressed_bytes FROM system.columns WHERE table = 'test_log' AND database = currentDatabase();
+SELECT data_compressed_bytes FROM system.columns WHERE table = 'test_tiny_log' AND database = currentDatabase();
 
 DROP TABLE test_log;
 DROP TABLE test_tiny_log;
