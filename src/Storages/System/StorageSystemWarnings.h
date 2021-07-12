@@ -2,11 +2,13 @@
 
 #include <Storages/System/IStorageSystemOneBlock.h>
 
-namespace DB {
+namespace DB
+{
 
 class Context;
 
-class StorageSystemWarnings final : public shared_ptr_helper<StorageSystemWarnings>, public IStorageSystemOneBlock<StorageSystemWarnings> {
+class StorageSystemWarnings final : public shared_ptr_helper<StorageSystemWarnings>,
+                                public IStorageSystemOneBlock<StorageSystemWarnings> {
 public:
     std::string getName() const override { return "SystemWarnings"; }
 
