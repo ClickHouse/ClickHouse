@@ -349,7 +349,7 @@ void IClient::outputQueryInfo(bool echo_query_)
 }
 
 
-void IClient::processQuery(const String & query)
+void IClient::prepareAndExecuteQuery(const String & query)
 {
     /* Parameters are in global variables:
      * 'parsed_query' -- the query AST,
@@ -359,11 +359,13 @@ void IClient::processQuery(const String & query)
      **/
 
     full_query = query_to_execute = query;
-    executeSingleQuery();
+
+    executeParsedQueryPrefix();
+    executeParsedQuery();
 }
 
 
-void IClient::executeSingleQuery(std::optional<bool> echo_query_)
+void IClient::executeParsedQuery(std::optional<bool> echo_query_, bool report_error)
 {
     have_error = false;
     processed_rows = 0;
@@ -373,9 +375,8 @@ void IClient::executeSingleQuery(std::optional<bool> echo_query_)
     resetOutput();
     outputQueryInfo(echo_query_.value_or(echo_queries));
 
-    executeSingleQueryPrefix();
-    executeSingleQueryImpl();
-    executeSingleQuerySuffix();
+    executeParsedQueryImpl();
+    executeParsedQuerySuffix();
 
     if (is_interactive)
     {
@@ -388,7 +389,7 @@ void IClient::executeSingleQuery(std::optional<bool> echo_query_)
         std::cerr << progress_indication.elapsedSeconds() << "\n";
     }
 
-    if (have_error)
+    if (have_error && report_error)
         reportQueryError();
 }
 
@@ -404,7 +405,7 @@ bool IClient::processMultiQuery(const String & all_queries_text)
         /// disable logs if expects errors
         TestHint test_hint(test_mode, all_queries_text);
         if (test_hint.clientError() || test_hint.serverError())
-            processQuery("SET send_logs_level = 'fatal'");
+            prepareAndExecuteQuery("SET send_logs_level = 'fatal'");
     }
 
     bool echo_query = echo_queries;
@@ -505,7 +506,7 @@ bool IClient::processMultiQuery(const String & all_queries_text)
         // unlike VALUES.
         auto * insert_ast = parsed_query->as<ASTInsertQuery>();
         /// But do not split query for clickhouse-local.
-        if (splitQueryIntoParts() && insert_ast && insert_ast->data)
+        if (insert_ast && insert_ast->data)
         {
             this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
             insert_ast->end = this_query_end;
@@ -551,7 +552,7 @@ bool IClient::processMultiQuery(const String & all_queries_text)
 
         try
         {
-            executeSingleQuery(echo_query);
+            executeParsedQuery(echo_query, false);
         }
         catch (...)
         {
@@ -568,7 +569,7 @@ bool IClient::processMultiQuery(const String & all_queries_text)
         // , where the inline data is delimited by semicolon and not by a
         // newline.
         /// TODO: Better way
-        if (splitQueryIntoParts() && insert_ast && insert_ast->data)
+        if (insert_ast && insert_ast->data)
         {
             this_query_end = insert_ast->end;
             adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
@@ -676,7 +677,7 @@ bool IClient::processQueryText(const String & text)
     if (!config().has("multiquery"))
     {
         assert(!query_fuzzer_runs);
-        processQuery(text);
+        prepareAndExecuteQuery(text);
 
         return true;
     }
@@ -709,9 +710,19 @@ void IClient::runInteractive()
         const char * home_path_cstr = getenv("HOME");
         if (home_path_cstr)
             home_path = home_path_cstr;
-
-        configReadClient(config(), home_path);
     }
+
+    /// Initialize query_id_formats if any
+    if (config().has("query_id_formats"))
+    {
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config().keys("query_id_formats", keys);
+        for (const auto & name : keys)
+            query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
+    }
+
+    if (query_id_formats.empty())
+        query_id_formats.emplace_back("Query id:", " {query_id}\n");
 
     /// Load command history if present.
     if (config().has("history_file"))
@@ -818,7 +829,6 @@ int IClient::mainImpl()
 
     if (is_interactive)
     {
-
         clearTerminal();
         showClientVersion();
     }

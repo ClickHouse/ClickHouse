@@ -1,13 +1,5 @@
 #pragma once
 
-#if USE_REPLXX
-#   include <common/ReplxxLineReader.h>
-#elif defined(USE_READLINE) && USE_READLINE
-#   include <common/ReadlineLineReader.h>
-#else
-#   include <common/LineReader.h>
-#endif
-
 #include <boost/program_options.hpp>
 #include <Poco/Util/Application.h>
 #include <Core/Names.h>
@@ -17,6 +9,14 @@
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
 #include <Common/ShellCommand.h>
+
+#if USE_REPLXX
+#   include <common/ReplxxLineReader.h>
+#elif defined(USE_READLINE) && USE_READLINE
+#   include <common/ReadlineLineReader.h>
+#else
+#   include <common/LineReader.h>
+#endif
 
 
 namespace DB
@@ -137,15 +137,15 @@ protected:
 
     void resetOutput();
 
-    virtual void executeSingleQueryPrefix() {}
+    virtual void executeParsedQueryPrefix() {}
 
-    virtual void executeSingleQueryImpl() = 0;
+    virtual void executeParsedQueryImpl() = 0;
 
-    virtual void executeSingleQuerySuffix() {}
+    virtual void executeParsedQuerySuffix() {}
 
-    void processQuery(const String & query);
+    void prepareAndExecuteQuery(const String & query);
 
-    void executeSingleQuery(std::optional<bool> echo_query_ = {});
+    void executeParsedQuery(std::optional<bool> echo_query_ = {}, bool report_error = true);
 
     virtual bool processQueryFromInteractive(const String & input) = 0;
 
@@ -182,10 +182,6 @@ protected:
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
 
     virtual bool supportPasswordOption() const = 0;
-
-    virtual bool splitQueryIntoParts() const = 0;
-
-    virtual void setDatabase(const String &) {}
 
 private:
 
