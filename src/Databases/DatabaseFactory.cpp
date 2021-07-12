@@ -12,8 +12,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Common/Macros.h>
 #include <filesystem>
 

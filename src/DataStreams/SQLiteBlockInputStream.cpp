@@ -142,7 +142,7 @@ void SQLiteBlockInputStream::insertValue(IColumn & column, const ExternalResultD
             assert_cast<ColumnInt32 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
             break;
         case ValueType::vtInt64:
-            assert_cast<ColumnInt64 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            assert_cast<ColumnInt64 &>(column).insertValue(sqlite3_column_int64(compiled_statement.get(), idx));
             break;
         case ValueType::vtFloat32:
             assert_cast<ColumnFloat32 &>(column).insertValue(sqlite3_column_double(compiled_statement.get(), idx));
