@@ -103,7 +103,6 @@ public:
     void execute(Block & block, bool dry_run = false) const;
 
     bool hasArrayJoin() const;
-    bool isDeterministic() const;
     void assertDeterministic() const;
 
     /// Obtain a sample block that contains the names and types of result columns.
