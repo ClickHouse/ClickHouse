@@ -270,19 +270,17 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
-    for (const auto & action : expr.getActions())
-    {
-        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-            throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
+    if (expr.hasArrayJoin())
+        throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
 
-        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            IFunctionBase & func = *action.node->function_base;
-            if (!func.isDeterministic())
-                throw Exception(key_name + " key cannot contain non-deterministic functions, "
-                    "but contains function " + func.getName(),
-                    ErrorCodes::BAD_ARGUMENTS);
-        }
+    try
+    {
+        expr.assertDeterministic();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("for {} key", key_name));
+        throw;
     }
 
     for (const ColumnWithTypeAndName & element : sample_block)
