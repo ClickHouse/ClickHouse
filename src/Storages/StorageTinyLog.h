@@ -40,7 +40,7 @@ public:
     CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) override;
 
     bool storesDataOnDisk() const override { return true; }
-    Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
+    Strings getDataPaths() const override { return {fullPath(disk, table_path)}; }
     bool supportsSubcolumns() const override { return true; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
