@@ -329,8 +329,12 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const TableJ
 
     if (Block totals_without_keys = totals)
     {
+        const auto & required_right = table_join.requiredRightKeys();
         for (const auto & name : table_join.keyNamesRight())
-            totals_without_keys.erase(totals_without_keys.getPositionByName(name));
+        {
+            if (!required_right.contains(name))
+                totals_without_keys.erase(totals_without_keys.getPositionByName(name));
+        }
 
         for (auto & col : totals_without_keys)
         {
