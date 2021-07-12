@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -79,9 +80,12 @@ public:
 
         for (const auto row : collections::range(0, input_rows_count))
         {
-            const UInt64 id = col_id->getUInt(row);
+            const auto id = S2CellId(col_id->getUInt(row));
 
-            S2Point point = S2CellId(id).ToPoint();
+            if (!id.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point is not valid");
+
+            S2Point point = id.ToPoint();
             S2LatLng ll(point);
 
             longitude.emplace_back(ll.lng().degrees());

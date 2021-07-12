@@ -14,19 +14,17 @@
 
 #include "s2_fwd.h"
 
-class S2CellId;
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
-
 
 class FunctionS2RectAdd : public IFunction
 {
@@ -81,13 +79,19 @@ public:
 
         for (const auto row : collections::range(0, input_rows_count))
         {
-            const UInt64 lo = col_lo->getUInt(row);
-            const UInt64 hi = col_hi->getUInt(row);
-            const UInt64 point = col_point->getUInt(row);
+            const auto lo = S2CellId(col_lo->getUInt(row));
+            const auto hi = S2CellId(col_hi->getUInt(row));
+            const auto point = S2CellId(col_point->getUInt(row));
 
-            S2LatLngRect rect(S2CellId(lo).ToLatLng(), S2CellId(hi).ToLatLng());
+            if (!lo.is_valid() || !hi.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Rectangle is not valid");
 
-            rect.AddPoint(S2CellId(point).ToPoint());
+            if (!point.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point is not valid");
+
+            S2LatLngRect rect(lo.ToLatLng(), hi.ToLatLng());
+
+            rect.AddPoint(point.ToPoint());
 
             vec_res_first.emplace_back(S2CellId(rect.lo()).id());
             vec_res_second.emplace_back(S2CellId(rect.hi()).id());

@@ -14,14 +14,13 @@
 
 #include "s2_fwd.h"
 
-class S2CellId;
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -77,6 +76,12 @@ public:
         {
             const UInt64 id_first = col_id_first->getInt(row);
             const UInt64 id_second = col_id_second->getInt(row);
+
+            auto first_cell = S2CellId(id_first);
+            auto second_cell = S2CellId(id_second);
+
+            if (!first_cell.is_valid() || !second_cell.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cell is not valid");
 
             dst_data.emplace_back(S2CellId(id_first).intersects(S2CellId(id_second)));
         }

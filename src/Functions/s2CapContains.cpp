@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -92,9 +93,9 @@ public:
 
         for (const auto row : collections::range(0, input_rows_count))
         {
-            const UInt64 center = col_center->getUInt(row);
+            const auto center = S2CellId(col_center->getUInt(row));
             const Float64 degrees = col_degrees->getFloat64(row);
-            const UInt64 point = col_point->getUInt(row);
+            const auto point = S2CellId(col_point->getUInt(row));
 
             if (isNaN(degrees))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan");
@@ -102,10 +103,16 @@ public:
             if (std::isinf(degrees))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be infinite");
 
-            S1Angle angle = S1Angle::Degrees(degrees);
-            S2Cap cap(S2CellId(center).ToPoint(), angle);
+            if (!center.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Center is not valid");
 
-            dst_data.emplace_back(cap.Contains(S2CellId(point).ToPoint()));
+            if (!point.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point is not valid");
+
+            S1Angle angle = S1Angle::Degrees(degrees);
+            S2Cap cap(center.ToPoint(), angle);
+
+            dst_data.emplace_back(cap.Contains(point.ToPoint()));
         }
 
         return dst;
