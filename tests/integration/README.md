@@ -34,6 +34,7 @@ sudo -H pip install \
     protobuf \
     psycopg2-binary \
     pymongo \
+    pytz \
     pytest \
     pytest-timeout \
     redis \

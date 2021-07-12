@@ -7310,17 +7310,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     if (!zookeeper)
         return best_replica;
 
-    String zero_copy;
-    if (disk_type == DiskType::Type::S3)
-    {
-        zero_copy = "zero_copy_s3";
-    }
-    else if (disk_type == DiskType::Type::HDFS)
-    {
-        zero_copy = "zero_copy_hdfs";
-    }
-    else
-        return best_replica;
+    String zero_copy = fmt::format("zero_copy_{}", DiskType::toString(disk_type));
     String zookeeper_part_node = fs::path(zookeeper_path) / zero_copy / "shared" / part.name;
 
     Strings ids;
