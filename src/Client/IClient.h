@@ -8,7 +8,9 @@
 #include <Common/ProgressIndication.h>
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
+#include <Client/TestHint.h>
 #include <Common/ShellCommand.h>
+
 
 #if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
@@ -153,6 +155,8 @@ protected:
 
     virtual void loadSuggestionDataIfPossible() {}
 
+    virtual bool checkErrorMatchesHints(const TestHint & /* test_hint */, bool /* had_error */) { return false; }
+
     virtual void reconnectIfNeeded() {}
 
     virtual bool isInteractive() = 0;
@@ -182,6 +186,10 @@ protected:
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
 
     virtual bool supportPasswordOption() const = 0;
+
+    virtual bool splitQueries() const { return false; }
+
+    virtual bool processWithFuzzing(const String &) { return true; }
 
 private:
 

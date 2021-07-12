@@ -159,6 +159,8 @@ private:
 
     bool supportPasswordOption() const override { return true; }
 
+    bool splitQueries() const override { return true; }
+
     void reconnectIfNeeded() override
     {
         if (!connection->checkConnected())
@@ -310,6 +312,67 @@ private:
         }
 
         return 0;
+    }
+
+    bool checkErrorMatchesHints(const TestHint & test_hint, bool had_error) override
+    {
+        auto error_matches_hint = true;
+        if (had_error)
+        {
+            if (test_hint.serverError())
+            {
+                if (!server_exception)
+                {
+                    error_matches_hint = false;
+                    fmt::print(stderr, "Expected server error code '{}' but got no server error.\n", test_hint.serverError());
+                }
+                else if (server_exception->code() != test_hint.serverError())
+                {
+                    error_matches_hint = false;
+                    std::cerr << "Expected server error code: " << test_hint.serverError() << " but got: " << server_exception->code()
+                                << "." << std::endl;
+                }
+            }
+
+            if (test_hint.clientError())
+            {
+                if (!client_exception)
+                {
+                    error_matches_hint = false;
+                    fmt::print(stderr, "Expected client error code '{}' but got no client error.\n", test_hint.clientError());
+                }
+                else if (client_exception->code() != test_hint.clientError())
+                {
+                    error_matches_hint = false;
+                    fmt::print(
+                        stderr, "Expected client error code '{}' but got '{}'.\n", test_hint.clientError(), client_exception->code());
+                }
+            }
+
+            if (!test_hint.clientError() && !test_hint.serverError())
+            {
+                // No error was expected but it still occurred. This is the
+                // default case w/o test hint, doesn't need additional
+                // diagnostics.
+                error_matches_hint = false;
+            }
+        }
+        else
+        {
+            if (test_hint.clientError())
+            {
+                fmt::print(stderr, "The query succeeded but the client error '{}' was expected.\n", test_hint.clientError());
+                error_matches_hint = false;
+            }
+
+            if (test_hint.serverError())
+            {
+                fmt::print(stderr, "The query succeeded but the server error '{}' was expected.\n", test_hint.serverError());
+                error_matches_hint = false;
+            }
+        }
+
+        return error_matches_hint;
     }
 
     void connect()
@@ -537,7 +600,7 @@ private:
     }
 
     /// Returns false when server is not available.
-    bool processWithFuzzing(const String & text)
+    bool processWithFuzzing(const String & text) override
     {
         ASTPtr orig_ast;
 
@@ -903,11 +966,10 @@ private:
 
     void executeParsedQueryPrefix() override
     {
-        auto query = query_to_execute;
         /// Some parts of a query (result output and formatting) are executed
         /// client-side. Thus we need to parse the query.
-        const char * begin = query.data();
-        parsed_query = parseQuery(begin, begin + query.size(), false);
+        const char * begin = full_query.data();
+        parsed_query = parseQuery(begin, begin + full_query.size(), false);
         if (!parsed_query)
             return;
 
@@ -915,7 +977,7 @@ private:
         /// Send part of query without data, because data will be sent separately.
         auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->data)
-            query_to_execute = full_query.substr(0, insert->data - query.data());
+            query_to_execute = full_query.substr(0, insert->data - full_query.data());
     }
 
     void executeParsedQueryImpl() override
