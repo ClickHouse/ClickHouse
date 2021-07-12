@@ -57,6 +57,10 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDa
         return builder.getFloatTy();
     else if (data_type.isFloat64())
         return builder.getDoubleTy();
+    else if (data_type.isEnum8())
+        return builder.getInt8Ty();
+    else if (data_type.isEnum16())
+        return builder.getInt16Ty();
 
     return nullptr;
 }
@@ -109,7 +113,7 @@ static inline bool canBeNativeType(const IDataType & type)
         return canBeNativeType(*data_type_nullable.getNestedType());
     }
 
-    return data_type.isNativeInt() || data_type.isNativeUInt() || data_type.isFloat() || data_type.isDate();
+    return data_type.isNativeInt() || data_type.isNativeUInt() || data_type.isFloat() || data_type.isDate() || data_type.isEnum();
 }
 
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
