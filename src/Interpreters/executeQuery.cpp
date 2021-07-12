@@ -948,7 +948,8 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     ContextMutablePtr context,
-    std::function<void(const String &, const String &, const String &, const String &)> set_result_details)
+    std::function<void(const String &, const String &, const String &, const String &)> set_result_details,
+    std::function<void()> before_finalize_callback)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1078,6 +1079,8 @@ void executeQuery(
                         previous_progress_callback(progress);
                     out->onProgress(progress);
                 });
+
+                out->setBeforeFinalizeCallback(before_finalize_callback);
 
                 if (set_result_details)
                     set_result_details(
