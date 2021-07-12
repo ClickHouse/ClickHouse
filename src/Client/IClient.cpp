@@ -35,8 +35,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Client/TestHint.h>
-
 #include <IO/WriteBufferFromOStream.h>
 
 namespace fs = std::filesystem;
@@ -506,7 +504,7 @@ bool IClient::processMultiQuery(const String & all_queries_text)
         // unlike VALUES.
         auto * insert_ast = parsed_query->as<ASTInsertQuery>();
         /// But do not split query for clickhouse-local.
-        if (insert_ast && insert_ast->data)
+        if (splitQueries() && insert_ast && insert_ast->data)
         {
             this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
             insert_ast->end = this_query_end;
@@ -529,15 +527,14 @@ bool IClient::processMultiQuery(const String & all_queries_text)
         // (the latter is our best guess for now).
         full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
 
-        /// TODO:
-        // if (query_fuzzer_runs)
-        // {
-        //     if (!processWithFuzzing(full_query))
-        //         return false;
+        if (query_fuzzer_runs)
+        {
+            if (!processWithFuzzing(full_query))
+                return false;
 
-        //     this_query_begin = this_query_end;
-        //     continue;
-        // }
+            this_query_begin = this_query_end;
+            continue;
+        }
 
         // Now we know for sure where the query ends.
         // Look for the hint in the text of query + insert data + trailing
@@ -569,7 +566,7 @@ bool IClient::processMultiQuery(const String & all_queries_text)
         // , where the inline data is delimited by semicolon and not by a
         // newline.
         /// TODO: Better way
-        if (insert_ast && insert_ast->data)
+        if (splitQueries() && insert_ast && insert_ast->data)
         {
             this_query_end = insert_ast->end;
             adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
@@ -577,61 +574,7 @@ bool IClient::processMultiQuery(const String & all_queries_text)
 
         // Check whether the error (or its absence) matches the test hints
         // (or their absence).
-        bool error_matches_hint = true;
-        if (have_error)
-        {
-            if (test_hint.serverError())
-            {
-                if (!server_exception)
-                {
-                    error_matches_hint = false;
-                    fmt::print(stderr, "Expected server error code '{}' but got no server error.\n", test_hint.serverError());
-                }
-                else if (server_exception->code() != test_hint.serverError())
-                {
-                    error_matches_hint = false;
-                    std::cerr << "Expected server error code: " << test_hint.serverError() << " but got: " << server_exception->code()
-                                << "." << std::endl;
-                }
-            }
-
-            if (test_hint.clientError())
-            {
-                if (!client_exception)
-                {
-                    error_matches_hint = false;
-                    fmt::print(stderr, "Expected client error code '{}' but got no client error.\n", test_hint.clientError());
-                }
-                else if (client_exception->code() != test_hint.clientError())
-                {
-                    error_matches_hint = false;
-                    fmt::print(
-                        stderr, "Expected client error code '{}' but got '{}'.\n", test_hint.clientError(), client_exception->code());
-                }
-            }
-
-            if (!test_hint.clientError() && !test_hint.serverError())
-            {
-                // No error was expected but it still occurred. This is the
-                // default case w/o test hint, doesn't need additional
-                // diagnostics.
-                error_matches_hint = false;
-            }
-        }
-        else
-        {
-            if (test_hint.clientError())
-            {
-                fmt::print(stderr, "The query succeeded but the client error '{}' was expected.\n", test_hint.clientError());
-                error_matches_hint = false;
-            }
-
-            if (test_hint.serverError())
-            {
-                fmt::print(stderr, "The query succeeded but the server error '{}' was expected.\n", test_hint.serverError());
-                error_matches_hint = false;
-            }
-        }
+        bool error_matches_hint = checkErrorMatchesHints(test_hint, have_error);
 
         // If the error is expected, force reconnect and ignore it.
         if (have_error && error_matches_hint)
@@ -645,9 +588,7 @@ bool IClient::processMultiQuery(const String & all_queries_text)
 
         // Report error.
         if (have_error)
-        {
             reportQueryError();
-        }
 
         // Stop processing queries if needed.
         if (have_error && !ignore_error)
@@ -682,11 +623,11 @@ bool IClient::processQueryText(const String & text)
         return true;
     }
 
-    // if (query_fuzzer_runs)
-    // {
-    //     processWithFuzzing(text);
-    //     return true;
-    // }
+    if (query_fuzzer_runs)
+    {
+        processWithFuzzing(text);
+        return true;
+    }
 
     return processMultiQuery(text);
 }
@@ -871,7 +812,7 @@ void IClient::init(int argc, char ** argv)
     /// Don't parse options with Poco library, we prefer neat boost::program_options.
     stopOptionsProcessing();
 
-    Arguments common_arguments{""}; /// 0th argument is ignored.
+    Arguments common_arguments{}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
     readArguments(argc, argv, common_arguments, external_tables_arguments);
 
@@ -888,10 +829,9 @@ void IClient::init(int argc, char ** argv)
     /// Parse main commandline options.
     po::parsed_options parsed = po::command_line_parser(common_arguments).options(options_description.main_description.value()).run();
 
-    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-    /// unrecognized_options[0] is "", I don't understand why we need "" as the first argument which unused
-    if (unrecognized_options.size() > 1)
-        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[1]);
+    // auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+    // if (!unrecognized_options.empty())
+    //     throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
 
     po::variables_map options;
     po::store(parsed, options);
