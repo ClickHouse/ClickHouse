@@ -930,7 +930,7 @@ def repeat_requests(self, server, iterations, vcd_value, rbac=False):
                 with ldap_external_user_directory(server=server, roles=roles, restart=True):
                     with When(f"I login and execute some query {iterations} times"):
                         start_time = time.time()
-                        r = self.context.node.command(f"time for i in {{1..{iterations}}}; do clickhouse client -q \"SELECT 1\" --user {user['cn']} --password {user['userpassword']} > /dev/null; done")
+                        r = self.context.node.command(f"time for i in {{1..{iterations}}}; do clickhouse client -q \"SELECT $i\" --user {user['cn']} --password {user['userpassword']} > /dev/null; done")
                         end_time = time.time()
 
                         return end_time - start_time
@@ -945,7 +945,7 @@ def repeat_requests(self, server, iterations, vcd_value, rbac=False):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_VerificationCooldown_Performance("1.0")
 )
-def verification_cooldown_performance(self, server, rbac=False, iterations=5000):
+def verification_cooldown_performance(self, server, rbac=False, iterations=1000):
     """Check login performance when the verification cooldown
     parameter is set to a positive value when comparing to the case when
     the verification cooldown parameter is turned off.

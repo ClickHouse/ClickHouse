@@ -688,7 +688,7 @@ def repeat_requests(self, server, iterations, vcd_value, rbac=False, timeout=600
             with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml"):
                 with When(f"I login and execute some query {iterations} times"):
                     start_time = time.time()
-                    r = self.context.node.command(f"time for i in {{1..{iterations}}}; do clickhouse client -q \"SELECT 1\" --user {user['cn']} --password {user['userpassword']} > /dev/null; done", timeout=timeout)
+                    r = self.context.node.command(f"time for i in {{1..{iterations}}}; do clickhouse client -q \"SELECT $i\" --user {user['cn']} --password {user['userpassword']} > /dev/null; done", timeout=timeout)
                     end_time = time.time()
 
                     return end_time - start_time
@@ -703,7 +703,7 @@ def repeat_requests(self, server, iterations, vcd_value, rbac=False, timeout=600
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Performance("1.0")
 )
-def verification_cooldown_performance(self, server, rbac=False, iterations=5000):
+def verification_cooldown_performance(self, server, rbac=False, iterations=1000):
     """Check that login performance is better when the verification cooldown
     parameter is set to a positive value when comparing to the case when
     the verification cooldown parameter is turned off.
