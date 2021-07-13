@@ -32,7 +32,7 @@ DatabaseSQLite::DatabaseSQLite(
     , database_engine_define(database_engine_define_->clone())
     , log(&Poco::Logger::get("DatabaseSQLite"))
 {
-    auto db_path = SQLiteDatabaseValidatePath(database_path_, context_);
+    auto db_path = SQLiteDatabaseValidatePath(database_path_, context_->getUserFilesPath());
 
     sqlite3 * tmp_sqlite_db = nullptr;
     int status = sqlite3_open(db_path.c_str(), &tmp_sqlite_db);

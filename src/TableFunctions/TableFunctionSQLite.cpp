@@ -76,7 +76,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     database_path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-    auto db_path = SQLiteDatabaseValidatePath(database_path, context);
+    auto db_path = SQLiteDatabaseValidatePath(database_path, context->getUserFilesPath());
 
     sqlite3 * tmp_sqlite_db = nullptr;
     int status = sqlite3_open(db_path.c_str(), &tmp_sqlite_db);
