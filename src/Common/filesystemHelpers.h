@@ -2,7 +2,6 @@
 
 #include <common/types.h>
 #include <Common/Exception.h>
-#include <Interpreters/Context.h>
 
 #include <filesystem>
 #include <memory>
@@ -36,7 +35,7 @@ bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::p
 /// Returns true if path starts with prefix path
 bool pathStartsWith(const String & path, const String & prefix_path);
 
-String SQLiteDatabaseValidatePath(const String & path, ContextPtr context);
+String SQLiteDatabaseValidatePath(const String & path, const String & user_files_path);
 }
 
 namespace FS

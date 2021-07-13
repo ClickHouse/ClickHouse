@@ -6,7 +6,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # See 01658_read_file_to_string_column.sh
 user_files_path=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
-user_files_path=/home/kssenii/ClickHouse/programs/server/user_files
 
 mkdir -p ${user_files_path}/
 chmod 777 ${user_files_path}

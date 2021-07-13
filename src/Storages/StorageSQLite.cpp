@@ -159,7 +159,7 @@ void registerStorageSQLite(StorageFactory & factory)
         const auto database_path = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         const auto table_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        auto db_path = SQLiteDatabaseValidatePath(database_path, args.getContext());
+        auto db_path = SQLiteDatabaseValidatePath(database_path, args.getContext()->getUserFilesPath());
 
         sqlite3 * tmp_sqlite_db = nullptr;
         int status = sqlite3_open(db_path.c_str(), &tmp_sqlite_db);

@@ -130,22 +130,22 @@ bool pathStartsWith(const String & path, const String & prefix_path)
     return pathStartsWith(filesystem_path, filesystem_prefix_path);
 }
 
-String SQLiteDatabaseValidatePath(const String & path, ContextPtr context)
+String SQLiteDatabaseValidatePath(const String & path, const String & user_files_path)
 {
-    auto user_files_path = fs::canonical(context->getUserFilesPath());
+    String canonical_user_files_path = fs::canonical(user_files_path);
 
-    fs::path canonical_path;
+    String canonical_path;
     std::error_code err;
 
     if (fs::path(path).is_relative())
-        canonical_path = fs::canonical(user_files_path / path, err);
+        canonical_path = fs::canonical(fs::path(user_files_path) / path, err);
     else
         canonical_path = fs::canonical(path, err);
 
     if (err)
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database path '{}' is invalid. Error: {}", path, err.message());
 
-    if (!canonical_path.string().starts_with(user_files_path.string()))
+    if (!canonical_path.starts_with(canonical_user_files_path))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                         "SQLite database file path '{}' must be inside 'user_files' directory", path);
 
