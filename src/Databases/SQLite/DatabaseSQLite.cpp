@@ -40,6 +40,12 @@ DatabaseSQLite::DatabaseSQLite(
     if (err)
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database path '{}' is invalid. Error: {}", database_path_, err.message());
 
+    String user_files_path = fs::canonical(context_->getUserFilesPath());
+    if (!canonical_path.starts_with(user_files_path))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                        "SQLite database file path '{}' must be inside 'user_files' directory: {}",
+                        database_path_, user_files_path);
+
     sqlite3 * tmp_sqlite_db = nullptr;
     int status = sqlite3_open(canonical_path.c_str(), &tmp_sqlite_db);
 
