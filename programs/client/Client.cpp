@@ -610,7 +610,9 @@ private:
                 /// Load suggestion data from the server.
                 suggest->load(connection_parameters, config().getInt("suggestion_limit"));
             }
+            
             /// Load Warnings at the beginning of connection
+            if (!config().has("no-warnings"))
             {
                 std::vector<String> messages;
                 try
@@ -2594,6 +2596,7 @@ public:
             ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
+            ("no-warnings", "disable warnings when client connects to server")
         ;
 
         Settings cmd_settings;
@@ -2754,6 +2757,8 @@ public:
             config().setBool("highlight", options["highlight"].as<bool>());
         if (options.count("history_file"))
             config().setString("history_file", options["history_file"].as<std::string>());
+        if (options.count("no-warnings"))
+            config().setBool("no-warnings", true);
 
         if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
         {
