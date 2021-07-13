@@ -446,7 +446,6 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         UInt64 parts = 0;
         UInt64 rows = 0;
         UInt64 marks = 0;
-        UInt64 bytes = 0;
 
         EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
         {
@@ -472,7 +471,6 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
             it->second->parts += step->getSelectedParts();
             it->second->rows += step->getSelectedRows();
             it->second->marks += step->getSelectedMarks();
-            it->second->bytes += step->getSelectedBytes();
         }
         for (const auto * child : node->children)
             process_node(child);
@@ -489,7 +487,6 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         columns[index++]->insert(counter.second->parts);
         columns[index++]->insert(counter.second->rows);
         columns[index++]->insert(counter.second->marks);
-        columns[index++]->insert(counter.second->bytes);
     }
 }
 
