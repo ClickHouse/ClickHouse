@@ -47,7 +47,7 @@ ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr /* co
     auto columns = fetchSQLiteTableStructure(sqlite_db.get(), remote_table_name);
 
     if (!columns)
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Failed to fetch table strcuture for {}", remote_table_name);
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Failed to fetch table structure for {}", remote_table_name);
 
     return ColumnsDescription{*columns};
 }
