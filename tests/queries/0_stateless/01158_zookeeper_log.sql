@@ -1,5 +1,6 @@
 drop table if exists rmt;
 create table rmt (n int) engine=ReplicatedMergeTree('/test/01158/{database}/rmt', '1') order by n;
+system sync replica rmt;
 insert into rmt values (1);
 insert into rmt values (1);
 system flush logs;

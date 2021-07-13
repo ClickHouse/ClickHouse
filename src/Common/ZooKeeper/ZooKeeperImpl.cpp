@@ -1008,6 +1008,12 @@ void ZooKeeper::pushRequest(RequestInfo && info)
                 throw Exception("xid equal to close_xid", Error::ZSESSIONEXPIRED);
             if (info.request->xid < 0)
                 throw Exception("XID overflow", Error::ZSESSIONEXPIRED);
+
+            if (auto * multi_request = dynamic_cast<ZooKeeperMultiRequest *>(info.request.get()))
+            {
+                for (auto & request : multi_request->requests)
+                    dynamic_cast<ZooKeeperRequest &>(*request).xid = multi_request->xid;
+            }
         }
 
         /// We must serialize 'pushRequest' and 'finalize' (from sendThread, receiveThread) calls
