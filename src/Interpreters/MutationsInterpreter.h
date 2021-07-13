@@ -59,6 +59,8 @@ public:
     /// Only updated columns. Returns the columns that are actually updated by the mutation interpreter.
     const NameSet & getUpdatedColumns() const { return updated_columns; }
 
+    const ColumnDependencies & getColumnDependencies() const;
+
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
 
@@ -152,6 +154,9 @@ private:
     NameSet updated_columns;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
+
+    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
+    ColumnDependencies dependencies;
 };
 
 }

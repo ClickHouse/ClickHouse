@@ -526,9 +526,8 @@ public:
     void clearOldWriteAheadLogs();
 
     /// Delete all directories which names begin with "tmp"
-    /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
-    /// Must be called with locked lockForShare() because use relative_data_path.
-    void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
+    /// Must be called with locked lockForShare() because it's using relative_data_path.
+    void clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
 
     void clearEmptyParts();
 
@@ -1088,6 +1087,9 @@ private:
 
     // Get partition matcher for FREEZE / UNFREEZE queries.
     MatcherFn getPartitionMatcher(const ASTPtr & partition, ContextPtr context) const;
+
+    /// Returns default settings for storage with possible changes from global config.
+    virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

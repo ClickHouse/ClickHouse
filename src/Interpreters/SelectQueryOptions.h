@@ -42,11 +42,14 @@ struct SelectQueryOptions
     bool ignore_alias = false;
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
+    bool with_all_cols = false; /// asterisk include materialized and aliased columns
 
-    SelectQueryOptions(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0, bool is_subquery_ = false)
+    SelectQueryOptions(
+        QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
+        size_t depth = 0,
+        bool is_subquery_ = false)
         : to_stage(stage), subquery_depth(depth), is_subquery(is_subquery_)
-    {
-    }
+    {}
 
     SelectQueryOptions copy() const { return *this; }
 
@@ -112,6 +115,12 @@ struct SelectQueryOptions
     SelectQueryOptions & setInternal(bool value = false)
     {
         is_internal = value;
+        return *this;
+    }
+
+    SelectQueryOptions & setWithAllColumns(bool value = true)
+    {
+        with_all_cols = value;
         return *this;
     }
 };

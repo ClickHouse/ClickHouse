@@ -65,6 +65,7 @@ struct ExpressionAnalyzerData
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
+    bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
     WindowDescriptions window_descriptions;
@@ -309,6 +310,7 @@ public:
     bool hasTableJoin() const { return syntax->ast_join; }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
+    bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }

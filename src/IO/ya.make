@@ -44,7 +44,6 @@ SRCS(
     NullWriteBuffer.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
-    ReadBufferAIO.cpp
     ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
     ReadBufferFromFileDecorator.cpp
