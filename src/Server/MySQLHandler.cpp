@@ -95,10 +95,11 @@ void MySQLHandler::run()
     connection_context->getClientInfo().interface = ClientInfo::Interface::MYSQL;
     connection_context->setDefaultFormat("MySQLWire");
     connection_context->getClientInfo().connection_id = connection_id;
+    connection_context->setMySQLProtocolContext(&connection_context_mysql);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
-    packet_endpoint = std::make_shared<PacketEndpoint>(*in, *out, connection_context->mysql.sequence_id);
+    packet_endpoint = connection_context_mysql.makeEndpoint(*in, *out);
 
     try
     {
@@ -110,11 +111,11 @@ void MySQLHandler::run()
 
         HandshakeResponse handshake_response;
         finishHandshake(handshake_response);
-        connection_context->mysql.client_capabilities = handshake_response.capability_flags;
+        connection_context_mysql.client_capabilities = handshake_response.capability_flags;
         if (handshake_response.max_packet_size)
-            connection_context->mysql.max_packet_size = handshake_response.max_packet_size;
-        if (!connection_context->mysql.max_packet_size)
-            connection_context->mysql.max_packet_size = MAX_PACKET_LENGTH;
+            connection_context_mysql.max_packet_size = handshake_response.max_packet_size;
+        if (!connection_context_mysql.max_packet_size)
+            connection_context_mysql.max_packet_size = MAX_PACKET_LENGTH;
 
         LOG_TRACE(log,
             "Capabilities: {}, max_packet_size: {}, character_set: {}, user: {}, auth_response length: {}, database: {}, auth_plugin_name: {}",
@@ -395,14 +396,14 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     ReadBufferFromMemory payload(buf, pos);
     payload.ignore(PACKET_HEADER_SIZE);
     ssl_request.readPayloadWithUnpacked(payload);
-    connection_context->mysql.client_capabilities = ssl_request.capability_flags;
-    connection_context->mysql.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
+    connection_context_mysql.client_capabilities = ssl_request.capability_flags;
+    connection_context_mysql.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
     secure_connection = true;
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
-    connection_context->mysql.sequence_id = 2;
-    packet_endpoint = std::make_shared<PacketEndpoint>(*in, *out, connection_context->mysql.sequence_id);
+    connection_context_mysql.sequence_id = 2;
+    packet_endpoint = connection_context_mysql.makeEndpoint(*in, *out);
     packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
 }
 
