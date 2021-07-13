@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -79,11 +80,14 @@ public:
             const double lat = col_lat->getFloat64(row);
             const UInt8 res = col_res->getUInt(row);
 
-            GeoCoord coord;
-            coord.lon = degsToRads(lon);
+            LatLng coord;
+            coord.lng = degsToRads(lon);
             coord.lat = degsToRads(lat);
 
-            H3Index hindex = geoToH3(&coord, res);
+            H3Index hindex;
+            H3Error err = latLngToCell(&coord, res, &hindex);
+            if (err)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect coordinates latitude: {}, longitude: {}, error: {}", coord.lat, coord.lng, err);
 
             dst_data[row] = hindex;
         }

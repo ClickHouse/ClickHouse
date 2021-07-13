@@ -1,12 +1,12 @@
 #pragma once
 
+#include <Core/NamesAndAliases.h>
 #include <Access/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -31,8 +31,8 @@ public:
 
     /// List of columns and their types in AST.
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
+    static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
-
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
     static ASTPtr formatProjections(const ProjectionsDescription & projections);

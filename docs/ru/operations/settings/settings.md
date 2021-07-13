@@ -1204,8 +1204,15 @@ load_balancing = round_robin
 Работает для форматов JSONEachRow и TSKV.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
+Управляет кавычками при выводе 64-битных или более [целых чисел](../../sql-reference/data-types/int-uint.md) (например, `UInt64` или `Int128`) в формате [JSON](../../interfaces/formats.md#json).
+По умолчанию такие числа заключаются в кавычки. Это поведение соответствует большинству реализаций JavaScript.
 
-Если значение истинно, то при использовании JSON\* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
+Возможные значения:
+
+-   0 — числа выводятся без кавычек.
+-   1 — числа выводятся в кавычках.
+
+Значение по умолчанию: 1.
 
 ## output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
 
@@ -1605,6 +1612,28 @@ ClickHouse генерирует исключение
 -   0 — генерирование исключения выключено.
 
 Значение по умолчанию: 0.
+
+## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
+
+Включает или отключает оптимизацию путем преобразования некоторых функций к чтению подстолбцов, таким образом уменьшая объем данных для чтения.
+
+Могут быть преобразованы следующие функции:
+
+-   [length](../../sql-reference/functions/array-functions.md#array_functions-length) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [empty](../../sql-reference/functions/array-functions.md#function-empty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size).
+-   [isNull](../../sql-reference/operators/index.md#operator-is-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [isNotNull](../../sql-reference/operators/index.md#is-not-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [count](../../sql-reference/aggregate-functions/reference/count.md) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) к чтению подстолбца [keys](../../sql-reference/data-types/map.md#map-subcolumns).
+-   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) к чтению подстолбца [values](../../sql-reference/data-types/map.md#map-subcolumns).
+
+Возможные значения:
+
+-   0 — оптимизация отключена.
+-   1 — оптимизация включена.
+
+Значение по умолчанию: `0`.
 
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
@@ -3023,4 +3052,17 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
+## external_table_functions_use_nulls {#external-table-functions-use-nulls}
+
+Определяет, как табличные функции [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) и [odbc](../../sql-reference/table-functions/odbc.md)] используют Nullable столбцы.
+
+Возможные значения:
+
+-   0 — табличная функция явно использует Nullable столбцы.
+-   1 — табличная функция неявно использует Nullable столбцы.
+
+Значение по умолчанию: `1`.
+
+**Использование**
+
+Если установлено значение `0`, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.

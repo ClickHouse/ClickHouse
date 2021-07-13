@@ -66,6 +66,7 @@ static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 static String selectEmptyReplacementQuery(const String & query);
 static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
+static String selectLimitReplacementQuery(const String & query);
 
 MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, size_t connection_id_)
@@ -83,6 +84,7 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
     replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
     replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
+    replacements.emplace("SET SQL_SELECT_LIMIT", selectLimitReplacementQuery);
 }
 
 void MySQLHandler::run()
@@ -458,6 +460,14 @@ static String showTableStatusReplacementQuery(const String & query)
             " WHERE name LIKE "
             + suffix);
     }
+    return query;
+}
+
+static String selectLimitReplacementQuery(const String & query)
+{
+    const String prefix = "SET SQL_SELECT_LIMIT";
+    if (query.starts_with(prefix))
+        return "SET limit" + std::string(query.data() + prefix.length());
     return query;
 }
 

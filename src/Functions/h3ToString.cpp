@@ -66,7 +66,7 @@ public:
         {
             const UInt64 hindex = col_hindex->getUInt(i);
 
-            if (!h3IsValid(hindex))
+            if (!isValidCell(hindex))
             {
                 throw Exception("Invalid H3 index: " + std::to_string(hindex), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }

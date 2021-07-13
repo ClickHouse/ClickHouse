@@ -267,6 +267,9 @@ private:
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
+    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
+    bool is_internal_query = false;
+
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
@@ -316,12 +319,17 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
+    /// A list of warnings about server configuration to place in `system.warnings` table.
+    std::vector<String> getWarnings() const;
+
     VolumePtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+
+    void addWarningMessage(const String & msg);
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
@@ -676,7 +684,7 @@ public:
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
 
-    Clusters & getClusters() const;
+    std::shared_ptr<Clusters> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
     void setClustersConfig(const ConfigurationPtr & config, const String & config_name = "remote_servers");
@@ -741,6 +749,9 @@ public:
     void reloadConfig() const;
 
     void shutdown();
+
+    bool isInternalQuery() const { return is_internal_query; }
+    void setInternalQuery(bool internal) { is_internal_query = internal; }
 
     ActionLocksManagerPtr getActionLocksManager();
 

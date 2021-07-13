@@ -50,7 +50,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/ExpressionJIT.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -477,17 +477,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
-    if (ThreadFuzzer::instance().isEffective())
-        LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
-
-#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
-    LOG_WARNING(log, "Server was built in debug mode. It will work slowly.");
-#endif
-
-#if defined(SANITIZER)
-    LOG_WARNING(log, "Server was built with sanitizer. It will work slowly.");
-#endif
-
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
@@ -496,6 +485,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
+
+#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
+    global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
+#endif
+
+if (ThreadFuzzer::instance().isEffective())
+    global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
+
+#if defined(SANITIZER)
+    global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
+#endif
+
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
@@ -552,8 +553,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
             {
                 /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                LOG_WARNING(log, "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
-                    calculated_binary_hash);
+                global_context->addWarningMessage(
+                    fmt::format("Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                    calculated_binary_hash)
+                );
             }
             else
             {
@@ -636,7 +639,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
         else
         {
-            LOG_WARNING(log, message);
+            global_context->addWarningMessage(message);
         }
     }
 
@@ -1159,7 +1162,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(
-            global_context, config().getUInt("asynchronous_metrics_update_period_s", 60), servers_to_start_before_tables, servers);
+            global_context, config().getUInt("asynchronous_metrics_update_period_s", 1), servers_to_start_before_tables, servers);
         attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)

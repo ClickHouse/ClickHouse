@@ -7,16 +7,21 @@ toc_title: HTTP Interface
 
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
 
-By default, clickhouse-server listens for HTTP on port 8123 (this can be changed in the config).
+By default, `clickhouse-server` listens for HTTP on port 8123 (this can be changed in the config).
 
-If you make a GET / request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) default value “Ok.” (with a line feed at the end)
+If you make a `GET /` request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) default value “Ok.” (with a line feed at the end)
 
 ``` bash
 $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-Use GET /ping request in health-check scripts. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13.
+Web UI can be accessed here: `http://localhost:8123/play`. 
+
+![Web UI](../images/play.png)
+
+
+In health-check scripts use `GET /ping` request. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13.
 
 ``` bash
 $ curl 'http://localhost:8123/ping'
@@ -51,8 +56,8 @@ X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","writ
 1
 ```
 
-As you can see, curl is somewhat inconvenient in that spaces must be URL escaped.
-Although wget escapes everything itself, we do not recommend using it because it does not work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
+As you can see, `curl` is somewhat inconvenient in that spaces must be URL escaped.
+Although `wget` escapes everything itself, we do not recommend using it because it does not work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
 
 ``` bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/' --data-binary @-
@@ -75,7 +80,7 @@ ECT 1
 , expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
 ```
 
-By default, data is returned in TabSeparated format (for more information, see the “Formats” section).
+By default, data is returned in [TabSeparated](formats.md#tabseparated) format.
 
 You use the FORMAT clause of the query to request any other format.
 
@@ -90,9 +95,11 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
-The POST method of transmitting data is necessary for INSERT queries. In this case, you can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the INSERT query replaces LOAD DATA LOCAL INFILE from MySQL.
+The POST method of transmitting data is necessary for `INSERT` queries. In this case, you can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.
 
-Examples: Creating a table:
+**Examples**
+
+Creating a table:
 
 ``` bash
 $ echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
@@ -498,7 +505,7 @@ Return a message.
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
-<http_handlers>
+</http_handlers>
 ```
 
 ``` bash
@@ -633,5 +640,3 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
 ```
-
-[Original article](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->
