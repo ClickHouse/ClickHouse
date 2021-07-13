@@ -1926,11 +1926,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 }
             }
 
+            /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
+            UInt64 limit = (query.where() && query.prewhere()) ? getLimitForSorting(query, context) : 0;
             if (query_info.projection)
                 query_info.projection->input_order_info
-                    = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context);
+                    = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context, limit);
             else
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, limit);
         }
 
         StreamLocalLimits limits;
