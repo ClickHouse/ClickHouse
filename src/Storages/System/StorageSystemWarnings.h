@@ -2,11 +2,15 @@
 
 #include <Storages/System/IStorageSystemOneBlock.h>
 
+
 namespace DB
 {
 
 class Context;
 
+/** Implements system.warnings table that contains warnings about server configuration
+  * to be displayed in clickhouse-client.
+  */
 class StorageSystemWarnings final : public shared_ptr_helper<StorageSystemWarnings>,
                                 public IStorageSystemOneBlock<StorageSystemWarnings> {
 public:

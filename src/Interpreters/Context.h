@@ -318,6 +318,8 @@ public:
     String getFlagsPath() const;
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
+
+    /// A list of warnings about server configuration to place in `system.warnings` table.
     std::vector<String> getWarnings() const;
 
     VolumePtr getTemporaryVolume() const;
