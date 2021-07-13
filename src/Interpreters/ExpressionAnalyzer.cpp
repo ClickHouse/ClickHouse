@@ -11,7 +11,6 @@
 #include <Parsers/DumpASTNode.h>
 
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/IColumn.h>
 
 #include <Interpreters/ArrayJoinAction.h>
@@ -231,7 +230,6 @@ void ExpressionAnalyzer::analyzeAggregation()
 
     if (has_aggregation)
     {
-
         /// Find out aggregation keys.
         if (select_query)
         {
@@ -252,6 +250,8 @@ void ExpressionAnalyzer::analyzeAggregation()
                     /// Constant expressions have non-null column pointer at this stage.
                     if (node->column && isColumnConst(*node->column))
                     {
+                        select_query->group_by_with_constant_keys = true;
+
                         /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                         if (!aggregate_descriptions.empty() || size > 1)
                         {
@@ -287,6 +287,11 @@ void ExpressionAnalyzer::analyzeAggregation()
         }
         else
             aggregated_columns = temp_actions->getNamesAndTypesList();
+
+        /// Constant expressions are already removed during first 'analyze' run.
+        /// So for second `analyze` information is taken from select_query.
+        if (select_query)
+            has_const_aggregation_keys = select_query->group_by_with_constant_keys;
 
         for (const auto & desc : aggregate_descriptions)
             aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
@@ -468,7 +473,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
         }
 
         AggregateFunctionProperties properties;
-        aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
+        aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters, "", getContext()) : Array();
         aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters, properties);
 
         aggregate_descriptions.push_back(aggregate);
@@ -651,7 +656,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         window_function.function_parameters
             = window_function.function_node->parameters
                 ? getAggregateFunctionParametersArray(
-                    window_function.function_node->parameters)
+                    window_function.function_node->parameters, "", getContext())
                 : Array();
 
         // Requiring a constant reference to a shared pointer to non-const AST
@@ -807,7 +812,8 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain
     }
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
-    chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(syntax->analyzed_join, table_join, step.getResultColumns()));
+    chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(
+        syntax->analyzed_join, table_join, step.getResultColumns()));
     chain.addStep();
     return table_join;
 }
@@ -900,8 +906,8 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
             *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
             * - this function shows the expression JOIN _data1.
             */
-        auto interpreter = interpretSubquery(join_element.table_expression, getContext(), original_right_columns, query_options);
-
+        auto interpreter = interpretSubquery(
+            join_element.table_expression, getContext(), original_right_columns, query_options.copy().setWithAllColumns());
         {
             joined_plan = std::make_unique<QueryPlan>();
             interpreter->buildQueryPlan(*joined_plan);
@@ -953,10 +959,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns)
 {
     const auto * select_query = getSelectQuery();
-    ActionsDAGPtr prewhere_actions;
-
     if (!select_query->prewhere())
-        return prewhere_actions;
+        return nullptr;
 
     Names first_action_names;
     if (!chain.steps.empty())
@@ -973,6 +977,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
+    ActionsDAGPtr prewhere_actions;
     {
         /// Remove unused source_columns from prewhere actions.
         auto tmp_actions_dag = std::make_shared<ActionsDAG>(sourceColumns());
@@ -1036,18 +1041,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     }
 
     return prewhere_actions;
-}
-
-void SelectQueryExpressionAnalyzer::appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions_dag, String column_name)
-{
-    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
-
-    // FIXME: assert(filter_info);
-    auto * expression_step = typeid_cast<ExpressionActionsChain::ExpressionActionsStep *>(&step);
-    expression_step->actions_dag = std::move(actions_dag);
-    step.addRequiredOutput(column_name);
-
-    chain.addStep();
 }
 
 bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types)
@@ -1517,7 +1510,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
         {
-            prewhere_info = std::make_shared<PrewhereDAGInfo>(actions, query.prewhere()->getColumnName(settings));
+            prewhere_info = std::make_shared<PrewhereInfo>(actions, query.prewhere()->getColumnName(settings));
 
             if (allowEarlyConstantFolding(*prewhere_info->prewhere_actions, settings))
             {
@@ -1738,7 +1731,6 @@ void ExpressionAnalysisResult::checkActions() const
 
         check_actions(prewhere_info->prewhere_actions);
         check_actions(prewhere_info->alias_actions);
-        check_actions(prewhere_info->remove_columns_actions);
     }
 }
 

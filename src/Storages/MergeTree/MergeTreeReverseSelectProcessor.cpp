@@ -19,6 +19,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     MarkRanges mark_ranges_,
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
+    ExpressionActionsSettings actions_settings,
     bool check_columns_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
@@ -28,7 +29,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
         storage_, metadata_snapshot_, owned_data_part_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         required_columns_, std::move(mark_ranges_), use_uncompressed_cache_, prewhere_info_,
-        check_columns_, reader_settings_, virt_column_names_, one_range_per_task_}
+        std::move(actions_settings), check_columns_, reader_settings_, virt_column_names_, one_range_per_task_}
 {
     if (!quiet)
         LOG_DEBUG(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",

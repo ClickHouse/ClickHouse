@@ -28,6 +28,7 @@
 #include <Processors/Pipe.h>
 
 #include <cassert>
+#include <chrono>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -718,6 +719,34 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr contex
     return file_checker.check();
 }
 
+
+IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
+{
+    std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    ColumnSizeByName column_sizes;
+    FileChecker::Map file_sizes = file_checker.getFileSizes();
+
+    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
+    {
+        ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
+        {
+            String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+            ColumnSize & size = column_sizes[column.name];
+            auto it = files.find(stream_name);
+            if (it != files.end())
+                size.data_compressed += file_sizes[fileName(it->second.data_file_path)];
+        };
+
+        ISerialization::SubstreamPath substream_path;
+        auto serialization = column.type->getDefaultSerialization();
+        serialization->enumerateStreams(stream_callback, substream_path);
+    }
+
+    return column_sizes;
+}
 
 void registerStorageLog(StorageFactory & factory)
 {

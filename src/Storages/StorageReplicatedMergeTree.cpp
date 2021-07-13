@@ -17,6 +17,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
@@ -414,7 +415,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                 /// We have to check granularity on other replicas. If it's fixed we
                 /// must create our new replica with fixed granularity and store this
                 /// information in /replica/metadata.
-                other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+                other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
 
                 checkTableStructure(zookeeper_path, metadata_snapshot);
 
@@ -449,7 +450,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         if (!replica_metadata_exists || replica_metadata.empty())
         {
             /// We have to check shared node granularity before we create ours.
-            other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+            other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
 
             ReplicatedMergeTreeTableMetadata current_metadata(*this, metadata_snapshot);
 
@@ -486,7 +487,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 }
 
 
-bool StorageReplicatedMergeTree::checkFixedGranualrityInZookeeper()
+bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper()
 {
     auto zookeeper = getZooKeeper();
     String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
@@ -551,12 +552,24 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
                 break;
         }
 
+        /// This replica inactive, don't check anything
+        if (!inactive_replicas.empty() && inactive_replicas.count(replica))
+            break;
+
         /// It maybe already removed from zk, but local in-memory mutations
         /// state was not updated.
         if (!getZooKeeper()->exists(fs::path(zookeeper_path) / "mutations" / mutation_id))
         {
             throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
         }
+
+        if (partial_shutdown_called)
+            throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
+                ErrorCodes::UNFINISHED);
+
+        /// Replica inactive, don't check mutation status
+        if (!inactive_replicas.empty() && inactive_replicas.count(replica))
+            continue;
 
         /// At least we have our current mutation
         std::set<String> mutation_ids;
@@ -566,10 +579,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         /// they will happen on each replica, so we can check only in-memory info.
         auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
         checkMutationStatus(mutation_status, mutation_ids);
-
-        if (partial_shutdown_called)
-            throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
-                ErrorCodes::UNFINISHED);
     }
 
     if (!inactive_replicas.empty())
@@ -1211,29 +1220,37 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (size_t i = 0; i < parts_to_fetch.size(); ++i)
     {
         const String & part_name = parts_to_fetch[i];
-        LOG_ERROR(log, "Removing locally missing part from ZooKeeper and queueing a fetch: {}", part_name);
 
         Coordination::Requests ops;
 
-        time_t part_create_time = 0;
-        Coordination::ExistsResponse exists_resp = exists_futures[i].get();
-        if (exists_resp.error == Coordination::Error::ZOK)
+        String has_replica = findReplicaHavingPart(part_name, true);
+        if (!has_replica.empty())
         {
-            part_create_time = exists_resp.stat.ctime / 1000;
-            removePartFromZooKeeper(part_name, ops, exists_resp.stat.numChildren > 0);
+            LOG_ERROR(log, "Removing locally missing part from ZooKeeper and queueing a fetch: {}", part_name);
+            time_t part_create_time = 0;
+            Coordination::ExistsResponse exists_resp = exists_futures[i].get();
+            if (exists_resp.error == Coordination::Error::ZOK)
+            {
+                part_create_time = exists_resp.stat.ctime / 1000;
+                removePartFromZooKeeper(part_name, ops, exists_resp.stat.numChildren > 0);
+            }
+            LogEntry log_entry;
+            log_entry.type = LogEntry::GET_PART;
+            log_entry.source_replica = "";
+            log_entry.new_part_name = part_name;
+            log_entry.create_time = part_create_time;
+
+            /// We assume that this occurs before the queue is loaded (queue.initialize).
+            ops.emplace_back(zkutil::makeCreateRequest(
+                fs::path(replica_path) / "queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+            enqueue_futures.emplace_back(zookeeper->asyncMulti(ops));
+        }
+        else
+        {
+            LOG_ERROR(log, "Not found active replica having part {}", part_name);
+            enqueuePartForCheck(part_name);
         }
 
-        LogEntry log_entry;
-        log_entry.type = LogEntry::GET_PART;
-        log_entry.source_replica = "";
-        log_entry.new_part_name = part_name;
-        log_entry.create_time = part_create_time;
-
-        /// We assume that this occurs before the queue is loaded (queue.initialize).
-        ops.emplace_back(zkutil::makeCreateRequest(
-            fs::path(replica_path) / "queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
-
-        enqueue_futures.emplace_back(zookeeper->asyncMulti(ops));
     }
 
     for (auto & future : enqueue_futures)
@@ -1267,7 +1284,6 @@ void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
         pinned_part_uuids = new_pinned_part_uuids;
     }
 }
-
 
 void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper,
     const DataPartPtr & part, Coordination::Requests & ops, String part_name, NameSet * absent_replicas_paths)
@@ -2092,6 +2108,10 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
         try
         {
             String part_name = entry.actual_new_part_name.empty() ? entry.new_part_name : entry.actual_new_part_name;
+
+            if (!entry.actual_new_part_name.empty())
+                LOG_DEBUG(log, "Will fetch part {} instead of {}", entry.actual_new_part_name, entry.new_part_name);
+
             if (!fetchPart(part_name, metadata_snapshot, fs::path(zookeeper_path) / "replicas" / replica, false, entry.quorum))
                 return false;
         }
@@ -2194,6 +2214,7 @@ bool StorageReplicatedMergeTree::executeFetchShared(
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.partition_id, drop_range_info.max_block);
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
     /// Delete the parts contained in the range to be deleted.
@@ -2255,9 +2276,14 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     bool replace = !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range);
 
     if (replace)
+    {
+        getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
+    }
     else
+    {
         drop_range = {};
+    }
 
     struct PartDescription
     {
@@ -3157,30 +3183,35 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     });
 }
 
-std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
+bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & executor)
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
-        return {};
+        return false;
 
     /// This object will mark the element of the queue as running.
     ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry = selectQueueEntry();
 
     if (!selected_entry)
-        return {};
-
-    PoolType pool_type;
+        return false;
 
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
     if (selected_entry->log_entry->type == LogEntry::GET_PART)
-        pool_type = PoolType::FETCH;
-    else
-        pool_type = PoolType::MERGE_MUTATE;
-
-    return JobAndPool{[this, selected_entry] () mutable
     {
-        return processQueueEntry(selected_entry);
-    }, pool_type};
+        executor.execute({[this, selected_entry] () mutable
+        {
+            return processQueueEntry(selected_entry);
+        }, PoolType::FETCH});
+        return true;
+    }
+    else
+    {
+        executor.execute({[this, selected_entry] () mutable
+        {
+            return processQueueEntry(selected_entry);
+        }, PoolType::MERGE_MUTATE});
+        return true;
+    }
 }
 
 
@@ -6963,6 +6994,14 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
+        if (merge_pred.hasDropRange(part->info))
+        {
+            if (throw_if_noop)
+                throw Exception("Already has DROP RANGE for part " + part_name + " in queue.", ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+
+            return false;
+        }
+
         /// There isn't a lot we can do otherwise. Can't cancel merges because it is possible that a replica already
         /// finished the merge.
         if (partIsAssignedToBackgroundOperation(part))
@@ -7097,6 +7136,8 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.front()).path_created;
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
+    getContext()->getMergeList().cancelInPartition(getStorageID(), partition_id, drop_range_info.max_block);
+
     return true;
 }
 
@@ -7147,6 +7188,11 @@ void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
     if (areBackgroundMovesNeeded())
         background_moves_executor.start();
+}
+
+std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSettings() const
+{
+    return std::make_unique<MergeTreeSettings>(getContext()->getReplicatedMergeTreeSettings());
 }
 
 
@@ -7376,4 +7422,164 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
     }
     return false;
 }
+
+
+bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name)
+{
+    LOG_INFO(log, "Going to replace lost part {} with empty part", lost_part_name);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto settings = getSettings();
+
+    constexpr static auto TMP_PREFIX = "tmp_empty_";
+
+    auto new_part_info = MergeTreePartInfo::fromPartName(lost_part_name, format_version);
+    auto block = metadata_snapshot->getSampleBlock();
+
+    DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
+
+    NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    ReservationPtr reservation = reserveSpacePreferringTTLRules(metadata_snapshot, 0, move_ttl_infos, time(nullptr), 0, true);
+    VolumePtr volume = getStoragePolicy()->getVolume(0);
+
+    IMergeTreeDataPart::MinMaxIndex minmax_idx;
+    minmax_idx.update(block, getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+
+    auto new_data_part = createPart(
+        lost_part_name,
+        choosePartType(0, block.rows()),
+        new_part_info,
+        createVolumeFromReservation(reservation, volume),
+        TMP_PREFIX + lost_part_name);
+
+    if (settings->assign_part_uuids)
+        new_data_part->uuid = UUIDHelpers::generateV4();
+
+    new_data_part->setColumns(columns);
+    new_data_part->rows_count = block.rows();
+
+    {
+        auto lock = lockParts();
+        auto parts_in_partition = getDataPartsPartitionRange(new_part_info.partition_id);
+        if (parts_in_partition.empty())
+        {
+            LOG_WARNING(log, "Empty part {} is not created instead of lost part because there are no parts in partition {} (it's empty), resolve this manually using DROP PARTITION.", lost_part_name, new_part_info.partition_id);
+            return false;
+        }
+
+        new_data_part->partition = (*parts_in_partition.begin())->partition;
+    }
+
+    new_data_part->minmax_idx = std::move(minmax_idx);
+    new_data_part->is_temp = true;
+
+
+    SyncGuardPtr sync_guard;
+    if (new_data_part->isStoredOnDisk())
+    {
+        /// The name could be non-unique in case of stale files from previous runs.
+        String full_path = new_data_part->getFullRelativePath();
+
+        if (new_data_part->volume->getDisk()->exists(full_path))
+        {
+            LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
+            new_data_part->volume->getDisk()->removeRecursive(full_path);
+        }
+
+        const auto disk = new_data_part->volume->getDisk();
+        disk->createDirectories(full_path);
+
+        if (getSettings()->fsync_part_directory)
+            sync_guard = disk->getDirectorySyncGuard(full_path);
+    }
+
+    /// This effectively chooses minimal compression method:
+    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
+    auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
+
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+    bool sync_on_insert = settings->fsync_after_insert;
+
+    out.writePrefix();
+    out.write(block);
+    out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
+
+    try
+    {
+        MergeTreeData::Transaction transaction(*this);
+        auto replaced_parts = renameTempPartAndReplace(new_data_part, nullptr, &transaction);
+
+        if (!replaced_parts.empty())
+        {
+            Strings part_names;
+            for (const auto & part : replaced_parts)
+                part_names.emplace_back(part->name);
+
+            /// Why this exception is not a LOGICAL_ERROR? Because it's possible
+            /// to have some source parts for the lost part if replica currently
+            /// cloning from another replica, but source replica lost covering
+            /// part and finished MERGE_PARTS before clone. It's an extremely
+            /// rare case and it's unclear how to resolve it better. Eventually
+            /// source replica will replace lost part with empty part and we
+            /// will fetch this empty part instead of our source parts. This
+            /// will make replicas consistent, but some data will be lost.
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Tried to create empty part {}, but it replaces existing parts {}.", lost_part_name, fmt::join(part_names, ", "));
+        }
+
+        while (true)
+        {
+
+            Coordination::Requests ops;
+            Coordination::Stat replicas_stat;
+            auto replicas_path = fs::path(zookeeper_path) / "replicas";
+            Strings replicas = zookeeper->getChildren(replicas_path, &replicas_stat);
+
+            /// In rare cases new replica can appear during check
+            ops.emplace_back(zkutil::makeCheckRequest(replicas_path, replicas_stat.version));
+
+            for (const String & replica : replicas)
+            {
+                String current_part_path = fs::path(zookeeper_path) / "replicas" / replica / "parts" / lost_part_name;
+
+                /// We must be sure that this part doesn't exist on other replicas
+                if (!zookeeper->exists(current_part_path))
+                {
+                    ops.emplace_back(zkutil::makeCreateRequest(current_part_path, "", zkutil::CreateMode::Persistent));
+                    ops.emplace_back(zkutil::makeRemoveRequest(current_part_path, -1));
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists on replica {} on path {}", lost_part_name, replica, current_part_path);
+                }
+            }
+
+            getCommitPartOps(ops, new_data_part);
+
+            Coordination::Responses responses;
+            if (auto code = zookeeper->tryMulti(ops, responses); code == Coordination::Error::ZOK)
+            {
+                transaction.commit();
+                break;
+            }
+            else if (code == Coordination::Error::ZBADVERSION)
+            {
+                LOG_INFO(log, "Looks like new replica appearead while creating new empty part, will retry");
+            }
+            else
+            {
+                zkutil::KeeperMultiException::check(code, ops, responses);
+            }
+        }
+    }
+    catch (const Exception & ex)
+    {
+        LOG_WARNING(log, "Cannot commit empty part {} with error {}", lost_part_name, ex.displayText());
+        return false;
+    }
+
+    LOG_INFO(log, "Created empty part {} instead of lost part", lost_part_name);
+
+    return true;
+}
+
 }
