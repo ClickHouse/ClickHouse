@@ -18,10 +18,6 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <filesystem>
-
-namespace fs = std::filesystem;
-
 
 namespace DB
 {
