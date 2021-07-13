@@ -198,8 +198,9 @@ private:
         {
             ASTPtr & ast = func.arguments->children[1];
 
-            /// Literal can use regular IN
-            if (ast->as<ASTLiteral>())
+            /// Literal or function can use regular IN.
+            /// NOTE: We don't support passing table functions to IN.
+            if (ast->as<ASTLiteral>() || ast->as<ASTFunction>())
             {
                 if (func.name == "globalIn")
                     func.name = "in";

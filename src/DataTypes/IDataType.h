@@ -322,8 +322,10 @@ struct WhichDataType
     constexpr bool isEnum() const { return isEnum8() || isEnum16(); }
 
     constexpr bool isDate() const { return idx == TypeIndex::Date; }
+    constexpr bool isDate32() const { return idx == TypeIndex::Date32; }
     constexpr bool isDateTime() const { return idx == TypeIndex::DateTime; }
     constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
+    constexpr bool isDateOrDate32() const { return isDate() || isDate32(); }
 
     constexpr bool isString() const { return idx == TypeIndex::String; }
     constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
@@ -347,6 +349,10 @@ struct WhichDataType
 template <typename T>
 inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }
 template <typename T>
+inline bool isDate32(const T & data_type) { return WhichDataType(data_type).isDate32(); }
+template <typename T>
+inline bool isDateOrDate32(const T & data_type) { return WhichDataType(data_type).isDateOrDate32(); }
+template <typename T>
 inline bool isDateTime(const T & data_type) { return WhichDataType(data_type).isDateTime(); }
 template <typename T>
 inline bool isDateTime64(const T & data_type) { return WhichDataType(data_type).isDateTime64(); }
@@ -357,6 +363,7 @@ inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_t
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
 inline bool isMap(const DataTypePtr & data_type) { return WhichDataType(data_type).isMap(); }
 inline bool isNothing(const DataTypePtr & data_type) { return WhichDataType(data_type).isNothing(); }
+inline bool isUUID(const DataTypePtr & data_type) { return WhichDataType(data_type).isUUID(); }
 
 template <typename T>
 inline bool isUInt8(const T & data_type)

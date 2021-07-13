@@ -1606,6 +1606,28 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0.
 
+## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
+
+Включает или отключает оптимизацию путем преобразования некоторых функций к чтению подстолбцов, таким образом уменьшая объем данных для чтения.
+
+Могут быть преобразованы следующие функции:
+
+-   [length](../../sql-reference/functions/array-functions.md#array_functions-length) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [empty](../../sql-reference/functions/array-functions.md#function-empty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size).
+-   [isNull](../../sql-reference/operators/index.md#operator-is-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [isNotNull](../../sql-reference/operators/index.md#is-not-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [count](../../sql-reference/aggregate-functions/reference/count.md) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) к чтению подстолбца [keys](../../sql-reference/data-types/map.md#map-subcolumns).
+-   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) к чтению подстолбца [values](../../sql-reference/data-types/map.md#map-subcolumns).
+
+Возможные значения:
+
+-   0 — оптимизация отключена.
+-   1 — оптимизация включена.
+
+Значение по умолчанию: `0`.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Тип: секунды

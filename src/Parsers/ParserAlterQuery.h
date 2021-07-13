@@ -15,6 +15,7 @@ namespace DB
   *     [RENAME COLUMN [IF EXISTS] col_name TO col_name]
   *     [MODIFY PRIMARY KEY (a, b, c...)]
   *     [MODIFY SETTING setting_name=setting_value, ...]
+  *     [RESET SETTING setting_name, ...]
   *     [COMMENT COLUMN [IF EXISTS] col_name string]
   *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]
   *     [FETCH PARTITION partition FROM ...]
