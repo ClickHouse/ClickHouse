@@ -27,12 +27,13 @@ A table with the specified format and structure and with data from the defined `
 
 **Patterns in URL**
 
-Patterns in curly brackets `{ }` are used to generate a set of shards or specify failover addresses. Multiple patterns are allowed in a single URL. The following pattern types are supported.
+Patterns in curly brackets `{ }` are used to generate a set of shards or to specify failover addresses. Multiple patterns are allowed in a single URL. 
+The following pattern types are supported.
 
-- {*a*,*b*} - Any number of variants separated by a comma. The pattern is replaced with *a* in the first shard address and it is replaced with *b* in the second shard address and so on. For instance, `example0{1,2}-1` generates `example01-1` and `example02-1`.
+- {*a*,*b*} - Any number of variants separated by a comma. The pattern is replaced with *a* in the first shard address and it is replaced with *b* in the second shard address and so on. For instance, `example0{1,2}-1` generates addresses `example01-1` and `example02-1`.
 - {*n*..*m*} - A range of numbers. This pattern generates shard addresses with incrementing indices from *n* to *m*. `example0{1..2}-1` generates `example01-1` and `example02-1`.
 - {*0n*..*0m*} - A range of numbers with leading zeroes. This modification preserves leading zeroes in indices. The pattern `example{01..03}-1` generates `example01-1`, `example02-1` and `example03-1`.
-- {*a*|*b*} - Any number of variants separated by a `|`. The pattern specifies a failover: the URL address with *b* is used if the address with *a* is not available. The pattern `example01-{1|2}` generates `example01-1`. If it is not available then `example01-2` is used.
+- {*a*|*b*} - Any number of variants separated by a `|`. The pattern specifies a failover: the address with *b* is used if the address with *a* is not available. The pattern `example01-{1|2}` generates `example01-1`. If it is not available then `example01-2` is used.
 
 **Examples**
 
