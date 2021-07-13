@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 
+#include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include "registerTableFunctions.h"
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -13,7 +14,10 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Databases/SQLite/fetchSQLiteTableStructure.h>
+
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 
 namespace DB
@@ -24,6 +28,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int SQLITE_ENGINE_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -72,8 +77,14 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     database_path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
+    std::error_code err;
+    String canonical_path = fs::canonical(database_path, err);
+    /// The path existance is also checked here.
+    if (err)
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database path '{}' is invalid. Error: {}", database_path, err.message());
+
     sqlite3 * tmp_sqlite_db = nullptr;
-    int status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
+    int status = sqlite3_open(canonical_path.c_str(), &tmp_sqlite_db);
     if (status != SQLITE_OK)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                         "Failed to open sqlite database. Status: {}. Message: {}",
