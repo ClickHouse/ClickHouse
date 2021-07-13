@@ -91,6 +91,11 @@ idx10	['This','is','a','test']
 === Try load data from datapage_v2.snappy.parquet
 Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Not yet implemented: Unsupported encoding.: data for INSERT was parsed from stdin
 
+=== Try load data from datatype-date32.parquet
+1925-01-01
+1949-10-01
+2021-10-01
+2282-12-31
 === Try load data from dict-page-offset-zero.parquet
 1552
 1552

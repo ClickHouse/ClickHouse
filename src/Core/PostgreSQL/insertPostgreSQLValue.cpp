@@ -89,6 +89,9 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtDate:
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
             break;
+        case ExternalResultDescription::ValueType::vtDate32:
+            assert_cast<ColumnInt32 &>(column).insertValue(Int32{LocalDate{std::string(value)}.getExtenedDayNum()});
+            break;
         case ExternalResultDescription::ValueType::vtDateTime:
         {
             ReadBufferFromString in(value);
