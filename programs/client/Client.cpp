@@ -488,6 +488,7 @@ private:
     }
 #endif
 
+    /// Make query to get all server warnings
     void loadWarningMessages(std::vector<String>& messages)
     {
         connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */, QueryProcessingStage::Complete);
@@ -612,14 +613,21 @@ private:
             /// Load Warnings at the begining of connection
             {
                 std::vector<String> messages;
-                loadWarningMessages(messages);
-                if (!messages.empty())
+                try
                 {
-                    std::cout << "Warnings:" << std::endl;
-                    for (const auto & message : messages)
-                        std::cout << " * " << message << std::endl;
+                    loadWarningMessages(messages);
+                    if (!messages.empty())
+                    {
+                        std::cout << "Warnings:" << std::endl;
+                        for (const auto & message : messages)
+                            std::cout << " * " << message << std::endl;
+                    }
+                    std::cout << std::endl;
                 }
-                std::cout << std::endl;
+                catch (...)
+                {
+                    /// Ignore exception
+                }
             }
 
             /// Load command history if present.
