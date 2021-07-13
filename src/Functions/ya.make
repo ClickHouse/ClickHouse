@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 CFLAGS(
-    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
+    -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
@@ -15,6 +15,7 @@ ADDINCL(
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
+    GLOBAL contrib/restricted/murmurhash
 )
 
 PEERDIR(
@@ -30,6 +31,7 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
+    contrib/restricted/murmurhash
     library/cpp/consistent_hashing
 )
 
@@ -42,6 +44,7 @@ SRCS(
     FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
+    FunctionSQLJSON.cpp
     FunctionsAES.cpp
     FunctionsCoding.cpp
     FunctionsConversion.cpp
@@ -74,6 +77,12 @@ SRCS(
     GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
     GeoHash.cpp
     IFunction.cpp
+    JSONPath/Parsers/ParserJSONPath.cpp
+    JSONPath/Parsers/ParserJSONPathMemberAccess.cpp
+    JSONPath/Parsers/ParserJSONPathQuery.cpp
+    JSONPath/Parsers/ParserJSONPathRange.cpp
+    JSONPath/Parsers/ParserJSONPathRoot.cpp
+    JSONPath/Parsers/ParserJSONPathStar.cpp
     TargetSpecific.cpp
     URL/URLHierarchy.cpp
     URL/URLPathHierarchy.cpp
@@ -378,6 +387,7 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    padString.cpp
     partitionId.cpp
     pi.cpp
     plus.cpp
