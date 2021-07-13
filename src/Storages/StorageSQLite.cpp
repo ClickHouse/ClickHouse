@@ -14,9 +14,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Common/filesystemHelpers.h>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -166,7 +164,7 @@ void registerStorageSQLite(StorageFactory & factory)
         sqlite3 * tmp_sqlite_db = nullptr;
         int status = sqlite3_open(db_path.c_str(), &tmp_sqlite_db);
         if (status != SQLITE_OK)
-            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                             "Failed to open sqlite database. Status: {}. Message: {}",
                             status, sqlite3_errstr(status));
 

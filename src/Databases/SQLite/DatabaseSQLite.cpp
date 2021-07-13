@@ -11,9 +11,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/StorageSQLite.h>
 #include <Common/filesystemHelpers.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 
 namespace DB
@@ -41,7 +38,7 @@ DatabaseSQLite::DatabaseSQLite(
     int status = sqlite3_open(db_path.c_str(), &tmp_sqlite_db);
 
     if (status != SQLITE_OK)
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                         "Cannot access sqlite database. Error status: {}. Message: {}",
                         status, sqlite3_errstr(status));
 
