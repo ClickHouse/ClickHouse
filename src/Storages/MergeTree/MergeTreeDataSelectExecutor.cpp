@@ -178,7 +178,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     Pipe projection_pipe;
     Pipe ordinary_pipe;
 
-    const auto & given_select = query_info.query->as<const ASTSelectQuery &>();
     if (!projection_parts.empty())
     {
         LOG_DEBUG(log, "projection required columns: {}", fmt::join(query_info.projection->required_columns, ", "));
@@ -201,7 +200,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             // NOTE: prewhere is executed inside readFromParts
             if (query_info.projection->before_where)
             {
-                // std::cerr << fmt::format("projection before_where: {}", query_info.projection->before_where->dumpDAG());
                 auto where_step = std::make_unique<FilterStep>(
                     plan->getCurrentDataStream(),
                     query_info.projection->before_where,
@@ -214,7 +212,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
             if (query_info.projection->before_aggregation)
             {
-                // std::cerr << fmt::format("projection before_aggregation: {}", query_info.projection->before_aggregation->dumpDAG());
                 auto expression_before_aggregation
                     = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), query_info.projection->before_aggregation);
                 expression_before_aggregation->setStepDescription("Before GROUP BY");
@@ -228,22 +225,28 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     if (!normal_parts.empty())
     {
         auto storage_from_base_parts_of_projection = StorageFromMergeTreeDataPart::create(std::move(normal_parts));
-        auto ast = query_info.projection->desc->query_ast->clone();
-        auto & select = ast->as<ASTSelectQuery &>();
-        if (given_select.where())
-            select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
-        if (given_select.prewhere())
-            select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.prewhere()->clone());
-
-        // After overriding the group by clause, we finish the possible aggregations directly
-        if (processed_stage >= QueryProcessingStage::Enum::WithMergeableState && given_select.groupBy())
-            select.setExpression(ASTSelectQuery::Expression::GROUP_BY, given_select.groupBy()->clone());
         auto interpreter = InterpreterSelectQuery(
-            ast,
+            query_info.query,
             context,
             storage_from_base_parts_of_projection,
             nullptr,
-            SelectQueryOptions{processed_stage}.ignoreAggregation().ignoreProjections());
+            SelectQueryOptions{processed_stage}.projectionQuery());
+
+        QueryPlan ordinary_query_plan;
+        interpreter.buildQueryPlan(ordinary_query_plan);
+
+        const auto & expressions = interpreter.getAnalysisResult();
+        if (processed_stage == QueryProcessingStage::Enum::FetchColumns && expressions.before_where)
+        {
+            auto where_step = std::make_unique<FilterStep>(
+                ordinary_query_plan.getCurrentDataStream(),
+                expressions.before_where,
+                expressions.where_column_name,
+                expressions.remove_where_filter);
+            where_step->setStepDescription("WHERE");
+            ordinary_query_plan.addStep(std::move(where_step));
+        }
+
         ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
     }
 
@@ -267,9 +270,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         auto build_aggregate_pipe = [&](Pipe & pipe, bool projection)
         {
             const auto & header_before_aggregation = pipe.getHeader();
-
-            // std::cerr << "============ header before aggregation" << std::endl;
-            // std::cerr << header_before_aggregation.dumpStructure() << std::endl;
 
             ColumnNumbers keys;
             for (const auto & key : query_info.projection->aggregation_keys)
@@ -350,9 +350,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 return std::make_shared<AggregatingTransform>(
                     header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
             });
-
-            // std::cerr << "============ header after aggregation" << std::endl;
-            // std::cerr << pipe.getHeader().dumpStructure() << std::endl;
         };
 
         if (!projection_pipe.empty())

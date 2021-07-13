@@ -386,7 +386,7 @@ struct ContextSharedPart
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::unique_ptr<SystemLogs> system_logs;                /// Used to log queries and operations on parts
     std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
-    std::vector<String> warnings_logs;                      /// Store warning messages
+    std::vector<String> warnings;                           /// Store warning messages about server configuration.
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
@@ -516,10 +516,11 @@ struct ContextSharedPart
         trace_collector.emplace(std::move(trace_log));
     }
 
-    void addWarningMessage(const String& message)
+    void addWarningMessage(const String & message)
     {
+        /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
         log->warning(message);
-        warnings_logs.push_back(message);
+        warnings.push_back(message);
     }
 };
 
@@ -645,7 +646,7 @@ String Context::getDictionariesLibPath() const
 std::vector<String> Context::getWarnings() const
 {
     auto lock = getLock();
-    return shared->warnings_logs;
+    return shared->warnings;
 }
 
 VolumePtr Context::getTemporaryVolume() const
