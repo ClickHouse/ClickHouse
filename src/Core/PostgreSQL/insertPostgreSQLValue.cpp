@@ -113,7 +113,6 @@ void insertPostgreSQLValue(
             assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(time);
             break;
         }
-        case ExternalResultDescription::ValueType::vtDateTime64:[[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal32: [[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal64: [[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal128: [[fallthrough]];
