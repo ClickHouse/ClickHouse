@@ -326,6 +326,15 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
         if (which.isDecimal256())
             return make_decimal_expression("Decimal256");
     }
+    
+    if (which.isDateTime64()){
+        auto ast_expression = std::make_shared<ASTFunction>();
+
+        ast_expression->name = "DateTime64";
+        ast_expression->arguments = std::make_shared<ASTExpressionList>();
+        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(UInt32(6)));
+        return ast_expression;
+    }
 
     return std::make_shared<ASTIdentifier>(data_type->getName());
 }

@@ -236,7 +236,7 @@ public:
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
         else if (which.isDateTime64())
         {
-            nested_column = ColumnDecimal<Decimal64>::create(0, 6);
+            nested_column = ColumnDecimal<DateTime64>::create(0, 6);
         }
         else if (which.isDecimal32())
         {
