@@ -16,8 +16,8 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=["configs/log_conf.xml", "configs/ssl_conf.xml", "configs/mysql.xml",
-                                                  "configs/dhparam.pem", "configs/server.crt", "configs/server.key"],
+node = cluster.add_instance('node', main_configs=["configs/ssl_conf.xml", "configs/mysql.xml", "configs/dhparam.pem",
+                                                  "configs/server.crt", "configs/server.key"],
                             user_configs=["configs/users.xml"], env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'}, with_mysql_client=True)
 
 server_port = 9001
