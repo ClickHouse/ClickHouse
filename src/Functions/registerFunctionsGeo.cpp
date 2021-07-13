@@ -43,6 +43,19 @@ void registerFunctionH3ToString(FunctionFactory &);
 void registerFunctionH3HexAreaM2(FunctionFactory &);
 #endif
 
+#if USE_S2_GEOMETRY
+void registerFunctionGeoToS2(FunctionFactory &);
+void registerFunctionS2ToGeo(FunctionFactory &);
+void registerFunctionS2GetNeighbors(FunctionFactory &);
+void registerFunctionS2CellsIntersect(FunctionFactory &);
+void registerFunctionS2CapContains(FunctionFactory &);
+void registerFunctionS2CapUnion(FunctionFactory &);
+void registerFunctionS2RectAdd(FunctionFactory &);
+void registerFunctionS2RectContains(FunctionFactory &);
+void registerFunctionS2RectUnion(FunctionFactory &);
+void registerFunctionS2RectIntersection(FunctionFactory &);
+#endif
+
 
 void registerFunctionsGeo(FunctionFactory & factory)
 {
@@ -80,6 +93,19 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionStringToH3(factory);
     registerFunctionH3ToString(factory);
     registerFunctionH3HexAreaM2(factory);
+#endif
+
+#if USE_S2_GEOMETRY
+    registerFunctionGeoToS2(factory);
+    registerFunctionS2ToGeo(factory);
+    registerFunctionS2GetNeighbors(factory);
+    registerFunctionS2CellsIntersect(factory);
+    registerFunctionS2CapContains(factory);
+    registerFunctionS2CapUnion(factory);
+    registerFunctionS2RectAdd(factory);
+    registerFunctionS2RectContains(factory);
+    registerFunctionS2RectUnion(factory);
+    registerFunctionS2RectIntersection(factory);
 #endif
 }
 
