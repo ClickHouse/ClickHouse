@@ -7,7 +7,7 @@ namespace DB
 
 struct OpenTelemetrySpan
 {
-    __uint128_t trace_id;
+    UUID trace_id;
     UInt64 span_id;
     UInt64 parent_span_id;
     std::string operation_name;
@@ -27,7 +27,8 @@ struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
         : OpenTelemetrySpan(span) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
 };
 

@@ -103,7 +103,7 @@ void IRowOutputFormat::writeMinExtreme(const DB::Columns & columns, size_t row_n
     write(columns, row_num);
 }
 
-void IRowOutputFormat::writeMaxExtreme(const DB::Columns & columns, size_t row_num)
+void IRowOutputFormat::writeMaxExtreme(const DB::Columns & columns, size_t row_num) //-V524
 {
     write(columns, row_num);
 }

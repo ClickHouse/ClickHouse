@@ -40,15 +40,13 @@ HashedDictionary<dictionary_key_type, sparse>::HashedDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
-    bool require_nonempty_,
-    BlockPtr previously_loaded_block_)
+    const HashedDictionaryStorageConfiguration & configuration_,
+    BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
-    , dict_lifetime(dict_lifetime_)
-    , require_nonempty(require_nonempty_)
-    , previously_loaded_block(std::move(previously_loaded_block_))
+    , configuration(configuration_)
+    , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();
     loadData();
@@ -77,6 +75,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
     const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     auto & attribute = attributes[attribute_index];
 
+    bool is_attribute_nullable = attribute.is_nullable_set.has_value();
+
     ColumnUInt8::MutablePtr col_null_map_to;
     ColumnUInt8::Container * vec_null_map_to = nullptr;
     if (attribute.is_nullable_set)
@@ -92,41 +92,61 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
-        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
-        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(dictionary_attribute.null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
-        if constexpr (std::is_same_v<ValueType, StringRef>)
+        if constexpr (std::is_same_v<ValueType, Array>)
         {
             auto * out = column.get();
 
-            getItemsImpl<ValueType>(
+            getItemsImpl<ValueType, false>(
                 attribute,
                 extractor,
-                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                [&](const size_t row)
-                {
-                    out->insertDefault();
-                    (*vec_null_map_to)[row] = true;
-                },
+                [&](const size_t, const Array & value, bool) { out->insert(value); },
                 default_value_extractor);
+        }
+        else if constexpr (std::is_same_v<ValueType, StringRef>)
+        {
+            auto * out = column.get();
+
+            if (is_attribute_nullable)
+                getItemsImpl<ValueType, true>(
+                    attribute,
+                    extractor,
+                    [&](size_t row, const StringRef value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out->insertData(value.data, value.size);
+                    },
+                    default_value_extractor);
+            else
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    extractor,
+                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
+                    default_value_extractor);
         }
         else
         {
             auto & out = column->getData();
 
-            getItemsImpl<ValueType>(
-                attribute,
-                extractor,
-                [&](const size_t row, const auto value) { return out[row] = value; },
-                [&](const size_t row)
-                {
-                    out[row] = ValueType();
-                    (*vec_null_map_to)[row] = true;
-                },
-                default_value_extractor);
+            if (is_attribute_nullable)
+                getItemsImpl<ValueType, true>(
+                    attribute,
+                    extractor,
+                    [&](size_t row, const auto value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out[row] = value;
+                    },
+                    default_value_extractor);
+            else
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    extractor,
+                    [&](size_t row, const auto value, bool) { out[row] = value; },
+                    default_value_extractor);
         }
 
         result = std::move(column);
@@ -134,8 +154,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
-    if (attribute.is_nullable_set)
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    if (is_attribute_nullable)
+        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
 
     return result;
 }
@@ -162,6 +182,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
 
     const auto & attribute = attributes.front();
     bool is_attribute_nullable = attribute.is_nullable_set.has_value();
+    size_t keys_found = 0;
 
     getAttributeContainer(0, [&](const auto & container)
     {
@@ -171,6 +192,8 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
 
             out[requested_key_index] = container.find(requested_key) != container.end();
 
+            keys_found += out[requested_key_index];
+
             if (is_attribute_nullable && !out[requested_key_index])
                 out[requested_key_index] = attribute.is_nullable_set->find(requested_key) != nullptr;
 
@@ -179,6 +202,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
     });
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -201,6 +225,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
 
         auto is_key_valid_func = [&](auto & key) { return parent_keys_map.find(key) != parent_keys_map.end(); };
 
+        size_t keys_found = 0;
+
         auto get_parent_func = [&](auto & hierarchy_key)
         {
             std::optional<UInt64> result;
@@ -210,12 +236,15 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
             if (it != parent_keys_map.end())
                 result = getValueFromCell(it);
 
+            keys_found +=result.has_value();
+
             return result;
         };
 
         auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
         return dictionary_hierarchy_array;
     }
@@ -247,6 +276,8 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 
         auto is_key_valid_func = [&](auto & key) { return parent_keys_map.find(key) != parent_keys_map.end(); };
 
+        size_t keys_found = 0;
+
         auto get_parent_func = [&](auto & hierarchy_key)
         {
             std::optional<UInt64> result;
@@ -256,12 +287,15 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
             if (it != parent_keys_map.end())
                 result = getValueFromCell(it);
 
+            keys_found += result.has_value();
+
             return result;
         };
 
         auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
         return result;
     }
@@ -290,9 +324,11 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
         for (const auto & [key, value] : parent_keys)
             parent_to_child[value].emplace_back(key);
 
-        auto result = getKeysDescendantsArray(keys, parent_to_child, level);
+        size_t keys_found;
+        auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
         return result;
     }
@@ -316,23 +352,7 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 
             auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
             std::unique_ptr<Arena> string_arena = std::is_same_v<AttributeType, String> ? std::make_unique<Arena>() : nullptr;
-
-            ValueType default_value;
-
-            if constexpr (std::is_same_v<ValueType, StringRef>)
-            {
-                string_arena = std::make_unique<Arena>();
-
-                const auto & string_null_value = dictionary_attribute.null_value.template get<String>();
-                const size_t string_null_value_size = string_null_value.size();
-
-                const char * string_in_arena = string_arena->insert(string_null_value.data(), string_null_value_size);
-                default_value = {string_in_arena, string_null_value_size};
-            }
-            else
-                default_value = dictionary_attribute.null_value.template get<NearestFieldType<ValueType>>();
-
-            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), default_value, CollectionType<ValueType>(), std::move(string_arena)};
+            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), CollectionType<ValueType>(), std::move(string_arena)};
             attributes.emplace_back(std::move(attribute));
         };
 
@@ -343,7 +363,9 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::updateData()
 {
-    if (!previously_loaded_block || previously_loaded_block->rows() == 0)
+    /// NOTE: updateData() does not preallocation since it may increase memory usage.
+
+    if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
@@ -351,13 +373,13 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
         while (const auto block = stream->read())
         {
             /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!previously_loaded_block)
-                previously_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
+            if (!update_field_loaded_block)
+                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
 
-            for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
+            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
             {
-                const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
-                MutableColumnPtr saved_column = previously_loaded_block->getByPosition(attribute_idx).column->assumeMutable();
+                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
@@ -368,14 +390,14 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
         auto stream = source_ptr->loadUpdatedAll();
         mergeBlockWithStream<dictionary_key_type>(
             dict_struct.getKeysSize(),
-            *previously_loaded_block,
+            *update_field_loaded_block,
             stream);
     }
 
-    if (previously_loaded_block)
+    if (update_field_loaded_block)
     {
-        resize(previously_loaded_block->rows());
-        blockToAttributes(*previously_loaded_block.get());
+        resize(update_field_loaded_block->rows());
+        blockToAttributes(*update_field_loaded_block.get());
     }
 }
 
@@ -480,18 +502,17 @@ void HashedDictionary<dictionary_key_type, sparse>::resize(size_t added_rows)
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
-template <typename AttributeType, typename ValueSetter, typename NullableValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
 void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
     const Attribute & attribute,
     DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
     ValueSetter && set_value [[maybe_unused]],
-    NullableValueSetter && set_nullable_value [[maybe_unused]],
     DefaultValueExtractor & default_value_extractor) const
 {
     const auto & attribute_container = std::get<CollectionType<AttributeType>>(attribute.container);
     const size_t keys_size = keys_extractor.getKeysSize();
 
-    bool is_attribute_nullable = attribute.is_nullable_set.has_value();
+    size_t keys_found = 0;
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
@@ -500,19 +521,26 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
         const auto it = attribute_container.find(key);
 
         if (it != attribute_container.end())
-            set_value(key_index, getValueFromCell(it));
+        {
+            set_value(key_index, getValueFromCell(it), false);
+            ++keys_found;
+        }
         else
         {
-            if (is_attribute_nullable && attribute.is_nullable_set->find(key) != nullptr)
-                set_nullable_value(key_index);
+            if constexpr (is_nullable)
+            {
+                bool is_value_nullable = (attribute.is_nullable_set->find(key) != nullptr) || default_value_extractor.isNullAt(key_index);
+                set_value(key_index, default_value_extractor[key_index], is_value_nullable);
+            }
             else
-                set_value(key_index, default_value_extractor[key_index]);
+                set_value(key_index, default_value_extractor[key_index], false);
         }
 
         keys_extractor.rollbackCurrentKey();
     }
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -530,13 +558,30 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        auto stream = source_ptr->loadAll();
+        std::atomic<size_t> new_size = 0;
+
+        BlockInputStreamPtr stream;
+        if (configuration.preallocate)
+            stream = source_ptr->loadAllWithSizeHint(&new_size);
+        else
+            stream = source_ptr->loadAll();
 
         stream->readPrefix();
 
         while (const auto block = stream->read())
         {
-            resize(block.rows());
+            if (configuration.preallocate && new_size)
+            {
+                size_t current_new_size = new_size.exchange(0);
+                if (current_new_size)
+                {
+                    LOG_TRACE(&Poco::Logger::get("HashedDictionary"), "Preallocated {} elements", current_new_size);
+                    resize(current_new_size);
+                }
+            }
+            else
+                resize(block.rows());
+
             blockToAttributes(block);
         }
 
@@ -545,7 +590,7 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
     else
         updateData();
 
-    if (require_nonempty && 0 == element_count)
+    if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.",
             full_name);
@@ -586,6 +631,9 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
     }
 
     bytes_allocated += complex_key_arena.size();
+
+    if (update_field_loaded_block)
+        bytes_allocated += update_field_loaded_block->allocatedBytes();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -685,32 +733,37 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
 
+        const std::string & layout_prefix = sparse ? ".layout.sparse_hashed" : ".layout.hashed";
+        const bool preallocate = config.getBool(config_prefix + layout_prefix + ".preallocate", false);
+
+        HashedDictionaryStorageConfiguration configuration{preallocate, require_nonempty, dict_lifetime};
+
         if (dictionary_key_type == DictionaryKeyType::simple)
         {
             if (sparse)
-                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, true>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
             else
-                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, false>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         }
         else
         {
             if (sparse)
-                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, true>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
             else
-                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, false>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         }
     };
 
     using namespace std::placeholders;
 
     factory.registerLayout("hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::simple, /* sparse = */ false); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::simple, /* sparse = */ false); }, false);
     factory.registerLayout("sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::simple, /* sparse = */ true); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::simple, /* sparse = */ true); }, false);
     factory.registerLayout("complex_key_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::complex, /* sparse = */ false); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::complex, /* sparse = */ false); }, true);
     factory.registerLayout("complex_key_sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::complex, /* sparse = */ true); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::complex, /* sparse = */ true); }, true);
 
 }
 

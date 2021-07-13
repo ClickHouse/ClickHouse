@@ -1,6 +1,9 @@
 #include <Interpreters/AggregateDescription.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
+
+#include <Common/JSONBuilder.h>
+
 
 namespace DB
 {
@@ -96,6 +99,52 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
             out << arg;
         }
         out << '\n';
+    }
+}
+
+void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
+{
+    map.add("Name", column_name);
+
+    if (function)
+    {
+        auto function_map = std::make_unique<JSONBuilder::JSONMap>();
+
+        function_map->add("Name", function->getName());
+
+        const auto & params = function->getParameters();
+        if (!params.empty())
+        {
+            auto params_array = std::make_unique<JSONBuilder::JSONArray>();
+            for (const auto & param : params)
+                params_array->add(applyVisitor(FieldVisitorToString(), param));
+
+            function_map->add("Parameters", std::move(params_array));
+        }
+
+        auto args_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto & type : function->getArgumentTypes())
+            args_array->add(type->getName());
+
+        function_map->add("Argument Types", std::move(args_array));
+        function_map->add("Result Type", function->getReturnType()->getName());
+
+        map.add("Function", std::move(function_map));
+    }
+
+    auto args_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (const auto & name : argument_names)
+        args_array->add(name);
+
+    map.add("Arguments", std::move(args_array));
+
+    if (!arguments.empty())
+    {
+        auto args_pos_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (auto pos : arguments)
+            args_pos_array->add(pos);
+
+        map.add("Argument Positions", std::move(args_pos_array));
     }
 }
 

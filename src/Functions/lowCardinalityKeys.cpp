@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -33,7 +33,7 @@ public:
     {
         const auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].get());
         if (!type)
-            throw Exception("First first argument of function lowCardinalityKeys must be ColumnLowCardinality, but got"
+            throw Exception("First first argument of function lowCardinalityKeys must be ColumnLowCardinality, but got "
                             + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type->getDictionaryType();

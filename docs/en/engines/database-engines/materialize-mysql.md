@@ -49,6 +49,7 @@ When working with the `MaterializeMySQL` database engine, [ReplacingMergeTree](.
 | DATE, NEWDATE           | [Date](../../sql-reference/data-types/date.md)               |
 | DATETIME, TIMESTAMP     | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | DATETIME2, TIMESTAMP2   | [DateTime64](../../sql-reference/data-types/datetime64.md)   |
+| ENUM                    | [Enum](../../sql-reference/data-types/enum.md)               |
 | STRING                  | [String](../../sql-reference/data-types/string.md)           |
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |

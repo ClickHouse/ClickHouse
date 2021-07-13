@@ -26,6 +26,8 @@
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
             <raft_logs_level>trace</raft_logs_level>
             <force_sync>false</force_sync>
+            <!-- we want all logs for complex problems investigation -->
+            <reserved_log_items>1000000000000000</reserved_log_items>
         </coordination_settings>
 
         <raft_configuration>

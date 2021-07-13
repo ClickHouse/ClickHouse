@@ -29,7 +29,7 @@
 #include <common/logger_useful.h>
 #include <random>
 #include <pcg_random.hpp>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 namespace fs = std::filesystem;
 
@@ -372,7 +372,20 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     }
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
+    size_t size_before_filtering = queue_nodes.size();
     filterAndSortQueueNodes(queue_nodes);
+    /// The following message is too verbose, but it can be useful too debug mysterious test failures in CI
+    LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
+                   "entries={}..{}, "
+                   "first_failed_task_name={}, current_tasks_size={}, "
+                   "last_current_task={}, "
+                   "last_skipped_entry_name={}",
+                   initialized, size_before_filtering, queue_nodes.size(),
+                   queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),
+                   first_failed_task_name ? *first_failed_task_name : "none", current_tasks.size(),
+                   current_tasks.empty() ? "none" : current_tasks.back()->entry_name,
+                   last_skipped_entry_name ? *last_skipped_entry_name : "none");
+
     if (max_tasks_in_queue < queue_nodes.size())
         cleanup_event->set();
 
@@ -1124,7 +1137,9 @@ void DDLWorker::runMainThread()
             scheduleTasks(reinitialized);
 
             LOG_DEBUG(log, "Waiting for queue updates");
-            queue_updated_event->wait();
+            /// FIXME It may hang for unknown reason. Timeout is just a hotfix.
+            constexpr int queue_wait_timeout_ms = 10000;
+            queue_updated_event->tryWait(queue_wait_timeout_ms);
         }
         catch (const Coordination::Exception & e)
         {

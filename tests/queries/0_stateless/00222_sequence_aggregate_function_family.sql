@@ -25,6 +25,8 @@ select 0 = sequenceMatch('(?1)(?t<2)(?3)')(time, data = 0, data = 1, data = 2, d
 select 1 = sequenceMatch('(?2)(?t>=7)(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
 select 0 = sequenceMatch('(?2)(?t>7)(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
 select 1 = sequenceMatch('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
+select 0 = sequenceMatch('(?1)(?t==2)(?2)')(time, data = 1, data = 2) from sequence_test;
+select 1 = sequenceMatch('(?1)(?t==1)(?2)')(time, data = 1, data = 2) from sequence_test;
 
 select count() = sequenceCount('')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
 select count() = sequenceCount('.')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
@@ -47,5 +49,7 @@ select 0 = sequenceCount('(?1)(?t<2)(?3)')(time, data = 0, data = 1, data = 2, d
 select 1 = sequenceCount('(?2)(?t>=7)(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
 select 0 = sequenceCount('(?2)(?t>7)(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
 select 1 = sequenceCount('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
+select 0 = sequenceCount('(?1)(?t==2)(?2)')(time, data = 1, data = 2) from sequence_test;
+select 1 = sequenceCount('(?1)(?t==1)(?2)')(time, data = 1, data = 2) from sequence_test;
 
 drop table sequence_test;

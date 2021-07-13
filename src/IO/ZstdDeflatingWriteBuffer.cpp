@@ -31,7 +31,7 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
 ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
 
     finish();
 

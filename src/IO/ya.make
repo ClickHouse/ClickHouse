@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 ADDINCL(
-    contrib/libs/zstd
+    contrib/libs/zstd/include
     contrib/restricted/fast_float
 )
 
@@ -44,9 +44,9 @@ SRCS(
     NullWriteBuffer.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
-    ReadBufferAIO.cpp
     ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
+    ReadBufferFromFileDecorator.cpp
     ReadBufferFromFileDescriptor.cpp
     ReadBufferFromIStream.cpp
     ReadBufferFromMemory.cpp
@@ -57,6 +57,7 @@ SRCS(
     UseSSL.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
+    WriteBufferFromFileDecorator.cpp
     WriteBufferFromFileDescriptor.cpp
     WriteBufferFromFileDescriptorDiscardOnFailure.cpp
     WriteBufferFromHTTP.cpp

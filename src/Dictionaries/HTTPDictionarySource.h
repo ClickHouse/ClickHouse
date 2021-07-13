@@ -8,6 +8,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
 #include <Interpreters/Context.h>
+#include <IO/CompressionMethod.h>
 
 namespace Poco
 {
@@ -21,13 +22,23 @@ namespace DB
 class HTTPDictionarySource final : public IDictionarySource
 {
 public:
+
+    struct Configuration
+    {
+        const std::string url;
+        const std::string format;
+        const std::string update_field;
+        const UInt64 update_lag;
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
+    };
+
     HTTPDictionarySource(
         const DictionaryStructure & dict_struct_,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
+        const Configuration & configuration,
+        const Poco::Net::HTTPBasicCredentials & credentials_,
         Block & sample_block_,
         ContextPtr context_,
-        bool check_config);
+        bool created_from_ddl);
 
     HTTPDictionarySource(const HTTPDictionarySource & other);
     HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
@@ -53,20 +64,21 @@ public:
 private:
     void getUpdateFieldAndDate(Poco::URI & uri);
 
+    // wrap buffer using encoding from made request
+    BlockInputStreamPtr createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer);
+
     Poco::Logger * log;
 
     LocalDateTime getLastModification() const;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
-    const std::string url;
+    const Configuration configuration;
     Poco::Net::HTTPBasicCredentials credentials;
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
-    std::string update_field;
-    const std::string format;
     Block sample_block;
     ContextPtr context;
     ConnectionTimeouts timeouts;
 };
 
 }
+
