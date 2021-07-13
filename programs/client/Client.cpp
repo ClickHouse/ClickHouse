@@ -430,6 +430,7 @@ private:
                {TokenType::ClosingRoundBracket, Replxx::Color::BROWN},
                {TokenType::OpeningSquareBracket, Replxx::Color::BROWN},
                {TokenType::ClosingSquareBracket, Replxx::Color::BROWN},
+               {TokenType::DoubleColon, Replxx::Color::BROWN},
                {TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE},
                {TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE},
 
