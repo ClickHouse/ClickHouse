@@ -1156,8 +1156,8 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
         log,
         num_streams,
         index_stats,
-        false,
-        true);
+        true /* use_skip_indexes */,
+        false /* ignore_size_limits */);
 
     return index_stats.back().num_granules_after;
 }
