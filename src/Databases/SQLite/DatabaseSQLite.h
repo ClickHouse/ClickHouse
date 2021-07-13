@@ -9,7 +9,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
 
-#include <sqlite3.h>
+#include <sqlite3.h> // Y_IGNORE
 
 
 namespace DB
