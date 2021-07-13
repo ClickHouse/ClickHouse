@@ -22,7 +22,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -69,10 +69,10 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             H3Index h3index = col_index->getUInt(row);
-            GeoCoord coord{};
+            LatLng coord{};
 
-            h3ToGeo(h3index,&coord);
-            lon_data[row] = radsToDegs(coord.lon);
+            cellToLatLng(h3index,&coord);
+            lon_data[row] = radsToDegs(coord.lng);
             lat_data[row] = radsToDegs(coord.lat);
         }
 
