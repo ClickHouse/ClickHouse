@@ -74,7 +74,7 @@ void TimerDescriptor::drain() const
     }
 }
 
-void TimerDescriptor::setRelative(const Poco::Timespan & timespan) const
+void TimerDescriptor::setRelative(Poco::Timespan timespan) const
 {
     itimerspec spec;
     spec.it_interval.tv_nsec = 0;

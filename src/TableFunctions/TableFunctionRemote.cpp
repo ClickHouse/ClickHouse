@@ -14,7 +14,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include "registerTableFunctions.h"
 
 
@@ -153,11 +153,6 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (arg_num < args.size())
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    /// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
-    /// We need to mark them as the name of the database or table, because the default value is column.
-    for (auto ast : args)
-        setIdentifierSpecial(ast);
-
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
@@ -240,6 +235,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
+            String{},
             remote_table_id.database_name,
             remote_table_id.table_name,
             String{},

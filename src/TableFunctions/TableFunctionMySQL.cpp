@@ -15,6 +15,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageMySQL.h>
+#include <Storages/MySQL/MySQLSettings.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionMySQL.h>
@@ -23,7 +24,7 @@
 #include <Common/quoteString.h>
 #include "registerTableFunctions.h"
 
-#include <Databases/MySQL/DatabaseConnectionMySQL.h> // for fetchTablesColumnsList
+#include <Databases/MySQL/DatabaseMySQL.h> // for fetchTablesColumnsList
 #include <Common/parseRemoteDescription.h>
 
 
@@ -79,16 +80,21 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context) const
 {
     const auto & settings = context->getSettingsRef();
-    const auto tables_and_columns = fetchTablesColumnsList(*pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
+    const auto tables_and_columns = fetchTablesColumnsList(*pool, remote_database_name, {remote_table_name}, settings, settings.mysql_datatypes_support_level);
 
     const auto columns = tables_and_columns.find(remote_table_name);
     if (columns == tables_and_columns.end())
-        throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("MySQL table " + (remote_database_name.empty() ? "" : (backQuote(remote_database_name) + "."))
+            + backQuote(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    return ColumnsDescription{columns->second};
+    return columns->second;
 }
 
-StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionMySQL::executeImpl(
+    const ASTPtr & /*ast_function*/,
+    ContextPtr context,
+    const std::string & table_name,
+    ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
 
@@ -101,7 +107,9 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, Cont
         on_duplicate_clause,
         columns,
         ConstraintsDescription{},
-        context);
+        String{},
+        context,
+        MySQLSettings{});
 
     pool.reset();
 

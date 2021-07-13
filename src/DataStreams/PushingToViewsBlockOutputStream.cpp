@@ -63,7 +63,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
         // Do not deduplicate insertions into MV if the main insertion is Ok
         if (disable_deduplication_for_children)
-            insert_context->setSetting("insert_deduplicate", false);
+            insert_context->setSetting("insert_deduplicate", Field{false});
 
         // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
         if (insert_settings.min_insert_block_size_rows_for_materialized_views)
@@ -311,7 +311,7 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     UInt64 milliseconds = main_watch.elapsedMilliseconds();
     if (views.size() > 1)
     {
-        LOG_TRACE(log, "Pushing from {} to {} views took {} ms.",
+        LOG_DEBUG(log, "Pushing from {} to {} views took {} ms.",
             storage->getStorageID().getNameForLogs(), views.size(),
             milliseconds);
     }

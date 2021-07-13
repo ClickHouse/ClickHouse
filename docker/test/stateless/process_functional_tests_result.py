@@ -6,13 +6,15 @@ import argparse
 import csv
 
 OK_SIGN = "[ OK "
-FAIL_SING = "[ FAIL "
-TIMEOUT_SING = "[ Timeout! "
+FAIL_SIGN = "[ FAIL "
+TIMEOUT_SIGN = "[ Timeout! "
 UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
 HUNG_SIGN = "Found hung queries in processlist"
 
 NO_TASK_TIMEOUT_SIGN = "All tests have finished"
+
+RETRIES_SIGN = "Some tests were restarted"
 
 def process_test_log(log_path):
     total = 0
@@ -21,6 +23,7 @@ def process_test_log(log_path):
     failed = 0
     success = 0
     hung = False
+    retries = False
     task_timeout = True
     test_results = []
     with open(log_path, 'r') as test_file:
@@ -30,7 +33,9 @@ def process_test_log(log_path):
                 task_timeout = False
             if HUNG_SIGN in line:
                 hung = True
-            if any(sign in line for sign in (OK_SIGN, FAIL_SING, UNKNOWN_SIGN, SKIPPED_SIGN)):
+            if RETRIES_SIGN in line:
+                retries = True
+            if any(sign in line for sign in (OK_SIGN, FAIL_SIGN, UNKNOWN_SIGN, SKIPPED_SIGN)):
                 test_name = line.split(' ')[2].split(':')[0]
 
                 test_time = ''
@@ -42,10 +47,10 @@ def process_test_log(log_path):
                     pass
 
                 total += 1
-                if TIMEOUT_SING in line:
+                if TIMEOUT_SIGN in line:
                     failed += 1
                     test_results.append((test_name, "Timeout", test_time))
-                elif FAIL_SING in line:
+                elif FAIL_SIGN in line:
                     failed += 1
                     test_results.append((test_name, "FAIL", test_time))
                 elif UNKNOWN_SIGN in line:
@@ -57,7 +62,7 @@ def process_test_log(log_path):
                 else:
                     success += int(OK_SIGN in line)
                     test_results.append((test_name, "OK", test_time))
-    return total, skipped, unknown, failed, success, hung, task_timeout, test_results
+    return total, skipped, unknown, failed, success, hung, task_timeout, retries, test_results
 
 def process_result(result_path):
     test_results = []
@@ -73,7 +78,7 @@ def process_result(result_path):
         state = "error"
 
     if result_path and os.path.exists(result_path):
-        total, skipped, unknown, failed, success, hung, task_timeout, test_results = process_test_log(result_path)
+        total, skipped, unknown, failed, success, hung, task_timeout, retries, test_results = process_test_log(result_path)
         is_flacky_check = 1 < int(os.environ.get('NUM_TRIES', 1))
         # If no tests were run (success == 0) it indicates an error (e.g. server did not start or crashed immediately)
         # But it's Ok for "flaky checks" - they can contain just one test for check which is marked as skipped.
@@ -83,9 +88,14 @@ def process_result(result_path):
         if hung:
             description = "Some queries hung, "
             state = "failure"
+            test_results.append(("Some queries hung", "FAIL", "0"))
         elif task_timeout:
             description = "Timeout, "
             state = "failure"
+            test_results.append(("Timeout", "FAIL", "0"))
+        elif retries:
+            description = "Some tests restarted, "
+            test_results.append(("Some tests restarted", "SKIPPED", "0"))
         else:
             description = ""
 

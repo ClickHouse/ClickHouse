@@ -7,9 +7,9 @@ import os
 import time
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml', 'configs/log_conf.xml'], stay_alive=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml', 'configs/log_conf.xml'], stay_alive=True)
-node3 = cluster.add_instance('node3', main_configs=['configs/enable_keeper3.xml', 'configs/log_conf.xml'], stay_alive=True)
+node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml'], stay_alive=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml'], stay_alive=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/enable_keeper3.xml'], stay_alive=True)
 
 from kazoo.client import KazooClient, KazooState
 
@@ -25,13 +25,6 @@ def started_cluster():
 
 def get_fake_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
-    def reset_listener(state):
-        nonlocal _fake_zk_instance
-        print("Fake zk callback called for state", state)
-        if state != KazooState.CONNECTED:
-            _fake_zk_instance._reset()
-
-    _fake_zk_instance.add_listener(reset_listener)
     _fake_zk_instance.start()
     return _fake_zk_instance
 
@@ -77,6 +70,7 @@ def test_recover_from_snapshot(started_cluster):
     # stale node should recover from leader's snapshot
     # with some sanitizers can start longer than 5 seconds
     node3.start_clickhouse(20)
+    print("Restarted")
 
     try:
         node1_zk = node2_zk = node3_zk = None

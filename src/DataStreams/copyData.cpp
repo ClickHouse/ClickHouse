@@ -49,6 +49,16 @@ void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, TCancelCall
     to.writeSuffix();
 }
 
+void copyData(IBlockInputStream & from, IBlockOutputStream & to, const std::function<void(const Block & block)> & progress,
+              std::atomic<bool> * is_cancelled)
+{
+    auto is_cancelled_pred = [is_cancelled] ()
+    {
+        return isAtomicSet(is_cancelled);
+    };
+
+    copyDataImpl(from, to, is_cancelled_pred, progress);
+}
 
 inline void doNothing(const Block &) {}
 

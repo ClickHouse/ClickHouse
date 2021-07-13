@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
@@ -142,7 +142,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
         key_columns[j]->updateHashWithValue(indices[j], hash);
     }
 
-    hash.get128(key.low, key.high);
+    hash.get128(key);
 
     return key;
 }

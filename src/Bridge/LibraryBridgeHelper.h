@@ -57,7 +57,7 @@ protected:
 
     Poco::Logger * getLog() const override { return log; }
 
-    const Poco::Timespan & getHTTPTimeout() const override { return http_timeout; }
+    Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
 
     Poco::URI createBaseURI() const override;
 

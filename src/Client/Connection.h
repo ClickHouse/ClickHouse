@@ -41,6 +41,7 @@ struct ExternalTableData
     /// Pipe of data form table;
     std::unique_ptr<Pipe> pipe;
     std::string table_name;
+    std::function<std::unique_ptr<Pipe>()> creating_pipe_callback;
     /// Flag if need to stop reading.
     std::atomic_bool is_cancelled = false;
 };
@@ -139,6 +140,8 @@ public:
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
 
+    Protocol::Compression getCompression() const { return compression; }
+
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
         const ConnectionTimeouts & timeouts,
@@ -181,6 +184,9 @@ public:
     void forceConnected(const ConnectionTimeouts & timeouts);
 
     bool isConnected() const { return connected; }
+
+    /// Check if connection is still active with ping request.
+    bool checkConnected() { return connected && ping(); }
 
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);

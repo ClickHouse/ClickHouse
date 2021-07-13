@@ -1,7 +1,7 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/SortCursor.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 namespace DB
 {
@@ -99,7 +99,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     while (key_end != rows)
     {
         /// Find the first position of new (not current) key in current chunk
-        auto indices = ext::range(key_begin, rows);
+        auto indices = collections::range(key_begin, rows);
         auto it = std::upper_bound(indices.begin(), indices.end(), cur_block_size - 1,
             [&](size_t lhs_row, size_t rhs_row)
             {
@@ -214,8 +214,8 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         {
             output.push(std::move(to_push_chunk));
             output.finish();
-            LOG_TRACE(log, "Aggregated. {} to {} rows (from {})", src_rows, res_rows,
-                                        formatReadableSizeWithBinarySuffix(src_bytes));
+            LOG_DEBUG(log, "Aggregated. {} to {} rows (from {})",
+                src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
             return Status::Finished;
         }
         if (input.isFinished())
@@ -229,7 +229,8 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         input.setNeeded();
         return Status::NeedData;
     }
-    current_chunk = input.pull(!is_consume_finished);
+    assert(!is_consume_finished);
+    current_chunk = input.pull(true /* set_not_needed */);
     return Status::Ready;
 }
 
