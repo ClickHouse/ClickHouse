@@ -720,19 +720,24 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
             WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
 
-            for (size_t i = 0; i < size; ++i)
+            if (null_map)
             {
-                if (null_map)
+                for (size_t i = 0; i < size; ++i)
                 {
                     bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                     null_map->getData()[i] |= !is_ok;
+                    writeChar(0, write_buffer);
+                    offsets_to[i] = write_buffer.count();
                 }
-                else
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
                 {
                     FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
+                    writeChar(0, write_buffer);
+                    offsets_to[i] = write_buffer.count();
                 }
-                writeChar(0, write_buffer);
-                offsets_to[i] = write_buffer.count();
             }
 
             write_buffer.finalize();
