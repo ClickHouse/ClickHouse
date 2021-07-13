@@ -7,7 +7,7 @@ SAMPLE_FILE="$CURDIR/01941_sample_data.csv"
 STD_ERROR_CAPTURED="$CURDIR/01941_std_error_captured.log"
 
 echo 'File generated:'
-${CLICKHOUSE_LOCAL} -q "SELECT number, if(number in (4,6), 'AAA', 'BBB') from numbers(7) FORMAT TSV" | tr '\t' ',' >"$SAMPLE_FILE"
+${CLICKHOUSE_LOCAL} -q "SELECT number, if(number in (4,6), 'AAA', 'BBB') from numbers(7) FORMAT CSV" --format_csv_delimiter=, >"$SAMPLE_FILE"
 cat "$SAMPLE_FILE"
 
 echo '******************'
@@ -48,5 +48,4 @@ else
 fi
 
 rm "$STD_ERROR_CAPTURED" "$SAMPLE_FILE"
-
 
