@@ -234,6 +234,10 @@ public:
         else if (which.isFloat64())                      nested_column = ColumnFloat64::create();
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
+        else if (which.isDateTime64())
+        {
+            nested_column = ColumnDecimal<Decimal64>::create(0, 6);
+        }
         else if (which.isDecimal32())
         {
             const auto & type = typeid_cast<const DataTypeDecimal<Decimal32> *>(nested.get());
