@@ -10,6 +10,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageSQLite.h>
+#include <Common/filesystemHelpers.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -34,20 +35,10 @@ DatabaseSQLite::DatabaseSQLite(
     , database_engine_define(database_engine_define_->clone())
     , log(&Poco::Logger::get("DatabaseSQLite"))
 {
-    std::error_code err;
-    String canonical_path = fs::canonical(database_path_, err);
-    /// The path existence is also checked.
-    if (err)
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database path '{}' is invalid. Error: {}", database_path_, err.message());
-
-    String user_files_path = fs::canonical(context_->getUserFilesPath());
-    if (!canonical_path.starts_with(user_files_path))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                        "SQLite database file path '{}' must be inside 'user_files' directory: {}",
-                        database_path_, user_files_path);
+    auto db_path = SQLiteDatabaseValidatePath(database_path_, context_);
 
     sqlite3 * tmp_sqlite_db = nullptr;
-    int status = sqlite3_open(canonical_path.c_str(), &tmp_sqlite_db);
+    int status = sqlite3_open(db_path.c_str(), &tmp_sqlite_db);
 
     if (status != SQLITE_OK)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
