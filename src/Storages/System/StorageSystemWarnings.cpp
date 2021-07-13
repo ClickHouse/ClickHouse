@@ -1,8 +1,10 @@
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemWarnings.h>
 
+
 namespace DB
 {
+
 NamesAndTypesList StorageSystemWarnings::getNamesAndTypes()
 {
     return {
