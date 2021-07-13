@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__, name="aggregate_alias_column")
 node1 = cluster.add_instance('node1', with_zookeeper=False)
 node2 = cluster.add_instance('node2',
-                             with_zookeeper=False, image='yandex/clickhouse-server', tag='21.3.15.4', stay_alive=True,
+                             with_zookeeper=False, image='yandex/clickhouse-server', tag='21.7.2.7', stay_alive=True,
                              with_installed_binary=True)
 
 
