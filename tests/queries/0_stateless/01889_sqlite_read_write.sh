@@ -6,8 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # See 01658_read_file_to_string_column.sh
 user_files_path=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+user_files_path=/home/kssenii/ClickHouse/programs/server/user_files
 
 mkdir -p ${user_files_path}/
+chmod 777 ${user_files_path}
 DB_PATH=${user_files_path}/db1
 
 
@@ -19,6 +21,8 @@ sqlite3 ${DB_PATH} 'DROP TABLE IF EXISTS table5'
 
 sqlite3 ${DB_PATH} 'CREATE TABLE table1 (col1 text, col2 smallint);'
 sqlite3 ${DB_PATH} 'CREATE TABLE table2 (col1 int, col2 text);'
+
+chmod ugo+w ${DB_PATH}
 
 sqlite3 ${DB_PATH} "INSERT INTO table1 VALUES ('line1', 1), ('line2', 2), ('line3', 3)"
 sqlite3 ${DB_PATH} "INSERT INTO table2 VALUES (1, 'text1'), (2, 'text2'), (3, 'text3')"
@@ -65,7 +69,6 @@ ${CLICKHOUSE_CLIENT} --query='DROP TABLE IF EXISTS sqlite_table3'
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE sqlite_table3 (col1 String, col2 Int32) ENGINE = SQLite('${DB_PATH}', 'table3')"
 
 ${CLICKHOUSE_CLIENT} --query='SHOW CREATE TABLE sqlite_table3;' | sed -r 's/(.*SQLite)(.*)/\1/'
-
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES ('line6', 6);"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES (NULL, 7);"
 
@@ -76,5 +79,12 @@ ${CLICKHOUSE_CLIENT} --query="select 'test table function'";
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table1') SELECT 'line4', 4"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', 'table1') ORDER BY col2"
 
+
+sqlite3 $CUR_DIR/db2 'DROP TABLE IF EXISTS table1'
+sqlite3 $CUR_DIR/db2 'CREATE TABLE table1 (col1 text, col2 smallint);'
+sqlite3 $CUR_DIR/db2 "INSERT INTO table1 VALUES ('line1', 1), ('line2', 2), ('line3', 3)"
+
+${CLICKHOUSE_CLIENT} --query="select 'test path in clickhouse-local'";
+${CLICKHOUSE_LOCAL} --query="SELECT * FROM sqlite('$CUR_DIR/db2', 'table1') ORDER BY col2"
 
 rm -r ${DB_PATH}
