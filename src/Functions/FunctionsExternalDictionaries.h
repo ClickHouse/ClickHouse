@@ -235,8 +235,8 @@ public:
                 }
                 else
                 {
-                    Columns tuple_columns = {std::move(key_column)};
-                    key_column = ColumnTuple::create(tuple_columns);
+                    // FIXME: do we need name here?
+                    key_column = ColumnTuple::createWithoutNames(Columns{std::move(key_column)});
 
                     DataTypes tuple_types = {key_column_type};
                     key_column_type = std::make_shared<DataTypeTuple>(tuple_types);
@@ -466,8 +466,8 @@ public:
                 }
                 else
                 {
-                    Columns tuple_columns = {std::move(key_column)};
-                    key_column = ColumnTuple::create(tuple_columns);
+                    // FIXME: do we need name here?
+                    key_column = ColumnTuple::createWithoutNames(Columns{std::move(key_column)});
 
                     DataTypes tuple_types = {key_column_type};
                     key_column_type = std::make_shared<DataTypeTuple>(tuple_types);
