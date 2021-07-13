@@ -26,7 +26,7 @@ public:
         bool check_columns,
         const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},
-        bool one_range_per_task_ = false,
+        bool has_limit_below_one_block_ = false,
         bool quiet = false);
 
         String getName() const override { return "MergeTreeInOrder"; }

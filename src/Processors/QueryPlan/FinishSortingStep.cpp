@@ -58,14 +58,14 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQ
     if (pipeline.getNumStreams() > 1)
     {
         UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
-        bool expected_one_block = limit_for_merging && limit_for_merging < max_block_size;
+        bool has_limit_below_one_block = limit_for_merging && limit_for_merging < max_block_size;
         auto transform = std::make_shared<MergingSortedTransform>(
                 pipeline.getHeader(),
                 pipeline.getNumStreams(),
                 prefix_description,
                 max_block_size,
                 limit_for_merging,
-                expected_one_block);
+                has_limit_below_one_block);
 
         pipeline.addTransform(std::move(transform));
     }

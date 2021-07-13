@@ -37,7 +37,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
     array_join_result_to_source = syntax_result->array_join_result_to_source;
 }
 
-InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
+InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, UInt64 limit) const
 {
     Names sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     if (!metadata_snapshot->hasSortingKey())
@@ -155,7 +155,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr &
 
     if (order_key_prefix_descr.empty())
         return {};
-    return std::make_shared<InputOrderInfo>(std::move(order_key_prefix_descr), read_direction);
+
+    return std::make_shared<InputOrderInfo>(std::move(order_key_prefix_descr), read_direction, limit);
 }
 
 }

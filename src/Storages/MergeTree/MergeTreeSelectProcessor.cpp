@@ -22,7 +22,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool check_columns_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
-    bool one_range_per_task_)
+    bool has_limit_below_one_block_)
     : MergeTreeBaseSelectProcessor{
         metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
         storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
@@ -31,7 +31,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     all_mark_ranges(std::move(mark_ranges_)),
-    one_range_per_task(one_range_per_task_),
+    has_limit_below_one_block(has_limit_below_one_block_),
     check_columns(check_columns_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {

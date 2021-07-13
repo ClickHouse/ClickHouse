@@ -31,7 +31,7 @@ public:
         bool check_columns,
         const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},
-        bool one_range_per_task_ = false);
+        bool has_limit_below_one_block_ = false);
 
     ~MergeTreeSelectProcessor() override;
 
@@ -61,7 +61,7 @@ protected:
     size_t part_index_in_query = 0;
     /// If true, every task will be created only with one range.
     /// It reduces amount of read data for queries with small LIMIT.
-    bool one_range_per_task = false;
+    bool has_limit_below_one_block = false;
 
     bool check_columns;
     size_t total_rows;

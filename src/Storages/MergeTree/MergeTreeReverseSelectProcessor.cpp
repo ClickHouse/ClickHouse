@@ -23,13 +23,13 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     bool check_columns_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
-    bool one_range_per_task_,
+    bool has_limit_below_one_block_,
     bool quiet)
     : MergeTreeSelectProcessor{
         storage_, metadata_snapshot_, owned_data_part_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         required_columns_, std::move(mark_ranges_), use_uncompressed_cache_, prewhere_info_,
-        std::move(actions_settings), check_columns_, reader_settings_, virt_column_names_, one_range_per_task_}
+        std::move(actions_settings), check_columns_, reader_settings_, virt_column_names_, has_limit_below_one_block_}
 {
     if (!quiet)
         LOG_DEBUG(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
