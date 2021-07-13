@@ -4,6 +4,7 @@
 
 #include <IO/WriteBufferFromFileBase.h>
 #include <Functions/FileEncryption.h>
+#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -29,31 +30,19 @@ public:
 
     ~WriteEncryptedBuffer() override
     {
-        try
-        {
-            finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    void finalize() override
-    {
-        if (finalized)
-            return;
-
-        next();
-        out->finalize();
-
-        finalized = true;
+        /// FIXME move final flush into the caller
+        MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+        finish();
     }
 
     void sync() override
     {
+        /// If buffer has pending data - write it.
+        next();
         out->sync();
     }
+
+    void finalize() override { finish(); }
 
     std::string getFileName() const override { return out->getFileName(); }
 
@@ -62,6 +51,7 @@ private:
     {
         if (!offset())
             return;
+
         if (flush_iv)
         {
             WriteIV(iv, *out);
@@ -71,7 +61,34 @@ private:
         encryptor.Encrypt(working_buffer.begin(), *out, offset());
     }
 
-    bool finalized = false;
+    void finish()
+    {
+        if (finished)
+            return;
+
+        try
+        {
+            finishImpl();
+            out->finalize();
+            finished = true;
+        }
+        catch (...)
+        {
+            /// Do not try to flush next time after exception.
+            out->position() = out->buffer().begin();
+            finished = true;
+            throw;
+        }
+    }
+
+    void finishImpl()
+    {
+        /// If buffer has pending data - write it.
+        next();
+        out->finalize();
+    }
+
+    bool finished = false;
     std::unique_ptr<WriteBufferFromFileBase> out;
 
     bool flush_iv;
