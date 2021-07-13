@@ -378,6 +378,8 @@ function run_tests
 
         # needs pv
         01923_network_receive_time_metric_insert
+
+        01889_sqlite_read_write
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
