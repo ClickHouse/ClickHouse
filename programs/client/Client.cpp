@@ -610,7 +610,7 @@ private:
                 /// Load suggestion data from the server.
                 suggest->load(connection_parameters, config().getInt("suggestion_limit"));
             }
-            /// Load Warnings at the begining of connection
+            /// Load Warnings at the beginning of connection
             {
                 std::vector<String> messages;
                 try
