@@ -2354,11 +2354,6 @@ OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, 
     return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, shared_from_this());
 }
 
-OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
-{
-    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this());
-}
-
 
 time_t Context::getUptimeSeconds() const
 {
@@ -2744,6 +2739,20 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
         throw Exception("Setting async_insert_busy_timeout can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
 
     shared->async_insert_queue = ptr;
+}
+
+void Context::setMySQLProtocolContext(MySQLWireContext * mysql_context)
+{
+    assert(session_context.lock().get() == this);
+    assert(!mysql_protocol_context);
+    assert(mysql_context);
+    mysql_protocol_context = mysql_context;
+}
+
+MySQLWireContext * Context::getMySQLProtocolContext() const
+{
+    assert(!mysql_protocol_context || session_context.lock().get());
+    return mysql_protocol_context;
 }
 
 }

@@ -68,4 +68,15 @@ String PacketEndpoint::packetToText(const String & payload)
 
 }
 
+
+MySQLProtocol::PacketEndpointPtr MySQLWireContext::makeEndpoint(WriteBuffer & out)
+{
+    return MySQLProtocol::PacketEndpoint::create(out, sequence_id);
+}
+
+MySQLProtocol::PacketEndpointPtr MySQLWireContext::makeEndpoint(ReadBuffer & in, WriteBuffer & out)
+{
+    return MySQLProtocol::PacketEndpoint::create(in, out, sequence_id);
+}
+
 }
