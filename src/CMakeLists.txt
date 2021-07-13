@@ -76,6 +76,10 @@ add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
+if (USE_SQLITE)
+    add_headers_and_sources(dbms Databases/SQLite)
+endif()
+
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
@@ -423,6 +427,10 @@ endif()
 if (USE_AMQPCPP)
     dbms_target_link_libraries(PUBLIC ${AMQPCPP_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${AMQPCPP_INCLUDE_DIR})
+endif()
+
+if (USE_SQLITE)
+    dbms_target_link_libraries(PUBLIC sqlite)
 endif()
 
 if (USE_CASSANDRA)
