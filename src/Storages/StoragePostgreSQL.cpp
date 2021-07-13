@@ -1,6 +1,7 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
+#include <DataStreams/PostgreSQLBlockInputStream.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -16,7 +17,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include <DataStreams/PostgreSQLBlockInputStream.h>
 #include <Core/Settings.h>
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
@@ -90,7 +90,7 @@ Pipe StoragePostgreSQL::read(
     }
 
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<PostgreSQLBlockInputStream>(pool->get(), query, sample_block, max_block_size_)));
+            std::make_shared<PostgreSQLBlockInputStream<>>(pool->get(), query, sample_block, max_block_size_)));
 }
 
 
@@ -162,7 +162,7 @@ public:
     }
 
     /// Cannot just use serializeAsText for array data type even though it converts perfectly
-    /// any dimension number array into text format, because it incloses in '[]' and for postgres it must be '{}'.
+    /// any dimension number array into text format, because it encloses in '[]' and for postgres it must be '{}'.
     /// Check if array[...] syntax from PostgreSQL will be applicable.
     void parseArray(const Field & array_field, const DataTypePtr & data_type, WriteBuffer & ostr)
     {

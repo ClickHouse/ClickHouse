@@ -230,7 +230,7 @@ ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, Con
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
-bool isExpressionActionsDeterministics(const ExpressionActionsPtr & actions)
+bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
 {
     for (const auto & action : actions->getActions())
     {
@@ -288,6 +288,7 @@ void replaceConstantExpressions(
 /// is one of the following:
 /// - QueryProcessingStage::Complete
 /// - QueryProcessingStage::WithMergeableStateAfterAggregation
+/// - QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit
 /// - none (in this case regular WithMergeableState should be used)
 std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, bool extremes, const Block & sharding_key_block)
 {
@@ -349,13 +350,13 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
     // ORDER BY
     const ASTPtr order_by = select.orderBy();
     if (order_by)
-        return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     // LIMIT BY
     // LIMIT
     // OFFSET
     if (select.limitBy() || select.limitLength() || select.limitOffset())
-        return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
     return QueryProcessingStage::Complete;
@@ -427,7 +428,7 @@ StorageDistributed::StorageDistributed(
     {
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
-        sharding_key_is_deterministic = isExpressionActionsDeterministics(sharding_key_expr);
+        sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
     }
 
     if (!relative_data_path.empty())
@@ -514,10 +515,22 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     if (settings.distributed_group_by_no_merge)
     {
         if (settings.distributed_group_by_no_merge == DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION)
-            return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        {
+            if (settings.distributed_push_down_limit)
+                return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+            else
+                return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        }
         else
+        {
+            /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
+            /// (since in this case queries processed separately and the initiator is just a proxy in this case).
             return QueryProcessingStage::Complete;
+        }
     }
+
+    if (settings.distributed_push_down_limit)
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
@@ -787,12 +800,33 @@ void StorageDistributed::startup()
     if (!storage_policy)
         return;
 
-    for (const DiskPtr & disk : data_volume->getDisks())
-        createDirectoryMonitors(disk);
+    const auto & disks = data_volume->getDisks();
 
-    for (const String & path : getDataPaths())
+    /// Make initialization for large number of disks parallel.
+    ThreadPool pool(disks.size());
+
+    for (const DiskPtr & disk : disks)
     {
-        UInt64 inc = getMaximumFileNumber(path);
+        pool.scheduleOrThrowOnError([&]()
+        {
+            createDirectoryMonitors(disk);
+        });
+    }
+    pool.wait();
+
+    const auto & paths = getDataPaths();
+    std::vector<UInt64> last_increment(paths.size());
+    for (size_t i = 0; i < paths.size(); ++i)
+    {
+        pool.scheduleOrThrowOnError([&, i]()
+        {
+            last_increment[i] = getMaximumFileNumber(paths[i]);
+        });
+    }
+    pool.wait();
+
+    for (const auto inc : last_increment)
+    {
         if (inc > file_names_increment.value)
             file_names_increment.value.store(inc);
     }
@@ -894,30 +928,50 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
             }
             else
             {
-                requireDirectoryMonitor(disk, dir_path.filename().string());
+                requireDirectoryMonitor(disk, dir_path.filename().string(), /* startup= */ true);
             }
         }
     }
 }
 
 
-StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const DiskPtr & disk, const std::string & name)
+StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const DiskPtr & disk, const std::string & name, bool startup)
 {
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
 
-    std::lock_guard lock(cluster_nodes_mutex);
-    auto & node_data = cluster_nodes_data[key];
-    if (!node_data.directory_monitor)
+    auto create_node_data = [&]()
     {
-        node_data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
-        node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
+        ClusterNodeData data;
+        data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
+        data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
             *this, disk, relative_data_path + name,
-            node_data.connection_pool,
+            data.connection_pool,
             monitors_blocker,
             getContext()->getDistributedSchedulePool());
+        return data;
+    };
+
+    /// In case of startup the lock can be acquired later.
+    if (startup)
+    {
+        auto tmp_node_data = create_node_data();
+        std::lock_guard lock(cluster_nodes_mutex);
+        auto & node_data = cluster_nodes_data[key];
+        assert(!node_data.directory_monitor);
+        node_data = std::move(tmp_node_data);
+        return *node_data.directory_monitor;
     }
-    return *node_data.directory_monitor;
+    else
+    {
+        std::lock_guard lock(cluster_nodes_mutex);
+        auto & node_data = cluster_nodes_data[key];
+        if (!node_data.directory_monitor)
+        {
+            node_data = create_node_data();
+        }
+        return *node_data.directory_monitor;
+    }
 }
 
 std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getDirectoryMonitorsStatuses() const
@@ -1142,6 +1196,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
     for (const DiskPtr & disk : data_volume->getDisks())
     {
+        disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(relative_data_path, new_path_to_table_data);
 
         auto new_path = disk->getPath() + new_path_to_table_data;

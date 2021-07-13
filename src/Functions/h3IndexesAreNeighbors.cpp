@@ -67,7 +67,7 @@ public:
             const UInt64 hindex_origin = col_hindex_origin->getUInt(row);
             const UInt64 hindex_dest = col_hindex_dest->getUInt(row);
 
-            UInt8 res = h3IndexesAreNeighbors(hindex_origin, hindex_dest);
+            UInt8 res = areNeighborCells(hindex_origin, hindex_dest);
 
             dst_data[row] = res;
         }

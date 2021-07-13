@@ -379,7 +379,7 @@ Default value: `1`.
 
 ## insert_null_as_default {#insert_null_as_default}
 
-Enables or disables the insertion of [default values](../../sql-reference/statements/create/table.md#create-default-values) instead of [NULL](../../sql-reference/syntax.md#null-literal) into columns with not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) data type. 
+Enables or disables the insertion of [default values](../../sql-reference/statements/create/table.md#create-default-values) instead of [NULL](../../sql-reference/syntax.md#null-literal) into columns with not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) data type.
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
 This setting is applicable to [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select) queries. Note that `SELECT` subqueries may be concatenated with `UNION ALL` clause.
@@ -1182,7 +1182,7 @@ Possible values:
 
 Default value: `1`.
 
-**Additional Info** 
+**Additional Info**
 
 This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
 
@@ -1194,21 +1194,22 @@ This setting is useful for replicated tables with a sampling key. A query may be
 !!! warning "Warning"
     This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
 
-## compile {#compile}
+## compile_expressions {#compile-expressions}
 
-Enable compilation of queries. By default, 0 (disabled).
+Enables or disables compilation of frequently used simple functions and operators to native code with LLVM at runtime.
 
-The compilation is only used for part of the query-processing pipeline: for the first stage of aggregation (GROUP BY).
-If this portion of the pipeline was compiled, the query may run faster due to the deployment of short cycles and inlining aggregate function calls. The maximum performance improvement (up to four times faster in rare cases) is seen for queries with multiple simple aggregate functions. Typically, the performance gain is insignificant. In very rare cases, it may slow down query execution.
+Possible values:
 
-## min_count_to_compile {#min-count-to-compile}
+- 0 — Disabled.
+- 1 — Enabled.
 
-How many times to potentially use a compiled chunk of code before running compilation. By default, 3.
-For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
-If the value is 1 or more, compilation occurs asynchronously in a separate thread. The result will be used as soon as it is ready, including queries that are currently running.
+Default value: `1`.
 
-Compiled code is required for each different combination of aggregate functions used in the query and the type of keys in the GROUP BY clause.
-The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they do not use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
+## min_count_to_compile_expression {#min-count-to-compile-expression}
+
+Minimum count of executing same expression before it is get compiled.
+
+Default value: `3`.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
@@ -1558,7 +1559,7 @@ Possible values:
 
 -   0 — Disabled (final query processing is done on the initiator node).
 -   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
--   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possilbe when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+-   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
 
 **Example**
 
@@ -1591,6 +1592,18 @@ FORMAT PrettyCompactMonoBlock
 
 Default value: 0
 
+## distributed_push_down_limit (#distributed-push-down-limit}
+
+LIMIT will be applied on each shard separatelly. Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
+
+Possible values:
+
+-  0 - Disabled
+-  1 - Enabled
+
+!!! note "Note"
+    That with this setting the result of the query may be inaccurate.
+
 ## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
 
 Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
@@ -1610,7 +1623,7 @@ Possible values:
 
 Default value: 0
 
-## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shardslrewrite-in}
+## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shards-rewrite-in}
 
 Rewrite IN in query for remote shards to exclude values that does not belong to the shard (requires optimize_skip_unused_shards).
 
@@ -1715,6 +1728,28 @@ Possible values:
 
 Default value: 0.
 
+## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
+
+Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read. 
+
+These functions can be transformed:
+
+-   [length](../../sql-reference/functions/array-functions.md#array_functions-length) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [empty](../../sql-reference/functions/array-functions.md#function-empty) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [isNull](../../sql-reference/operators/index.md#operator-is-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [isNotNull](../../sql-reference/operators/index.md#is-not-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [count](../../sql-reference/aggregate-functions/reference/count.md) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) to read the [keys](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
+-   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) to read the [values](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
+
+Possible values:
+
+-   0 — Optimization disabled.
+-   1 — Optimization enabled.
+
+Default value: `0`.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Type: seconds
@@ -1789,6 +1824,27 @@ Possible values:
 -   0 — Disabled.
 
 Default value: 0.
+
+## distributed_directory_monitor_split_batch_on_failure {#distributed_directory_monitor_split_batch_on_failure}
+
+Enables/disables splitting batches on failures.
+
+Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
+
+So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_directory_monitor_batch_inserts` for failed batches).
+
+Possible values:
+
+-   1 — Enabled.
+-   0 — Disabled.
+
+Default value: 0.
+
+!!! note "Note"
+    This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+
+!!! warning "Warning"
+    You should not rely on automatic batch splitting, since this may hurt performance.
 
 ## os_thread_priority {#setting-os-thread-priority}
 
@@ -2073,7 +2129,7 @@ Default value: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recomended to use default value.
+Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recommended to use default value.
 
 Possible values:
 
@@ -2660,7 +2716,7 @@ Default value: `0`.
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
-It is implemented via query rewrite (similar to [count_distinct_implementation](#settings-count_distinct_implementation) setting) to get consistent results for distributed queries. 
+It is implemented via query rewrite (similar to [count_distinct_implementation](#settings-count_distinct_implementation) setting) to get consistent results for distributed queries.
 
 Possible values:
 
@@ -2844,7 +2900,7 @@ Default value: `0`.
 
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
-Adds a modifier `SYNC` to all `DROP` and `DETACH` queries. 
+Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
 
 Possible values:
 
@@ -2950,7 +3006,7 @@ Enables or disables using the original column names instead of aliases in query 
 Possible values:
 
 - 0 — The column name is substituted with the alias.
-- 1 — The column name is not substituted with the alias. 
+- 1 — The column name is not substituted with the alias.
 
 Default value: `0`.
 
@@ -3063,8 +3119,86 @@ SELECT
     sum(a),
     sumCount(b).1,
     sumCount(b).2,
-    (sumCount(b).1) / (sumCount(b).2)    
+    (sumCount(b).1) / (sumCount(b).2)
 FROM fuse_tbl
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+## flatten_nested {#flatten-nested}
+
+Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
+
+Possible values:
+
+-   1 — Nested column is flattened to separate arrays.
+-   0 — Nested column stays a single array of tuples.
+
+Default value: `1`.
+
+**Usage**
+
+If the setting is set to `0`, it is possible to use an arbitrary level of nesting.
+
+**Examples**
+
+Query:
+
+``` sql
+SET flatten_nested = 1;
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Result:
+
+``` text
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n.a` Array(UInt32),
+    `n.b` Array(UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SET flatten_nested = 0;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Result:
+
+``` text
+┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n` Nested(a UInt32, b UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## external_table_functions_use_nulls {#external-table-functions-use-nulls}
+
+Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md)] table functions use Nullable columns.
+
+Possible values:
+
+-   0 — The table function explicitly uses Nullable columns.
+-   1 — The table function implicitly uses Nullable columns.
+
+Default value: `1`.
+
+**Usage**
+
+If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
