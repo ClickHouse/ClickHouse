@@ -13,7 +13,9 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -22,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SQLITE_ENGINE_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 StorageSQLite::StorageSQLite(
@@ -157,8 +160,14 @@ void registerStorageSQLite(StorageFactory & factory)
         const auto database_path = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         const auto table_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
+        std::error_code err;
+        auto canonical_path = fs::canonical(database_path, err);
+        /// The path existance is also checked here.
+        if (err)
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database path '{}' is invalid. Error: {}", database_path, err.message());
+
         sqlite3 * tmp_sqlite_db = nullptr;
-        int status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
+        int status = sqlite3_open(canonical_path.c_str(), &tmp_sqlite_db);
         if (status != SQLITE_OK)
             throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                             "Failed to open sqlite database. Status: {}. Message: {}",
