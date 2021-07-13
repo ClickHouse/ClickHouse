@@ -263,10 +263,12 @@ namespace DB
                     || std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
                 {
                     fillArrowArrayWithDecimalColumnData<ToDataType>(column, null_bytemap, array_builder, format_name, start, end);
+                    return true;
                 }
                 return false;
             };
-            callOnIndexAndDataType<void>(column_type->getTypeId(), fill_decimal);
+            if (!callOnIndexAndDataType<void>(column_type->getTypeId(), fill_decimal))
+                throw Exception{ErrorCodes::UNKNOWN_TYPE, "Decimal type {} is not supported for conversion into a {} data format", column_type->getName(), format_name};
         }
     #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
                 else if (#CPP_NUMERIC_TYPE == column_type_name) \
@@ -304,8 +306,10 @@ namespace DB
             if (null_bytemap && (*null_bytemap)[value_i])
                 status = builder.AppendNull();
             else
-                status = builder.Append(
-                    arrow::Decimal128(reinterpret_cast<const uint8_t *>(&column.getElement(value_i).value))); // TODO: try copy column
+            {
+                Int128 element = Int128(column.getElement(value_i).value);
+                status = builder.Append(arrow::Decimal128(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
+            }
 
             checkStatus(status, write_column->getName(), format_name);
         }
@@ -336,11 +340,13 @@ namespace DB
                 {
                     const auto & decimal_type = static_cast<const ToDataType *>(column_type.get());
                     arrow_type = arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale());
+                    return true;
                 }
 
                 return false;
             };
-            callOnIndexAndDataType<void>(column_type->getTypeId(), create_arrow_type);
+            if (!callOnIndexAndDataType<void>(column_type->getTypeId(), create_arrow_type))
+                throw Exception{ErrorCodes::UNKNOWN_TYPE, "Decimal type {} is not supported for conversion into a {} data format", column_type->getName(), format_name};
             return arrow_type;
         }
 
@@ -361,7 +367,7 @@ namespace DB
             return arrow_type_it->second;
         }
 
-        throw Exception{"The type \"" + column_name + "\" of a column \"" + column_name + "\""
+        throw Exception{"The type \"" + column_type->getName() + "\" of a column \"" + column_name + "\""
                              " is not supported for conversion into a " + format_name + " data format",
                              ErrorCodes::UNKNOWN_TYPE};
     }
