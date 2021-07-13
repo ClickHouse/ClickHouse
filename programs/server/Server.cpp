@@ -1413,11 +1413,12 @@ if (ThreadFuzzer::instance().isEffective())
         {
             /// DDL worker should be started after all tables were loaded
             String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
+            String host_zookeeper_path = config().getString("distributed_ddl.host_path", "/clickhouse/task_queue/host/");
             int pool_size = config().getInt("distributed_ddl.pool_size", 1);
             if (pool_size < 1)
                 throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
-                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
+                                                                     "distributed_ddl", host_zookeeper_path, "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
         }
 
         for (auto & server : *servers)

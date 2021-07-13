@@ -43,7 +43,7 @@ class DDLWorker
 {
 public:
     DDLWorker(int pool_size_, const std::string & zk_root_dir, ContextPtr context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-              const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr);
+              const std::string & zk_host_dir = "", const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr);
     virtual ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
@@ -109,6 +109,7 @@ protected:
 
     void runMainThread();
     void runCleanupThread();
+    void runActivatehostThread();
 
     ContextMutablePtr context;
     Poco::Logger * log;
@@ -116,6 +117,7 @@ protected:
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
     std::string queue_dir;      /// dir with queue of queries
+    std::string host_dir;       /// dir with host
 
     mutable std::mutex zookeeper_mutex;
     ZooKeeperPtr current_zookeeper;
@@ -132,6 +134,12 @@ protected:
 
     ThreadFromGlobalPool main_thread;
     ThreadFromGlobalPool cleanup_thread;
+    ThreadFromGlobalPool activatehost_thread;
+
+    /// The random data we wrote into `/host_dir/ip:port/is_active`.
+    String active_node_identifier;
+
+    Int64 activate_host_period = 60;   // The frequency of checking host status.
 
     /// Size of the pool for query execution.
     size_t pool_size = 1;

@@ -155,6 +155,7 @@ DDLWorker::DDLWorker(
     ContextPtr context_,
     const Poco::Util::AbstractConfiguration * config,
     const String & prefix,
+    const std::string & zk_host_dir,
     const String & logger_name,
     const CurrentMetrics::Metric * max_entry_metric_)
     : context(Context::createCopy(context_))
@@ -176,11 +177,16 @@ DDLWorker::DDLWorker(
     if (queue_dir.back() == '/')
         queue_dir.resize(queue_dir.size() - 1);
 
+    host_dir = zk_host_dir;
+    if (host_dir.back() == '/')
+        host_dir.resize(host_dir.size() - 1);
+
     if (config)
     {
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
         max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
+        activate_host_period = config->getUInt64(prefix + ".activate_host_period", static_cast<UInt64>(activate_host_period));
 
         if (config->has(prefix + ".profile"))
             context->setSetting("profile", config->getString(prefix + ".profile"));
@@ -199,6 +205,7 @@ void DDLWorker::startup()
 {
     main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
     cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
+    activatehost_thread = ThreadFromGlobalPool(&DDLWorker::runActivatehostThread, this);
 }
 
 void DDLWorker::shutdown()
@@ -1201,6 +1208,113 @@ void DDLWorker::runCleanupThread()
         {
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
+    }
+}
+
+/// Used to check whether it's us who set node `is_active`, or not.
+static String generateActiveNodeIdentifier()
+{
+    return "pid: " + toString(getpid()) + ", random: " + toString(randomSeed());
+}
+
+std::shared_ptr<HostID> getCurrentHostID(ContextPtr context)
+{
+    auto maybe_port = context->getTCPPortSecure();
+    auto port = maybe_port ? *maybe_port : context->getTCPPort();
+
+    Clusters::Impl cluster_map = context->getClusters()->getContainer();
+    for (auto & it : cluster_map)
+    {
+        const Cluster::AddressesWithFailover & shards = it.second->getShardsAddresses();
+        for (const auto & address_vec : shards)
+        {
+            for (const auto & address : address_vec)
+            {
+                std::shared_ptr<HostID> host = std::make_shared<HostID>();
+                host->host_name = address.host_name;
+                host->port = address.port;
+                String readable_str = host->readableString();
+                if (host->isLocalAddress(port))
+                {
+                    return host;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+void DDLWorker::runActivatehostThread()
+{
+    setThreadName("DDLWorkerActive");
+    LOG_DEBUG(log, "Started DDLWorker activate host thread");
+
+    active_node_identifier = generateActiveNodeIdentifier();
+    std::shared_ptr<HostID> host = getCurrentHostID(context);
+    auto host_full_name = host->readableString();
+    LOG_DEBUG(log, "Get current host full name {}, active id {}", host_full_name, active_node_identifier);
+
+    bool is_init = false;
+
+    while (!stop_flag)
+    {
+        try
+        {
+            if (stop_flag)
+                break;
+
+            auto zookeeper = tryGetZooKeeper();
+            if (zookeeper->expired())
+            {
+                sleepForSeconds(1);
+                continue;
+            }
+
+            if (!is_init)
+            {
+                zookeeper->createAncestors(fs::path(host_dir) / "");
+                is_init = true;
+            }
+
+            String host_path = fs::path(host_dir) / host_full_name;
+            String data;
+            Coordination::Stat stat;
+            bool exist_host = zookeeper->tryGet(host_path, data, &stat);
+            if (!exist_host)
+            {
+                auto create_node_code = zookeeper->tryCreate(host_path, "", zkutil::CreateMode::Persistent);
+                if (create_node_code != Coordination::Error::ZOK)
+                    throw Coordination::Exception(create_node_code, host_path);
+            }
+
+            String is_active_path = fs::path(host_path) / "is_active";
+            bool has_is_active = zookeeper->tryGet(is_active_path, data, &stat);
+            if (has_is_active)
+            {
+                if (data != active_node_identifier)
+                {
+                    auto code = zookeeper->tryRemove(is_active_path, stat.version);
+                    if (code != Coordination::Error::ZOK)
+                        throw Coordination::Exception(code, is_active_path);
+                }
+                else
+                {
+                    sleepForSeconds(activate_host_period);
+                    continue;
+                }
+            }
+            auto create_active_code = zookeeper->tryCreate(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral);
+            if (create_active_code != Coordination::Error::ZOK)
+            {
+                throw Coordination::Exception(create_active_code, is_active_path);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+            sleepForSeconds(5);
+        }
+        sleepForSeconds(activate_host_period);
     }
 }
 
