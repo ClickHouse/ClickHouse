@@ -215,6 +215,7 @@
 01747_join_view_filter_dictionary
 01748_dictionary_table_dot
 01755_client_highlight_multi_line_comment_regression
+01756_optimize_skip_unused_shards_rewrite_in
 00950_dict_get
 01683_flat_dictionary
 01681_cache_dictionary_simple_key
@@ -251,6 +252,7 @@
 01924_argmax_bitmap_state
 01914_exchange_dictionaries
 01923_different_expression_name_alias
+01930_optimize_skip_unused_shards_rewrite_in
 01932_null_valid_identifier
 00918_json_functions
 01889_sql_json_functions
