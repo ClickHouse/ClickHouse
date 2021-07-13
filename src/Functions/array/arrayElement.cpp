@@ -12,6 +12,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
@@ -108,6 +109,9 @@ private:
         const Field & index, PaddedPODArray<UInt64> & matched_idxs);
 
     static bool matchKeyToIndexString(const IColumn & data, const Offsets & offsets,
+        const ColumnsWithTypeAndName & arguments, PaddedPODArray<UInt64> & matched_idxs);
+
+    static bool matchKeyToIndexFixedString(const IColumn & data, const Offsets & offsets,
         const ColumnsWithTypeAndName & arguments, PaddedPODArray<UInt64> & matched_idxs);
 
     static bool matchKeyToIndexStringConst(const IColumn & data, const Offsets & offsets,
@@ -767,6 +771,19 @@ struct MatcherString
     }
 };
 
+struct MatcherFixedString
+{
+    const ColumnFixedString & data;
+    const ColumnFixedString & index;
+
+    bool match(size_t row_data, size_t row_index) const
+    {
+        auto data_ref = data.getDataAt(row_data);
+        auto index_ref = index.getDataAt(row_index);
+        return memequalSmallAllowOverflow15(index_ref.data, index_ref.size, data_ref.data, data_ref.size);
+    }
+};
+
 struct MatcherStringConst
 {
     const ColumnString & data;
@@ -863,6 +880,23 @@ bool FunctionArrayElement::matchKeyToIndexString(
     return true;
 }
 
+bool FunctionArrayElement::matchKeyToIndexFixedString(
+    const IColumn & data, const Offsets & offsets,
+    const ColumnsWithTypeAndName & arguments, PaddedPODArray<UInt64> & matched_idxs)
+{
+    const auto * index_string = checkAndGetColumn<ColumnFixedString>(arguments[1].column.get());
+    if (!index_string)
+        return false;
+
+    const auto * data_string = checkAndGetColumn<ColumnFixedString>(&data);
+    if (!data_string)
+        return false;
+
+    MatcherFixedString matcher{*data_string, *index_string};
+    executeMatchKeyToIndex(offsets, matched_idxs, matcher);
+    return true;
+}
+
 template <typename DataType>
 bool FunctionArrayElement::matchKeyToIndexNumberConst(
     const IColumn & data, const Offsets & offsets,
@@ -922,8 +956,10 @@ bool FunctionArrayElement::matchKeyToIndex(
         || matchKeyToIndexNumber<Int64>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int128>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int256>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt256>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<UUID>(data, offsets, arguments, matched_idxs)
-        || matchKeyToIndexString(data, offsets, arguments, matched_idxs);
+        || matchKeyToIndexString(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexFixedString(data, offsets, arguments, matched_idxs);
 }
 
 bool FunctionArrayElement::matchKeyToIndexConst(

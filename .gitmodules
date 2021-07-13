@@ -168,9 +168,6 @@
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt.git
-[submodule "contrib/antlr4-runtime"]
-	path = contrib/antlr4-runtime
-	url = https://github.com/ClickHouse-Extras/antlr4-runtime.git
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
 	url = https://github.com/ClickHouse-Extras/sentry-native.git
@@ -231,3 +228,6 @@
 [submodule "contrib/libpqxx"]
 	path = contrib/libpqxx
 	url = https://github.com/ClickHouse-Extras/libpqxx.git
+[submodule "contrib/sqlite-amalgamation"]
+	path = contrib/sqlite-amalgamation
+	url = https://github.com/azadkuh/sqlite-amalgamation

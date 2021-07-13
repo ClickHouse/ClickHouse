@@ -163,13 +163,6 @@ public:
                 arguments[0]->getName(),
                 getName());
 
-        if (!WhichDataType(arguments[1]).isUInt64() &&
-            !isTuple(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {} must be UInt64 or tuple(...)",
-                arguments[1]->getName(),
-                getName());
-
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -189,8 +182,8 @@ public:
         auto dictionary_key_type = dictionary->getKeyType();
 
         const ColumnWithTypeAndName & key_column_with_type = arguments[1];
-        const auto key_column = key_column_with_type.column;
-        const auto key_column_type = WhichDataType(key_column_with_type.type);
+        auto key_column = key_column_with_type.column;
+        auto key_column_type = key_column_with_type.type;
 
         ColumnPtr range_col = nullptr;
         DataTypePtr range_col_type = nullptr;
@@ -214,7 +207,7 @@ public:
 
         if (dictionary_key_type == DictionaryKeyType::simple)
         {
-            if (!key_column_type.isUInt64())
+            if (!WhichDataType(key_column_type).isUInt64())
                  throw Exception(
                      ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                      "Second argument of function {} must be UInt64 when dictionary is simple. Actual type {}.",
@@ -225,24 +218,39 @@ public:
         }
         else if (dictionary_key_type == DictionaryKeyType::complex)
         {
-            if (!key_column_type.isTuple())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Second argument of function {} must be tuple when dictionary is complex. Actual type {}.",
-                    getName(),
-                    key_column_with_type.type->getName());
-
             /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
-            ColumnPtr key_column_full = key_column->convertToFullColumnIfConst();
+            key_column = key_column->convertToFullColumnIfConst();
+            size_t keys_size = dictionary->getStructure().getKeysSize();
 
-            const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_column_full).getColumnsCopy();
-            const auto & key_types = static_cast<const DataTypeTuple &>(*key_column_with_type.type).getElements();
+            if (!isTuple(key_column_type))
+            {
+                if (keys_size > 1)
+                {
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
+                        "Actual type {}.",
+                        getName(),
+                        key_column_type->getName());
+                }
+                else
+                {
+                    Columns tuple_columns = {std::move(key_column)};
+                    key_column = ColumnTuple::create(tuple_columns);
+
+                    DataTypes tuple_types = {key_column_type};
+                    key_column_type = std::make_shared<DataTypeTuple>(tuple_types);
+                }
+            }
+
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
+            const auto & key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
 
             return dictionary->hasKeys(key_columns, key_types);
         }
         else
         {
-            if (!key_column_type.isUInt64())
+            if (!WhichDataType(key_column_type).isUInt64())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Second argument of function {} must be UInt64 when dictionary is range. Actual type {}.",
@@ -346,13 +354,6 @@ public:
         Strings attribute_names = getAttributeNamesFromColumn(arguments[1].column, arguments[1].type);
 
         auto dictionary = helper.getDictionary(dictionary_name);
-
-        if (!WhichDataType(arguments[2].type).isUInt64() && !isTuple(arguments[2].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of third argument of function {}, must be UInt64 or tuple(...).",
-                arguments[2].type->getName(),
-                getName());
-
         auto dictionary_key_type = dictionary->getKeyType();
 
         size_t current_arguments_index = 3;
@@ -446,18 +447,35 @@ public:
         }
         else if (dictionary_key_type == DictionaryKeyType::complex)
         {
-            if (!isTuple(key_col_with_type.type))
-                 throw Exception(
-                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                     "Third argument of function {} must be tuple when dictionary is complex. Actual type {}.",
-                     getName(),
-                     key_col_with_type.type->getName());
-
             /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
-            ColumnPtr key_column_full = key_col_with_type.column->convertToFullColumnIfConst();
+            ColumnPtr key_column = key_col_with_type.column->convertToFullColumnIfConst();
+            DataTypePtr key_column_type = key_col_with_type.type;
 
-            const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_column_full).getColumnsCopy();
-            const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
+            size_t keys_size = dictionary->getStructure().getKeysSize();
+
+            if (!isTuple(key_column_type))
+            {
+                if (keys_size > 1)
+                {
+                    throw Exception(
+                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                         "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
+                         "Actual type {}.",
+                         getName(),
+                         key_col_with_type.type->getName());
+                }
+                else
+                {
+                    Columns tuple_columns = {std::move(key_column)};
+                    key_column = ColumnTuple::create(tuple_columns);
+
+                    DataTypes tuple_types = {key_column_type};
+                    key_column_type = std::make_shared<DataTypeTuple>(tuple_types);
+                }
+            }
+
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
+            const auto & key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
 
             result = executeDictionaryRequest(
                 dictionary,

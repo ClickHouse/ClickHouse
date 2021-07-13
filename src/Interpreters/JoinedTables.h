@@ -22,12 +22,9 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class JoinedTables
 {
 public:
-    JoinedTables(ContextPtr context, const ASTSelectQuery & select_query);
+    JoinedTables(ContextPtr context, const ASTSelectQuery & select_query, bool include_all_columns_ = false);
 
-    void reset(const ASTSelectQuery & select_query)
-    {
-        *this = JoinedTables(Context::createCopy(context), select_query);
-    }
+    void reset(const ASTSelectQuery & select_query);
 
     StoragePtr getLeftTableStorage();
     bool resolveTables();
@@ -37,7 +34,6 @@ public:
     std::shared_ptr<TableJoin> makeTableJoin(const ASTSelectQuery & select_query);
 
     const TablesWithColumns & tablesWithColumns() const { return tables_with_columns; }
-    TablesWithColumns moveTablesWithColumns() { return std::move(tables_with_columns); }
 
     bool isLeftTableSubquery() const;
     bool isLeftTableFunction() const;
@@ -51,6 +47,7 @@ private:
     ContextPtr context;
     std::vector<const ASTTableExpression *> table_expressions;
     TablesWithColumns tables_with_columns;
+    const bool include_all_columns;
 
     /// Legacy (duplicated left table values)
     ASTPtr left_table_expression;
