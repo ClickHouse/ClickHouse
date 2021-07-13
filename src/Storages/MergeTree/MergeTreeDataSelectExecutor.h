@@ -174,6 +174,7 @@ public:
 
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
+    /// If not 'ignore_size_limits' it will throw exception if the amount of data exceed the limits from settings.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
         MergeTreeData::DataPartsVector && parts,
         StorageMetadataPtr metadata_snapshot,
