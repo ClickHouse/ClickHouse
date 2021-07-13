@@ -6,6 +6,7 @@
 #include <openssl/engine.h>
 
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
@@ -50,28 +51,16 @@ public:
 private:
     String ToBigEndianString(DB::UInt128 value) const
     {
-        size_t size = kIVSize;
-        size_t dev = std::pow(2, CHAR_BIT);
-        String result(size, 0);
-
-        for (size_t i = 0; i != size; ++i)
-        {
-            result[size - i - 1] = value % dev;
-            value /= dev;
-        }
-        return result;
+        WriteBufferFromOwnString out;
+        writeBinaryBigEndian(value, out);
+        return std::move(out.str());
     }
 
     DB::UInt128 FromBigEndianString(const String & str) const
     {
-        size_t dev = std::pow(2, CHAR_BIT);
-        DB::UInt128 result = 0;
-
-        for (auto c : str)
-        {
-            result *= dev;
-            result += c % dev;
-        }
+        ReadBufferFromMemory in{str.data(), str.length()};
+        DB::UInt128 result;
+        readBinaryBigEndian(result, in);
         return result;
     }
 
