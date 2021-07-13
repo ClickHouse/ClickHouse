@@ -270,19 +270,17 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
-    for (const auto & action : expr.getActions())
-    {
-        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-            throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
+    if (expr.hasArrayJoin())
+        throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
 
-        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            IFunctionBase & func = *action.node->function_base;
-            if (!func.isDeterministic())
-                throw Exception(key_name + " key cannot contain non-deterministic functions, "
-                    "but contains function " + func.getName(),
-                    ErrorCodes::BAD_ARGUMENTS);
-        }
+    try
+    {
+        expr.assertDeterministic();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("for {} key", key_name));
+        throw;
     }
 
     for (const ColumnWithTypeAndName & element : sample_block)
@@ -418,7 +416,6 @@ void MergeTreeData::checkProperties(
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);
-
 }
 
 void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach)
@@ -1515,6 +1512,7 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     if ((which_old_type.isInt() && !which_new_type.isInt())
         || (which_old_type.isUInt() && !which_new_type.isUInt())
         || (which_old_type.isDate() && !which_new_type.isDate())
+        || (which_old_type.isDate32() && !which_new_type.isDate32())
         || (which_old_type.isDateTime() && !which_new_type.isDateTime())
         || (which_old_type.isFloat() && !which_new_type.isFloat()))
     {
@@ -3335,20 +3333,25 @@ MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_st
     return res;
 }
 
-std::vector<DetachedPartInfo>
-MergeTreeData::getDetachedParts() const
+std::vector<DetachedPartInfo> MergeTreeData::getDetachedParts() const
 {
     std::vector<DetachedPartInfo> res;
 
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
-        for (auto it = disk->iterateDirectory(fs::path(path) / MergeTreeData::DETACHED_DIR_NAME); it->isValid(); it->next())
-        {
-            res.emplace_back();
-            auto & part = res.back();
+        String detached_path = fs::path(path) / MergeTreeData::DETACHED_DIR_NAME;
 
-            DetachedPartInfo::tryParseDetachedPartName(it->name(), part, format_version);
-            part.disk = disk->getName();
+        /// Note: we don't care about TOCTOU issue here.
+        if (disk->exists(detached_path))
+        {
+            for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
+            {
+                res.emplace_back();
+                auto & part = res.back();
+
+                DetachedPartInfo::tryParseDetachedPartName(it->name(), part, format_version);
+                part.disk = disk->getName();
+            }
         }
     }
     return res;
