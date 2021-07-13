@@ -9,6 +9,8 @@
 #include "registerTableFunctions.h"
 
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -83,12 +85,16 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (err)
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database path '{}' is invalid. Error: {}", database_path, err.message());
 
+    String user_files_path = fs::canonical(context->getUserFilesPath());
+    if (!canonical_path.starts_with(user_files_path))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database file path '{}' must be inside 'user_files' directory", database_path);
+
     sqlite3 * tmp_sqlite_db = nullptr;
     int status = sqlite3_open(canonical_path.c_str(), &tmp_sqlite_db);
     if (status != SQLITE_OK)
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Failed to open sqlite database. Status: {}. Message: {}",
-                        status, sqlite3_errstr(status));
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                        "SQLite database file path '{}' must be inside 'user_files' directory: {}",
+                        database_path, user_files_path);
 
     sqlite_db = std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
 }

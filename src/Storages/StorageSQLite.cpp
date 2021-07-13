@@ -161,10 +161,16 @@ void registerStorageSQLite(StorageFactory & factory)
         const auto table_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         std::error_code err;
-        auto canonical_path = fs::canonical(database_path, err);
+        String canonical_path = fs::canonical(database_path, err);
         /// The path existance is also checked here.
         if (err)
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database path '{}' is invalid. Error: {}", database_path, err.message());
+
+        String user_files_path = fs::canonical(args.getContext()->getUserFilesPath());
+        if (!canonical_path.starts_with(user_files_path))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                            "SQLite database file path '{}' must be inside 'user_files' directory: {}",
+                            database_path, user_files_path);
 
         sqlite3 * tmp_sqlite_db = nullptr;
         int status = sqlite3_open(canonical_path.c_str(), &tmp_sqlite_db);
