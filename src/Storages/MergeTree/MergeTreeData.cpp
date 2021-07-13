@@ -1,4 +1,3 @@
-#include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
 #include <Compression/CompressedReadBuffer.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
@@ -27,7 +26,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTPartition.h>
-#include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -128,7 +126,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
-using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
@@ -141,20 +138,20 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
     const auto & sampling_key = metadata.getSamplingKey();
     DataTypePtr sampling_column_type = sampling_key.data_types[0];
 
-    RelativeSize size_of_universum = 0;
+    bool is_correct_sample_condition = false;
     if (sampling_key.data_types.size() == 1)
     {
         if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
+            is_correct_sample_condition = true;
         else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
+            is_correct_sample_condition = true;
         else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
+            is_correct_sample_condition = true;
         else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
+            is_correct_sample_condition = true;
     }
 
-    if (size_of_universum == RelativeSize(0))
+    if (!is_correct_sample_condition)
         throw Exception(
             "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
             + ". Must be one unsigned integer type",
