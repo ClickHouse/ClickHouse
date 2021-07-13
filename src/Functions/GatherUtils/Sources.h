@@ -140,7 +140,7 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
 
 /// The methods can be virtual or not depending on the template parameter. See IStringSource.
-#if !__clang__
+#if !defined(__clang__)
 #   pragma GCC diagnostic push
 #   pragma GCC diagnostic ignored "-Wsuggest-override"
 #elif __clang_major__ >= 11
@@ -233,7 +233,7 @@ struct ConstSource : public Base
     }
 };
 
-#if !__clang__ || __clang_major__ >= 11
+#if !defined(__clang__) || __clang_major__ >= 11
 #   pragma GCC diagnostic pop
 #endif
 
@@ -755,6 +755,7 @@ struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 {
     using Slice = GenericValueSlice;
     using SinkType = GenericArraySink;
+    using Column = IColumn;
 
     const IColumn * column;
     size_t total_rows;

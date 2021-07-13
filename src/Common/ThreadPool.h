@@ -11,8 +11,7 @@
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
-#include <ext/scope_guard.h>
-
+#include <common/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -68,9 +67,14 @@ public:
     /// Returns number of running and scheduled jobs.
     size_t active() const;
 
+    /// Returns true if the pool already terminated
+    /// (and any further scheduling will produce CANNOT_SCHEDULE_TASK exception)
+    bool finished() const;
+
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
+    size_t getMaxThreads() const;
 
 private:
     mutable std::mutex mutex;
@@ -187,7 +191,7 @@ public:
     ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
     {
         if (joinable())
-            std::terminate();
+            abort();
         state = std::move(rhs.state);
         return *this;
     }
@@ -195,13 +199,13 @@ public:
     ~ThreadFromGlobalPool()
     {
         if (joinable())
-            std::terminate();
+            abort();
     }
 
     void join()
     {
         if (!joinable())
-            std::terminate();
+            abort();
 
         state->wait();
         state.reset();
@@ -210,7 +214,7 @@ public:
     void detach()
     {
         if (!joinable())
-            std::terminate();
+            abort();
         state.reset();
     }
 

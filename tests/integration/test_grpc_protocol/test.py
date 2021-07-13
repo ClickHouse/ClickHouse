@@ -1,10 +1,9 @@
 import os
 import pytest
-import subprocess
 import sys
 import time
 import grpc
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, run_and_check
 from threading import Thread
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -15,7 +14,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 proto_dir = os.path.join(SCRIPT_DIR, './protos')
 gen_dir = os.path.join(SCRIPT_DIR, './_gen')
 os.makedirs(gen_dir, exist_ok=True)
-subprocess.check_call(
+run_and_check(
     'python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
     {proto_dir}/clickhouse_grpc.proto'.format(proto_dir=proto_dir, gen_dir=gen_dir), shell=True)
 
@@ -134,7 +133,7 @@ def start_cluster():
 @pytest.fixture(autouse=True)
 def reset_after_test():
     yield
-    query("DROP TABLE IF EXISTS t")
+    node.query_with_retry("DROP TABLE IF EXISTS t")
 
 # Actual tests
 

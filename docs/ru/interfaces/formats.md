@@ -1,6 +1,6 @@
 ---
 toc_priority: 21
-toc_title: "\u0424\u043e\u0440\u043c\u0430\u0442\u044b\u0020\u0432\u0445\u043e\u0434\u043d\u044b\u0445\u0020\u0438\u0020\u0432\u044b\u0445\u043e\u0434\u043d\u044b\u0445\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
+toc_title: "Форматы входных и выходных данных"
 ---
 
 # Форматы входных и выходных данных {#formats}
@@ -24,6 +24,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
 | [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
+| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONString](#jsonstring)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
 | [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
@@ -48,7 +49,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
 | [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
 | [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                 | ✔     | ✗      |
+| [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
 | [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
 | [Native](#native)                                                                       | ✔     | ✔      |
@@ -56,6 +57,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
+| [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 
 Вы можете регулировать некоторые параметры работы с форматами с помощью настроек ClickHouse. За дополнительной информацией обращайтесь к разделу [Настройки](../operations/settings/settings.md).
@@ -487,6 +489,33 @@ ClickHouse поддерживает [NULL](../sql-reference/syntax.md), кото
 
         "rows_before_limit_at_least": 3
 }
+```
+
+## JSONAsString {#jsonasstring}
+
+В этом формате один объект JSON интерпретируется как одно строковое значение. Если входные данные имеют несколько объектов JSON, разделенных запятой, то они будут интерпретироваться как отдельные строки таблицы.
+
+В этом формате парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как `DEFAULT` или `MATERIALIZED`(смотрите раздел [Значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values)), либо отсутствовать. Для дальнейшей обработки объекта JSON, представленного в строке, вы можете использовать [функции для работы с JSON](../sql-reference/functions/json-functions.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+DROP TABLE IF EXISTS json_as_string;
+CREATE TABLE json_as_string (json String) ENGINE = Memory;
+INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_string;
+```
+
+Результат:
+
+``` text
+┌─json──────────────────────────────┐
+│ {"foo":{"bar":{"x":"y"},"baz":1}} │
+│ {}                                │
+│ {"any json stucture":1}           │
+└───────────────────────────────────┘
 ```
 
 ## JSONCompact {#jsoncompact}
@@ -1139,12 +1168,15 @@ SELECT * FROM topic1_stream;
 | `STRING`, `BINARY`            | [String](../sql-reference/data-types/string.md)           | `STRING`                      |
 | —                             | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                      |
 | `DECIMAL`                     | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                     |
+| `LIST`                        | [Array](../sql-reference/data-types/array.md)             | `LIST`                        |
 
-ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
 
-Неподдержанные типы данных Parquet: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
 
-Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных, ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+Неподдерживаемые типы данных Parquet: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
 ### Вставка и выборка данных {#vstavka-i-vyborka-dannykh}
 
@@ -1168,67 +1200,112 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 `Arrow` — это Apache Arrow's "file mode" формат. Он предназначен для произвольного доступа в памяти.
 
+### Соответствие типов данных {#data_types-matching-arrow}
+
+Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
+
+| Тип данных Arrow (`INSERT`) | Тип данных ClickHouse                               | Тип данных Arrow (`SELECT`) |
+|-----------------------------|-----------------------------------------------------|-----------------------------|
+| `UINT8`, `BOOL`             | [UInt8](../sql-reference/data-types/int-uint.md)    | `UINT8`                     |
+| `INT8`                      | [Int8](../sql-reference/data-types/int-uint.md)     | `INT8`                      |
+| `UINT16`                    | [UInt16](../sql-reference/data-types/int-uint.md)   | `UINT16`                    |
+| `INT16`                     | [Int16](../sql-reference/data-types/int-uint.md)    | `INT16`                     |
+| `UINT32`                    | [UInt32](../sql-reference/data-types/int-uint.md)   | `UINT32`                    |
+| `INT32`                     | [Int32](../sql-reference/data-types/int-uint.md)    | `INT32`                     |
+| `UINT64`                    | [UInt64](../sql-reference/data-types/int-uint.md)   | `UINT64`                    |
+| `INT64`                     | [Int64](../sql-reference/data-types/int-uint.md)    | `INT64`                     |
+| `FLOAT`, `HALF_FLOAT`       | [Float32](../sql-reference/data-types/float.md)     | `FLOAT32`                   |
+| `DOUBLE`                    | [Float64](../sql-reference/data-types/float.md)     | `FLOAT64`                   |
+| `DATE32`                    | [Date](../sql-reference/data-types/date.md)         | `UINT16`                    |
+| `DATE64`, `TIMESTAMP`       | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                    |
+| `STRING`, `BINARY`          | [String](../sql-reference/data-types/string.md)     | `UTF8`                      |
+| `STRING`, `BINARY`          | [FixedString](../sql-reference/data-types/fixedstring.md)   | `UTF8`                        |
+| `DECIMAL`                   | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                   |
+| `LIST`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                      |
+
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
+
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных Arrow `DECIMAL` как `Decimal128`.
+
+Неподдерживаемые типы данных Arrow: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Arrow. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+
+### Вставка данных {#inserting-data-arrow}
+
+Чтобы вставить в ClickHouse данные из файла в формате Arrow, используйте команду следующего вида:
+
+``` bash
+$ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
+```
+
+### Вывод данных {#selecting-data-arrow}
+
+Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Arrow, используйте команду следующего вида:
+
+``` bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
+```
+
 ## ArrowStream {#data-format-arrow-stream}
 
 `ArrowStream` — это Apache Arrow's "stream mode" формат. Он предназначен для обработки потоков в памяти.
 
 ## ORC {#data-format-orc}
 
-[Apache ORC](https://orc.apache.org/) - это column-oriented формат данных, распространённый в экосистеме Hadoop. Вы можете только вставлять данные этого формата в ClickHouse.
+[Apache ORC](https://orc.apache.org/) — это столбцовый формат данных, распространенный в экосистеме [Hadoop](https://hadoop.apache.org/).
 
 ### Соответствие типов данных {#sootvetstvie-tipov-dannykh-1}
 
-Таблица показывает поддержанные типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT`.
+Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
 
-| Тип данных ORC (`INSERT`) | Тип данных ClickHouse                               |
-|---------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`           | [UInt8](../sql-reference/data-types/int-uint.md)    |
-| `INT8`                    | [Int8](../sql-reference/data-types/int-uint.md)     |
-| `UINT16`                  | [UInt16](../sql-reference/data-types/int-uint.md)   |
-| `INT16`                   | [Int16](../sql-reference/data-types/int-uint.md)    |
-| `UINT32`                  | [UInt32](../sql-reference/data-types/int-uint.md)   |
-| `INT32`                   | [Int32](../sql-reference/data-types/int-uint.md)    |
-| `UINT64`                  | [UInt64](../sql-reference/data-types/int-uint.md)   |
-| `INT64`                   | [Int64](../sql-reference/data-types/int-uint.md)    |
-| `FLOAT`, `HALF_FLOAT`     | [Float32](../sql-reference/data-types/float.md)     |
-| `DOUBLE`                  | [Float64](../sql-reference/data-types/float.md)     |
-| `DATE32`                  | [Date](../sql-reference/data-types/date.md)         |
-| `DATE64`, `TIMESTAMP`     | [DateTime](../sql-reference/data-types/datetime.md) |
-| `STRING`, `BINARY`        | [String](../sql-reference/data-types/string.md)     |
-| `DECIMAL`                 | [Decimal](../sql-reference/data-types/decimal.md)   |
+| Тип данных ORC (`INSERT`) | Тип данных ClickHouse                               | Тип данных ORC (`SELECT`) |
+|---------------------------|-----------------------------------------------------|---------------------------|
+| `UINT8`, `BOOL`           | [UInt8](../sql-reference/data-types/int-uint.md)    | `UINT8`                   |
+| `INT8`                    | [Int8](../sql-reference/data-types/int-uint.md)     | `INT8`                    |
+| `UINT16`                  | [UInt16](../sql-reference/data-types/int-uint.md)   | `UINT16`                  |
+| `INT16`                   | [Int16](../sql-reference/data-types/int-uint.md)    | `INT16`                   |
+| `UINT32`                  | [UInt32](../sql-reference/data-types/int-uint.md)   | `UINT32`                  |
+| `INT32`                   | [Int32](../sql-reference/data-types/int-uint.md)    | `INT32`                   |
+| `UINT64`                  | [UInt64](../sql-reference/data-types/int-uint.md)   | `UINT64`                  |
+| `INT64`                   | [Int64](../sql-reference/data-types/int-uint.md)    | `INT64`                   |
+| `FLOAT`, `HALF_FLOAT`     | [Float32](../sql-reference/data-types/float.md)     | `FLOAT`                   |
+| `DOUBLE`                  | [Float64](../sql-reference/data-types/float.md)     | `DOUBLE`                  |
+| `DATE32`                  | [Date](../sql-reference/data-types/date.md)         | `DATE32`                  |
+| `DATE64`, `TIMESTAMP`     | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`               |
+| `STRING`, `BINARY`        | [String](../sql-reference/data-types/string.md)     | `BINARY`                  |
+| `DECIMAL`                 | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                 |
+| `LIST`                    | [Array](../sql-reference/data-types/array.md)       | `LIST`                    |
 
-ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
 
-Неподдержанные типы данных ORC: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных ORC `DECIMAL` как `Decimal128`.
 
-Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных, ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
+Неподдерживаемые типы данных ORC: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
 
 ### Вставка данных {#vstavka-dannykh-1}
 
-Данные ORC можно вставить в таблицу ClickHouse командой:
+Чтобы вставить в ClickHouse данные из файла в формате ORC, используйте команду следующего вида:
 
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Для обмена данных с Hadoop можно использовать [движок таблиц HDFS](../engines/table-engines/integrations/hdfs.md).
+### Вывод данных {#vyvod-dannykh-1}
 
-## Схема формата {#formatschema}
+Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата ORC, используйте команду следующего вида:
 
-Имя файла со схемой записывается в настройке `format_schema`. При использовании форматов `Cap'n Proto` и `Protobuf` требуется указать схему.
-Схема представляет собой имя файла и имя типа в этом файле, разделенные двоеточием, например `schemafile.proto:MessageType`.
-Если файл имеет стандартное расширение для данного формата (например `.proto` для `Protobuf`),
-то можно его не указывать и записывать схему так `schemafile:MessageType`.
+``` bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
+```
 
-Если для ввода/вывода данных используется [клиент](../interfaces/cli.md) в [интерактивном режиме](../interfaces/cli.md#cli_usage), то при записи схемы можно использовать абсолютный путь или записывать путь
-относительно текущей директории на клиенте. Если клиент используется в [batch режиме](../interfaces/cli.md#cli_usage), то в записи схемы допускается только относительный путь, из соображений безопасности.
-
-Если для ввода/вывода данных используется [HTTP-интерфейс](../interfaces/http.md), то файл со схемой должен располагаться на сервере в каталоге,
-указанном в параметре [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path) конфигурации сервера.
+Для обмена данных с экосистемой Hadoop вы можете использовать [движок таблиц HDFS](../engines/table-engines/integrations/hdfs.md).
 
 ## LineAsString {#lineasstring}
 
- В этом формате последовательность строковых объектов, разделенных символом новой строки, интерпретируется как одно значение. Парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](../sql-reference/statements/create/table.md#create-default-values) или [MATERIALIZED](../sql-reference/statements/create/table.md#create-default-values), либо отсутствовать.
+ В этом формате каждая строка импортируемых данных интерпретируется как одно строковое значение. Парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](../sql-reference/statements/create/table.md#create-default-values) или [MATERIALIZED](../sql-reference/statements/create/table.md#create-default-values), либо отсутствовать.
 
 **Пример**
 
@@ -1248,6 +1325,89 @@ SELECT * FROM line_as_string;
 │ "I love apple", "I love banana", "I love orange"; │
 └───────────────────────────────────────────────────┘
 ```
+
+## Regexp {#data-format-regexp}
+
+Каждая строка импортируемых данных разбирается в соответствии с регулярным выражением.
+
+При работе с форматом `Regexp` можно использовать следующие параметры:
+
+- `format_regexp` — [String](../sql-reference/data-types/string.md). Строка с регулярным выражением в формате [re2](https://github.com/google/re2/wiki/Syntax).
+- `format_regexp_escaping_rule` — [String](../sql-reference/data-types/string.md). Правило сериализации. Поддерживаются следующие правила:
+    - CSV (как в [CSV](#csv))
+    - JSON (как в [JSONEachRow](#jsoneachrow))
+    - Escaped (как в [TSV](#tabseparated))
+    - Quoted (как в [Values](#data-format-values))
+    - Raw (данные импортируются как есть, без сериализации)
+- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Признак, будет ли генерироваться исключение в случае, если импортируемые данные не соответствуют регулярному выражению `format_regexp`. Может принимать значение `0` или `1`.
+
+**Использование**
+
+Регулярное выражение (шаблон) из параметра `format_regexp` применяется к каждой строке импортируемых данных. Количество частей в шаблоне (подшаблонов) должно соответствовать количеству колонок в импортируемых данных.
+
+Строки импортируемых данных должны разделяться символом новой строки `'\n'` или символами `"\r\n"` (перенос строки в формате DOS).
+
+Данные, выделенные по подшаблонам, интерпретируются в соответствии с типом, указанным в параметре `format_regexp_escaping_rule`.
+
+Если строка импортируемых данных не соответствует регулярному выражению и параметр `format_regexp_skip_unmatched` равен 1, строка просто игнорируется. Если же параметр `format_regexp_skip_unmatched` равен 0, генерируется исключение.
+
+**Пример**
+
+Рассмотрим файл data.tsv:
+
+```text
+id: 1 array: [1,2,3] string: str1 date: 2020-01-01
+id: 2 array: [1,2,3] string: str2 date: 2020-01-02
+id: 3 array: [1,2,3] string: str3 date: 2020-01-03
+```
+и таблицу:
+
+```sql
+CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, date Date) ENGINE = Memory;
+```
+
+Команда импорта:
+
+```bash
+$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table FORMAT Regexp SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0;"
+```
+
+Запрос:
+
+```sql
+SELECT * FROM imp_regex_table;
+```
+
+Результат:
+
+```text
+┌─id─┬─array───┬─string─┬───────date─┐
+│  1 │ [1,2,3] │ str1   │ 2020-01-01 │
+│  2 │ [1,2,3] │ str2   │ 2020-01-02 │
+│  3 │ [1,2,3] │ str3   │ 2020-01-03 │
+└────┴─────────┴────────┴────────────┘
+```
+
+## Схема формата {#formatschema}
+
+Имя файла со схемой записывается в настройке `format_schema`. При использовании форматов `Cap'n Proto` и `Protobuf` требуется указать схему.
+Схема представляет собой имя файла и имя типа в этом файле, разделенные двоеточием, например `schemafile.proto:MessageType`.
+Если файл имеет стандартное расширение для данного формата (например `.proto` для `Protobuf`),
+то можно его не указывать и записывать схему так `schemafile:MessageType`.
+
+Если для ввода/вывода данных используется [клиент](../interfaces/cli.md) в [интерактивном режиме](../interfaces/cli.md#cli_usage), то при записи схемы можно использовать абсолютный путь или записывать путь
+относительно текущей директории на клиенте. Если клиент используется в [batch режиме](../interfaces/cli.md#cli_usage), то в записи схемы допускается только относительный путь, из соображений безопасности.
+
+Если для ввода/вывода данных используется [HTTP-интерфейс](../interfaces/http.md), то файл со схемой должен располагаться на сервере в каталоге,
+указанном в параметре [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path) конфигурации сервера.
+
+## Игнорирование ошибок {#skippingerrors}
+
+Некоторые форматы, такие как `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` и `Protobuf`, могут игнорировать строки, которые не соответствуют правилам и  разбор которых может вызвать ошибку. При этом обработка импортируемых данных продолжается со следующей строки. См. настройки [input_format_allow_errors_num](../operations/settings/settings.md#input-format-allow-errors-num) и
+[input_format_allow_errors_ratio](../operations/settings/settings.md#input-format-allow-errors-ratio).
+Ограничения:
+- В формате `JSONEachRow` в случае ошибки игнорируются все данные до конца текущей строки (или до конца файла). Поэтому строки должны быть разделены символом `\n`, чтобы ошибки обрабатывались корректно.
+- Форматы `Template` и `CustomSeparated` используют разделитель после последней колонки и разделитель между строками. Поэтому игнорирование ошибок работает только если хотя бы одна из строк не пустая.
 
 ## RawBLOB {#rawblob}
 
@@ -1289,5 +1449,3 @@ $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 ``` text
 f9725a22f9191e064120d718e26862a9  -
 ```
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/formats/) <!--hide-->

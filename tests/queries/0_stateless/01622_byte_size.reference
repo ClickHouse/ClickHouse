@@ -1,0 +1,66 @@
+
+# byteSize
+
+byteSize for numbers #0
+1	UInt8	1	UInt16	2	UInt32	4	UInt64	8	UInt256	32
+2	UInt8	1	UInt16	2	UInt32	4	UInt64	8	UInt256	32
+1	Int8	1	Int16	2	Int32	4	Int64	8	Int128	16	UInt256	32
+2	Int8	1	Int16	2	Int32	4	Int64	8	Int128	16	UInt256	32
+1	Float32	4	Float64	8
+2	Float32	4	Float64	8
+
+byteSize for numbers #1
+1	97	Date	2	DateTime	4	DateTime64(3)	8	UUID	16
+2	97	Date	2	DateTime	4	DateTime64(3)	8	UUID	16
+
+byteSize for constants
+1	1	256	2	65536	4	4294967296	8	0.5	8	1e-10	8
+2020-01-01	2	2020-01-01 01:02:03	4	2020-01-01 01:02:03.000	8
+UUID	16
+
+byteSize for strings
+1	39		9	a	10	\0\0\0\0\0\0\0\0	8	abcde\0\0\0	8
+2	43	abced	14		9	abcde\0\0\0	8	\0\0\0\0\0\0\0\0	8
+constants: 		9	a	10	abcde	14
+
+byteSize for simple array
+1	60	[]	8	[]	8	[]	8	[]	8	[]	8	[]	8	[]	8
+2	92	[1]	9	[-1]	9	[256]	12	[1.1]	12	[1.1000]	12	['2020-01-01']	10	['61f0c404-5cb3-11e7-907b-a6006ad3dba0']	24
+3	124	[1,1]	10	[-1,-1]	10	[256,256]	16	[1.1,1.1]	16	[1.1000,1.1000]	16	['2020-01-01','2020-01-01']	12	['61f0c404-5cb3-11e7-907b-a6006ad3dba0','61f0c404-5cb3-11e7-907b-a6006ad3dba0']	40
+4	156	[1,1,1]	11	[-1,-1,-1]	11	[256,256,256]	20	[1.1,1.1,1.1]	20	[1.1000,1.1000,1.1000]	20	['2020-01-01','2020-01-01','2020-01-01']	14	['61f0c404-5cb3-11e7-907b-a6006ad3dba0','61f0c404-5cb3-11e7-907b-a6006ad3dba0','61f0c404-5cb3-11e7-907b-a6006ad3dba0']	56
+constants:	[]	8	[1,1]	10	[-1,-1]	10	Array(UInt16)	12	Array(Float64)	24
+constants:	[1.1000,1.1000]	16	['2020-01-01','2020-01-01']	12
+constants:	['61f0c404-5cb3-11e7-907b-a6006ad3dba0','61f0c404-5cb3-11e7-907b-a6006ad3dba0']	40
+
+byteSize for int array of arrays
+1	52	[]	8	[[]]	16
+2	102	[1,2]	16	[[],[1,2]]	32
+3	155	[0,256]	16	[[],[1,2],[0,256]]	48
+4	226	[256,65536]	16	[[],[1,2],[0,256],[256,65536]]	64
+constants:	[[],[1,2],[0,65536]]	Array(Array(UInt32))	48
+
+byteSize for string array of arrays
+1	52	[]	8	[[]]	16
+2	102	['']	17	[[],['']]	33
+3	155	['','a']	27	[[],[''],['','a']]	60
+4	226	['','a','abced']	41	[[],[''],['','a'],['','a','abced']]	101
+constants:	[[],[''],['','a']]	60
+
+byteSize for others: Nullable, Tuple, LowCardinality
+1	42	\N	5	\N	10	(1,NULL)	14		9
+2	45	1	5	a	11	(1,'a')	15	a	10
+3	57	256	5	abcde	15	(256,'abcde')	19	abcde	14
+constants:	\N	1	(65536,NULL)	5	(65536,'a')	15
+constants:	abced	LowCardinality(String)	14
+
+byteSize for complex fields
+1	12	[]	8
+2	25	[(NULL,[])]	21
+3	25	[('a\0\0\0',[])]	21
+4	45	[('a\0\0\0',[(NULL,'a')])]	41
+5	65	[('a\0\0\0',[(NULL,'a'),(NULL,'a')])]	61
+6	124	[(NULL,[]),('a\0\0\0',[]),('a\0\0\0',[(NULL,'a')]),('a\0\0\0',[(NULL,'a'),(NULL,'a')])]	120
+constants:	(NULL,[])	9	('a\0\0\0',[])	13	('a\0\0\0',[(NULL,'a')])	24	('a\0\0\0',[(NULL,'a'),(NULL,'a')])	35
+constants:	[(NULL,[]),('a\0\0\0',[]),('a\0\0\0',[(NULL,'a')]),('a\0\0\0',[(NULL,'a'),(NULL,'a')])]
+constants:	Array(Tuple(Nullable(FixedString(4)), Array(Tuple(Nullable(Nothing), String))))
+constants:	93

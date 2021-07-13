@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/EnabledQuota.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <memory>
 #include <mutex>
 #include <map>
@@ -60,7 +60,7 @@ private:
     mutable std::mutex mutex;
     std::unordered_map<UUID /* quota id */, QuotaInfo> all_quotas;
     bool all_quotas_read = false;
-    ext::scope_guard subscription;
+    scope_guard subscription;
     std::map<EnabledQuota::Params, std::weak_ptr<EnabledQuota>> enabled_quotas;
 };
 }

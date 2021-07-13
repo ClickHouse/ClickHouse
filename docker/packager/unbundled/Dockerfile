@@ -21,6 +21,8 @@ RUN apt-get update \
         libboost-thread-dev \
         libboost-iostreams-dev \
         libboost-regex-dev \
+        libboost-context-dev \
+        libboost-coroutine-dev \
         zlib1g-dev \
         liblz4-dev \
         libdouble-conversion-dev \
@@ -33,9 +35,6 @@ RUN apt-get update \
         libjemalloc-dev \
         libmsgpack-dev \
         libcurl4-openssl-dev \
-        opencl-headers \
-        ocl-icd-libopencl1 \
-        intel-opencl-icd \
         unixodbc-dev \
         odbcinst \
         tzdata \

@@ -1,6 +1,7 @@
 #include <Core/Settings.h>
 
 #include <Interpreters/TreeOptimizer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
@@ -10,9 +11,11 @@
 #include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
+#include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
@@ -26,8 +29,9 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/IStorage.h>
 
+#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 
 namespace DB
 {
@@ -79,7 +83,7 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & so
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
-void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
+void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, ContextPtr context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
@@ -133,8 +137,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                 const auto & dict_name = dict_name_ast->value.safeGet<String>();
                 const auto & attr_name = attr_name_ast->value.safeGet<String>();
 
-                String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dict_name);
-                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(resolved_name);
+                const auto & dict_ptr = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;
@@ -269,7 +272,7 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
 }
 
 /// Optimize duplicate ORDER BY
-void optimizeDuplicateOrderBy(ASTPtr & query, const Context & context)
+void optimizeDuplicateOrderBy(ASTPtr & query, ContextPtr context)
 {
     DuplicateOrderByVisitor::Data order_by_data{context};
     DuplicateOrderByVisitor(order_by_data).visit(query);
@@ -395,7 +398,7 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
 
 /// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
 /// has a single argument and not an aggregate functions.
-void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const Context & context,
+void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
                                           const TablesWithColumns & tables_with_columns,
                                           const Names & sorting_key_columns)
 {
@@ -447,7 +450,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
 /// Optimize ORDER BY x, y, f(x), g(x, y), f(h(x)), t(f(x), g(x)) into ORDER BY x, y
 /// in case if f(), g(), h(), t() are deterministic (in scope of query).
 /// Don't optimize ORDER BY f(x), g(x), x even if f(x) is bijection for x or g(x).
-void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, const Context & context)
+void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, ContextPtr context)
 {
     const auto & order_by = select_query->orderBy();
     if (!order_by)
@@ -548,9 +551,21 @@ void optimizeAnyFunctions(ASTPtr & query)
     RewriteAnyFunctionVisitor(data).visit(query);
 }
 
-void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & context)
+void optimizeSumIfFunctions(ASTPtr & query)
 {
-    RemoveInjectiveFunctionsVisitor::Data data = {context};
+    RewriteSumIfFunctionVisitor::Data data = {};
+    RewriteSumIfFunctionVisitor(data).visit(query);
+}
+
+void optimizeCountConstantAndSumOne(ASTPtr & query)
+{
+    RewriteCountVariantsVisitor::visit(query);
+}
+
+
+void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
+{
+    RemoveInjectiveFunctionsVisitor::Data data(context);
     RemoveInjectiveFunctionsVisitor(data).visit(query);
 }
 
@@ -566,6 +581,12 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
+void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & metadata_snapshot)
+{
+    RewriteFunctionToSubcolumnVisitor::Data data{metadata_snapshot};
+    RewriteFunctionToSubcolumnVisitor(data).visit(query);
+}
+
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -577,28 +598,30 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
         OptimizeIfChainsVisitor().visit(query);
 }
 
-void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set,
-                          const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-                          const Context & context, const StorageMetadataPtr & metadata_snapshot,
-                          bool & rewrite_subqueries)
+void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
+                          const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns, ContextPtr context)
 {
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    optimizeIf(query, aliases, settings.optimize_if_chain_to_multiif);
+    if (settings.optimize_functions_to_subcolumns && result.storage
+        && result.storage->supportsSubcolumns() && result.metadata_snapshot)
+        optimizeFunctionsToSubcolumns(query, result.metadata_snapshot);
+
+    optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
 
     /// Push the predicate expression down to the subqueries.
-    rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
+    result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
 
     /// GROUP BY injective function elimination.
-    optimizeGroupBy(select_query, source_columns_set, context);
+    optimizeGroupBy(select_query, result.source_columns_set, context);
 
     /// GROUP BY functions of other keys elimination.
     if (settings.optimize_group_by_function_keys)
@@ -607,6 +630,12 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     /// Move all operations out of any function
     if (settings.optimize_move_functions_out_of_any)
         optimizeAnyFunctions(query);
+
+    if (settings.optimize_normalize_count_variants)
+        optimizeCountConstantAndSumOne(query);
+
+    if (settings.optimize_rewrite_sum_if_to_count_if)
+        optimizeSumIfFunctions(query);
 
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)
@@ -639,7 +668,7 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     /// Replace monotonous functions with its argument
     if (settings.optimize_monotonous_functions_in_order_by)
         optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns,
-            metadata_snapshot ? metadata_snapshot->getSortingKeyColumns() : Names{});
+            result.metadata_snapshot ? result.metadata_snapshot->getSortingKeyColumns() : Names{});
 
     /// Remove duplicate items from ORDER BY.
     /// Execute it after all order by optimizations,

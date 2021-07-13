@@ -36,10 +36,10 @@ ClickHouse Playground дает возможность поработать с  [
 - запрещены INSERT запросы
 
 Также установлены следующие опции:
-- [max_result_bytes=10485760](../operations/settings/query_complexity/#max-result-bytes)
-- [max_result_rows=2000](../operations/settings/query_complexity/#setting-max_result_rows)
-- [result_overflow_mode=break](../operations/settings/query_complexity/#result-overflow-mode)
-- [max_execution_time=60000](../operations/settings/query_complexity/#max-execution-time)
+- [max_result_bytes=10485760](../operations/settings/query-complexity.md#max-result-bytes)
+- [max_result_rows=2000](../operations/settings/query-complexity.md#setting-max_result_rows)
+- [result_overflow_mode=break](../operations/settings/query-complexity.md#result-overflow-mode)
+- [max_execution_time=60000](../operations/settings/query-complexity.md#max-execution-time)
 
 ## Примеры {#examples}
 
@@ -61,4 +61,4 @@ clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground
 Бэкэнд Playground - это кластер ClickHouse без дополнительных серверных приложений. Как упоминалось выше,  способы подключения по HTTPS и TCP/TLS общедоступны как часть Playground. Они проксируются через [Cloudflare Spectrum](https://www.cloudflare.com/products/cloudflare-spectrum/) для добавления дополнительного уровня защиты и улучшенного глобального подключения.
 
 !!! warning "Предупреждение"
-Открывать сервер ClickHouse для публичного доступа  в любой другой ситуации **настоятельно не рекомендуется**. Убедитесь, что он настроен только на частную сеть и защищен брандмауэром.
+    Открывать сервер ClickHouse для публичного доступа  в любой другой ситуации **настоятельно не рекомендуется**. Убедитесь, что он настроен только на частную сеть и защищен брандмауэром.

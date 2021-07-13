@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 ADDINCL(
-    contrib/libs/zstd
+    contrib/libs/zstd/include
     contrib/restricted/fast_float
 )
 
@@ -26,14 +26,17 @@ SRCS(
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
     DoubleConverter.cpp
+    HTTPChunkedReadBuffer.cpp
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
-    HexWriteBuffer.cpp
     LZMADeflatingWriteBuffer.cpp
     LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
+    MMapReadBufferFromFileWithCache.cpp
+    MMappedFile.cpp
+    MMappedFileDescriptor.cpp
     MemoryReadWriteBuffer.cpp
     MySQLBinlogEventReadBuffer.cpp
     MySQLPacketPayloadReadBuffer.cpp
@@ -41,23 +44,23 @@ SRCS(
     NullWriteBuffer.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
-    ReadBufferAIO.cpp
     ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
+    ReadBufferFromFileDecorator.cpp
     ReadBufferFromFileDescriptor.cpp
     ReadBufferFromIStream.cpp
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
     SeekAvoidingReadBuffer.cpp
+    TimeoutSetter.cpp
     UseSSL.cpp
-    WriteBufferAIO.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
+    WriteBufferFromFileDecorator.cpp
     WriteBufferFromFileDescriptor.cpp
     WriteBufferFromFileDescriptorDiscardOnFailure.cpp
     WriteBufferFromHTTP.cpp
-    WriteBufferFromHTTPServerResponse.cpp
     WriteBufferFromOStream.cpp
     WriteBufferFromPocoSocket.cpp
     WriteBufferFromTemporaryFile.cpp
@@ -69,7 +72,6 @@ SRCS(
     ZstdInflatingReadBuffer.cpp
     copyData.cpp
     createReadBufferFromFileBase.cpp
-    createWriteBufferFromFileBase.cpp
     parseDateTimeBestEffort.cpp
     readFloatText.cpp
 

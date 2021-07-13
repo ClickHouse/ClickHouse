@@ -29,7 +29,7 @@ class FunctionH3ToString : public IFunction
 public:
     static constexpr auto name = "h3ToString";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3ToString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToString>(); }
 
     std::string getName() const override { return name; }
 
@@ -66,7 +66,7 @@ public:
         {
             const UInt64 hindex = col_hindex->getUInt(i);
 
-            if (!h3IsValid(hindex))
+            if (!isValidCell(hindex))
             {
                 throw Exception("Invalid H3 index: " + std::to_string(hindex), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }

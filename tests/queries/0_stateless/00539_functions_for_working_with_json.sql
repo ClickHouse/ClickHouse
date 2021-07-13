@@ -15,3 +15,11 @@ SELECT visitParamExtractRaw('{"myparam": "{"}', 'myparam');
 SELECT visitParamExtractRaw('{"myparam": "["}', 'myparam');
 SELECT visitParamExtractRaw('{"myparam": ["]", "2", "3"], "other":123}', 'myparam');
 SELECT visitParamExtractRaw('{"myparam": {"nested" : [1,2,3]}, "other":123}', 'myparam');
+
+SELECT simpleJSONExtractInt('{"myparam":-1}', 'myparam');
+SELECT simpleJSONExtractUInt('{"myparam":-1}', 'myparam');
+SELECT simpleJSONExtractFloat('{"myparam":null}', 'myparam');
+SELECT simpleJSONExtractFloat('{"myparam":-1}', 'myparam');
+SELECT simpleJSONExtractBool('{"myparam":true}', 'myparam');
+SELECT simpleJSONExtractString('{"myparam":"test_string"}', 'myparam');
+SELECT simpleJSONExtractString('{"myparam":"test\\"string"}', 'myparam');

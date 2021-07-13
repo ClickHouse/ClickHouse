@@ -3,6 +3,7 @@
 # This is a monkey test used to trigger sanitizers.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="CREATE DATABASE IF NOT EXISTS dictdb_01076; "

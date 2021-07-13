@@ -18,7 +18,8 @@ def public_tables(self, node=None):
         node = self.context.node
 
     with user(node, f"{user_name}"):
-        with Then("I check the user is able to select on system.one"):
+
+        with When("I check the user is able to select on system.one"):
             node.query("SELECT count(*) FROM system.one", settings = [("user",user_name)])
 
         with And("I check the user is able to select on system.numbers"):
@@ -32,10 +33,10 @@ def public_tables(self, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Table_QueryLog("1.0"),
+    RQ_SRS_006_RBAC_Table_SensitiveTables("1.0"),
 )
-def query_log(self, node=None):
-    """Check that a user with no privilege is only able to see their own queries.
+def sensitive_tables(self, node=None):
+    """Check that a user with no privilege is not able to see from these tables.
     """
     user_name = f"user_{getuid()}"
     if node is None:
@@ -45,8 +46,48 @@ def query_log(self, node=None):
         with Given("I create a query"):
             node.query("SELECT 1")
 
-        with Then("The user reads system.query_log"):
-            output = node.query("SELECT count() FROM system.query_log", settings = [("user",user_name)]).output
+        with When("I select from processes"):
+            output = node.query("SELECT count(*) FROM system.processes", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
+        with And("I select from query_log"):
+            output = node.query("SELECT count(*) FROM system.query_log", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
+        with And("I select from query_thread_log"):
+            output = node.query("SELECT count(*) FROM system.query_thread_log", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
+        with And("I select from clusters"):
+            output = node.query("SELECT count(*) FROM system.clusters", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
+        with And("I select from events"):
+            output = node.query("SELECT count(*) FROM system.events", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
+        with And("I select from graphite_retentions"):
+            output = node.query("SELECT count(*) FROM system.graphite_retentions", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
+        with And("I select from stack_trace"):
+            output = node.query("SELECT count(*) FROM system.stack_trace", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
+        with And("I select from trace_log"):
+            output = node.query("SELECT count(*) FROM system.trace_log", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
+        with And("I select from user_directories"):
+            output = node.query("SELECT count(*) FROM system.user_directories", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
+        with And("I select from zookeeper"):
+            output = node.query("SELECT count(*) FROM system.zookeeper WHERE path = '/clickhouse' ", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
+        with And("I select from macros"):
+            output = node.query("SELECT count(*) FROM system.macros", settings = [("user",user_name)]).output
             assert output == 0, error()
 
 @TestFeature
@@ -54,5 +95,5 @@ def query_log(self, node=None):
 def feature(self, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
-    Scenario(run=public_tables, setup=instrument_clickhouse_server_log, flags=TE)
-    Scenario(run=query_log, setup=instrument_clickhouse_server_log, flags=TE)
+    Scenario(run=public_tables, setup=instrument_clickhouse_server_log)
+    Scenario(run=sensitive_tables, setup=instrument_clickhouse_server_log)

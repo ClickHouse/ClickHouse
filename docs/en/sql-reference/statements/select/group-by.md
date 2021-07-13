@@ -208,7 +208,7 @@ This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` forma
 
 ### Configuring Totals Processing {#configuring-totals-processing}
 
-By default, `totals_mode = 'before_having'`. In this case, ‘totals’ is calculated across all rows, including the ones that don’t pass through HAVING and `max_rows_to_group_by`.
+By default, `totals_mode = 'before_having'`. In this case, ‘totals’ is calculated across all rows, including the ones that do not pass through HAVING and `max_rows_to_group_by`.
 
 The other alternatives include only the rows that pass through HAVING in ‘totals’, and behave differently with the setting `max_rows_to_group_by` and `group_by_overflow_mode = 'any'`.
 
@@ -255,6 +255,10 @@ For every different key value encountered, `GROUP BY` calculates a set of aggreg
 
 Aggregation is one of the most important features of a column-oriented DBMS, and thus it’s implementation is one of the most heavily optimized parts of ClickHouse. By default, aggregation is done in memory using a hash-table. It has 40+ specializations that are chosen automatically depending on “grouping key” data types.
 
+### GROUP BY Optimization Depending on Table Sorting Key {#aggregation-in-order}
+
+The aggregation can be performed more effectively, if a table is sorted by some key, and `GROUP BY` expression contains at least prefix of sorting key or injective functions. In this case when a new key is read from table, the in-between result of aggregation can be finalized and sent to client. This behaviour is switched on by the [optimize_aggregation_in_order](../../../operations/settings/settings.md#optimize_aggregation_in_order) setting. Such optimization reduces memory usage during aggregation, but in some cases may slow down the query execution. 
+
 ### GROUP BY in External Memory {#select-group-by-in-external-memory}
 
 You can enable dumping temporary data to the disk to restrict memory usage during `GROUP BY`.
@@ -270,4 +274,4 @@ When merging data flushed to the disk, as well as when merging results from remo
 
 When external aggregation is enabled, if there was less than `max_bytes_before_external_group_by` of data (i.e. data was not flushed), the query runs just as fast as without external aggregation. If any temporary data was flushed, the run time will be several times longer (approximately three times).
 
-If you have an [ORDER BY](../../../sql-reference/statements/select/order-by.md) with a [LIMIT](../../../sql-reference/statements/select/limit.md) after `GROUP BY`, then the amount of used RAM depends on the amount of data in `LIMIT`, not in the whole table. But if the `ORDER BY` doesn’t have `LIMIT`, don’t forget to enable external sorting (`max_bytes_before_external_sort`).
+If you have an [ORDER BY](../../../sql-reference/statements/select/order-by.md) with a [LIMIT](../../../sql-reference/statements/select/limit.md) after `GROUP BY`, then the amount of used RAM depends on the amount of data in `LIMIT`, not in the whole table. But if the `ORDER BY` does not have `LIMIT`, do not forget to enable external sorting (`max_bytes_before_external_sort`).

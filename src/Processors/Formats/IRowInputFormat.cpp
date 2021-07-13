@@ -39,6 +39,16 @@ bool isParseError(int code)
         || code == ErrorCodes::INCORRECT_DATA;             /// For some ReadHelpers
 }
 
+IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
+    : IInputFormat(std::move(header), in_), params(params_)
+{
+    const auto & port_header = getPort().getHeader();
+    size_t num_columns = port_header.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = port_header.getByPosition(i).type->getDefaultSerialization();
+}
+
 
 Chunk IRowInputFormat::generate()
 {
@@ -132,6 +142,26 @@ Chunk IRowInputFormat::generate()
             }
         }
     }
+    catch (ParsingException & e)
+    {
+        String verbose_diagnostic;
+        try
+        {
+            verbose_diagnostic = getDiagnosticInfo();
+        }
+        catch (const Exception & exception)
+        {
+            verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
+        }
+        catch (...)
+        {
+            /// Error while trying to obtain verbose diagnostic. Ok to ignore.
+        }
+
+        e.setLineNumber(total_rows);
+        e.addMessage(verbose_diagnostic);
+        throw;
+    }
     catch (Exception & e)
     {
         if (!isParseError(e.code()))
@@ -160,7 +190,7 @@ Chunk IRowInputFormat::generate()
         if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
             Poco::Logger * log = &Poco::Logger::get("IRowInputFormat");
-            LOG_TRACE(log, "Skipped {} rows with errors while reading the input stream", num_errors);
+            LOG_DEBUG(log, "Skipped {} rows with errors while reading the input stream", num_errors);
         }
 
         readSuffix();

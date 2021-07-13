@@ -53,7 +53,7 @@ IAST::Hash IAST::getTreeHash() const
     SipHash hash_state;
     updateTreeHash(hash_state);
     IAST::Hash res;
-    hash_state.get128(res.first, res.second);
+    hash_state.get128(res);
     return res;
 }
 
@@ -109,6 +109,22 @@ String IAST::getColumnName() const
 }
 
 
+String IAST::getColumnName(const Settings & settings) const
+{
+    WriteBufferFromOwnString write_buffer;
+    appendColumnName(write_buffer, settings);
+    return write_buffer.str();
+}
+
+
+String IAST::getColumnNameWithoutAlias() const
+{
+    WriteBufferFromOwnString write_buffer;
+    appendColumnNameWithoutAlias(write_buffer);
+    return write_buffer.str();
+}
+
+
 void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
     switch (identifier_quoting_style)
@@ -159,6 +175,13 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
         if (!child) throw Exception("Can't dump nullptr child", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
         child->dumpTree(ostr, indent + 1);
     }
+}
+
+std::string IAST::dumpTree(size_t indent) const
+{
+    WriteBufferFromOwnString wb;
+    dumpTree(wb, indent);
+    return wb.str();
 }
 
 }

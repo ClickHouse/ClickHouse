@@ -43,9 +43,9 @@ void TabSeparatedRowOutputFormat::doWritePrefix()
 }
 
 
-void TabSeparatedRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void TabSeparatedRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    type.serializeAsTextEscaped(column, row_num, out, format_settings);
+    serialization.serializeTextEscaped(column, row_num, out, format_settings);
 }
 
 
@@ -85,6 +85,7 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         {
             return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, false, false, params, settings);
         });
+        factory.markOutputFormatSupportsParallelFormatting(name);
     }
 
     for (const auto * name : {"TabSeparatedRaw", "TSVRaw"})
@@ -97,6 +98,7 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         {
             return std::make_shared<TabSeparatedRawRowOutputFormat>(buf, sample, false, false, params, settings);
         });
+        factory.markOutputFormatSupportsParallelFormatting(name);
     }
 
     for (const auto * name : {"TabSeparatedWithNames", "TSVWithNames"})
@@ -109,6 +111,7 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         {
             return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, true, false, params, settings);
         });
+        factory.markOutputFormatSupportsParallelFormatting(name);
     }
 
     for (const auto * name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
@@ -121,6 +124,7 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         {
             return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, true, true, params, settings);
         });
+        factory.markOutputFormatSupportsParallelFormatting(name);
     }
 }
 

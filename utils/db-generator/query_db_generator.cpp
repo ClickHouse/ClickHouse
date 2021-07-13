@@ -17,9 +17,11 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/program_options.hpp>
+
 
 namespace po = boost::program_options;
 
@@ -56,9 +58,9 @@ std::string randomDate()
     int32_t year = rng() % 136 + 1970;
     int32_t month = rng() % 12 + 1;
     int32_t day = rng() % 12 + 1;
-    char ans[13];
-    sprintf(ans, "'%04u-%02u-%02u'", year, month, day);
-    return std::string(ans);
+    char answer[13];
+    sprintf(answer, "'%04u-%02u-%02u'", year, month, day);
+    return std::string(answer);
 }
 
 std::string randomDatetime()
@@ -69,9 +71,9 @@ std::string randomDatetime()
     int32_t hours = rng() % 24;
     int32_t minutes = rng() % 60;
     int32_t seconds = rng() % 60;
-    char ans[22];
+    char answer[22];
     sprintf(
-            ans,
+            answer,
             "'%04u-%02u-%02u %02u:%02u:%02u'",
             year,
             month,
@@ -79,7 +81,7 @@ std::string randomDatetime()
             hours,
             minutes,
             seconds);
-    return std::string(ans);
+    return std::string(answer);
 }
 TableAndColumn get_table_a_column(const std::string & c)
 {

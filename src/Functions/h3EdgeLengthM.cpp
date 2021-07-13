@@ -10,7 +10,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -37,7 +37,7 @@ class FunctionH3EdgeLengthM : public IFunction
 public:
     static constexpr auto name = "h3EdgeLengthM";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3EdgeLengthM>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3EdgeLengthM>(); }
 
     std::string getName() const override { return name; }
 
@@ -63,14 +63,14 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 resolution = col_hindex->getUInt(row);
             if (resolution > MAX_H3_RES)
                 throw Exception("The argument 'resolution' (" + toString(resolution) + ") of function " + getName()
                     + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-            Float64 res = edgeLengthM(resolution);
+            Float64 res = getHexagonEdgeLengthAvgM(resolution);
 
             dst_data[row] = res;
         }

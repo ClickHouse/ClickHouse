@@ -9,7 +9,7 @@ namespace DB
 /// Parse query or set 'out_error_message'.
 ASTPtr tryParseQuery(
     IParser & parser,
-    const char * & pos,                /// Moved to end of parsed fragment.
+    const char * & _out_query_end, // query start as input parameter, query end as output
     const char * end,
     std::string & out_error_message,
     bool hilite,

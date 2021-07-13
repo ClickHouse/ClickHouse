@@ -1,8 +1,9 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Common/NaNUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -37,7 +38,7 @@ class FunctionFormatReadableTimeDelta : public IFunction
 {
 public:
     static constexpr auto name = "formatReadableTimeDelta";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
 
     String getName() const override { return name; }
 
@@ -134,24 +135,32 @@ public:
             /// Virtual call is Ok (negligible comparing to the rest of calculations).
             Float64 value = arguments[0].column->getFloat64(i);
 
-            bool is_negative = value < 0;
-            if (is_negative)
+            if (!isFinite(value))
             {
-                writeChar('-', buf_to);
-                value = -value;
+                /// Cannot decide what unit it is (years, month), just simply write inf or nan.
+                writeFloatText(value, buf_to);
             }
-
-            /// To output separators between parts: ", " and " and ".
-            bool has_output = false;
-
-            switch (max_unit) /// A kind of Duff Device.
+            else
             {
-                case Years:     processUnit(365 * 24 * 3600, " year", 5, value, buf_to, has_output); [[fallthrough]];
-                case Months:    processUnit(30.5 * 24 * 3600, " month", 6, value, buf_to, has_output); [[fallthrough]];
-                case Days:      processUnit(24 * 3600, " day", 4, value, buf_to, has_output); [[fallthrough]];
-                case Hours:     processUnit(3600, " hour", 5, value, buf_to, has_output); [[fallthrough]];
-                case Minutes:   processUnit(60, " minute", 7, value, buf_to, has_output); [[fallthrough]];
-                case Seconds:   processUnit(1, " second", 7, value, buf_to, has_output);
+                bool is_negative = value < 0;
+                if (is_negative)
+                {
+                    writeChar('-', buf_to);
+                    value = -value;
+                }
+
+                /// To output separators between parts: ", " and " and ".
+                bool has_output = false;
+
+                switch (max_unit) /// A kind of Duff Device.
+                {
+                    case Years:     processUnit(365 * 24 * 3600, " year", 5, value, buf_to, has_output); [[fallthrough]];
+                    case Months:    processUnit(30.5 * 24 * 3600, " month", 6, value, buf_to, has_output); [[fallthrough]];
+                    case Days:      processUnit(24 * 3600, " day", 4, value, buf_to, has_output); [[fallthrough]];
+                    case Hours:     processUnit(3600, " hour", 5, value, buf_to, has_output); [[fallthrough]];
+                    case Minutes:   processUnit(60, " minute", 7, value, buf_to, has_output); [[fallthrough]];
+                    case Seconds:   processUnit(1, " second", 7, value, buf_to, has_output);
+                }
             }
 
             writeChar(0, buf_to);

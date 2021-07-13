@@ -5,7 +5,7 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/lz4
-    contrib/libs/zstd
+    contrib/libs/zstd/include
 )
 
 PEERDIR(
@@ -17,6 +17,7 @@ PEERDIR(
 
 SRCS(
     CachedCompressedReadBuffer.cpp
+    CheckingCompressedReadBuffer.cpp
     CompressedReadBuffer.cpp
     CompressedReadBufferBase.cpp
     CompressedReadBufferFromFile.cpp

@@ -13,6 +13,13 @@ namespace Coordination
 
 using namespace DB;
 
+void write(size_t x, WriteBuffer & out);
+
+/// uint64_t != size_t on darwin
+#ifdef __APPLE__
+void write(uint64_t x, WriteBuffer & out);
+#endif
+
 void write(int64_t x, WriteBuffer & out);
 void write(int32_t x, WriteBuffer & out);
 void write(OpNum x, WriteBuffer & out);
@@ -37,6 +44,10 @@ void write(const std::vector<T> & arr, WriteBuffer & out)
         write(elem, out);
 }
 
+void read(size_t & x, ReadBuffer & in);
+#ifdef __APPLE__
+void read(uint64_t & x, ReadBuffer & in);
+#endif
 void read(int64_t & x, ReadBuffer & in);
 void read(int32_t & x, ReadBuffer & in);
 void read(OpNum & x, ReadBuffer & in);

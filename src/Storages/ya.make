@@ -17,17 +17,20 @@ SRCS(
     ConstraintsDescription.cpp
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedBlockOutputStream.cpp
+    Distributed/DistributedSettings.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
     KeyDescription.cpp
     LiveView/StorageLiveView.cpp
     LiveView/TemporaryLiveViewCleaner.cpp
+    MemorySettings.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
     MergeTree/BackgroundJobsExecutor.cpp
     MergeTree/BoolMask.cpp
     MergeTree/DataPartsExchange.cpp
+    MergeTree/DropPartsRanges.cpp
     MergeTree/EphemeralLockInZooKeeper.cpp
     MergeTree/IMergeTreeDataPart.cpp
     MergeTree/IMergeTreeDataPartWriter.cpp
@@ -47,6 +50,7 @@ SRCS(
     MergeTree/MergeTreeDataPartInMemory.cpp
     MergeTree/MergeTreeDataPartTTLInfo.cpp
     MergeTree/MergeTreeDataPartType.cpp
+    MergeTree/MergeTreeDataPartUUID.cpp
     MergeTree/MergeTreeDataPartWide.cpp
     MergeTree/MergeTreeDataPartWriterCompact.cpp
     MergeTree/MergeTreeDataPartWriterInMemory.cpp
@@ -54,6 +58,7 @@ SRCS(
     MergeTree/MergeTreeDataPartWriterWide.cpp
     MergeTree/MergeTreeDataSelectExecutor.cpp
     MergeTree/MergeTreeDataWriter.cpp
+    MergeTree/MergeTreeDeduplicationLog.cpp
     MergeTree/MergeTreeIndexAggregatorBloomFilter.cpp
     MergeTree/MergeTreeIndexBloomFilter.cpp
     MergeTree/MergeTreeIndexConditionBloomFilter.cpp
@@ -71,6 +76,7 @@ SRCS(
     MergeTree/MergeTreePartInfo.cpp
     MergeTree/MergeTreePartition.cpp
     MergeTree/MergeTreePartsMover.cpp
+    MergeTree/MergeTreeProjections.cpp
     MergeTree/MergeTreeRangeReader.cpp
     MergeTree/MergeTreeReadPool.cpp
     MergeTree/MergeTreeReaderCompact.cpp
@@ -87,7 +93,9 @@ SRCS(
     MergeTree/MergeType.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
+    MergeTree/PartMovesBetweenShardsOrchestrator.cpp
     MergeTree/PartitionPruner.cpp
+    MergeTree/PinnedPartUUIDs.cpp
     MergeTree/ReplicatedFetchList.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
@@ -107,13 +115,17 @@ SRCS(
     MergeTree/localBackup.cpp
     MergeTree/registerStorageMergeTree.cpp
     MutationCommands.cpp
+    MySQL/MySQLSettings.cpp
     PartitionCommands.cpp
+    ProjectionsDescription.cpp
+    ReadFinalForExternalReplicaStorage.cpp
     ReadInOrderOptimizer.cpp
     SelectQueryDescription.cpp
     SetSettings.cpp
     StorageBuffer.cpp
     StorageDictionary.cpp
     StorageDistributed.cpp
+    StorageExternalDistributed.cpp
     StorageFactory.cpp
     StorageFile.cpp
     StorageGenerateRandom.cpp
@@ -147,6 +159,8 @@ SRCS(
     System/StorageSystemContributors.cpp
     System/StorageSystemContributors.generated.cpp
     System/StorageSystemCurrentRoles.cpp
+    System/StorageSystemDDLWorkerQueue.cpp
+    System/StorageSystemDataSkippingIndices.cpp
     System/StorageSystemDataTypeFamilies.cpp
     System/StorageSystemDatabases.cpp
     System/StorageSystemDetachedParts.cpp
@@ -168,11 +182,14 @@ SRCS(
     System/StorageSystemMutations.cpp
     System/StorageSystemNumbers.cpp
     System/StorageSystemOne.cpp
+    System/StorageSystemPartMovesBetweenShards.cpp
     System/StorageSystemParts.cpp
     System/StorageSystemPartsBase.cpp
     System/StorageSystemPartsColumns.cpp
     System/StorageSystemPrivileges.cpp
     System/StorageSystemProcesses.cpp
+    System/StorageSystemProjectionParts.cpp
+    System/StorageSystemProjectionPartsColumns.cpp
     System/StorageSystemQuotaLimits.cpp
     System/StorageSystemQuotaUsage.cpp
     System/StorageSystemQuotas.cpp

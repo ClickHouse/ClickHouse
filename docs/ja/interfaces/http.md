@@ -478,7 +478,7 @@ max_alter_threads   2
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
-<http_handlers>
+</http_handlers>
 ```
 
 ``` bash

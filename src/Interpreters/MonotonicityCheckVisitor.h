@@ -26,7 +26,7 @@ public:
     struct Data
     {
         const TablesWithColumns & tables;
-        const Context & context;
+        ContextPtr context;
         const std::unordered_set<String> & group_by_function_hashes;
         Monotonicity monotonicity{true, true, true};
         ASTIdentifier * identifier = nullptr;
@@ -43,9 +43,14 @@ public:
             if (group_by_function_hashes.count(key))
                 return false;
 
-            /// if ORDER BY contains aggregate function it shouldn't be optimized
-            if (AggregateFunctionFactory::instance().isAggregateFunctionName(ast_function.name))
+            /// if ORDER BY contains aggregate function or window functions, it
+            /// shouldn't be optimized
+            if (ast_function.is_window_function
+                || AggregateFunctionFactory::instance().isAggregateFunctionName(
+                    ast_function.name))
+            {
                 return false;
+            }
 
             return true;
         }

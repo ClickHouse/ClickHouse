@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 ## tests with real clickhouse restart would be a bit to heavy,
@@ -13,7 +14,7 @@ mkdir -p "${WORKING_FOLDER_01600}"
 clickhouse_local() {
     local query="$1"
     shift
-    ${CLICKHOUSE_LOCAL} --query "$query" $@ -- --path="${WORKING_FOLDER_01600}"
+    ${CLICKHOUSE_LOCAL} --query "$query" "$@" -- --path="${WORKING_FOLDER_01600}"
 }
 
 test_detach_attach_sequence() {

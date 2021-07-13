@@ -1,5 +1,6 @@
 #include <Storages/MutationCommands.h>
-#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserAlterQuery.h>
@@ -64,6 +65,16 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.index_name = command->index->as<ASTIdentifier &>().name();
         return res;
     }
+    else if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MATERIALIZE_PROJECTION;
+        res.partition = command->partition;
+        res.predicate = nullptr;
+        res.projection_name = command->projection->as<ASTIdentifier &>().name();
+        return res;
+    }
     else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)
     {
         MutationCommand res;
@@ -96,6 +107,18 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         if (command->partition)
             res.partition = command->partition;
         if (command->clear_index)
+            res.clear = true;
+        return res;
+    }
+    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_PROJECTION)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MutationCommand::Type::DROP_PROJECTION;
+        res.column_name = command->projection->as<ASTIdentifier &>().name();
+        if (command->partition)
+            res.partition = command->partition;
+        if (command->clear_projection)
             res.clear = true;
         return res;
     }
@@ -133,13 +156,13 @@ void MutationCommands::writeText(WriteBuffer & out) const
 {
     WriteBufferFromOwnString commands_buf;
     formatAST(*ast(), commands_buf, /* hilite = */ false, /* one_line = */ true);
-    out << escape << commands_buf.str();
+    writeEscapedString(commands_buf.str(), out);
 }
 
 void MutationCommands::readText(ReadBuffer & in)
 {
     String commands_str;
-    in >> escape >> commands_str;
+    readEscapedString(commands_str, in);
 
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(

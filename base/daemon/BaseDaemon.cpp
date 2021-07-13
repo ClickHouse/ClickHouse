@@ -21,13 +21,11 @@
 #include <fstream>
 #include <sstream>
 #include <memory>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/PatternFormatter.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
@@ -56,6 +54,10 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
+#include <Common/getExecutablePath.h>
+#include <Common/getHashOfLoadedBinary.h>
+#include <Common/Elf.h>
+#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
@@ -67,6 +69,7 @@
 #endif
 #include <ucontext.h>
 
+namespace fs = std::filesystem;
 
 DB::PipeFDs signal_pipe;
 
@@ -78,16 +81,6 @@ static void call_default_signal_handler(int sig)
 {
     signal(sig, SIG_DFL);
     raise(sig);
-}
-
-const char * msan_strsignal(int sig)
-{
-    // Apparently strsignal is not instrumented by MemorySanitizer, so we
-    // have to unpoison it to avoid msan reports inside fmt library when we
-    // print it.
-    const char * signal_name = strsignal(sig);
-    __msan_unpoison_string(signal_name);
-    return signal_name;
 }
 
 static constexpr size_t max_query_id_size = 127;
@@ -119,11 +112,13 @@ static void writeSignalIDtoSignalPipe(int sig)
 /** Signal handler for HUP / USR1 */
 static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     writeSignalIDtoSignalPipe(sig);
 }
 
 static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     writeSignalIDtoSignalPipe(sig);
 }
 
@@ -132,6 +127,7 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
     char buf[signal_pipe_buf_size];
@@ -156,7 +152,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        sleepForSeconds(10);
+        sleepForSeconds(20);  /// FIXME: use some feedback from threads that process stacktrace
         call_default_signal_handler(sig);
     }
 
@@ -234,10 +230,10 @@ public:
             }
             else
             {
-                siginfo_t info;
-                ucontext_t context;
+                siginfo_t info{};
+                ucontext_t context{};
                 StackTrace stack_trace(NoCapture{});
-                UInt32 thread_num;
+                UInt32 thread_num{};
                 std::string query_id;
                 DB::ThreadStatus * thread_ptr{};
 
@@ -294,13 +290,13 @@ private:
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, msan_strsignal(sig), sig);
+                thread_num, strsignal(sig), sig);
         }
         else
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, query_id, msan_strsignal(sig), sig);
+                thread_num, query_id, strsignal(sig), sig);
         }
 
         String error_message;
@@ -315,7 +311,8 @@ private:
         if (stack_trace.getSize())
         {
             /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
-            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
+            /// NOTE: This still require memory allocations and mutex lock inside logger.
+            ///       BTW we can also print it to stderr using write syscalls.
 
             std::stringstream bare_stacktrace;
             bare_stacktrace << "Stack trace:";
@@ -327,6 +324,32 @@ private:
 
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+
+#if defined(OS_LINUX)
+        /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
+        if (daemon.stored_binary_hash.empty())
+        {
+            LOG_FATAL(log, "Calculated checksum of the binary: {}."
+                " There is no information about the reference checksum.", calculated_binary_hash);
+        }
+        else if (calculated_binary_hash == daemon.stored_binary_hash)
+        {
+            LOG_FATAL(log, "Checksum of the binary: {}, integrity check passed.", calculated_binary_hash);
+        }
+        else
+        {
+            LOG_FATAL(log, "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
+                " to the reference checksum stored in the binary ({1})."
+                " It may indicate one of the following:"
+                " - the file was changed just after startup;"
+                " - the file is damaged on disk due to faulty hardware;"
+                " - the loaded executable is damaged in memory due to faulty hardware;"
+                " - the file was intentionally modified;"
+                " - logical error in code."
+                , calculated_binary_hash, daemon.stored_binary_hash);
+        }
+#endif
 
         /// Write crash to system.crash_log table if available.
         if (collectCrashLog)
@@ -393,7 +416,9 @@ static void sanitizerDeathCallback()
     else
         log_message = "Terminate called without an active exception";
 
-    static const size_t buf_size = 1024;
+    /// POSIX.1 says that write(2)s of less than PIPE_BUF bytes must be atomic - man 7 pipe
+    /// And the buffer should not be too small because our exception messages can be large.
+    static constexpr size_t buf_size = PIPE_BUF;
 
     if (log_message.size() > buf_size - 16)
         log_message.resize(buf_size - 16);
@@ -412,11 +437,11 @@ static void sanitizerDeathCallback()
 
 static std::string createDirectory(const std::string & file)
 {
-    auto path = Poco::Path(file).makeParent();
-    if (path.toString().empty())
+    fs::path path = fs::path(file).parent_path();
+    if (path.empty())
         return "";
-    Poco::File(path).createDirectories();
-    return path.toString();
+    fs::create_directories(path);
+    return path;
 };
 
 
@@ -424,7 +449,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 {
     try
     {
-        Poco::File(path).createDirectories();
+        fs::create_directories(path);
         return true;
     }
     catch (...)
@@ -443,9 +468,9 @@ void BaseDaemon::reloadConfiguration()
       *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", "config.xml");
+    config_path = config().getString("config-file", getDefaultConfigFileName());
     DB::ConfigProcessor config_processor(config_path, false, true);
-    config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+    config_processor.setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
@@ -481,8 +506,9 @@ void BaseDaemon::kill()
 {
     dumpCoverageReportIfPossible();
     pid_file.reset();
-    if (::raise(SIGKILL) != 0)
-        throw Poco::SystemException("cannot kill process");
+    /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
+    /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
+    _exit(128 + SIGKILL);
 }
 
 std::string BaseDaemon::getDefaultCorePath() const
@@ -490,21 +516,28 @@ std::string BaseDaemon::getDefaultCorePath() const
     return "/opt/cores/";
 }
 
+std::string BaseDaemon::getDefaultConfigFileName() const
+{
+    return "config.xml";
+}
+
 void BaseDaemon::closeFDs()
 {
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
-    Poco::File proc_path{"/dev/fd"};
+    fs::path proc_path{"/dev/fd"};
 #else
-    Poco::File proc_path{"/proc/self/fd"};
+    fs::path proc_path{"/proc/self/fd"};
 #endif
-    if (proc_path.isDirectory()) /// Hooray, proc exists
+    if (fs::is_directory(proc_path)) /// Hooray, proc exists
     {
-        std::vector<std::string> fds;
-        /// in /proc/self/fd directory filenames are numeric file descriptors
-        proc_path.list(fds);
-        for (const auto & fd_str : fds)
+        /// in /proc/self/fd directory filenames are numeric file descriptors.
+        /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
+        std::vector<int> fds;
+        for (const auto & path : fs::directory_iterator(proc_path))
+            fds.push_back(DB::parse<int>(path.path().filename()));
+
+        for (const auto & fd : fds)
         {
-            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
         }
@@ -538,6 +571,7 @@ void debugIncreaseOOMScore()
     {
         DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
         buf.write(new_score.c_str(), new_score.size());
+        buf.close();
     }
     catch (const Poco::Exception & e)
     {
@@ -565,7 +599,7 @@ void BaseDaemon::initialize(Application & self)
     {
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
-        std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
+        std::string path = fs::path(config().getString("application.path")).replace_filename("");
         if (0 != chdir(path.c_str()))
             throw Poco::Exception("Cannot change directory to " + path);
     }
@@ -613,7 +647,7 @@ void BaseDaemon::initialize(Application & self)
 
     std::string log_path = config().getString("logger.log", "");
     if (!log_path.empty())
-        log_path = Poco::Path(log_path).setFileName("").toString();
+        log_path = fs::path(log_path).replace_filename("");
 
     /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
       * Some libraries write to stderr in case of errors in debug mode,
@@ -676,8 +710,7 @@ void BaseDaemon::initialize(Application & self)
 
         tryCreateDirectories(&logger(), core_path);
 
-        Poco::File cores = core_path;
-        if (!(cores.exists() && cores.isDirectory()))
+        if (!(fs::exists(core_path) && fs::is_directory(core_path)))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
             tryCreateDirectories(&logger(), core_path);
@@ -760,7 +793,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     /// Setup signal handlers.
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
-    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler, &handled_signals);
+    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, &handled_signals);
     addSignalHandler({SIGHUP, SIGUSR1}, closeLogsSignalHandler, &handled_signals);
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, &handled_signals);
 
@@ -786,6 +819,13 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         build_id_info = "build id: " + build_id_hex;
 #else
     build_id_info = "no build id";
+#endif
+
+#if defined(__linux__)
+    std::string executable_path = getExecutablePath();
+
+    if (!executable_path.empty())
+        stored_binary_hash = DB::Elf(executable_path).getBinaryHash();
 #endif
 }
 
@@ -846,13 +886,13 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + msan_strsignal(signal_id), 0);
+        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", msan_strsignal(signal_id));
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {
@@ -956,13 +996,13 @@ void BaseDaemon::setupWatchdog()
         if (errno == ECHILD)
         {
             logger().information("Child process no longer exists.");
-            _exit(status);
+            _exit(WEXITSTATUS(status));
         }
 
         if (WIFEXITED(status))
         {
             logger().information(fmt::format("Child process exited normally with code {}.", WEXITSTATUS(status)));
-            _exit(status);
+            _exit(WEXITSTATUS(status));
         }
 
         if (WIFSIGNALED(status))
@@ -980,7 +1020,7 @@ void BaseDaemon::setupWatchdog()
                 logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
 
                 if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
-                    _exit(status);
+                    _exit(128 + sig);
             }
         }
         else
@@ -990,11 +1030,17 @@ void BaseDaemon::setupWatchdog()
 
         /// Automatic restart is not enabled but you can play with it.
 #if 1
-        _exit(status);
+        _exit(WEXITSTATUS(status));
 #else
         logger().information("Will restart.");
         if (argv0)
             memcpy(argv0, original_process_name.c_str(), original_process_name.size());
 #endif
     }
+}
+
+
+String BaseDaemon::getStoredBinaryHash() const
+{
+    return stored_binary_hash;
 }

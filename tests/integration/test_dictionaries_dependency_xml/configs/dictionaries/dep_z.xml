@@ -12,7 +12,8 @@
                <invalidate_query>SELECT intDiv(count(), 5) from dict.dep_y</invalidate_query>
            </clickhouse>
        </source>
-       <lifetime>5</lifetime>
+       <!-- ExternalLoader::PeriodicUpdater::check_period_sec=5 anyway -->
+       <lifetime>4</lifetime>
        <layout>
            <flat/>
        </layout>

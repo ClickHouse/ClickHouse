@@ -151,7 +151,7 @@ try
 
     std::string time_str = options.at("time").as<std::string>();
     LocalDateTime time(time_str);
-    LocalDate date(time);
+    LocalDate date(time_str);
 
     DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
     DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);

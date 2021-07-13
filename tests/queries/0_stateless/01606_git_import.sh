@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 # Clone some not too large repository and create a database from it.
+
+cd $CLICKHOUSE_TMP || exit
 
 # Protection for network errors
 for _ in {1..10}; do

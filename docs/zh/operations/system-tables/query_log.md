@@ -5,86 +5,87 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 
 # system.query_log {#system_tables-query_log}
 
-包含有关已执行查询的信息，例如，开始时间、处理持续时间、错误消息。
+包含已执行查询的相关信息，例如：开始时间、处理持续时间、错误消息。
 
 !!! note "注"
     此表不包含以下内容的摄取数据 `INSERT` 查询。
 
-您可以更改查询日志记录的设置 [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 服务器配置部分。
+您可以更改query_log的设置，在服务器配置的 [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 部分。
 
-您可以通过设置禁用查询日志记录 [log_queries=0](../../operations/settings/settings.md#settings-log-queries). 我们不建议关闭日志记录，因为此表中的信息对于解决问题很重要。
+您可以通过设置 [log_queries=0](../../operations/settings/settings.md#settings-log-queries)来禁用query_log. 我们不建议关闭此日志，因为此表中的信息对于解决问题很重要。
 
-数据的冲洗周期设置在 `flush_interval_milliseconds` 的参数 [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 服务器设置部分。 要强制冲洗，请使用 [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) 查询。
+数据刷新的周期可通过 `flush_interval_milliseconds` 参数来设置 [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 。 要强制刷新，请使用 [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs)。
 
-ClickHouse不会自动从表中删除数据。 看 [导言](../../operations/system-tables/index.md#system-tables-introduction) 欲了解更多详情。
+ClickHouse不会自动从表中删除数据。更多详情请看 [introduction](../../operations/system-tables/index.md#system-tables-introduction) 。
 
-该 `system.query_log` 表注册两种查询:
+`system.query_log` 表注册两种查询:
 
 1.  客户端直接运行的初始查询。
 2.  由其他查询启动的子查询（用于分布式查询执行）。 对于这些类型的查询，有关父查询的信息显示在 `initial_*` 列。
 
-每个查询创建一个或两个行中 `query_log` 表，这取决于状态（见 `type` 列）的查询:
+每个查询在`query_log` 表中创建一或两行记录，这取决于查询的状态（见 `type` 列）:
 
-1.  如果查询执行成功，则两行具有 `QueryStart` 和 `QueryFinish` 创建类型。
-2.  如果在查询处理过程中发生错误，两个事件与 `QueryStart` 和 `ExceptionWhileProcessing` 创建类型。
-3.  如果在启动查询之前发生错误，则单个事件具有 `ExceptionBeforeStart` 创建类型。
+1.  如果查询执行成功，会创建type分别为`QueryStart` 和 `QueryFinish` 的两行记录。
+2.  如果在查询处理过程中发生错误，会创建type分别为`QueryStart` 和 `ExceptionWhileProcessing` 的两行记录。
+3.  如果在启动查询之前发生错误，则创建一行type为`ExceptionBeforeStart` 的记录。
 
 列:
 
--   `type` ([枚举8](../../sql-reference/data-types/enum.md)) — Type of an event that occurred when executing the query. Values:
-    -   `'QueryStart' = 1` — Successful start of query execution.
-    -   `'QueryFinish' = 2` — Successful end of query execution.
-    -   `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
-    -   `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
--   `event_date` ([日期](../../sql-reference/data-types/date.md)) — Query starting date.
--   `event_time` ([日期时间](../../sql-reference/data-types/datetime.md)) — Query starting time.
--   `query_start_time` ([日期时间](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
--   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.
--   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` 和 `JOIN`. 对于分布式查询 `read_rows` 包括在所有副本上读取的行总数。 每个副本发送它的 `read_rows` 值，并且查询的服务器-发起方汇总所有接收到的和本地的值。 缓存卷不会影响此值。
--   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` 和 `JOIN`. 对于分布式查询 `read_bytes` 包括在所有副本上读取的行总数。 每个副本发送它的 `read_bytes` 值，并且查询的服务器-发起方汇总所有接收到的和本地的值。 缓存卷不会影响此值。
--   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` 查询，写入的行数。 对于其他查询，列值为0。
--   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` 查询时，写入的字节数。 对于其他查询，列值为0。
--   `result_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of rows in a result of the `SELECT` 查询，或者在一些行 `INSERT` 查询。
--   `result_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — RAM volume in bytes used to store a query result.
--   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Memory consumption by the query.
--   `query` ([字符串](../../sql-reference/data-types/string.md)) — Query string.
--   `exception` ([字符串](../../sql-reference/data-types/string.md)) — Exception message.
--   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
--   `stack_trace` ([字符串](../../sql-reference/data-types/string.md)) — [堆栈跟踪](https://en.wikipedia.org/wiki/Stack_trace). 如果查询成功完成，则为空字符串。
--   `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Query type. Possible values:
-    -   1 — Query was initiated by the client.
-    -   0 — Query was initiated by another query as part of distributed query execution.
--   `user` ([字符串](../../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
--   `query_id` ([字符串](../../sql-reference/data-types/string.md)) — ID of the query.
--   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address that was used to make the query.
--   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to make the query.
--   `initial_user` ([字符串](../../sql-reference/data-types/string.md)) — Name of the user who ran the initial query (for distributed query execution).
--   `initial_query_id` ([字符串](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
--   `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address that the parent query was launched from.
--   `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to make the parent query.
--   `interface` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Interface that the query was initiated from. Possible values:
+-   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — 执行查询时的事件类型. 值:
+    -   `'QueryStart' = 1` — 查询成功启动.
+    -   `'QueryFinish' = 2` — 查询成功完成.
+    -   `'ExceptionBeforeStart' = 3` — 查询执行前有异常.
+    -   `'ExceptionWhileProcessing' = 4` — 查询执行期间有异常.
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — 查询开始日期.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 查询开始时间.
+-   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — 查询开始时间（毫秒精度）.
+-   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 查询执行的开始时间.
+-   `query_start_time_microseconds` (DateTime64) — 查询执行的开始时间（毫秒精度）.
+-   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 查询消耗的时间（毫秒）.
+-   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 从参与了查询的所有表和表函数读取的总行数. 包括：普通的子查询,  `IN` 和 `JOIN`的子查询. 对于分布式查询 `read_rows` 包括在所有副本上读取的行总数。 每个副本发送它的 `read_rows` 值，并且查询的服务器-发起方汇总所有接收到的和本地的值。 缓存卷不会影响此值。
+-   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 从参与了查询的所有表和表函数读取的总字节数. 包括：普通的子查询,  `IN` 和 `JOIN`的子查询. 对于分布式查询 `read_bytes` 包括在所有副本上读取的字节总数。 每个副本发送它的 `read_bytes` 值，并且查询的服务器-发起方汇总所有接收到的和本地的值。 缓存卷不会影响此值。
+-   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 对于 `INSERT` 查询，为写入的行数。 对于其他查询，值为0。
+-   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 对于 `INSERT` 查询时，为写入的字节数。 对于其他查询，值为0。
+-   `result_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — `SELECT` 查询结果的行数，或`INSERT` 的行数。
+-   `result_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 存储查询结果的RAM量.
+-   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 查询使用的内存.
+-   `query` ([String](../../sql-reference/data-types/string.md)) — 查询语句.
+-   `exception` ([String](../../sql-reference/data-types/string.md)) — 异常信息.
+-   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — 异常码.
+-   `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack Trace](https://en.wikipedia.org/wiki/Stack_trace). 如果查询成功完成，则为空字符串。
+-   `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md)) — 查询类型. 可能的值:
+    -   1 — 客户端发起的查询.
+    -   0 — 由另一个查询发起的，作为分布式查询的一部分.
+-   `user` ([String](../../sql-reference/data-types/string.md)) — 发起查询的用户.
+-   `query_id` ([String](../../sql-reference/data-types/string.md)) — 查询ID.
+-   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — 发起查询的客户端IP地址.
+-   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — 发起查询的客户端端口.
+-   `initial_user` ([String](../../sql-reference/data-types/string.md)) — 初始查询的用户名（用于分布式查询执行）.
+-   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — 运行初始查询的ID（用于分布式查询执行）.
+-   `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — 运行父查询的IP地址.
+-   `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — 发起父查询的客户端端口.
+-   `interface` ([UInt8](../../sql-reference/data-types/int-uint.md)) — 发起查询的接口. 可能的值:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` ([字符串](../../sql-reference/data-types/string.md)) — Operating system username who runs [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../../interfaces/cli.md).
--   `client_hostname` ([字符串](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../../interfaces/cli.md) 或者运行另一个TCP客户端。
--   `client_name` ([字符串](../../sql-reference/data-types/string.md)) — The [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../../interfaces/cli.md) 或另一个TCP客户端名称。
--   `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../../interfaces/cli.md) 或另一个TCP客户端。
--   `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Major version of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../../interfaces/cli.md) 或另一个TCP客户端。
--   `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Minor version of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../../interfaces/cli.md) 或另一个TCP客户端。
--   `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../../interfaces/cli.md) 或另一个TCP客户端版本。
--   `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
-    -   0 — The query was launched from the TCP interface.
-    -   1 — `GET` 方法被使用。
-    -   2 — `POST` 方法被使用。
--   `http_user_agent` ([字符串](../../sql-reference/data-types/string.md)) — The `UserAgent` http请求中传递的标头。
--   `quota_key` ([字符串](../../sql-reference/data-types/string.md)) — The “quota key” 在指定 [配额](../../operations/quotas.md) 设置（见 `keyed`).
+-   `os_user` ([String](../../sql-reference/data-types/string.md)) — 运行 [clickhouse-client](../../interfaces/cli.md)的操作系统用户名.
+-   `client_hostname` ([String](../../sql-reference/data-types/string.md)) — 运行[clickhouse-client](../../interfaces/cli.md) 或其他TCP客户端的机器的主机名。
+-   `client_name` ([String](../../sql-reference/data-types/string.md)) — [clickhouse-client](../../interfaces/cli.md) 或其他TCP客户端的名称。
+-   `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — [clickhouse-client](../../interfaces/cli.md) 或其他TCP客户端的Revision。
+-   `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — [clickhouse-client](../../interfaces/cli.md) 或其他TCP客户端的Major version。
+-   `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — [clickhouse-client](../../interfaces/cli.md) 或其他TCP客户端的Minor version。
+-   `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — [clickhouse-client](../../interfaces/cli.md) 或其他TCP客户端的Patch component。
+-   `http_method` (UInt8) — 发起查询的HTTP方法. 可能值:
+    -   0 — TCP接口的查询.
+    -   1 — `GET`
+    -   2 — `POST`
+-   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` The UserAgent header passed in the HTTP request。
+-   `quota_key` ([String](../../sql-reference/data-types/string.md)) — 在[quotas](../../operations/quotas.md) 配置里设置的“quota key” （见 `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
--   `thread_numbers` ([数组(UInt32)](../../sql-reference/data-types/array.md)) — Number of threads that are participating in query execution.
--   `ProfileEvents.Names` ([数组（字符串)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [系统。活动](../../operations/system-tables/events.md#system_tables-events)
--   `ProfileEvents.Values` ([数组(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics that are listed in the `ProfileEvents.Names` 列。
--   `Settings.Names` ([数组（字符串)](../../sql-reference/data-types/array.md)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` 参数为1。
--   `Settings.Values` ([数组（字符串)](../../sql-reference/data-types/array.md)) — Values of settings that are listed in the `Settings.Names` 列。
-
+-   `ProfileEvents` ([Map(String, UInt64))](../../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [系统。活动](../../operations/system-tables/events.md#system_tables-events)
+-   `Settings` ([Map(String, String)](../../sql-reference/data-types/array.md)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` 参数为1。
+-   `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — 参与查询的线程数.
+-   `Settings.Names` ([Array（String)](../../sql-reference/data-types/array.md)) — 客户端运行查询时更改的设置的名称。 要启用对设置的日志记录更改，请将log_query_settings参数设置为1。
+-   `Settings.Values` ([Array（String)](../../sql-reference/data-types/array.md)) — `Settings.Names` 列中列出的设置的值。
 **示例**
 
 ``` sql
@@ -132,12 +133,10 @@ http_user_agent:
 quota_key:
 revision:             54434
 thread_ids:           []
-ProfileEvents.Names:  []
-ProfileEvents.Values: []
-Settings.Names:       ['use_uncompressed_cache','load_balancing','log_queries','max_memory_usage']
-Settings.Values:      ['0','random','1','10000000000']
+ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
+Settings:             {'background_pool_size':'32','load_balancing':'random','allow_suspicious_low_cardinality_types':'1','distributed_aggregation_memory_efficient':'1','skip_unavailable_shards':'1','log_queries':'1','max_bytes_before_external_group_by':'20000000000','max_bytes_before_external_sort':'20000000000','allow_introspection_functions':'1'}
 ```
 
 **另请参阅**
 
--   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+-   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — 这个表包含了每个查询执行线程的信息

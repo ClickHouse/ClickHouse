@@ -13,9 +13,6 @@ node = cluster.add_instance('node', main_configs=[
     'configs/asynchronous_metrics_update_period_s.xml',
 ])
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
 @pytest.fixture(scope='module', autouse=True)
 def start_cluster():
     try:

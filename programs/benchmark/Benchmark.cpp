@@ -8,7 +8,6 @@
 #include <iomanip>
 #include <random>
 #include <pcg_random.hpp>
-#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -36,7 +35,10 @@
 #include <Common/Config/configReadClient.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
+#include <filesystem>
 
+
+namespace fs = std::filesystem;
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
@@ -62,12 +64,12 @@ public:
             bool randomize_, size_t max_iterations_, double max_time_,
             const String & json_path_, size_t confidence_,
             const String & query_id_, const String & query_to_execute_, bool continue_on_errors_,
-            bool print_stacktrace_, const Settings & settings_)
+            bool reconnect_, bool print_stacktrace_, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), confidence(confidence_), query_id(query_id_),
-        query_to_execute(query_to_execute_), continue_on_errors(continue_on_errors_),
+        query_to_execute(query_to_execute_), continue_on_errors(continue_on_errors_), reconnect(reconnect_),
         print_stacktrace(print_stacktrace_), settings(settings_),
         shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
         pool(concurrency)
@@ -95,8 +97,8 @@ public:
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
 
-        global_context.makeGlobalContext();
-        global_context.setSettings(settings);
+        global_context->makeGlobalContext();
+        global_context->setSettings(settings);
 
         std::cerr << std::fixed << std::setprecision(3);
 
@@ -119,8 +121,8 @@ public:
 
     int main(const std::vector<std::string> &) override
     {
-        if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
-            Poco::File(json_path).remove();
+        if (!json_path.empty() && fs::exists(json_path)) /// Clear file with previous results
+            fs::remove(json_path);
 
         readQueries();
         runBenchmark();
@@ -155,10 +157,11 @@ private:
     String query_id;
     String query_to_execute;
     bool continue_on_errors;
+    bool reconnect;
     bool print_stacktrace;
     const Settings & settings;
     SharedContextHolder shared_context;
-    Context global_context;
+    ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
     /// Don't execute new queries after timelimit or SIGINT or exception
@@ -404,9 +407,14 @@ private:
     void execute(EntryPtrs & connection_entries, Query & query, size_t connection_index)
     {
         Stopwatch watch;
+
+        Connection & connection = **connection_entries[connection_index];
+
+        if (reconnect)
+            connection.disconnect();
+
         RemoteBlockInputStream stream(
-            *(*connection_entries[connection_index]),
-            query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+            connection, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
         if (!query_id.empty())
             stream.setQueryId(query_id);
 
@@ -573,7 +581,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query",      value<std::string>()->default_value(""),             "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
-            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
+            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
@@ -589,6 +597,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("confidence",    value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id",      value<std::string>()->default_value(""),         "")
             ("continue_on_errors", "continue testing even if a query fails")
+            ("reconnect", "establish new connection for every query")
         ;
 
         Settings settings;
@@ -638,7 +647,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
             options["query"].as<std::string>(),
-            options.count("continue_on_errors") > 0,
+            options.count("continue_on_errors"),
+            options.count("reconnect"),
             print_stacktrace,
             settings);
         return benchmark.run();

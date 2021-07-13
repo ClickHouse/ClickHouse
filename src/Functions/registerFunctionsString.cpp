@@ -29,11 +29,15 @@ void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
 void registerFunctionStartsWith(FunctionFactory &);
 void registerFunctionEndsWith(FunctionFactory &);
 void registerFunctionTrim(FunctionFactory &);
+void registerFunctionPadString(FunctionFactory &);
 void registerFunctionRegexpQuoteMeta(FunctionFactory &);
 void registerFunctionNormalizeQuery(FunctionFactory &);
 void registerFunctionNormalizedQueryHash(FunctionFactory &);
 void registerFunctionCountMatches(FunctionFactory &);
-void registerFunctionEncodeXMLComponent(FunctionFactory & factory);
+void registerFunctionEncodeXMLComponent(FunctionFactory &);
+void registerFunctionDecodeXMLComponent(FunctionFactory &);
+void registerFunctionExtractTextFromHTML(FunctionFactory &);
+
 
 #if USE_BASE64
 void registerFunctionBase64Encode(FunctionFactory &);
@@ -65,11 +69,14 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionStartsWith(factory);
     registerFunctionEndsWith(factory);
     registerFunctionTrim(factory);
+    registerFunctionPadString(factory);
     registerFunctionRegexpQuoteMeta(factory);
     registerFunctionNormalizeQuery(factory);
     registerFunctionNormalizedQueryHash(factory);
     registerFunctionCountMatches(factory);
     registerFunctionEncodeXMLComponent(factory);
+    registerFunctionDecodeXMLComponent(factory);
+    registerFunctionExtractTextFromHTML(factory);
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);

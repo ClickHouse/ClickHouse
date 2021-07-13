@@ -68,11 +68,11 @@ struct NeedChild
 };
 
 /// Simple matcher for one node type. Use need_child function for complex traversal logic.
-template <typename Data_, NeedChild::Condition need_child = NeedChild::all, typename T = ASTPtr>
+template <typename DataImpl, NeedChild::Condition need_child = NeedChild::all, typename T = ASTPtr>
 class OneTypeMatcher
 {
 public:
-    using Data = Data_;
+    using Data = DataImpl;
     using TypeToVisit = typename Data::TypeToVisit;
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child) { return need_child(node, child); }

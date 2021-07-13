@@ -69,6 +69,9 @@ toc_title: Integrations
 -   Geo
     -   [MaxMind](https://dev.maxmind.com/geoip/)
         -   [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
+-   AutoML
+    -   [MindsDB](https://mindsdb.com/)
+        -   [MindsDB](https://github.com/mindsdb/mindsdb) - Predictive AI layer for ClickHouse database.
 
 ## Programming Language Ecosystems {#programming-language-ecosystems}
 
