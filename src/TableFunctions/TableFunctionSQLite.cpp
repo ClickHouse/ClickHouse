@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/filesystemHelpers.h>
 
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include "registerTableFunctions.h"
@@ -79,22 +80,13 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     database_path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-    std::error_code err;
-    String canonical_path = fs::canonical(database_path, err);
-    /// The path existence is also checked.
-    if (err)
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database path '{}' is invalid. Error: {}", database_path, err.message());
-
-    String user_files_path = fs::canonical(context->getUserFilesPath());
-    if (!canonical_path.starts_with(user_files_path))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database file path '{}' must be inside 'user_files' directory", database_path);
+    auto db_path = SQLiteDatabaseValidatePath(database_path, context);
 
     sqlite3 * tmp_sqlite_db = nullptr;
-    int status = sqlite3_open(canonical_path.c_str(), &tmp_sqlite_db);
+    int status = sqlite3_open(db_path.c_str(), &tmp_sqlite_db);
     if (status != SQLITE_OK)
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                        "SQLite database file path '{}' must be inside 'user_files' directory: {}",
-                        database_path, user_files_path);
+                        "SQLite database file path '{}' must be inside 'user_files' directory: {}", database_path);
 
     sqlite_db = std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
 }
