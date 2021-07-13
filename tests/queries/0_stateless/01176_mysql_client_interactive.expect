@@ -22,5 +22,27 @@ expect "| dummy |"
 expect "|     0 |"
 expect "1 row in set"
 
+# exception before start
+send -- "select * from table_that_does_not_exist;\r"
+expect "ERROR 60 (00000): Code: 60"
+
+# exception after start
+send -- "select throwIf(number) from numbers(2) settings max_block_size=1;\r"
+expect "ERROR 395 (00000): Code: 395"
+
+# other formats
+send -- "select * from system.one format TSV;\r"
+expect "ERROR 1 (00000): Code: 1"
+
+send -- "select count(number), sum(number) from numbers(10);\r"
+expect "+---------------+-------------+"
+expect "| count(number) | sum(number) |"
+expect "+---------------+-------------+"
+expect "|            10 |          45 |"
+expect "+---------------+-------------+"
+expect "1 row in set"
+expect "Read 10 rows, 80.00 B"
+expect "mysql> "
+
 send -- "quit;\r"
 expect eof

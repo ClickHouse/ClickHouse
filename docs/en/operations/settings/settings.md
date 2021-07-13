@@ -1213,7 +1213,15 @@ Default value: `3`.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
-If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
+Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
+Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations. 
+
+Possible values:
+
+-   0 — Integers are output without quotes.
+-   1 — Integers are enclosed in quotes.
+
+Default value: 1.
 
 ## output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
 
