@@ -3,6 +3,11 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
+    <settings>
+        <compile_aggregate_expressions>1</compile_aggregate_expressions>
+        <min_count_to_compile_aggregate_expression>0</min_count_to_compile_aggregate_expression>
+    </settings>
+
     <create_query>
         CREATE TABLE jit_test_memory (
             key UInt64,
@@ -64,6 +69,9 @@
                 <value>any</value>
                 <value>anyLast</value>
                 <value>count</value>
+                <value>groupBitOr</value>
+                <value>groupBitAnd</value>
+                <value>groupBitXor</value>
             </values>
         </substitution>
 
@@ -114,7 +122,7 @@
         SELECT
             {function}(value_1),
             {function}(value_2),
-            groupBitAnd(value_3),
+            sum(toUInt256(value_3)),
             {function}(value_3)
         FROM {table}
         GROUP BY key
@@ -135,7 +143,7 @@
         SELECT
             {function}If(value_1, predicate),
             {function}If(value_2, predicate),
-            groupBitAndIf(value_3, predicate),
+            sumIf(toUInt256(value_3), predicate),
             {function}If(value_3, predicate)
         FROM {table}
         GROUP BY key
@@ -158,7 +166,7 @@
         SELECT
             {function}(value_1),
             {function}(value_2),
-            groupBitAnd(value_3),
+            sum(toUInt256(value_3)),
             {function}(value_3),
             {function}(value_4),
             {function}(value_5)
@@ -183,7 +191,7 @@
         SELECT
             {function}If(value_1, predicate),
             {function}If(value_2, predicate),
-            groupBitAndIf(value_3, predicate),
+            sumIf(toUInt256(value_3), predicate),
             {function}If(value_3, predicate),
             {function}If(value_4, predicate),
             {function}If(value_5, predicate)
@@ -207,7 +215,7 @@
         SELECT
             {function}(WatchID),
             {function}(CounterID),
-            groupBitAnd(ClientIP),
+            sum(toUInt256(ClientIP)),
             {function}(ClientIP)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
@@ -219,8 +227,8 @@
             {function}(WatchID),
             {function}(CounterID),
             {function}(ClientIP),
-            {function}(GoodEvent),
-            {function}(CounterClass)
+            {function}(IPNetworkID),
+            {function}(SearchEngineID)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
@@ -230,10 +238,10 @@
         SELECT
             {function}(WatchID),
             {function}(CounterID),
-            groupBitAnd(ClientIP),
+            sum(toUInt256(ClientIP)),
             {function}(ClientIP),
-            {function}(GoodEvent),
-            {function}(CounterClass)
+            {function}(IPNetworkID),
+            {function}(SearchEngineID)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
@@ -255,7 +263,7 @@
         SELECT
             {function}If(WatchID, predicate),
             {function}If(CounterID, predicate),
-            groupBitAndIf(ClientIP, predicate),
+            sumIf(toUInt256(ClientIP), predicate),
             {function}If(ClientIP, predicate)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
@@ -268,8 +276,8 @@
             {function}If(WatchID, predicate),
             {function}If(CounterID, predicate),
             {function}If(ClientIP, predicate),
-            {function}If(GoodEvent, predicate),
-            {function}If(CounterClass, predicate)
+            {function}If(IPNetworkID, predicate),
+            {function}If(SearchEngineID, predicate)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
@@ -280,10 +288,10 @@
         SELECT
             {function}If(WatchID, predicate),
             {function}If(CounterID, predicate),
-            groupBitAndIf(ClientIP, predicate),
+            sumIf(toUInt256(ClientIP), predicate),
             {function}If(ClientIP, predicate),
-            {function}If(GoodEvent, predicate),
-            {function}If(CounterClass, predicate)
+            {function}If(IPNetworkID, predicate),
+            {function}If(SearchEngineID, predicate)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
