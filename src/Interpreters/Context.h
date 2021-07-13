@@ -120,6 +120,8 @@ using ThrottlerPtr = std::shared_ptr<Throttler>;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
+struct MySQLWireContext;
+
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
 
@@ -299,6 +301,8 @@ private:
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
 
+    MySQLWireContext * mysql_protocol_context = nullptr;
+
     Context();
     Context(const Context &);
     Context & operator=(const Context &);
@@ -320,12 +324,17 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
+    /// A list of warnings about server configuration to place in `system.warnings` table.
+    std::vector<String> getWarnings() const;
+
     VolumePtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+
+    void addWarningMessage(const String & msg);
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
@@ -534,7 +543,6 @@ public:
     BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
 
@@ -791,14 +799,10 @@ public:
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
 
-    struct MySQLWireContext
-    {
-        uint8_t sequence_id = 0;
-        uint32_t client_capabilities = 0;
-        size_t max_packet_size = 0;
-    };
-
-    MySQLWireContext mysql;
+    /// Caller is responsible for lifetime of mysql_context.
+    /// Used in MySQLHandler for session context.
+    void setMySQLProtocolContext(MySQLWireContext * mysql_context);
+    MySQLWireContext * getMySQLProtocolContext() const;
 
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
