@@ -59,7 +59,7 @@ public:
         {
             const UInt64 hindex = col_hindex->getUInt(row);
 
-            UInt8 res = h3GetBaseCell(hindex);
+            UInt8 res = getBaseCellNumber(hindex);
 
             dst_data[row] = res;
         }

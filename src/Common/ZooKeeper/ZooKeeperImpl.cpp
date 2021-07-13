@@ -853,7 +853,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             }
 
             /// Send thread will exit after sending close request or on expired flag
-            send_thread.join();
+            if (send_thread.joinable())
+                send_thread.join();
         }
 
         /// Set expired flag after we sent close event
@@ -870,7 +871,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        if (!error_receive)
+        if (!error_receive && receive_thread.joinable())
             receive_thread.join();
 
         {

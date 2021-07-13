@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 CFLAGS(
-    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
+    -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
@@ -387,6 +387,7 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    padString.cpp
     partitionId.cpp
     pi.cpp
     plus.cpp
