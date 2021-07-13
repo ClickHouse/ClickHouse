@@ -488,48 +488,48 @@ private:
     }
 #endif
 
-    void loadWarningMessages(std::vector<String> messages)
+    void loadWarningMessages(std::vector<String>& messages)
     {
         connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */, QueryProcessingStage::Complete);
         while (true)
         {
             Packet packet = connection->receivePacket();
             switch (packet.type)
-                {
-                    case Protocol::Server::Data:
-                        if (packet.block)
-                        {
-                            const ColumnString & column = typeid_cast<const ColumnString &>(*packet.block.getByPosition(0).column);
+            {
+                case Protocol::Server::Data:
+                    if (packet.block)
+                    {
+                        const ColumnString & column = typeid_cast<const ColumnString &>(*packet.block.getByPosition(0).column);
 
-                            size_t rows = packet.block.rows();
-                            for (size_t i = 0; i < rows; ++i)
-                                messages.emplace_back(column.getDataAt(i).toString());
-                        }
-                        continue;
+                        size_t rows = packet.block.rows();
+                        for (size_t i = 0; i < rows; ++i)
+                            messages.emplace_back(column.getDataAt(i).toString());
+                    }
+                    continue;
 
-                    case Protocol::Server::Progress:
-                        continue;
-                    case Protocol::Server::ProfileInfo:
-                        continue;
-                    case Protocol::Server::Totals:
-                        continue;
-                    case Protocol::Server::Extremes:
-                        continue;
-                    case Protocol::Server::Log:
-                        continue;
+                case Protocol::Server::Progress:
+                    continue;
+                case Protocol::Server::ProfileInfo:
+                    continue;
+                case Protocol::Server::Totals:
+                    continue;
+                case Protocol::Server::Extremes:
+                    continue;
+                case Protocol::Server::Log:
+                    continue;
 
-                    case Protocol::Server::Exception:
-                        packet.exception->rethrow();
-                        return;
+                case Protocol::Server::Exception:
+                    packet.exception->rethrow();
+                    return;
 
-                    case Protocol::Server::EndOfStream:
-                        return;
+                case Protocol::Server::EndOfStream:
+                    return;
 
-                    default:
-                        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
-                            packet.type, connection->getDescription());
-                }
-        } 
+                default:
+                    throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                        packet.type, connection->getDescription());
+            }
+        }
     }
 
     int mainImpl()
@@ -613,12 +613,13 @@ private:
             {
                 std::vector<String> messages;
                 loadWarningMessages(messages);
-                if (!messages.empty()) {
+                if (!messages.empty())
+                {
                     std::cout << "Warnings:" << std::endl;
-                    for (const auto & message : messages) 
-                        std::cout << message << std::endl;
-                    
+                    for (const auto & message : messages)
+                        std::cout << " * " << message << std::endl;
                 }
+                std::cout << std::endl;
             }
 
             /// Load command history if present.
