@@ -300,6 +300,7 @@ SRCS(
     h3ToParent.cpp
     h3ToString.cpp
     h3kRing.cpp
+    h3toGeo.cpp
     hasColumnInTable.cpp
     hasThreadFuzzer.cpp
     hasToken.cpp
