@@ -35,29 +35,46 @@ FULL JOIN
 ) rr
 USING (id);
 
-SELECT id, yago 
+SELECT id, yago
 FROM ( SELECT item_id AS id FROM t GROUP BY id ) AS ll
-FULL OUTER JOIN ( SELECT item_id AS id, arrayJoin([111, 222, 333, 444]), SUM(price_sold) AS yago FROM t GROUP BY id WITH TOTALS ) AS rr 
+FULL OUTER JOIN ( SELECT item_id AS id, arrayJoin([111, 222, 333, 444]), SUM(price_sold) AS yago FROM t GROUP BY id WITH TOTALS ) AS rr
 USING (id);
 
-SELECT id, yago 
+SELECT id, yago
 FROM ( SELECT item_id AS id, arrayJoin([111, 222, 333]) FROM t GROUP BY id WITH TOTALS ) AS ll
-FULL OUTER JOIN ( SELECT item_id AS id, SUM(price_sold) AS yago FROM t GROUP BY id ) AS rr 
+FULL OUTER JOIN ( SELECT item_id AS id, SUM(price_sold) AS yago FROM t GROUP BY id ) AS rr
 USING (id);
 
-SELECT id, yago 
+SELECT id, yago
 FROM ( SELECT item_id AS id, arrayJoin(emptyArrayInt32()) FROM t GROUP BY id WITH TOTALS ) AS ll
-FULL OUTER JOIN ( SELECT item_id AS id, SUM(price_sold) AS yago FROM t GROUP BY id ) AS rr 
+FULL OUTER JOIN ( SELECT item_id AS id, SUM(price_sold) AS yago FROM t GROUP BY id ) AS rr
 USING (id);
 
-SELECT id, yago 
+SELECT id, yago
 FROM ( SELECT item_id AS id FROM t GROUP BY id ) AS ll
-FULL OUTER JOIN ( SELECT item_id AS id, arrayJoin(emptyArrayInt32()), SUM(price_sold) AS yago FROM t GROUP BY id WITH TOTALS ) AS rr 
+FULL OUTER JOIN ( SELECT item_id AS id, arrayJoin(emptyArrayInt32()), SUM(price_sold) AS yago FROM t GROUP BY id WITH TOTALS ) AS rr
 USING (id);
 
-SELECT id, yago 
+SELECT id, yago
 FROM ( SELECT item_id AS id, arrayJoin([111, 222, 333]) FROM t GROUP BY id WITH TOTALS ) AS ll
-FULL OUTER JOIN ( SELECT item_id AS id, arrayJoin([111, 222, 333, 444]), SUM(price_sold) AS yago FROM t GROUP BY id WITH TOTALS ) AS rr 
+FULL OUTER JOIN ( SELECT item_id AS id, arrayJoin([111, 222, 333, 444]), SUM(price_sold) AS yago FROM t GROUP BY id WITH TOTALS ) AS rr
 USING (id);
+
+INSERT INTO t VALUES (1, 100, '1970-01-01'), (1, 200, '1970-01-02');
+
+SELECT *
+FROM (SELECT item_id FROM t GROUP BY item_id WITH TOTALS) l
+LEFT JOIN (SELECT item_id FROM t ) r
+ON l.item_id = r.item_id;
+
+SELECT *
+FROM (SELECT item_id FROM t) l
+LEFT JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ) r
+ON l.item_id = r.item_id;
+
+SELECT *
+FROM (SELECT item_id FROM t GROUP BY item_id WITH TOTALS) l
+LEFT JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ) r
+ON l.item_id = r.item_id;
 
 DROP TABLE t;
