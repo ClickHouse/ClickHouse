@@ -70,9 +70,7 @@ public:
         return RE2::FullMatch(column_name, string_to_string_regexp);
     }
 
-    ~AvroSerializerTraits()
-    {
-    }
+    ~AvroSerializerTraits() = default;
 
 private:
     const RE2 string_to_string_regexp;
