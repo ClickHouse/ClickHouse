@@ -319,12 +319,17 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
+    /// A list of warnings about server configuration to place in `system.warnings` table.
+    std::vector<String> getWarnings() const;
+
     VolumePtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+
+    void addWarningMessage(const String & msg);
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
