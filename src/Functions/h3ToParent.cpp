@@ -74,7 +74,7 @@ public:
                 throw Exception("The argument 'resolution' (" + toString(resolution) + ") of function " + getName()
                     + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-            UInt64 res = h3ToParent(hindex, resolution);
+            UInt64 res = cellToParent(hindex, resolution);
 
             dst_data[row] = res;
         }

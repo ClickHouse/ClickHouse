@@ -44,6 +44,7 @@
             --table-header-color: #F8F8F8;
             --table-hover-color: #FFF8EF;
             --null-color: #A88;
+            --link-color: #06D;
         }
 
         [data-theme="dark"] {
@@ -61,6 +62,7 @@
             --table-header-color: #102020;
             --table-hover-color: #003333;
             --null-color: #A88;
+            --link-color: #4BDAF7;
         }
 
         html, body
@@ -275,6 +277,35 @@
             font-size: 110%;
             color: #080;
         }
+
+        a, a:visited
+        {
+            color: var(--link-color);
+            text-decoration: none;
+        }
+
+        /* This is for graph in svg */
+        text
+        {
+            font-size: 14px;
+            fill: var(--text-color);
+        }
+
+        .node rect
+        {
+            fill: var(--element-background-color);
+            filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+        }
+
+        .edgePath path
+        {
+            stroke: var(--text-color);
+        }
+
+        marker
+        {
+            fill: var(--text-color);
+        }
     </style>
 </head>
 
@@ -297,6 +328,7 @@
         <table class="monospace shadow" id="data-table"></table>
         <pre class="monospace shadow" id="data-unparsed"></pre>
     </div>
+    <svg id="graph" fill="none"></svg>
     <p id="error" class="monospace shadow">
     </p>
 </body>
@@ -439,6 +471,12 @@
             table.removeChild(table.lastChild);
         }
 
+        let graph = document.getElementById('graph');
+        while (graph.firstChild) {
+            graph.removeChild(graph.lastChild);
+        }
+        graph.style.display = 'none';
+
         document.getElementById('data-unparsed').innerText = '';
         document.getElementById('data-unparsed').style.display = 'none';
 
@@ -453,12 +491,21 @@
 
     function renderResult(response)
     {
-        //console.log(response);
         clear();
 
         let stats = document.getElementById('stats');
         stats.innerText = 'Elapsed: ' + response.statistics.elapsed.toFixed(3) + " sec, read " + response.statistics.rows_read + " rows.";
 
+        /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1.
+        if (response.data.length > 3 && response.data[0][0] === "digraph" && document.getElementById('query').value.match(/^\s*EXPLAIN/i)) {
+            renderGraph(response);
+        } else {
+            renderTable(response);
+        }
+    }
+
+    function renderTable(response)
+    {
         let thead = document.createElement('thead');
         for (let idx in response.meta) {
             let th = document.createElement('th');
@@ -482,6 +529,7 @@
                 let cell = response.data[row_idx][col_idx];
 
                 let is_null = (cell === null);
+                let is_link = false;
 
                 /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
                 let text;
@@ -491,9 +539,23 @@
                     text = JSON.stringify(cell);
                 } else {
                     text = cell;
+
+                    /// If it looks like URL, create a link. This is for convenience.
+                    if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
+                        is_link = true;
+                    }
                 }
 
-                td.appendChild(document.createTextNode(text));
+                let node = document.createTextNode(text);
+                if (is_link) {
+                    let link = document.createElement('a');
+                    link.appendChild(node);
+                    link.href = text;
+                    link.setAttribute('target', '_blank');
+                    node = link;
+                }
+
+                td.appendChild(node);
                 td.className = column_classes[col_idx];
                 if (is_null) {
                     td.className += ' null';
@@ -534,6 +596,51 @@
         clear();
         document.getElementById('error').innerText = response ? response : "No response.";
         document.getElementById('error').style.display = 'block';
+    }
+
+    /// Huge JS libraries should be loaded only if needed.
+    function loadJS(src) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.addEventListener('load', function() { resolve(true); });
+            document.head.appendChild(script);
+        });
+    }
+
+    let load_dagre_promise;
+    function loadDagre() {
+        if (load_dagre_promise) { return load_dagre_promise; }
+
+        load_dagre_promise = Promise.all([
+            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js'),
+            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js'),
+            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js'),
+            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0'),
+        ]);
+
+        return load_dagre_promise;
+    }
+
+    async function renderGraph(response)
+    {
+        await loadDagre();
+
+        /// https://github.com/dagrejs/dagre-d3/issues/131
+        const dot = response.data.reduce((acc, row) => acc + '\n' + row[0].replace(/shape\s*=\s*box/g, 'shape=rect'));
+
+        let graph = graphlibDot.read(dot);
+        graph.graph().rankdir = 'TB';
+
+        let render = new dagreD3.render();
+
+        let svg = document.getElementById('graph');
+        svg.style.display = 'block';
+
+        render(d3.select("#graph"), graph);
+
+        svg.style.width = graph.graph().width;
+        svg.style.height = graph.graph().height;
     }
 
     function setColorTheme(theme)
