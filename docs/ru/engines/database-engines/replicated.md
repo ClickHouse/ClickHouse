@@ -34,25 +34,86 @@ DDL-запросы с базой данных `Replicated` работают по
 
 ## Примеры использования {#usage-example}
 
-The example must show usage and use cases. The following text contains the recommended parts of this section.
-
-Input table:
-
-``` text
-```
-
-Query:
+Создадим реплицируемую базу на трех хостах:
 
 ``` sql
+node1 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','shard1','replica1');
+node2 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','shard1','other_replica');
+node3 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','{replica}');
 ```
 
-Result:
+Выполним DDL-запрос на одном из хостов:
+
+``` sql
+CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
+```
+
+Запрос выполнится на всех остальных хостах:
 
 ``` text
+┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐ 
+│ shard1|replica1      │    0    │       │          2          │        0         │ 
+│ shard1|other_replica │    0    │       │          1          │        0         │
+│ other_shard|r1       │    0    │       │          0          │        0         │
+└──────────────────────┴─────────┴───────┴─────────────────────┴──────────────────┘
 ```
 
-Follow up with any text to clarify the example.
+Кластер в системной таблице `system.clusters`:
 
-**See Also** 
+``` sql
+SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local 
+FROM system.clusters WHERE cluster='r';
+```
 
--   [link](#)
+``` text
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐ 
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │ 
+│ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
+│ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
+└─────────┴───────────┴─────────────┴───────────┴──────────────┴──────┴──────────┘
+```
+
+Создадим распределенную таблицу и вставим в нее данные:
+
+``` sql
+node2 :) CREATE TABLE r.d (n UInt64) ENGINE=Distributed('r','r','rmt', n % 2);
+node3 :) INSERT INTO r SELECT * FROM numbers(10);
+node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY host;
+```
+
+``` text
+┌─hosts─┬─groupArray(n)─┐ 
+│ node1 │  [1,3,5,7,9]  │   
+│ node2 │  [0,2,4,6,8]  │    
+└───────┴───────────────┘
+```
+
+Добавление реплики:
+
+``` sql
+node4 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','r2');
+```
+
+Новая реплика автоматически создаст все таблицы, которые есть в базе, а старые реплики перезагрузят из ZooKeeper-а конфигурацию кластера:
+
+``` text
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐ 
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │ 
+│ r       │     1     │      2      │   node4   │  127.0.0.1   │ 9003 │     0    │
+│ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
+│ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
+└─────────┴───────────┴─────────────┴───────────┴──────────────┴──────┴──────────┘
+```
+
+Распределенная таблица также получит данные от нового хоста:
+
+```sql
+node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY host;
+```
+
+```text
+┌─hosts─┬─groupArray(n)─┐ 
+│ node2 │  [1,3,5,7,9]  │   
+│ node4 │  [0,2,4,6,8]  │    
+└───────┴───────────────┘
+```
