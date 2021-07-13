@@ -1,5 +1,6 @@
 #pragma once
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/CustomWeekTransforms.h>
@@ -35,7 +36,7 @@ public:
     {
         if (arguments.size() == 1)
         {
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -43,7 +44,7 @@ public:
         }
         else if (arguments.size() == 2)
         {
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -59,7 +60,7 @@ public:
         }
         else if (arguments.size() == 3)
         {
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -104,6 +105,9 @@ public:
 
         if (which.isDate())
             return CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
+                arguments, result_type, input_rows_count, Transform{});
+        else if (which.isDate32())
+            return CustomWeekTransformImpl<DataTypeDate32, ToDataType>::execute(
                 arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime())
             return CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(
