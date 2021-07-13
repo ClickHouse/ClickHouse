@@ -162,7 +162,7 @@ void registerStorageSQLite(StorageFactory & factory)
 
         std::error_code err;
         String canonical_path = fs::canonical(database_path, err);
-        /// The path existance is also checked here.
+        /// The path existence is also checked.
         if (err)
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "SQLite database path '{}' is invalid. Error: {}", database_path, err.message());
 
