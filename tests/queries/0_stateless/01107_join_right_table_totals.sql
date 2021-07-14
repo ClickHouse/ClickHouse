@@ -68,13 +68,33 @@ LEFT JOIN (SELECT item_id FROM t ) r
 ON l.item_id = r.item_id;
 
 SELECT *
+FROM (SELECT item_id FROM t GROUP BY item_id WITH TOTALS) l
+RIGHT JOIN (SELECT item_id FROM t ) r
+ON l.item_id = r.item_id;
+
+SELECT *
 FROM (SELECT item_id FROM t) l
 LEFT JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ) r
 ON l.item_id = r.item_id;
 
 SELECT *
+FROM (SELECT item_id FROM t) l
+RIGHT JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ) r
+ON l.item_id = r.item_id;
+
+SELECT *
 FROM (SELECT item_id FROM t GROUP BY item_id WITH TOTALS) l
 LEFT JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS ) r
+ON l.item_id = r.item_id;
+
+SELECT *
+FROM (SELECT item_id, 'foo' AS key, 1 AS val FROM t GROUP BY item_id WITH TOTALS) l
+LEFT JOIN (SELECT item_id, sum(price_sold) AS val FROM t GROUP BY item_id WITH TOTALS ) r
+ON l.item_id = r.item_id;
+
+SELECT *
+FROM (SELECT * FROM t GROUP BY item_id, price_sold, date WITH TOTALS) l
+LEFT JOIN (SELECT * FROM t GROUP BY item_id, price_sold, date WITH TOTALS ) r
 ON l.item_id = r.item_id;
 
 DROP TABLE t;
