@@ -65,11 +65,12 @@ public:
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DiskType::Type getType() const override { return delegate->getType(); }
+    bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
     void startup() override;
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
 protected:
     Executor & getExecutor() override;

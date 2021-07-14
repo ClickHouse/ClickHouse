@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
@@ -125,12 +126,36 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
-
-static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key)
+static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+
+    if (!check_sample_column_is_correct)
+        return;
+
+    const auto & sampling_key = metadata.getSamplingKey();
+    DataTypePtr sampling_column_type = sampling_key.data_types[0];
+
+    bool is_correct_sample_condition = false;
+    if (sampling_key.data_types.size() == 1)
+    {
+        if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
+            is_correct_sample_condition = true;
+        else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
+            is_correct_sample_condition = true;
+        else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
+            is_correct_sample_condition = true;
+        else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
+            is_correct_sample_condition = true;
+    }
+
+    if (!is_correct_sample_condition)
+        throw Exception(
+            "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
+            + ". Must be one unsigned integer type",
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 }
 
 MergeTreeData::MergeTreeData(
@@ -200,7 +225,8 @@ MergeTreeData::MergeTreeData(
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
         /// This is for backward compatibility.
-        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key);
+        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key,
+                              settings->check_sample_column_is_correct);
     }
 
     checkTTLExpressions(metadata_, metadata_);
@@ -1671,7 +1697,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "ALTER MODIFY SAMPLE BY is not supported for default-partitioned tables created with the old syntax",
                     ErrorCodes::BAD_ARGUMENTS);
 
-            checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key);
+            checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key,
+                                  getSettings()->check_sample_column_is_correct);
         }
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
         {
@@ -2746,19 +2773,17 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 
-            /// We do not check allow_s3_zero_copy_replication here because data may be shared
-            /// when allow_s3_zero_copy_replication turned on and off again
+            /// We do not check allow_remote_fs_zero_copy_replication here because data may be shared
+            /// when allow_remote_fs_zero_copy_replication turned on and off again
 
             original_active_part->force_keep_shared_data = false;
 
-            if (original_active_part->volume->getDisk()->getType() == DiskType::Type::S3)
+            if (original_active_part->volume->getDisk()->supportZeroCopyReplication() &&
+                part_copy->volume->getDisk()->supportZeroCopyReplication() &&
+                original_active_part->getUniqueId() == part_copy->getUniqueId())
             {
-                if (part_copy->volume->getDisk()->getType() == DiskType::Type::S3
-                        && original_active_part->getUniqueId() == part_copy->getUniqueId())
-                {
-                    /// May be when several volumes use the same S3 storage
-                    original_active_part->force_keep_shared_data = true;
-                }
+                /// May be when several volumes use the same S3/HDFS storage
+                original_active_part->force_keep_shared_data = true;
             }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);

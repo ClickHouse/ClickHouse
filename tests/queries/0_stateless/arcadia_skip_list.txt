@@ -256,3 +256,12 @@
 01932_null_valid_identifier
 00918_json_functions
 01889_sql_json_functions
+01849_geoToS2
+01851_s2_to_geo
+01852_s2_get_neighbours
+01853_s2_cells_intersect
+01854_s2_cap_contains
+01854_s2_cap_union
+01428_h3_range_check
+01442_h3kring_range_check
+01906_h3_to_geo

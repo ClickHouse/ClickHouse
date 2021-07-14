@@ -26,6 +26,7 @@ SRCS(
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
     DoubleConverter.cpp
+    FileEncryptionCommon.cpp
     HTTPChunkedReadBuffer.cpp
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
@@ -44,6 +45,7 @@ SRCS(
     NullWriteBuffer.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
+    ReadBufferFromEncryptedFile.cpp
     ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
     ReadBufferFromFileDecorator.cpp
@@ -55,6 +57,7 @@ SRCS(
     SeekAvoidingReadBuffer.cpp
     TimeoutSetter.cpp
     UseSSL.cpp
+    WriteBufferFromEncryptedFile.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
     WriteBufferFromFileDecorator.cpp
