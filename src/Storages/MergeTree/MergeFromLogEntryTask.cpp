@@ -35,15 +35,16 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(ReplicatedMergeTreeLogEntry::Ptr en
 
 bool MergeFromLogEntryTask::execute()
 {
+    std::exception_ptr saved_exception;
+
     try
     {
-        std::exception_ptr saved_exception;
+        /// We don't have any backoff for failed entries
+        /// we just count amount of tries for each of them.
+
 
         try
         {
-            /// We don't have any backoff for failed entries
-            /// we just count amount of tries for each of them.
-
             /// Returns false if
             if (executeImpl())
                 return true;
@@ -53,50 +54,52 @@ bool MergeFromLogEntryTask::execute()
 
             return false;
         }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
+            {
+                /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
+                LOG_INFO(log, e.displayText());
+            }
+            else if (e.code() == ErrorCodes::ABORTED)
+            {
+                /// Interrupted merge or downloading a part is not an error.
+                LOG_INFO(log, e.message());
+            }
+            else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
+            {
+                /// Part cannot be added temporarily
+                LOG_INFO(log, e.displayText());
+                storage.cleanup_thread.wakeup();
+            }
+            else
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+            /** This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
+                 * The thread that performs this action will sleep a few seconds after the exception.
+                 * See `queue.processEntry` function.
+                 */
+            throw;
+        }
         catch (...)
         {
-            saved_exception = std::current_exception();
-        }
-
-
-        if (saved_exception)
-        {
-            std::lock_guard lock(storage.queue.state_mutex);
-            entry->exception = saved_exception;
-        }
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
-        {
-            /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
-            LOG_INFO(log, e.displayText());
-        }
-        else if (e.code() == ErrorCodes::ABORTED)
-        {
-            /// Interrupted merge or downloading a part is not an error.
-            LOG_INFO(log, e.message());
-        }
-        else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
-        {
-            /// Part cannot be added temporarily
-            LOG_INFO(log, e.displayText());
-            storage.cleanup_thread.wakeup();
-        }
-        else
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
+            throw;
+        }
 
-        /** This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
-             * The thread that performs this action will sleep a few seconds after the exception.
-             * See `queue.processEntry` function.
-             */
-        throw;
     }
     catch (...)
     {
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        throw;
+        saved_exception = std::current_exception();
     }
+
+
+    if (saved_exception)
+    {
+        std::lock_guard lock(storage.queue.state_mutex);
+        entry->exception = saved_exception;
+    }
+
 
     return false;
 }
@@ -123,7 +126,11 @@ bool MergeFromLogEntryTask::executeImpl()
             try
             {
                 if (!merge_task->execute())
+                {
                     state = State::NEED_COMMIT;
+                    return true;
+                }
+
             }
             catch (...)
             {
@@ -139,7 +146,10 @@ bool MergeFromLogEntryTask::executeImpl()
             try
             {
                 if (!commit())
+                {
                     state = State::CANT_MERGE_NEED_FETCH;
+                    return true;
+                }
             }
             catch (...)
             {
