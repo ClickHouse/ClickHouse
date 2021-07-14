@@ -101,6 +101,24 @@ struct AggregateFunctionSumData
     {
         const auto * end = ptr + count;
 
+        if constexpr (
+            (is_integer_v<T> && !is_big_int_v<T>)
+            || (IsDecimalNumber<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
+        {
+            /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
+            /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
+            T local_sum{};
+            while (ptr < end)
+            {
+                T multiplier = !*null_map;
+                Impl::add(local_sum, *ptr * multiplier);
+                ++ptr;
+                ++null_map;
+            }
+            Impl::add(sum, local_sum);
+            return;
+        }
+
         if constexpr (std::is_floating_point_v<T>)
         {
             constexpr size_t unroll_count = 128 / sizeof(T);

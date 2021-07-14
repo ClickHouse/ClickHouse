@@ -18,6 +18,8 @@
 
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM 0xFFFF
+/// Max int value of Date32, DATE LUT cache size minus daynum_offset_epoch
+#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - 16436)
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
@@ -269,6 +271,8 @@ public:
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
+
+    auto getDayNumOffsetEpoch() const { return daynum_offset_epoch; }
 
     /// All functions below are thread-safe; arguments are not checked.
 
@@ -926,15 +930,17 @@ public:
     {
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return LUTIndex(0);
-
-        return LUTIndex{years_months_lut[(year - DATE_LUT_MIN_YEAR) * 12 + month - 1] + day_of_month - 1};
+        auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
+        UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
+        /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2283-11-11)
+        return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
 
     /// Create DayNum from year, month, day of month.
-    inline ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month) const
+    inline ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
-            return ExtendedDayNum(0);
+            return ExtendedDayNum(default_error_day_num);
 
         return toDayNum(makeLUTIndex(year, month, day_of_month));
     }
@@ -1091,9 +1097,9 @@ public:
         return lut[new_index].date + time;
     }
 
-    inline NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int32 delta) const
     {
-        return addDays(t, delta * 7);
+        return addDays(t, static_cast<Int64>(delta) * 7);
     }
 
     inline UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -1158,14 +1164,14 @@ public:
         return toDayNum(addMonthsIndex(d, delta));
     }
 
-    inline Time NO_SANITIZE_UNDEFINED addQuarters(Time t, Int64 delta) const
+    inline Time NO_SANITIZE_UNDEFINED addQuarters(Time t, Int32 delta) const
     {
-        return addMonths(t, delta * 3);
+        return addMonths(t, static_cast<Int64>(delta) * 3);
     }
 
-    inline ExtendedDayNum addQuarters(ExtendedDayNum d, Int64 delta) const
+    inline ExtendedDayNum addQuarters(ExtendedDayNum d, Int32 delta) const
     {
-        return addMonths(d, delta * 3);
+        return addMonths(d, static_cast<Int64>(delta) * 3);
     }
 
     template <typename DateOrTime>

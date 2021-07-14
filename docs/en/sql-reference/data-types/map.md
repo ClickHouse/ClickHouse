@@ -12,9 +12,6 @@ toc_title: Map(key, value)
 -   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md) or [Integer](../../sql-reference/data-types/int-uint.md).
 -   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Array](../../sql-reference/data-types/array.md).
 
-!!! warning "Warning"
-    Currently `Map` data type is an experimental feature. To work with it you must set `allow_experimental_map_type = 1`.
-
 To get the value from an `a Map('key', 'value')` column, use `a['key']` syntax. This lookup works now with a linear complexity.
 
 **Examples**
