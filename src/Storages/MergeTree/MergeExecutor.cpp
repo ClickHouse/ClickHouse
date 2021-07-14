@@ -24,9 +24,16 @@ MergeExecutor::~MergeExecutor()
 void MergeExecutor::schedule(BackgroundTaskPtr task)
 {
     pool.scheduleOrThrow([this, task]() {
-        if (task->execute()) {
-            schedule(task);
+        try
+        {
+            if (task->execute()) {
+                schedule(task);
+            }
+        } catch (...)
+        {
+            // no-op
         }
+
     }, task->getPriority());
 }
 
