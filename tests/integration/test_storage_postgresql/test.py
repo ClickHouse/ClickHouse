@@ -85,10 +85,10 @@ def test_postgres_conversions(started_cluster):
         h timestamp, i date, j decimal(5, 3), k numeric, l boolean)''')
     node1.query('''
         INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'clickhouse', 'test_types', 'postgres', 'mysecretpassword') VALUES
-        (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12', '2000-05-12', 22.222, 22.222, 1)''')
+        (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12.012345', '2000-05-12', 22.222, 22.222, 1)''')
     result = node1.query('''
         SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3), l FROM postgresql('postgres1:5432', 'clickhouse', 'test_types', 'postgres', 'mysecretpassword')''')
-    assert(result == '-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12\t2000-05-12\t22.222\t22.222\t1\n')
+    assert(result == '-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12.012345\t2000-05-12\t22.222\t22.222\t1\n')
 
     cursor.execute("INSERT INTO test_types (l) VALUES (TRUE), (true), ('yes'), ('y'), ('1');")
     cursor.execute("INSERT INTO test_types (l) VALUES (FALSE), (false), ('no'), ('off'), ('0');")
@@ -100,7 +100,7 @@ def test_postgres_conversions(started_cluster):
         '''CREATE TABLE IF NOT EXISTS test_array_dimensions
            (
                 a Date[] NOT NULL,                          -- Date
-                b Timestamp[] NOT NULL,                     -- DateTime
+                b Timestamp[] NOT NULL,                     -- DateTime64(6)
                 c real[][] NOT NULL,                        -- Float32
                 d double precision[][] NOT NULL,            -- Float64
                 e decimal(5, 5)[][][] NOT NULL,             -- Decimal32
@@ -114,7 +114,7 @@ def test_postgres_conversions(started_cluster):
     result = node1.query('''
         DESCRIBE TABLE postgresql('postgres1:5432', 'clickhouse', 'test_array_dimensions', 'postgres', 'mysecretpassword')''')
     expected = ('a\tArray(Date)\t\t\t\t\t\n' +
-               'b\tArray(DateTime)\t\t\t\t\t\n' +
+               'b\tArray(DateTime64(6))\t\t\t\t\t\n' +
                'c\tArray(Array(Float32))\t\t\t\t\t\n' +
                'd\tArray(Array(Float64))\t\t\t\t\t\n' +
                'e\tArray(Array(Array(Decimal(5, 5))))\t\t\t\t\t\n' +
@@ -129,7 +129,7 @@ def test_postgres_conversions(started_cluster):
     node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'clickhouse', 'test_array_dimensions', 'postgres', 'mysecretpassword') "
         "VALUES ("
         "['2000-05-12', '2000-05-12'], "
-        "['2000-05-12 12:12:12', '2000-05-12 12:12:12'], "
+        "['2000-05-12 12:12:12.012345', '2000-05-12 12:12:12.012345'], "
         "[[1.12345], [1.12345], [1.12345]], "
         "[[1.1234567891], [1.1234567891], [1.1234567891]], "
         "[[[0.11111, 0.11111]], [[0.22222, 0.22222]], [[0.33333, 0.33333]]], "
@@ -144,7 +144,7 @@ def test_postgres_conversions(started_cluster):
         SELECT * FROM postgresql('postgres1:5432', 'clickhouse', 'test_array_dimensions', 'postgres', 'mysecretpassword')''')
     expected = (
         "['2000-05-12','2000-05-12']\t" +
-        "['2000-05-12 12:12:12','2000-05-12 12:12:12']\t" +
+        "['2000-05-12 12:12:12.012345','2000-05-12 12:12:12.012345']\t" +
         "[[1.12345],[1.12345],[1.12345]]\t" +
         "[[1.1234567891],[1.1234567891],[1.1234567891]]\t" +
         "[[[0.11111,0.11111]],[[0.22222,0.22222]],[[0.33333,0.33333]]]\t"
