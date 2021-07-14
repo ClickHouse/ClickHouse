@@ -352,10 +352,6 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 
     ++buf.position();
 
-    /// It is possible that current buffer ends with `\` (start of escape sequence), oef is not reached,
-    /// but there is no pending data yet. Without this wait we will read beyond the end of current buffer in code below.
-    while (!buf.eof() && !buf.hasPendingData()) {}
-
     if (buf.eof())
         return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
 
@@ -1149,8 +1145,6 @@ bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
 
     if (current < in.buffer().end())
         return true;
-
-    while (!in.eof() && !in.hasPendingData()) {}
 
     saveUpToPosition(in, memory, current);
 

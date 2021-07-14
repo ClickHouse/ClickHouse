@@ -56,6 +56,10 @@ bool ZstdInflatingReadBuffer::nextImpl()
         eof = true;
         return !working_buffer.empty();
     }
+    else if (output.pos == 0)
+    {
+        return nextImpl();
+    }
 
     return true;
 }
