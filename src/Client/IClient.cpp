@@ -784,6 +784,13 @@ int IClient::mainImpl()
 }
 
 
+void IClient::initialize(Poco::Util::Application & self)
+{
+    Poco::Util::Application::initialize(self);
+    initializeChild();
+}
+
+
 int IClient::main(const std::vector<std::string> & /*args*/)
 {
     try
@@ -807,6 +814,9 @@ int IClient::main(const std::vector<std::string> & /*args*/)
 
 void IClient::init(int argc, char ** argv)
 {
+    shared_context = Context::createShared();
+    global_context = Context::createGlobal(shared_context.get());
+
     namespace po = boost::program_options;
 
     /// Don't parse options with Poco library, we prefer neat boost::program_options.
@@ -829,9 +839,9 @@ void IClient::init(int argc, char ** argv)
     /// Parse main commandline options.
     po::parsed_options parsed = po::command_line_parser(common_arguments).options(options_description.main_description.value()).run();
 
-    // auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-    // if (!unrecognized_options.empty())
-    //     throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+    //auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+    //if (!unrecognized_options.empty())
+    //    throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
 
     po::variables_map options;
     po::store(parsed, options);

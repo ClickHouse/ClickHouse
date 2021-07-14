@@ -30,11 +30,20 @@ class IClient : public Poco::Util::Application
 public:
     using Arguments = std::vector<std::string>;
 
-    int main(const std::vector<std::string> & /*args*/) override;
+    int main(const std::vector<String> & /*args*/) override;
+
+    void initialize(Poco::Util::Application & self) override;
 
     int mainImpl();
 
     void init(int argc, char ** argv);
+
+    ~IClient() override
+    {
+        if (global_context)
+            global_context->shutdown(); /// required for properly exception handling
+    }
+
 
 protected:
     NameSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж",
@@ -58,8 +67,8 @@ protected:
     /// Settings specified via command line args
     Settings cmd_settings;
 
-    SharedContextHolder shared_context = Context::createShared();
-    ContextMutablePtr global_context = Context::createGlobal(shared_context.get());
+    SharedContextHolder shared_context;
+    ContextMutablePtr global_context;
 
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
@@ -162,6 +171,8 @@ protected:
     virtual bool isInteractive() = 0;
 
     virtual void processMainImplException(const Exception & e) = 0;
+
+    virtual void initializeChild() = 0;
 
     virtual int childMainImpl() = 0;
 
