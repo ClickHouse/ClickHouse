@@ -1067,7 +1067,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
     {
         executor.execute({[this, share_lock] ()
         {
-            clearOldTemporaryDirectories();
+            clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
             return true;
         }, PoolType::MERGE_MUTATE});
         executed = true;
