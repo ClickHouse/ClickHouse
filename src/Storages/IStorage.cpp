@@ -51,7 +51,10 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
     if (is_dropped)
-        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+    {
+        auto table_id = getStorageID();
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
+    }
 
     return result;
 }

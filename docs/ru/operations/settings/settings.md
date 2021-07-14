@@ -1204,8 +1204,15 @@ load_balancing = round_robin
 Работает для форматов JSONEachRow и TSKV.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
+Управляет кавычками при выводе 64-битных или более [целых чисел](../../sql-reference/data-types/int-uint.md) (например, `UInt64` или `Int128`) в формате [JSON](../../interfaces/formats.md#json).
+По умолчанию такие числа заключаются в кавычки. Это поведение соответствует большинству реализаций JavaScript.
 
-Если значение истинно, то при использовании JSON\* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
+Возможные значения:
+
+-   0 — числа выводятся без кавычек.
+-   1 — числа выводятся в кавычках.
+
+Значение по умолчанию: 1.
 
 ## output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
 

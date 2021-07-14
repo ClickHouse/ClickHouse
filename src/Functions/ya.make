@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 CFLAGS(
-    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
+    -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
@@ -44,6 +44,7 @@ SRCS(
     FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
+    FunctionSQLJSON.cpp
     FunctionsAES.cpp
     FunctionsCoding.cpp
     FunctionsConversion.cpp
@@ -76,6 +77,12 @@ SRCS(
     GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
     GeoHash.cpp
     IFunction.cpp
+    JSONPath/Parsers/ParserJSONPath.cpp
+    JSONPath/Parsers/ParserJSONPathMemberAccess.cpp
+    JSONPath/Parsers/ParserJSONPathQuery.cpp
+    JSONPath/Parsers/ParserJSONPathRange.cpp
+    JSONPath/Parsers/ParserJSONPathRoot.cpp
+    JSONPath/Parsers/ParserJSONPathStar.cpp
     TargetSpecific.cpp
     URL/URLHierarchy.cpp
     URL/URLPathHierarchy.cpp
@@ -270,6 +277,7 @@ SRCS(
     gcd.cpp
     generateUUIDv4.cpp
     geoToH3.cpp
+    geoToS2.cpp
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
@@ -293,6 +301,7 @@ SRCS(
     h3ToParent.cpp
     h3ToString.cpp
     h3kRing.cpp
+    h3toGeo.cpp
     hasColumnInTable.cpp
     hasThreadFuzzer.cpp
     hasToken.cpp
@@ -380,6 +389,7 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    padString.cpp
     partitionId.cpp
     pi.cpp
     plus.cpp
@@ -447,6 +457,15 @@ SRCS(
     runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
+    s2CapContains.cpp
+    s2CapUnion.cpp
+    s2CellsIntersect.cpp
+    s2GetNeighbors.cpp
+    s2RectAdd.cpp
+    s2RectContains.cpp
+    s2RectIntersection.cpp
+    s2RectUnion.cpp
+    s2ToGeo.cpp
     sigmoid.cpp
     sign.cpp
     sin.cpp
