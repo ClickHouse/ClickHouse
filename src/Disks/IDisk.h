@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Core/Defines.h>
 #include <common/types.h>
 #include <Common/CurrentMetrics.h>
@@ -156,7 +157,7 @@ public:
         const String & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         size_t estimated_size = 0,
-        size_t aio_threshold = 0,
+        size_t direct_io_threshold = 0,
         size_t mmap_threshold = 0,
         MMappedFileCache * mmap_cache = nullptr) const = 0;
 
@@ -233,7 +234,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr) {}
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) { }
 
 protected:
     friend class DiskDecorator;

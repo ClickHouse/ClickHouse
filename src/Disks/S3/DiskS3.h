@@ -77,7 +77,7 @@ public:
         const String & path,
         size_t buf_size,
         size_t estimated_size,
-        size_t aio_threshold,
+        size_t direct_io_threshold,
         size_t mmap_threshold,
         MMappedFileCache * mmap_cache) const override;
 
@@ -113,7 +113,7 @@ public:
     /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &) override;
 
 private:
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);

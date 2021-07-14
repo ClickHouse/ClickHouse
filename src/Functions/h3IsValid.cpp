@@ -41,8 +41,9 @@ public:
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -59,7 +60,7 @@ public:
         {
             const UInt64 hindex = col_hindex->getUInt(row);
 
-            UInt8 is_valid = h3IsValid(hindex) == 0 ? 0 : 1;
+            UInt8 is_valid = isValidCell(hindex) == 0 ? 0 : 1;
 
             dst_data[row] = is_valid;
         }
