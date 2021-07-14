@@ -193,6 +193,7 @@ struct IDiskRemote::Metadata
 class RemoteDiskDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
+    RemoteDiskDirectoryIterator() {}
     RemoteDiskDirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
 
     void next() override { ++iter; }

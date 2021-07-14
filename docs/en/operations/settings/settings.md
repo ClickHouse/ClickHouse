@@ -1213,7 +1213,15 @@ Default value: `3`.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
-If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
+Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
+Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations. 
+
+Possible values:
+
+-   0 — Integers are output without quotes.
+-   1 — Integers are enclosed in quotes.
+
+Default value: 1.
 
 ## output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
 
@@ -1727,6 +1735,28 @@ Possible values:
 -   0 — Throwing an exception is disabled.
 
 Default value: 0.
+
+## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
+
+Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read. 
+
+These functions can be transformed:
+
+-   [length](../../sql-reference/functions/array-functions.md#array_functions-length) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [empty](../../sql-reference/functions/array-functions.md#function-empty) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [isNull](../../sql-reference/operators/index.md#operator-is-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [isNotNull](../../sql-reference/operators/index.md#is-not-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [count](../../sql-reference/aggregate-functions/reference/count.md) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) to read the [keys](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
+-   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) to read the [values](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
+
+Possible values:
+
+-   0 — Optimization disabled.
+-   1 — Optimization enabled.
+
+Default value: `0`.
 
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
