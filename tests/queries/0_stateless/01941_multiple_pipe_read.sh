@@ -4,7 +4,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 SAMPLE_FILE="$CURDIR/01941_sample_data.csv"
-STD_ERROR_CAPTURED="$CURDIR/01941_std_error_captured.log"
 
 set -e
 
@@ -28,5 +27,5 @@ echo "$SAMPLE_FILE" > /tmp/pipe &
 ${CLICKHOUSE_LOCAL} --structure 'key String' -q 'select * from table; select * from table;' --file /tmp/pipe
 
 
-rm "$STD_ERROR_CAPTURED" "$SAMPLE_FILE"
+rm "$SAMPLE_FILE"
 
