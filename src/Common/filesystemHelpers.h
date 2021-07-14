@@ -35,7 +35,6 @@ bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::p
 /// Returns true if path starts with prefix path
 bool pathStartsWith(const String & path, const String & prefix_path);
 
-String SQLiteDatabaseValidatePath(const String & path, const String & user_files_path);
 }
 
 namespace FS

@@ -3,6 +3,7 @@
 #if USE_SQLITE
 #include <common/range.h>
 #include <DataStreams/SQLiteBlockInputStream.h>
+#include <Databases/SQLite/SQLiteUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
@@ -23,7 +24,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SQLITE_ENGINE_ERROR;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 StorageSQLite::StorageSQLite(
@@ -159,16 +159,9 @@ void registerStorageSQLite(StorageFactory & factory)
         const auto database_path = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         const auto table_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        auto db_path = SQLiteDatabaseValidatePath(database_path, args.getContext()->getUserFilesPath());
+        auto sqlite_db = openSQLiteDB(database_path, args.getContext());
 
-        sqlite3 * tmp_sqlite_db = nullptr;
-        int status = sqlite3_open(db_path.c_str(), &tmp_sqlite_db);
-        if (status != SQLITE_OK)
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                            "Failed to open sqlite database. Status: {}. Message: {}",
-                            status, sqlite3_errstr(status));
-
-        return StorageSQLite::create(args.table_id, std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close),
+        return StorageSQLite::create(args.table_id, sqlite_db,
                                      table_name, args.columns, args.constraints, args.getContext());
     },
     {

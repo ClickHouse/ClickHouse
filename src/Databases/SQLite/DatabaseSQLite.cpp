@@ -10,7 +10,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageSQLite.h>
-#include <Common/filesystemHelpers.h>
+#include <Databases/SQLite/SQLiteUtils.h>
 
 
 namespace DB
@@ -20,7 +20,6 @@ namespace ErrorCodes
 {
     extern const int SQLITE_ENGINE_ERROR;
     extern const int UNKNOWN_TABLE;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 DatabaseSQLite::DatabaseSQLite(
@@ -32,17 +31,7 @@ DatabaseSQLite::DatabaseSQLite(
     , database_engine_define(database_engine_define_->clone())
     , log(&Poco::Logger::get("DatabaseSQLite"))
 {
-    auto db_path = SQLiteDatabaseValidatePath(database_path_, context_->getUserFilesPath());
-
-    sqlite3 * tmp_sqlite_db = nullptr;
-    int status = sqlite3_open(db_path.c_str(), &tmp_sqlite_db);
-
-    if (status != SQLITE_OK)
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                        "Cannot access sqlite database. Error status: {}. Message: {}",
-                        status, sqlite3_errstr(status));
-
-    sqlite_db = std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
+    sqlite_db = openSQLiteDB(database_path_, context_);
 }
 
 
