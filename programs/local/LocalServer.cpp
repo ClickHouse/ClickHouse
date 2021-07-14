@@ -63,17 +63,8 @@ namespace ErrorCodes
 
 LocalServer::LocalServer() = default;
 
-LocalServer::~LocalServer()
+void LocalServer::initializeChild()
 {
-    if (global_context)
-        global_context->shutdown(); /// required for properly exception handling
-}
-
-
-void LocalServer::initialize(Poco::Util::Application & self)
-{
-    Poco::Util::Application::initialize(self);
-
     /// Load config files if exists
     if (config().has("config-file") || fs::exists("config.xml"))
     {
@@ -90,7 +81,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
         // force enable logging
         config().setString("logger", "logger");
         // sensitive data rules are not used here
-        // buildLoggers(config(), logger(), "clickhouse-local");
+        buildLoggers(config(), logger(), "clickhouse-local");
     }
     else
     {
@@ -480,7 +471,7 @@ int LocalServer::childMainImpl()
         attachSystemTables(global_context);
     }
 
-    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
+    /// we can't mutate global_context (can lead to races, as it was already passed to some background threads)
     /// so we can't reuse it safely as a query context and need a copy here
     query_context = Context::createCopy(global_context);
 

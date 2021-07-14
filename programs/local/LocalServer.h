@@ -16,14 +16,10 @@ namespace DB
 /// Lightweight Application for clickhouse-local
 /// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
 /// Quiet mode by default
-class LocalServer : public IClient
+class LocalServer : public IClient, public Loggers
 {
 public:
     LocalServer();
-
-    void initialize(Poco::Util::Application & self) override;
-
-    ~LocalServer() override;
 
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
@@ -47,6 +43,8 @@ private:
 
 protected:
     void processMainImplException(const Exception & e) override;
+
+    void initializeChild() override;
 
     int childMainImpl() override;
 

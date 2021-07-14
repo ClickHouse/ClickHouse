@@ -167,10 +167,8 @@ private:
             connect();
     }
 
-    void initialize(Poco::Util::Application & self) override
+    void initializeChild() override
     {
-        Poco::Util::Application::initialize(self);
-
         const char * home_path_cstr = getenv("HOME");
         if (home_path_cstr)
             home_path = home_path_cstr;
