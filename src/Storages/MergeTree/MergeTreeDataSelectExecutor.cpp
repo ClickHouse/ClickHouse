@@ -763,7 +763,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     size_t num_streams,
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes,
-    bool ignore_size_limits)
+    bool check_limits)
 {
     RangesInDataParts parts_with_ranges(parts.size());
     const Settings & settings = context->getSettingsRef();
@@ -891,7 +891,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             if (!ranges.ranges.empty())
             {
-                if (!ignore_size_limits && (limits.max_rows || leaf_limits.max_rows))
+                if (check_limits && (limits.max_rows || leaf_limits.max_rows))
                 {
                     /// Fail fast if estimated number of rows to read exceeds the limit
                     auto current_rows_estimate = ranges.getRowsCount();
@@ -1157,7 +1157,7 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
         num_streams,
         index_stats,
         true /* use_skip_indexes */,
-        false /* ignore_size_limits */);
+        false /* check_limits */);
 
     return index_stats.back().num_granules_after;
 }

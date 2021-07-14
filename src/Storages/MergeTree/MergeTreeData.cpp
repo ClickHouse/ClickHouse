@@ -3920,7 +3920,7 @@ static void selectBestProjection(
         candidate.required_columns,
         metadata_snapshot,
         candidate.desc->metadata,
-        query_info, // TODO syntax_analysis_result set in index
+        query_info,
         query_context,
         settings.max_threads,
         max_added_blocks);
@@ -3938,7 +3938,7 @@ static void selectBestProjection(
             required_columns,
             metadata_snapshot,
             metadata_snapshot,
-            query_info, // TODO syntax_analysis_result set in index
+            query_info,
             query_context,
             settings.max_threads,
             max_added_blocks);
