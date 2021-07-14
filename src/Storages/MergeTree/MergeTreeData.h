@@ -813,11 +813,11 @@ public:
     bool scheduleDataMovingJob(IBackgroundJobExecutor & executor);
     bool areBackgroundMovesNeeded() const;
 
-    /// Lock part in zookeeper for use common S3 data in several nodes
+    /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
     virtual void lockSharedData(const IMergeTreeDataPart &) const {}
 
-    /// Unlock common S3 data part in zookeeper
+    /// Unlock shared data part in zookeeper
     /// Overridden in StorageReplicatedMergeTree
     virtual bool unlockSharedData(const IMergeTreeDataPart &) const { return true; }
 

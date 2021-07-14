@@ -1,6 +1,6 @@
 ---
 toc_priority: 12
-toc_title: MateriaziePostgreSQL
+toc_title: MaterializedPostgreSQL
 ---
 
 # MaterializedPostgreSQL {#materialize-postgresql}
