@@ -344,23 +344,24 @@ void IDiskRemote::replaceFile(const String & from_path, const String & to_path)
 }
 
 
-void IDiskRemote::removeFileIfExists(const String & path)
-{
-    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
-    if (fs::exists(fs::path(metadata_path) / path))
-    {
-        removeMeta(path, fs_paths_keeper);
-        removeFromRemoteFS(fs_paths_keeper);
-    }
-}
-
-
 void IDiskRemote::removeSharedFile(const String & path, bool keep_in_remote_fs)
 {
     RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
     removeMeta(path, fs_paths_keeper);
     if (!keep_in_remote_fs)
         removeFromRemoteFS(fs_paths_keeper);
+}
+
+
+void IDiskRemote::removeSharedFileIfExists(const String & path, bool keep_in_remote_fs)
+{
+    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
+    if (fs::exists(fs::path(metadata_path) / path))
+    {
+        removeMeta(path, fs_paths_keeper);
+        if (!keep_in_remote_fs)
+            removeFromRemoteFS(fs_paths_keeper);
+    }
 }
 
 
@@ -486,6 +487,15 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
         return true;
     }
     return false;
+}
+
+String IDiskRemote::getUniqueId(const String & path) const
+{
+    Metadata metadata(remote_fs_root_path, metadata_path, path);
+    String id;
+    if (!metadata.remote_fs_objects.empty())
+        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
+    return id;
 }
 
 }

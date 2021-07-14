@@ -212,19 +212,23 @@ public:
     /// Return disk type - "local", "s3", etc.
     virtual DiskType::Type getType() const = 0;
 
+    /// Whether this disk support zero-copy replication.
+    /// Overrode in remote fs disks.
+    virtual bool supportZeroCopyReplication() const = 0;
+
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
     /// Performs action on disk startup.
     virtual void startup() {}
 
-    /// Return some uniq string for file, overrode for S3
-    /// Required for distinguish different copies of the same part on S3
+    /// Return some uniq string for file, overrode for IDiskRemote
+    /// Required for distinguish different copies of the same part on remote disk
     virtual String getUniqueId(const String & path) const { return path; }
 
     /// Check file exists and ClickHouse has an access to it
-    /// Overrode in DiskS3
-    /// Required for S3 to ensure that replica has access to data written by other node
+    /// Overrode in remote FS disks (s3/hdfs)
+    /// Required for remote disk to ensure that replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
     /// Invoked on partitions freeze query.

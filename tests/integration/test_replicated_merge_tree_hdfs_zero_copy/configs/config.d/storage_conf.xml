@@ -1,41 +1,34 @@
 <yandex>
-
     <storage_configuration>
         <disks>
-            <s31>
-                <type>s3</type>
-                <endpoint>http://minio1:9001/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-            </s31>
-            <s31_again>
-                <type>s3</type>
-                <endpoint>http://minio1:9001/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-            </s31_again>
-            <s32>
-                <type>s3</type>
-                <endpoint>http://minio1:9001/root/data2/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-            </s32>
+            <hdfs1>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse1/</endpoint>
+            </hdfs1>
+            <hdfs1_again>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse1/</endpoint>
+            </hdfs1_again>
+            <hdfs2>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse2/</endpoint>
+            </hdfs2>
         </disks>
         <policies>
-            <s3>
+            <hdfs_only>
                 <volumes>
                     <main>
-                        <disk>s31</disk>
+                        <disk>hdfs1</disk>
                     </main>
                 </volumes>
-            </s3>
+            </hdfs_only>
             <hybrid>
                 <volumes>
                     <main>
                         <disk>default</disk>
                     </main>
                     <external>
-                        <disk>s31</disk>
+                        <disk>hdfs1</disk>
                     </external>
                 </volumes>
                 <move_factor>0.0</move_factor>
@@ -43,20 +36,20 @@
             <tiered>
                 <volumes>
                     <main>
-                        <disk>s31</disk>
+                        <disk>hdfs2</disk>
                     </main>
                     <external>
-                        <disk>s32</disk>
+                        <disk>hdfs1</disk>
                     </external>
                 </volumes>
             </tiered>
             <tiered_copy>
                 <volumes>
                     <main>
-                        <disk>s31</disk>
+                        <disk>hdfs1_again</disk>
                     </main>
                     <external>
-                        <disk>s31_again</disk>
+                        <disk>hdfs1</disk>
                     </external>
                 </volumes>
             </tiered_copy>
@@ -64,7 +57,7 @@
     </storage_configuration>
 
     <merge_tree>
-        <min_bytes_for_wide_part>1024</min_bytes_for_wide_part>
+        <min_bytes_for_wide_part>1024000</min_bytes_for_wide_part>
         <old_parts_lifetime>1</old_parts_lifetime>
         <allow_remote_fs_zero_copy_replication>1</allow_remote_fs_zero_copy_replication>
     </merge_tree>
@@ -88,6 +81,6 @@
 
     <macros>
         <cluster>test_cluster</cluster>
+        <shard>1</shard>
     </macros>
-
 </yandex>
