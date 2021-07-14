@@ -304,11 +304,11 @@ bool MergeFromLogEntryTask::prepare()
     future_merged_part->updatePath(storage, reserved_space);
     future_merged_part->merge_type = entry->merge_type;
 
-    if (storage_settings_ptr->allow_s3_zero_copy_replication)
+    if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
         if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::Type::S3)
         {
-            if (storage.merge_strategy_picker.shouldMergeOnSingleReplicaS3Shared(*entry)) // MAYBE FIXME
+            if (storage.merge_strategy_picker.shouldMergeOnSingleReplicaShared(*entry)) // MAYBE FIXME
             {
                 if (!replica_to_execute_merge_picked)
                     replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(*entry);
