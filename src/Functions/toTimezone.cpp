@@ -24,7 +24,7 @@ class ExecutableFunctionToTimeZone : public IExecutableFunction
 public:
     explicit ExecutableFunctionToTimeZone() = default;
 
-    String getName() const override { return "toTimeZone"; }
+    String getName() const override { return "toTimezone"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
@@ -42,7 +42,7 @@ public:
         argument_types(std::move(argument_types_)),
         return_type(std::move(return_type_)) {}
 
-    String getName() const override { return "toTimeZone"; }
+    String getName() const override { return "toTimezone"; }
 
     const DataTypes & getArgumentTypes() const override
     {
@@ -76,59 +76,46 @@ private:
 class ToTimeZoneOverloadResolver : public IFunctionOverloadResolver
 {
 public:
-    static constexpr auto name = "toTimeZone";
+    static constexpr auto name = "toTimezone";
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<ToTimeZoneOverloadResolver>(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const auto which_type = WhichDataType(arguments[0]);
-        if (!which_type.isDateTime() && !which_type.isDateTime64())
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of argument of function " + getName() +
-                            ". Should be DateTime or DateTime64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (which_type.isDateTime())
-            return std::make_shared<DataTypeDateTime>();
-
-        const auto * date_time64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].get());
-        return std::make_shared<DataTypeDateTime64>(date_time64->getScale());
-    }
-
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
-        {
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
                             + toString(arguments.size()) + ", should be 2",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        }
 
         const auto which_type = WhichDataType(arguments[0].type);
         if (!which_type.isDateTime() && !which_type.isDateTime64())
             throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                             ". Should be DateTime or DateTime64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
+        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+        if (which_type.isDateTime())
+            return std::make_shared<DataTypeDateTime>(time_zone_name);
+
+        const auto * date_time64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
+        return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone_name);
+    }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
         bool is_constant_timezone = false;
         if (arguments[1].column)
         {
             is_constant_timezone = isColumnConst(*arguments[1].column);
         }
 
-        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
             data_types[i] = arguments[i].type;
 
-        if (which_type.isDateTime())
-        {
-            return std::make_unique<FunctionBaseToTimeZone>(is_constant_timezone, data_types, std::make_shared<DataTypeDateTime>(time_zone_name));
-        }
-
-        const auto * date_time64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-        return std::make_unique<FunctionBaseToTimeZone>(is_constant_timezone, data_types, std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone_name));
+        return std::make_unique<FunctionBaseToTimeZone>(is_constant_timezone, data_types, result_type);
     }
 };
 
@@ -137,7 +124,7 @@ public:
 void registerFunctionToTimeZone(FunctionFactory & factory)
 {
     factory.registerFunction<ToTimeZoneOverloadResolver>();
-    factory.registerAlias("toTimezone", "toTimeZone");
+    factory.registerAlias("toTimeZone", "toTimezone");
 }
 
 }
