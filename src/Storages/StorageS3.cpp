@@ -581,8 +581,18 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(client_auth.uri.key, compression_method);
     bool has_wildcards = client_auth.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos || client_auth.uri.key.find(PARTITION_ID_WILDCARD) != String::npos;
-    auto insert_query = std::static_pointer_cast<ASTInsertQuery>(query);
-    if (insert_query->partition_by && has_wildcards)
+    auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
+
+    bool is_partitioned_implementation = false;
+    if (insert_query)
+    {
+        if (insert_query->partition_by && has_wildcards)
+        {
+            is_partitioned_implementation = true;
+        }
+    }
+
+    if (is_partitioned_implementation)
     {
         return std::make_shared<PartitionedStorageS3Sink>(
             insert_query->partition_by,
@@ -750,6 +760,11 @@ NamesAndTypesList StorageS3::getVirtuals() const
         {"_path", std::make_shared<DataTypeString>()},
         {"_file", std::make_shared<DataTypeString>()}
     };
+}
+
+bool StorageS3::supportsPartitionBy() const
+{
+    return true;
 }
 
 }
