@@ -465,7 +465,7 @@ Result:
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Converts an input value to the specified data type. Unlike the [reinterpret](#type_conversion_function-reinterpret) function, type conversion is performed in a natural way. If conversion can not be done then an exception is raised.
+Converts an input value to the specified data type. Unlike the [reinterpret](#type_conversion_function-reinterpret) function, `CAST` tries to present the same value using the new data type. If conversion can not be done then an exception is raised.
 Several syntax variants are supported.
 
 **Syntax**
@@ -496,16 +496,16 @@ Query:
 ```sql
 SELECT
     CAST(toInt8(-1), 'UInt8') AS cast_int_to_uint,
-    CAST(1.5 AS Int32) AS cast_float_to_int,
+    CAST(1.5 AS Decimal(3,2)) AS cast_float_to_decimal,
     '1'::Int32 AS cast_string_to_int;
 ```
 
 Result:
 
 ```
-┌─cast_int_to_uint─┬─cast_float_to_int─┬─cast_string_to_int─┐
-│              255 │                 1 │                  1 │
-└──────────────────┴───────────────────┴────────────────────┘
+┌─cast_int_to_uint─┬─cast_float_to_decimal─┬─cast_string_to_int─┐
+│              255 │                  1.50 │                  1 │
+└──────────────────┴───────────────────────┴────────────────────┘
 ```
 
 Query:
