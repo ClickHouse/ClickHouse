@@ -326,7 +326,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
         if (which.isDecimal256())
             return make_decimal_expression("Decimal256");
     }
-    
+
     if (which.isDateTime64())
     {
         auto ast_expression = std::make_shared<ASTFunction>();
