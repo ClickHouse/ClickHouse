@@ -1,4 +1,4 @@
-option(ENABLE_SQLITE "Enalbe sqlite" ${ENABLE_LIBRARIES})
+option(ENABLE_SQLITE "Enable sqlite" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_SQLITE)
     return()

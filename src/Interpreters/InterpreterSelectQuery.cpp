@@ -283,6 +283,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     checkStackSize();
 
     query_info.ignore_projections = options.ignore_projections;
+    query_info.is_projection_query = options.is_projection_query;
 
     initSettings();
     const Settings & settings = context->getSettingsRef();
@@ -575,9 +576,9 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
     ///
-    /// But if we ignore aggregation, plan header does not match result_header.
+    /// But if it's a projection query, plan header does not match result_header.
     /// TODO: add special stage for InterpreterSelectQuery?
-    if (!options.ignore_aggregation && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+    if (!options.is_projection_query && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
@@ -2013,7 +2014,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     expression_before_aggregation->setStepDescription("Before GROUP BY");
     query_plan.addStep(std::move(expression_before_aggregation));
 
-    if (options.ignore_aggregation)
+    if (options.is_projection_query)
         return;
 
     const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
