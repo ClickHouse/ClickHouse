@@ -4,9 +4,9 @@
 
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Common/filesystemHelpers.h>
 
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
+#include <Databases/SQLite/SQLiteUtils.h>
 #include "registerTableFunctions.h"
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -27,7 +27,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int SQLITE_ENGINE_ERROR;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -76,15 +75,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     database_path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-    auto db_path = SQLiteDatabaseValidatePath(database_path, context->getUserFilesPath());
-
-    sqlite3 * tmp_sqlite_db = nullptr;
-    int status = sqlite3_open(db_path.c_str(), &tmp_sqlite_db);
-    if (status != SQLITE_OK)
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                        "SQLite database file path '{}' must be inside 'user_files' directory: {}", database_path);
-
-    sqlite_db = std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
+    sqlite_db = openSQLiteDB(database_path, context);
 }
 
 
