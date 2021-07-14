@@ -236,7 +236,7 @@ def test_different_data_types(started_cluster):
            (
                 key Integer NOT NULL PRIMARY KEY,
                 a Date[] NOT NULL,                          -- Date
-                b Timestamp[] NOT NULL,                     -- DateTime64
+                b Timestamp[] NOT NULL,                     -- DateTime64(6)
                 c real[][] NOT NULL,                        -- Float32
                 d double precision[][] NOT NULL,            -- Float64
                 e decimal(5, 5)[][][] NOT NULL,             -- Decimal32
