@@ -1,2 +1,2 @@
-drop type String; -- { serverError 591 }
+drop type String; -- { serverError 595 }
 drop type MyType; -- { serverError 50 }
