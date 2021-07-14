@@ -35,12 +35,13 @@ public:
 class FunctionBaseToTimeZone : public IFunctionBase
 {
 public:
-    FunctionBaseToTimeZone(bool is_constant_timezone_,
-                           DataTypes argument_types_,
-                           DataTypePtr return_type_):
-        is_constant_timezone(is_constant_timezone_),
-        argument_types(std::move(argument_types_)),
-        return_type(std::move(return_type_)) {}
+    FunctionBaseToTimeZone(
+        bool is_constant_timezone_,
+        DataTypes argument_types_,
+        DataTypePtr return_type_)
+        : is_constant_timezone(is_constant_timezone_)
+        , argument_types(std::move(argument_types_))
+        , return_type(std::move(return_type_)) {}
 
     String getName() const override { return "toTimezone"; }
 
@@ -87,13 +88,13 @@ public:
     {
         if (arguments.size() != 2)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(arguments.size()) + ", should be 2",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                + toString(arguments.size()) + ", should be 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const auto which_type = WhichDataType(arguments[0].type);
         if (!which_type.isDateTime() && !which_type.isDateTime64())
             throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
-                            ". Should be DateTime or DateTime64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                ". Should be DateTime or DateTime64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
         if (which_type.isDateTime())
@@ -107,9 +108,7 @@ public:
     {
         bool is_constant_timezone = false;
         if (arguments[1].column)
-        {
             is_constant_timezone = isColumnConst(*arguments[1].column);
-        }
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
