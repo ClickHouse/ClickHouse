@@ -1998,6 +1998,16 @@ Possible values:
 
 Default value: 16.
 
+## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
+
+Sleep time for merge selecting when no part selected, a lower setting will trigger selecting tasks in background_schedule_pool frequently which result in large amount of requests to zookeeper in large-scale clusters
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 5000 
+
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
 Enables parallel distributed `INSERT ... SELECT` query.
