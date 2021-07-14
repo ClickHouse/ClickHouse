@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 
-String SQLiteDatabaseValidatePath(const String & path, const String & user_files_path)
+String validateSQLiteDatabasePath(const String & path, const String & user_files_path)
 {
     String canonical_user_files_path = fs::canonical(user_files_path);
 
@@ -39,7 +39,7 @@ String SQLiteDatabaseValidatePath(const String & path, const String & user_files
 
 SQLitePtr openSQLiteDB(const String & database_path, ContextPtr context)
 {
-    auto validated_path = SQLiteDatabaseValidatePath(database_path, context->getUserFilesPath());
+    auto validated_path = validateSQLiteDatabasePath(database_path, context->getUserFilesPath());
 
     sqlite3 * tmp_sqlite_db = nullptr;
     int status = sqlite3_open(validated_path.c_str(), &tmp_sqlite_db);
