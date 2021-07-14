@@ -153,6 +153,26 @@ Possible values:
 
 Default value: 1048576.
 
+## table_function_remote_max_addresses {#settings-table_function_remote_max_addresses}
+
+Sets the maximum number of addresses generated with globs for [remote](../../sql-reference/table-functions/remote.md) function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
+##  glob_expansion_max_elements  {#settings-glob_expansion_max_elements }
+
+Sets the maximum number of addresses generated with globs for external storages and table functions except `remote` function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
