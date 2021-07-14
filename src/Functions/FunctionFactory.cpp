@@ -58,7 +58,7 @@ void FunctionFactory::registerFunction(
 
 FunctionOverloadResolverPtr FunctionFactory::getImpl(
     const std::string & name,
-    ContextConstPtr context) const
+    ContextPtr context) const
 {
     auto res = tryGetImpl(name, context);
     if (!res)
@@ -89,14 +89,14 @@ std::vector<std::string> FunctionFactory::getAllNames() const
 
 FunctionOverloadResolverPtr FunctionFactory::get(
     const std::string & name,
-    ContextConstPtr context) const
+    ContextPtr context) const
 {
     return getImpl(name, context);
 }
 
 FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
-    ContextConstPtr context) const
+    ContextPtr context) const
 {
     std::lock_guard<std::mutex> guard(mutex);
     String name = getAliasToOrName(name_param);
@@ -127,8 +127,8 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 }
 
 FunctionOverloadResolverPtr FunctionFactory::tryGet(
-        const std::string & name,
-        ContextConstPtr context) const
+    const std::string & name,
+    ContextPtr context) const
 {
     auto impl = tryGetImpl(name, context);
     return impl ? std::move(impl) : nullptr;
