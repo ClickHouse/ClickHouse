@@ -4,7 +4,7 @@
 
 #include <Disks/IDisk.h>
 
-#include <DataStreams/RemoteBlockInputStream.h>
+#include <DataStreams/RemoteQueryExecutor.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -57,6 +57,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/NullSink.h>
 
@@ -739,9 +740,10 @@ QueryPipelinePtr StorageDistributed::distributedWrite(const ASTInsertQuery & que
                     "Expected exactly one connection for shard " + toString(shard_info.shard_num), ErrorCodes::LOGICAL_ERROR);
 
             ///  INSERT SELECT query returns empty block
-            auto in_stream = std::make_shared<RemoteBlockInputStream>(std::move(connections), new_query_str, Block{}, local_context);
+            auto remote_query_executor
+                = std::make_shared<RemoteQueryExecutor>(shard_info.pool, std::move(connections), new_query_str, Block{}, local_context);
             pipelines.emplace_back(std::make_unique<QueryPipeline>());
-            pipelines.back()->init(Pipe(std::make_shared<SourceFromInputStream>(std::move(in_stream))));
+            pipelines.back()->init(Pipe(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote)));
             pipelines.back()->setSinks([](const Block & header, QueryPipeline::StreamType) -> ProcessorPtr
             {
                 return std::make_shared<EmptySink>(header);
