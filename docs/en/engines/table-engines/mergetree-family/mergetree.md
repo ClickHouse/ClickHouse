@@ -821,4 +821,52 @@ S3 disk can be configured as `main` or `cold` storage:
 
 In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->
+## Using HDFS for Data Storage {#table_engine-mergetree-hdfs}
+
+[HDFS](https://hadoop.apache.org/docs/r1.2.1/hdfs_design.html) is a distributed file system for remote data storage.
+
+`MergeTree` family table engines is able to store data to HDFS using a disk with type `HDFS`.
+
+Configuration markup:
+``` xml
+<yandex>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+            </hdfs>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <hdfs>
+                <volumes>
+                    <main>
+                        <disk>hdfs</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </hdfs>
+        </policies>
+    </storage_configuration>
+
+    <merge_tree>
+        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+    </merge_tree>
+</yandex>
+```
+
+Required parameters:
+
+-   `endpoint` — HDFS endpoint url in `path`. Endpoint url should contain bucket and root path to store data. It is used to lookup the HDFS configuration for retrieving files.
+
+Optional parameters:
+
+-   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
+-   `thread_pool_size` — The number of threads in the Global Thread pool.
+-   `objects_chunk_size_to_delete` — The number of threads in the Global Thread pool.
