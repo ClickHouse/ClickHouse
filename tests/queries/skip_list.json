@@ -520,6 +520,7 @@
         "01933_client_replxx_convert_history", /// Uses non unique history file
         "01999_grant_with_replace",
         "01902_table_function_merge_db_repr",
+        "01939_user_with_default_database", //create user and database
         "01946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer",
         "01946_test_wrong_host_name_access"
     ]
