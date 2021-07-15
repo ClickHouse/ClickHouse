@@ -118,6 +118,7 @@ SRCS(
     MySQL/MySQLSettings.cpp
     PartitionCommands.cpp
     ProjectionsDescription.cpp
+    ReadFinalForExternalReplicaStorage.cpp
     ReadInOrderOptimizer.cpp
     SelectQueryDescription.cpp
     SetSettings.cpp
