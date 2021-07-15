@@ -16,16 +16,16 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
   1. Установите из App Store последнюю версию [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12). 
 
-  1. Запустите ее, чтобы принять лицензионное соглашение. Необходимые компоненты установятся автоматически.
+  2. Запустите ее, чтобы принять лицензионное соглашение. Необходимые компоненты установятся автоматически.
 
-  1. Затем убедитесь, что в системе выбрана последняя версия инструментов командной строки:
+  3. Затем убедитесь, что в системе выбрана последняя версия инструментов командной строки:
 
     ``` bash
     $ sudo rm -rf /Library/Developer/CommandLineTools
     $ sudo xcode-select --install
     ```
 
-  1. Перезагрузитесь.
+  4. Перезагрузитесь.
 
 ## Установка компиляторов, инструментов и библиотек {#install-required-compilers-tools-and-libraries}
 
@@ -112,14 +112,14 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
   </plist>
   ```
 
-1. Выполните команду:
+2. Выполните команду:
 
   ``` bash
   $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
   ```
 
-1. Перезагрузитесь.
+3. Перезагрузитесь.
 
-1. Чтобы проверить, как это работает, выполните команду `ulimit -n`.
+4. Чтобы проверить, как это работает, выполните команду `ulimit -n`.
 
 [Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->
