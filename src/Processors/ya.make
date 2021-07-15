@@ -126,6 +126,7 @@ SRCS(
     QueryPlan/QueryPlan.cpp
     QueryPlan/ReadFromMergeTree.cpp
     QueryPlan/ReadFromPreparedSource.cpp
+    QueryPlan/ReadFromRemote.cpp
     QueryPlan/ReadNothingStep.cpp
     QueryPlan/RollupStep.cpp
     QueryPlan/SettingQuotaAndLimitsStep.cpp
