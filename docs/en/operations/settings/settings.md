@@ -509,6 +509,19 @@ Possible values:
 
 Default value: `ALL`.
 
+## join_algorithm {#settings-join_algorithm}
+
+Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
+
+Possible values:
+
+- 'hash'
+- 'partial_merge'
+- 'prefer_partial_merge'
+- 'auto' — tries to change `hash` join to `merge` join on the fly to avoid out of memory.
+
+Default value: `hash`.
+
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
 Changes behaviour of join operations with `ANY` strictness.

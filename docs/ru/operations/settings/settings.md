@@ -490,6 +490,19 @@ ClickHouse может парсить только базовый формат `Y
 
 Значение по умолчанию: `ALL`.
 
+## join_algorithm {#settings-join_algorithm}
+
+Определяет алгоритм выполнения запроса [JOIN](../../sql-reference/statements/select/join.md).
+
+Возможные значения:
+
+- 'hash'
+- 'partial_merge'
+- 'prefer_partial_merge'
+- 'auto' — сервер пытается на лету заменить алгоритм `hash` на `merge` чтобы избежать переполнения памяти.
+
+Значение по умолчанию: `hash`.
+
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
 Изменяет поведение операций, выполняемых со строгостью `ANY`.

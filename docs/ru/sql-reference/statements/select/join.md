@@ -38,10 +38,19 @@ FROM <left_table>
 
 ## Настройки {#join-settings}
 
-!!! note "Примечание"
-    Значение строгости по умолчанию может быть переопределено с помощью настройки [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
+Значение строгости по умолчанию может быть переопределено с помощью настройки [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
 
 Поведение сервера ClickHouse для операций `ANY JOIN` зависит от параметра [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys).
+
+**См. также**
+
+- [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm)
+- [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+- [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+- [partial_merge_join_optimizations](../../../operations/settings/settings.md#partial_merge_join_optimizations)
+- [partial_merge_join_rows_in_right_blocks](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
+- [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
+- [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
 
 ### Использование ASOF JOIN {#asof-join-usage}
 

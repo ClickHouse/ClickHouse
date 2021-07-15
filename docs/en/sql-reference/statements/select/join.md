@@ -36,12 +36,21 @@ Additional join types available in ClickHouse:
 -   `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
 -   `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-## Setting {#join-settings}
+## Settings {#join-settings}
 
-!!! note "Note"
-    The default join type can be overriden using [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
+The default join type can be overriden using [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
 
-    Also the behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
+The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
+
+**See also**
+
+- [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm)
+- [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+- [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+- [partial_merge_join_optimizations](../../../operations/settings/settings.md#partial_merge_join_optimizations)
+- [partial_merge_join_rows_in_right_blocks](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
+- [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
+- [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
 
 ### ASOF JOIN Usage {#asof-join-usage}
 
