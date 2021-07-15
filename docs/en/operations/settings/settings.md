@@ -1213,7 +1213,15 @@ Default value: `3`.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
-If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
+Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
+Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations. 
+
+Possible values:
+
+-   0 — Integers are output without quotes.
+-   1 — Integers are enclosed in quotes.
+
+Default value: 1.
 
 ## output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
 
@@ -1989,6 +1997,16 @@ Possible values:
 -   Any positive integer.
 
 Default value: 16.
+
+## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
+
+Sleep time for merge selecting when no part selected, a lower setting will trigger selecting tasks in background_schedule_pool frequently which result in large amount of requests to zookeeper in large-scale clusters
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 5000 
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
@@ -3202,3 +3220,14 @@ Default value: `1`.
 **Usage**
 
 If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
+
+## output_format_arrow_low_cardinality_as_dictionary {#output-format-arrow-low-cardinality-as-dictionary}
+
+Allows to convert the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) type to the `DICTIONARY` type of the [Arrow](../../interfaces/formats.md#data-format-arrow) format for `SELECT` queries.
+
+Possible values:
+
+-   0 — The `LowCardinality` type is not converted to the `DICTIONARY` type.
+-   1 — The `LowCardinality` type is converted to the `DICTIONARY` type.
+
+Default value: `0`.

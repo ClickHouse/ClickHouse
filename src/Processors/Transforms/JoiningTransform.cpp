@@ -1,6 +1,6 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/join_common.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -159,19 +159,16 @@ void JoiningTransform::transform(Chunk & chunk)
     Block block;
     if (on_totals)
     {
-        /// We have to make chunk empty before return
-        /// In case of using `arrayJoin` we can get more or less rows than one
-        auto cols = chunk.detachColumns();
-        for (auto & col : cols)
-            col = col->cloneResized(1);
-        block = inputs.front().getHeader().cloneWithColumns(std::move(cols));
+        const auto & left_totals = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+        const auto & right_totals = join->getTotals();
 
         /// Drop totals if both out stream and joined stream doesn't have ones.
         /// See comment in ExpressionTransform.h
-        if (default_totals && !join->hasTotals())
+        if (default_totals && !right_totals)
             return;
 
-        join->joinTotals(block);
+        block = outputs.front().getHeader().cloneEmpty();
+        JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), block);
     }
     else
         block = readExecute(chunk);

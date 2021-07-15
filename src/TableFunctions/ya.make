@@ -22,6 +22,7 @@ SRCS(
     TableFunctionNull.cpp
     TableFunctionNumbers.cpp
     TableFunctionRemote.cpp
+    TableFunctionSQLite.cpp
     TableFunctionURL.cpp
     TableFunctionValues.cpp
     TableFunctionView.cpp
