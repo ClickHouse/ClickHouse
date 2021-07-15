@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/quoteString.h>
@@ -71,7 +71,7 @@ static DataTypePtr convertPostgreSQLDataType(String & type, const std::function<
     else if (type == "bigserial")
         res = std::make_shared<DataTypeUInt64>();
     else if (type.starts_with("timestamp"))
-        res = std::make_shared<DataTypeDateTime>();
+        res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
         res = std::make_shared<DataTypeDate>();
     else if (type.starts_with("numeric"))

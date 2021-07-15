@@ -10,6 +10,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageSQLite.h>
+#include <Databases/SQLite/SQLiteUtils.h>
 
 
 namespace DB
@@ -30,17 +31,7 @@ DatabaseSQLite::DatabaseSQLite(
     , database_engine_define(database_engine_define_->clone())
     , log(&Poco::Logger::get("DatabaseSQLite"))
 {
-    sqlite3 * tmp_sqlite_db = nullptr;
-    int status = sqlite3_open(database_path_.c_str(), &tmp_sqlite_db);
-
-    if (status != SQLITE_OK)
-    {
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Cannot access sqlite database. Error status: {}. Message: {}",
-                        status, sqlite3_errstr(status));
-    }
-
-    sqlite_db = std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
+    sqlite_db = openSQLiteDB(database_path_, context_);
 }
 
 

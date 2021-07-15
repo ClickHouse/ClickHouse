@@ -9,7 +9,7 @@
     Do not use any JavaScript or CSS frameworks or preprocessors.
     This HTML page should not require any build systems (node.js, npm, gulp, etc.)
     This HTML page should not be minified, instead it should be reasonably minimalistic by itself.
-    This HTML page should not load any external resources
+    This HTML page should not load any external resources on load.
     (CSS and JavaScript must be embedded directly to the page. No external fonts or images should be loaded).
     This UI should look as lightweight, clean and fast as possible.
     All UI elements must be aligned in pixel-perfect way.
@@ -343,13 +343,18 @@
     /// Save query in history only if it is different.
     let previous_query = '';
 
-    /// Substitute the address of the server where the page is served.
-    if (location.protocol != 'file:') {
+    const current_url = new URL(window.location);
+
+    const server_address = current_url.searchParams.get('url');
+    if (server_address) {
+        document.getElementById('url').value = server_address;
+    } else if (location.protocol != 'file:') {
+        /// Substitute the address of the server where the page is served.
         document.getElementById('url').value = location.origin;
     }
 
     /// Substitute user name if it's specified in the query string
-    let user_from_url = (new URL(window.location)).searchParams.get('user');
+    const user_from_url = current_url.searchParams.get('user');
     if (user_from_url) {
         document.getElementById('user').value = user_from_url;
     }
@@ -361,7 +366,9 @@
         let user = document.getElementById('user').value;
         let password = document.getElementById('password').value;
 
-        let url = document.getElementById('url').value +
+        let server_address = document.getElementById('url').value;
+
+        let url = server_address +
             /// Ask server to allow cross-domain requests.
             '?add_http_cors_header=1' +
             '&user=' + encodeURIComponent(user) +
@@ -390,11 +397,18 @@
                         response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
                     };
                     let title = "ClickHouse Query: " + query;
-                    let url = window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query);
+
+                    let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+                    if (server_address != location.origin) {
+                        /// Save server's address in URL if it's not identical to the address of the play UI.
+                        history_url += '&url=' + encodeURIComponent(server_address);
+                    }
+                    history_url += '#' + window.btoa(query);
+
                     if (previous_query == '') {
-                        history.replaceState(state, title, url);
+                        history.replaceState(state, title, history_url);
                     } else {
-                        history.pushState(state, title, url);
+                        history.pushState(state, title, history_url);
                     }
                     document.title = title;
                     previous_query = query;
