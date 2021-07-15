@@ -465,27 +465,29 @@ Result:
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Converts input value `x` to the `T` data type. Unlike to `reinterpret` function, type conversion is performed in a natural way.
-
-The syntax `CAST(x AS t)` is also supported.
-
-!!! note "Note"
-    If value `x` does not fit the bounds of type `T`, the function overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
+Converts an input value to the specified data type. Unlike the [reinterpret](#type_conversion_function-reinterpret) function, `CAST` tries to present the same value using the new data type. If the conversion can not be done then an exception is raised.
+Several syntax variants are supported.
 
 **Syntax**
 
 ``` sql
 CAST(x, T)
+CAST(x AS t)
+x::t
 ```
 
 **Arguments**
 
--   `x` — Any type. 
--   `T` — Destination type. [String](../../sql-reference/data-types/string.md).  
+-   `x` — A value to convert. May be of any type. 
+-   `T` — The name of the target data type. [String](../../sql-reference/data-types/string.md).  
+-   `t` — The target data type.
 
 **Returned value**
 
--   Destination type value.
+-    Converted value.
+
+!!! note "Note"
+    If the input value does not fit the bounds of the target type, the result overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
 
 **Examples**
 
@@ -494,16 +496,16 @@ Query:
 ```sql
 SELECT
     CAST(toInt8(-1), 'UInt8') AS cast_int_to_uint,
-    CAST(toInt8(1), 'Float32') AS cast_int_to_float,
-    CAST('1', 'UInt32') AS cast_string_to_int;
+    CAST(1.5 AS Decimal(3,2)) AS cast_float_to_decimal,
+    '1'::Int32 AS cast_string_to_int;
 ```
 
 Result:
 
 ```
-┌─cast_int_to_uint─┬─cast_int_to_float─┬─cast_string_to_int─┐
-│              255 │                 1 │                  1 │
-└──────────────────┴───────────────────┴────────────────────┘
+┌─cast_int_to_uint─┬─cast_float_to_decimal─┬─cast_string_to_int─┐
+│              255 │                  1.50 │                  1 │
+└──────────────────┴───────────────────────┴────────────────────┘
 ```
 
 Query:
