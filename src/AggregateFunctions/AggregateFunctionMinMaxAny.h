@@ -7,11 +7,20 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <common/StringRef.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
 
 namespace DB
 {
@@ -20,6 +29,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** Aggregate functions that store one of passed values.
@@ -177,6 +187,265 @@ public:
     {
         return false;
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = true;
+
+    static llvm::Value * getValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
+
+        auto * type = toNativeType<T>(builder);
+        auto * value_ptr_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, value_offset_from_structure);
+        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
+
+        return value_ptr;
+    }
+
+    static llvm::Value * getValueFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * type = toNativeType<T>(builder);
+        auto * value_ptr = getValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
+
+        return b.CreateLoad(type, value_ptr);
+    }
+
+    static void compileChange(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        b.CreateStore(b.getInt1(true), has_value_ptr);
+
+        auto * value_ptr = getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr);
+        b.CreateStore(value_to_check, value_ptr);
+    }
+
+    static void compileChangeMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        auto * value_src = getValueFromAggregateDataPtr(builder, aggregate_data_src_ptr);
+
+        compileChange(builder, aggregate_data_dst_ptr, value_src);
+    }
+
+    static void compileChangeFirstTime(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        b.CreateCondBr(has_value_value, if_should_not_change, if_should_change);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_change);
+        compileChange(builder, aggregate_data_ptr, value_to_check);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    static void compileChangeFirstTimeMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
+
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        b.CreateCondBr(b.CreateAnd(b.CreateNot(has_value_dst), has_value_src), if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChangeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    static void compileChangeEveryTime(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        compileChange(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeEveryTimeMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        b.CreateCondBr(has_value_src, if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChangeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    template <bool is_less>
+    static void compileChangeComparison(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+
+        auto * value = getValueFromAggregateDataPtr(b, aggregate_data_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        auto is_signed = std::numeric_limits<T>::is_signed;
+
+        llvm::Value * should_change_after_comparison = nullptr;
+
+        if constexpr (is_less)
+        {
+            if (value_to_check->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_to_check, value) : b.CreateICmpULT(value_to_check, value);
+            else
+                should_change_after_comparison = b.CreateFCmpOLT(value_to_check, value);
+        }
+        else
+        {
+            if (value_to_check->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_to_check, value) : b.CreateICmpUGT(value_to_check, value);
+            else
+                should_change_after_comparison = b.CreateFCmpOGT(value_to_check, value);
+        }
+
+        b.CreateCondBr(b.CreateOr(b.CreateNot(has_value_value), should_change_after_comparison), if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChange(builder, aggregate_data_ptr, value_to_check);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    template <bool is_less>
+    static void compileChangeComparisonMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
+
+        auto * value_dst = getValueFromAggregateDataPtr(b, aggregate_data_dst_ptr);
+
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
+
+        auto * value_src = getValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        auto is_signed = std::numeric_limits<T>::is_signed;
+
+        llvm::Value * should_change_after_comparison = nullptr;
+
+        if constexpr (is_less)
+        {
+            if (value_src->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_src, value_dst) : b.CreateICmpULT(value_src, value_dst);
+            else
+                should_change_after_comparison = b.CreateFCmpOLT(value_src, value_dst);
+        }
+        else
+        {
+            if (value_src->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_src, value_dst) : b.CreateICmpUGT(value_src, value_dst);
+            else
+                should_change_after_comparison = b.CreateFCmpOGT(value_src, value_dst);
+        }
+
+        b.CreateCondBr(b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), should_change_after_comparison)), if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChangeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    static void compileChangeIfLess(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        static constexpr bool is_less = true;
+        compileChangeComparison<is_less>(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfLessMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        static constexpr bool is_less = true;
+        compileChangeComparisonMerge<is_less>(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+    static void compileChangeIfGreater(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        static constexpr bool is_less = false;
+        compileChangeComparison<is_less>(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfGreaterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        static constexpr bool is_less = false;
+        compileChangeComparisonMerge<is_less>(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+    static llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+    {
+        return getValueFromAggregateDataPtr(builder, aggregate_data_ptr);
+    }
+
+#endif
+
 };
 
 
@@ -400,6 +669,13 @@ public:
     {
         return true;
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
+
 };
 
 static_assert(
@@ -576,6 +852,13 @@ public:
     {
         return false;
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
+
 };
 
 
@@ -593,6 +876,22 @@ struct AggregateFunctionMinData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfLess(to, arena); }
 
     static const char * name() { return "min"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeIfLess(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeIfLessMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+#endif
 };
 
 template <typename Data>
@@ -604,6 +903,22 @@ struct AggregateFunctionMaxData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfGreater(to, arena); }
 
     static const char * name() { return "max"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeIfGreater(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeIfGreaterMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+#endif
 };
 
 template <typename Data>
@@ -615,6 +930,22 @@ struct AggregateFunctionAnyData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeFirstTime(to, arena); }
 
     static const char * name() { return "any"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeFirstTime(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeFirstTimeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+#endif
 };
 
 template <typename Data>
@@ -626,6 +957,22 @@ struct AggregateFunctionAnyLastData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeEveryTime(to, arena); }
 
     static const char * name() { return "anyLast"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeEveryTime(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeEveryTimeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+#endif
 };
 
 
@@ -693,6 +1040,13 @@ struct AggregateFunctionAnyHeavyData : Data
     }
 
     static const char * name() { return "anyHeavy"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
+
 };
 
 
@@ -752,6 +1106,62 @@ public:
     {
         this->data(place).insertResultInto(to);
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        if constexpr (!Data::is_compilable)
+            return false;
+
+        return canBeNativeType(*this->argument_types[0]);
+    }
+
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->sizeOfData(), llvm::assumeAligned(this->alignOfData()));
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> & argument_values) const override
+    {
+        if constexpr (Data::is_compilable)
+        {
+            Data::compileChangeIfBetter(builder, aggregate_data_ptr, argument_values[0]);
+        }
+        else
+        {
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+
+    void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+        {
+            Data::compileChangeIfBetterMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        }
+        else
+        {
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+        {
+            return Data::compileGetResult(builder, aggregate_data_ptr);
+        }
+        else
+        {
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+
+#endif
 };
 
 }

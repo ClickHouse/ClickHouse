@@ -47,14 +47,16 @@ public:
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
 
         arg = arguments[1].get();
         if (!isInteger(arg))
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(2) + " of function " + getName() + ". Must be integer",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be integer",
+                arg->getName(), 2, getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
@@ -77,7 +79,7 @@ public:
             const H3Index origin_hindex = col_hindex->getUInt(row);
             const int k = col_k->getInt(row);
 
-            /// Overflow is possible. The function maxKringSize does not check for overflow.
+            /// Overflow is possible. The function maxGridDiskSize does not check for overflow.
             /// The calculation is similar to square of k but several times more.
             /// Let's use huge underestimation as the safe bound. We should not allow to generate too large arrays nevertheless.
             constexpr auto max_k = 10000;
@@ -86,9 +88,9 @@ public:
             if (k < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
-            const auto vec_size = maxKringSize(k);
+            const auto vec_size = maxGridDiskSize(k);
             hindex_vec.resize(vec_size);
-            kRing(origin_hindex, k, hindex_vec.data());
+            gridDisk(origin_hindex, k, hindex_vec.data());
 
             dst_data.reserve(dst_data.size() + vec_size);
             for (auto hindex : hindex_vec)

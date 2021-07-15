@@ -110,6 +110,11 @@ struct CRCFunctionWrapper
         throw Exception("Cannot apply function " + std::string(Impl::name) + " to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
+    [[noreturn]] static void uuid(const ColumnUUID::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    {
+        throw Exception("Cannot apply function " + std::string(Impl::name) + " to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
 private:
     static ReturnType doCRC(const ColumnString::Chars & buf, size_t offset, size_t size)
     {
