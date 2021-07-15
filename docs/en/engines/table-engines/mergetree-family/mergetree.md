@@ -76,7 +76,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
 -   `SAMPLE BY` — An expression for sampling. Optional.
 
-    If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+    If a sampling expression is used, the primary key must contain it. The result of sampling expression must be unsigned integer. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 -   `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.
 
