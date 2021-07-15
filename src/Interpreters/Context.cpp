@@ -2335,11 +2335,6 @@ OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, 
     return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, shared_from_this());
 }
 
-OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
-{
-    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this());
-}
-
 
 time_t Context::getUptimeSeconds() const
 {
@@ -2710,6 +2705,20 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
         const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
+}
+
+void Context::setMySQLProtocolContext(MySQLWireContext * mysql_context)
+{
+    assert(session_context.lock().get() == this);
+    assert(!mysql_protocol_context);
+    assert(mysql_context);
+    mysql_protocol_context = mysql_context;
+}
+
+MySQLWireContext * Context::getMySQLProtocolContext() const
+{
+    assert(!mysql_protocol_context || session_context.lock().get());
+    return mysql_protocol_context;
 }
 
 }
