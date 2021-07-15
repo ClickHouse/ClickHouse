@@ -3,8 +3,22 @@ from kerberos.tests.common import *
 from kerberos.requirements.requirements import *
 
 import time
-import datetime
-import itertools
+
+
+@TestScenario
+@Requirements(
+    RQ_SRS_016_Kerberos_Ping("1.0")
+)
+def ping(self):
+    """Containers should be reachable
+    """
+    ch_nodes = self.context.ch_nodes
+
+    for i in range(3):
+        with When(f"curl ch_{i} kerberos"):
+            r = ch_nodes[i].command(f"curl kerberos -c 1")
+        with Then(f"return code should be 0"):
+            assert r.exitcode == 7, error()
 
 
 @TestScenario
@@ -84,8 +98,10 @@ def invalid_server_ticket(self):
         ch_nodes[2].cmd("kdestroy")
         while True:
             kinit_no_keytab(node=ch_nodes[2])
+            create_server_principal(node=ch_nodes[0])
             if ch_nodes[2].cmd(test_select_query(node=ch_nodes[0])).output == "kerberos_user":
                 break
+            debug(test_select_query(node=ch_nodes[0]))
         ch_nodes[2].cmd("kdestroy")
 
     with And("I expect the user to be default"):
@@ -97,8 +113,8 @@ def invalid_server_ticket(self):
     RQ_SRS_016_Kerberos_KerberosNotAvailable_InvalidClientTicket("1.0")
 )
 def invalid_client_ticket(self):
-    """ClickHouse SHALL reject Kerberos authentication no Kerberos server is reachable
-    and client has no valid ticket (or the existing ticket is outdated).
+    """ClickHouse SHALL reject Kerberos authentication in case client has
+     no valid ticket (or the existing ticket is outdated).
     """
     ch_nodes = self.context.ch_nodes
 
@@ -108,8 +124,8 @@ def invalid_client_ticket(self):
     with And("setting up server principal"):
         create_server_principal(node=ch_nodes[0])
 
-    with And("I kill kerberos-server"):
-        self.context.krb_server.stop()
+    # with And("I kill kerberos-server"):
+    #     self.context.krb_server.stop()
 
     with And("I wait until client ticket is expired"):
         time.sleep(10)
@@ -120,17 +136,18 @@ def invalid_client_ticket(self):
     with Then("I expect the user to be default"):
         assert r.output == "default", error()
 
-    with Finally("I start kerberos server again"):
-        self.context.krb_server.start()
-        ch_nodes[2].cmd("kdestroy")
+    with Finally(""):
+        # self.context.krb_server.start()
+        time.sleep(1)
+        ch_nodes[2].cmd(f"echo pwd | kinit -l 10:00 kerberos_user")
         while True:
-            kinit_no_keytab(node=ch_nodes[2])
+            time.sleep(1)
             if ch_nodes[2].cmd(test_select_query(node=ch_nodes[0])).output == "kerberos_user":
                 break
         ch_nodes[2].cmd("kdestroy")
 
 
-@TestScenario
+@TestCase
 @Requirements(
     RQ_SRS_016_Kerberos_KerberosNotAvailable_ValidTickets("1.0")
 )
@@ -316,9 +333,6 @@ def authentication_performance(self):
         ch_nodes[0].query("DROP USER pwd_user")
 
 
-
-
-
 @TestFeature
 def generic(self):
     """Perform ClickHouse Kerberos authentication testing
@@ -329,4 +343,4 @@ def generic(self):
     self.context.clients = [self.context.cluster.node(f"krb-client{i}") for i in range(1, 6)]
 
     for scenario in loads(current_module(), Scenario, Suite):
-        Scenario(run=scenario, flags=TE)
+        Scenario(run=scenario, flags=TE) #, setup=instrument_clickhouse_server_log)
