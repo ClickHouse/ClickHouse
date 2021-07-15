@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__, name="cte_distributed")
 node1 = cluster.add_instance('node1', with_zookeeper=False)
 node2 = cluster.add_instance('node2',
-                             with_zookeeper=False, image='yandex/clickhouse-server', tag='19.16.9.37', stay_alive=True,
+                             with_zookeeper=False, image='yandex/clickhouse-server', tag='21.7.3.14', stay_alive=True,
                              with_installed_binary=True)
 
 
