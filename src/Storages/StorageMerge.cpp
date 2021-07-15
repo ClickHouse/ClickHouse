@@ -676,13 +676,15 @@ void StorageMerge::convertingSourceStream(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(pipe.getHeader().getColumnsWithTypeAndName(),
                                                                      header.getColumnsWithTypeAndName(),
                                                                      ActionsDAG::MatchColumnsMode::Name);
-        auto actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+        auto actions = std::make_shared<ExpressionActions>(
+            convert_actions_dag,
+            ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
         });
     }
-
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
 
