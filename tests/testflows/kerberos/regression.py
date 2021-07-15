@@ -10,6 +10,7 @@ from helpers.argparser import argparser
 from kerberos.requirements.requirements import *
 
 xfails = {
+    "config/principal and realm specified/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/26197")],
 }
 
 
