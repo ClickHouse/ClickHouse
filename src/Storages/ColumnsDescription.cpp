@@ -448,6 +448,29 @@ Names ColumnsDescription::getNamesOfPhysical() const
     return ret;
 }
 
+std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetFlags flags, const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    if (it != columns.get<1>().end() && (defaultKindToGetFlag(it->default_desc.kind) & flags))
+        return NameAndTypePair(it->name, it->type);
+
+    auto jt = subcolumns.get<0>().find(column_name);
+    if (jt != subcolumns.get<0>().end())
+        return *jt;
+
+    return {};
+}
+
+NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetFlags flags, const String & column_name) const
+{
+    auto column = tryGetColumnOrSubcolumn(flags, column_name);
+    if (!column)
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "There is no column or subcolumn {} in table.", column_name);
+
+    return *column;
+}
+
 std::optional<NameAndTypePair> ColumnsDescription::tryGetPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
@@ -467,38 +490,18 @@ NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) cons
     return *column;
 }
 
-std::optional<NameAndTypePair> ColumnsDescription::tryGetPhysicalOrSubcolumn(const String & column_name) const
-{
-    auto it = columns.get<1>().find(column_name);
-    if (it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias)
-        return NameAndTypePair(it->name, it->type);
-
-    auto jt = subcolumns.get<0>().find(column_name);
-    if (jt != subcolumns.get<0>().end())
-        return *jt;
-
-    return {};
-}
-
-NameAndTypePair ColumnsDescription::getPhysicalOrSubcolumn(const String & column_name) const
-{
-    auto column = tryGetPhysicalOrSubcolumn(column_name);
-    if (!column)
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-            "There is no physical column or subcolumn {} in table.", column_name);
-
-    return *column;
-}
-
 bool ColumnsDescription::hasPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
     return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
 }
 
-bool ColumnsDescription::hasPhysicalOrSubcolumn(const String & column_name) const
+bool ColumnsDescription::hasColumnOrSubcolumn(GetFlags flags, const String & column_name) const
 {
-    return hasPhysical(column_name) || hasSubcolumn(column_name);
+    auto it = columns.get<1>().find(column_name);
+    return (it != columns.get<1>().end()
+        && (defaultKindToGetFlag(it->default_desc.kind) & flags))
+            || hasSubcolumn(column_name);
 }
 
 void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
