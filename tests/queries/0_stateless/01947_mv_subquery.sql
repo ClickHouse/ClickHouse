@@ -17,7 +17,7 @@ LEFT JOIN
     SELECT id, sum(delta) as deltas_sum FROM dst
     WHERE id IN (SELECT id FROM src WHERE not sleepEachRow(0.001))
     GROUP BY id
-)
+) _a
 USING (id);
 
 -- Inserting 2 numbers should require 2 calls to sleep
@@ -27,13 +27,13 @@ INSERT into src SELECT number + 100 as id, 1 FROM numbers(2);
 DESCRIBE ( SELECT '1947 #3 QUERY - TRUE',
                   id,
                   src.value - deltas_sum as delta
-           FROM src
-                    LEFT JOIN
+            FROM src
+            LEFT JOIN
                 (
                     SELECT id, sum(delta) as deltas_sum FROM dst
                     WHERE id IN (SELECT id FROM src WHERE not sleepEachRow(0.001))
                     GROUP BY id
-                    )
+                ) _a
                 USING (id)
     ) FORMAT Null;
 
@@ -82,13 +82,13 @@ SELECT
     id,
     src.value - deltas_sum as delta
 FROM src
-         LEFT JOIN
-     (
-         SELECT id, sum(delta) as deltas_sum FROM dst
-         WHERE id IN (SELECT id FROM src WHERE not sleepEachRow(0.001))
-         GROUP BY id
-         )
-     USING (id);
+LEFT JOIN
+(
+    SELECT id, sum(delta) as deltas_sum FROM dst
+    WHERE id IN (SELECT id FROM src WHERE not sleepEachRow(0.001))
+    GROUP BY id
+) _a
+USING (id);
 
 -- Inserting 2 numbers should require 2 calls to sleep
 INSERT into src SELECT number + 200 as id, 1 FROM numbers(2);
@@ -97,14 +97,14 @@ INSERT into src SELECT number + 200 as id, 1 FROM numbers(2);
 DESCRIBE ( SELECT '1947 #3 QUERY - FALSE',
                   id,
                   src.value - deltas_sum as delta
-           FROM src
-                    LEFT JOIN
-                (
-                    SELECT id, sum(delta) as deltas_sum FROM dst
-                    WHERE id IN (SELECT id FROM src WHERE not sleepEachRow(0.001))
-                    GROUP BY id
-                    )
-                USING (id)
+            FROM src
+            LEFT JOIN
+            (
+                SELECT id, sum(delta) as deltas_sum FROM dst
+                WHERE id IN (SELECT id FROM src WHERE not sleepEachRow(0.001))
+                GROUP BY id
+            ) _a
+            USING (id)
     ) FORMAT Null;
 
 SYSTEM FLUSH LOGS;
