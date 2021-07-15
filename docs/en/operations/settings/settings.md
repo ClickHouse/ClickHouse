@@ -515,10 +515,10 @@ Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
 
 Possible values:
 
-- 'hash' — [hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
-- 'partial_merge' — [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
-- 'prefer_partial_merge'
-- 'auto' — tries to change `hash` join to `merge` join on the fly to avoid out of memory.
+- 'hash' — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
+- 'partial_merge' — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
+- 'prefer_partial_merge' — Always tries to use `merge` join if possible.
+- 'auto' — Tries to change `hash` join to `merge` join on the fly to avoid out of memory.
 
 Default value: `hash`.
 
