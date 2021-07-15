@@ -35,7 +35,7 @@ bool injectRequiredColumnsRecursively(
     /// stages.
     checkStackSize();
 
-    auto column_in_storage = storage_columns.tryGetPhysicalOrSubcolumn(column_name);
+    auto column_in_storage = storage_columns.tryGetColumnOrSubcolumn(ColumnsDescription::AllPhysical, column_name);
     if (column_in_storage)
     {
         auto column_name_in_part = column_in_storage->getNameInStorage();
@@ -93,7 +93,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
     for (size_t i = 0; i < columns.size(); ++i)
     {
         /// We are going to fetch only physical columns
-        if (!storage_columns.hasPhysicalOrSubcolumn(columns[i]))
+        if (!storage_columns.hasColumnOrSubcolumn(ColumnsDescription::AllPhysical, columns[i]))
             throw Exception("There is no physical column or subcolumn " + columns[i] + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
