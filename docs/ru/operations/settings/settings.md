@@ -1204,8 +1204,15 @@ load_balancing = round_robin
 Работает для форматов JSONEachRow и TSKV.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
+Управляет кавычками при выводе 64-битных или более [целых чисел](../../sql-reference/data-types/int-uint.md) (например, `UInt64` или `Int128`) в формате [JSON](../../interfaces/formats.md#json).
+По умолчанию такие числа заключаются в кавычки. Это поведение соответствует большинству реализаций JavaScript.
 
-Если значение истинно, то при использовании JSON\* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
+Возможные значения:
+
+-   0 — числа выводятся без кавычек.
+-   1 — числа выводятся в кавычках.
+
+Значение по умолчанию: 1.
 
 ## output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
 
@@ -3107,3 +3114,13 @@ SETTINGS index_granularity = 8192 │
 
 Если установлено значение `0`, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
 
+## output_format_arrow_low_cardinality_as_dictionary {#output-format-arrow-low-cardinality-as-dictionary}
+
+Позволяет конвертировать тип [LowCardinality](../../sql-reference/data-types/lowcardinality.md) в тип `DICTIONARY` формата [Arrow](../../interfaces/formats.md#data-format-arrow) для запросов `SELECT`.
+
+Возможные значения:
+
+-   0 — тип `LowCardinality` не конвертируется в тип `DICTIONARY`.
+-   1 — тип `LowCardinality` конвертируется в тип `DICTIONARY`.
+
+Значение по умолчанию: `0`.

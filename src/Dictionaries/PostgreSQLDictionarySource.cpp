@@ -107,8 +107,9 @@ BlockInputStreamPtr PostgreSQLDictionarySource::loadKeys(const Columns & key_col
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadBase(const String & query)
 {
-    return std::make_shared<PostgreSQLBlockInputStream>(pool->get(), query, sample_block, max_block_size);
+    return std::make_shared<PostgreSQLBlockInputStream<>>(pool->get(), query, sample_block, max_block_size);
 }
+
 
 bool PostgreSQLDictionarySource::isModified() const
 {
@@ -128,7 +129,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    PostgreSQLBlockInputStream block_input_stream(pool->get(), request, invalidate_sample_block, 1);
+    PostgreSQLBlockInputStream<> block_input_stream(pool->get(), request, invalidate_sample_block, 1);
     return readInvalidateQuery(block_input_stream);
 }
 

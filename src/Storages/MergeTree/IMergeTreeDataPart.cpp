@@ -1103,7 +1103,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
 
 std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
-    /// NOTE: It's needed for S3 zero-copy replication
+    /// NOTE: It's needed for zero-copy replication
     if (force_keep_shared_data)
         return true;
 
@@ -1501,16 +1501,11 @@ SerializationPtr IMergeTreeDataPart::getSerializationForColumn(const NameAndType
 
 String IMergeTreeDataPart::getUniqueId() const
 {
-    String id;
-
     auto disk = volume->getDisk();
+    if (!disk->supportZeroCopyReplication())
+        throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
 
-    if (disk->getType() == DB::DiskType::Type::S3)
-        id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
-
-    if (id.empty())
-        throw Exception("Can't get unique S3 object", ErrorCodes::LOGICAL_ERROR);
-
+    String id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
     return id;
 }
 

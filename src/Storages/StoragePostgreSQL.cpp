@@ -1,6 +1,7 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
+#include <DataStreams/PostgreSQLBlockInputStream.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -16,7 +17,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include <DataStreams/PostgreSQLBlockInputStream.h>
 #include <Core/Settings.h>
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
@@ -90,7 +90,7 @@ Pipe StoragePostgreSQL::read(
     }
 
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<PostgreSQLBlockInputStream>(pool->get(), query, sample_block, max_block_size_)));
+            std::make_shared<PostgreSQLBlockInputStream<>>(pool->get(), query, sample_block, max_block_size_)));
 }
 
 
@@ -234,6 +234,10 @@ public:
         else if (which.isFloat64())                      nested_column = ColumnFloat64::create();
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
+        else if (which.isDateTime64())
+        {
+            nested_column = ColumnDecimal<DateTime64>::create(0, 6);
+        }
         else if (which.isDecimal32())
         {
             const auto & type = typeid_cast<const DataTypeDecimal<Decimal32> *>(nested.get());
