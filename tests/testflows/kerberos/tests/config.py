@@ -145,12 +145,8 @@ def multiple_principal(self):
                        log_error="Multiple principal sections are not allowed")
 
 
-
-
-
-
-
 @TestFeature
+@Name("config")
 def config(self):
     """Perform ClickHouse Kerberos authentication testing for incorrect configuration files
     """
