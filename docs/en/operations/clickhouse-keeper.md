@@ -10,7 +10,7 @@ ClickHouse server use [ZooKeeper](https://zookeeper.apache.org/) coordination sy
 !!! warning "Warning"
     This feature currently in pre-production stage. We test it in our CI and on small internal installations.
 
-## Implemetation details
+## Implementation details
 
 ZooKeeper is one of the first well-known open-source coordination systems. It's implemented in Java, has quite a simple and powerful data model. ZooKeeper's coordination algorithm called ZAB (ZooKeeper Atomic Broadcast) doesn't provide linearizability guarantees for reads, because each ZooKeeper node serves reads locally. Unlike ZooKeeper `clickhouse-keeper` written in C++ and use [RAFT algorithm](https://raft.github.io/) [implementation](https://github.com/eBay/NuRaft). This algorithm allows to have linearizability for reads and writes, has several open-source implementations in different languages.
 
