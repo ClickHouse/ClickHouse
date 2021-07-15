@@ -2783,6 +2783,16 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         }
     }
 
+    {
+        /// Check "is_lost" version after retrieving queue and parts.
+        /// If version has changed, then replica most likely has been dropped and parts set is inconsistent,
+        /// so throw exception and retry cloning.
+        Coordination::Stat is_lost_stat_new;
+        zookeeper->get(fs::path(source_path) / "is_lost", &is_lost_stat_new);
+        if (is_lost_stat_new.version != source_is_lost_stat.version)
+            throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Cannot clone {}, because it suddenly become lost", source_replica);
+    }
+
     tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
 
     auto local_active_parts = getDataParts();
