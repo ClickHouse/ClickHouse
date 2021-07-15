@@ -3066,3 +3066,14 @@ SETTINGS index_granularity = 8192 │
 **Использование**
 
 Если установлено значение `0`, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
+
+## output_format_arrow_low_cardinality_as_dictionary {#output-format-arrow-low-cardinality-as-dictionary}
+
+Позволяет конвертировать тип [LowCardinality](../../sql-reference/data-types/lowcardinality.md) в тип `DICTIONARY` формата [Arrow](../../interfaces/formats.md#data-format-arrow) для запросов `SELECT`.
+
+Возможные значения:
+
+-   0 — тип `LowCardinality` не конвертируется в тип `DICTIONARY`.
+-   1 — тип `LowCardinality` конвертируется в тип `DICTIONARY`.
+
+Значение по умолчанию: `0`.
