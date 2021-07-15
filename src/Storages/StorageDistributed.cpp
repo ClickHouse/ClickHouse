@@ -602,25 +602,25 @@ void StorageDistributed::read(
         return;
     }
 
-    const Scalars & scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
-
     bool has_virtual_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
     if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num", metadata_snapshot))
         has_virtual_shard_num_column = false;
 
-    ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
-        ? ClusterProxy::SelectStreamFactory(
-            header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, local_context->getExternalTables())
-        : ClusterProxy::SelectStreamFactory(
+    StorageID main_table = StorageID::createEmpty();
+    if (!remote_table_function_ptr)
+        main_table = StorageID{remote_database, remote_table};
+
+    ClusterProxy::SelectStreamFactory select_stream_factory =
+        ClusterProxy::SelectStreamFactory(
             header,
             processed_stage,
-            StorageID{remote_database, remote_table},
-            scalars,
-            has_virtual_shard_num_column,
-            local_context->getExternalTables());
+            has_virtual_shard_num_column);
 
-    ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
-        modified_query_ast, local_context, query_info,
+    ClusterProxy::executeQuery(
+        query_plan, header, processed_stage,
+        main_table, remote_table_function_ptr,
+        select_stream_factory, log, modified_query_ast,
+        local_context, query_info,
         sharding_key_expr, sharding_key_column_name,
         query_info.cluster);
 
