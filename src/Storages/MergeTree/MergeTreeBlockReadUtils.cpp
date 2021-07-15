@@ -35,16 +35,16 @@ bool injectRequiredColumnsRecursively(
     /// stages.
     checkStackSize();
 
-    if (storage_columns.hasPhysicalOrSubcolumn(column_name))
+    auto column_in_storage = storage_columns.tryGetPhysicalOrSubcolumn(column_name);
+    if (column_in_storage)
     {
-        auto column_in_storage = storage_columns.getPhysicalOrSubcolumn(column_name);
-        auto column_name_in_part = column_in_storage.getNameInStorage();
+        auto column_name_in_part = column_in_storage->getNameInStorage();
         if (alter_conversions.isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
         auto column_in_part = NameAndTypePair(
-            column_name_in_part, column_in_storage.getSubcolumnName(),
-            column_in_storage.getTypeInStorage(), column_in_storage.type);
+            column_name_in_part, column_in_storage->getSubcolumnName(),
+            column_in_storage->getTypeInStorage(), column_in_storage->type);
 
         /// column has files and hence does not require evaluation
         if (part->hasColumnFiles(column_in_part))
@@ -310,9 +310,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (check_columns)
     {
-        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllWithSubcolumns();
-        result.pre_columns = physical_columns.addTypes(pre_column_names);
-        result.columns = physical_columns.addTypes(column_names);
+        const auto & columns = metadata_snapshot->getColumns();
+        result.pre_columns = columns.getByNames(ColumnsDescription::All, pre_column_names, true);
+        result.columns = columns.getByNames(ColumnsDescription::All, column_names, true);
     }
     else
     {

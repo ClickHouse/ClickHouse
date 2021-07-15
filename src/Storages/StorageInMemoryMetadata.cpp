@@ -321,22 +321,25 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
     Block res;
 
     auto all_columns = getColumns().getAllWithSubcolumns();
-    std::unordered_map<String, DataTypePtr> columns_map;
-    columns_map.reserve(all_columns.size());
+    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> columns_map;
+    columns_map.set_empty_key(StringRef());
 
     for (const auto & elem : all_columns)
-        columns_map.emplace(elem.name, elem.type);
+        columns_map.emplace(elem.name, &elem.type);
 
     /// Virtual columns must be appended after ordinary, because user can
     /// override them.
     for (const auto & column : virtuals)
-        columns_map.emplace(column.name, column.type);
+        columns_map.emplace(column.name, &column.type);
 
     for (const auto & name : column_names)
     {
         auto it = columns_map.find(name);
         if (it != columns_map.end())
-            res.insert({it->second->createColumn(), it->second, it->first});
+        {
+            const auto & type = *it->second;
+            res.insert({type->createColumn(), type, name});
+        }
         else
             throw Exception(
                 "Column " + backQuote(name) + " not found in table " + (storage_id.empty() ? "" : storage_id.getNameForLogs()),
