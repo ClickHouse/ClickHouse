@@ -9,7 +9,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
-
 namespace DB
 {
 
@@ -1558,10 +1557,16 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         else
         {
             // Offset is inside the frame.
-            auto ptr = ColumnNullable::create(transform->blockAt(target_row).input_columns[
-                workspace.argument_column_indices[0]],
-                ColumnUInt8::create());
-            to.insertFrom(*ptr, target_row.row);
+            auto srcColumnPtr = transform->blockAt(target_row).input_columns[workspace.argument_column_indices[0]];
+            // If the original column type is Nullable(from DDL)
+            if(srcColumnPtr->getDataType() == TypeIndex::Nullable)
+            {
+                to.insertFrom(*srcColumnPtr, target_row.row);
+            }
+            else
+            {
+                assert_cast<ColumnNullable&>(to).insertFromNotNullable(*srcColumnPtr, target_row.row);
+            }
         }
     }
 };
@@ -1633,10 +1638,16 @@ struct WindowFunctionNthValue final : public WindowFunction
         else
         {
             // Offset is inside the frame.
-            auto ptr = ColumnNullable::create(transform->blockAt(target_row).input_columns[
-                workspace.argument_column_indices[0]],
-                    ColumnUInt8::create());
-                to.insertFrom(*ptr, target_row.row);
+            auto srcColumnPtr = transform->blockAt(target_row).input_columns[workspace.argument_column_indices[0]];
+            // If the original column type is Nullable(from DDL)
+            if(srcColumnPtr->getDataType() == TypeIndex::Nullable)
+            {
+                to.insertFrom(*srcColumnPtr, target_row.row);
+            }
+            else
+            {
+                assert_cast<ColumnNullable&>(to).insertFromNotNullable(*srcColumnPtr, target_row.row);
+            }
         }
     }
 };

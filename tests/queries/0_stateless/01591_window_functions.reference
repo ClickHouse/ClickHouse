@@ -1053,11 +1053,33 @@ settings max_block_size = 3;
 12	2	10	11	10	10	14
 13	2	10	12	10	10	143
 14	2	10	13	10	10	154
+<<<<<<< HEAD
 15	3	15	0	15	15	15
+=======
+15	3	15	\N	15	15	15
+-- careful with auto-application of Null combinator
+SELECT number,
+    lagInFrame(toNullable(number), 1) OVER w AS prevOne,
+    lagInFrame(toNullable(number), 2) OVER w AS prevTwo
+FROM numbers(10)
+WINDOW w AS (ORDER BY number ASC)
+;
+0	\N	\N
+1	0	\N
+2	1	0
+3	2	1
+4	3	2
+5	4	3
+6	5	4
+7	6	5
+8	7	6
+9	8	7
+>>>>>>> Add missing test back in 01591_window_function
 -- careful with auto-application of Null combinator
 select lagInFrame(toNullable(1)) over ();
 \N
 select lagInFrameOrNull(1) over (); -- { serverError 36 }
+<<<<<<< HEAD
 -- this is the same as `select max(Null::Nullable(Nothing))`
 select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
 \N	Nullable(Nothing)	\N
@@ -1076,6 +1098,10 @@ WINDOW w AS (ORDER BY number ASC)
 1	0	\N	0	0
 2	1	0	1	0
 3	2	1	2	1
+=======
+select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
+\N	Nullable(Nothing)	\N
+>>>>>>> Add missing test back in 01591_window_function
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,
@@ -1178,3 +1204,31 @@ select count() over (rows between 2147483648 preceding and 2147493648 following)
 select count() over () from (select 1 a) l inner join (select 2 a) r using a;
 -- This case works as expected, one empty input chunk marked as input end.
 select count() over () where null;
+-- Inheriting another window.
+select number, count() over (w1 rows unbounded preceding) from numbers(10)
+window
+    w0 as (partition by intDiv(number, 5) as p),
+    w1 as (w0 order by mod(number, 3) as o)
+order by p, o, number
+;
+0	1
+3	2
+1	3
+4	4
+2	5
+6	1
+9	2
+7	3
+5	4
+8	5
+-- can't redefine PARTITION BY
+select count() over (w partition by number) from numbers(1) window w as (partition by intDiv(number, 5)); -- { serverError 36 }
+-- can't redefine existing ORDER BY
+select count() over (w order by number) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3)); -- { serverError 36 }
+-- parent window can't have frame
+select count() over (w range unbounded preceding) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3) rows unbounded preceding); -- { serverError 36 }
+-- looks weird but probably should work -- this is a window that inherits and changes nothing
+select count() over (w) from numbers(1) window w as ();
+1
+-- nonexistent parent window
+select count() over (w2 rows unbounded preceding); -- { serverError 36 }
