@@ -28,4 +28,4 @@ Attempt to read twice from a regular file
 6,"AAA"
 ******************
 Attempt to read twice from a pipe
-OK: stderr contains a message
+OK: stderr contains a message 'Cannot read from a pipeline twice'
