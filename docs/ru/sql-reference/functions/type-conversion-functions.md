@@ -462,27 +462,29 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Преобразует входное значение `x` в указанный тип данных `T`. В отличии от функции `reinterpret` использует внешнее представление значения `x`.
-
-Поддерживается также синтаксис `CAST(x AS t)`.
-
-!!! warning "Предупреждение"
-   Если значение `x` не может быть преобразовано к типу `T`, возникает переполнение. Например, `CAST(-1, 'UInt8')` возвращает 255.
+Преобразует входное значение к указанному типу данных. В отличие от функции [reinterpret](#type_conversion_function-reinterpret) `CAST` пытается представить то же самое значение в новом типе данных. Если преобразование невозможно, то возникает исключение.
+Поддерживается несколько вариантов синтаксиса.
 
 **Синтаксис**
 
 ``` sql
 CAST(x, T)
+CAST(x AS t)
+x::t
 ```
 
 **Аргументы**
 
--   `x` — любой тип данных. 
--   `T` — конечный тип данных. [String](../../sql-reference/data-types/string.md).  
+-   `x` — значение, которое нужно преобразовать. Может быть любого типа. 
+-   `T` — имя типа данных. [String](../../sql-reference/data-types/string.md).  
+-   `t` — тип данных.
 
 **Возвращаемое значение**
 
-- Значение конечного типа данных.
+-   Преобразованное значение.
+
+!!! note "Примечание"
+    Если входное значение выходит за границы нового типа, то результат переполняется. Например, `CAST(-1, 'UInt8')` возвращает `255`.
 
 **Примеры**
 
@@ -491,16 +493,16 @@ CAST(x, T)
 ```sql
 SELECT
     CAST(toInt8(-1), 'UInt8') AS cast_int_to_uint,
-    CAST(toInt8(1), 'Float32') AS cast_int_to_float,
-    CAST('1', 'UInt32') AS cast_string_to_int
+    CAST(1.5 AS Decimal(3,2)) AS cast_float_to_decimal,
+    '1'::Int32 AS cast_string_to_int;
 ```
 
 Результат:
 
 ```
-┌─cast_int_to_uint─┬─cast_int_to_float─┬─cast_string_to_int─┐
-│              255 │                 1 │                  1 │
-└──────────────────┴───────────────────┴────────────────────┘
+┌─cast_int_to_uint─┬─cast_float_to_decimal─┬─cast_string_to_int─┐
+│              255 │                  1.50 │                  1 │
+└──────────────────┴───────────────────────┴────────────────────┘
 ```
 
 Запрос:
@@ -524,7 +526,7 @@ SELECT
 
 Преобразование в FixedString(N) работает только для аргументов типа [String](../../sql-reference/data-types/string.md) или [FixedString](../../sql-reference/data-types/fixedstring.md).
 
-Поддерживается преобразование к типу [Nullable](../../sql-reference/functions/type-conversion-functions.md) и обратно. 
+Поддерживается преобразование к типу [Nullable](../../sql-reference/data-types/nullable.md) и обратно. 
 
 **Примеры**
 
