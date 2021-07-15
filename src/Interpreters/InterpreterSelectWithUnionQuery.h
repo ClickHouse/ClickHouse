@@ -39,10 +39,10 @@ public:
 
     virtual void ignoreWithTotals() override;
 
+    static Block getCommonHeaderForUnion(const Blocks & headers, bool allow_type_promotion_after_64_bits = false);
+
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
-
-    static Block getCommonHeaderForUnion(const Blocks & headers);
 
     Block getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names);
 

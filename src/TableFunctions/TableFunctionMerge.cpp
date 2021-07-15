@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
 #include <TableFunctions/TableFunctionMerge.h>
@@ -107,17 +108,22 @@ const TableFunctionMerge::DbToTableSetMap & TableFunctionMerge::getSourceDatabas
 
 ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context) const
 {
+    Blocks headers;
     for (const auto & db_with_tables : getSourceDatabasesAndTables(context))
     {
         for (const auto & table : db_with_tables.second)
         {
             auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{db_with_tables.first, table}, context);
             if (storage)
-                return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
+                headers.push_back(storage->getInMemoryMetadataPtr()->getSampleBlock());
         }
     }
 
-    throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
+    if (headers.empty())
+        throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
+
+    auto common_header = InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(headers, /* allow_type_promotion_after_64_bits */ true);
+    return ColumnsDescription{common_header.getNamesAndTypesList()};
 }
 
 

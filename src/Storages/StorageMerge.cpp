@@ -683,7 +683,6 @@ void StorageMerge::convertingSourceStream(
         });
     }
 
-
     auto where_expression = query->as<ASTSelectQuery>()->where();
 
     if (!where_expression)

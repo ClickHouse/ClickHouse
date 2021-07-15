@@ -50,7 +50,7 @@ namespace
 }
 
 
-DataTypePtr getLeastSupertype(const DataTypes & types)
+DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_promotion_after_64_bits)
 {
     /// Trivial cases
 
@@ -443,7 +443,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             {
                 // Because 128 and 256 bit integers are significantly slower, we should not promote to them.
                 // But if we already have wide numbers, promotion is necessary.
-                if (min_bit_width_of_integer != 64)
+                // Allow promotion to 128 and 256 for storage Merge.
+                if (min_bit_width_of_integer != 64 || allow_promotion_after_64_bits)
                     ++min_bit_width_of_integer;
                 else
                     throw Exception(

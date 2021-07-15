@@ -1,0 +1,19 @@
+date	Date					
+value	Int128					
+--- ORDER BY value ---
+2018-08-01	-1
+2018-08-01	1
+2018-08-01	2
+--- WHERE toTypeName(value) = Int128 ---
+2018-08-01	-1
+2018-08-01	1
+2018-08-01	2
+--- WHERE toTypeName(value) = UInt64 ---
+--- WHERE date = 2018-08-01 ---
+2018-08-01	-1
+2018-08-01	1
+2018-08-01	2
+--- WHERE _table = test_s64_distributed ---
+2018-08-01	-1
+--- WHERE value = -1 ---
+2018-08-01	-1
