@@ -22,4 +22,4 @@ You can also use the following database engines:
 
 -   [PostgreSQL](../../engines/database-engines/postgresql.md)
 
-[Original article](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->
+-   [Replicated](../../engines/database-engines/replicated.md)

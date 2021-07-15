@@ -3141,6 +3141,53 @@ SELECT
 FROM fuse_tbl
 ```
 
+## allow_experimental_database_replicated {#allow_experimental_database_replicated}
+
+Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
+
+Sets how long initial DDL query should wait for Replicated database to precess previous DDL queue entries in seconds.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `300`.
+
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
+
+Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite. 
+
+Possible values:
+
+-   Positive integer.
+-   0 — Async mode.
+-   Negative integer — infinite timeout.
+
+Default value: `180`.
+
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
+
+Sets format of distributed DDL query result.
+
+Possible values:
+
+-   `throw` — Returns result set with query execution status for all hosts where query is finished. If query has failed on some hosts, then it will rethrow the first exception. If query is not finished yet on some hosts and [distributed_ddl_task_timeout](#distributed_ddl_task_timeout) exceeded, then it throws `TIMEOUT_EXCEEDED` exception.
+-   `none` — Is similar to throw, but distributed DDL query returns no result set.
+-   `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
+-   `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
+
+Default value: `throw`.
+
 ## flatten_nested {#flatten-nested}
 
 Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
