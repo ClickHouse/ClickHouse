@@ -290,26 +290,27 @@ void replaceConstantExpressions(
 /// - QueryProcessingStage::WithMergeableStateAfterAggregation
 /// - QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit
 /// - none (in this case regular WithMergeableState should be used)
-std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, bool extremes, const Block & sharding_key_block)
+std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, bool extremes, const Names & sharding_key_columns)
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    auto sharding_block_has = [&](const auto & exprs, size_t limit = SIZE_MAX) -> bool
+    auto sharding_block_has = [&](const auto & exprs) -> bool
     {
-        size_t i = 0;
+        std::unordered_set<std::string> expr_columns;
         for (auto & expr : exprs)
         {
-            ++i;
-            if (i > limit)
-                break;
-
             auto id = expr->template as<ASTIdentifier>();
             if (!id)
-                return false;
-            /// TODO: if GROUP BY contains multiIf()/if() it should contain only columns from sharding_key
-            if (!sharding_key_block.has(id->name()))
+                continue;
+            expr_columns.emplace(id->name());
+        }
+
+        for (const auto & column : sharding_key_columns)
+        {
+            if (!expr_columns.contains(column))
                 return false;
         }
+
         return true;
     };
 
@@ -343,7 +344,7 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
     }
     else
     {
-        if (!sharding_block_has(group_by->children, 1))
+        if (!sharding_block_has(group_by->children))
             return {};
     }
 
@@ -547,8 +548,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         has_sharding_key &&
         (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic))
     {
-        Block sharding_key_block = sharding_key_expr->getSampleBlock();
-        auto stage = getOptimizedQueryProcessingStage(query_info, settings.extremes, sharding_key_block);
+        auto stage = getOptimizedQueryProcessingStage(query_info, settings.extremes, sharding_key_expr->getRequiredColumns());
         if (stage)
         {
             LOG_DEBUG(log, "Force processing stage to {}", QueryProcessingStage::toString(*stage));
