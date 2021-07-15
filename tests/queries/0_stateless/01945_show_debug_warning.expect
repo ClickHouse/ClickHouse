@@ -15,8 +15,28 @@ expect_after {
 }
 
 set basedir [file dirname $argv0]
+set Debug_type 0
+
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
-]expect "Warnings:"
+expect ":) "
+
+# Check debug type
+send -- "SELECT value FROM system.build_options WHERE name='BUILD_TYPE'\r"
+expect {
+"Debug"  {
+    set Debug_type 1 
+    expect ":) "
+    }
+"RelWithDebInfo"
+}
+
+send -- "\4"
+expect eof
+
+if { $Debug_type > 0} {
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
+expect "Warnings:"
 expect " * Server was built in debug mode. It will work slowly."
 expect ":) "
 
@@ -27,3 +47,4 @@ expect ":) "
 
 send -- "\4"
 expect eof
+}
