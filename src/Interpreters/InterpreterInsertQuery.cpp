@@ -37,10 +37,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
-    extern const int PARTITION_BY_NOT_SUPPORTED;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -157,7 +157,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     StoragePtr table = getTable(query);
     if (query.partition_by && !table->supportsPartitionBy())
-        throw Exception("PARTITION BY clause is not supported by storage", ErrorCodes::PARTITION_BY_NOT_SUPPORTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
 
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings.lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
