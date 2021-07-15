@@ -33,7 +33,17 @@ namespace
             if (query.is_revoke)
                 grantee.access.revoke(query.access_rights_elements);
             else
-                grantee.access.grant(query.access_rights_elements);
+            {
+                if (query.is_replace)
+                {
+                    AccessRights tmp;
+                    tmp.grant(query.access_rights_elements);
+                    grantee.access.makeIntersection(tmp);
+                    grantee.access.grant(query.access_rights_elements);
+                }
+                else
+                    grantee.access.grant(query.access_rights_elements);
+            }
         }
 
         if (!roles_to_grant_or_revoke.empty())
@@ -48,9 +58,15 @@ namespace
             else
             {
                 if (query.admin_option)
-                    grantee.granted_roles.grantWithAdminOption(roles_to_grant_or_revoke);
+                    if (query.is_replace)
+                        grantee.granted_roles.grantByReplaceWithAdminOption(roles_to_grant_or_revoke);
+                    else
+                        grantee.granted_roles.grantWithAdminOption(roles_to_grant_or_revoke);
                 else
-                    grantee.granted_roles.grant(roles_to_grant_or_revoke);
+                    if (query.is_replace)
+                        grantee.granted_roles.grantByReplace(roles_to_grant_or_revoke);
+                    else
+                        grantee.granted_roles.grant(roles_to_grant_or_revoke);
             }
         }
     }

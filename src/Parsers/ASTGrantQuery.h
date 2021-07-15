@@ -24,6 +24,7 @@ public:
     AccessRightsElements access_rights_elements;
     std::shared_ptr<ASTRolesOrUsersSet> roles;
     bool admin_option = false;
+    bool is_replace = false;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
     String getID(char) const override;

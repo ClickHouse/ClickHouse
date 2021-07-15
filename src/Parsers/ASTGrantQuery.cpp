@@ -111,6 +111,9 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
         throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::LOGICAL_ERROR);
     bool grant_option = !access_rights_elements.empty() && access_rights_elements[0].grant_option;
 
+    if (!is_revoke && is_replace)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " BY REPLACE" << (settings.hilite ? hilite_none : "");
+
     formatOnCluster(settings);
 
     if (is_revoke)
