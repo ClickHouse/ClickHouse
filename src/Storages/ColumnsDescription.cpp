@@ -396,6 +396,7 @@ static ColumnsDescription::GetFlags defaultKindToGetFlag(ColumnDefaultKind kind)
         case ColumnDefaultKind::Alias:
             return ColumnsDescription::Aliases;
     }
+    __builtin_unreachable();
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(GetFlags flags, const Names & names, bool with_subcolumns) const
