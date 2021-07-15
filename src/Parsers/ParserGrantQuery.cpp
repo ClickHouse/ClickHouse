@@ -232,10 +232,14 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     bool is_revoke = false;
+    bool is_replace = false;
     if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
         is_revoke = true;
     else if (!ParserKeyword{"GRANT"}.ignore(pos, expected))
         return false;
+
+    if (!is_revoke && ParserKeyword{"BY REPLACE"}.ignore(pos, expected))
+        is_replace = true;
 
     String cluster;
     parseOnCluster(pos, expected, cluster);
@@ -300,6 +304,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->roles = std::move(roles);
     query->grantees = std::move(grantees);
     query->admin_option = admin_option;
+    query->is_replace = is_replace;
 
     return true;
 }
