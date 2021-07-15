@@ -895,6 +895,17 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
         x = __builtin_bswap64(x);
 }
 
+template <typename T>
+inline std::enable_if_t<is_big_int_v<T>, void>
+readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+{
+    for (size_t i = 0; i != std::size(x.items); ++i)
+    {
+        auto & item = x.items[std::size(x.items) - i - 1];
+        readBinaryBigEndian(item, buf);
+    }
+}
+
 
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
