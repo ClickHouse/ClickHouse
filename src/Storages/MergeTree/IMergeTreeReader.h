@@ -3,6 +3,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <sparsehash/dense_hash_map>
 
 namespace DB
 {
@@ -72,6 +73,7 @@ protected:
 
     /// Columns that are read.
     NamesAndTypesList columns;
+    NamesAndTypesList part_columns;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;
@@ -92,7 +94,7 @@ private:
     MergeTreeData::AlterConversions alter_conversions;
 
     /// Actual data type of columns in part
-    std::unordered_map<String, DataTypePtr> columns_from_part;
+    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> columns_from_part;
 };
 
 }
