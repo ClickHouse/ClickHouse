@@ -515,8 +515,8 @@ Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
 
 Possible values:
 
-- 'hash'
-- 'partial_merge'
+- 'hash' — [hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
+- 'partial_merge' — [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
 - 'prefer_partial_merge'
 - 'auto' — tries to change `hash` join to `merge` join on the fly to avoid out of memory.
 
