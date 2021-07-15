@@ -155,7 +155,7 @@ Default value: 1048576.
 
 ## table_function_remote_max_addresses {#settings-table_function_remote_max_addresses}
 
-Sets the maximum number of addresses generated with globs for [remote](../../sql-reference/table-functions/remote.md) function.
+Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
 
 Possible values:
 
@@ -165,7 +165,7 @@ Default value: `1000`.
 
 ##  glob_expansion_max_elements  {#settings-glob_expansion_max_elements }
 
-Sets the maximum number of addresses generated with globs for external storages and table functions except `remote` function.
+Sets the maximum number of addresses generated from patterns for external storages and table functions except the `remote` function.
 
 Possible values:
 
