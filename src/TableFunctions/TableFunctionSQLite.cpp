@@ -5,15 +5,18 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 
+#include <Databases/SQLite/fetchSQLiteTableStructure.h>
+#include <Databases/SQLite/SQLiteUtils.h>
 #include "registerTableFunctions.h"
 
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Databases/SQLite/fetchSQLiteTableStructure.h>
 
 
 namespace DB
@@ -72,14 +75,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     database_path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-    sqlite3 * tmp_sqlite_db = nullptr;
-    int status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
-    if (status != SQLITE_OK)
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Failed to open sqlite database. Status: {}. Message: {}",
-                        status, sqlite3_errstr(status));
-
-    sqlite_db = std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
+    sqlite_db = openSQLiteDB(database_path, context);
 }
 
 

@@ -28,6 +28,7 @@ SRCS(
     MySQL/MaterializeMySQLSettings.cpp
     MySQL/MaterializeMySQLSyncThread.cpp
     SQLite/DatabaseSQLite.cpp
+    SQLite/SQLiteUtils.cpp
     SQLite/fetchSQLiteTableStructure.cpp
 
 )
