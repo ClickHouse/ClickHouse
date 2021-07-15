@@ -1330,13 +1330,6 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         throw Exception("Logical error: unknown combination of JOIN", ErrorCodes::LOGICAL_ERROR);
 }
 
-
-void HashJoin::joinTotals(Block & block) const
-{
-    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, *table_join, block);
-}
-
-
 template <typename Mapped>
 struct AdderNonJoined
 {

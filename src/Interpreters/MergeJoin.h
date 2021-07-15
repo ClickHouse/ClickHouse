@@ -26,9 +26,10 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
-    void joinTotals(Block &) const override;
+
     void setTotals(const Block &) override;
-    bool hasTotals() const override { return totals; }
+    const Block & getTotals() const override { return totals; }
+
     size_t getTotalRowCount() const override { return right_blocks.row_count; }
     size_t getTotalByteCount() const override { return right_blocks.bytes; }
 
