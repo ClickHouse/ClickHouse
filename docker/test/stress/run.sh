@@ -136,8 +136,8 @@ zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/
     || echo -e 'No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
 # Logical errors
-zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
-    && echo -e 'Logical error thrown (see clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
+zgrep -Fa "Code: 49, " /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
+    && echo -e 'Logical error (Code: 49) thrown (see clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No logical errors\tOK' >> /test_output/test_results.tsv
 
 # Crash
