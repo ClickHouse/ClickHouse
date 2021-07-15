@@ -489,8 +489,9 @@ private:
 #endif
 
     /// Make query to get all server warnings
-    void loadWarningMessages(std::vector<String>& messages)
+    std::vector<String> loadWarningMessages()
     {
+        std::vector<String> messages;
         connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */, QueryProcessingStage::Complete);
         while (true)
         {
@@ -521,10 +522,10 @@ private:
 
                 case Protocol::Server::Exception:
                     packet.exception->rethrow();
-                    return;
+                    return messages;
 
                 case Protocol::Server::EndOfStream:
-                    return;
+                    return messages;
 
                 default:
                     throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
@@ -614,10 +615,9 @@ private:
             /// Load Warnings at the beginning of connection
             if (!config().has("no-warnings"))
             {
-                std::vector<String> messages;
                 try
                 {
-                    loadWarningMessages(messages);
+                    std::vector<String> messages = loadWarningMessages();
                     if (!messages.empty())
                     {
                         std::cout << "Warnings:" << std::endl;
