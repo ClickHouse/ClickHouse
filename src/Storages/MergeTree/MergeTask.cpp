@@ -131,10 +131,10 @@ void MergeTask::prepare()
 
     if (deduplicate)
     {
-        if (deduplicate_by_columns->empty())
+        if (deduplicate_by_columns.empty())
             LOG_DEBUG(log, "DEDUPLICATE BY all columns");
         else
-            LOG_DEBUG(log, "DEDUPLICATE BY ('{}')", fmt::join(*deduplicate_by_columns, "', '"));
+            LOG_DEBUG(log, "DEDUPLICATE BY ('{}')", fmt::join(deduplicate_by_columns, "', '"));
     }
 
     disk = space_reservation->getDisk();
@@ -817,7 +817,7 @@ void MergeTask::createMergedStream()
     merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (deduplicate)
-        merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, *deduplicate_by_columns);
+        merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, deduplicate_by_columns);
 
     if (need_remove_expired_values)
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, force_ttl);

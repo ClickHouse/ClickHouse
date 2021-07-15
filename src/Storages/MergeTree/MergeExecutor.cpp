@@ -23,7 +23,8 @@ MergeExecutor::~MergeExecutor()
 
 void MergeExecutor::schedule(BackgroundTaskPtr task)
 {
-    pool.scheduleOrThrow([this, task]() {
+    const auto priority = task->getPriority();
+    pool.scheduleOrThrow([this, task = std::move(task)]() {
         try
         {
             if (task->execute()) {
@@ -34,7 +35,7 @@ void MergeExecutor::schedule(BackgroundTaskPtr task)
             // no-op
         }
 
-    }, task->getPriority());
+    }, priority);
 }
 
 }

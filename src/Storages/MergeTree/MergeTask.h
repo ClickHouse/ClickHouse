@@ -85,7 +85,7 @@ public:
         ContextPtr context_,
         ReservationPtr space_reservation_,
         bool deduplicate_,
-        NamesPtr deduplicate_by_columns_,
+        Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
         MergeTreeDataPartPtr parent_part_,
         String prefix_,
@@ -167,7 +167,7 @@ private:
     ContextPtr context;
     ReservationPtr space_reservation;
     bool deduplicate;
-    NamesPtr deduplicate_by_columns;
+    Names deduplicate_by_columns;
     MergeTreeData::MergingParams merging_params;
     MergeTreeDataPartPtr parent_part;
     String prefix;

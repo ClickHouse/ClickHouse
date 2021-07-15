@@ -1780,6 +1780,11 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             merging_params);
 
 
+        while (part_future->execute()) {}
+
+        part = part_future->getFuture().get();
+
+
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
 
         try

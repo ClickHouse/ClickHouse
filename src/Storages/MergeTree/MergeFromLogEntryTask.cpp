@@ -42,7 +42,6 @@ bool MergeFromLogEntryTask::execute()
         /// We don't have any backoff for failed entries
         /// we just count amount of tries for each of them.
 
-
         try
         {
             /// Returns false if
@@ -162,11 +161,16 @@ bool MergeFromLogEntryTask::executeImpl()
         }
         case State::CANT_MERGE_NEED_FETCH :
         {
+            LOG_FATAL(&Poco::Logger::get("abacaba"), "Will execute fetch istead of merge!");
             /// MAYBE FIXME
-            storage.executeFetch(*entry);
+            if (storage.executeFetch(*entry))
+            {
+                state = State::SUCCESS;
+                return true;
+            }
 
-            state = State::SUCCESS;
-            return true;
+            /// Fetch is ???
+            return false;
         }
         case State::SUCCESS :
         {
@@ -375,6 +379,8 @@ bool MergeFromLogEntryTask::prepare()
 bool MergeFromLogEntryTask::commit()
 {
     part = merge_task->getFuture().get();
+
+    merge_task.reset();
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, transaction_ptr.get());
 

@@ -436,8 +436,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const IMergeTreeDataPart * /*parent_part*/,
     const String & /*prefix*/)
 {
-    auto deduplicate_by_columns_ptr = std::make_shared<Names>(deduplicate_by_columns);
-
     return std::make_shared<MergeTask>(
         future_part,
         const_cast<StorageMetadataPtr &>(metadata_snapshot),
@@ -447,7 +445,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         context,
         const_cast<ReservationPtr &>(space_reservation),
         deduplicate,
-        deduplicate_by_columns_ptr,
+        deduplicate_by_columns,
         merging_params,
         nullptr,
         "",
