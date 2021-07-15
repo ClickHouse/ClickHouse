@@ -40,7 +40,7 @@ Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
 void Block::initializeIndexByName()
 {
     for (size_t i = 0, size = data.size(); i < size; ++i)
-        index_by_name[data[i].name].push_back(i);
+        index_by_name[data[i].name] = i;
 }
 
 
@@ -50,12 +50,11 @@ void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
         throw Exception("Position out of bound in Block::insert(), max position = "
             + toString(data.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
 
-    for (auto & name_it : index_by_name)
-        for (auto & name_pos : name_it.second)
-            if (name_pos >= position)
-                ++name_pos;
+    for (auto & [name, pos] : index_by_name)
+        if (pos >= position)
+                ++pos;
 
-    index_by_name[elem.name].push_back(position);
+    index_by_name[elem.name] = position;
     data.emplace(data.begin() + position, elem);
 }
 
@@ -65,25 +64,24 @@ void Block::insert(size_t position, ColumnWithTypeAndName && elem)
         throw Exception("Position out of bound in Block::insert(), max position = "
         + toString(data.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
 
-    for (auto & name_it : index_by_name)
-        for (auto & name_pos : name_it.second)
-            if (name_pos >= position)
-                ++name_pos;
+    for (auto & [name, pos] : index_by_name)
+        if (pos >= position)
+            ++pos;
 
-    index_by_name[elem.name].push_back(position);
+    index_by_name[elem.name] = position;
     data.emplace(data.begin() + position, std::move(elem));
 }
 
 
 void Block::insert(const ColumnWithTypeAndName & elem)
 {
-    index_by_name[elem.name].push_back(data.size());
+    index_by_name[elem.name] = data.size();
     data.emplace_back(elem);
 }
 
 void Block::insert(ColumnWithTypeAndName && elem)
 {
-    index_by_name[elem.name].push_back(data.size());
+    index_by_name[elem.name] = data.size();
     data.emplace_back(std::move(elem));
 }
 
@@ -127,26 +125,14 @@ void Block::eraseImpl(size_t position)
 
     for (auto it = index_by_name.begin(); it != index_by_name.end();)
     {
-        bool pop_back = false;
-
-        for (auto & pos : it->second)
-        {
-            if (pos == position)
-            {
-                pos = it->second.back();
-                pop_back = true;
-            }
-            else if (pos > position)
-                --pos;
-        }
-
-        if (pop_back)
-            it->second.pop_back();
-
-        if (it->second.empty())
+        if (it->second == position)
             index_by_name.erase(it++);
         else
+        {
+            if (it->second > position)
+                --it->second;
             ++it;
+        }
     }
 }
 
@@ -158,8 +144,7 @@ void Block::erase(const String & name)
     if (index_it == index_by_name.end())
         throw Exception("No such name in Block::erase(): '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
-    for (auto pos : index_it->second)
-        eraseImpl(pos);
+    eraseImpl(index_it->second);
 }
 
 
@@ -193,16 +178,13 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
-/// Return the first column by name
 const ColumnWithTypeAndName * Block::findByName(const String & name) const
 {
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
         return nullptr;
 
-    assert(!it->second.empty());
-
-    return &data[it->second[0]];
+    return &data[it->second];
 }
 
 
@@ -230,9 +212,7 @@ size_t Block::getPositionByName(const String & name) const
         throw Exception(
             "Not found column " + name + " in block. There are only columns: " + dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
-    assert(!it->second.empty());
-
-    return it->second[0];
+    return it->second;
 }
 
 
@@ -454,21 +434,15 @@ Block Block::sortColumns() const
 {
     Block sorted_block;
 
-    /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
-    std::vector<decltype(index_by_name.begin())> sorted_index_by_name(index_by_name.size());
-    {
-        size_t i = 0;
-        for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
-            sorted_index_by_name[i++] = it;
-    }
-    std::sort(sorted_index_by_name.begin(), sorted_index_by_name.end(), [](const auto & lhs, const auto & rhs)
-    {
-        return lhs->first < rhs->first;
-    });
+    /// XXX: build another (multi-)index by names.
+    std::map<String, std::list<size_t>> sorted_index_by_name;
+
+    for (size_t i = 0, s = data.size(); i < s; ++i)
+        sorted_index_by_name[data[i].name].push_back(i);
 
     for (const auto & it : sorted_index_by_name)
     {
-        for (auto pos : it->second)
+        for (auto pos : it.second)
             sorted_block.insert(data[pos]);
     }
 
