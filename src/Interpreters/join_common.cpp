@@ -322,46 +322,26 @@ void createMissedColumns(Block & block)
 }
 
 /// Append totals from right to left block, correct types if needed
-void joinTotals(const Block & totals, const Block & columns_to_add, const TableJoin & table_join, Block & block)
+void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_join, Block & out_block)
 {
     if (table_join.forceNullableLeft())
-        convertColumnsToNullable(block);
+        JoinCommon::convertColumnsToNullable(left_totals);
 
-    if (Block totals_without_keys = totals)
+    if (table_join.forceNullableRight())
+        JoinCommon::convertColumnsToNullable(right_totals);
+
+    for (auto & col : out_block)
     {
-        for (const auto & name : table_join.keyNamesRight())
-            totals_without_keys.erase(totals_without_keys.getPositionByName(name));
+        if (const auto * left_col = left_totals.findByName(col.name))
+            col = *left_col;
+        else if (const auto * right_col = right_totals.findByName(col.name))
+            col = *right_col;
+        else
+            col.column = col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
 
-        for (auto & col : totals_without_keys)
-        {
-            if (table_join.rightBecomeNullable(col.type))
-                JoinCommon::convertColumnToNullable(col);
-
-            /// In case of arrayJoin it can be not one row
-            if (col.column->size() != 1)
-                col.column = col.column->cloneResized(1);
-        }
-
-        for (size_t i = 0; i < totals_without_keys.columns(); ++i)
-            block.insert(totals_without_keys.safeGetByPosition(i));
-    }
-    else
-    {
-        /// We will join empty `totals` - from one row with the default values.
-
-        for (size_t i = 0; i < columns_to_add.columns(); ++i)
-        {
-            const auto & col = columns_to_add.getByPosition(i);
-            if (block.has(col.name))
-            {
-                /// For StorageJoin we discarded table qualifiers, so some names may clash
-                continue;
-            }
-            block.insert({
-                col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(),
-                col.type,
-                col.name});
-        }
+        /// In case of using `arrayJoin` we can get more or less rows than one
+        if (col.column->size() != 1)
+            col.column = col.column->cloneResized(1);
     }
 }
 
