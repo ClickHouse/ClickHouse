@@ -161,7 +161,7 @@ bool MergeFromLogEntryTask::executeImpl()
         }
         case State::CANT_MERGE_NEED_FETCH :
         {
-            LOG_FATAL(&Poco::Logger::get("abacaba"), "Will execute fetch istead of merge!");
+            // LOG_FATAL(&Poco::Logger::get("abacaba"), "Will execute fetch istead of merge!");
             /// MAYBE FIXME
             if (storage.executeFetch(*entry))
             {
