@@ -15,7 +15,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageMySQL.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionMySQL.h>
@@ -24,7 +23,7 @@
 #include <Common/quoteString.h>
 #include "registerTableFunctions.h"
 
-#include <Databases/MySQL/DatabaseMySQL.h> // for fetchTablesColumnsList
+#include <Databases/MySQL/DatabaseConnectionMySQL.h> // for fetchTablesColumnsList
 #include <Common/parseRemoteDescription.h>
 
 
@@ -87,7 +86,7 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr contex
         throw Exception("MySQL table " + (remote_database_name.empty() ? "" : (backQuote(remote_database_name) + "."))
             + backQuote(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    return columns->second;
+    return ColumnsDescription{columns->second};
 }
 
 StoragePtr TableFunctionMySQL::executeImpl(
@@ -108,8 +107,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
         columns,
         ConstraintsDescription{},
         String{},
-        context,
-        MySQLSettings{});
+        context);
 
     pool.reset();
 

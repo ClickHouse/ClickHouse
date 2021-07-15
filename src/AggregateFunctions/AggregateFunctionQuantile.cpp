@@ -8,7 +8,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -53,9 +52,6 @@ template <typename Value, bool float_return> using FuncQuantilesTDigest = Aggreg
 template <typename Value, bool float_return> using FuncQuantileTDigestWeighted = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantileTDigestWeighted, true, std::conditional_t<float_return, Float32, void>, false>;
 template <typename Value, bool float_return> using FuncQuantilesTDigestWeighted = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantilesTDigestWeighted, true, std::conditional_t<float_return, Float32, void>, true>;
 
-template <typename Value, bool float_return> using FuncQuantileBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantileBFloat16, false, std::conditional_t<float_return, Float64, void>, false>;
-template <typename Value, bool float_return> using FuncQuantilesBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantilesBFloat16, false, std::conditional_t<float_return, Float64, void>, true>;
-
 
 template <template <typename, bool> class Function>
 static constexpr bool supportDecimal()
@@ -85,7 +81,7 @@ static constexpr bool supportBigInt()
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
-    const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+    const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     /// Second argument type check doesn't depend on the type of the first one.
     Function<void, true>::assertSecondArg(argument_types);
@@ -125,47 +121,41 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 {
-    /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
-
     factory.registerFunction(NameQuantile::name, createAggregateFunctionQuantile<FuncQuantile>);
-    factory.registerFunction(NameQuantiles::name, { createAggregateFunctionQuantile<FuncQuantiles>, properties });
+    factory.registerFunction(NameQuantiles::name, createAggregateFunctionQuantile<FuncQuantiles>);
 
     factory.registerFunction(NameQuantileDeterministic::name, createAggregateFunctionQuantile<FuncQuantileDeterministic>);
-    factory.registerFunction(NameQuantilesDeterministic::name, { createAggregateFunctionQuantile<FuncQuantilesDeterministic>, properties });
+    factory.registerFunction(NameQuantilesDeterministic::name, createAggregateFunctionQuantile<FuncQuantilesDeterministic>);
 
     factory.registerFunction(NameQuantileExact::name, createAggregateFunctionQuantile<FuncQuantileExact>);
-    factory.registerFunction(NameQuantilesExact::name, { createAggregateFunctionQuantile<FuncQuantilesExact>, properties });
+    factory.registerFunction(NameQuantilesExact::name, createAggregateFunctionQuantile<FuncQuantilesExact>);
 
     factory.registerFunction(NameQuantileExactLow::name, createAggregateFunctionQuantile<FuncQuantileExactLow>);
-    factory.registerFunction(NameQuantilesExactLow::name, { createAggregateFunctionQuantile<FuncQuantilesExactLow>, properties });
+    factory.registerFunction(NameQuantilesExactLow::name, createAggregateFunctionQuantile<FuncQuantilesExactLow>);
 
     factory.registerFunction(NameQuantileExactHigh::name, createAggregateFunctionQuantile<FuncQuantileExactHigh>);
-    factory.registerFunction(NameQuantilesExactHigh::name, { createAggregateFunctionQuantile<FuncQuantilesExactHigh>, properties });
+    factory.registerFunction(NameQuantilesExactHigh::name, createAggregateFunctionQuantile<FuncQuantilesExactHigh>);
 
     factory.registerFunction(NameQuantileExactExclusive::name, createAggregateFunctionQuantile<FuncQuantileExactExclusive>);
-    factory.registerFunction(NameQuantilesExactExclusive::name, { createAggregateFunctionQuantile<FuncQuantilesExactExclusive>, properties });
+    factory.registerFunction(NameQuantilesExactExclusive::name, createAggregateFunctionQuantile<FuncQuantilesExactExclusive>);
 
     factory.registerFunction(NameQuantileExactInclusive::name, createAggregateFunctionQuantile<FuncQuantileExactInclusive>);
-    factory.registerFunction(NameQuantilesExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantilesExactInclusive>, properties });
+    factory.registerFunction(NameQuantilesExactInclusive::name, createAggregateFunctionQuantile<FuncQuantilesExactInclusive>);
 
     factory.registerFunction(NameQuantileExactWeighted::name, createAggregateFunctionQuantile<FuncQuantileExactWeighted>);
-    factory.registerFunction(NameQuantilesExactWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesExactWeighted>, properties });
+    factory.registerFunction(NameQuantilesExactWeighted::name, createAggregateFunctionQuantile<FuncQuantilesExactWeighted>);
 
     factory.registerFunction(NameQuantileTiming::name, createAggregateFunctionQuantile<FuncQuantileTiming>);
-    factory.registerFunction(NameQuantilesTiming::name, { createAggregateFunctionQuantile<FuncQuantilesTiming>, properties });
+    factory.registerFunction(NameQuantilesTiming::name, createAggregateFunctionQuantile<FuncQuantilesTiming>);
 
     factory.registerFunction(NameQuantileTimingWeighted::name, createAggregateFunctionQuantile<FuncQuantileTimingWeighted>);
-    factory.registerFunction(NameQuantilesTimingWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesTimingWeighted>, properties });
+    factory.registerFunction(NameQuantilesTimingWeighted::name, createAggregateFunctionQuantile<FuncQuantilesTimingWeighted>);
 
     factory.registerFunction(NameQuantileTDigest::name, createAggregateFunctionQuantile<FuncQuantileTDigest>);
-    factory.registerFunction(NameQuantilesTDigest::name, { createAggregateFunctionQuantile<FuncQuantilesTDigest>, properties });
+    factory.registerFunction(NameQuantilesTDigest::name, createAggregateFunctionQuantile<FuncQuantilesTDigest>);
 
     factory.registerFunction(NameQuantileTDigestWeighted::name, createAggregateFunctionQuantile<FuncQuantileTDigestWeighted>);
-    factory.registerFunction(NameQuantilesTDigestWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesTDigestWeighted>, properties });
-
-    factory.registerFunction(NameQuantileBFloat16::name, createAggregateFunctionQuantile<FuncQuantileBFloat16>);
-    factory.registerFunction(NameQuantilesBFloat16::name, { createAggregateFunctionQuantile<FuncQuantilesBFloat16>, properties });
+    factory.registerFunction(NameQuantilesTDigestWeighted::name, createAggregateFunctionQuantile<FuncQuantilesTDigestWeighted>);
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("median", NameQuantile::name);
@@ -178,7 +168,6 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     factory.registerAlias("medianTimingWeighted", NameQuantileTimingWeighted::name);
     factory.registerAlias("medianTDigest", NameQuantileTDigest::name);
     factory.registerAlias("medianTDigestWeighted", NameQuantileTDigestWeighted::name);
-    factory.registerAlias("medianBFloat16", NameQuantileBFloat16::name);
 }
 
 }

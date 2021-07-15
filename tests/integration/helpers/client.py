@@ -1,7 +1,6 @@
 import os
 import subprocess as sp
 import tempfile
-import logging
 from threading import Timer
 
 
@@ -102,11 +101,10 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode('utf-8', errors='replace')
-        stderr = self.stderr_file.read().decode('utf-8', errors='replace')
+        stdout = self.stdout_file.read().decode()
+        stderr = self.stderr_file.read().decode()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
-            logging.debug(f"Timed out. Last stdout:{stdout}, stderr:{stderr}")
             raise QueryTimeoutExceedException('Client timed out!')
 
         if (self.process.returncode != 0 or stderr) and not self.ignore_error:
@@ -120,8 +118,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode('utf-8', errors='replace')
-        stderr = self.stderr_file.read().decode('utf-8', errors='replace')
+        stdout = self.stdout_file.read().decode()
+        stderr = self.stderr_file.read().decode()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
@@ -136,8 +134,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode('utf-8', errors='replace')
-        stderr = self.stderr_file.read().decode('utf-8', errors='replace')
+        stdout = self.stdout_file.read().decode()
+        stderr = self.stderr_file.read().decode()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')

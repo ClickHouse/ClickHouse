@@ -9,7 +9,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Storages/PostgreSQL/PoolWithFailover.h>
 
 
 namespace DB
@@ -33,7 +33,7 @@ public:
         const ASTStorage * database_engine_define,
         const String & dbname_,
         const String & postgres_dbname,
-        postgres::PoolWithFailoverPtr pool_,
+        postgres::PoolWithFailoverPtr connection_pool_,
         bool cache_tables_);
 
     String getEngineName() const override { return "PostgreSQL"; }
@@ -47,7 +47,7 @@ public:
 
     bool empty() const override;
 
-    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach) override;
+    void loadStoredObjects(ContextPtr, bool, bool force_attach) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
@@ -70,7 +70,7 @@ private:
     String metadata_path;
     ASTPtr database_engine_define;
     String dbname;
-    postgres::PoolWithFailoverPtr pool;
+    postgres::PoolWithFailoverPtr connection_pool;
     const bool cache_tables;
 
     mutable Tables cached_tables;
@@ -78,11 +78,9 @@ private:
     BackgroundSchedulePool::TaskHolder cleaner_task;
 
     bool checkPostgresTable(const String & table_name) const;
-
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, const bool table_checked) const;
-
+    std::unordered_set<std::string> fetchTablesList() const;
+    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
     void removeOutdatedTables();
-
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };
 

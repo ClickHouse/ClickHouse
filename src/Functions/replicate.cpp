@@ -55,7 +55,7 @@ ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & argument
             offsets = array_column->getOffsetsPtr();
     }
 
-    const auto & offsets_data = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets).getData(); /// NOLINT
+    const auto & offsets_data = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets).getData();
     return ColumnArray::create(first_column->replicate(offsets_data)->convertToFullColumnIfConst(), offsets);
 }
 

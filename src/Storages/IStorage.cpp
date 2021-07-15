@@ -51,10 +51,7 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
     if (is_dropped)
-    {
-        auto table_id = getStorageID();
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
-    }
+        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
     return result;
 }
@@ -201,7 +198,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
-std::string PrewhereInfo::dump() const
+std::string PrewhereDAGInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
@@ -214,6 +211,11 @@ std::string PrewhereInfo::dump() const
     if (prewhere_actions)
     {
         ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
+    }
+
+    if (remove_columns_actions)
+    {
+        ss << "remove_columns_actions " << remove_columns_actions->dumpDAG() << "\n";
     }
 
     ss << "remove_prewhere_column " << remove_prewhere_column

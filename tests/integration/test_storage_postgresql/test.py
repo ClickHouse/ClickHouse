@@ -9,14 +9,14 @@ from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_postgres=True)
-node2 = cluster.add_instance('node2', with_postgres_cluster=True)
+node1 = cluster.add_instance('node1', main_configs=["configs/log_conf.xml"], with_postgres=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/log_conf.xml'], with_postgres_cluster=True)
 
-def get_postgres_conn(cluster, ip, database=False):
+def get_postgres_conn(database=False, port=5432):
     if database == True:
-        conn_string = f"host={ip} port='{cluster.postgres_port}' dbname='clickhouse' user='postgres' password='mysecretpassword'"
+        conn_string = "host='localhost' port={} dbname='clickhouse' user='postgres' password='mysecretpassword'".format(port)
     else:
-        conn_string = f"host={ip} port='{cluster.postgres_port}' user='postgres' password='mysecretpassword'"
+        conn_string = "host='localhost' port={} user='postgres' password='mysecretpassword'".format(port)
 
     conn = psycopg2.connect(conn_string)
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
@@ -25,7 +25,6 @@ def get_postgres_conn(cluster, ip, database=False):
 
 def create_postgres_db(conn, name):
     cursor = conn.cursor()
-    cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
     cursor.execute("CREATE DATABASE {}".format(name))
 
 
@@ -33,20 +32,17 @@ def create_postgres_db(conn, name):
 def started_cluster():
     try:
         cluster.start()
-        postgres_conn = get_postgres_conn(cluster, ip=cluster.postgres_ip)
-        print("postgres connected")
+
+        postgres_conn = get_postgres_conn(port=5432)
         create_postgres_db(postgres_conn, 'clickhouse')
 
-        postgres_conn = get_postgres_conn(cluster, ip=cluster.postgres2_ip)
-        print("postgres2 connected")
+        postgres_conn = get_postgres_conn(port=5421)
         create_postgres_db(postgres_conn, 'clickhouse')
 
-        postgres_conn = get_postgres_conn(cluster, ip=cluster.postgres3_ip)
-        print("postgres2 connected")
+        postgres_conn = get_postgres_conn(port=5441)
         create_postgres_db(postgres_conn, 'clickhouse')
 
-        postgres_conn = get_postgres_conn(cluster, ip=cluster.postgres4_ip)
-        print("postgres2 connected")
+        postgres_conn = get_postgres_conn(port=5461)
         create_postgres_db(postgres_conn, 'clickhouse')
 
         print("postgres connected")
@@ -57,10 +53,10 @@ def started_cluster():
 
 
 def test_postgres_select_insert(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
+    conn = get_postgres_conn(True)
     cursor = conn.cursor()
     table_name = 'test_many'
-    table = f'''postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'clickhouse', '{table_name}', 'postgres', 'mysecretpassword')'''
+    table = '''postgresql('postgres1:5432', 'clickhouse', '{}', 'postgres', 'mysecretpassword')'''.format(table_name)
     cursor.execute('CREATE TABLE IF NOT EXISTS {} (a integer, b text, c integer)'.format(table_name))
 
     result = node1.query('''
@@ -77,7 +73,7 @@ def test_postgres_select_insert(started_cluster):
 
 
 def test_postgres_conversions(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
+    conn = get_postgres_conn(True)
     cursor = conn.cursor()
     cursor.execute(
         '''CREATE TABLE IF NOT EXISTS test_types (
@@ -85,10 +81,10 @@ def test_postgres_conversions(started_cluster):
         h timestamp, i date, j decimal(5, 3), k numeric, l boolean)''')
     node1.query('''
         INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'clickhouse', 'test_types', 'postgres', 'mysecretpassword') VALUES
-        (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12.012345', '2000-05-12', 22.222, 22.222, 1)''')
+        (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12', '2000-05-12', 22.222, 22.222, 1)''')
     result = node1.query('''
         SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3), l FROM postgresql('postgres1:5432', 'clickhouse', 'test_types', 'postgres', 'mysecretpassword')''')
-    assert(result == '-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12.012345\t2000-05-12\t22.222\t22.222\t1\n')
+    assert(result == '-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12\t2000-05-12\t22.222\t22.222\t1\n')
 
     cursor.execute("INSERT INTO test_types (l) VALUES (TRUE), (true), ('yes'), ('y'), ('1');")
     cursor.execute("INSERT INTO test_types (l) VALUES (FALSE), (false), ('no'), ('off'), ('0');")
@@ -100,7 +96,7 @@ def test_postgres_conversions(started_cluster):
         '''CREATE TABLE IF NOT EXISTS test_array_dimensions
            (
                 a Date[] NOT NULL,                          -- Date
-                b Timestamp[] NOT NULL,                     -- DateTime64(6)
+                b Timestamp[] NOT NULL,                     -- DateTime
                 c real[][] NOT NULL,                        -- Float32
                 d double precision[][] NOT NULL,            -- Float64
                 e decimal(5, 5)[][][] NOT NULL,             -- Decimal32
@@ -114,7 +110,7 @@ def test_postgres_conversions(started_cluster):
     result = node1.query('''
         DESCRIBE TABLE postgresql('postgres1:5432', 'clickhouse', 'test_array_dimensions', 'postgres', 'mysecretpassword')''')
     expected = ('a\tArray(Date)\t\t\t\t\t\n' +
-               'b\tArray(DateTime64(6))\t\t\t\t\t\n' +
+               'b\tArray(DateTime)\t\t\t\t\t\n' +
                'c\tArray(Array(Float32))\t\t\t\t\t\n' +
                'd\tArray(Array(Float64))\t\t\t\t\t\n' +
                'e\tArray(Array(Array(Decimal(5, 5))))\t\t\t\t\t\n' +
@@ -129,7 +125,7 @@ def test_postgres_conversions(started_cluster):
     node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'clickhouse', 'test_array_dimensions', 'postgres', 'mysecretpassword') "
         "VALUES ("
         "['2000-05-12', '2000-05-12'], "
-        "['2000-05-12 12:12:12.012345', '2000-05-12 12:12:12.012345'], "
+        "['2000-05-12 12:12:12', '2000-05-12 12:12:12'], "
         "[[1.12345], [1.12345], [1.12345]], "
         "[[1.1234567891], [1.1234567891], [1.1234567891]], "
         "[[[0.11111, 0.11111]], [[0.22222, 0.22222]], [[0.33333, 0.33333]]], "
@@ -144,7 +140,7 @@ def test_postgres_conversions(started_cluster):
         SELECT * FROM postgresql('postgres1:5432', 'clickhouse', 'test_array_dimensions', 'postgres', 'mysecretpassword')''')
     expected = (
         "['2000-05-12','2000-05-12']\t" +
-        "['2000-05-12 12:12:12.012345','2000-05-12 12:12:12.012345']\t" +
+        "['2000-05-12 12:12:12','2000-05-12 12:12:12']\t" +
         "[[1.12345],[1.12345],[1.12345]]\t" +
         "[[1.1234567891],[1.1234567891],[1.1234567891]]\t" +
         "[[[0.11111,0.11111]],[[0.22222,0.22222]],[[0.33333,0.33333]]]\t"
@@ -158,7 +154,7 @@ def test_postgres_conversions(started_cluster):
 
 
 def test_non_default_scema(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
+    conn = get_postgres_conn(True)
     cursor = conn.cursor()
     cursor.execute('CREATE SCHEMA test_schema')
     cursor.execute('CREATE TABLE test_schema.test_table (a integer)')
@@ -188,14 +184,9 @@ def test_non_default_scema(started_cluster):
     result = node1.query('SELECT * FROM test_pg_table_schema_with_dots')
     assert(result == expected)
 
-    cursor.execute('INSERT INTO "test_schema"."test_table" SELECT i FROM generate_series(100, 199) as t(i)')
-    result = node1.query('SELECT * FROM {}'.format(table_function))
-    expected = node1.query('SELECT number FROM numbers(200)')
-    assert(result == expected)
-
 
 def test_concurrent_queries(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
+    conn = get_postgres_conn(True)
     cursor = conn.cursor()
 
     node1.query('''
@@ -248,10 +239,10 @@ def test_concurrent_queries(started_cluster):
 
 
 def test_postgres_distributed(started_cluster):
-    conn0 = get_postgres_conn(started_cluster, started_cluster.postgres_ip, database=True)
-    conn1 = get_postgres_conn(started_cluster, started_cluster.postgres2_ip, database=True)
-    conn2 = get_postgres_conn(started_cluster, started_cluster.postgres3_ip, database=True)
-    conn3 = get_postgres_conn(started_cluster, started_cluster.postgres4_ip, database=True)
+    conn0 = get_postgres_conn(port=5432, database=True)
+    conn1 = get_postgres_conn(port=5421, database=True)
+    conn2 = get_postgres_conn(port=5441, database=True)
+    conn3 = get_postgres_conn(port=5461, database=True)
 
     cursor0 = conn0.cursor()
     cursor1 = conn1.cursor()
@@ -306,37 +297,6 @@ def test_postgres_distributed(started_cluster):
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
     started_cluster.unpause_container('postgres1')
     assert(result == 'host2\nhost4\n' or result == 'host3\nhost4\n')
-
-    
-def test_datetime_with_timezone(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE test_timezone (ts timestamp without time zone, ts_z timestamp with time zone)")
-    cursor.execute("insert into test_timezone select '2014-04-04 20:00:00', '2014-04-04 20:00:00'::timestamptz at time zone 'America/New_York';")
-    cursor.execute("select * from test_timezone")
-    result = cursor.fetchall()[0]
-    print(result[0], str(result[1])[:-6])
-    node1.query("create table test_timezone ( ts DateTime, ts_z DateTime('America/New_York')) ENGINE PostgreSQL('postgres1:5432', 'clickhouse', 'test_timezone', 'postgres', 'mysecretpassword');")
-    assert(node1.query("select ts from test_timezone").strip() == str(result[0]))
-    # [:-6] because 2014-04-04 16:00:00+00:00 -> 2014-04-04 16:00:00
-    assert(node1.query("select ts_z from test_timezone").strip() == str(result[1])[:-6])
-    assert(node1.query("select * from test_timezone") == "2014-04-04 20:00:00\t2014-04-04 16:00:00\n")
-
-
-def test_postgres_ndim(started_cluster):
-    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
-    cursor = conn.cursor()
-    cursor.execute('CREATE TABLE arr1 (a Integer[])')
-    cursor.execute("INSERT INTO arr1 SELECT '{{1}, {2}}'")
-
-    # The point is in creating a table via 'as select *', in postgres att_ndim will not be correct in this case.
-    cursor.execute('CREATE TABLE arr2 AS SELECT * FROM arr1')
-    cursor.execute("SELECT attndims AS dims FROM pg_attribute WHERE attrelid = 'arr2'::regclass; ")
-    result = cursor.fetchall()[0]
-    assert(int(result[0]) == 0)
-
-    result = node1.query('''SELECT toTypeName(a) FROM postgresql('postgres1:5432', 'clickhouse', 'arr2', 'postgres', 'mysecretpassword')''')
-    assert(result.strip() == "Array(Array(Nullable(Int32)))")
 
 
 if __name__ == '__main__':

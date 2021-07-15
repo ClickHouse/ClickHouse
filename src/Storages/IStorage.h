@@ -190,10 +190,9 @@ protected:
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
+
 private:
-
     StorageID storage_id;
-
     mutable std::mutex id_mutex;
 
     /// Multiversion storage metadata. Allows to read/write storage metadata
@@ -350,8 +349,6 @@ public:
       * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
     virtual void drop() {}
-
-    virtual void dropInnerTableIfAny(bool /* no_delay */, ContextPtr /* context */) {}
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).

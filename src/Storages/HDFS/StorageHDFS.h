@@ -1,15 +1,11 @@
 #pragma once
-
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
-
 #if USE_HDFS
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
 #include <common/logger_useful.h>
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 namespace DB
 {
@@ -17,9 +13,9 @@ namespace DB
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHDFS final : public shared_ptr_helper<StorageHDFS>, public IStorage, WithContext
+class StorageHDFS final : public ext::shared_ptr_helper<StorageHDFS>, public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageHDFS>;
+    friend struct ext::shared_ptr_helper<StorageHDFS>;
 public:
     String getName() const override { return "HDFS"; }
 
@@ -33,8 +29,6 @@ public:
         unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
-
-    void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, TableExclusiveLockHolder &) override;
 
     NamesAndTypesList getVirtuals() const override;
 

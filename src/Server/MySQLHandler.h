@@ -56,10 +56,9 @@ private:
 protected:
     Poco::Logger * log;
 
-    MySQLWireContext connection_context_mysql;
-    ContextMutablePtr connection_context;
+    ContextPtr connection_context;
 
-    MySQLProtocol::PacketEndpointPtr packet_endpoint;
+    std::shared_ptr<MySQLProtocol::PacketEndpoint> packet_endpoint;
 
 private:
     UInt64 connection_id = 0;

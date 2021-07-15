@@ -17,12 +17,11 @@ node_1 = cluster.add_instance('node_1', with_zookeeper=True)
 def started_cluster():
     try:
         cluster.start()
-        node_1.query_with_retry('DROP TABLE IF EXISTS replicated')
 
-        node_1.query_with_retry('''CREATE TABLE replicated (id UInt32, date Date) ENGINE =
+        node_1.query('''CREATE TABLE replicated (id UInt32, date Date) ENGINE =
             ReplicatedMergeTree('/clickhouse/tables/replicated', 'node_1')  ORDER BY id PARTITION BY toYYYYMM(date)''')
 
-        node.query_with_retry("CREATE TABLE distributed (id UInt32, date Date) ENGINE = Distributed('test_cluster', 'default', 'replicated')")
+        node.query("CREATE TABLE distributed (id UInt32, date Date) ENGINE = Distributed('test_cluster', 'default', 'replicated')")
 
         yield cluster
 

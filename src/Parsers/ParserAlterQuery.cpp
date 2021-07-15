@@ -33,7 +33,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_ttl("MODIFY TTL");
     ParserKeyword s_materialize_ttl("MATERIALIZE TTL");
     ParserKeyword s_modify_setting("MODIFY SETTING");
-    ParserKeyword s_reset_setting("RESET SETTING");
     ParserKeyword s_modify_query("MODIFY QUERY");
 
     ParserKeyword s_add_index("ADD INDEX");
@@ -85,7 +84,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_to_disk("TO DISK");
     ParserKeyword s_to_volume("TO VOLUME");
     ParserKeyword s_to_table("TO TABLE");
-    ParserKeyword s_to_shard("TO SHARD");
 
     ParserKeyword s_delete("DELETE");
     ParserKeyword s_update("UPDATE");
@@ -116,9 +114,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma),
         /* allow_empty = */ false);
     ParserSetQuery parser_settings(true);
-    ParserList parser_reset_setting(
-        std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma),
-        /* allow_empty = */ false);
     ParserNameList values_p;
     ParserSelectWithUnionQuery select_p;
     ParserTTLExpressionList parser_ttl_list;
@@ -235,9 +230,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_idx_decl.parse(pos, command->index_decl, expected))
                 return false;
 
-            if (s_first.ignore(pos, expected))
-                command->first = true;
-            else if (s_after.ignore(pos, expected))
+            if (s_after.ignore(pos, expected))
             {
                 if (!parser_name.parse(pos, command->index, expected))
                     return false;
@@ -372,10 +365,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
                     return false;
                 command->move_destination_type = DataDestinationType::TABLE;
-            }
-            else if (s_to_shard.ignore(pos))
-            {
-                command->move_destination_type = DataDestinationType::SHARD;
             }
             else
                 return false;
@@ -708,12 +697,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_settings.parse(pos, command->settings_changes, expected))
                 return false;
             command->type = ASTAlterCommand::MODIFY_SETTING;
-        }
-        else if (s_reset_setting.ignore(pos, expected))
-        {
-            if (!parser_reset_setting.parse(pos, command->settings_resets, expected))
-                return false;
-            command->type = ASTAlterCommand::RESET_SETTING;
         }
         else if (s_modify_query.ignore(pos, expected))
         {

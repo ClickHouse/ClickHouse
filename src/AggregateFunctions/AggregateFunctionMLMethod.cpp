@@ -5,7 +5,7 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include "AggregateFunctionFactory.h"
@@ -15,8 +15,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -31,7 +29,7 @@ namespace
     using FuncLogisticRegression = AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression>;
     template <typename Method>
     AggregateFunctionPtr createAggregateFunctionMLMethod(
-        const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        const std::string & name, const DataTypes & argument_types, const Array & parameters)
     {
         if (parameters.size() > 4)
             throw Exception(

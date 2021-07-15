@@ -149,11 +149,7 @@ inline bool isPunctuationASCII(char c)
 
 inline bool isValidIdentifier(const std::string_view & str)
 {
-    return !str.empty()
-        && isValidIdentifierBegin(str[0])
-        && std::all_of(str.begin() + 1, str.end(), isWordCharASCII)
-        /// NULL is not a valid identifier in SQL, any case.
-        && !(str.size() == strlen("null") && 0 == strncasecmp(str.data(), "null", strlen("null")));
+    return !str.empty() && isValidIdentifierBegin(str[0]) && std::all_of(str.begin() + 1, str.end(), isWordCharASCII);
 }
 
 /// Works assuming isAlphaASCII.

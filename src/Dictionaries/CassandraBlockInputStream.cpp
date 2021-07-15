@@ -110,8 +110,6 @@ void CassandraBlockInputStream::insertValue(IColumn & column, ValueType type, co
             assert_cast<ColumnFloat64 &>(column).insertValue(value);
             break;
         }
-        case ValueType::vtEnum8:
-        case ValueType::vtEnum16:
         case ValueType::vtString:
         {
             const char * value = nullptr;

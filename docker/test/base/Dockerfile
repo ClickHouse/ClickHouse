@@ -46,7 +46,6 @@ RUN apt-get update \
         pigz \
         pkg-config \
         tzdata \
-        pv \
         --yes --no-install-recommends
 
 # Sanitizer options for services (clickhouse-server)

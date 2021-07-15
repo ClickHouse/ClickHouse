@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 
@@ -14,9 +14,9 @@ namespace DB
  * Read only.
  */
 
-class StorageMongoDB final : public shared_ptr_helper<StorageMongoDB>, public IStorage
+class StorageMongoDB final : public ext::shared_ptr_helper<StorageMongoDB>, public IStorage
 {
-    friend struct shared_ptr_helper<StorageMongoDB>;
+    friend struct ext::shared_ptr_helper<StorageMongoDB>;
 public:
     StorageMongoDB(
         const StorageID & table_id_,
@@ -52,8 +52,8 @@ private:
     const std::string password;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
-    bool authenticated = false;
-    std::mutex connection_mutex; /// Protects the variables `connection` and `authenticated`.
+    bool authentified = false;
+    std::mutex connection_mutex; /// Protects the variables `connection` and `authentified`.
 };
 
 }
