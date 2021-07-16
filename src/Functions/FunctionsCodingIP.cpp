@@ -35,14 +35,11 @@ namespace ErrorCodes
 }
 
 
-/** Encoding functions for network adresses:
+/** Encoding functions for network addresses:
   *
   * IPv4NumToString (num) - See below.
   * IPv4StringToNum(string) - Convert, for example, '192.168.0.1' to 3232235521 and vice versa.
-  *
   */
-
-
 class FunctionIPv6NumToString : public IFunction
 {
 public:
