@@ -36,12 +36,12 @@ public:
         ASTPtr query;
         Block header;
 
-        size_t shard_num;
+        size_t shard_num = 0;
         ConnectionPoolWithFailoverPtr pool;
 
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).
-        bool lazy;
+        bool lazy = false;
         UInt32 local_delay = 0;
     };
 

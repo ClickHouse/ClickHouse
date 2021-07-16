@@ -14,6 +14,8 @@ using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
 
+/// Reading step from remote servers.
+/// Unite query results from several shards.
 class ReadFromRemote final : public ISourceStep
 {
 public:
