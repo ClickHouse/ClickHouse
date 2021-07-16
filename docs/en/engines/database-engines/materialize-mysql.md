@@ -7,7 +7,7 @@ toc_title: MaterializeMySQL
 
 Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables.
 
-ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries. ClickHouse database created with MaterializeMySQL now contains all column comments from the MySQL database that materialized
+ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries. ClickHouse database created with MaterializeMySQL contains all column comments from the MySQL database that materialized.
 
 This feature is experimental.
 
