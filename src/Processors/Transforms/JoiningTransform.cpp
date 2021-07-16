@@ -183,11 +183,9 @@ void JoiningTransform::transform(Chunk & chunk)
 Block JoiningTransform::readExecute(Chunk & chunk)
 {
     Block res;
-    // std::cerr << "=== Chunk rows " << chunk.getNumRows() << " cols " << chunk.getNumColumns() << std::endl;
 
     if (!not_processed)
     {
-        // std::cerr << "!not_processed " << std::endl;
         if (chunk.hasColumns())
             res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -196,7 +194,6 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
     {
-        // std::cerr << "not_processed->empty() " << std::endl;
         if (chunk.hasColumns())
             res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -205,12 +202,10 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
     else
     {
-        // std::cerr << "not not_processed->empty() " << std::endl;
         res = std::move(not_processed->block);
         join->joinBlock(res, not_processed);
     }
 
-    // std::cerr << "Res block rows " << res.rows() << " cols " << res.columns() << std::endl;
     return res;
 }
 
