@@ -1925,7 +1925,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             }
 
             /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
-            UInt64 limit = (query.where() || query.prewhere()) ? 0 : getLimitForSorting(query, context);
+            UInt64 limit = (query.where() || query.prewhere() || query.groupBy()) ? 0 : getLimitForSorting(query, context);
             if (query_info.projection)
                 query_info.projection->input_order_info
                     = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context, limit);
