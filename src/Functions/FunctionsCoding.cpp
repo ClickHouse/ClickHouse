@@ -8,7 +8,6 @@ namespace DB
 struct NameFunctionIPv4NumToString { static constexpr auto name = "IPv4NumToString"; };
 struct NameFunctionIPv4NumToStringClassC { static constexpr auto name = "IPv4NumToStringClassC"; };
 
-
 void registerFunctionsCoding(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToStringCutToZero>();
@@ -29,20 +28,16 @@ void registerFunctionsCoding(FunctionFactory & factory)
 
     factory.registerFunction<FunctionIPv4NumToString<0, NameFunctionIPv4NumToString>>();
     factory.registerFunction<FunctionIPv4NumToString<1, NameFunctionIPv4NumToStringClassC>>();
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionIPv4NumToString<0, NameFunctionIPv4NumToString>>("INET_NTOA", FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionIPv4StringToNum>();
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionIPv4StringToNum>("INET_ATON", FunctionFactory::CaseInsensitive);
-
     factory.registerFunction<FunctionIPv6NumToString>();
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionIPv6NumToString>("INET6_NTOA", FunctionFactory::CaseInsensitive);
-
     factory.registerFunction<FunctionIPv6StringToNum>();
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionIPv6StringToNum>("INET6_ATON", FunctionFactory::CaseInsensitive);
+
+    /// MysQL compatibility aliases:
+    factory.registerAlias("INET_ATON", FunctionIPv4StringToNum::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("INET6_NTOA", FunctionIPv6NumToString::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("INET6_ATON", FunctionIPv6StringToNum::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("INET_NTOA", NameFunctionIPv4NumToString::name, FunctionFactory::CaseInsensitive);
 }
 
 }
