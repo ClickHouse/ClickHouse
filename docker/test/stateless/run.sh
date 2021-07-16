@@ -35,7 +35,7 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     # simpliest way to forward env variables to server
     sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
 else
-    service clickhouse-server start
+    sudo clickhouse start
 fi
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

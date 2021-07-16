@@ -74,7 +74,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 **Syntax**
 
 ``` sql
-quantileExact(level)(expr)
+quantileExactLow(level)(expr)
 ```
 
 Alias: `medianExactLow`.

@@ -44,6 +44,7 @@ public:
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
+    bool group_by_with_constant_keys = false;
     bool limit_with_ties = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }

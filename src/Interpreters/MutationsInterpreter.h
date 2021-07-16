@@ -56,6 +56,8 @@ public:
     /// Only changed columns.
     const Block & getUpdatedHeader() const;
 
+    const ColumnDependencies & getColumnDependencies() const;
+
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
 
@@ -148,6 +150,9 @@ private:
     NameSet materialized_projections;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
+
+    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
+    ColumnDependencies dependencies;
 };
 
 }

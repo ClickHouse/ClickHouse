@@ -11,6 +11,7 @@ services:
             interval: 10s
             timeout: 5s
             retries: 5
+        command: [ "postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=2"]
         networks:
           default:
             aliases:

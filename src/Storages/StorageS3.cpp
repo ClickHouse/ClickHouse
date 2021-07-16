@@ -27,6 +27,8 @@
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
@@ -433,6 +435,30 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         min_upload_part_size,
         max_single_part_upload_size);
 }
+
+
+void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
+{
+    updateClientAndAuthSettings(local_context, client_auth);
+
+    Aws::S3::Model::ObjectIdentifier obj;
+    obj.SetKey(client_auth.uri.key);
+
+    Aws::S3::Model::Delete delkeys;
+    delkeys.AddObjects(std::move(obj));
+
+    Aws::S3::Model::DeleteObjectsRequest request;
+    request.SetBucket(client_auth.uri.bucket);
+    request.SetDelete(delkeys);
+
+    auto response = client_auth.client->DeleteObjects(request);
+    if (!response.IsSuccess())
+    {
+        const auto & err = response.GetError();
+        throw Exception(std::to_string(static_cast<int>(err.GetErrorType())) + ": " + err.GetMessage(), ErrorCodes::S3_ERROR);
+    }
+}
+
 
 void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentication & upd)
 {

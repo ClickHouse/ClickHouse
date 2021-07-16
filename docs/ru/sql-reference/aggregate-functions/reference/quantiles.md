@@ -8,7 +8,7 @@ toc_priority: 201
 
 Синтаксис: `quantiles(level1, level2, …)(x)`
 
-Все функции для вычисления квантилей имеют соответствующие функции для вычисления нескольких квантилей: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`. Эти функции вычисляют все квантили указанных уровней в один проход и возвращают массив с вычисленными значениями.
+Все функции для вычисления квантилей имеют соответствующие функции для вычисления нескольких квантилей: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`, `quantilesBFloat16`. Эти функции вычисляют все квантили указанных уровней в один проход и возвращают массив с вычисленными значениями.
 
 ## quantilesExactExclusive {#quantilesexactexclusive}
 
@@ -18,7 +18,7 @@ toc_priority: 201
 
 Эта функция эквивалентна Excel функции [PERCENTILE.EXC](https://support.microsoft.com/en-us/office/percentile-exc-function-bbaa7204-e9e1-4010-85bf-c31dc5dce4ba), [тип R6](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 
-С наборами уровней работает эффективнее, чем [quantilesExactExclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactexclusive).
+С наборами уровней работает эффективнее, чем [quantileExactExclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactexclusive).
 
 **Синтаксис**
 
@@ -70,7 +70,7 @@ SELECT quantilesExactExclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(x) FROM 
 
 Эта функция эквивалентна Excel функции [PERCENTILE.INC](https://support.microsoft.com/en-us/office/percentile-inc-function-680f9539-45eb-410b-9a5e-c1355e5fe2ed), [тип R7](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 
-С наборами уровней работает эффективнее, чем [quantilesExactInclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantilesexactinclusive).
+С наборами уровней работает эффективнее, чем [quantileExactInclusive](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactinclusive).
 
 **Синтаксис**
 

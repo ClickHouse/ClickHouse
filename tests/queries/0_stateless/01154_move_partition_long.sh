@@ -85,12 +85,23 @@ function optimize_thread()
     done
 }
 
+function drop_part_thread()
+{
+    while true; do
+        REPLICA=$(($RANDOM % 16))
+        part=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.parts WHERE active AND database='$CLICKHOUSE_DATABASE' and table='dst_$REPLICA' ORDER BY rand() LIMIT 1")
+        $CLICKHOUSE_CLIENT -q "ALTER TABLE dst_$REPLICA DROP PART '$part'" 2>/dev/null
+        sleep 0.$RANDOM;
+    done
+}
+
 #export -f create_drop_thread;
 export -f insert_thread;
 export -f move_partition_src_dst_thread;
 export -f replace_partition_src_src_thread;
 export -f drop_partition_thread;
 export -f optimize_thread;
+export -f drop_part_thread;
 
 TIMEOUT=60
 
@@ -102,6 +113,7 @@ timeout $TIMEOUT bash -c move_partition_src_dst_thread &
 timeout $TIMEOUT bash -c replace_partition_src_src_thread &
 timeout $TIMEOUT bash -c drop_partition_thread &
 timeout $TIMEOUT bash -c optimize_thread &
+timeout $TIMEOUT bash -c drop_part_thread &
 wait
 
 for ((i=0; i<16; i++)) do

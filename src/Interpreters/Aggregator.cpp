@@ -1,5 +1,6 @@
 #include <future>
 #include <Poco/Util/Application.h>
+
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
@@ -21,6 +22,8 @@
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <IO/Operators.h>
+#include <Interpreters/JIT/compileFunction.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 
 
 namespace ProfileEvents
@@ -211,6 +214,32 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
     }
 }
 
+#if USE_EMBEDDED_COMPILER
+
+static CHJIT & getJITInstance()
+{
+    static CHJIT jit;
+    return jit;
+}
+
+class CompiledAggregateFunctionsHolder final : public CompiledExpressionCacheEntry
+{
+public:
+    explicit CompiledAggregateFunctionsHolder(CompiledAggregateFunctions compiled_function_)
+        : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
+        , compiled_aggregate_functions(compiled_function_)
+    {}
+
+    ~CompiledAggregateFunctionsHolder() override
+    {
+        getJITInstance().deleteCompiledModule(compiled_aggregate_functions.compiled_module);
+    }
+
+    CompiledAggregateFunctions compiled_aggregate_functions;
+};
+
+#endif
+
 Aggregator::Aggregator(const Params & params_)
     : params(params_)
 {
@@ -262,8 +291,93 @@ Aggregator::Aggregator(const Params & params_)
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
+
+#if USE_EMBEDDED_COMPILER
+    compileAggregateFunctions();
+#endif
+
 }
 
+#if USE_EMBEDDED_COMPILER
+
+void Aggregator::compileAggregateFunctions()
+{
+    static std::unordered_map<UInt128, UInt64, UInt128Hash> aggregate_functions_description_to_count;
+    static std::mutex mtx;
+
+    if (!params.compile_aggregate_expressions)
+        return;
+
+    std::vector<AggregateFunctionWithOffset> functions_to_compile;
+    size_t aggregate_instructions_size = 0;
+    String functions_description;
+
+    is_aggregate_function_compiled.resize(aggregate_functions.size());
+
+    /// Add values to the aggregate functions.
+    for (size_t i = 0; i < aggregate_functions.size(); ++i)
+    {
+        const auto * function = aggregate_functions[i];
+        size_t offset_of_aggregate_function = offsets_of_aggregate_states[i];
+
+        if (function->isCompilable())
+        {
+            AggregateFunctionWithOffset function_to_compile
+            {
+                .function = function,
+                .aggregate_data_offset = offset_of_aggregate_function
+            };
+
+            functions_to_compile.emplace_back(std::move(function_to_compile));
+
+            functions_description += function->getDescription();
+            functions_description += ' ';
+
+            functions_description += std::to_string(offset_of_aggregate_function);
+            functions_description += ' ';
+        }
+
+        ++aggregate_instructions_size;
+        is_aggregate_function_compiled[i] = function->isCompilable();
+    }
+
+    if (functions_to_compile.empty())
+        return;
+
+    SipHash aggregate_functions_description_hash;
+    aggregate_functions_description_hash.update(functions_description);
+
+    UInt128 aggregate_functions_description_hash_key;
+    aggregate_functions_description_hash.get128(aggregate_functions_description_hash_key);
+
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+
+        if (aggregate_functions_description_to_count[aggregate_functions_description_hash_key]++ < params.min_count_to_compile_aggregate_expression)
+            return;
+
+        if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+        {
+            auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(aggregate_functions_description_hash_key, [&] ()
+            {
+                LOG_TRACE(log, "Compile expression {}", functions_description);
+
+                auto compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_description);
+                return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
+            });
+
+            compiled_aggregate_functions_holder = std::static_pointer_cast<CompiledAggregateFunctionsHolder>(compiled_function_cache_entry);
+        }
+        else
+        {
+            LOG_TRACE(log, "Compile expression {}", functions_description);
+            auto compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_description);
+            compiled_aggregate_functions_holder = std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
+        }
+    }
+}
+
+#endif
 
 AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 {
@@ -431,11 +545,15 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     return AggregatedDataVariants::Type::serialized;
 }
 
-
+template <bool skip_compiled_aggregate_functions>
 void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
 {
     for (size_t j = 0; j < params.aggregates_size; ++j)
     {
+        if constexpr (skip_compiled_aggregate_functions)
+            if (is_aggregate_function_compiled[j])
+                continue;
+
         try
         {
             /** An exception may occur if there is a shortage of memory.
@@ -447,13 +565,18 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
         catch (...)
         {
             for (size_t rollback_j = 0; rollback_j < j; ++rollback_j)
+            {
+                if constexpr (skip_compiled_aggregate_functions)
+                    if (is_aggregate_function_compiled[j])
+                        continue;
+
                 aggregate_functions[rollback_j]->destroy(aggregate_data + offsets_of_aggregate_states[rollback_j]);
+            }
 
             throw;
         }
     }
 }
-
 
 /** It's interesting - if you remove `noinline`, then gcc for some reason will inline this function, and the performance decreases (~ 10%).
   * (Probably because after the inline of this function, more internal functions no longer be inlined.)
@@ -472,13 +595,25 @@ void NO_INLINE Aggregator::executeImpl(
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
     if (!no_more_keys)
-        executeImplBatch<false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+    {
+#if USE_EMBEDDED_COMPILER
+        if (compiled_aggregate_functions_holder)
+        {
+            executeImplBatch<false, true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+        }
+        else
+#endif
+        {
+            executeImplBatch<false, false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+        }
+    }
     else
-        executeImplBatch<true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+    {
+        executeImplBatch<true, false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+    }
 }
 
-
-template <bool no_more_keys, typename Method>
+template <bool no_more_keys, bool use_compiled_functions, typename Method>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     typename Method::State & state,
@@ -535,8 +670,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    /// Generic case.
-
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
 
     /// For all rows.
@@ -555,7 +688,37 @@ void NO_INLINE Aggregator::executeImplBatch(
                 emplace_result.setMapped(nullptr);
 
                 aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                createAggregateStates(aggregate_data);
+
+#if USE_EMBEDDED_COMPILER
+                if constexpr (use_compiled_functions)
+                {
+                    const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+                    compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
+                    if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
+                    {
+                        static constexpr bool skip_compiled_aggregate_functions = true;
+                        createAggregateStates<skip_compiled_aggregate_functions>(aggregate_data);
+                    }
+
+#if defined(MEMORY_SANITIZER)
+
+                    /// We compile only functions that do not allocate some data in Arena. Only store necessary state in AggregateData place.
+                    for (size_t aggregate_function_index = 0; aggregate_function_index < aggregate_functions.size(); ++aggregate_function_index)
+                    {
+                        if (!is_aggregate_function_compiled[aggregate_function_index])
+                            continue;
+
+                        auto aggregate_data_with_offset = aggregate_data + offsets_of_aggregate_states[aggregate_function_index];
+                        auto data_size = params.aggregates[aggregate_function_index].function->sizeOfData();
+                        __msan_unpoison(aggregate_data_with_offset, data_size);
+                    }
+#endif
+                }
+                else
+#endif
+                {
+                    createAggregateStates(aggregate_data);
+                }
 
                 emplace_result.setMapped(aggregate_data);
             }
@@ -577,9 +740,39 @@ void NO_INLINE Aggregator::executeImplBatch(
         places[i] = aggregate_data;
     }
 
-    /// Add values to the aggregate functions.
-    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+#if USE_EMBEDDED_COMPILER
+    if constexpr (use_compiled_functions)
     {
+        std::vector<ColumnData> columns_data;
+
+        for (size_t i = 0; i < aggregate_functions.size(); ++i)
+        {
+            if (!is_aggregate_function_compiled[i])
+                continue;
+
+            AggregateFunctionInstruction * inst = aggregate_instructions + i;
+            size_t arguments_size = inst->that->getArgumentTypes().size();
+
+            for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
+                columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
+        }
+
+        auto add_into_aggregate_states_function = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function;
+        add_into_aggregate_states_function(rows, columns_data.data(), places.get());
+    }
+#endif
+
+    /// Add values to the aggregate functions.
+    for (size_t i = 0; i < aggregate_functions.size(); ++i)
+    {
+#if USE_EMBEDDED_COMPILER
+        if constexpr (use_compiled_functions)
+            if (is_aggregate_function_compiled[i])
+                continue;
+#endif
+
+        AggregateFunctionInstruction * inst = aggregate_instructions + i;
+
         if (inst->offsets)
             inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
         else
@@ -720,6 +913,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
             }
         }
     }
+
     NestedColumnsHolder nested_columns_holder;
     AggregateFunctionInstructions aggregate_functions_instructions;
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
@@ -1025,9 +1219,23 @@ void Aggregator::convertToBlockImpl(
         raw_key_columns.push_back(column.get());
 
     if (final)
-        convertToBlockImplFinal(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
+    {
+#if USE_EMBEDDED_COMPILER
+        if (compiled_aggregate_functions_holder)
+        {
+            static constexpr bool use_compiled_functions = !Method::low_cardinality_optimization;
+            convertToBlockImplFinal<Method, use_compiled_functions>(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
+        }
+        else
+#endif
+        {
+            convertToBlockImplFinal<Method, false>(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
+        }
+    }
     else
+    {
         convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
+    }
     /// In order to release memory early.
     data.clearAndShrink();
 }
@@ -1101,7 +1309,7 @@ inline void Aggregator::insertAggregatesIntoColumns(
 }
 
 
-template <typename Method, typename Table>
+template <typename Method, bool use_compiled_functions, typename Table>
 void NO_INLINE Aggregator::convertToBlockImplFinal(
     Method & method,
     Table & data,
@@ -1121,11 +1329,98 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     auto shuffled_key_sizes = method.shuffleKeyColumns(key_columns, key_sizes);
     const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes :  key_sizes;
 
+    PaddedPODArray<AggregateDataPtr> places;
+    places.reserve(data.size());
+
     data.forEachValue([&](const auto & key, auto & mapped)
     {
         method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
-        insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
+        places.emplace_back(mapped);
+
+        /// Mark the cell as destroyed so it will not be destroyed in destructor.
+        mapped = nullptr;
     });
+
+    std::exception_ptr exception;
+    size_t aggregate_functions_destroy_index = 0;
+
+    try
+    {
+#if USE_EMBEDDED_COMPILER
+        if constexpr (use_compiled_functions)
+        {
+            /** For JIT compiled functions we need to resize columns before pass them into compiled code.
+              * insert_aggregates_into_columns_function function does not throw exception.
+              */
+            std::vector<ColumnData> columns_data;
+
+            auto compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+            {
+                if (!is_aggregate_function_compiled[i])
+                    continue;
+
+                auto & final_aggregate_column = final_aggregate_columns[i];
+                final_aggregate_column = final_aggregate_column->cloneResized(places.size());
+                columns_data.emplace_back(getColumnData(final_aggregate_column.get()));
+            }
+
+            auto insert_aggregates_into_columns_function = compiled_functions.insert_aggregates_into_columns_function;
+            insert_aggregates_into_columns_function(places.size(), columns_data.data(), places.data());
+        }
+#endif
+
+        for (; aggregate_functions_destroy_index < params.aggregates_size;)
+        {
+            if constexpr (use_compiled_functions)
+            {
+                if (is_aggregate_function_compiled[aggregate_functions_destroy_index])
+                {
+                    ++aggregate_functions_destroy_index;
+                    continue;
+                }
+            }
+
+            auto & final_aggregate_column = final_aggregate_columns[aggregate_functions_destroy_index];
+            size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
+
+            /** We increase aggregate_functions_destroy_index because by function contract if insertResultIntoBatch
+              * throws exception, it also must destroy all necessary states.
+              * Then code need to continue to destroy other aggregate function states with next function index.
+              */
+            size_t destroy_index = aggregate_functions_destroy_index;
+            ++aggregate_functions_destroy_index;
+
+            /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
+            bool is_state = aggregate_functions[destroy_index]->isState();
+            bool destroy_place_after_insert = !is_state;
+
+            aggregate_functions[destroy_index]->insertResultIntoBatch(places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+        }
+    }
+    catch (...)
+    {
+        exception = std::current_exception();
+    }
+
+    for (; aggregate_functions_destroy_index < params.aggregates_size; ++aggregate_functions_destroy_index)
+    {
+        if constexpr (use_compiled_functions)
+        {
+            if (is_aggregate_function_compiled[aggregate_functions_destroy_index])
+            {
+                ++aggregate_functions_destroy_index;
+                continue;
+            }
+        }
+
+        size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
+        aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(places.size(), places.data(), offset);
+    }
+
+    if (exception)
+        std::rethrow_exception(exception);
 }
 
 template <typename Method, typename Table>
@@ -1545,7 +1840,7 @@ void NO_INLINE Aggregator::mergeDataNullKey(
 }
 
 
-template <typename Method, typename Table>
+template <typename Method, bool use_compiled_functions, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst,
     Table & table_src,
@@ -1554,19 +1849,40 @@ void NO_INLINE Aggregator::mergeDataImpl(
     if constexpr (Method::low_cardinality_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
-    table_src.mergeToViaEmplace(table_dst,
-        [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
+    table_src.mergeToViaEmplace(table_dst, [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
     {
         if (!inserted)
         {
-            for (size_t i = 0; i < params.aggregates_size; ++i)
-                aggregate_functions[i]->merge(
-                    dst + offsets_of_aggregate_states[i],
-                    src + offsets_of_aggregate_states[i],
-                    arena);
+#if USE_EMBEDDED_COMPILER
+            if constexpr (use_compiled_functions)
+            {
+                const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+                compiled_functions.merge_aggregate_states_function(dst, src);
 
-            for (size_t i = 0; i < params.aggregates_size; ++i)
-                aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
+                if (compiled_aggregate_functions_holder->compiled_aggregate_functions.functions_count != params.aggregates_size)
+                {
+                    for (size_t i = 0; i < params.aggregates_size; ++i)
+                    {
+                        if (!is_aggregate_function_compiled[i])
+                            aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+                    }
+
+                    for (size_t i = 0; i < params.aggregates_size; ++i)
+                    {
+                        if (!is_aggregate_function_compiled[i])
+                            aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
+                    }
+                }
+            }
+            else
+#endif
+            {
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
+            }
         }
         else
         {
@@ -1575,6 +1891,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
         src = nullptr;
     });
+
     table_src.clearAndShrink();
 }
 
@@ -1677,21 +1994,39 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
         AggregatedDataVariants & current = *non_empty_data[result_num];
 
         if (!no_more_keys)
-            mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data,
-                getDataVariant<Method>(current).data,
-                res->aggregates_pool);
+        {
+#if USE_EMBEDDED_COMPILER
+            if (compiled_aggregate_functions_holder)
+            {
+                mergeDataImpl<Method, true>(
+                    getDataVariant<Method>(*res).data,
+                    getDataVariant<Method>(current).data,
+                    res->aggregates_pool);
+            }
+            else
+#endif
+            {
+                mergeDataImpl<Method, false>(
+                    getDataVariant<Method>(*res).data,
+                    getDataVariant<Method>(current).data,
+                    res->aggregates_pool);
+            }
+        }
         else if (res->without_key)
+        {
             mergeDataNoMoreKeysImpl<Method>(
                 getDataVariant<Method>(*res).data,
                 res->without_key,
                 getDataVariant<Method>(current).data,
                 res->aggregates_pool);
+        }
         else
+        {
             mergeDataOnlyExistingKeysImpl<Method>(
                 getDataVariant<Method>(*res).data,
                 getDataVariant<Method>(current).data,
                 res->aggregates_pool);
+        }
 
         /// `current` will not destroy the states of aggregate functions in the destructor
         current.aggregator = nullptr;
@@ -1716,11 +2051,22 @@ void NO_INLINE Aggregator::mergeBucketImpl(
             return;
 
         AggregatedDataVariants & current = *data[result_num];
-
-        mergeDataImpl<Method>(
-            getDataVariant<Method>(*res).data.impls[bucket],
-            getDataVariant<Method>(current).data.impls[bucket],
-            arena);
+#if USE_EMBEDDED_COMPILER
+        if (compiled_aggregate_functions_holder)
+        {
+            mergeDataImpl<Method, true>(
+                getDataVariant<Method>(*res).data.impls[bucket],
+                getDataVariant<Method>(current).data.impls[bucket],
+                arena);
+        }
+        else
+#endif
+        {
+            mergeDataImpl<Method, false>(
+                getDataVariant<Method>(*res).data.impls[bucket],
+                getDataVariant<Method>(current).data.impls[bucket],
+                arena);
+        }
     }
 }
 

@@ -5,6 +5,14 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
 
 namespace DB
 {
@@ -154,6 +162,76 @@ public:
         const Array & params, const AggregateFunctionProperties & properties) const override;
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        return nested_func->isCompilable();
+    }
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        nested_func->compileCreate(builder, aggregate_data_ptr);
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        const auto & predicate_type = arguments_types[argument_values.size() - 1];
+        auto * predicate_value = argument_values[argument_values.size() - 1];
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_true = llvm::BasicBlock::Create(head->getContext(), "if_true", head->getParent());
+        auto * if_false = llvm::BasicBlock::Create(head->getContext(), "if_false", head->getParent());
+
+        auto * is_predicate_true = nativeBoolCast(b, predicate_type, predicate_value);
+
+        b.CreateCondBr(is_predicate_true, if_true, if_false);
+
+        b.SetInsertPoint(if_true);
+
+        size_t arguments_size_without_predicate = arguments_types.size() - 1;
+
+        DataTypes argument_types_without_predicate;
+        std::vector<llvm::Value *> argument_values_without_predicate;
+
+        argument_types_without_predicate.resize(arguments_size_without_predicate);
+        argument_values_without_predicate.resize(arguments_size_without_predicate);
+
+        for (size_t i = 0; i < arguments_size_without_predicate; ++i)
+        {
+            argument_types_without_predicate[i] = arguments_types[i];
+            argument_values_without_predicate[i] = argument_values[i];
+        }
+
+        nested_func->compileAdd(builder, aggregate_data_ptr, argument_types_without_predicate, argument_values_without_predicate);
+
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_false);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        nested_func->compileMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        return nested_func->compileGetResult(builder, aggregate_data_ptr);
+    }
+
+#endif
+
+
 };
 
 }
