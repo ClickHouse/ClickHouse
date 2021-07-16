@@ -1,34 +1,26 @@
-#pragma once
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
 #include <Common/hex.h>
 #include <Common/typeid_cast.h>
-#include <Common/BitHelpers.h>
 
 #include <arpa/inet.h>
-#include <common/range.h>
 #include <type_traits>
 #include <array>
 
@@ -43,7 +35,7 @@ namespace ErrorCodes
 }
 
 
-/** Encoding functions:
+/** Encoding functions for network adresses:
   *
   * IPv4NumToString (num) - See below.
   * IPv4StringToNum(string) - Convert, for example, '192.168.0.1' to 3232235521 and vice versa.
@@ -115,8 +107,8 @@ public:
         }
         else
             throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -226,15 +218,15 @@ public:
         }
         else
             throw Exception("Illegal column " + arguments[0].column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:
     static bool isIPv4Mapped(const UInt8 * address)
     {
         return (unalignedLoad<UInt64>(address) == 0) &&
-            ((unalignedLoad<UInt64>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
+               ((unalignedLoad<UInt64>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
     }
 
     static void cutAddress(const unsigned char * address, char *& dst, UInt8 zeroed_tail_bytes_count)
@@ -313,8 +305,8 @@ public:
         }
         else
             throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -340,7 +332,7 @@ public:
     {
         if (!WhichDataType(arguments[0]).isUInt32())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt32",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -377,8 +369,8 @@ public:
         }
         else
             throw Exception("Illegal column " + arguments[0].column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -400,7 +392,7 @@ public:
     {
         if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt32>();
     }
@@ -440,8 +432,8 @@ public:
         }
         else
             throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -449,7 +441,7 @@ public:
 class FunctionIPv4ToIPv6 : public IFunction
 {
 public:
-     static constexpr auto name = "IPv4ToIPv6";
+    static constexpr auto name = "IPv4ToIPv6";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4ToIPv6>(); }
 
     String getName() const override { return name; }
@@ -489,8 +481,8 @@ public:
         }
         else
             throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:
@@ -518,7 +510,7 @@ public:
     {
         if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return DataTypeFactory::instance().get("IPv4");
     }
@@ -536,7 +528,7 @@ public:
     {
         if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return DataTypeFactory::instance().get("IPv6");
     }
@@ -560,7 +552,7 @@ public:
     {
         if (!WhichDataType(arguments[0]).isUInt64())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt64",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -614,8 +606,8 @@ public:
         }
         else
             throw Exception("Illegal column " + arguments[0].column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -633,17 +625,17 @@ struct ParseMACImpl
     static UInt64 parse(const char * pos)
     {
         return (UInt64(unhex(pos[0])) << 44)
-             | (UInt64(unhex(pos[1])) << 40)
-             | (UInt64(unhex(pos[3])) << 36)
-             | (UInt64(unhex(pos[4])) << 32)
-             | (UInt64(unhex(pos[6])) << 28)
-             | (UInt64(unhex(pos[7])) << 24)
-             | (UInt64(unhex(pos[9])) << 20)
-             | (UInt64(unhex(pos[10])) << 16)
-             | (UInt64(unhex(pos[12])) << 12)
-             | (UInt64(unhex(pos[13])) << 8)
-             | (UInt64(unhex(pos[15])) << 4)
-             | (UInt64(unhex(pos[16])));
+               | (UInt64(unhex(pos[1])) << 40)
+               | (UInt64(unhex(pos[3])) << 36)
+               | (UInt64(unhex(pos[4])) << 32)
+               | (UInt64(unhex(pos[6])) << 28)
+               | (UInt64(unhex(pos[7])) << 24)
+               | (UInt64(unhex(pos[9])) << 20)
+               | (UInt64(unhex(pos[10])) << 16)
+               | (UInt64(unhex(pos[12])) << 12)
+               | (UInt64(unhex(pos[13])) << 8)
+               | (UInt64(unhex(pos[15])) << 4)
+               | (UInt64(unhex(pos[16])));
     }
 
     static constexpr auto name = "MACStringToNum";
@@ -660,11 +652,11 @@ struct ParseOUIImpl
     static UInt64 parse(const char * pos)
     {
         return (UInt64(unhex(pos[0])) << 20)
-             | (UInt64(unhex(pos[1])) << 16)
-             | (UInt64(unhex(pos[3])) << 12)
-             | (UInt64(unhex(pos[4])) << 8)
-             | (UInt64(unhex(pos[6])) << 4)
-             | (UInt64(unhex(pos[7])));
+               | (UInt64(unhex(pos[1])) << 16)
+               | (UInt64(unhex(pos[3])) << 12)
+               | (UInt64(unhex(pos[4])) << 8)
+               | (UInt64(unhex(pos[6])) << 4)
+               | (UInt64(unhex(pos[7])));
     }
 
     static constexpr auto name = "MACStringToOUI";
@@ -689,7 +681,7 @@ public:
     {
         if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt64>();
     }
@@ -728,8 +720,8 @@ public:
         }
         else
             throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -739,7 +731,7 @@ private:
 
 #if defined(__SSE2__)
 
-    #include <emmintrin.h>
+#include <emmintrin.h>
 
     static inline void applyCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst_lower, UInt8 * __restrict dst_upper, UInt8 bits_to_keep)
     {
@@ -807,8 +799,8 @@ public:
 
         if (!col_ip_in && !col_const_ip_in)
             throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
 
         if ((col_const_ip_in && col_const_ip_in->getValue<String>().size() != IPV6_BINARY_LENGTH) ||
             (col_ip_in && col_ip_in->getN() != IPV6_BINARY_LENGTH))
@@ -826,8 +818,8 @@ public:
 
         if (!col_const_cidr_in && !col_cidr_in)
             throw Exception("Illegal column " + arguments[1].column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
 
         auto col_res_lower_range = ColumnFixedString::create(IPV6_BINARY_LENGTH);
         auto col_res_upper_range = ColumnFixedString::create(IPV6_BINARY_LENGTH);
@@ -848,12 +840,12 @@ public:
             const size_t offset_ipv6 = offset * IPV6_BINARY_LENGTH;
 
             const UInt8 * ip = col_const_ip_in
-                ? col_const_ip_value
-                : &col_ip_in->getChars()[offset_ipv6];
+                               ? col_const_ip_value
+                               : &col_ip_in->getChars()[offset_ipv6];
 
             UInt8 cidr = col_const_cidr_in
-                ? col_const_cidr_in->getValue<UInt8>()
-                : col_cidr_in->getData()[offset];
+                         ? col_const_cidr_in->getValue<UInt8>()
+                         : col_cidr_in->getData()[offset];
 
             cidr = std::min(cidr, max_cidr_mask);
 
@@ -920,8 +912,8 @@ public:
         const auto * col_ip_in = checkAndGetColumn<ColumnUInt32>(column_ip.get());
         if (!col_const_ip_in && !col_ip_in)
             throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
 
         const auto & col_type_name_cidr = arguments[1];
         const ColumnPtr & column_cidr = col_type_name_cidr.column;
@@ -931,8 +923,8 @@ public:
 
         if (!col_const_cidr_in && !col_cidr_in)
             throw Exception("Illegal column " + arguments[1].column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
 
         auto col_res_lower_range = ColumnUInt32::create();
         auto col_res_upper_range = ColumnUInt32::create();
@@ -946,12 +938,12 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             UInt32 ip = col_const_ip_in
-                ? col_const_ip_in->getValue<UInt32>()
-                : col_ip_in->getData()[i];
+                        ? col_const_ip_in->getValue<UInt32>()
+                        : col_ip_in->getData()[i];
 
             UInt8 cidr = col_const_cidr_in
-                ? col_const_cidr_in->getValue<UInt8>()
-                : col_cidr_in->getData()[i];
+                         ? col_const_cidr_in->getValue<UInt8>()
+                         : col_cidr_in->getData()[i];
 
             std::tie(vec_res_lower_range[i], vec_res_upper_range[i]) = applyCIDRMask(ip, cidr);
         }
@@ -1053,5 +1045,36 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN);
     }
 };
+
+struct NameFunctionIPv4NumToString { static constexpr auto name = "IPv4NumToString"; };
+struct NameFunctionIPv4NumToStringClassC { static constexpr auto name = "IPv4NumToStringClassC"; };
+
+void registerFunctionsCoding(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionCutIPv6>();
+    factory.registerFunction<FunctionIPv4ToIPv6>();
+    factory.registerFunction<FunctionMACNumToString>();
+    factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>();
+    factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>();
+    factory.registerFunction<FunctionToIPv4>();
+    factory.registerFunction<FunctionToIPv6>();
+    factory.registerFunction<FunctionIPv6CIDRToRange>();
+    factory.registerFunction<FunctionIPv4CIDRToRange>();
+    factory.registerFunction<FunctionIsIPv4String>();
+    factory.registerFunction<FunctionIsIPv6String>();
+
+    factory.registerFunction<FunctionIPv4NumToString<0, NameFunctionIPv4NumToString>>();
+    factory.registerFunction<FunctionIPv4NumToString<1, NameFunctionIPv4NumToStringClassC>>();
+
+    factory.registerFunction<FunctionIPv4StringToNum>();
+    factory.registerFunction<FunctionIPv6NumToString>();
+    factory.registerFunction<FunctionIPv6StringToNum>();
+
+    /// MysQL compatibility aliases:
+    factory.registerAlias("INET_ATON", FunctionIPv4StringToNum::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("INET6_NTOA", FunctionIPv6NumToString::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("INET6_ATON", FunctionIPv6StringToNum::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("INET_NTOA", NameFunctionIPv4NumToString::name, FunctionFactory::CaseInsensitive);
+}
 
 }
