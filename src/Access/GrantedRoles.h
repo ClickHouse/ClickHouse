@@ -18,8 +18,6 @@ public:
     void grant(const std::vector<UUID> & roles_);
     void grantWithAdminOption(const UUID & role_);
     void grantWithAdminOption(const std::vector<UUID> & roles_);
-    void grantByReplace(const std::vector<UUID> & roles_);
-    void grantByReplaceWithAdminOption(const std::vector<UUID> & roles_);
 
     void revoke(const UUID & role_);
     void revoke(const std::vector<UUID> & roles_);
@@ -60,6 +58,4 @@ private:
     boost::container::flat_set<UUID> roles;
     boost::container::flat_set<UUID> roles_with_admin_option;
 };
-
-void eraseExcept(boost::container::flat_set<UUID> & data_set, const std::vector<UUID> & ids);
 }
