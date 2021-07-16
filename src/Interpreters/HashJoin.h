@@ -155,9 +155,7 @@ public:
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
     void setTotals(const Block & block) override { totals = block; }
-    bool hasTotals() const override { return totals; }
-
-    void joinTotals(Block & block) const override;
+    const Block & getTotals() const override { return totals; }
 
     bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
 

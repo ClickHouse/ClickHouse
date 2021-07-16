@@ -1213,7 +1213,15 @@ Default value: `3`.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
-If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
+Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
+Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations. 
+
+Possible values:
+
+-   0 — Integers are output without quotes.
+-   1 — Integers are enclosed in quotes.
+
+Default value: 1.
 
 ## output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
 
@@ -1730,7 +1738,7 @@ Default value: 0.
 
 ## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
 
-Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read. 
+Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read.
 
 These functions can be transformed:
 
@@ -1961,6 +1969,13 @@ Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
 
+## output_format_avro_string_column_pattern {#output_format_avro_string_column_pattern}
+
+Regexp of column names of type String to output as Avro `string` (default is `bytes`).
+RE2 syntax is supported.
+
+Type: string
+
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format.
@@ -1989,6 +2004,16 @@ Possible values:
 -   Any positive integer.
 
 Default value: 16.
+
+## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
+
+Sleep time for merge selecting when no part selected, a lower setting will trigger selecting tasks in background_schedule_pool frequently which result in large amount of requests to zookeeper in large-scale clusters
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 5000 
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
@@ -3123,6 +3148,53 @@ SELECT
 FROM fuse_tbl
 ```
 
+## allow_experimental_database_replicated {#allow_experimental_database_replicated}
+
+Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
+
+Sets how long initial DDL query should wait for Replicated database to precess previous DDL queue entries in seconds.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `300`.
+
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
+
+Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite. 
+
+Possible values:
+
+-   Positive integer.
+-   0 — Async mode.
+-   Negative integer — infinite timeout.
+
+Default value: `180`.
+
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
+
+Sets format of distributed DDL query result.
+
+Possible values:
+
+-   `throw` — Returns result set with query execution status for all hosts where query is finished. If query has failed on some hosts, then it will rethrow the first exception. If query is not finished yet on some hosts and [distributed_ddl_task_timeout](#distributed_ddl_task_timeout) exceeded, then it throws `TIMEOUT_EXCEEDED` exception.
+-   `none` — Is similar to throw, but distributed DDL query returns no result set.
+-   `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
+-   `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
+
+Default value: `throw`.
+
 ## flatten_nested {#flatten-nested}
 
 Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
@@ -3202,3 +3274,14 @@ Default value: `1`.
 **Usage**
 
 If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
+
+## output_format_arrow_low_cardinality_as_dictionary {#output-format-arrow-low-cardinality-as-dictionary}
+
+Allows to convert the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) type to the `DICTIONARY` type of the [Arrow](../../interfaces/formats.md#data-format-arrow) format for `SELECT` queries.
+
+Possible values:
+
+-   0 — The `LowCardinality` type is not converted to the `DICTIONARY` type.
+-   1 — The `LowCardinality` type is converted to the `DICTIONARY` type.
+
+Default value: `0`.
