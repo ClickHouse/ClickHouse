@@ -184,6 +184,25 @@ bool MergeFromLogEntryTask::executeImpl()
 
 bool MergeFromLogEntryTask::prepare()
 {
+    /// If we already have this part or a part covering it, we do not need to do anything.
+    /// The part may be still in the PreCommitted -> Committed transition so we first search
+    /// among PreCommitted parts to definitely find the desired part if it exists.
+    MergeTreeData::DataPartPtr existing_part = storage.getPartIfExists(entry->new_part_name, {MergeTreeDataPartState::PreCommitted});
+
+    if (!existing_part)
+        existing_part = storage.getActiveContainingPart(entry->new_part_name);
+
+    /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
+    if (existing_part && storage.getZooKeeper()->exists(fs::path(storage.replica_path) / "parts" / existing_part->name))
+    {
+        LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry->new_part_name, existing_part->name);
+
+
+        /// We have to exit from all the execution process
+        state = State::SUCCESS;
+        return true;
+    }
+
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry->source_parts, ", "), entry->new_part_name);
 
