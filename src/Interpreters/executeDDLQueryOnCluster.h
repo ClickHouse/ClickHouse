@@ -1,7 +1,5 @@
 #pragma once
-
 #include <DataStreams/BlockIO.h>
-#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace zkutil
@@ -12,6 +10,7 @@ namespace zkutil
 namespace DB
 {
 
+class Context;
 class AccessRightsElements;
 struct DDLLogEntry;
 
@@ -21,16 +20,15 @@ bool isSupportedAlterType(int type);
 
 /// Pushes distributed DDL query to the queue.
 /// Returns DDLQueryStatusInputStream, which reads results of query execution on each host in the cluster.
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const AccessRightsElements & query_requires_access);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, AccessRightsElements && query_requires_access);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option = false);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option = false);
 
-BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait = {});
 
 class DDLQueryStatusInputStream final : public IBlockInputStream
 {
 public:
-    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const std::optional<Strings> & hosts_to_wait = {});
+    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_, const std::optional<Strings> & hosts_to_wait = {});
 
     String getName() const override { return "DDLQueryStatusInputStream"; }
 
@@ -46,10 +44,8 @@ private:
 
     Strings getNewAndUpdate(const Strings & current_list_of_finished_hosts);
 
-    std::pair<String, UInt16> parseHostAndPort(const String & host_id) const;
-
     String node_path;
-    ContextPtr context;
+    const Context & context;
     Stopwatch watch;
     Poco::Logger * log;
 
@@ -66,8 +62,6 @@ private:
 
     Int64 timeout_seconds = 120;
     bool by_hostname = true;
-    bool throw_on_timeout = true;
-    bool timeout_exceeded = false;
 };
 
 }

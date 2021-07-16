@@ -275,8 +275,7 @@ Token Lexer::nextTokenImpl()
                         else
                             ++pos;
                     }
-                    pos = end;
-                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
+                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, end);
                 }
             }
             return Token(TokenType::Slash, token_begin, pos);
@@ -316,12 +315,7 @@ Token Lexer::nextTokenImpl()
         case '?':
             return Token(TokenType::QuestionMark, token_begin, ++pos);
         case ':':
-        {
-            ++pos;
-            if (pos < end && *pos == ':')
-                return Token(TokenType::DoubleColon, token_begin, ++pos);
-            return Token(TokenType::Colon, token_begin, pos);
-        }
+            return Token(TokenType::Colon, token_begin, ++pos);
         case '|':
         {
             ++pos;
@@ -338,11 +332,6 @@ Token Lexer::nextTokenImpl()
         }
 
         default:
-            if (*pos == '$' && ((pos + 1 < end && !isWordCharASCII(pos[1])) || pos + 1 == end))
-            {
-                /// Capture standalone dollar sign
-                return Token(TokenType::DollarSign, token_begin, ++pos);
-            }
             if (isWordCharASCII(*pos) || *pos == '$')
             {
                 ++pos;

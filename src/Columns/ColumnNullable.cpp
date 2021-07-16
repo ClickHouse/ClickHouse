@@ -35,6 +35,7 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
 }
 
+
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 {
     const auto & arr = getNullMapData();
@@ -147,17 +148,6 @@ const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
         pos = getNestedColumn().deserializeAndInsertFromArena(pos);
     else
         getNestedColumn().insertDefault();
-
-    return pos;
-}
-
-const char * ColumnNullable::skipSerializedInArena(const char * pos) const
-{
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
-
-    if (val == 0)
-        return getNestedColumn().skipSerializedInArena(pos);
 
     return pos;
 }

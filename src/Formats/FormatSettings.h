@@ -52,7 +52,6 @@ struct FormatSettings
     struct
     {
         UInt64 row_group_size = 1000000;
-        bool low_cardinality_as_dictionary = false;
     } arrow;
 
     struct

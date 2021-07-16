@@ -37,12 +37,10 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
-        auto serialization = type->getDefaultSerialization();
-
         if (!type->isNullable())
         {
-            serialization->serializeBinary(hyperrectangle[i].left, ostr);
-            serialization->serializeBinary(hyperrectangle[i].right, ostr);
+            type->serializeBinary(hyperrectangle[i].left, ostr);
+            type->serializeBinary(hyperrectangle[i].right, ostr);
         }
         else
         {
@@ -50,8 +48,8 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
             writeBinary(is_null, ostr);
             if (!is_null)
             {
-                serialization->serializeBinary(hyperrectangle[i].left, ostr);
-                serialization->serializeBinary(hyperrectangle[i].right, ostr);
+                type->serializeBinary(hyperrectangle[i].left, ostr);
+                type->serializeBinary(hyperrectangle[i].right, ostr);
             }
         }
     }
@@ -62,17 +60,13 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
     hyperrectangle.clear();
     Field min_val;
     Field max_val;
-
-
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
-        auto serialization = type->getDefaultSerialization();
-
         if (!type->isNullable())
         {
-            serialization->deserializeBinary(min_val, istr);
-            serialization->deserializeBinary(max_val, istr);
+            type->deserializeBinary(min_val, istr);
+            type->deserializeBinary(max_val, istr);
         }
         else
         {
@@ -80,8 +74,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
             readBinary(is_null, istr);
             if (!is_null)
             {
-                serialization->deserializeBinary(min_val, istr);
-                serialization->deserializeBinary(max_val, istr);
+                type->deserializeBinary(min_val, istr);
+                type->deserializeBinary(max_val, istr);
             }
             else
             {
@@ -138,7 +132,7 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const IndexDescription & index,
     const SelectQueryInfo & query,
-    ContextPtr context)
+    const Context & context)
     : index_data_types(index.data_types)
     , condition(query, context, index.column_names, index.expression)
 {
@@ -175,7 +169,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
-    const SelectQueryInfo & query, ContextPtr context) const
+    const SelectQueryInfo & query, const Context & context) const
 {
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, query, context);
 };

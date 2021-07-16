@@ -1,10 +1,6 @@
 # docker build -t yandex/clickhouse-unbundled-builder .
 FROM yandex/clickhouse-deb-builder
 
-RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && wget -nv -O /tmp/arrow-keyring.deb "https://apache.bintray.com/arrow/ubuntu/apache-arrow-archive-keyring-latest-${CODENAME}.deb" \
-    && dpkg -i /tmp/arrow-keyring.deb
-
 # Libraries from OS are only needed to test the "unbundled" build (that is not used in production).
 RUN apt-get update \
     && apt-get install \
@@ -35,6 +31,9 @@ RUN apt-get update \
         libjemalloc-dev \
         libmsgpack-dev \
         libcurl4-openssl-dev \
+        opencl-headers \
+        ocl-icd-libopencl1 \
+        intel-opencl-icd \
         unixodbc-dev \
         odbcinst \
         tzdata \
@@ -58,7 +57,6 @@ RUN apt-get update \
         libc-ares-dev \
         rapidjson-dev \
         libsnappy-dev \
-        libparquet-dev \
         libthrift-dev \
         libutf8proc-dev \
         libbz2-dev \

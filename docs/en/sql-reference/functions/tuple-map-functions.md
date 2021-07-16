@@ -66,27 +66,28 @@ Result:
 
 -   [Map(key, value)](../../sql-reference/data-types/map.md) data type
 
+
 ## mapAdd {#function-mapadd}
 
 Collect all the keys and sum corresponding values.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
-mapAdd(arg1, arg2 [, ...])
+mapAdd(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 ```
 
-**Arguments**
+**Arguments** 
 
-Arguments are [maps](../../sql-reference/data-types/map.md) or [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
--   Depending on the arguments returns one [map](../../sql-reference/data-types/map.md) or [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
+-   Returns one [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
 
 **Example**
 
-Query with a tuple map:
+Query:
 
 ``` sql
 SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTypeName(res) as type;
@@ -98,11 +99,6 @@ Result:
 ┌─res───────────┬─type───────────────────────────────┐
 │ ([1,2],[2,2]) │ Tuple(Array(UInt8), Array(UInt64)) │
 └───────────────┴────────────────────────────────────┘
-```
-
-Query with `Map` type:
-
-``` sql
 ```
 
 ## mapSubtract {#function-mapsubtract}
@@ -225,8 +221,6 @@ Result:
 
 Returns all keys from the `map` parameter.
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [keys](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn instead of reading and processing the whole column data. The query `SELECT mapKeys(m) FROM table` transforms to `SELECT m.keys FROM table`.
-
 **Syntax**
 
 ```sql
@@ -267,8 +261,6 @@ Result:
 ## mapValues {#mapvalues}
 
 Returns all values from the `map` parameter.
-
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [values](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn instead of reading and processing the whole column data. The query `SELECT mapValues(m) FROM table` transforms to `SELECT m.values FROM table`.
 
 **Syntax**
 

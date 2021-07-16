@@ -145,11 +145,6 @@ public:
         return cells.size();
     }
 
-    size_t maxSize() const
-    {
-        return max_size;
-    }
-
     void reset()
     {
         std::lock_guard lock(mutex);

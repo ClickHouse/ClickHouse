@@ -12,7 +12,7 @@
 #include <Common/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 #include <common/sort.h>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -97,11 +97,6 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
     size_t old_size = chars.size();
     chars.resize(old_size + n);
     memcpy(chars.data() + old_size, pos, n);
-    return pos + n;
-}
-
-const char * ColumnFixedString::skipSerializedInArena(const char * pos) const
-{
     return pos + n;
 }
 

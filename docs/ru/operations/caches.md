@@ -26,3 +26,4 @@ toc_title: Кеши
 
 Чтобы очистить кеш, используйте выражение [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md).
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/caches/) <!--hide-->

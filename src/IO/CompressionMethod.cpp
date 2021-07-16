@@ -46,6 +46,7 @@ std::string toContentEncodingName(CompressionMethod method)
     __builtin_unreachable();
 }
 
+
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint)
 {
     std::string file_extension;

@@ -13,6 +13,7 @@
 #include <arrow/api.h>
 #include <arrow/util/memory.h>
 #include <parquet/arrow/writer.h>
+#include <parquet/deprecated_io.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
 
@@ -31,16 +32,11 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
 
 void ParquetBlockOutputFormat::consume(Chunk chunk)
 {
+    const Block & header = getPort(PortKind::Main).getHeader();
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
-    if (!ch_column_to_arrow_column)
-    {
-        const Block & header = getPort(PortKind::Main).getHeader();
-        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Parquet");
-    }
-
-    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
+    CHColumnToArrowColumn::chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Parquet");
 
     if (!file_writer)
     {

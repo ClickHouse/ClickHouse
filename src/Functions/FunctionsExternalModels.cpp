@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Columns/ColumnString.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <string>
 #include <memory>
 #include <DataTypes/DataTypeNullable.h>
@@ -18,9 +18,9 @@
 namespace DB
 {
 
-FunctionPtr FunctionModelEvaluate::create(ContextPtr context)
+FunctionPtr FunctionModelEvaluate::create(const Context & context)
 {
-    return std::make_shared<FunctionModelEvaluate>(context->getExternalModelsLoader());
+    return std::make_shared<FunctionModelEvaluate>(context.getExternalModelsLoader());
 }
 
 namespace ErrorCodes
@@ -83,7 +83,7 @@ ColumnPtr FunctionModelEvaluate::executeImpl(const ColumnsWithTypeAndName & argu
     ColumnPtr null_map;
 
     column_ptrs.reserve(arguments.size());
-    for (auto arg : collections::range(1, arguments.size()))
+    for (auto arg : ext::range(1, arguments.size()))
     {
         const auto & column = arguments[arg].column;
         column_ptrs.push_back(column.get());
