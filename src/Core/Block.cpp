@@ -1,5 +1,5 @@
 #include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 
 #include <Core/Block.h>
 
@@ -369,18 +369,6 @@ void Block::setColumns(const Columns & columns)
 }
 
 
-void Block::setColumn(size_t position, ColumnWithTypeAndName && column)
-{
-    if (position >= data.size())
-        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Block::setColumn(), max position {}",
-                        position, toString(data.size()));
-
-    data[position].name = std::move(column.name);
-    data[position].type = std::move(column.type);
-    data[position].column = std::move(column.column);
-}
-
-
 Block Block::cloneWithColumns(MutableColumns && columns) const
 {
     Block res;
@@ -436,7 +424,7 @@ Block Block::sortColumns() const
     Block sorted_block;
 
     /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
-    std::vector<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
+    std::vector<decltype(index_by_name.begin())> sorted_index_by_name(index_by_name.size());
     {
         size_t i = 0;
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)

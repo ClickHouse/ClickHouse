@@ -12,7 +12,7 @@
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
-#include <common/map.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -34,7 +34,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
     Poco::Logger * log_)
-    : table_columns{collections::map<std::unordered_set>(
+    : table_columns{ext::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
     , sorting_key_names{NameSet(
@@ -344,10 +344,6 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
         /// disallow GLOBAL IN, GLOBAL NOT IN
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
-            return true;
-
-        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
-        if ("indexHint" == function_ptr->name)
             return true;
     }
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))

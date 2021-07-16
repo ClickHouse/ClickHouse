@@ -1,5 +1,5 @@
 configure_file(config_formats.h.in ${ConfigIncludePath}/config_formats.h)
 
-if (ENABLE_EXAMPLES)
-    add_subdirectory(examples)
-endif()
+if (ENABLE_TESTS)
+    add_subdirectory (tests)
+endif ()

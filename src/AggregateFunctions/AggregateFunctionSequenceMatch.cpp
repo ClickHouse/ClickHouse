@@ -5,11 +5,10 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 
-#include <common/range.h>
+#include <ext/range.h>
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -24,7 +23,7 @@ namespace
 
 template <template <typename, typename> typename AggregateFunction, template <typename> typename Data>
 AggregateFunctionPtr createAggregateFunctionSequenceBase(
-    const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+    const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     if (params.size() != 1)
         throw Exception{"Aggregate function " + name + " requires exactly one parameter.",
@@ -43,7 +42,7 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
 
     const auto * time_arg = argument_types.front().get();
 
-    for (const auto i : collections::range(1, arg_count))
+    for (const auto i : ext::range(1, arg_count))
     {
         const auto * cond_arg = argument_types[i].get();
         if (!isUInt8(cond_arg))

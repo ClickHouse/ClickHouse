@@ -9,7 +9,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -142,7 +141,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
 
     struct Frame
     {
-        Node * node = {};
+        Node * node;
         QueryPipelines pipelines = {};
     };
 
@@ -158,7 +157,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
         if (last_pipeline)
         {
             frame.pipelines.emplace_back(std::move(last_pipeline));
-            last_pipeline = nullptr; //-V1048
+            last_pipeline = nullptr;
         }
 
         size_t next_child = frame.pipelines.size();
@@ -200,92 +199,6 @@ void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
     interpreter_context.emplace_back(std::move(context));
 }
 
-
-static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
-{
-    map.add("Node Type", step.getName());
-
-    if (options.description)
-    {
-        const auto & description = step.getStepDescription();
-        if (!description.empty())
-            map.add("Description", description);
-    }
-
-    if (options.header && step.hasOutputStream())
-    {
-        auto header_array = std::make_unique<JSONBuilder::JSONArray>();
-
-        for (const auto & output_column : step.getOutputStream().header)
-        {
-            auto column_map = std::make_unique<JSONBuilder::JSONMap>();
-            column_map->add("Name", output_column.name);
-            if (output_column.type)
-                column_map->add("Type", output_column.type->getName());
-
-            header_array->add(std::move(column_map));
-        }
-
-        map.add("Header", std::move(header_array));
-    }
-
-    if (options.actions)
-        step.describeActions(map);
-
-    if (options.indexes)
-        step.describeIndexes(map);
-}
-
-JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
-{
-    checkInitialized();
-
-    struct Frame
-    {
-        Node * node = {};
-        size_t next_child = 0;
-        std::unique_ptr<JSONBuilder::JSONMap> node_map = {};
-        std::unique_ptr<JSONBuilder::JSONArray> children_array = {};
-    };
-
-    std::stack<Frame> stack;
-    stack.push(Frame{.node = root});
-
-    std::unique_ptr<JSONBuilder::JSONMap> tree;
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.top();
-
-        if (frame.next_child == 0)
-        {
-            if (!frame.node->children.empty())
-                frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
-
-            frame.node_map = std::make_unique<JSONBuilder::JSONMap>();
-            explainStep(*frame.node->step, *frame.node_map, options);
-        }
-
-        if (frame.next_child < frame.node->children.size())
-        {
-            stack.push(Frame{frame.node->children[frame.next_child]});
-            ++frame.next_child;
-        }
-        else
-        {
-            if (frame.children_array)
-                frame.node_map->add("Plans", std::move(frame.children_array));
-
-            tree.swap(frame.node_map);
-            stack.pop();
-
-            if (!stack.empty())
-                stack.top().children_array->add(std::move(tree));
-        }
-    }
-
-    return tree;
-}
 
 static void explainStep(
     const IQueryPlanStep & step,
@@ -330,9 +243,6 @@ static void explainStep(
 
     if (options.actions)
         step.describeActions(settings);
-
-    if (options.indexes)
-        step.describeIndexes(settings);
 }
 
 std::string debugExplainStep(const IQueryPlanStep & step)
@@ -352,7 +262,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
     struct Frame
     {
-        Node * node = {};
+        Node * node;
         bool is_description_printed = false;
         size_t next_child = 0;
     };
@@ -398,7 +308,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
     struct Frame
     {
-        Node * node = {};
+        Node * node;
         size_t offset = 0;
         bool is_description_printed = false;
         size_t next_child = 0;

@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
 
@@ -197,7 +197,7 @@ public:
         bool first_argument_is_date = false;
         auto check_first_argument = [&]
         {
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDateOrDateTime(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",

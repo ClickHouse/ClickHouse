@@ -1,7 +1,5 @@
 #pragma once
 
-#include <common/bit_cast.h>
-#include <Common/HashTable/Hash.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -15,6 +13,8 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <ext/bit_cast.h>
+#include <Common/HashTable/Hash.h>
 #include <Interpreters/BloomFilter.h>
 
 namespace DB
@@ -93,7 +93,7 @@ struct BloomFilterHash
         else if (which.isDateTime()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
         else if (which.isFloat32()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
-        else if (which.isUUID()) return build_hash_column(getNumberTypeHash<UUID, UUID>(field));
+        else if (which.isUUID()) return build_hash_column(getNumberTypeHash<UInt128, UInt128>(field));
         else if (which.isString()) return build_hash_column(getStringTypeHash(field));
         else if (which.isFixedString()) return build_hash_column(getFixedStringTypeHash(field, data_type));
         else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
@@ -154,7 +154,7 @@ struct BloomFilterHash
         else if (which.isDateTime()) getNumberTypeHash<UInt32, is_first>(column, vec, pos);
         else if (which.isFloat32()) getNumberTypeHash<Float32, is_first>(column, vec, pos);
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);
-        else if (which.isUUID()) getNumberTypeHash<UUID, is_first>(column, vec, pos);
+        else if (which.isUUID()) getNumberTypeHash<UInt128, is_first>(column, vec, pos);
         else if (which.isString()) getStringTypeHash<is_first>(column, vec, pos);
         else if (which.isFixedString()) getStringTypeHash<is_first>(column, vec, pos);
         else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);

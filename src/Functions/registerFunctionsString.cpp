@@ -29,7 +29,6 @@ void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
 void registerFunctionStartsWith(FunctionFactory &);
 void registerFunctionEndsWith(FunctionFactory &);
 void registerFunctionTrim(FunctionFactory &);
-void registerFunctionPadString(FunctionFactory &);
 void registerFunctionRegexpQuoteMeta(FunctionFactory &);
 void registerFunctionNormalizeQuery(FunctionFactory &);
 void registerFunctionNormalizedQueryHash(FunctionFactory &);
@@ -69,7 +68,6 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionStartsWith(factory);
     registerFunctionEndsWith(factory);
     registerFunctionTrim(factory);
-    registerFunctionPadString(factory);
     registerFunctionRegexpQuoteMeta(factory);
     registerFunctionNormalizeQuery(factory);
     registerFunctionNormalizedQueryHash(factory);

@@ -95,7 +95,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (tables())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FROM" << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FROM " << (s.hilite ? hilite_none : "");
         tables()->formatImpl(s, state, frame);
     }
 
@@ -376,7 +376,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>(table_id);
+    table_expression->database_and_table_name = createTableIdentifier(table_id);
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);

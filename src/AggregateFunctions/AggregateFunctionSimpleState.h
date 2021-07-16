@@ -7,7 +7,6 @@
 
 namespace DB
 {
-struct Settings;
 
 /** Not an aggregate function, but an adapter of aggregate functions.
   * Aggregate functions with the `SimpleState` suffix is almost identical to the corresponding ones,
