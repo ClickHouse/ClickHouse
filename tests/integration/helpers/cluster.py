@@ -1083,7 +1083,7 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                self.postgres_conn  = psycopg2.connect(host=self.postgres_ip, port=self.postgres_port, user='postgres', password='mysecretpassword')
+                self.postgres_conn  = psycopg2.connect(host=self.postgres_ip, port=self.postgres_port, database='postgres', user='postgres', password='mysecretpassword')
                 self.postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres_conn.autocommit = True
                 logging.debug("Postgres Started")
@@ -1101,7 +1101,7 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                self.postgres2_conn = psycopg2.connect(host=self.postgres2_ip, port=self.postgres_port, user='postgres', password='mysecretpassword')
+                self.postgres2_conn = psycopg2.connect(host=self.postgres2_ip, port=self.postgres_port, database='postgres', user='postgres', password='mysecretpassword')
                 self.postgres2_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres2_conn.autocommit = True
                 logging.debug("Postgres Cluster host 2 started")
@@ -1111,7 +1111,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         while time.time() - start < timeout:
             try:
-                self.postgres3_conn = psycopg2.connect(host=self.postgres3_ip, port=self.postgres_port, user='postgres', password='mysecretpassword')
+                self.postgres3_conn = psycopg2.connect(host=self.postgres3_ip, port=self.postgres_port, database='postgres', user='postgres', password='mysecretpassword')
                 self.postgres3_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres3_conn.autocommit = True
                 logging.debug("Postgres Cluster host 3 started")
@@ -1121,7 +1121,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         while time.time() - start < timeout:
             try:
-                self.postgres4_conn = psycopg2.connect(host=self.postgres4_ip, port=self.postgres_port, user='postgres', password='mysecretpassword')
+                self.postgres4_conn = psycopg2.connect(host=self.postgres4_ip, port=self.postgres_port, database='postgres', user='postgres', password='mysecretpassword')
                 self.postgres4_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres4_conn.autocommit = True
                 logging.debug("Postgres Cluster host 4 started")
