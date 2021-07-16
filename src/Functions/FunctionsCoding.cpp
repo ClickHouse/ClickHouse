@@ -16,8 +16,6 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionMACNumToString>();
     factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>();
     factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>();
-    factory.registerFunction<FunctionBitmaskToArray>();
-    factory.registerFunction<FunctionBitPositionsToArray>();
     factory.registerFunction<FunctionToIPv4>();
     factory.registerFunction<FunctionToIPv6>();
     factory.registerFunction<FunctionIPv6CIDRToRange>();
