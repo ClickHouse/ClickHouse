@@ -168,7 +168,7 @@ ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, NamesAndAlias
 /// We are trying to find first column from end with name `column_name` or with a name beginning with `column_name` and ".".
 /// For example "fruits.bananas"
 /// names are considered the same if they completely match or `name_without_dot` matches the part of the name to the point
-static auto getNameRange(const ColumnsDescription::Container & columns, const String & name_without_dot)
+static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, const String & name_without_dot)
 {
     String name_with_dot = name_without_dot + ".";
 
@@ -228,7 +228,7 @@ void ColumnsDescription::remove(const String & column_name)
 
     for (auto list_it = range.first; list_it != range.second;)
     {
-        removeSubcolumns(list_it->name, list_it->type);
+        removeSubcolumns(list_it->name);
         list_it = columns.get<0>().erase(list_it);
     }
 }
@@ -303,7 +303,7 @@ void ColumnsDescription::flattenNested()
         }
 
         ColumnDescription column = std::move(*it);
-        removeSubcolumns(column.name, column.type);
+        removeSubcolumns(column.name);
         it = columns.get<0>().erase(it);
 
         const DataTypes & elements = type_tuple->getElements();
@@ -372,12 +372,7 @@ bool ColumnsDescription::hasNested(const String & column_name) const
 
 bool ColumnsDescription::hasSubcolumn(const String & column_name) const
 {
-    return subcolumns.find(column_name) != subcolumns.end();
-}
-
-bool ColumnsDescription::hasInStorageOrSubcolumn(const String & column_name) const
-{
-    return has(column_name) || hasSubcolumn(column_name);
+    return subcolumns.get<0>().count(column_name);
 }
 
 const ColumnDescription & ColumnsDescription::get(const String & column_name) const
@@ -388,6 +383,50 @@ const ColumnDescription & ColumnsDescription::get(const String & column_name) co
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
     return *it;
+}
+
+static ColumnsDescription::GetFlags defaultKindToGetFlag(ColumnDefaultKind kind)
+{
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default:
+            return ColumnsDescription::Ordinary;
+        case ColumnDefaultKind::Materialized:
+            return ColumnsDescription::Materialized;
+        case ColumnDefaultKind::Alias:
+            return ColumnsDescription::Aliases;
+    }
+    __builtin_unreachable();
+}
+
+NamesAndTypesList ColumnsDescription::getByNames(GetFlags flags, const Names & names, bool with_subcolumns) const
+{
+    NamesAndTypesList res;
+    for (const auto & name : names)
+    {
+        if (auto it = columns.get<1>().find(name); it != columns.get<1>().end())
+        {
+            auto kind = defaultKindToGetFlag(it->default_desc.kind);
+            if (flags & kind)
+            {
+                res.emplace_back(name, it->type);
+                continue;
+            }
+        }
+        else if (with_subcolumns)
+        {
+            auto jt = subcolumns.get<0>().find(name);
+            if (jt != subcolumns.get<0>().end())
+            {
+                res.push_back(*jt);
+                continue;
+            }
+        }
+
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", name);
+    }
+
+    return res;
 }
 
 
@@ -409,29 +448,46 @@ Names ColumnsDescription::getNamesOfPhysical() const
     return ret;
 }
 
-NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) const
+std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetFlags flags, const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    if (it != columns.get<1>().end() && (defaultKindToGetFlag(it->default_desc.kind) & flags))
+        return NameAndTypePair(it->name, it->type);
+
+    auto jt = subcolumns.get<0>().find(column_name);
+    if (jt != subcolumns.get<0>().end())
+        return *jt;
+
+    return {};
+}
+
+NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetFlags flags, const String & column_name) const
+{
+    auto column = tryGetColumnOrSubcolumn(flags, column_name);
+    if (!column)
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "There is no column or subcolumn {} in table.", column_name);
+
+    return *column;
+}
+
+std::optional<NameAndTypePair> ColumnsDescription::tryGetPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
     if (it == columns.get<1>().end() || it->default_desc.kind == ColumnDefaultKind::Alias)
-        throw Exception("There is no physical column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        return {};
+
     return NameAndTypePair(it->name, it->type);
 }
 
-NameAndTypePair ColumnsDescription::getPhysicalOrSubcolumn(const String & column_name) const
+NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) const
 {
-    if (auto it = columns.get<1>().find(column_name); it != columns.get<1>().end()
-        && it->default_desc.kind != ColumnDefaultKind::Alias)
-    {
-        return NameAndTypePair(it->name, it->type);
-    }
+    auto column = tryGetPhysical(column_name);
+    if (!column)
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "There is no physical column {} in table.", column_name);
 
-    if (auto it = subcolumns.find(column_name); it != subcolumns.end())
-    {
-        return it->second;
-    }
-
-    throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-        "There is no physical column or subcolumn {} in table.", column_name);
+    return *column;
 }
 
 bool ColumnsDescription::hasPhysical(const String & column_name) const
@@ -440,32 +496,36 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
     return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
 }
 
-bool ColumnsDescription::hasPhysicalOrSubcolumn(const String & column_name) const
+bool ColumnsDescription::hasColumnOrSubcolumn(GetFlags flags, const String & column_name) const
 {
-    return hasPhysical(column_name) || subcolumns.find(column_name) != subcolumns.end();
+    auto it = columns.get<1>().find(column_name);
+    return (it != columns.get<1>().end()
+        && (defaultKindToGetFlag(it->default_desc.kind) & flags))
+            || hasSubcolumn(column_name);
 }
 
-static NamesAndTypesList getWithSubcolumns(NamesAndTypesList && source_list)
+void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
 {
-    NamesAndTypesList ret;
     for (const auto & col : source_list)
     {
-        ret.emplace_back(col.name, col.type);
-        for (const auto & subcolumn : col.type->getSubcolumnNames())
-            ret.emplace_back(col.name, subcolumn, col.type, col.type->getSubcolumnType(subcolumn));
+        auto range = subcolumns.get<1>().equal_range(col.name);
+        if (range.first != range.second)
+            source_list.insert(source_list.end(), range.first, range.second);
     }
-
-    return ret;
 }
 
 NamesAndTypesList ColumnsDescription::getAllWithSubcolumns() const
 {
-    return getWithSubcolumns(getAll());
+    auto columns_list = getAll();
+    addSubcolumnsToList(columns_list);
+    return columns_list;
 }
 
 NamesAndTypesList ColumnsDescription::getAllPhysicalWithSubcolumns() const
 {
-    return getWithSubcolumns(getAllPhysical());
+    auto columns_list = getAllPhysical();
+    addSubcolumnsToList(columns_list);
+    return columns_list;
 }
 
 bool ColumnsDescription::hasDefaults() const
@@ -591,14 +651,15 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
 
-        subcolumns[subcolumn.name] = subcolumn;
+        subcolumns.get<0>().insert(std::move(subcolumn));
     }
 }
 
-void ColumnsDescription::removeSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage)
+void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
 {
-    for (const auto & subcolumn_name : type_in_storage->getSubcolumnNames())
-        subcolumns.erase(name_in_storage + "." + subcolumn_name);
+    auto range = subcolumns.get<1>().equal_range(name_in_storage);
+    if (range.first != range.second)
+        subcolumns.get<1>().erase(range.first, range.second);
 }
 
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
