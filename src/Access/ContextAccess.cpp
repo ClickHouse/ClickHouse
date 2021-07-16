@@ -163,11 +163,10 @@ void ContextAccess::setUser(const UserPtr & user_) const
     if (!user)
     {
         /// User has been dropped.
-        auto nothing_granted = std::make_shared<AccessRights>();
-        access = nothing_granted;
-        access_with_implicit = nothing_granted;
         subscription_for_user_change = {};
         subscription_for_roles_changes = {};
+        access = nullptr;
+        access_with_implicit = nullptr;
         enabled_roles = nullptr;
         roles_info = nullptr;
         enabled_row_policies = nullptr;
@@ -252,32 +251,45 @@ String ContextAccess::getUserName() const
 std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
 {
     std::lock_guard lock{mutex};
-    return roles_info;
+    if (roles_info)
+        return roles_info;
+    static const auto no_roles = std::make_shared<EnabledRolesInfo>();
+    return no_roles;
 }
 
 std::shared_ptr<const EnabledRowPolicies> ContextAccess::getEnabledRowPolicies() const
 {
     std::lock_guard lock{mutex};
-    return enabled_row_policies;
+    if (enabled_row_policies)
+        return enabled_row_policies;
+    static const auto no_row_policies = std::make_shared<EnabledRowPolicies>();
+    return no_row_policies;
 }
 
 ASTPtr ContextAccess::getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType index, const ASTPtr & extra_condition) const
 {
     std::lock_guard lock{mutex};
-    return enabled_row_policies ? enabled_row_policies->getCondition(database, table_name, index, extra_condition) : nullptr;
+    if (enabled_row_policies)
+        return enabled_row_policies->getCondition(database, table_name, index, extra_condition);
+    return nullptr;
 }
 
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 {
     std::lock_guard lock{mutex};
-    return enabled_quota;
+    if (enabled_quota)
+        return enabled_quota;
+    static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
+    return unlimited_quota;
 }
 
 
 std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
     std::lock_guard lock{mutex};
-    return enabled_quota ? enabled_quota->getUsage() : std::optional<QuotaUsage>{};
+    if (enabled_quota)
+        return enabled_quota->getUsage();
+    return {};
 }
 
 
@@ -288,7 +300,7 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
         auto full_access = std::shared_ptr<ContextAccess>(new ContextAccess);
         full_access->is_full_access = true;
         full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
-        full_access->enabled_quota = EnabledQuota::getUnlimitedQuota();
+        full_access->access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*full_access->access));
         return full_access;
     }();
     return res;
@@ -298,28 +310,40 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
 std::shared_ptr<const Settings> ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
-    return enabled_settings ? enabled_settings->getSettings() : nullptr;
+    if (enabled_settings)
+        return enabled_settings->getSettings();
+    static const auto everything_by_default = std::make_shared<Settings>();
+    return everything_by_default;
 }
 
 
 std::shared_ptr<const SettingsConstraints> ContextAccess::getSettingsConstraints() const
 {
     std::lock_guard lock{mutex};
-    return enabled_settings ? enabled_settings->getConstraints() : nullptr;
+    if (enabled_settings)
+        return enabled_settings->getConstraints();
+    static const auto no_constraints = std::make_shared<SettingsConstraints>();
+    return no_constraints;
 }
 
 
 std::shared_ptr<const AccessRights> ContextAccess::getAccessRights() const
 {
     std::lock_guard lock{mutex};
-    return access;
+    if (access)
+        return access;
+    static const auto nothing_granted = std::make_shared<AccessRights>();
+    return nothing_granted;
 }
 
 
 std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit() const
 {
     std::lock_guard lock{mutex};
-    return access_with_implicit;
+    if (access_with_implicit)
+        return access_with_implicit;
+    static const auto nothing_granted = std::make_shared<AccessRights>();
+    return nothing_granted;
 }
 
 
@@ -551,7 +575,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
     for (auto it = std::begin(role_ids); it != std::end(role_ids); ++it, ++i)
     {
         const UUID & role_id = *it;
-        if (info && info->enabled_roles_with_admin_option.count(role_id))
+        if (info->enabled_roles_with_admin_option.count(role_id))
             continue;
 
         if (throw_if_denied)
@@ -560,7 +584,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
             if (!role_name)
                 role_name = "ID {" + toString(role_id) + "}";
 
-            if (info && info->enabled_roles.count(role_id))
+            if (info->enabled_roles.count(role_id))
                 show_error("Not enough privileges. "
                            "Role " + backQuote(*role_name) + " is granted, but without ADMIN option. "
                            "To execute this query it's necessary to have the role " + backQuoteIfNeed(*role_name) + " granted with ADMIN option.",
