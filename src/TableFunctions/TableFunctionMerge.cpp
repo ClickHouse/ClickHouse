@@ -122,7 +122,7 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
     if (headers.empty())
         throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
 
-    auto common_header = InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(headers, /* allow_type_promotion_after_64_bits */ true);
+    auto common_header = InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(headers);
     return ColumnsDescription{common_header.getNamesAndTypesList()};
 }
 

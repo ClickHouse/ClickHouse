@@ -12,6 +12,6 @@ namespace DB
   * Examples: least common supertype for UInt8, Int8 - Int16.
   * Examples: there is no least common supertype for Array(UInt8), Int8.
   */
-DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_type_promotion_after_64_bits = false);
+DataTypePtr getLeastSupertype(const DataTypes & types);
 
 }

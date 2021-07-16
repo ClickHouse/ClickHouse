@@ -1,19 +1,25 @@
+--- Result structure ---
 date	Date					
-value	Int128					
+value	Int64					
 --- ORDER BY value ---
 2018-08-01	-1
-2018-08-01	1
-2018-08-01	2
---- WHERE toTypeName(value) = Int128 ---
 2018-08-01	-1
 2018-08-01	1
-2018-08-01	2
---- WHERE toTypeName(value) = UInt64 ---
+2018-08-01	1
+--- WHERE toTypeName(value) = Int64 ---
+2018-08-01	-1
+2018-08-01	-1
+2018-08-01	1
+2018-08-01	1
 --- WHERE date = 2018-08-01 ---
 2018-08-01	-1
+2018-08-01	-1
 2018-08-01	1
-2018-08-01	2
---- WHERE _table = test_s64_distributed ---
+2018-08-01	1
+--- WHERE _table = test_merge_s64_distributed ---
 2018-08-01	-1
 --- WHERE value = -1 ---
 2018-08-01	-1
+2018-08-01	-1
+--- WHERE value = 1048575 ---
+--- Expected error: no common type for Int64 and UInt64 ---

@@ -164,7 +164,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
 }
 
-Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & headers, bool allow_type_promotion_after_64_bits)
+Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & headers)
 {
     size_t num_selects = headers.size();
     Block common_header = headers.front();
@@ -188,7 +188,7 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
             columns[i] = &headers[i].getByPosition(column_num);
 
         ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
-        result_elem = getLeastSuperColumn(columns, allow_type_promotion_after_64_bits);
+        result_elem = getLeastSuperColumn(columns);
     }
 
     return common_header;

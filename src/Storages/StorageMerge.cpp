@@ -166,7 +166,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
             if (table && table.get() != this)
             {
                 ++selected_table_size;
-                stage_in_source_tables = std::max(
+                stage_in_source_tables = std::min(
                     stage_in_source_tables,
                     table->getQueryProcessingStage(local_context, to_stage, table->getInMemoryMetadataPtr(), query_info));
             }

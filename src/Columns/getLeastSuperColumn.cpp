@@ -18,7 +18,7 @@ static bool sameConstants(const IColumn & a, const IColumn & b)
     return assert_cast<const ColumnConst &>(a).getField() == assert_cast<const ColumnConst &>(b).getField();
 }
 
-ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns, bool allow_promotion_after_64_bits)
+ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns)
 {
     if (columns.empty())
         throw Exception("Logical error: no src columns for supercolumn", ErrorCodes::LOGICAL_ERROR);
@@ -36,7 +36,7 @@ ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithType
             ++num_const;
     }
 
-    result.type = getLeastSupertype(types, allow_promotion_after_64_bits);
+    result.type = getLeastSupertype(types);
 
     /// Create supertype column saving constness if possible.
 
