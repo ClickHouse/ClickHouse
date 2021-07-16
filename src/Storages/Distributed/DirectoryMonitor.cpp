@@ -27,6 +27,7 @@
 #include <Disks/IDisk.h>
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
+#include <boost/range/adaptor/indexed.hpp>
 #include <filesystem>
 
 
@@ -763,8 +764,8 @@ struct StorageDistributedDirectoryMonitor::Batch
             else
             {
                 std::vector<std::string> files(file_index_to_path.size());
-                for (const auto & [index, name] : file_index_to_path)
-                    files.push_back(name);
+                for (const auto && file_info : file_index_to_path | boost::adaptors::indexed())
+                    files[file_info.index()] = file_info.value().second;
                 e.addMessage(fmt::format("While sending batch {}", fmt::join(files, "\n")));
 
                 throw;
