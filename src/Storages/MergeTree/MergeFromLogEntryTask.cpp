@@ -116,6 +116,10 @@ bool MergeFromLogEntryTask::executeImpl()
                 return true;
             }
 
+            /// Depending on condition there is no need to execute a merge
+            if (state == State::SUCCESS)
+                return false;
+
 
             state = State::NEED_EXECUTE_INNER_MERGE;
             return true;
