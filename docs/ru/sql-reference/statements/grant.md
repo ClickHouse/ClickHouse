@@ -33,7 +33,7 @@ GRANT [BY REPLACE] [ON CLUSTER cluster_name] role [,...] TO {user | another_role
 - `role` — Роль пользователя ClickHouse.
 - `user` — Пользователь ClickHouse.
 
-Пункт `BY REPLACE` Заменить старую роль новыми ролями для пользователя `user` или `role`.
+`BY REPLACE` заменяет все старые роли новыми ролями для пользователя `user` или `role`.
 `WITH ADMIN OPTION` присваивает привилегию [ADMIN OPTION](#admin-option-privilege) пользователю или роли.
 
 ## Использование {#grant-usage}
