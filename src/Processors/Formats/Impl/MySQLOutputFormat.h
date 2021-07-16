@@ -25,11 +25,7 @@ public:
 
     String getName() const override { return "MySQLOutputFormat"; }
 
-    void setContext(ContextPtr context_)
-    {
-        context = context_;
-        packet_endpoint = std::make_unique<MySQLProtocol::PacketEndpoint>(out, const_cast<uint8_t &>(getContext()->mysql.sequence_id)); /// TODO: fix it
-    }
+    void setContext(ContextPtr context_);
 
     void consume(Chunk) override;
     void finalize() override;
@@ -41,7 +37,9 @@ public:
 private:
     bool initialized = false;
 
-    std::unique_ptr<MySQLProtocol::PacketEndpoint> packet_endpoint;
+    std::optional<MySQLWireContext> own_mysql_context;
+    MySQLWireContext * mysql_context = nullptr;
+    MySQLProtocol::PacketEndpointPtr packet_endpoint;
     FormatSettings format_settings;
     DataTypes data_types;
     Serializations serializations;

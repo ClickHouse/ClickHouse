@@ -465,6 +465,19 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
     return block;
 }
 
+std::unique_ptr<MergeTreeBlockSizePredictor> MergeTreeBaseSelectProcessor::getSizePredictor(
+    const MergeTreeData::DataPartPtr & data_part,
+    const MergeTreeReadTaskColumns & task_columns,
+    const StorageMetadataPtr & metadata_snapshot)
+{
+    const auto & required_column_names = task_columns.columns.getNames();
+    const auto & required_pre_column_names = task_columns.pre_columns.getNames();
+    NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
+    complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
+
+    return std::make_unique<MergeTreeBlockSizePredictor>(
+        data_part, Names(complete_column_names.begin(), complete_column_names.end()), metadata_snapshot->getSampleBlock());
+}
 
 MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;
 

@@ -4,7 +4,6 @@
 
 Функции:
 
-
 -   `median` — синоним для [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
 -   `medianDeterministic` — синоним для [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md#quantiledeterministic).
 -   `medianExact` — синоним для [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact).
@@ -31,7 +30,7 @@
 Запрос:
 
 ``` sql
-SELECT medianDeterministic(val, 1) FROM t
+SELECT medianDeterministic(val, 1) FROM t;
 ```
 
 Результат:
@@ -41,4 +40,3 @@ SELECT medianDeterministic(val, 1) FROM t
 │                         1.5 │
 └─────────────────────────────┘
 ```
-

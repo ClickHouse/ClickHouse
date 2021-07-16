@@ -182,7 +182,7 @@ ProcessorPtr ReadFromMergeTree::createSource(
     return std::make_shared<TSource>(
             data, metadata_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache,
-            prewhere_info, actions_settings, true, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block);
+            prewhere_info, actions_settings, true, reader_settings, virt_column_names, has_limit_below_one_block);
 }
 
 Pipe ReadFromMergeTree::readInOrder(
@@ -837,7 +837,8 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         log,
         requested_num_streams,
         result.index_stats,
-        true);
+        true /* use_skip_indexes */,
+        true /* check_limits */);
 
     size_t sum_marks_pk = total_marks_pk;
     for (const auto & stat : result.index_stats)

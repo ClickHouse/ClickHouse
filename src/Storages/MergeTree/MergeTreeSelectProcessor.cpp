@@ -19,7 +19,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
-    bool check_columns_,
+    bool check_columns,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
     bool has_limit_below_one_block_)
@@ -32,7 +32,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     data_part{owned_data_part_},
     all_mark_ranges(std::move(mark_ranges_)),
     has_limit_below_one_block(has_limit_below_one_block_),
-    check_columns(check_columns_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {
     /// will be used to distinguish between PREWHERE and WHERE columns when applying filter

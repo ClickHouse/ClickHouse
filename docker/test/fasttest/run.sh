@@ -380,6 +380,14 @@ function run_tests
         01923_network_receive_time_metric_insert
 
         01889_sqlite_read_write
+
+        # needs s2
+        01849_geoToS2
+        01851_s2_to_geo
+        01852_s2_get_neighbours
+        01853_s2_cells_intersect
+        01854_s2_cap_contains
+        01854_s2_cap_union
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \

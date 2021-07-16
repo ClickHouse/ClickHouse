@@ -62,9 +62,7 @@ protected:
     /// If true, every task will be created only with one range.
     /// It reduces amount of read data for queries with small LIMIT.
     bool has_limit_below_one_block = false;
-
-    bool check_columns;
-    size_t total_rows;
+    size_t total_rows = 0;
 };
 
 }
