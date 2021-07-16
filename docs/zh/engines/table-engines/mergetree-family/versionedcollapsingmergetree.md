@@ -3,7 +3,7 @@ toc_priority: 37
 toc_title: "版本折叠MergeTree"
 ---
 
-# 版本折叠MergeTree {#versionedcollapsingmergetree}
+# VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
 
 这个引擎:
 

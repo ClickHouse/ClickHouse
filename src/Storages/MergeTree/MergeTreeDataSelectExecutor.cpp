@@ -178,7 +178,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     Pipe projection_pipe;
     Pipe ordinary_pipe;
 
-    const auto & given_select = query_info.query->as<const ASTSelectQuery &>();
     if (!projection_parts.empty())
     {
         LOG_DEBUG(log, "projection required columns: {}", fmt::join(query_info.projection->required_columns, ", "));
@@ -226,22 +225,28 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     if (!normal_parts.empty())
     {
         auto storage_from_base_parts_of_projection = StorageFromMergeTreeDataPart::create(std::move(normal_parts));
-        auto ast = query_info.projection->desc->query_ast->clone();
-        auto & select = ast->as<ASTSelectQuery &>();
-        if (given_select.where())
-            select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
-        if (given_select.prewhere())
-            select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.prewhere()->clone());
-
-        // After overriding the group by clause, we finish the possible aggregations directly
-        if (processed_stage >= QueryProcessingStage::Enum::WithMergeableState && given_select.groupBy())
-            select.setExpression(ASTSelectQuery::Expression::GROUP_BY, given_select.groupBy()->clone());
         auto interpreter = InterpreterSelectQuery(
-            ast,
+            query_info.query,
             context,
             storage_from_base_parts_of_projection,
             nullptr,
-            SelectQueryOptions{processed_stage}.ignoreAggregation().ignoreProjections());
+            SelectQueryOptions{processed_stage}.projectionQuery());
+
+        QueryPlan ordinary_query_plan;
+        interpreter.buildQueryPlan(ordinary_query_plan);
+
+        const auto & expressions = interpreter.getAnalysisResult();
+        if (processed_stage == QueryProcessingStage::Enum::FetchColumns && expressions.before_where)
+        {
+            auto where_step = std::make_unique<FilterStep>(
+                ordinary_query_plan.getCurrentDataStream(),
+                expressions.before_where,
+                expressions.where_column_name,
+                expressions.remove_where_filter);
+            where_step->setStepDescription("WHERE");
+            ordinary_query_plan.addStep(std::move(where_step));
+        }
+
         ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
     }
 
@@ -757,7 +762,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     Poco::Logger * log,
     size_t num_streams,
     ReadFromMergeTree::IndexStats & index_stats,
-    bool use_skip_indexes)
+    bool use_skip_indexes,
+    bool check_limits)
 {
     RangesInDataParts parts_with_ranges(parts.size());
     const Settings & settings = context->getSettingsRef();
@@ -885,7 +891,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             if (!ranges.ranges.empty())
             {
-                if (limits.max_rows || leaf_limits.max_rows)
+                if (check_limits && (limits.max_rows || leaf_limits.max_rows))
                 {
                     /// Fail fast if estimated number of rows to read exceeds the limit
                     auto current_rows_estimate = ranges.getRowsCount();
@@ -1150,7 +1156,8 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
         log,
         num_streams,
         index_stats,
-        false);
+        true /* use_skip_indexes */,
+        false /* check_limits */);
 
     return index_stats.back().num_granules_after;
 }
