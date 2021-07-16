@@ -64,7 +64,12 @@ public:
         std::lock_guard lock{mutex};
         auto x = cache.get(params);
         if (x)
-            return *x;
+        {
+            if ((*x)->getUser())
+                return *x;
+            /// No user, probably the user has been dropped while it was in the cache.
+            cache.remove(params);
+        }
         auto res = std::shared_ptr<ContextAccess>(new ContextAccess(manager, params));
         cache.add(params, res);
         return res;
