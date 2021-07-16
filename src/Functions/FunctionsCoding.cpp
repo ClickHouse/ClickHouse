@@ -10,7 +10,6 @@ struct NameFunctionIPv4NumToStringClassC { static constexpr auto name = "IPv4Num
 
 void registerFunctionsCoding(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionToStringCutToZero>();
     factory.registerFunction<FunctionCutIPv6>();
     factory.registerFunction<FunctionIPv4ToIPv6>();
     factory.registerFunction<FunctionMACNumToString>();
