@@ -16,7 +16,6 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionMACNumToString>();
     factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>();
     factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>();
-    factory.registerFunction<FunctionChar>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionBitmaskToArray>();
     factory.registerFunction<FunctionBitPositionsToArray>();
     factory.registerFunction<FunctionToIPv4>();
