@@ -613,10 +613,16 @@
     }
 
     /// Huge JS libraries should be loaded only if needed.
-    function loadJS(src) {
+    function loadJS(src, integrity) {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = src;
+            if (integrity) {
+                script.crossOrigin = 'anonymous';
+                script.integrity = integrity;
+            } else {
+                console.warn('no integrity for', src)
+            }
             script.addEventListener('load', function() { resolve(true); });
             document.head.appendChild(script);
         });
@@ -627,10 +633,14 @@
         if (load_dagre_promise) { return load_dagre_promise; }
 
         load_dagre_promise = Promise.all([
-            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js'),
-            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js'),
-            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js'),
-            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0'),
+            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
+                   'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
+            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
+                   'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
+            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
+                   'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
+            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
+                   'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
         ]);
 
         return load_dagre_promise;

@@ -1738,7 +1738,7 @@ Default value: 0.
 
 ## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
 
-Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read. 
+Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read.
 
 These functions can be transformed:
 
@@ -1968,6 +1968,13 @@ Type: unsigned int
 Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
+
+## output_format_avro_string_column_pattern {#output_format_avro_string_column_pattern}
+
+Regexp of column names of type String to output as Avro `string` (default is `bytes`).
+RE2 syntax is supported.
+
+Type: string
 
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
