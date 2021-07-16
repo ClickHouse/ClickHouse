@@ -1053,33 +1053,11 @@ settings max_block_size = 3;
 12	2	10	11	10	10	14
 13	2	10	12	10	10	143
 14	2	10	13	10	10	154
-<<<<<<< HEAD
 15	3	15	0	15	15	15
-=======
-15	3	15	\N	15	15	15
--- careful with auto-application of Null combinator
-SELECT number,
-    lagInFrame(toNullable(number), 1) OVER w AS prevOne,
-    lagInFrame(toNullable(number), 2) OVER w AS prevTwo
-FROM numbers(10)
-WINDOW w AS (ORDER BY number ASC)
-;
-0	\N	\N
-1	0	\N
-2	1	0
-3	2	1
-4	3	2
-5	4	3
-6	5	4
-7	6	5
-8	7	6
-9	8	7
->>>>>>> Add missing test back in 01591_window_function
 -- careful with auto-application of Null combinator
 select lagInFrame(toNullable(1)) over ();
 \N
 select lagInFrameOrNull(1) over (); -- { serverError 36 }
-<<<<<<< HEAD
 -- this is the same as `select max(Null::Nullable(Nothing))`
 select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
 \N	Nullable(Nothing)	\N
@@ -1098,10 +1076,6 @@ WINDOW w AS (ORDER BY number ASC)
 1	0	\N	0	0
 2	1	0	1	0
 3	2	1	2	1
-=======
-select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
-\N	Nullable(Nothing)	\N
->>>>>>> Add missing test back in 01591_window_function
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,
