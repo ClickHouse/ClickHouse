@@ -3230,7 +3230,11 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecuto
         executor.execute({[this, selected_entry] () mutable
         {
             auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry->log_entry, *this);
-            while (task->execute()) {}
+            try {
+                while (task->execute()) {}
+            } catch (...) {
+
+            }
             return true;
         }, PoolType::MUTATE});
         return true;
