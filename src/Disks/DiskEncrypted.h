@@ -14,6 +14,9 @@ namespace DB
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
+/// Encrypted disk ciphers all written files on the fly and writes the encrypted files to an underlying (normal) disk.
+/// And when we read files from an encrypted disk it deciphers them automatically,
+/// so we can work with a encrypted disk like it's a normal disk.
 class DiskEncrypted : public DiskDecorator
 {
 public:
@@ -102,10 +105,7 @@ public:
         delegate->listFiles(wrapped_path, file_names);
     }
 
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override
-    {
-        IDisk::copy(from_path, to_disk, to_path);
-    }
+    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
