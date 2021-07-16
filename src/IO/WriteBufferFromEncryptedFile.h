@@ -12,15 +12,17 @@
 namespace DB
 {
 
+/// Encrypts data and writes the encrypted data to the underlying write buffer.
 class WriteBufferFromEncryptedFile : public WriteBufferFromFileBase
 {
 public:
+    /// `old_file_size` should be set to non-zero if we're going to append an existing file.
     WriteBufferFromEncryptedFile(
-        size_t buf_size_,
+        size_t buffer_size_,
         std::unique_ptr<WriteBufferFromFileBase> out_,
-        const String & init_vector_,
-        const FileEncryption::EncryptionKey & key_,
-        const size_t & file_size);
+        const String & key_,
+        const FileEncryption::InitVector & init_vector_,
+        size_t old_file_size = 0);
     ~WriteBufferFromEncryptedFile() override;
 
     void sync() override;
@@ -37,8 +39,9 @@ private:
     bool finished = false;
     std::unique_ptr<WriteBufferFromFileBase> out;
 
-    bool flush_iv;
-    String iv;
+    FileEncryption::InitVector iv;
+    bool flush_iv = false;
+
     FileEncryption::Encryptor encryptor;
 };
 
