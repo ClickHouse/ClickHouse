@@ -345,15 +345,15 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , disk(disk_)
     , relative_path(relative_path_)
     , path(fs::path(disk->getPath()) / relative_path / "")
-    , should_batch_inserts(storage.getContext()->getSettingsRef().distributed_directory_monitor_batch_inserts)
-    , split_batch_on_failure(storage.getContext()->getSettingsRef().distributed_directory_monitor_split_batch_on_failure)
+    , should_batch_inserts(storage.getDistributedSettingsRef().monitor_batch_inserts)
+    , split_batch_on_failure(storage.getDistributedSettingsRef().monitor_split_batch_on_failure)
     , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
     , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
     , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path(path + "current_batch.txt")
-    , default_sleep_time(storage.getContext()->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds())
+    , default_sleep_time(storage.getDistributedSettingsRef().monitor_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
-    , max_sleep_time(storage.getContext()->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds())
+    , max_sleep_time(storage.getDistributedSettingsRef().monitor_max_sleep_time_ms.totalMilliseconds())
     , log(&Poco::Logger::get(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
@@ -432,7 +432,7 @@ void StorageDistributedDirectoryMonitor::run()
                 do_sleep = true;
                 ++status.error_count;
                 sleep_time = std::min(
-                    std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(status.error_count))},
+                    std::chrono::milliseconds{UInt64(default_sleep_time.count() * std::exp2(status.error_count))},
                     max_sleep_time);
                 tryLogCurrentException(getLoggerName().data());
                 status.last_exception = std::current_exception();
