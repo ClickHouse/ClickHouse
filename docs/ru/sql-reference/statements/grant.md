@@ -20,7 +20,7 @@ GRANT [BY REPLACE] [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,.
 - `role` — Роль пользователя ClickHouse.
 - `user` — Пользователь ClickHouse.
 
-Пункт `BY REPLACE` заменить старые привилегии новыми привилегиями для `user` или `role`.
+`BY REPLACE` заменяет все старые привилегии новыми привилегиями для `user` или `role`.
 `WITH GRANT OPTION` разрешает пользователю или роли выполнять запрос `GRANT`. Пользователь может выдавать только те привилегии, которые есть у него, той же или меньшей области действий.
 
 
@@ -483,4 +483,3 @@ GRANT INSERT(x,y) ON db.table TO john
 ### ADMIN OPTION {#admin-option-privilege}
 
 Привилегия `ADMIN OPTION` разрешает пользователю назначать свои роли другому пользователю.
-
