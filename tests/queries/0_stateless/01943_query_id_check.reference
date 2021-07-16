@@ -1,0 +1,2 @@
+CREATE TABLE tmp ENGINE = TinyLog AS SELECT queryID();
+CREATE TABLE tmp ENGINE = TinyLog AS SELECT initialQueryID();
