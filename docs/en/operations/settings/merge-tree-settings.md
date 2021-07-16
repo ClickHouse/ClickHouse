@@ -284,8 +284,8 @@ Enables to check column for sampling or sampling expression is correct at table 
 
 Possible values:
 
--   true  — Check column or sampling expression is correct at table creation
--   false — Check column or sampling expression is correct at table creation will be ignored.
+-   true  — Check column or sampling expression is correct at table creation.
+-   false — Do not check column or sampling expression is correct at table creation.
 
 Default value: `true`.
 
