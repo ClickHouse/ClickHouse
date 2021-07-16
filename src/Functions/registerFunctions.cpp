@@ -14,6 +14,7 @@ void registerFunctionsMap(FunctionFactory &);
 void registerFunctionsBitmap(FunctionFactory &);
 void registerFunctionsBinaryRepr(FunctionFactory &);
 void registerFunctionsCoding(FunctionFactory &);
+void registerFunctionsCodingUUID(FunctionFactory &);
 void registerFunctionsComparison(FunctionFactory &);
 void registerFunctionsConditional(FunctionFactory &);
 void registerFunctionsConversion(FunctionFactory &);
@@ -76,6 +77,7 @@ void registerFunctions()
 #endif
     registerFunctionsBinaryRepr(factory);
     registerFunctionsCoding(factory);
+    registerFunctionsCodingUUID(factory);
     registerFunctionsComparison(factory);
     registerFunctionsConditional(factory);
     registerFunctionsConversion(factory);
