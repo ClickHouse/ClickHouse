@@ -36,15 +36,10 @@ public:
 
     ~MergeTreeSelectProcessor() override;
 
-    String getName() const override = 0;
-
     /// Closes readers and unlock part locks
     void finish();
 
 protected:
-
-    bool getNewTask() override = 0;
-
     /// Used by Task
     Names required_columns;
     /// Names from header. Used in order to order columns in read blocks.
