@@ -728,7 +728,7 @@ During this time, they are not moved to other volumes or disks. Therefore, until
 
 ## Using S3 for Data Storage {#table_engine-mergetree-s3}
 
-`MergeTree` family table engines is able to store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
+`MergeTree` family table engines can store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
 
 Configuration markup:
 ``` xml
@@ -762,11 +762,13 @@ Configuration markup:
 ```
 
 Required parameters:
--   `endpoint` — S3 endpoint url in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint url should contain bucket and root path to store data.
+
+-   `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
 -   `access_key_id` — S3 access key id.
 -   `secret_access_key` — S3 secret access key.
 
 Optional parameters:
+
 -   `region` — S3 region name.
 -   `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
 -   `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
@@ -825,7 +827,7 @@ In case of `cold` option a data can be moved to S3 if local disk free size will 
 
 [HDFS](https://hadoop.apache.org/docs/r1.2.1/hdfs_design.html) is a distributed file system for remote data storage.
 
-`MergeTree` family table engines is able to store data to HDFS using a disk with type `HDFS`.
+`MergeTree` family table engines can store data to HDFS using a disk with type `HDFS`.
 
 Configuration markup:
 ``` xml
@@ -863,10 +865,9 @@ Configuration markup:
 
 Required parameters:
 
--   `endpoint` — HDFS endpoint url in `path`. Endpoint url should contain bucket and root path to store data. It is used to lookup the HDFS configuration for retrieving files.
+-   `endpoint` — HDFS endpoint URL in `path`. Endpoint URL should contain a bucket and root path to store data. The parameter is used to look up the HDFS configuration for retrieving files.
 
 Optional parameters:
 
--   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
+-   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
 -   `thread_pool_size` — The number of threads in the Global Thread pool.
--   `objects_chunk_size_to_delete` — The number of threads in the Global Thread pool.
