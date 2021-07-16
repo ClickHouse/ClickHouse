@@ -35,14 +35,9 @@ namespace
             else
             {
                 if (query.is_replace)
-                {
-                    AccessRights tmp;
-                    tmp.grant(query.access_rights_elements);
-                    grantee.access.makeIntersection(tmp);
-                    grantee.access.grant(query.access_rights_elements);
-                }
-                else
-                    grantee.access.grant(query.access_rights_elements);
+                    grantee.access = {};
+
+                grantee.access.grant(query.access_rights_elements);
             }
         }
 
@@ -57,16 +52,13 @@ namespace
             }
             else
             {
+                if (query.is_replace)
+                    grantee.granted_roles = {};
+
                 if (query.admin_option)
-                    if (query.is_replace)
-                        grantee.granted_roles.grantByReplaceWithAdminOption(roles_to_grant_or_revoke);
-                    else
-                        grantee.granted_roles.grantWithAdminOption(roles_to_grant_or_revoke);
+                    grantee.granted_roles.grantWithAdminOption(roles_to_grant_or_revoke);
                 else
-                    if (query.is_replace)
-                        grantee.granted_roles.grantByReplace(roles_to_grant_or_revoke);
-                    else
-                        grantee.granted_roles.grant(roles_to_grant_or_revoke);
+                    grantee.granted_roles.grant(roles_to_grant_or_revoke);
             }
         }
     }

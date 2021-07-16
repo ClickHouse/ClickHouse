@@ -2,7 +2,6 @@
 #include <Access/RolesOrUsersSet.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
-#include <set>
 
 namespace DB
 {
@@ -167,36 +166,4 @@ void GrantedRoles::makeIntersection(const GrantedRoles & other)
         return other.roles_with_admin_option.find(id) == other.roles_with_admin_option.end();
     });
 }
-
-void GrantedRoles::grantByReplace(const std::vector<UUID> & roles_)
-{
-    eraseExcept(roles, roles_);
-}
-
-void GrantedRoles::grantByReplaceWithAdminOption(const std::vector<UUID> & roles_)
-{
-    eraseExcept(roles_with_admin_option, roles_);
-}
-
-void eraseExcept(boost::container::flat_set<UUID> & data_set, const std::vector<UUID> & ids)
-{
-    if (ids.size() == 0)
-    {
-        data_set.clear();
-        return;
-    }
-
-    std::set<UUID> t;
-    for (const UUID & id : ids)
-    {
-        t.insert(id);
-        if (data_set.count(id) == 0)
-            data_set.insert(id);
-    }
-
-    for (const UUID & role : data_set)
-        if (!t.contains(role))
-            data_set.erase(role);
-}
-
 }
