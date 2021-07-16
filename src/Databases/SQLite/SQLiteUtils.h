@@ -7,7 +7,7 @@
 #if USE_SQLITE
 #include <Core/Types.h>
 #include <Interpreters/Context.h>
-#include <sqlite3.h>
+#include <sqlite3.h> // Y_IGNORE
 
 
 namespace DB
