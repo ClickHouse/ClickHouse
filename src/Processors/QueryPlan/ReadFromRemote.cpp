@@ -9,6 +9,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <Common/checkStackSize.h>
 
 namespace DB
