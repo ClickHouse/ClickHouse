@@ -30,7 +30,7 @@ expect {
 "RelWithDebInfo"
 }
 
-send -- "\4"
+send -- "q\r"
 expect eof
 
 if { $Debug_type > 0} {
@@ -45,6 +45,6 @@ send -- "SELECT message FROM system.warnings WHERE message='Server was built in 
 expect "Server was built in debug mode. It will work slowly."
 expect ":) "
 
-send -- "\4"
+send -- "q\r"
 expect eof
 }
