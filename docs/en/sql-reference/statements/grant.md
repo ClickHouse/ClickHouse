@@ -13,24 +13,26 @@ To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md)
 ## Granting Privilege Syntax {#grant-privigele-syntax}
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+GRANT [BY REPLACE] [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
 ```
 
 -   `privilege` — Type of privilege.
 -   `role` — ClickHouse user role.
 -   `user` — ClickHouse user account.
 
+The `BY REPLACE` clause replace old privileges by new privileges for the `user` or `role`
 The `WITH GRANT OPTION` clause grants `user` or `role` with permission to execute the `GRANT` query. Users can grant privileges of the same scope they have and less.
 
 ## Assigning Role Syntax {#assign-role-syntax}
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+GRANT [BY REPLACE] [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
 ```
 
 -   `role` — ClickHouse user role.
 -   `user` — ClickHouse user account.
 
+The `BY REPLACE` clause replace old roles by new role for the `user` or `role`
 The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
 
 ## Usage {#grant-usage}
