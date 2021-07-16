@@ -13,7 +13,7 @@ struct Settings;
 AggregateFunctionPtr createAggregateFunctionNothing(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
-    assertArityAtMost<1>(name, argument_types);
+    assertUnary(name, argument_types);
 
     return std::make_shared<AggregateFunctionNothing>(argument_types, parameters);
 }
