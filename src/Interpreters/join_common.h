@@ -35,7 +35,7 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right);
 
 void createMissedColumns(Block & block);
-void joinTotals(const Block & totals, const Block & columns_to_add, const TableJoin & table_join, Block & block);
+void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_join, Block & out_block);
 
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
