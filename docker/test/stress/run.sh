@@ -62,7 +62,7 @@ function start()
             break
         fi
         # use root to match with current uid
-        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>/var/log/clickhouse-server/stderr.log
+        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
         sleep 0.5
         counter=$((counter + 1))
     done
