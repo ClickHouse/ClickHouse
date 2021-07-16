@@ -28,17 +28,20 @@ namespace
         const ASTGrantQuery & query,
         const std::vector<UUID> & roles_to_grant_or_revoke)
     {
+        if (query.is_replace && !query.is_revoke)
+        {
+            if (roles_to_grant_or_revoke.empty())
+                grantee.access = {};
+            else
+                grantee.granted_roles = {};
+        }
+
         if (!query.access_rights_elements.empty())
         {
             if (query.is_revoke)
                 grantee.access.revoke(query.access_rights_elements);
             else
-            {
-                if (query.is_replace)
-                    grantee.access = {};
-
                 grantee.access.grant(query.access_rights_elements);
-            }
         }
 
         if (!roles_to_grant_or_revoke.empty())
@@ -52,9 +55,6 @@ namespace
             }
             else
             {
-                if (query.is_replace)
-                    grantee.granted_roles = {};
-
                 if (query.admin_option)
                     grantee.granted_roles.grantWithAdminOption(roles_to_grant_or_revoke);
                 else

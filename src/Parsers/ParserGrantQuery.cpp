@@ -231,15 +231,18 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (attach_mode && !ParserKeyword{"ATTACH"}.ignore(pos, expected))
         return false;
 
-    bool is_revoke = false;
     bool is_replace = false;
+    if (ParserKeyword{"REPLACE"}.ignore(pos, expected))
+        is_replace = true;
+
+    bool is_revoke = false;
     if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
         is_revoke = true;
     else if (!ParserKeyword{"GRANT"}.ignore(pos, expected))
         return false;
 
-    if (!is_revoke && ParserKeyword{"BY REPLACE"}.ignore(pos, expected))
-        is_replace = true;
+    if (is_replace && is_revoke)
+        return false;
 
     String cluster;
     parseOnCluster(pos, expected, cluster);
