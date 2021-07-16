@@ -302,26 +302,9 @@ private:
         }
         catch (const Exception & e)
         {
-            bool print_stack_trace = config().getBool("stacktrace", false);
+            bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
 
-            std::string text = e.displayText();
-
-            /** If exception is received from server, then stack trace is embedded in message.
-              * If exception is thrown on client, then stack trace is in separate field.
-              */
-
-            auto embedded_stack_trace_pos = text.find("Stack trace");
-            if (std::string::npos != embedded_stack_trace_pos && !print_stack_trace)
-                text.resize(embedded_stack_trace_pos);
-
-            std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
-
-            /// Don't print the stack trace on the client if it was logged on the server.
-            /// Also don't print the stack trace in case of network errors.
-            if (print_stack_trace && e.code() != ErrorCodes::NETWORK_ERROR && std::string::npos == embedded_stack_trace_pos)
-            {
-                std::cerr << "Stack trace:" << std::endl << e.getStackTraceString();
-            }
+            std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
             return e.code() ? e.code() : -1;
@@ -700,17 +683,10 @@ private:
                 }
                 catch (const Exception & e)
                 {
-                    // We don't need to handle the test hints in the interactive
-                    // mode.
-                    std::cerr << std::endl
-                              << "Exception on client:" << std::endl
-                              << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+                    /// We don't need to handle the test hints in the interactive mode.
 
-                    if (config().getBool("stacktrace", false))
-                        std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
-
-                    std::cerr << std::endl;
-
+                    bool print_stack_trace = config().getBool("stacktrace", false);
+                    std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
                     client_exception = std::make_unique<Exception>(e);
                 }
 
@@ -1007,18 +983,11 @@ private:
     {
         if (server_exception)
         {
-            std::string text = server_exception->displayText();
-            auto embedded_stack_trace_pos = text.find("Stack trace");
-            if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
-            {
-                text.resize(embedded_stack_trace_pos);
-            }
+            bool print_stack_trace = config().getBool("stacktrace", false);
             std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-                      << "Code: " << server_exception->code() << ". " << text << std::endl;
+                << getExceptionMessage(*server_exception, print_stack_trace, true) << std::endl;
             if (is_interactive)
-            {
                 std::cerr << std::endl;
-            }
         }
 
         if (client_exception)
@@ -1477,8 +1446,7 @@ private:
                 {
                     // Just report it, we'll terminate below.
                     fmt::print(stderr,
-                        "Error while reconnecting to the server: Code: {}: {}\n",
-                        getCurrentExceptionCode(),
+                        "Error while reconnecting to the server: {}\n",
                         getCurrentExceptionMessage(true));
 
                     assert(!connection->isConnected());
@@ -2664,8 +2632,7 @@ public:
             }
             catch (const Exception & e)
             {
-                std::string text = e.displayText();
-                std::cerr << "Code: " << e.code() << ". " << text << std::endl;
+                std::cerr << getExceptionMessage(e, false) << std::endl;
                 std::cerr << "Table №" << i << std::endl << std::endl;
                 /// Avoid the case when error exit code can possibly overflow to normal (zero).
                 auto exit_code = e.code() % 256;
@@ -2810,8 +2777,7 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     }
     catch (const DB::Exception & e)
     {
-        std::string text = e.displayText();
-        std::cerr << "Code: " << e.code() << ". " << text << std::endl;
+        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         return 1;
     }
     catch (...)
