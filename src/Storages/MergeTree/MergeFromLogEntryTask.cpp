@@ -380,6 +380,7 @@ bool MergeFromLogEntryTask::commit()
 {
     part = merge_task->getFuture().get();
 
+    /// Task is not needed
     merge_task.reset();
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, transaction_ptr.get());

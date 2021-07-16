@@ -1568,7 +1568,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             do_fetch = true;
             break;
         case LogEntry::MERGE_PARTS:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
+            do_fetch = !tryExecuteMerge(entry);
+            break;
+            // throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
         case LogEntry::MUTATE_PART:
             /// Sometimes it's better to fetch mutated part instead of merging.
             do_fetch = !tryExecutePartMutation(entry);
@@ -1586,7 +1588,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     }
 
     if (do_fetch)
-        executeFetch(entry);
+        return executeFetch(entry);
 
     return true;
 }
@@ -3220,8 +3222,17 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecuto
     }
     else if (job_type == LogEntry::MERGE_PARTS)
     {
-        auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry->log_entry, *this);
-        executor.execute(task);
+        // auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry->log_entry, *this);
+        // executor.execute(task);
+        // return true;
+
+        /// Execute in common pool. For now it is MUTATE pool
+        executor.execute({[this, selected_entry] () mutable
+        {
+            auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry->log_entry, *this);
+            while (task->execute()) {}
+            return true;
+        }, PoolType::MUTATE});
         return true;
     }
     else
