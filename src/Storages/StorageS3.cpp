@@ -383,17 +383,18 @@ public:
     {
         const auto & columns = chunk.getColumns();
 
-        Block current_block_with_partition_by_expr = sample_block.cloneWithoutColumns();
-        current_block_with_partition_by_expr.setColumns(columns);
-        partition_by_expr->execute(current_block_with_partition_by_expr);
+        Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
+        block_with_partition_by_expr.setColumns(columns);
+        partition_by_expr->execute(block_with_partition_by_expr);
 
-        const auto * key_column = checkAndGetColumn<ColumnString>(current_block_with_partition_by_expr.getByName(partition_by_column_name).column.get());
+        const auto * key_column = checkAndGetColumn<ColumnString>(block_with_partition_by_expr.getByName(partition_by_column_name).column.get());
 
         std::unordered_map<String, size_t> sub_chunks_indices;
         IColumn::Selector selector;
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
             auto value = key_column->getDataAt(row);
+            validateParitionKey(value);
             auto [it, inserted] = sub_chunks_indices.emplace(value, sub_chunks_indices.size());
             selector.push_back(it->second);
         }
@@ -471,6 +472,26 @@ private:
         }
 
         return sinks[partition_id];
+    }
+
+    static void validateParitionKey(const StringRef & str)
+    {
+        if (str.size == 0)
+            throw DB::Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Illegal empty partition key");
+
+        static constexpr std::array<char, 8> valid_chars = {'/', '.', '!', '(', ')', '\'', '_', '-'};
+        for (const char * p = str.data; static_cast<size_t>(p - str.data) < str.size; ++p)
+        {
+            bool is_valid = isWordCharASCII(*p) || std::any_of(valid_chars.begin(), valid_chars.end(), [p](char v){ return v == *p; });
+            if (unlikely(!is_valid))
+            {
+                /// need to convert to uint32 because uint8 can't be passed to format due to "mixing character types is disallowed"
+                UInt32 invalid_char_byte = static_cast<UInt32>(static_cast<UInt8>(*p));
+                throw DB::Exception(
+                    ErrorCodes::CANNOT_PARSE_TEXT,
+                    "Illegal character '\\x{0:02x}' in partition key. Allowed symbols: [a-zA-Z0-9{1}]", invalid_char_byte, fmt::join(valid_chars, ""));
+            }
+        }
     }
 };
 
