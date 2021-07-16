@@ -12,6 +12,7 @@ void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
 void registerFunctionsMap(FunctionFactory &);
 void registerFunctionsBitmap(FunctionFactory &);
+void registerFunctionsBinaryRepr(FunctionFactory &);
 void registerFunctionsCoding(FunctionFactory &);
 void registerFunctionsComparison(FunctionFactory &);
 void registerFunctionsConditional(FunctionFactory &);
@@ -73,6 +74,7 @@ void registerFunctions()
 #if !defined(ARCADIA_BUILD)
     registerFunctionsBitmap(factory);
 #endif
+    registerFunctionsBinaryRepr(factory);
     registerFunctionsCoding(factory);
     registerFunctionsComparison(factory);
     registerFunctionsConditional(factory);
