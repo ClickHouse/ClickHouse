@@ -12,26 +12,26 @@ toc_title: 授权操作
 ## 授权操作语法 {#grant-privigele-syntax}
 
 ``` sql
-GRANT [BY REPLACE] [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+[REPLACE] GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
 ```
 
 -   `privilege` — 权限类型
 -   `role` — 用户角色
 -   `user` — 用户账号
 
-`BY REPLACE` 以当前sql里的新权限替代掉 `user` 或 `role`的旧权限。
+`REPLACE` 以当前sql里的新权限替代掉 `user` 或 `role`的旧权限。
 `WITH GRANT OPTION` 授予 `user` 或 `role`执行 `GRANT` 操作的权限。用户可将在自身权限范围内的权限进行授权
 
 ## 角色分配的语法 {#assign-role-syntax}
 
 ``` sql
-GRANT [BY REPLACE] [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+[REPLACE] GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
 ```
 
 -   `role` —  角色
 -   `user` —  用户
 
-`BY REPLACE` 以当前sql里的新role替代掉 `user` 或 `role`的旧role
+`REPLACE` 以当前sql里的新role替代掉 `user` 或 `role`的旧role
  `WITH ADMIN OPTION`  授予 `user` 或 `role` 执行[ADMIN OPTION](#admin-option-privilege) 的权限
 
 ## 用法 {#grant-usage}
