@@ -6,5 +6,5 @@ match_max 100000
 
 spawn bash -c "$env(CLICKHOUSE_CLIENT_BINARY) --no-warnings $env(CLICKHOUSE_CLIENT_OPT)"
 expect ":) "
-send -- "q\r"
+send -- "\4"
 expect eof
