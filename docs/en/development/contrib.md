@@ -79,6 +79,7 @@ SELECT library_name, license_type, license_path FROM system.licenses ORDER BY li
 | re2 | BSD 3-clause | /contrib/re2/LICENSE |
 | replxx | BSD 3-clause | /contrib/replxx/LICENSE.md |
 | rocksdb | BSD 3-clause | /contrib/rocksdb/LICENSE.leveldb |
+| s2geometry | Apache | /contrib/s2geometry/LICENSE |
 | sentry-native | MIT | /contrib/sentry-native/LICENSE |
 | simdjson | Apache | /contrib/simdjson/LICENSE |
 | snappy | Public Domain | /contrib/snappy/COPYING |

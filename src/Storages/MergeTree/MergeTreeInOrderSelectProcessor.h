@@ -8,28 +8,19 @@ namespace DB
 /// Used to read data from single part with select query in order of primary key.
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeInOrderSelectProcessor : public MergeTreeSelectProcessor
+class MergeTreeInOrderSelectProcessor final : public MergeTreeSelectProcessor
 {
 public:
-    MergeTreeInOrderSelectProcessor(
-        const MergeTreeData & storage,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeData::DataPartPtr & owned_data_part,
-        UInt64 max_block_size_rows,
-        size_t preferred_block_size_bytes,
-        size_t preferred_max_column_in_block_size_bytes,
-        Names required_columns_,
-        MarkRanges mark_ranges,
-        bool use_uncompressed_cache,
-        const PrewhereInfoPtr & prewhere_info,
-        ExpressionActionsSettings actions_settings,
-        bool check_columns,
-        const MergeTreeReaderSettings & reader_settings,
-        const Names & virt_column_names = {},
-        bool has_limit_below_one_block_ = false,
-        bool quiet = false);
+    template <typename... Args>
+    MergeTreeInOrderSelectProcessor(Args &&... args)
+        : MergeTreeSelectProcessor{std::forward<Args>(args)...}
+    {
+        LOG_DEBUG(log, "Reading {} ranges in order from part {}, approx. {} rows starting from {}",
+            all_mark_ranges.size(), data_part->name, total_rows,
+            data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
+    }
 
-        String getName() const override { return "MergeTreeInOrder"; }
+    String getName() const override { return "MergeTreeInOrder"; }
 
 private:
     bool getNewTask() override;
