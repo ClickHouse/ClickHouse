@@ -7,7 +7,7 @@ toc_title: MaterializeMySQL
 
 Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables.
 
-ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries.
+ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries. ClickHouse database created with MaterializeMySQL now contains all column comments from the MySQL database that materialized
 
 This feature is experimental.
 
@@ -81,6 +81,8 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 - If `_version` is not specified in the `SELECT` query, [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used. So only rows with `MAX(_version)` are selected.
 
 - If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not included into the result set.
+
+- The result includes columns comments from the MySQL database that materialized (if they exist).
 
 ### Index Conversion {#index-conversion}
 
