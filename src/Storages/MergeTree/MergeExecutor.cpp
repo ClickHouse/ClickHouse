@@ -24,24 +24,17 @@ MergeExecutor::~MergeExecutor()
 void MergeExecutor::schedule(BackgroundTaskPtr task)
 {
     const auto priority = task->getPriority();
-    pool.scheduleOrThrow([task]() {
+    pool.scheduleOrThrow([this, task]() {
         try
         {
-            // if (task->execute()) {
-            //     schedule(task);
-            // }
-
-            while (task->execute()) {}
-
+            if (task->execute()) {
+                schedule(task);
+            }
         } catch (...)
         {
             // no-op
         }
-
-
-
     }, priority);
-    // while (task->execute()) {}
 }
 
 }

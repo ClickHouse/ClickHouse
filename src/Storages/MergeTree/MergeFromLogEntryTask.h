@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 
 
@@ -15,7 +16,7 @@ class StorageReplicatedMergeTree;
 class MergeFromLogEntryTask : public BackgroundTask
 {
 public:
-    MergeFromLogEntryTask(ReplicatedMergeTreeLogEntry::Ptr entry_, StorageReplicatedMergeTree & storage_);
+    MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_);
 
     bool execute() override;
 
@@ -40,6 +41,10 @@ private:
     };
 
     State state{State::NEED_PREPARE};
+
+
+    /// This is important not to execute the same merge in parallel
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry;
     ReplicatedMergeTreeLogEntry::Ptr entry;
     StorageReplicatedMergeTree & storage;
     Poco::Logger * log;

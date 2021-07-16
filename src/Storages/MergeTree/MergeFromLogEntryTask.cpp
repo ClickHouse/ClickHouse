@@ -25,8 +25,8 @@ namespace ErrorCodes
 }
 
 
-MergeFromLogEntryTask::MergeFromLogEntryTask(ReplicatedMergeTreeLogEntry::Ptr entry_, StorageReplicatedMergeTree & storage_)
-    : BackgroundTask(0), entry(entry_), storage(storage_)
+MergeFromLogEntryTask::MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_)
+    : BackgroundTask(0), selected_entry(selected_entry_), entry(selected_entry->log_entry), storage(storage_)
 /// FIXME: Equal priority for all task.
 {
     log = storage.log;
