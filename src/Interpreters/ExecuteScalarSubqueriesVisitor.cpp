@@ -157,6 +157,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     if (data.only_analyze || !settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar)
         || !data.getContext()->hasQueryContext())
     {
+        /// subquery and ast can be the same object and ast will be moved.
+        /// Save these fields to avoid use after move.
         auto alias = subquery.alias;
         auto prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
 
