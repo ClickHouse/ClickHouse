@@ -545,14 +545,16 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             Int64 amount = total_memory_tracker.get();
             Int64 peak = total_memory_tracker.getPeak();
             Int64 new_amount = data.resident;
+            Int64 diff = new_amount = amount;
 
-            LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"),
-                "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
-                ReadableSize(amount),
-                ReadableSize(peak),
-                ReadableSize(new_amount),
-                ReadableSize(new_amount - amount)
-            );
+            if (diff)
+                LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"),
+                    "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
+                    ReadableSize(amount),
+                    ReadableSize(peak),
+                    ReadableSize(new_amount),
+                    ReadableSize(diff)
+                );
 
             total_memory_tracker.set(new_amount);
             CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
