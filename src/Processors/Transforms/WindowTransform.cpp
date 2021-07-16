@@ -1557,16 +1557,9 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         else
         {
             // Offset is inside the frame.
-            auto srcColumnPtr = transform->blockAt(target_row).input_columns[workspace.argument_column_indices[0]];
-            // If the original column type is Nullable(from DDL)
-            if(srcColumnPtr->getDataType() == TypeIndex::Nullable)
-            {
-                to.insertFrom(*srcColumnPtr, target_row.row);
-            }
-            else
-            {
-                assert_cast<ColumnNullable&>(to).insertFromNotNullable(*srcColumnPtr, target_row.row);
-            }
+            to.insertFrom(*transform->blockAt(target_row).input_columns[
+                    workspace.argument_column_indices[0]],
+                target_row.row);
         }
     }
 };
@@ -1589,7 +1582,7 @@ struct WindowFunctionNthValue final : public WindowFunction
                 "Function {} takes at least one argument", name_);
         }
 
-        if(argument_types.size() != 2)
+        if (argument_types.size() != 2)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function '{}' accepts 2 arguments, {} given",
@@ -1640,7 +1633,7 @@ struct WindowFunctionNthValue final : public WindowFunction
             // Offset is inside the frame.
             auto srcColumnPtr = transform->blockAt(target_row).input_columns[workspace.argument_column_indices[0]];
             // If the original column type is Nullable(from DDL)
-            if(srcColumnPtr->getDataType() == TypeIndex::Nullable)
+            if (srcColumnPtr->getDataType() == TypeIndex::Nullable)
             {
                 to.insertFrom(*srcColumnPtr, target_row.row);
             }
