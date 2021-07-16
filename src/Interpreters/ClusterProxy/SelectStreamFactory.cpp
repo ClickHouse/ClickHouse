@@ -27,7 +27,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ALL_REPLICAS_ARE_STALE;
 }
 
