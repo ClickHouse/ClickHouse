@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ALL_CONNECTION_TRIES_FAILED;
+}
+
 static ActionsDAGPtr getConvertingDAG(const Block & block, const Block & header)
 {
     /// Convert header structure to expected.
