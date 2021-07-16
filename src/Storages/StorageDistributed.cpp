@@ -1093,7 +1093,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
     if (!limit || limit > SSIZE_MAX)
     {
-        throw Exception("optimize_skip_unused_shards_limit out of range (0, {}]", ErrorCodes::ARGUMENT_OUT_OF_BOUND, SSIZE_MAX);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "optimize_skip_unused_shards_limit out of range (0, {}]", SSIZE_MAX);
     }
     // To interpret limit==0 as limit is reached
     ++limit;

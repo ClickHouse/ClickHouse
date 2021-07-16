@@ -1094,6 +1094,17 @@ writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian archi
     writePODBinary(x, buf);
 }
 
+template <typename T>
+inline std::enable_if_t<is_big_int_v<T>, void>
+writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
+{
+    for (size_t i = 0; i != std::size(x.items); ++i)
+    {
+        const auto & item = x.items[std::size(x.items) - i - 1];
+        writeBinaryBigEndian(item, buf);
+    }
+}
+
 struct PcgSerializer
 {
     static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)

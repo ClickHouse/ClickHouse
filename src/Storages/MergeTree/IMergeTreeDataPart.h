@@ -374,7 +374,7 @@ public:
 
     void loadProjections(bool require_columns_checksums, bool check_consistency);
 
-    /// Return set of metadat file names without checksums. For example,
+    /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 
