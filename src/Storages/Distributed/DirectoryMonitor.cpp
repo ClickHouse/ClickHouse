@@ -330,6 +330,13 @@ namespace
         CheckingCompressedReadBuffer checking_in(in);
         remote.writePrepared(checking_in);
     }
+
+    uint64_t doubleToUInt64(double d)
+    {
+        if (d >= std::numeric_limits<uint64_t>::max())
+            return std::numeric_limits<uint64_t>::max();
+        return static_cast<uint64_t>(d);
+    }
 }
 
 
@@ -431,9 +438,14 @@ void StorageDistributedDirectoryMonitor::run()
 
                 do_sleep = true;
                 ++status.error_count;
-                sleep_time = std::min(
-                    std::chrono::milliseconds{UInt64(default_sleep_time.count() * std::exp2(status.error_count))},
-                    max_sleep_time);
+
+                UInt64 q = doubleToUInt64(std::exp2(status.error_count));
+                std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
+                if (new_sleep_time.count() < 0)
+                    sleep_time = max_sleep_time;
+                else
+                    sleep_time = std::min(new_sleep_time, max_sleep_time);
+
                 tryLogCurrentException(getLoggerName().data());
                 status.last_exception = std::current_exception();
             }
