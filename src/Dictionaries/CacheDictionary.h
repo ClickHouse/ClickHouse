@@ -3,82 +3,93 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <map>
 #include <mutex>
 #include <shared_mutex>
 #include <utility>
-#include <variant>
 #include <vector>
-#include <common/logger_useful.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Common/ThreadPool.h>
-#include <Common/ConcurrentBoundedQueue.h>
+
 #include <pcg_random.hpp>
-#include <Common/ArenaWithFreeLists.h>
+
+#include <common/logger_useful.h>
+
+#include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
-#include <ext/bit_cast.h>
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-#include "DictionaryHelpers.h"
 
-namespace CurrentMetrics
-{
-    extern const Metric CacheDictionaryUpdateQueueBatches;
-    extern const Metric CacheDictionaryUpdateQueueKeys;
-}
-
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/ICacheDictionaryStorage.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryHelpers.h>
+#include <Dictionaries/CacheDictionaryUpdateQueue.h>
 
 namespace DB
 {
+/** CacheDictionary store keys in cache storage and can asynchronous and synchronous updates during keys fetch.
 
-namespace ErrorCodes
-{
-}
+    If keys are not found in storage during fetch, dictionary start update operation with update queue.
 
-/*
- *
- * This dictionary is stored in a cache that has a fixed number of cells.
- * These cells contain frequently used elements.
- * When searching for a dictionary, the cache is searched first and special heuristic is used:
- * while looking for the key, we take a look only at max_collision_length elements.
- * So, our cache is not perfect. It has errors like "the key is in cache, but the cache says that it does not".
- * And in this case we simply ask external source for the key which is faster.
- * You have to keep this logic in mind.
- * */
+    During update operation necessary keys are fetched from source and inserted into storage.
+
+    After that data from storage and source are aggregated and returned to the client.
+
+    Typical flow:
+
+    1. Client request data during for example getColumn function call.
+    2. CacheDictionary request data from storage and if all data is found in storage it returns result to client.
+    3. If some data is not in storage cache dictionary try to perform update.
+
+    If all keys are just expired and allow_read_expired_keys option is set dictionary starts asynchronous update and
+    return result to client.
+
+    If there are not found keys dictionary start synchronous update and wait for result.
+
+    4. After getting result from synchronous update dictionary aggregates data that was previously fetched from
+    storage and data that was fetched during update and return result to client.
+ */
+template <DictionaryKeyType dictionary_key_type>
 class CacheDictionary final : public IDictionary
 {
 public:
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
+    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by cache dictionary");
+
     CacheDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
+        CacheDictionaryStoragePtr cache_storage_ptr_,
+        CacheDictionaryUpdateQueueConfiguration update_queue_configuration_,
         DictionaryLifetime dict_lifetime_,
-        size_t strict_max_lifetime_seconds,
-        size_t size_,
-        bool allow_read_expired_keys_,
-        size_t max_update_queue_size_,
-        size_t update_queue_push_timeout_milliseconds_,
-        size_t query_wait_timeout_milliseconds,
-        size_t max_threads_for_updates);
+        bool allow_read_expired_keys_);
 
     ~CacheDictionary() override;
 
-    std::string getTypeName() const override { return "Cache"; }
+    std::string getTypeName() const override { return cache_storage_ptr->getName(); }
+
+    size_t getElementCount() const override;
 
     size_t getBytesAllocated() const override;
 
+    double getLoadFactor() const override;
+
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
 
     double getHitRate() const override
     {
-        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / queries;
     }
-
-    size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
-
-    double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size; }
 
     bool supportUpdates() const override { return false; }
 
@@ -88,14 +99,10 @@ public:
                 getDictionaryID(),
                 dict_struct,
                 getSourceAndUpdateIfNeeded()->clone(),
+                cache_storage_ptr,
+                update_queue.getConfiguration(),
                 dict_lifetime,
-                strict_max_lifetime_seconds,
-                size,
-                allow_read_expired_keys,
-                max_update_queue_size,
-                update_queue_push_timeout_milliseconds,
-                query_wait_timeout_milliseconds,
-                max_threads_for_updates);
+                allow_read_expired_keys);
     }
 
     const IDictionarySource * getSource() const override;
@@ -106,133 +113,61 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
+        return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    bool hasHierarchy() const override { return hierarchical_attribute; }
-
-    void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
-
-    void isInVectorVector(
-        const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
-    void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
-    void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
-
-    std::exception_ptr getLastException() const override;
-
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
+    DictionaryKeyType getKeyType() const override
+    {
+        return dictionary_key_type == DictionaryKeyType::simple ? DictionaryKeyType::simple : DictionaryKeyType::complex;
+    }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_values_column) const override;
+        const ColumnPtr & default_values_column) const override;
+
+    Columns getColumns(
+        const Strings & attribute_names,
+        const DataTypes & result_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const Columns & default_values_columns) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
-
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
+    std::exception_ptr getLastException() const override;
+
+    bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::simple && dict_struct.hierarchical_attribute_index.has_value(); }
+
+    ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & key_type) const override;
+
+    ColumnUInt8::Ptr isInHierarchy(
+        ColumnPtr key_column,
+        ColumnPtr in_key_column,
+        const DataTypePtr & key_type) const override;
+
 private:
-    template <typename Value>
-    using ContainerType = Value[];
-    template <typename Value>
-    using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
+    using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
 
-    using time_point_t = std::chrono::system_clock::time_point;
+    static MutableColumns aggregateColumnsInOrderOfKeys(
+        const PaddedPODArray<KeyType> & keys,
+        const DictionaryStorageFetchRequest & request,
+        const MutableColumns & fetched_columns,
+        const PaddedPODArray<KeyState> & key_index_to_state);
 
-    struct CellMetadata final
-    {
-        UInt64 id;
-        time_point_t deadline;
-        bool is_default{false};
+    static MutableColumns aggregateColumns(
+        const PaddedPODArray<KeyType> & keys,
+        const DictionaryStorageFetchRequest & request,
+        const MutableColumns & fetched_columns_from_storage,
+        const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
+        const MutableColumns & fetched_columns_during_update,
+        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index);
 
-        time_point_t expiresAt() const { return deadline; }
-        void setExpiresAt(const time_point_t & t) { deadline = t; is_default = false; }
-        bool isDefault() const { return is_default; }
-        void setDefault() { is_default = true; }
-    };
-
-    using AttributeValue = std::variant<
-        UInt8, UInt16, UInt32, UInt64, UInt128,
-        Int8, Int16, Int32, Int64,
-        Decimal32, Decimal64, Decimal128,
-        Float32, Float64, String>;
-
-    struct AttributeValuesForKey
-    {
-        bool found{false};
-        std::vector<AttributeValue> values;
-
-        std::string dump();
-    };
-
-    using FoundValuesForKeys = std::unordered_map<Key, AttributeValuesForKey>;
-
-    struct Attribute final
-    {
-        AttributeUnderlyingType type;
-        String name;
-        /// Default value for each type. Could be defined in config.
-        AttributeValue null_value;
-        /// We store attribute value for all keys. It is a "row" in a hand-made open addressing hashtable,
-        /// where "column" is key.
-        std::variant<
-            ContainerPtrType<UInt8>,
-            ContainerPtrType<UInt16>,
-            ContainerPtrType<UInt32>,
-            ContainerPtrType<UInt64>,
-            ContainerPtrType<UInt128>,
-            ContainerPtrType<Int8>,
-            ContainerPtrType<Int16>,
-            ContainerPtrType<Int32>,
-            ContainerPtrType<Int64>,
-            ContainerPtrType<Decimal32>,
-            ContainerPtrType<Decimal64>,
-            ContainerPtrType<Decimal128>,
-            ContainerPtrType<Float32>,
-            ContainerPtrType<Float64>,
-            ContainerPtrType<StringRef>>
-            arrays;
-    };
-
-    void createAttributes();
-
-    /* NOLINTNEXTLINE(readability-convert-member-functions-to-static) */
-    Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value);
-
-    template <typename AttributeType, typename OutputType, typename DefaultValueExtractor>
-    void getItemsNumberImpl(
-        Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        ResultArrayType<OutputType> & out,
-        DefaultValueExtractor & default_value_extractor) const;
-
-    void getItemsString(
-        Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        ColumnString * out,
-        DictionaryDefaultValueExtractor<String> & default_value_extractor) const;
-
-    PaddedPODArray<Key> getCachedIds() const;
-
-    bool isEmptyCell(const UInt64 idx) const;
-
-    size_t getCellIdx(const Key id) const;
-
-    void setDefaultAttributeValue(Attribute & attribute, const Key idx) const;
-
-    void setAttributeValue(Attribute & attribute, const Key idx, const Field & value) const;
-
-    static std::vector<AttributeValue> getAttributeValuesFromBlockAtPosition(const std::vector<const IColumn *> & column_ptrs, size_t position);
-
-    Attribute & getAttribute(const std::string & attribute_name) const;
-    size_t getAttributeIndex(const std::string & attribute_name) const;
-
-    using SharedDictionarySourcePtr = std::shared_ptr<IDictionarySource>;
+    void update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit_ptr);
 
     /// Update dictionary source pointer if required and return it. Thread safe.
     /// MultiVersion is not used here because it works with constant pointers.
@@ -252,160 +187,39 @@ private:
         return source_ptr;
     }
 
-    inline void setLifetime(CellMetadata & cell, time_point_t now)
-    {
-        if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-        {
-            std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-            cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
-        }
-        else
-        {
-            /// This maybe not obvious, but when we define is this cell is expired or expired permanently, we add strict_max_lifetime_seconds
-            /// to the expiration time. And it overflows pretty well.
-            cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max() - 2 * std::chrono::seconds(strict_max_lifetime_seconds));
-        }
-    }
-
-    inline bool isExpired(time_point_t now, time_point_t deadline) const
-    {
-        return now > deadline;
-    }
-
-    inline bool isExpiredPermanently(time_point_t now, time_point_t deadline) const
-    {
-        return now > deadline + std::chrono::seconds(strict_max_lifetime_seconds);
-    }
-
-    enum class ResultState
-    {
-        NotFound,
-        FoundAndValid,
-        FoundButExpired,
-        /// Here is a gap between there two states in which a key could be read
-        /// with an enabled setting in config enable_read_expired_keys.
-        FoundButExpiredPermanently
-    };
-
-    using FindResult = std::pair<size_t, ResultState>;
-
-    FindResult findCellIdxForGet(const Key & id, const time_point_t now) const;
-
-    size_t findCellIdxForSet(const Key & id) const;
-
-    template <typename AncestorType>
-    void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
-
     const DictionaryStructure dict_struct;
 
     /// Dictionary source should be used with mutex
     mutable std::mutex source_mutex;
     mutable SharedDictionarySourcePtr source_ptr;
 
+    CacheDictionaryStoragePtr cache_storage_ptr;
+    mutable CacheDictionaryUpdateQueue<dictionary_key_type> update_queue;
+
     const DictionaryLifetime dict_lifetime;
-    const size_t strict_max_lifetime_seconds;
-    const bool allow_read_expired_keys;
-    const size_t max_update_queue_size;
-    const size_t update_queue_push_timeout_milliseconds;
-    const size_t query_wait_timeout_milliseconds;
-    const size_t max_threads_for_updates;
 
     Poco::Logger * log;
+
+    const bool allow_read_expired_keys;
+
+    mutable pcg64 rnd_engine;
 
     /// This lock is used for the inner cache state update function lock it for
     /// write, when it need to update cache state all other functions just
     /// readers. Surprisingly this lock is also used for last_exception pointer.
     mutable std::shared_mutex rw_lock;
 
-    /// Actual size will be increased to match power of 2
-    const size_t size;
-
-    /// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
-    const size_t size_overlap_mask;
-
-    /// Max tries to find cell, overlapped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
-    static constexpr size_t max_collision_length = 10;
-
-    const size_t zero_cell_idx{getCellIdx(0)};
-    std::map<std::string, size_t> attribute_index_by_name;
-    mutable std::vector<Attribute> attributes;
-    mutable std::vector<CellMetadata> cells;
-    Attribute * hierarchical_attribute = nullptr;
-    std::unique_ptr<ArenaWithFreeLists> string_arena;
-
     mutable std::exception_ptr last_exception;
-    mutable std::atomic<size_t> error_count{0};
+    mutable std::atomic<size_t> error_count {0};
     mutable std::atomic<std::chrono::system_clock::time_point> backoff_end_time{std::chrono::system_clock::time_point{}};
 
-    mutable pcg64 rnd_engine;
-
-    mutable size_t bytes_allocated = 0;
-    mutable std::atomic<size_t> element_count{0};
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 
-    /*
-     * How the update goes: we basically have a method like get(keys)->values. Values are cached, so sometimes we
-     * can return them from the cache. For values not in cache, we query them from the source, and add to the
-     * cache. The cache is lossy, so we can't expect it to store all the keys, and we store them separately.
-     * So, there is a map of found keys to all its attributes.
-     */
-    struct UpdateUnit
-    {
-        explicit UpdateUnit(std::vector<Key> && requested_ids_) :
-                requested_ids(std::move(requested_ids_)),
-                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size())
-        {
-            found_ids.reserve(requested_ids.size());
-            for (const auto id : requested_ids)
-                found_ids.insert({id, {}});
-        }
-
-        std::vector<Key> requested_ids;
-        FoundValuesForKeys found_ids;
-
-        std::atomic<bool> is_done{false};
-        std::exception_ptr current_exception{nullptr};
-
-        /// While UpdateUnit is alive, it is accounted in update_queue size.
-        CurrentMetrics::Increment alive_batch{CurrentMetrics::CacheDictionaryUpdateQueueBatches};
-        CurrentMetrics::Increment alive_keys;
-
-        std::string dumpFoundIds();
-    };
-
-    using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
-    using UpdateQueue = ConcurrentBoundedQueue<UpdateUnitPtr>;
-
-    mutable UpdateQueue update_queue;
-
-    ThreadPool update_pool;
-
-    /*
-     *  Actually, we can divide all requested keys into two 'buckets'. There are only four possible states and they
-     * are described in the table.
-     *
-     * cache_not_found_ids  |0|0|1|1|
-     * cache_expired_ids    |0|1|0|1|
-     *
-     * 0 - if set is empty, 1 - otherwise
-     *
-     * Only if there are no cache_not_found_ids and some cache_expired_ids
-     * (with allow_read_expired_keys setting) we can perform async update.
-     * Otherwise we have no concatenate ids and update them sync.
-     *
-     */
-    void updateThreadFunction();
-    void update(UpdateUnitPtr & update_unit_ptr);
-
-
-    void tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const;
-    void waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr) const;
-
-    mutable std::mutex update_mutex;
-    mutable std::condition_variable is_update_finished;
-
-    std::atomic<bool> finished{false};
 };
+
+extern template class CacheDictionary<DictionaryKeyType::simple>;
+extern template class CacheDictionary<DictionaryKeyType::complex>;
 
 }

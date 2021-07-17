@@ -46,4 +46,3 @@ attribute.names:  []
 attribute.values: []
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/opentelemetry_span_log) <!--hide-->

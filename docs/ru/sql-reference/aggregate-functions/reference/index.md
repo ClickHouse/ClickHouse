@@ -1,5 +1,5 @@
 ---
-toc_folder_title: "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a"
+toc_folder_title: "Справочник"
 toc_priority: 36
 toc_hidden: true
 ---
@@ -65,4 +65,3 @@ toc_hidden: true
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference) <!--hide-->

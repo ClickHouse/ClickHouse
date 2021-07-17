@@ -3,7 +3,7 @@
 #include <Access/EnabledSettings.h>
 #include <Core/UUID.h>
 #include <common/types.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <map>
 #include <unordered_map>
 
@@ -46,7 +46,7 @@ private:
     std::unordered_map<UUID, SettingsProfilePtr> all_profiles;
     std::unordered_map<String, UUID> profiles_by_name;
     bool all_profiles_read = false;
-    ext::scope_guard subscription;
+    scope_guard subscription;
     std::map<EnabledSettings::Params, std::weak_ptr<EnabledSettings>> enabled_settings;
     std::optional<UUID> default_profile_id;
     std::unordered_map<UUID, std::shared_ptr<const SettingsChanges>> settings_for_profiles;

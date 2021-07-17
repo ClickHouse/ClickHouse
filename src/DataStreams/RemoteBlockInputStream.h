@@ -25,21 +25,21 @@ public:
     /// Takes already set connection.
     RemoteBlockInputStream(
             Connection & connection,
-            const String & query_, const Block & header_, const Context & context_,
+            const String & query_, const Block & header_, ContextPtr context_,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Accepts several connections already taken from pool.
     RemoteBlockInputStream(
             std::vector<IConnectionPool::Entry> && connections,
-            const String & query_, const Block & header_, const Context & context_,
+            const String & query_, const Block & header_, ContextPtr context_,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteBlockInputStream(
             const ConnectionPoolWithFailoverPtr & pool,
-            const String & query_, const Block & header_, const Context & context_,
+            const String & query_, const Block & header_, ContextPtr context_,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 

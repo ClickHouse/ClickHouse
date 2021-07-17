@@ -19,9 +19,12 @@ public:
     TimezoneMixin(const TimezoneMixin &) = default;
 
     const DateLUTImpl & getTimeZone() const { return time_zone; }
+    bool hasExplicitTimeZone() const { return has_explicit_time_zone; }
 
 protected:
+    /// true if time zone name was provided in data type parameters, false if it's using default time zone.
     bool has_explicit_time_zone;
+
     const DateLUTImpl & time_zone;
     const DateLUTImpl & utc_time_zone;
 };
@@ -58,21 +61,12 @@ public:
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
 
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-
     bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
+
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 }

@@ -8,6 +8,7 @@
 
 #include <deque>
 
+
 namespace DB
 {
 
@@ -110,7 +111,9 @@ public:
     Status prepare() override;
     void work() override;
 
-private:
+    /*
+     * Implementation details.
+     */
     void advancePartitionEnd();
 
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
@@ -136,7 +139,9 @@ private:
     }
 
     const Columns & inputAt(const RowNumber & x) const
-    { return const_cast<WindowTransform *>(this)->inputAt(x); }
+    {
+        return const_cast<WindowTransform *>(this)->inputAt(x);
+    }
 
     auto & blockAt(const uint64_t block_number)
     {
@@ -146,13 +151,19 @@ private:
     }
 
     const auto & blockAt(const uint64_t block_number) const
-    { return const_cast<WindowTransform *>(this)->blockAt(block_number); }
+    {
+        return const_cast<WindowTransform *>(this)->blockAt(block_number);
+    }
 
     auto & blockAt(const RowNumber & x)
-    { return blockAt(x.block); }
+    {
+        return blockAt(x.block);
+    }
 
     const auto & blockAt(const RowNumber & x) const
-    { return const_cast<WindowTransform *>(this)->blockAt(x); }
+    {
+        return const_cast<WindowTransform *>(this)->blockAt(x);
+    }
 
     size_t blockRowsNumber(const RowNumber & x) const
     {
@@ -222,10 +233,14 @@ private:
     }
 
     RowNumber blocksEnd() const
-    { return RowNumber{first_block_number + blocks.size(), 0}; }
+    {
+        return RowNumber{first_block_number + blocks.size(), 0};
+    }
 
     RowNumber blocksBegin() const
-    { return RowNumber{first_block_number, 0}; }
+    {
+        return RowNumber{first_block_number, 0};
+    }
 
 public:
     /*
@@ -321,10 +336,7 @@ public:
     int (* compare_values_with_offset) (
         const IColumn * compared_column, size_t compared_row,
         const IColumn * reference_column, size_t reference_row,
-        // We can make it a Field later if we need the Decimals. Now we only
-        // have ints and datetime, and the underlying Field type for them is
-        // uint64_t anyway.
-        uint64_t offset,
+        const Field & offset,
         bool offset_is_preceding);
 };
 

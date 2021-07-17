@@ -13,6 +13,7 @@ namespace ErrorCodes
     extern const int MISMATCH_REPLICAS_DATA_SOURCES;
     extern const int NO_AVAILABLE_REPLICA;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
 
@@ -155,10 +156,19 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
     }
 }
 
+
+void MultiplexedConnections::sendReadTaskResponse(const String & response)
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+    current_connection->sendReadTaskResponse(response);
+}
+
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    Packet packet = receivePacketUnlocked();
+    Packet packet = receivePacketUnlocked({});
     return packet;
 }
 
@@ -206,10 +216,11 @@ Packet MultiplexedConnections::drain()
 
     while (hasActiveConnections())
     {
-        Packet packet = receivePacketUnlocked();
+        Packet packet = receivePacketUnlocked({});
 
         switch (packet.type)
         {
+            case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
             case Protocol::Server::Progress:
@@ -253,7 +264,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return buf.str();
 }
 
-Packet MultiplexedConnections::receivePacketUnlocked(std::function<void(Poco::Net::Socket &)> async_callback)
+Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
     if (!sent_query)
         throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
@@ -265,10 +276,30 @@ Packet MultiplexedConnections::receivePacketUnlocked(std::function<void(Poco::Ne
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    Packet packet = current_connection->receivePacket(std::move(async_callback));
+    Packet packet;
+    {
+        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+
+        try
+        {
+            packet = current_connection->receivePacket();
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
+            {
+                /// Exception may happen when packet is received, e.g. when got unknown packet.
+                /// In this case, invalidate replica, so that we would not read from it anymore.
+                current_connection->disconnect();
+                invalidateReplica(state);
+            }
+            throw;
+        }
+    }
 
     switch (packet.type)
     {
+        case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:
         case Protocol::Server::Progress:

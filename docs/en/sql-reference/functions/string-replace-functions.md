@@ -92,4 +92,3 @@ Predefined characters: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, 
 This implementation slightly differs from re2::RE2::QuoteMeta. It escapes zero byte as `\0` instead of `\x00` and it escapes only required characters.
 For more information, see the link: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_replace_functions/) <!--hide-->

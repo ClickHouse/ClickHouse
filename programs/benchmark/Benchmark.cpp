@@ -8,7 +8,6 @@
 #include <iomanip>
 #include <random>
 #include <pcg_random.hpp>
-#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -36,7 +35,10 @@
 #include <Common/Config/configReadClient.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
+#include <filesystem>
 
+
+namespace fs = std::filesystem;
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
@@ -95,8 +97,8 @@ public:
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
 
-        global_context.makeGlobalContext();
-        global_context.setSettings(settings);
+        global_context->makeGlobalContext();
+        global_context->setSettings(settings);
 
         std::cerr << std::fixed << std::setprecision(3);
 
@@ -119,8 +121,8 @@ public:
 
     int main(const std::vector<std::string> &) override
     {
-        if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
-            Poco::File(json_path).remove();
+        if (!json_path.empty() && fs::exists(json_path)) /// Clear file with previous results
+            fs::remove(json_path);
 
         readQueries();
         runBenchmark();
@@ -159,7 +161,7 @@ private:
     bool print_stacktrace;
     const Settings & settings;
     SharedContextHolder shared_context;
-    Context global_context;
+    ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
     /// Don't execute new queries after timelimit or SIGINT or exception
@@ -579,7 +581,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query",      value<std::string>()->default_value(""),             "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
-            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
+            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")

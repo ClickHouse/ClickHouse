@@ -14,7 +14,7 @@ groupBitOr(expr)
 
 `expr` – An expression that results in `UInt*` type.
 
-**Return value**
+**Returned value**
 
 Value of the `UInt*` type.
 

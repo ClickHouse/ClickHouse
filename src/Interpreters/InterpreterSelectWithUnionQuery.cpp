@@ -6,11 +6,13 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -24,112 +26,10 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
-    extern const int EXPECTED_ALL_OR_DISTINCT;
 }
 
-struct CustomizeASTSelectWithUnionQueryNormalize
-{
-    using TypeToVisit = ASTSelectWithUnionQuery;
-
-    const UnionMode & union_default_mode;
-
-    static void getSelectsFromUnionListNode(ASTPtr & ast_select, ASTs & selects)
-    {
-        if (auto * inner_union = ast_select->as<ASTSelectWithUnionQuery>())
-        {
-            for (auto & child : inner_union->list_of_selects->children)
-                getSelectsFromUnionListNode(child, selects);
-
-            return;
-        }
-
-        selects.push_back(std::move(ast_select));
-    }
-
-    void visit(ASTSelectWithUnionQuery & ast, ASTPtr &) const
-    {
-        auto & union_modes = ast.list_of_modes;
-        ASTs selects;
-        auto & select_list = ast.list_of_selects->children;
-
-        int i;
-        for (i = union_modes.size() - 1; i >= 0; --i)
-        {
-            /// Rewrite UNION Mode
-            if (union_modes[i] == ASTSelectWithUnionQuery::Mode::Unspecified)
-            {
-                if (union_default_mode == UnionMode::ALL)
-                    union_modes[i] = ASTSelectWithUnionQuery::Mode::ALL;
-                else if (union_default_mode == UnionMode::DISTINCT)
-                    union_modes[i] = ASTSelectWithUnionQuery::Mode::DISTINCT;
-                else
-                    throw Exception(
-                        "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty",
-                        DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
-            }
-
-            if (union_modes[i] == ASTSelectWithUnionQuery::Mode::ALL)
-            {
-                if (auto * inner_union = select_list[i + 1]->as<ASTSelectWithUnionQuery>())
-                {
-                    /// Inner_union is an UNION ALL list, just lift up
-                    for (auto child = inner_union->list_of_selects->children.rbegin();
-                         child != inner_union->list_of_selects->children.rend();
-                         ++child)
-                        selects.push_back(std::move(*child));
-                }
-                else
-                    selects.push_back(std::move(select_list[i + 1]));
-            }
-            /// flatten all left nodes and current node to a UNION DISTINCT list
-            else if (union_modes[i] == ASTSelectWithUnionQuery::Mode::DISTINCT)
-            {
-                auto distinct_list = std::make_shared<ASTSelectWithUnionQuery>();
-                distinct_list->list_of_selects = std::make_shared<ASTExpressionList>();
-                distinct_list->children.push_back(distinct_list->list_of_selects);
-
-                for (int j = 0; j <= i + 1; ++j)
-                {
-                    getSelectsFromUnionListNode(select_list[j], distinct_list->list_of_selects->children);
-                }
-
-                distinct_list->union_mode = ASTSelectWithUnionQuery::Mode::DISTINCT;
-                distinct_list->is_normalized = true;
-                selects.push_back(std::move(distinct_list));
-                break;
-            }
-        }
-
-        /// No UNION DISTINCT or only one child in select_list
-        if (i == -1)
-        {
-            if (auto * inner_union = select_list[0]->as<ASTSelectWithUnionQuery>())
-            {
-                /// Inner_union is an UNION ALL list, just lift it up
-                for (auto child = inner_union->list_of_selects->children.rbegin(); child != inner_union->list_of_selects->children.rend();
-                     ++child)
-                    selects.push_back(std::move(*child));
-            }
-            else
-                selects.push_back(std::move(select_list[0]));
-        }
-
-        // reverse children list
-        std::reverse(selects.begin(), selects.end());
-
-        ast.is_normalized = true;
-        ast.union_mode = ASTSelectWithUnionQuery::Mode::ALL;
-
-        ast.list_of_selects->children = std::move(selects);
-    }
-};
-
-/// We need normalize children first, so we should visit AST tree bottom up
-using CustomizeASTSelectWithUnionQueryNormalizeVisitor
-    = InDepthNodeVisitor<OneTypeMatcher<CustomizeASTSelectWithUnionQueryNormalize>, false>;
-
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-    const ASTPtr & query_ptr_, const Context & context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
+    const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
@@ -137,21 +37,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const Settings & settings = context->getSettingsRef();
     if (options.subquery_depth == 0 && (settings.limit > 0 || settings.offset > 0))
         settings_limit_offset_needed = true;
-
-    /// Normalize AST Tree
-    if (!ast->is_normalized)
-    {
-        CustomizeASTSelectWithUnionQueryNormalizeVisitor::Data union_default_mode{settings.union_default_mode};
-        CustomizeASTSelectWithUnionQueryNormalizeVisitor(union_default_mode).visit(query_ptr);
-
-        /// After normalization, if it only has one ASTSelectWithUnionQuery child,
-        /// we can lift it up, this can reduce one unnecessary recursion later.
-        if (ast->list_of_selects->children.size() == 1 && ast->list_of_selects->children.at(0)->as<ASTSelectWithUnionQuery>())
-        {
-            query_ptr = std::move(ast->list_of_selects->children.at(0));
-            ast = query_ptr->as<ASTSelectWithUnionQuery>();
-        }
-    }
 
     size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
@@ -312,26 +197,26 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
 Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return InterpreterSelectWithUnionQuery(ast_ptr_, *context, options.copy().analyze().noModify(), required_result_column_names)
+        return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
             .getSampleBlock();
     else
-        return InterpreterSelectQuery(ast_ptr_, *context, options.copy().analyze().noModify()).getSampleBlock();
+        return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, *context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
     else
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, *context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
 
-Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, const Context & context_, bool is_subquery)
+Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, ContextPtr context_, bool is_subquery)
 {
-    auto & cache = context_.getSampleBlockCache();
+    auto & cache = context_->getSampleBlockCache();
     /// Using query string because query_ptr changes for every internal SELECT
     auto key = queryToString(query_ptr_);
     if (cache.find(key) != cache.end())
@@ -367,11 +252,23 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         {
             plans[i] = std::make_unique<QueryPlan>();
             nested_interpreters[i]->buildQueryPlan(*plans[i]);
+
+            if (!blocksHaveEqualStructure(plans[i]->getCurrentDataStream().header, result_header))
+            {
+                auto actions_dag = ActionsDAG::makeConvertingActions(
+                        plans[i]->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                        result_header.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Position);
+                auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentDataStream(), std::move(actions_dag));
+                converting_step->setStepDescription("Conversion before UNION");
+                plans[i]->addStep(std::move(converting_step));
+            }
+
             data_streams[i] = plans[i]->getCurrentDataStream();
         }
 
         auto max_threads = context->getSettingsRef().max_threads;
-        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
+        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), max_threads);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
@@ -413,7 +310,9 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto pipeline = query_plan.buildQueryPipeline();
+    auto pipeline = query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 
     res.pipeline = std::move(*pipeline);
     res.pipeline.addInterpreterContext(context);

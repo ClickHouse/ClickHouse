@@ -1,6 +1,6 @@
 ---
 toc_priority: 45
-toc_title: "\u0412\u043d\u0435\u0448\u043d\u0438\u0435\u0020\u0434\u0430\u043d\u043d\u044b\u0435\u0020\u0434\u043b\u044f\u0020\u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0438\u0020\u0437\u0430\u043f\u0440\u043e\u0441\u0430"
+toc_title: "Внешние данные для обработки запроса"
 ---
 
 # Внешние данные для обработки запроса {#vneshnie-dannye-dlia-obrabotki-zaprosa}
@@ -65,4 +65,3 @@ $ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+coun
 
 При распределённой обработке запроса, временные таблицы передаются на все удалённые серверы.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/external_data/) <!--hide-->

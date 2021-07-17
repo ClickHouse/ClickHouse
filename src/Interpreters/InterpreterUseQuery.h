@@ -7,23 +7,17 @@
 namespace DB
 {
 
-class Context;
-
-
 /** Change default database for session.
   */
-class InterpreterUseQuery : public IInterpreter
+class InterpreterUseQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterUseQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_), context(context_) {}
+    InterpreterUseQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 
 private:
     ASTPtr query_ptr;
-    Context & context;
 };
-
 
 }

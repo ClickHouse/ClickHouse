@@ -55,7 +55,7 @@ CREATE TABLE encryption_test
     `comment` String,
     `secret` String
 )
-ENGINE = Memory
+ENGINE = Memory;
 ```
 
 Insert some data (please avoid storing the keys/ivs in the database as this undermines the whole concept of encryption), also storing 'hints' is unsafe too and used only for illustrative purposes:
@@ -110,7 +110,7 @@ Result:
 
 Compatible with mysql encryption and resulting ciphertext can be decrypted with [AES_DECRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-decrypt) function.
 
-Will produce same ciphertext as `encrypt` on equal inputs. But when `key` or `iv` are longer than they should normally be, `aes_encrypt_mysql` will stick to what MySQL's `aes_encrypt` does: 'fold' `key` and ignore excess bits of `IV`.
+Will produce the same ciphertext as `encrypt` on equal inputs. But when `key` or `iv` are longer than they should normally be, `aes_encrypt_mysql` will stick to what MySQL's `aes_encrypt` does: 'fold' `key` and ignore excess bits of `iv`.
 
 Supported encryption modes:
 
@@ -132,12 +132,11 @@ aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
 -   `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — Text that needs to be encrypted. [String](../../sql-reference/data-types/string.md#string).
 -   `key` — Encryption key. If key is longer than required by mode, MySQL-specific key folding is performed. [String](../../sql-reference/data-types/string.md#string).
--   `iv` — Initialization vector. Optinal, only first 16 bytes are taken into account [String](../../sql-reference/data-types/string.md#string).
+-   `iv` — Initialization vector. Optional, only first 16 bytes are taken into account [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
 - Ciphertext binary string. [String](../../sql-reference/data-types/string.md#string).
-
 
 **Examples**
 
@@ -156,7 +155,6 @@ Result:
 │                 1 │
 └───────────────────┘
 ```
-
 
 But `encrypt` fails when `key` or `iv` is longer than expected:
 
@@ -252,7 +250,7 @@ decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 
 **Examples**
 
-Re-using table from [encrypt](./encryption-functions.md#encrypt).
+Re-using table from [encrypt](#encrypt).
 
 Query:
 
@@ -284,6 +282,7 @@ SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920
 ```
 
 Result:
+
 ``` text
 ┌─comment─────────────────────────────┬─plaintext─┐
 │ aes-256-cfb128 no IV                │ Secret    │
@@ -294,7 +293,7 @@ Result:
 └─────────────────────────────────────┴───────────┘
 ```
 
-Notice how only portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
+Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
 
 ## aes_decrypt_mysql {#aes_decrypt_mysql}
 
@@ -331,6 +330,7 @@ aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 **Examples**
 
 Let's decrypt data we've previously encrypted with MySQL:
+
 ``` sql
 mysql> SET  block_encryption_mode='aes-256-cfb128';
 Query OK, 0 rows affected (0.00 sec)
@@ -345,11 +345,13 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 ```
 
 Query:
+
 ``` sql
 SELECT aes_decrypt_mysql('aes-256-cfb128', unhex('24E9E4966469'), '123456789101213141516171819202122', 'iviviviviviviviv123456') AS plaintext
 ```
 
 Result:
+
 ``` text
 ┌─plaintext─┐
 │ Secret    │

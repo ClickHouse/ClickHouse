@@ -18,4 +18,8 @@ You can also use the following database engines:
 
 -   [Lazy](../../engines/database-engines/lazy.md)
 
-[Original article](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->
+-   [Atomic](../../engines/database-engines/atomic.md)
+
+-   [PostgreSQL](../../engines/database-engines/postgresql.md)
+
+-   [Replicated](../../engines/database-engines/replicated.md)

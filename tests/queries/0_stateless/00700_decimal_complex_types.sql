@@ -58,35 +58,35 @@ SELECT has(a, toDecimal32(0.1, 3)), has(a, toDecimal32(1.0, 3)) FROM decimal;
 SELECT has(b, toDecimal64(0.4, 3)), has(b, toDecimal64(1.0, 3)) FROM decimal;
 SELECT has(c, toDecimal128(0.7, 3)), has(c, toDecimal128(1.0, 3)) FROM decimal;
 
-SELECT has(a, toDecimal32(0.1, 2)) FROM decimal; -- { serverError 43 }
-SELECT has(a, toDecimal32(0.1, 4)) FROM decimal; -- { serverError 43 }
-SELECT has(a, toDecimal64(0.1, 3)) FROM decimal; -- { serverError 43 }
-SELECT has(a, toDecimal128(0.1, 3)) FROM decimal; -- { serverError 43 }
-SELECT has(b, toDecimal32(0.4, 3)) FROM decimal; -- { serverError 43 }
-SELECT has(b, toDecimal64(0.4, 2)) FROM decimal; -- { serverError 43 }
-SELECT has(b, toDecimal64(0.4, 4)) FROM decimal; -- { serverError 43 }
-SELECT has(b, toDecimal128(0.4, 3)) FROM decimal; -- { serverError 43 }
-SELECT has(c, toDecimal32(0.7, 3)) FROM decimal; -- { serverError 43 }
-SELECT has(c, toDecimal64(0.7, 3)) FROM decimal; -- { serverError 43 }
-SELECT has(c, toDecimal128(0.7, 2)) FROM decimal; -- { serverError 43 }
-SELECT has(c, toDecimal128(0.7, 4)) FROM decimal; -- { serverError 43 }
+SELECT has(a, toDecimal32(0.1, 2)) FROM decimal;
+SELECT has(a, toDecimal32(0.1, 4)) FROM decimal;
+SELECT has(a, toDecimal64(0.1, 3)) FROM decimal;
+SELECT has(a, toDecimal128(0.1, 3)) FROM decimal;
+SELECT has(b, toDecimal32(0.4, 3)) FROM decimal;
+SELECT has(b, toDecimal64(0.4, 2)) FROM decimal;
+SELECT has(b, toDecimal64(0.4, 4)) FROM decimal;
+SELECT has(b, toDecimal128(0.4, 3)) FROM decimal;
+SELECT has(c, toDecimal32(0.7, 3)) FROM decimal;
+SELECT has(c, toDecimal64(0.7, 3)) FROM decimal;
+SELECT has(c, toDecimal128(0.7, 2)) FROM decimal;
+SELECT has(c, toDecimal128(0.7, 4)) FROM decimal;
 
 SELECT indexOf(a, toDecimal32(0.1, 3)), indexOf(a, toDecimal32(1.0, 3)) FROM decimal;
 SELECT indexOf(b, toDecimal64(0.5, 3)), indexOf(b, toDecimal64(1.0, 3)) FROM decimal;
 SELECT indexOf(c, toDecimal128(0.9, 3)), indexOf(c, toDecimal128(1.0, 3)) FROM decimal;
 
-SELECT indexOf(a, toDecimal32(0.1, 2)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(a, toDecimal32(0.1, 4)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(a, toDecimal64(0.1, 3)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(a, toDecimal128(0.1, 3)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(b, toDecimal32(0.4, 3)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(b, toDecimal64(0.4, 2)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(b, toDecimal64(0.4, 4)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(b, toDecimal128(0.4, 3)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(c, toDecimal32(0.7, 3)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(c, toDecimal64(0.7, 3)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(c, toDecimal128(0.7, 2)) FROM decimal; -- { serverError 43 }
-SELECT indexOf(c, toDecimal128(0.7, 4)) FROM decimal; -- { serverError 43 }
+SELECT indexOf(a, toDecimal32(0.1, 2)) FROM decimal;
+SELECT indexOf(a, toDecimal32(0.1, 4)) FROM decimal;
+SELECT indexOf(a, toDecimal64(0.1, 3)) FROM decimal;
+SELECT indexOf(a, toDecimal128(0.1, 3)) FROM decimal;
+SELECT indexOf(b, toDecimal32(0.4, 3)) FROM decimal;
+SELECT indexOf(b, toDecimal64(0.4, 2)) FROM decimal;
+SELECT indexOf(b, toDecimal64(0.4, 4)) FROM decimal;
+SELECT indexOf(b, toDecimal128(0.4, 3)) FROM decimal;
+SELECT indexOf(c, toDecimal32(0.7, 3)) FROM decimal;
+SELECT indexOf(c, toDecimal64(0.7, 3)) FROM decimal;
+SELECT indexOf(c, toDecimal128(0.7, 2)) FROM decimal;
+SELECT indexOf(c, toDecimal128(0.7, 4)) FROM decimal;
 
 SELECT arrayConcat(a, b) AS x, toTypeName(x) FROM decimal;
 SELECT arrayConcat(a, c) AS x, toTypeName(x) FROM decimal;

@@ -1,5 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#include <Common/config.h>
+#endif
+
+#if USE_AWS_S3
+
 #include <atomic> // for std::atomic<size_t>
 
 #include "ProxyConfiguration.h"
@@ -23,3 +29,5 @@ private:
 };
 
 }
+
+#endif

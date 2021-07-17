@@ -252,11 +252,11 @@ External sorting works much less effectively than sorting in RAM.
 
  If `ORDER BY` expression has a prefix that coincides with the table sorting key, you can optimize the query by using the [optimize_read_in_order](../../../operations/settings/settings.md#optimize_read_in_order) setting.  
  
- When the `optimize_read_in_order` setting is enabled, the Clickhouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](../../../sql-reference/statements/select/limit.md). So queries on big data with small limit are processed faster.
+ When the `optimize_read_in_order` setting is enabled, the ClickHouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](../../../sql-reference/statements/select/limit.md). So queries on big data with small limit are processed faster.
 
-Optimization works with both `ASC` and `DESC` and doesn't work together with [GROUP BY](../../../sql-reference/statements/select/group-by.md) clause and [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
+Optimization works with both `ASC` and `DESC` and does not work together with [GROUP BY](../../../sql-reference/statements/select/group-by.md) clause and [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
-When the `optimize_read_in_order` setting is disabled, the Clickhouse server does not use the table index while processing `SELECT` queries.
+When the `optimize_read_in_order` setting is disabled, the ClickHouse server does not use the table index while processing `SELECT` queries.
 
 Consider disabling `optimize_read_in_order` manually, when running queries that have `ORDER BY` clause, large `LIMIT` and [WHERE](../../../sql-reference/statements/select/where.md) condition that requires to read huge amount of records before queried data is found.
 
@@ -265,7 +265,7 @@ Optimization is supported in the following table engines:
 - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
 - [Merge](../../../engines/table-engines/special/merge.md), [Buffer](../../../engines/table-engines/special/buffer.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) table engines over `MergeTree`-engine tables
 
-In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query doesn't have the `ORDER BY` clause.
+In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query does not have the `ORDER BY` clause.
 
 ## ORDER BY Expr WITH FILL Modifier {#orderby-with-fill}
 
@@ -364,7 +364,7 @@ returns
 └────────────┴────────────┴──────────┘
 ```
 
-Field `d1` doesn’t fill and use default value cause we don’t have repeated values for `d2` value, and sequence for `d1` can’t be properly calculated.
+Field `d1` does not fill and use default value cause we do not have repeated values for `d2` value, and sequence for `d1` can’t be properly calculated.
 
 The following query with a changed field in `ORDER BY`
 
@@ -398,86 +398,6 @@ returns
 │ 1970-03-07 │ 1970-01-01 │          │
 │ 1970-03-12 │ 1970-01-08 │ original │
 └────────────┴────────────┴──────────┘
-```
-
-## OFFSET FETCH Clause {#offset-fetch}
-
-`OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.
-
-``` sql
-OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
-```
-
-The `offset_row_count` or `fetch_row_count` value can be a number or a literal constant. You can omit `fetch_row_count`; by default, it equals 1.
-
-`OFFSET` specifies the number of rows to skip before starting to return rows from the query.
-
-The `FETCH` specifies the maximum number of rows that can be in the result of a query.
-
-The `ONLY` option is used to return rows that immediately follow the rows omitted by the `OFFSET`. In this case the `FETCH` is an alternative to the [LIMIT](../../../sql-reference/statements/select/limit.md) clause. For example, the following query
-
-``` sql
-SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;
-```
-
-is identical to the query
-
-``` sql
-SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
-```
-
-The `WITH TIES` option is used to return any additional rows that tie for the last place in the result set according to the `ORDER BY` clause. For example, if `fetch_row_count` is set to 5 but two additional rows match the values of the `ORDER BY` columns in the fifth row, the result set will contain seven rows.
-
-!!! note "Note"
-    According to the standard, the `OFFSET` clause must come before the `FETCH` clause if both are present.
-	
-### Examples {#examples}
-
-Input table:
-
-``` text
-┌─a─┬─b─┐
-│ 1 │ 1 │
-│ 2 │ 1 │
-│ 3 │ 4 │
-│ 1 │ 3 │
-│ 5 │ 4 │
-│ 0 │ 6 │
-│ 5 │ 7 │
-└───┴───┘
-```
-
-Usage of the `ONLY` option:
-
-``` sql
-SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY;
-```
-
-Result:
-
-``` text
-┌─a─┬─b─┐
-│ 2 │ 1 │
-│ 3 │ 4 │
-│ 5 │ 4 │
-└───┴───┘
-```
-
-Usage of the `WITH TIES` option:
-
-``` sql
-SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
-```
-
-Result:
-
-``` text
-┌─a─┬─b─┐
-│ 2 │ 1 │
-│ 3 │ 4 │
-│ 5 │ 4 │
-│ 5 │ 7 │
-└───┴───┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/order-by/) <!--hide-->

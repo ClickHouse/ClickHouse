@@ -66,28 +66,27 @@ Result:
 
 -   [Map(key, value)](../../sql-reference/data-types/map.md) data type
 
-
 ## mapAdd {#function-mapadd}
 
 Collect all the keys and sum corresponding values.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
-mapAdd(Tuple(Array, Array), Tuple(Array, Array) [, ...])
+mapAdd(arg1, arg2 [, ...])
 ```
 
-**Arguments** 
+**Arguments**
 
-Arguments are [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [maps](../../sql-reference/data-types/map.md) or [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
--   Returns one [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
+-   Depending on the arguments returns one [map](../../sql-reference/data-types/map.md) or [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
 
 **Example**
 
-Query:
+Query with a tuple map:
 
 ``` sql
 SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTypeName(res) as type;
@@ -99,6 +98,11 @@ Result:
 ┌─res───────────┬─type───────────────────────────────┐
 │ ([1,2],[2,2]) │ Tuple(Array(UInt8), Array(UInt64)) │
 └───────────────┴────────────────────────────────────┘
+```
+
+Query with `Map` type:
+
+``` sql
 ```
 
 ## mapSubtract {#function-mapsubtract}
@@ -172,6 +176,135 @@ Result:
 ┌─res──────────────────────────┬─type──────────────────────────────┐
 │ ([1,2,3,4,5],[11,22,0,44,0]) │ Tuple(Array(UInt8), Array(UInt8)) │
 └──────────────────────────────┴───────────────────────────────────┘
+```
+
+## mapContains {#mapcontains}
+
+Determines  whether the `map` contains the `key` parameter.
+
+**Syntax**
+
+``` sql
+mapContains(map, key)
+```
+
+**Parameters** 
+
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).
+-   `key` — Key. Type matches the type of keys of `map` parameter.
+
+**Returned value**
+
+-   `1` if `map` contains `key`, `0` if not.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapContains(a, 'name') FROM test;
+
+```
+
+Result:
+
+```text
+┌─mapContains(a, 'name')─┐
+│                      1 │
+│                      0 │
+└────────────────────────┘
+```
+
+## mapKeys {#mapkeys}
+
+Returns all keys from the `map` parameter.
+
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [keys](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn instead of reading and processing the whole column data. The query `SELECT mapKeys(m) FROM table` transforms to `SELECT m.keys FROM table`.
+
+**Syntax**
+
+```sql
+mapKeys(map)
+```
+
+**Parameters**
+
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).
+
+**Returned value**
+
+-   Array containing all keys from the `map`.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapKeys(a) FROM test;
+```
+
+Result:
+
+```text
+┌─mapKeys(a)────────────┐
+│ ['name','age']        │
+│ ['number','position'] │
+└───────────────────────┘
+```
+
+## mapValues {#mapvalues}
+
+Returns all values from the `map` parameter.
+
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [values](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn instead of reading and processing the whole column data. The query `SELECT mapValues(m) FROM table` transforms to `SELECT m.values FROM table`.
+
+**Syntax**
+
+```sql
+mapKeys(map)
+```
+
+**Parameters**
+
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).
+
+**Returned value**
+
+-   Array containing all the values from `map`.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapValues(a) FROM test;
+```
+
+Result:
+
+```text
+┌─mapValues(a)─────┐
+│ ['eleven','11']  │
+│ ['twelve','6.0'] │
+└──────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->

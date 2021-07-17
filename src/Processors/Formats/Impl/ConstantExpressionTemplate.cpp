@@ -17,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -143,9 +144,9 @@ class ReplaceLiteralsVisitor
 {
 public:
     LiteralsInfo replaced_literals;
-    const Context & context;
+    ContextPtr context;
 
-    explicit ReplaceLiteralsVisitor(const Context & context_) : context(context_) { }
+    explicit ReplaceLiteralsVisitor(ContextPtr context_) : context(context_) { }
 
     void visit(ASTPtr & ast, bool force_nullable)
     {
@@ -208,6 +209,14 @@ private:
                 const Map & map = literal->value.get<Map>();
                 if (map.size() % 2)
                     return false;
+            }
+            else if (literal->value.getType() == Field::Types::Tuple)
+            {
+                const Tuple & tuple = literal->value.get<Tuple>();
+
+                for (const auto & value : tuple)
+                    if (value.isNull())
+                        return true;
             }
 
             String column_name = "_dummy_" + std::to_string(replaced_literals.size());
@@ -284,7 +293,7 @@ private:
 /// E.g. template of "position('some string', 'other string') != 0" is
 /// ["position", "(", DataTypeString, ",", DataTypeString, ")", "!=", DataTypeUInt64]
 ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
-                                                                 ASTPtr & expression, const IDataType & result_type, bool null_as_default_, const Context & context)
+                                                                 ASTPtr & expression, const IDataType & result_type, bool null_as_default_, ContextPtr context)
 {
     null_as_default = null_as_default_;
 
@@ -296,6 +305,7 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     /// Make sequence of tokens and determine IDataType by Field::Types:Which for each literal.
     token_after_literal_idx.reserve(replaced_literals.size());
     special_parser.resize(replaced_literals.size());
+    serializations.resize(replaced_literals.size());
 
     TokenIterator prev_end = expression_begin;
     for (size_t i = 0; i < replaced_literals.size(); ++i)
@@ -316,6 +326,8 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
         literals.insert({nullptr, info.type, info.dummy_column_name});
 
         prev_end = info.literal->end.value();
+
+        serializations[i] = info.type->getDefaultSerialization();
     }
 
     while (prev_end < expression_end)
@@ -351,7 +363,7 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     hash_state.update(salt);
 
     IAST::Hash res128;
-    hash_state.get128(res128.first, res128.second);
+    hash_state.get128(res128);
     size_t res = 0;
     boost::hash_combine(res, res128.first);
     boost::hash_combine(res, res128.second);
@@ -365,7 +377,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
                                                            TokenIterator expression_begin,
                                                            TokenIterator expression_end,
                                                            const ASTPtr & expression_,
-                                                           const Context & context,
+                                                           ContextPtr context,
                                                            bool * found_in_cache,
                                                            const String & salt)
 {
@@ -373,7 +385,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     ASTPtr expression = expression_->clone();
     ReplaceLiteralsVisitor visitor(context);
     visitor.visit(expression, result_column_type->isNullable() || null_as_default);
-    ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
+    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(expression);
 
     size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
@@ -449,7 +461,7 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
                 return false;
         }
         else
-            type->deserializeAsTextQuoted(*columns[cur_column], istr, format_settings);
+            structure->serializations[cur_column]->deserializeTextQuoted(*columns[cur_column], istr, format_settings);
 
         ++cur_column;
     }
@@ -481,14 +493,12 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         /// TODO faster way to check types without using Parsers
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
-        ParserMapOfLiterals parser_map;
 
         Tokens tokens_number(istr.position(), istr.buffer().end());
         IParser::Pos iterator(tokens_number, settings.max_parser_depth);
         Expected expected;
         ASTPtr ast;
-        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected)
-            && !parser_map.parse(iterator, ast, expected))
+        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected))
             return false;
 
         istr.position() = const_cast<char *>(iterator->begin);
@@ -581,7 +591,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
     }
 }
 
-ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, size_t column_idx, size_t offset)
+ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset)
 {
     Block evaluated = structure->literals.cloneWithColumns(std::move(columns));
     columns = structure->literals.cloneEmptyColumns();
@@ -599,12 +609,13 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
                         ErrorCodes::LOGICAL_ERROR);
 
     rows_count = 0;
-    ColumnPtr res = evaluated.getByName(structure->result_column_name).column->convertToFullColumnIfConst();
+    auto res = evaluated.getByName(structure->result_column_name);
+    res.column = res.column->convertToFullColumnIfConst();
     if (!structure->null_as_default)
-        return res;
+        return castColumn(res, expected_type);
 
     /// Extract column with evaluated expression and mask for NULLs
-    const auto & tuple = assert_cast<const ColumnTuple &>(*res);
+    const auto & tuple = assert_cast<const ColumnTuple &>(*res.column);
     if (tuple.tupleSize() != 2)
         throw Exception("Invalid tuple size, it'a a bug", ErrorCodes::LOGICAL_ERROR);
     const auto & is_null = assert_cast<const ColumnUInt8 &>(tuple.getColumn(1));
@@ -613,7 +624,9 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
         if (is_null.getUInt(i))
             nulls.setBit(column_idx, offset + i);
 
-    return tuple.getColumnPtr(0);
+    res.column = tuple.getColumnPtr(0);
+    res.type = assert_cast<const DataTypeTuple &>(*res.type).getElements()[0];
+    return castColumn(res, expected_type);
 }
 
 void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default)

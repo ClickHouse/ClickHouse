@@ -20,8 +20,8 @@ If the condition `cond` evaluates to a non-zero value, returns the result of the
 **Arguments**
 
 -   `cond` – The condition for evaluation that can be zero or not. The type is UInt8, Nullable(UInt8) or NULL.
--   `then` - The expression to return if condition is met.
--   `else` - The expression to return if condition is not met.
+-   `then` – The expression to return if condition is met.
+-   `else` – The expression to return if condition is not met.
 
 **Returned values**
 
@@ -32,7 +32,7 @@ The function executes `then` and `else` expressions and returns its result, depe
 Query:
 
 ``` sql
-SELECT if(1, plus(2, 2), plus(2, 6))
+SELECT if(1, plus(2, 2), plus(2, 6));
 ```
 
 Result:
@@ -46,7 +46,7 @@ Result:
 Query:
 
 ``` sql
-SELECT if(0, plus(2, 2), plus(2, 6))
+SELECT if(0, plus(2, 2), plus(2, 6));
 ```
 
 Result:
@@ -202,4 +202,3 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/conditional_functions/) <!--hide-->

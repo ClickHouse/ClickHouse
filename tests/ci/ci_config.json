@@ -72,16 +72,6 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10",
-            "build-type": "",
-            "sanitizer": "",
-            "package-type": "deb",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
-            "tidy": "disable",
-            "with_coverage": false
-        },
-        {
             "compiler": "clang-11",
             "build-type": "debug",
             "sanitizer": "",
@@ -92,7 +82,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-9",
+            "compiler": "gcc-10",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -121,7 +111,7 @@
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
-            "with_coverage": true
+            "with_coverage": false
         },
         {
             "compiler": "clang-11",
@@ -155,6 +145,16 @@
         },
         {
             "compiler": "clang-11-freebsd",
+            "build-type": "",
+            "sanitizer": "",
+            "package-type": "binary",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "tidy": "disable",
+            "with_coverage": false
+        },
+        {
+            "compiler": "clang-11-darwin-aarch64",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -214,18 +214,6 @@
             }
         },
         "Functional stateful tests (debug)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "deb",
-                "build_type": "debug",
-                "sanitizer": "none",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
-        "Functional stateless tests (ANTLR debug)": {
             "required_build_properties": {
                 "compiler": "clang-11",
                 "package_type": "deb",
@@ -359,7 +347,7 @@
         },
         "Functional stateless tests (unbundled)": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",

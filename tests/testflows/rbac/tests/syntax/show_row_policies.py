@@ -29,25 +29,25 @@ def feature(self, node="clickhouse1"):
         with Given("I have a table"):
             node.query(f"CREATE TABLE default.foo (x UInt64, y String) Engine=Memory")
 
-        with Scenario("I show row policies", flags=TE, requirements=[
+        with Scenario("I show row policies", requirements=[
                 RQ_SRS_006_RBAC_RowPolicy_ShowRowPolicies("1.0")]):
             with cleanup("policy0"):
                 with When("I run drop row policy command"):
                     node.query("SHOW ROW POLICIES")
 
-        with Scenario("I show row policies using short syntax", flags=TE, requirements=[
+        with Scenario("I show row policies using short syntax", requirements=[
                 RQ_SRS_006_RBAC_RowPolicy_ShowRowPolicies("1.0")]):
             with cleanup("policy1"):
                 with When("I run drop row policy command"):
                     node.query("SHOW POLICIES")
 
-        with Scenario("I show row policies on a database table", flags=TE, requirements=[
+        with Scenario("I show row policies on a database table", requirements=[
                 RQ_SRS_006_RBAC_RowPolicy_ShowRowPolicies_On("1.0")]):
             with cleanup("policy0"):
                 with When("I run drop row policy command"):
                     node.query("SHOW ROW POLICIES ON default.foo")
 
-        with Scenario("I show row policies on a table", flags=TE, requirements=[
+        with Scenario("I show row policies on a table", requirements=[
                 RQ_SRS_006_RBAC_RowPolicy_ShowRowPolicies_On("1.0")]):
             with cleanup("policy0"):
                 with When("I run drop row policy command"):

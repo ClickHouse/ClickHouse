@@ -12,11 +12,7 @@ namespace DB
 {
 namespace
 {
-    bool parseRoleNameOrID(
-        IParserBase::Pos & pos,
-        Expected & expected,
-        bool id_mode,
-        String & res)
+    bool parseNameOrID(IParserBase::Pos & pos, Expected & expected, bool id_mode, String & res)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -39,20 +35,21 @@ namespace
         });
     }
 
-
     bool parseBeforeExcept(
         IParserBase::Pos & pos,
         Expected & expected,
         bool id_mode,
         bool allow_all,
+        bool allow_any,
         bool allow_current_user,
-        Strings & names,
         bool & all,
+        Strings & names,
         bool & current_user)
     {
         bool res_all = false;
-        bool res_current_user = false;
         Strings res_names;
+        bool res_current_user = false;
+        Strings res_with_roles_names;
 
         auto parse_element = [&]
         {
@@ -65,6 +62,12 @@ namespace
                 return true;
             }
 
+            if (allow_any && ParserKeyword{"ANY"}.ignore(pos, expected))
+            {
+                res_all = true;
+                return true;
+            }
+
             if (allow_current_user && parseCurrentUserTag(pos, expected))
             {
                 res_current_user = true;
@@ -72,7 +75,7 @@ namespace
             }
 
             String name;
-            if (parseRoleNameOrID(pos, expected, id_mode, name))
+            if (parseNameOrID(pos, expected, id_mode, name))
             {
                 res_names.emplace_back(std::move(name));
                 return true;
@@ -85,8 +88,8 @@ namespace
             return false;
 
         names = std::move(res_names);
-        all = res_all;
         current_user = res_current_user;
+        all = res_all;
         return true;
     }
 
@@ -98,13 +101,12 @@ namespace
         Strings & except_names,
         bool & except_current_user)
     {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
+        return IParserBase::wrapParseImpl(pos, [&] {
             if (!ParserKeyword{"EXCEPT"}.ignore(pos, expected))
                 return false;
 
             bool unused;
-            return parseBeforeExcept(pos, expected, id_mode, false, allow_current_user, except_names, unused, except_current_user);
+            return parseBeforeExcept(pos, expected, id_mode, false, false, allow_current_user, unused, except_names, except_current_user);
         });
     }
 }
@@ -112,13 +114,13 @@ namespace
 
 bool ParserRolesOrUsersSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    bool all = false;
     Strings names;
     bool current_user = false;
-    bool all = false;
     Strings except_names;
     bool except_current_user = false;
 
-    if (!parseBeforeExcept(pos, expected, id_mode, allow_all, allow_current_user, names, all, current_user))
+    if (!parseBeforeExcept(pos, expected, id_mode, allow_all, allow_any, allow_current_user, all, names, current_user))
         return false;
 
     parseExceptAndAfterExcept(pos, expected, id_mode, allow_current_user, except_names, except_current_user);
@@ -132,9 +134,10 @@ bool ParserRolesOrUsersSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     result->all = all;
     result->except_names = std::move(except_names);
     result->except_current_user = except_current_user;
+    result->allow_users = allow_users;
+    result->allow_roles = allow_roles;
     result->id_mode = id_mode;
-    result->allow_user_names = allow_user_names;
-    result->allow_role_names = allow_role_names;
+    result->use_keyword_any = all && allow_any && !allow_all;
     node = result;
     return true;
 }

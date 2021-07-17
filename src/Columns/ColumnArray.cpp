@@ -239,6 +239,16 @@ const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
+const char * ColumnArray::skipSerializedInArena(const char * pos) const
+{
+    size_t array_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(array_size);
+
+    for (size_t i = 0; i < array_size; ++i)
+        pos = getData().skipSerializedInArena(pos);
+
+    return pos;
+}
 
 void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
 {
@@ -370,6 +380,10 @@ void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
+bool ColumnArray::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnArray>();
+}
 
 namespace
 {
@@ -1196,7 +1210,6 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
         ColumnTuple::create(tuple_columns),
         assert_cast<const ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
-
 
 void ColumnArray::gather(ColumnGathererStream & gatherer)
 {
