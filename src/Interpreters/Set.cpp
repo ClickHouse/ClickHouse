@@ -7,8 +7,6 @@
 
 #include <Common/typeid_cast.h>
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
