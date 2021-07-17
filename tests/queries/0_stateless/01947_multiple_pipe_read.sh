@@ -3,16 +3,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-SAMPLE_FILE="$CURDIR/01947_sample_data.csv"
-STD_ERROR_CAPTURED="$CURDIR/01947_std_error_captured.log"
+SAMPLE_FILE=$(mktemp 01947_multiple_pipe_read_sample_data_XXXXXX.csv)
+STD_ERROR_CAPTURED=$(mktemp 01947_multiple_pipe_read_std_error_captured_XXXXXX.log)
 
 echo 'File generated:'
 ${CLICKHOUSE_LOCAL} -q "SELECT number, if(number in (4,6), 'AAA', 'BBB') from numbers(7) FORMAT CSV" --format_csv_delimiter=, >"$SAMPLE_FILE"
 cat "$SAMPLE_FILE"
-
-echo '******************'
-echo 'Attempt to read twice from a pipeline'
-${CLICKHOUSE_LOCAL} --structure 'key String' -q 'select * from table; select * from table;' <<<foo
 
 echo '******************'
 echo 'Attempt to read twice from a regular file'
