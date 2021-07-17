@@ -520,7 +520,7 @@ Pipe StorageFile::read(
             else
             {
                 // else if fd is not a regular file, then throw an Exception
-                throw Exception("Cannot read from a pipeline twice", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+                throw Exception("Cannot read from a pipe twice", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
             }
         }
         pipes.emplace_back(std::make_shared<StorageFileSource>(
