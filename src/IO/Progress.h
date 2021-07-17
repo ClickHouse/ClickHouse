@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <functional>
 #include <common/types.h>
 
 #include <Core/Defines.h>
