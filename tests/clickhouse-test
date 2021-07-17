@@ -820,6 +820,7 @@ def coverage_test_finished(test_name: str) -> None:
 
 def coverage_shut_down() -> None:
     os.kill(get_server_pid_coverage(), signal.SIGRTMIN + 2)
+    coverage_tests_file.close()
 
 
 def print_stack_traces() -> None:

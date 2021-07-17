@@ -36,7 +36,7 @@ env.loader = ModuleLoader(compiled_tpl_path)
 
 sf_to_funcs = GCNOParser().read(args.gcno_dir)
 
-tests_names_file = os.path.join(args.sources_dir, "tests", "tests_names.txt")
+tests_names_file = os.path.join(args.sources_dir, "tests", "tests_lists.txt")
 
 files, tests, bb = CCRParser().read(args.report_file, tests_names_file)
 

@@ -13,7 +13,10 @@
 
 namespace coverage
 {
+static const String report_path { "/report.ccr" }; /// Change if you want to test runtime outside of Docker
 static const String logger_base_name {"Coverage"};
+
+static constexpr size_t report_file_size_upper_limit = 200 * 1024 * 1024;
 
 enum class Magic : uint32_t
 {
@@ -26,26 +29,6 @@ Writer& Writer::instance()
     static Writer w;
     return w;
 }
-
-void Writer::pcTableCallback(const Addr * start, const Addr * end) noexcept
-{
-    const size_t bb_pairs = end - start;
-    instrumented_basic_blocks = bb_pairs / 2;
-
-    instrumented_blocks_addrs.resize(instrumented_basic_blocks);
-
-    for (size_t i = 0; i < instrumented_basic_blocks; ++i)
-        /// Real address for non-function entries is the previous instruction, see implementation in clang:
-        /// https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L768
-        instrumented_blocks_addrs[i] = start[2 * i] - !(start[2 * i + 1] & 1);
-}
-
-void Writer::countersCallback(bool * start, bool * end) noexcept
-{
-    std::fill(start, end, false);
-    current = {start, end};
-}
-
 
 void Writer::printErrnoAndThrow() const
 {
@@ -84,6 +67,8 @@ void Writer::onServerInitialized()
 
     report_file_ptr = static_cast<uint32_t *>(ptr);
 
+    if (madvise(ptr, report_file_size_upper_limit, MADV_SEQUENTIAL) == -1) printErrnoAndThrow();
+
     mergeAndWriteHeader(symbolizeAddrsIntoLocalCaches());
 
     /// Testing script in docker (/docker/test/coverage/run.sh) waits for this message and starts tests afterwards.
@@ -92,6 +77,15 @@ void Writer::onServerInitialized()
 
 Writer::LocalCaches Writer::symbolizeAddrsIntoLocalCaches()
 {
+    instrumented_basic_blocks = instrumented_blocks_pairs.size() / 2;
+
+    std::vector<Addr> instrumented_blocks_addrs(instrumented_basic_blocks);
+
+    for (size_t i = 0; i < instrumented_basic_blocks; ++i)
+        /// Real address for non-function entries is the previous instruction, see implementation in clang:
+        /// https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L768
+        instrumented_blocks_addrs[i] = instrumented_blocks_pairs[2 * i] - !(instrumented_blocks_pairs[2 * i + 1] & 1);
+
     const size_t hardware_concurrency { std::thread::hardware_concurrency() };
 
     LOG_INFO(base_log, "{} instrumented basic blocks. Using thread pool of size {}",
@@ -107,7 +101,7 @@ Writer::LocalCaches Writer::symbolizeAddrsIntoLocalCaches()
     std::vector<std::thread> workers(caches.size());
 
     for (size_t thread_index = 0; thread_index < caches.size(); ++thread_index)
-        workers[thread_index] = std::thread{[this, step, thread_index, &dwarf, &cache = caches[thread_index]]
+        workers[thread_index] = std::thread([&, this, thread_index, &cache = caches[thread_index]]
         {
             const size_t start_index = thread_index * step;
             const size_t end_index = std::min(start_index + step, instrumented_basic_blocks - 1);
@@ -132,13 +126,10 @@ Writer::LocalCaches Writer::symbolizeAddrsIntoLocalCaches()
                 else
                     cache[src_path] = {{bb_index, line}};
             }
-        }};
+        });
 
     for (auto & worker : workers)
         worker.join();
-
-    instrumented_blocks_addrs.clear();
-    instrumented_blocks_addrs.shrink_to_fit();
 
     return caches;
 }
@@ -195,6 +186,8 @@ void Writer::mergeAndWriteHeader(const LocalCaches& caches)
 
         char * const report_ptr_char = reinterpret_cast<char *>(&ptr[++report_file_pos]);
 
+        /// Strings are padded up to 4 bytes boundary.
+        /// https://github.com/llvm/llvm-project/blob/main/llvm/include/llvm/ProfileData/GCOV.h#L173
         memcpy(report_ptr_char, path.c_str(), path_size);
         memset(report_ptr_char + path_size, 0, path_padding);
 
@@ -214,18 +207,20 @@ void Writer::onTestFinished()
 {
     report_file_ptr[++report_file_pos] = static_cast<uint32_t>(Magic::TestEntry);
 
+    //madvise(current.data(), instrumented_basic_blocks, MADV_WILLNEED);
+
     for (size_t bb_index = 0; bb_index < instrumented_basic_blocks; ++bb_index)
         if (current[bb_index])
         {
-            current[bb_index] = false;
             report_file_ptr[++report_file_pos] = bb_index;
+            current[bb_index] = false;
         }
 }
 
 void Writer::onShutRuntime()
 {
-    msync(report_file_ptr, report_file_size_upper_limit, MS_SYNC);
-    munmap(report_file_ptr, report_file_size_upper_limit);
+    if (msync(report_file_ptr, report_file_size_upper_limit, MS_SYNC) == -1) printErrnoAndThrow();
+    if (munmap(report_file_ptr, report_file_size_upper_limit) == -1) printErrnoAndThrow();
 
     const size_t file_real_size = ++report_file_pos * sizeof(uint32_t);
 

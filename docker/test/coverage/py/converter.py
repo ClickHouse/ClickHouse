@@ -1,4 +1,7 @@
 import os.path
+from tqdm import tqdm
+from dir_entry import DirEntry
+from files_entry import FileEntry
 
 
 class Converter:
@@ -8,10 +11,9 @@ class Converter:
         self.tests = tests
         self.bb = bb
 
-        self.bb_to_src_func_block = {}  # bb_index -> (src, func, block)
-
-        for bb_index in bb.keys():
-            self.bb_to_src_func_block[bb_index] = self.bb_to_src(bb_index)
+        # bb_index -> (src, func, block)
+        self.bb_to_src_location = \
+            [self.bb_to_src(bb_index) for bb_index in bb.keys()]
 
     def bb_to_src(self, bb_index):
         for file_name, bb in self.files:

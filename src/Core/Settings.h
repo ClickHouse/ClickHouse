@@ -15,7 +15,6 @@ namespace boost::program_options
     class options_description;
 }
 
-
 namespace DB
 {
 class IColumn;
