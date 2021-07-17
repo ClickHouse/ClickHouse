@@ -370,7 +370,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
     }
 
-    future_part->updatePath(storage, reserved_space);
+    future_part->updatePath(storage, reserved_space.get());
 
     for (const auto & part : future_part->parts)
     {

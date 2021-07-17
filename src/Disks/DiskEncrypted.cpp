@@ -123,7 +123,7 @@ private:
 
 ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
 {
-    auto reservation = std::unique_ptr<IReservation>(delegate->reserve(bytes).get());
+    auto reservation = delegate->reserve(bytes);
     if (!reservation)
         return {};
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));

@@ -83,7 +83,7 @@ public:
         TableLockHolder & holder_,
         time_t time_of_merge_,
         ContextPtr context_,
-        ReservationPtr space_reservation_,
+        ReservationConstPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
@@ -165,7 +165,8 @@ private:
     TableLockHolder & holder;
     time_t time_of_merge;
     ContextPtr context;
-    ReservationPtr space_reservation;
+    /// It is necessary, because of projections presense
+    ReservationConstPtr space_reservation;
     bool deduplicate;
     Names deduplicate_by_columns;
     MergeTreeData::MergingParams merging_params;

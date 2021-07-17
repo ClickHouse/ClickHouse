@@ -101,7 +101,7 @@ public:
         TableLockHolder & table_lock_holder,
         time_t time_of_merge,
         ContextPtr context,
-        const ReservationPtr & space_reservation,
+        ReservationConstPtr space_reservation,
         bool deduplicate,
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
@@ -116,7 +116,7 @@ public:
         MergeListEntry & merge_entry,
         time_t time_of_mutation,
         ContextPtr context,
-        const ReservationPtr & space_reservation,
+        ReservationConstPtr space_reservation,
         TableLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
@@ -201,7 +201,7 @@ private:
         IMergedBlockOutputStream & out,
         time_t time_of_mutation,
         MergeListEntry & merge_entry,
-        const ReservationPtr & space_reservation,
+        ReservationConstPtr space_reservation,
         TableLockHolder & holder,
         ContextPtr context,
         IMergeTreeDataPart::MinMaxIndex * minmax_idx = nullptr);
@@ -218,7 +218,7 @@ private:
         MergeListEntry & merge_entry,
         bool need_remove_expired_values,
         bool need_sync,
-        const ReservationPtr & space_reservation,
+        ReservationConstPtr space_reservation,
         TableLockHolder & holder,
         ContextPtr context);
 
@@ -236,7 +236,7 @@ private:
         MergeListEntry & merge_entry,
         bool need_remove_expired_values,
         bool need_sync,
-        const ReservationPtr & space_reservation,
+        ReservationConstPtr space_reservation,
         TableLockHolder & holder,
         ContextPtr context);
 

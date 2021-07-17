@@ -429,7 +429,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     TableLockHolder & holder,
     time_t time_of_merge,
     ContextPtr context,
-    const ReservationPtr & space_reservation,
+    ReservationConstPtr space_reservation,
     bool deduplicate,
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
@@ -443,7 +443,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         holder,
         time_of_merge,
         context,
-        const_cast<ReservationPtr &>(space_reservation),
+        space_reservation,
         deduplicate,
         deduplicate_by_columns,
         merging_params,
@@ -462,7 +462,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     MergeListEntry & merge_entry,
     time_t time_of_mutation,
     ContextPtr context,
-    const ReservationPtr & space_reservation,
+    ReservationConstPtr space_reservation,
     TableLockHolder & holder)
 {
     checkOperationIsNotCanceled(merge_entry);
@@ -1275,7 +1275,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
     IMergedBlockOutputStream & out,
     time_t time_of_mutation,
     MergeListEntry & merge_entry,
-    const ReservationPtr & space_reservation,
+    ReservationConstPtr space_reservation,
     TableLockHolder & holder,
     ContextPtr context,
     IMergeTreeDataPart::MinMaxIndex * minmax_idx)
@@ -1439,7 +1439,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     MergeListEntry & merge_entry,
     bool need_remove_expired_values,
     bool need_sync,
-    const ReservationPtr & space_reservation,
+    ReservationConstPtr space_reservation,
     TableLockHolder & holder,
     ContextPtr context)
 {
@@ -1496,7 +1496,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     MergeListEntry & merge_entry,
     bool need_remove_expired_values,
     bool need_sync,
-    const ReservationPtr & space_reservation,
+    ReservationConstPtr space_reservation,
     TableLockHolder & holder,
     ContextPtr context)
 {

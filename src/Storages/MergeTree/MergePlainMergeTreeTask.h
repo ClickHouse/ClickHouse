@@ -20,7 +20,7 @@ class StorageMergeTree;
 struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPartPtr future_part;
-    ReservationPtr reserved_space;
+    ReservationConstPtr reserved_space;
     StorageMergeTree & storage;
     // Optional tagger to maintain volatile parts for the JBOD balancer
     std::optional<CurrentlySubmergingEmergingTagger> tagger;

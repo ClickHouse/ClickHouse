@@ -6,7 +6,6 @@ namespace DB
 {
 
 using TableLockHolder = RWLockImpl::LockHolder;
-using TableLockHolderPtr = std::shared_ptr<TableLockHolder>;
 
 /// Table exclusive lock, holds both alter and drop locks. Useful for DROP-like
 /// queries.

@@ -79,7 +79,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
         name = part_info.getPartName();
 }
 
-void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const ReservationPtr & reservation)
+void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const IReservation * reservation)
 {
     path = storage.getFullPathOnDisk(reservation->getDisk()) + name + "/";
 }

@@ -323,7 +323,7 @@ bool MergeFromLogEntryTask::prepare()
     }
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
-    ReservationPtr reserved_space = storage.balancedReservation(
+    ReservationConstPtr reserved_space = storage.balancedReservation(
         metadata_snapshot,
         estimated_space_for_merge,
         max_volume_index,
@@ -338,7 +338,7 @@ bool MergeFromLogEntryTask::prepare()
             metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
 
     future_merged_part->uuid = entry->new_part_uuid;
-    future_merged_part->updatePath(storage, reserved_space);
+    future_merged_part->updatePath(storage, reserved_space.get());
     future_merged_part->merge_type = entry->merge_type;
 
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)

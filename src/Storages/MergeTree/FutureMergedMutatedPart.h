@@ -41,7 +41,7 @@ struct FutureMergedMutatedPart
     void assign(MergeTreeData::DataPartsVector parts_);
     void assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type);
 
-    void updatePath(const MergeTreeData & storage, const ReservationPtr & reservation);
+    void updatePath(const MergeTreeData & storage, const IReservation * reservation);
 };
 
 using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
