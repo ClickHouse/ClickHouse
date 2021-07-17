@@ -33,8 +33,13 @@ def started_cluster():
             node.query("DROP TABLE IF EXISTS test_mutations")
 
         for node in [node1, node2, node3, node4]:
-            node.query(
-                "CREATE TABLE test_mutations(d Date, x UInt32, i UInt32) ENGINE ReplicatedMergeTree('/clickhouse/{cluster}/tables/test/test_mutations', '{instance}') ORDER BY x PARTITION BY toYYYYMM(d)")
+            node.query("""
+            CREATE TABLE test_mutations(d Date, x UInt32, i UInt32)
+            ENGINE ReplicatedMergeTree('/clickhouse/{cluster}/tables/test/test_mutations', '{instance}')
+            ORDER BY x
+            PARTITION BY toYYYYMM(d)
+            SETTINGS number_of_free_entries_in_pool_to_execute_mutation=0
+            """)
 
         node5.query(
             "CREATE TABLE test_mutations(d Date, x UInt32, i UInt32) ENGINE MergeTree() ORDER BY x PARTITION BY toYYYYMM(d)")
