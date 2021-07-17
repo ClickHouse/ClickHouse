@@ -278,7 +278,5 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (grantees)
         formatGrantees(*grantees, format);
-
-
 }
 }
