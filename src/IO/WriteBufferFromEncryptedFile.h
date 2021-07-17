@@ -20,6 +20,7 @@ public:
     WriteBufferFromEncryptedFile(
         size_t buffer_size_,
         std::unique_ptr<WriteBufferFromFileBase> out_,
+        FileEncryption::Algorithm encryption_algorithm_,
         const String & key_,
         const FileEncryption::InitVector & init_vector_,
         size_t old_file_size = 0);
