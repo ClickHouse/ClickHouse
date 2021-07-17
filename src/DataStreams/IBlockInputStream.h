@@ -84,15 +84,6 @@ public:
       */
     virtual void readSuffix();
 
-    /// Must be called before `read()` and `readPrefix()`.
-    void dumpTree(WriteBuffer & ostr, size_t indent = 0, size_t multiplier = 1) const;
-
-    /** Check the depth of the pipeline.
-      * If max_depth is specified and the `depth` is greater - throw an exception.
-      * Must be called before `read()` and `readPrefix()`.
-      */
-    size_t checkDepth(size_t max_depth) const { return checkDepthImpl(max_depth, max_depth); }
-
     /// Do not allow to change the table while the blocks stream and its children are alive.
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
 
@@ -259,9 +250,6 @@ private:
     void checkQuota(Block & block);
 
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
-
-    /// Get text with names of this source and the entire subtree.
-    String getTreeID() const;
 
     template <typename F>
     void forEachChild(F && f)
