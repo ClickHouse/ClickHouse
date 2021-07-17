@@ -175,7 +175,8 @@
         "00140_rename",
         /// Requires investigation
         "00953_zookeeper_suetin_deduplication_bug",
-        "01783_http_chunk_size"
+        "01783_http_chunk_size",
+        "00166_explain_estimate"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
