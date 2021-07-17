@@ -338,16 +338,8 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
 
     // GROUP BY
     const ASTPtr group_by = select.groupBy();
-    if (!group_by)
-    {
-        if (!select.distinct)
-            return {};
-    }
-    else
-    {
-        if (!sharding_block_has(group_by->children))
-            return {};
-    }
+    if (!query_info.syntax_analyzer_result->aggregates.empty() && (!group_by || !sharding_block_has(group_by->children)))
+        return {};
 
     // ORDER BY
     const ASTPtr order_by = select.orderBy();
