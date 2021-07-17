@@ -529,15 +529,21 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
+    // LIMIT BY
+    if (const ASTPtr limit_by = select.limitBy())
+    {
+        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(limit_by->children))
+            return {};
+    }
+
     // ORDER BY
-    const ASTPtr order_by = select.orderBy();
-    if (order_by)
+    if (const ASTPtr order_by = select.orderBy())
         return default_stage;
 
     // LIMIT BY
     // LIMIT
     // OFFSET
-    if (select.limitBy() || select.limitLength() || select.limitOffset())
+    if (select.limitLength() || select.limitOffset())
         return default_stage;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
