@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_DEEP_PIPELINE;
 }
 
 
