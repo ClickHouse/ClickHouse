@@ -320,7 +320,12 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 {
     Block res;
 
+#if !defined(ARCADIA_BUILD)
     google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
+#else
+    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
+#endif
+
     virtuals_map.set_empty_key(StringRef());
 
     /// Virtual columns must be appended after ordinary, because user can
