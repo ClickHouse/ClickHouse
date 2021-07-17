@@ -7,10 +7,6 @@ File generated:
 5,"BBB"
 6,"AAA"
 ******************
-Attempt to read twice from a pipeline
-foo
-foo
-******************
 Attempt to read twice from a regular file
 0,"BBB"
 1,"BBB"
