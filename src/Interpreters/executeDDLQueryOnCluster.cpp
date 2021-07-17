@@ -14,10 +14,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataStreams/NullBlockOutputStream.h>
-#include <DataStreams/NullAndDoCopyBlockInputStream.h>
-#include <DataStreams/copyData.h>
+#include <Processors/NullSink.h>
 #include <filesystem>
+
 
 namespace fs = std::filesystem;
 
@@ -174,42 +173,53 @@ BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & en
     if (context->getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
-    BlockInputStreamPtr stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, context, hosts_to_wait);
-    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
-    {
-        /// Wait for query to finish, but ignore output
-        auto null_output = std::make_shared<NullBlockOutputStream>(stream->getHeader());
-        stream = std::make_shared<NullAndDoCopyBlockInputStream>(std::move(stream), std::move(null_output));
-    }
+    ProcessorPtr processor = std::make_shared<DDLQueryStatusSource>(node_path, entry, context, hosts_to_wait);
+    io.pipeline.init(Pipe{processor});
 
-    io.in = std::move(stream);
+    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
+        io.pipeline.setSinks([](const Block & header, QueryPipeline::StreamType){ return std::make_shared<EmptySink>(header); });
+
     return io;
 }
 
-DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_,
-                                                     const std::optional<Strings> & hosts_to_wait)
-    : node_path(zk_node_path)
+DDLQueryStatusSource::DDLQueryStatusSource(
+    const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const std::optional<Strings> & hosts_to_wait)
+    : SourceWithProgress(getSampleBlock(context_, hosts_to_wait.has_value()), true)
+    , node_path(zk_node_path)
     , context(context_)
     , watch(CLOCK_MONOTONIC_COARSE)
     , log(&Poco::Logger::get("DDLQueryStatusInputStream"))
 {
-    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::THROW ||
-        context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
-        throw_on_timeout = true;
-    else if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT ||
-             context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NEVER_THROW)
-        throw_on_timeout = false;
+    auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
+    throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
+
+    if (hosts_to_wait)
+    {
+        waiting_hosts = NameSet(hosts_to_wait->begin(), hosts_to_wait->end());
+        by_hostname = false;
+    }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown output mode");
+    {
+        for (const HostID & host : entry.hosts)
+            waiting_hosts.emplace(host.toString());
+    }
+
+    addTotalRowsApprox(waiting_hosts.size());
+    timeout_seconds = context->getSettingsRef().distributed_ddl_task_timeout;
+}
+
+Block DDLQueryStatusSource::getSampleBlock(ContextPtr context_, bool hosts_to_wait)
+{
+    auto output_mode = context_->getSettingsRef().distributed_ddl_output_mode;
 
     auto maybe_make_nullable = [&](const DataTypePtr & type) -> DataTypePtr
     {
-        if (throw_on_timeout)
+        if (output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE)
             return type;
         return std::make_shared<DataTypeNullable>(type);
     };
 
-    sample = Block{
+    Block res = Block{
         {std::make_shared<DataTypeString>(),                         "host"},
         {std::make_shared<DataTypeUInt16>(),                         "port"},
         {maybe_make_nullable(std::make_shared<DataTypeInt64>()),     "status"},
@@ -219,23 +229,12 @@ DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path
     };
 
     if (hosts_to_wait)
-    {
-        waiting_hosts = NameSet(hosts_to_wait->begin(), hosts_to_wait->end());
-        by_hostname = false;
-        sample.erase("port");
-    }
-    else
-    {
-        for (const HostID & host : entry.hosts)
-            waiting_hosts.emplace(host.toString());
-    }
+        res.erase("port");
 
-    addTotalRowsApprox(waiting_hosts.size());
-
-    timeout_seconds = context->getSettingsRef().distributed_ddl_task_timeout;
+    return res;
 }
 
-std::pair<String, UInt16> DDLQueryStatusInputStream::parseHostAndPort(const String & host_id) const
+std::pair<String, UInt16> DDLQueryStatusSource::parseHostAndPort(const String & host_id) const
 {
     String host = host_id;
     UInt16 port = 0;
@@ -248,34 +247,23 @@ std::pair<String, UInt16> DDLQueryStatusInputStream::parseHostAndPort(const Stri
     return {host, port};
 }
 
-Block DDLQueryStatusInputStream::readImpl()
+Chunk DDLQueryStatusSource::generate()
 {
-    Block res;
     bool all_hosts_finished = num_hosts_finished >= waiting_hosts.size();
+
     /// Seems like num_hosts_finished cannot be strictly greater than waiting_hosts.size()
     assert(num_hosts_finished <= waiting_hosts.size());
-    if (all_hosts_finished || timeout_exceeded)
-    {
-        bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
-        if (first_exception && throw_if_error_on_host)
-            throw Exception(*first_exception);
 
-        return res;
-    }
+    if (all_hosts_finished || timeout_exceeded)
+        return {};
 
     auto zookeeper = context->getZooKeeper();
     size_t try_number = 0;
 
-    while (res.rows() == 0)
+    while (true)
     {
         if (isCancelled())
-        {
-            bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
-            if (first_exception && throw_if_error_on_host)
-                throw Exception(*first_exception);
-
-            return res;
-        }
+            return {};
 
         if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)
         {
@@ -297,7 +285,7 @@ Block DDLQueryStatusInputStream::readImpl()
                 unfinished_hosts.erase(host_id);
 
             /// Query is not finished on the rest hosts, so fill the corresponding rows with NULLs.
-            MutableColumns columns = sample.cloneEmptyColumns();
+            MutableColumns columns = output.getHeader().cloneEmptyColumns();
             for (const String & host_id : unfinished_hosts)
             {
                 auto [host, port] = parseHostAndPort(host_id);
@@ -310,8 +298,7 @@ Block DDLQueryStatusInputStream::readImpl()
                 columns[num++]->insert(num_unfinished_hosts);
                 columns[num++]->insert(num_active_hosts);
             }
-            res = sample.cloneWithColumns(std::move(columns));
-            return res;
+            return Chunk(std::move(columns), unfinished_hosts.size());
         }
 
         if (num_hosts_finished != 0 || try_number != 0)
@@ -322,8 +309,8 @@ Block DDLQueryStatusInputStream::readImpl()
         if (!zookeeper->exists(node_path))
         {
             throw Exception(ErrorCodes::UNFINISHED,
-                            "Cannot provide query execution status. The query's node {} has been deleted by the cleaner since it was finished (or its lifetime is expired)",
-                            node_path);
+                "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
+                " since it was finished (or its lifetime is expired)", node_path);
         }
 
         Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "finished"));
@@ -333,7 +320,7 @@ Block DDLQueryStatusInputStream::readImpl()
 
         current_active_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "active");
 
-        MutableColumns columns = sample.cloneEmptyColumns();
+        MutableColumns columns = output.getHeader().cloneEmptyColumns();
         for (const String & host_id : new_hosts)
         {
             ExecutionStatus status(-1, "Cannot obtain error message");
@@ -345,7 +332,7 @@ Block DDLQueryStatusInputStream::readImpl()
 
             auto [host, port] = parseHostAndPort(host_id);
 
-            if (status.code != 0 && first_exception == nullptr)
+            if (status.code != 0 && !first_exception)
                 first_exception = std::make_unique<Exception>(status.code, "There was an error on [{}:{}]: {}", host, port, status.message);
 
             ++num_hosts_finished;
@@ -359,13 +346,25 @@ Block DDLQueryStatusInputStream::readImpl()
             columns[num++]->insert(waiting_hosts.size() - num_hosts_finished);
             columns[num++]->insert(current_active_hosts.size());
         }
-        res = sample.cloneWithColumns(std::move(columns));
-    }
 
-    return res;
+        return Chunk(std::move(columns), new_hosts.size());
+    }
 }
 
-Strings DDLQueryStatusInputStream::getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)
+void DDLQueryStatusSource::work()
+{
+    SourceWithProgress::work();
+
+    if (finished)
+    {
+        bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
+
+        if (first_exception && throw_if_error_on_host)
+            throw Exception(*first_exception);
+    }
+}
+
+Strings DDLQueryStatusSource::getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)
 {
     Strings res;
     Coordination::Error code = zookeeper->tryGetChildren(node_path, res);
@@ -374,7 +373,7 @@ Strings DDLQueryStatusInputStream::getChildrenAllowNoNode(const std::shared_ptr<
     return res;
 }
 
-Strings DDLQueryStatusInputStream::getNewAndUpdate(const Strings & current_list_of_finished_hosts)
+Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_finished_hosts)
 {
     Strings diff;
     for (const String & host : current_list_of_finished_hosts)
@@ -384,7 +383,7 @@ Strings DDLQueryStatusInputStream::getNewAndUpdate(const Strings & current_list_
             if (!ignoring_hosts.count(host))
             {
                 ignoring_hosts.emplace(host);
-                LOG_INFO(log, "Unexpected host {} appeared  in task {}", host, node_path);
+                LOG_INFO(log, "Unexpected host {} appeared in task {}", host, node_path);
             }
             continue;
         }
