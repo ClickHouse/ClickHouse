@@ -19,12 +19,12 @@ public:
     std::string getName() const override { return name; }
     bool hasStaticStructure() const override { return true; }
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "SystemZeros"; }
 
-    UInt64 evaluateArgument(const Context & context, ASTPtr & argument) const;
+    UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 
-    ColumnsDescription getActualTableStructure(const Context & context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
 };
 
 

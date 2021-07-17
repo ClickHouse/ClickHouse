@@ -796,7 +796,7 @@ ClickHouse使用ZooKeeper存储复制表副本的元数据。 如果未使用复
       The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
 -   `session_timeout` — Maximum timeout for the client session in milliseconds.
--   `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) 隆隆隆隆路虏脢..陇.貌.垄拢卢虏禄.陇.貌路.隆拢脳枚脢虏.麓脢for脱 可选。
+-   `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes)被用作根由ClickHouse服务器使用znodes 可选。
 -   `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
 **配置示例**
@@ -823,7 +823,7 @@ ClickHouse使用ZooKeeper存储复制表副本的元数据。 如果未使用复
 **另请参阅**
 
 -   [复制](../../engines/table-engines/mergetree-family/replication.md)
--   [动物园管理员程序员指南](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+-   [zookeeper管理指南](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 

@@ -30,7 +30,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, const Context & context)
+static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, ContextPtr context)
 {
     if (res_columns.size() == 1) /// Parsing arguments as Fields
     {
@@ -68,7 +68,7 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
 }
 
-void TableFunctionValues::parseArguments(const ASTPtr & ast_function, const Context & /*context*/)
+void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     ASTs & args_func = ast_function->children;
 
@@ -93,12 +93,12 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, const Cont
     structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionValues::getActualTableStructure(const Context & context) const
+ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
 

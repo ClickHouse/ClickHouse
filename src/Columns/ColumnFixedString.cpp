@@ -12,7 +12,7 @@
 #include <Common/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 #include <common/sort.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -97,6 +97,11 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
     size_t old_size = chars.size();
     chars.resize(old_size + n);
     memcpy(chars.data() + old_size, pos, n);
+    return pos + n;
+}
+
+const char * ColumnFixedString::skipSerializedInArena(const char * pos) const
+{
     return pos + n;
 }
 
@@ -472,21 +477,6 @@ ColumnPtr ColumnFixedString::compress() const
                 compressed->data(), res->getChars().data(), compressed->size(), chars_size);
             return res;
         });
-}
-
-
-void ColumnFixedString::alignStringLength(ColumnFixedString::Chars & data, size_t n, size_t old_size)
-{
-    size_t length = data.size() - old_size;
-    if (length < n)
-    {
-        data.resize_fill(old_size + n);
-    }
-    else if (length > n)
-    {
-        data.resize_assume_reserved(old_size);
-        throw Exception("Too large value for FixedString(" + std::to_string(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE);
-    }
 }
 
 }

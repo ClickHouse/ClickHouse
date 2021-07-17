@@ -7,7 +7,7 @@ from ldap.external_user_directory.requirements import *
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_LDAPUserDirectory_MoreThanOne("2.0")
 )
-def more_than_one_user_directory(self, timeout=20):
+def more_than_one_user_directory(self):
     """Check when more than one LDAP user directory is
     defined inside a configuration file.
     """
@@ -52,7 +52,7 @@ def more_than_one_user_directory(self, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Server_Empty("1.0")
 )
-def empty_server(self, timeout=20):
+def empty_server(self, timeout=300):
     """Check that empty string in a `server` field is not allowed.
     """
     message = "DB::Exception: Empty 'server' field for LDAP user directory"
@@ -71,7 +71,7 @@ def empty_server(self, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Server_Missing("1.0")
 )
-def missing_server(self, timeout=20):
+def missing_server(self, timeout=300):
     """Check that missing `server` field is not allowed.
     """
     message = "DB::Exception: Missing 'server' field for LDAP user directory"
@@ -90,7 +90,7 @@ def missing_server(self, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Server_MoreThanOne("1.0")
 )
-def defined_twice_server(self, timeout=20):
+def defined_twice_server(self):
     """Check that when `server` field is defined twice that only the first
     entry is used.
     """
@@ -119,7 +119,7 @@ def defined_twice_server(self, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Server_Invalid("1.0")
 )
-def invalid_server(self, timeout=20):
+def invalid_server(self):
     """Check when `server` field value is invalid.
     """
     servers = {
@@ -148,7 +148,7 @@ def invalid_server(self, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Roles_Empty("1.0")
 )
-def empty_roles(self, timeout=20):
+def empty_roles(self):
     """Check when `roles` parameter is empty then user can't read any tables.
     """
     message = "DB::Exception: user1: Not enough privileges."
@@ -178,7 +178,7 @@ def empty_roles(self, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Roles_MoreThanOne("1.0")
 )
-def defined_twice_roles(self, timeout=20):
+def defined_twice_roles(self):
     """Check that when `roles` is defined twice then only the first entry is used.
     """
     node = self.context.node
@@ -222,7 +222,7 @@ def defined_twice_roles(self, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Roles_Invalid("2.0")
 )
-def invalid_role_in_roles(self, timeout=20):
+def invalid_role_in_roles(self):
     """Check that no error is returned when LDAP users try to authenticate
     if an invalid role is specified inside the `roles` section.
     """
@@ -244,7 +244,7 @@ def invalid_role_in_roles(self, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Roles_Missing("1.0")
 )
-def missing_roles(self, timeout=20):
+def missing_roles(self):
     """Check that when the `roles` are missing then
     LDAP users can still login but can't read from any table.
     """

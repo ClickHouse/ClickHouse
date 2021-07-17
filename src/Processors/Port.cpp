@@ -16,7 +16,7 @@ void connect(OutputPort & output, InputPort & input)
     auto out_name = output.getProcessor().getName();
     auto in_name = input.getProcessor().getName();
 
-    assertBlocksHaveEqualStructure(input.getHeader(), output.getHeader(), " function connect between " + out_name + " and " + in_name);
+    assertCompatibleHeader(output.getHeader(), input.getHeader(), " function connect between " + out_name + " and " + in_name);
 
     input.output_port = &output;
     output.input_port = &input;

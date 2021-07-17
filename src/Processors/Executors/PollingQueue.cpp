@@ -23,24 +23,14 @@ namespace ErrorCodes
 
 PollingQueue::PollingQueue()
 {
-    epoll_fd = epoll_create(1);
-    if (-1 == epoll_fd)
-        throwFromErrno("Cannot create epoll descriptor", ErrorCodes::CANNOT_OPEN_FILE);
-
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
         throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
 
-    epoll_event socket_event;
-    socket_event.events = EPOLLIN | EPOLLPRI;
-    socket_event.data.ptr = pipe_fd;
-
-    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipe_fd[0], &socket_event))
-        throwFromErrno("Cannot add pipe descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+    epoll.add(pipe_fd[0], pipe_fd);
 }
 
 PollingQueue::~PollingQueue()
 {
-    close(epoll_fd);
     close(pipe_fd[0]);
     close(pipe_fd[1]);
 }
@@ -52,13 +42,7 @@ void PollingQueue::addTask(size_t thread_number, void * data, int fd)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} was already added to task queue", key);
 
     tasks[key] = TaskData{thread_number, data, fd};
-
-    epoll_event socket_event;
-    socket_event.events = EPOLLIN | EPOLLPRI;
-    socket_event.data.ptr = data;
-
-    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &socket_event))
-        throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+    epoll.add(fd, data);
 }
 
 static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
@@ -86,15 +70,7 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 
     epoll_event event;
     event.data.ptr = nullptr;
-    int num_events = 0;
-
-    while (num_events <= 0)
-    {
-        num_events = epoll_wait(epoll_fd, &event, 1, -1);
-
-        if (num_events == -1 && errno != EINTR)
-                throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
-    }
+    epoll.getManyReady(1, &event, true);
 
     lock.lock();
 
@@ -112,9 +88,7 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 
     auto res = it->second;
     tasks.erase(it);
-
-    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_DEL, res.fd, &event))
-        throwFromErrno("Cannot remove socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+    epoll.remove(res.fd);
 
     return res;
 }

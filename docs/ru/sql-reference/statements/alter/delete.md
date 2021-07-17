@@ -26,4 +26,3 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 -   [Синхронность запросов ALTER](../../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/delete/) <!--hide-->

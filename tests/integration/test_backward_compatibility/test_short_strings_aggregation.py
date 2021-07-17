@@ -2,7 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="short_strings")
 node1 = cluster.add_instance('node1', with_zookeeper=False, image='yandex/clickhouse-server', tag='19.16.9.37',
                              stay_alive=True, with_installed_binary=True)
 node2 = cluster.add_instance('node2', with_zookeeper=False, image='yandex/clickhouse-server', tag='19.16.9.37',

@@ -30,7 +30,7 @@ Pipe StorageSystemDisks::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
@@ -44,7 +44,7 @@ Pipe StorageSystemDisks::read(
     MutableColumnPtr col_keep = ColumnUInt64::create();
     MutableColumnPtr col_type = ColumnString::create();
 
-    for (const auto & [disk_name, disk_ptr] : context.getDisksMap())
+    for (const auto & [disk_name, disk_ptr] : context->getDisksMap())
     {
         col_name->insert(disk_name);
         col_path->insert(disk_ptr->getPath());

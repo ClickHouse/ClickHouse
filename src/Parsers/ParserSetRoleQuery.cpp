@@ -15,12 +15,12 @@ namespace
         {
             ASTPtr ast;
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoleNames().allowAll();
+            roles_p.allowRoles().allowAll();
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
             roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
-            roles->allow_user_names = false;
+            roles->allow_users = false;
             return true;
         });
     }
@@ -34,12 +34,12 @@ namespace
 
             ASTPtr ast;
             ParserRolesOrUsersSet users_p;
-            users_p.allowUserNames().allowCurrentUser();
+            users_p.allowUsers().allowCurrentUser();
             if (!users_p.parse(pos, ast, expected))
                 return false;
 
             to_users = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
-            to_users->allow_role_names = false;
+            to_users->allow_roles = false;
             return true;
         });
     }

@@ -50,9 +50,9 @@ private:
     struct Action
     {
         enum Type { POP, PUSH, READ };
-        Type type;
-        capnp::StructSchema::Field field = {};
-        BlockPositionList columns = {};
+        Type type{};
+        capnp::StructSchema::Field field{};
+        BlockPositionList columns{};
     };
 
     // Wrapper for classes that could throw in destructor

@@ -1,0 +1,183 @@
+logger:
+  level: trace
+  log: /var/log/clickhouse-server/clickhouse-server.log
+  errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
+  size: 1000M
+  count: 10
+http_port: 8123
+tcp_port: 9000
+mysql_port: 9004
+postgresql_port: 9005
+interserver_http_port: 9009
+max_connections: 4096
+keep_alive_timeout: 3
+grpc:
+  enable_ssl: false
+  ssl_cert_file: /path/to/ssl_cert_file
+  ssl_key_file: /path/to/ssl_key_file
+  ssl_require_client_auth: false
+  ssl_ca_cert_file: /path/to/ssl_ca_cert_file
+  compression: deflate
+  compression_level: medium
+  max_send_message_size: -1
+  max_receive_message_size: -1
+  verbose_logs: false
+openSSL:
+  server:
+    certificateFile: /etc/clickhouse-server/server.crt
+    privateKeyFile: /etc/clickhouse-server/server.key
+    dhParamsFile: /etc/clickhouse-server/dhparam.pem
+    verificationMode: none
+    loadDefaultCAFile: true
+    cacheSessions: true
+    disableProtocols: 'sslv2,sslv3'
+    preferServerCiphers: true
+  client:
+    loadDefaultCAFile: true
+    cacheSessions: true
+    disableProtocols: 'sslv2,sslv3'
+    preferServerCiphers: true
+    invalidCertificateHandler:
+      name: RejectCertificateHandler
+max_concurrent_queries: 100
+max_server_memory_usage: 0
+max_thread_pool_size: 10000
+max_server_memory_usage_to_ram_ratio: 0.9
+total_memory_profiler_step: 4194304
+total_memory_tracker_sample_probability: 0
+uncompressed_cache_size: 8589934592
+mark_cache_size: 5368709120
+mmap_cache_size: 1000
+path: /var/lib/clickhouse/
+tmp_path: /var/lib/clickhouse/tmp/
+user_files_path: /var/lib/clickhouse/user_files/
+ldap_servers: ''
+user_directories:
+  users_xml:
+    path: users.yaml
+  local_directory:
+    path: /var/lib/clickhouse/access/
+default_profile: default
+custom_settings_prefixes: ''
+default_database: default
+mlock_executable: true
+remap_executable: false
+remote_servers:
+  test_shard_localhost:
+    shard:
+      replica:
+        host: localhost
+        port: 9000
+  test_cluster_two_shards_localhost:
+    shard:
+      - replica:
+          host: localhost
+          port: 9000
+      - replica:
+          host: localhost
+          port: 9000
+  test_cluster_two_shards:
+    shard:
+      - replica:
+          host: 127.0.0.1
+          port: 9000
+      - replica:
+          host: 127.0.0.2
+          port: 9000
+  test_cluster_two_shards_internal_replication:
+    shard:
+      - internal_replication: true
+        replica:
+          host: 127.0.0.1
+          port: 9000
+      - internal_replication: true
+        replica:
+          host: 127.0.0.2
+          port: 9000
+  test_shard_localhost_secure:
+    shard:
+      replica:
+        host: localhost
+        port: 9440
+        secure: 1
+  test_unavailable_shard:
+    shard:
+      - replica:
+          host: localhost
+          port: 9000
+      - replica:
+          host: localhost
+          port: 1
+builtin_dictionaries_reload_interval: 3600
+max_session_timeout: 3600
+default_session_timeout: 60
+query_log:
+  database: system
+  table: query_log
+  partition_by: toYYYYMM(event_date)
+  flush_interval_milliseconds: 7500
+trace_log:
+  database: system
+  table: trace_log
+  partition_by: toYYYYMM(event_date)
+  flush_interval_milliseconds: 7500
+query_thread_log:
+  database: system
+  table: query_thread_log
+  partition_by: toYYYYMM(event_date)
+  flush_interval_milliseconds: 7500
+metric_log:
+  database: system
+  table: metric_log
+  flush_interval_milliseconds: 7500
+  collect_interval_milliseconds: 1000
+asynchronous_metric_log:
+  database: system
+  table: asynchronous_metric_log
+  flush_interval_milliseconds: 60000
+opentelemetry_span_log:
+  engine: |-
+    engine MergeTree
+                partition by toYYYYMM(finish_date)
+                order by (finish_date, finish_time_us, trace_id)
+  database: system
+  table: opentelemetry_span_log
+  flush_interval_milliseconds: 7500
+crash_log:
+  database: system
+  table: crash_log
+  partition_by: ''
+  flush_interval_milliseconds: 1000
+top_level_domains_lists: ''
+dictionaries_config: '*_dictionary.xml'
+distributed_ddl:
+  path: /clickhouse/task_queue/ddl
+graphite_rollup_example:
+  pattern:
+    regexp: click_cost
+    function: any
+    retention:
+      - age: 0
+        precision: 3600
+      - age: 86400
+        precision: 60
+  default:
+    function: max
+    retention:
+      - age: 0
+        precision: 60
+      - age: 3600
+        precision: 300
+      - age: 86400
+        precision: 3600
+format_schema_path: /var/lib/clickhouse/format_schemas/
+query_masking_rules:
+  rule:
+    name: hide encrypt/decrypt arguments
+    regexp: '((?:aes_)?(?:encrypt|decrypt)(?:_mysql)?)\s*\(\s*(?:''(?:\\''|.)+''|.*?)\s*\)'
+    replace: \1(???)
+send_crash_reports:
+  enabled: false
+  anonymize: false
+  endpoint: 'https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277'
+

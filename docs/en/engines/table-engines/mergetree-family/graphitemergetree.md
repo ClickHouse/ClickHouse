@@ -7,7 +7,7 @@ toc_title: GraphiteMergeTree
 
 This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
-You can use any ClickHouse table engine to store the Graphite data if you don’t need rollup, but if you need a rollup use `GraphiteMergeTree`. The engine reduces the volume of storage and increases the efficiency of queries from Graphite.
+You can use any ClickHouse table engine to store the Graphite data if you do not need rollup, but if you need a rollup use `GraphiteMergeTree`. The engine reduces the volume of storage and increases the efficiency of queries from Graphite.
 
 The engine inherits properties from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md).
 

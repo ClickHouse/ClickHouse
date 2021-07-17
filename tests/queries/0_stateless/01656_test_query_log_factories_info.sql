@@ -2,6 +2,8 @@ SET database_atomic_wait_for_drop_and_detach_synchronously=1;
 
 SELECT uniqArray([1, 1, 2]),
        SUBSTRING('Hello, world', 7, 5),
+       POW(1, 2), ROUND(TANh(1)), CrC32(''),
+       SUM(number), MAX(number),
        flatten([[[BIT_AND(123)]], [[mod(3, 2)], [CAST('1' AS INTEGER)]]]),
        week(toDate('2000-12-05')),
        CAST(arrayJoin([NULL, NULL]) AS Nullable(TEXT)),
@@ -49,7 +51,7 @@ WHERE current_database = currentDatabase() AND type == 'QueryFinish' AND (query 
 ORDER BY query_start_time DESC LIMIT 1 FORMAT TabSeparatedWithNames;
 SELECT '';
 
-CREATE OR REPLACE TABLE test_query_log_factories_info1.memory_table (id BIGINT, date DateTime) ENGINE=Memory();
+CREATE OR REPLACE TABLE test_query_log_factories_info1.memory_table (id BIGINT, date DATETIME) ENGINE=Memory();
 
 SYSTEM FLUSH LOGS;
 SELECT arraySort(used_data_type_families), used_storages

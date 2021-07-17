@@ -15,4 +15,3 @@ ALTER SETTINGS PROFILE [IF EXISTS] TO name1 [ON CLUSTER cluster_name1] [RENAME T
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/alter/settings-profile) <!--hide-->

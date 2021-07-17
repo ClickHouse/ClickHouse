@@ -168,7 +168,7 @@ class FunctionBayesAB : public IFunction
 public:
     static constexpr auto name = "bayesAB";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBayesAB>();
     }

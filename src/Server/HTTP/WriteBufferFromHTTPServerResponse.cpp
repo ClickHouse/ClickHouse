@@ -171,6 +171,8 @@ void WriteBufferFromHTTPServerResponse::finalize()
     try
     {
         next();
+        if (out)
+            out->finalize();
         out.reset();
     }
     catch (...)
@@ -194,7 +196,7 @@ void WriteBufferFromHTTPServerResponse::finalize()
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     finalize();
 }
 

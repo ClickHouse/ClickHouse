@@ -7,6 +7,7 @@
 #include <atomic>
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <Storages/RabbitMQ/UVLoop.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
@@ -19,7 +20,7 @@ class WriteBufferToRabbitMQProducer : public WriteBuffer
 public:
     WriteBufferToRabbitMQProducer(
             std::pair<String, UInt16> & parsed_address_,
-            const Context & global_context,
+            ContextPtr global_context,
             const std::pair<String, String> & login_password_,
             const String & vhost_,
             const Names & routing_keys_,
@@ -69,10 +70,11 @@ private:
     AMQP::Table key_arguments;
     BackgroundSchedulePool::TaskHolder writing_task;
 
-    std::unique_ptr<uv_loop_t> loop;
+    UVLoop loop;
     std::unique_ptr<RabbitMQHandler> event_handler;
     std::unique_ptr<AMQP::TcpConnection> connection;
     std::unique_ptr<AMQP::TcpChannel> producer_channel;
+    bool producer_ready = false;
 
     /// Channel errors lead to channel closure, need to count number of recreated channels to update channel id
     UInt64 channel_id_counter = 0;

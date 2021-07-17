@@ -1,22 +1,22 @@
 #pragma once
 
+#include <Core/UUID.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
-#include <Core/UUID.h>
 
 
 namespace DB
 {
+
 class AccessControlManager;
 class ASTShowGrantsQuery;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 
-
-class InterpreterShowGrantsQuery : public IInterpreter
+class InterpreterShowGrantsQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterShowGrantsQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
+    InterpreterShowGrantsQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 
@@ -32,6 +32,6 @@ private:
     std::vector<AccessEntityPtr> getEntities() const;
 
     ASTPtr query_ptr;
-    Context & context;
 };
+
 }

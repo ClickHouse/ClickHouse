@@ -15,8 +15,6 @@
 
 #include <Core/iostream_debug_helpers.h>
 
-namespace std
-{
 
 template <typename T>
 inline std::ostream& operator<<(std::ostream & ostr, const std::vector<T> & v)
@@ -27,8 +25,6 @@ inline std::ostream& operator<<(std::ostream & ostr, const std::vector<T> & v)
         ostr << i << ", ";
     }
     return ostr << "] (" << v.size() << ") items";
-}
-
 }
 
 using namespace DB;
@@ -67,7 +63,7 @@ TEST_P(ParseDataTypeTest, parseStringValue)
     for (const auto & value : p.values)
     {
         ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
-        data_type->deserializeAsWholeText(*col, buffer, FormatSettings{});
+        data_type->getDefaultSerialization()->deserializeWholeText(*col, buffer, FormatSettings{});
     }
 
     ASSERT_EQ(p.expected_values.size(), col->size()) << "Actual items: " << *col;

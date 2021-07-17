@@ -22,17 +22,17 @@ JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer
 }
 
 
-void JSONCompactEachRowRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void JSONCompactEachRowRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     if (yield_strings)
     {
         WriteBufferFromOwnString buf;
 
-        type.serializeAsText(column, row_num, buf, settings);
+        serialization.serializeText(column, row_num, buf, settings);
         writeJSONString(buf.str(), out, settings);
     }
     else
-        type.serializeAsTextJSON(column, row_num, out, settings);
+        serialization.serializeTextJSON(column, row_num, out, settings);
 }
 
 
@@ -63,7 +63,7 @@ void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, siz
         if (i != 0)
             JSONCompactEachRowRowOutputFormat::writeFieldDelimiter();
 
-        JSONCompactEachRowRowOutputFormat::writeField(*columns[i], *types[i], row_num);
+        JSONCompactEachRowRowOutputFormat::writeField(*columns[i], *serializations[i], row_num);
     }
     writeCString("]\n", out);
 }

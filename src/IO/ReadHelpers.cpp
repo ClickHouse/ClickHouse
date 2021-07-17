@@ -81,11 +81,6 @@ void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 
     parseHex(&src36[16], dst16, 8);
 }
 
-UInt128 stringToUUID(const String & str)
-{
-    return parseFromString<UUID>(str);
-}
-
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
@@ -332,6 +327,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
             && decoded_char != '"'
             && decoded_char != '`'  /// MySQL style identifiers
             && decoded_char != '/'  /// JavaScript in HTML
+            && decoded_char != '='  /// Yandex's TSKV
             && !isControlASCII(decoded_char))
         {
             s.push_back('\\');
@@ -770,7 +766,7 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 
     auto ignore_delimiter = [&]
     {
-        if (!buf.eof())
+        if (!buf.eof() && !isNumericASCII(*buf.position()))
         {
             ++buf.position();
             return true;

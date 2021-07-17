@@ -554,9 +554,9 @@ SELECT count() FROM test;
 DROP TABLE IF EXISTS test_r1;
 DROP TABLE IF EXISTS test_r2;
 
-CREATE TABLE test_r1 AS test ENGINE = ReplicatedMergeTree('/clickhouse/test', 'r1') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G';
+CREATE TABLE test_r1 AS test ENGINE = ReplicatedMergeTree('/clickhouse/test_01666', 'r1') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G';
 INSERT INTO test_r1 SELECT * FROM test;
-CREATE TABLE test_r2 AS test ENGINE = ReplicatedMergeTree('/clickhouse/test', 'r2') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G';
+CREATE TABLE test_r2 AS test ENGINE = ReplicatedMergeTree('/clickhouse/test_01666', 'r2') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G';
 
 SYSTEM SYNC REPLICA test_r2;
 

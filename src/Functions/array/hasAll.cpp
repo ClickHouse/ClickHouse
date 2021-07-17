@@ -10,7 +10,7 @@ class FunctionArrayHasAll : public FunctionArrayHasAllAny
 {
 public:
     static constexpr auto name = "hasAll";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayHasAll>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayHasAll>(); }
     FunctionArrayHasAll() : FunctionArrayHasAllAny(GatherUtils::ArraySearchType::All, name) {}
 };
 

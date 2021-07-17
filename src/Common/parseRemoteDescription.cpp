@@ -1,6 +1,9 @@
 #include "parseRemoteDescription.h"
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <common/logger_useful.h>
+
 
 namespace DB
 {
@@ -165,6 +168,29 @@ std::vector<String> parseRemoteDescription(const String & description, size_t l,
             ErrorCodes::BAD_ARGUMENTS);
 
     return res;
+}
+
+
+std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDatabase(const String & description, size_t max_addresses, UInt16 default_port)
+{
+    auto addresses = parseRemoteDescription(description, 0, description.size(), '|', max_addresses);
+    std::vector<std::pair<String, uint16_t>> result;
+
+    for (const auto & address : addresses)
+    {
+        size_t colon = address.find(':');
+        if (colon == String::npos)
+        {
+            LOG_WARNING(&Poco::Logger::get("ParseRemoteDescription"), "Port is not found for host: {}. Using default port {}", address, default_port);
+            result.emplace_back(std::make_pair(address, default_port));
+        }
+        else
+        {
+            result.emplace_back(std::make_pair(address.substr(0, colon), DB::parseFromString<UInt16>(address.substr(colon + 1))));
+        }
+    }
+
+    return result;
 }
 
 }

@@ -17,7 +17,7 @@ def drop_user_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=drop_user, flags=TE,
+        Suite(run=drop_user,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in drop_user.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -38,13 +38,14 @@ def drop_user_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=drop_user, flags=TE,
+        Suite(run=drop_user,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in drop_user.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
+    ("ALL",),
     ("ACCESS MANAGEMENT",),
     ("DROP USER",),
 ])
@@ -59,7 +60,14 @@ def drop_user(self, privilege, grant_target_name, user_name, node=None):
     with Scenario("DROP USER without privilege"):
 
         drop_user_name = f"drop_user_{getuid()}"
+
         with user(node, drop_user_name):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
             with When("I check the user can't drop a user"):
                 node.query(f"DROP USER {drop_user_name}", settings=[("user",user_name)],
@@ -67,6 +75,7 @@ def drop_user(self, privilege, grant_target_name, user_name, node=None):
 
     with Scenario("DROP USER with privilege"):
         drop_user_name = f"drop_user_{getuid()}"
+
         with user(node, drop_user_name):
             with When(f"I grant {privilege}"):
                 node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
@@ -76,6 +85,7 @@ def drop_user(self, privilege, grant_target_name, user_name, node=None):
 
     with Scenario("DROP USER on cluster"):
         drop_user_name = f"drop_user_{getuid()}"
+
         try:
             with Given("I have a user on a cluster"):
                 node.query(f"CREATE USER {drop_user_name} ON CLUSTER sharded_cluster")
@@ -93,6 +103,7 @@ def drop_user(self, privilege, grant_target_name, user_name, node=None):
 
     with Scenario("DROP USER with revoked privilege"):
         drop_user_name = f"drop_user_{getuid()}"
+
         with user(node, drop_user_name):
             with When(f"I grant {privilege}"):
                 node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
@@ -108,6 +119,8 @@ def drop_user(self, privilege, grant_target_name, user_name, node=None):
 @Name("drop user")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_DropUser("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of DROP USER.

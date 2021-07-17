@@ -15,7 +15,8 @@
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
 #include <Common/COW.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorDump.h>
+
 
 namespace DB
 {

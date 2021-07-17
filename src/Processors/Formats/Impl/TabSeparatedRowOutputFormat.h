@@ -28,7 +28,7 @@ public:
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowEndDelimiter() override;
     void writeBeforeTotals() override;

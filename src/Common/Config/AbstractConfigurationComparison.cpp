@@ -1,4 +1,5 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/getMultipleKeysFromConfig.h>
 
 #include <unordered_set>
 #include <common/StringRef.h>
@@ -26,6 +27,27 @@ bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const P
     return isSameConfiguration(left, String(), right, String());
 }
 
+bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const Poco::Util::AbstractConfiguration & right, const String & key)
+{
+    return isSameConfiguration(left, key, right, key);
+}
+
+bool isSameConfigurationWithMultipleKeys(const Poco::Util::AbstractConfiguration & left, const Poco::Util::AbstractConfiguration & right, const String & root, const String & name)
+{
+    if (&left == &right)
+        return true;
+
+    auto left_multiple_keys = getMultipleKeysFromConfig(left, root, name);
+    auto right_multiple_keys = getMultipleKeysFromConfig(right, root, name);
+    if (left_multiple_keys.size() != right_multiple_keys.size())
+        return false;
+
+    for (auto & key : left_multiple_keys)
+        if (!isSameConfiguration(left, right, concatKeyAndSubKey(root, key)))
+            return false;
+
+    return true;
+}
 
 bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const String & left_key,
                          const Poco::Util::AbstractConfiguration & right, const String & right_key)

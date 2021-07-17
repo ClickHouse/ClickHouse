@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
     DROP TABLE IF EXISTS lc_empty_part_bug;
-    create table lc_empty_part_bug (id  UInt64, s String) Engine=MergeTree ORDER BY id;
+    create table lc_empty_part_bug (id  UInt64, s String) Engine=MergeTree ORDER BY id SETTINGS number_of_free_entries_in_pool_to_execute_mutation=0;
     insert into lc_empty_part_bug select number as id, toString(rand()) from numbers(100);
     alter table lc_empty_part_bug delete where id < 100;
 " --mutations_sync=1
