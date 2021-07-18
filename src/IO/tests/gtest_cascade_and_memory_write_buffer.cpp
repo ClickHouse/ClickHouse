@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
-#include <Poco/File.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
@@ -9,7 +8,9 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>
 #include <Common/typeid_cast.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 using namespace DB;
 
 
@@ -41,10 +42,9 @@ static void testCascadeBufferRedability(
         if (!wbuf)
             continue;
 
-        auto * wbuf_readable = dynamic_cast<IReadableWriteBuffer *>(wbuf.get());
-        ASSERT_FALSE(!wbuf_readable);
+        auto & wbuf_readable = dynamic_cast<IReadableWriteBuffer &>(*wbuf);
 
-        auto rbuf = wbuf_readable->tryGetReadBuffer();
+        auto rbuf = wbuf_readable.tryGetReadBuffer();
         ASSERT_FALSE(!rbuf);
 
         read_buffers.emplace_back(rbuf);
@@ -236,7 +236,7 @@ try
 
         buf.reset();
         reread_buf.reset();
-        ASSERT_TRUE(!Poco::File(tmp_filename).exists());
+        ASSERT_TRUE(!fs::exists(tmp_filename));
     }
 }
 catch (...)

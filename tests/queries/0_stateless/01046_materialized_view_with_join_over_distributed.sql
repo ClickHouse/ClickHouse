@@ -1,5 +1,7 @@
 -- from https://github.com/ClickHouse/ClickHouse/issues/5142
 
+set insert_distributed_sync = 1;
+
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS t_d;
 DROP TABLE IF EXISTS t_v;

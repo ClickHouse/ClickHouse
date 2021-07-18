@@ -12,12 +12,10 @@ void ApplyWithAliasVisitor::visit(ASTPtr & ast, const Data & data)
         std::optional<Data> new_data;
         if (auto with = node_select->with())
         {
-            for (auto & child : with->children)
-                visit(child, data);
-
             std::set<String> current_names;
             for (auto & child : with->children)
             {
+                visit(child, new_data ? *new_data : data);
                 if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
                 {
                     if (!new_data)

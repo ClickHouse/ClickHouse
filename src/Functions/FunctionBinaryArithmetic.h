@@ -5,7 +5,7 @@
 // sanitizer/asan_interface.h
 #include <memory>
 #include <type_traits>
-#include <Common/Arena.h>
+#include <common/wide_integer_to_string.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -23,17 +23,17 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include "Core/DecimalFunctions.h"
-#include "IFunctionImpl.h"
+#include "IFunction.h"
 #include "FunctionHelpers.h"
 #include "IsOperation.h"
 #include "DivisionUtils.h"
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
+#include <Common/Arena.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <ext/map.h>
+#include <common/map.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -86,6 +86,7 @@ template <> inline constexpr bool IsIntegral<DataTypeInt32> = true;
 template <> inline constexpr bool IsIntegral<DataTypeInt64> = true;
 
 template <typename DataType> constexpr bool IsExtended = false;
+template <> inline constexpr bool IsExtended<DataTypeUInt128> = true;
 template <> inline constexpr bool IsExtended<DataTypeUInt256> = true;
 template <> inline constexpr bool IsExtended<DataTypeInt128> = true;
 template <> inline constexpr bool IsExtended<DataTypeInt256> = true;
@@ -504,7 +505,7 @@ private:
 using namespace traits_;
 using namespace impl_;
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
     static constexpr const bool is_plus = IsOperation<Op>::plus;
@@ -512,7 +513,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr const bool is_multiply = IsOperation<Op>::multiply;
     static constexpr const bool is_division = IsOperation<Op>::division;
 
-    const Context & context;
+    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename F>
@@ -523,6 +524,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeUInt16,
             DataTypeUInt32,
             DataTypeUInt64,
+            DataTypeUInt128,
             DataTypeUInt256,
             DataTypeInt8,
             DataTypeInt16,
@@ -543,22 +545,61 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     template <typename F>
+    static bool castTypeNoFloats(const IDataType * type, F && f)
+    {
+        return castTypeToEither<
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeUInt128,
+            DataTypeUInt256,
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64,
+            DataTypeInt128,
+            DataTypeInt256,
+            DataTypeDate,
+            DataTypeDateTime,
+            DataTypeDecimal<Decimal32>,
+            DataTypeDecimal<Decimal64>,
+            DataTypeDecimal<Decimal128>,
+            DataTypeDecimal<Decimal256>,
+            DataTypeFixedString
+        >(type, std::forward<F>(f));
+    }
+
+    template <typename F>
     static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     {
-        return castType(left, [&](const auto & left_)
+        if constexpr (valid_on_float_arguments)
         {
-            return castType(right, [&](const auto & right_)
+            return castType(left, [&](const auto & left_)
             {
-                return f(left_, right_);
+                return castType(right, [&](const auto & right_)
+                {
+                    return f(left_, right_);
+                });
             });
-        });
+        }
+        else
+        {
+            return castTypeNoFloats(left, [&](const auto & left_)
+            {
+                return castTypeNoFloats(right, [&](const auto & right_)
+                {
+                    return f(left_, right_);
+                });
+            });
+        }
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, const Context & context)
+    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        bool first_is_date_or_datetime = isDateOrDateTime(type0);
-        bool second_is_date_or_datetime = isDateOrDateTime(type1);
+        bool first_is_date_or_datetime = isDate(type0) || isDateTime(type0) || isDateTime64(type0);
+        bool second_is_date_or_datetime = isDate(type1) || isDateTime(type1) || isDateTime64(type1);
 
         /// Exactly one argument must be Date or DateTime
         if (first_is_date_or_datetime == second_is_date_or_datetime)
@@ -733,7 +774,7 @@ class FunctionBinaryArithmetic : public IFunction
         ColumnsWithTypeAndName new_arguments = arguments;
 
         /// Interval argument must be second.
-        if (WhichDataType(arguments[1].type).isDateOrDateTime())
+        if (isDate(arguments[1].type) || isDateTime(arguments[1].type) || isDateTime64(arguments[1].type))
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
@@ -744,7 +785,7 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
-    template <class T, class ResultDataType, class CC, class C>
+    template <typename T, typename ResultDataType, typename CC, typename C>
     static auto helperGetOrConvert(const CC & col_const, const C & col)
     {
         using ResultType = typename ResultDataType::FieldType;
@@ -752,12 +793,14 @@ class FunctionBinaryArithmetic : public IFunction
 
         if constexpr (IsFloatingPoint<ResultDataType> && IsDecimalNumber<T>)
             return DecimalUtils::convertTo<NativeResultType>(col_const->template getValue<T>(), col.getScale());
+        else if constexpr (IsDecimalNumber<T>)
+            return col_const->template getValue<T>().value;
         else
             return col_const->template getValue<T>();
     }
 
-    template <OpCase op_case, bool left_decimal, bool right_decimal, class OpImpl, class OpImplCheck,
-              class L, class R, class VR, class SA, class SB>
+    template <OpCase op_case, bool left_decimal, bool right_decimal, typename OpImpl, typename OpImplCheck,
+              typename L, typename R, typename VR, typename SA, typename SB>
     void helperInvokeEither(const L& left, const R& right, VR& vec_res, SA scale_a, SB scale_b) const
     {
         if (check_decimal_overflow)
@@ -856,9 +899,8 @@ class FunctionBinaryArithmetic : public IFunction
             const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
 
             const ResultType res = check_decimal_overflow
-                // the arguments are already scaled after conversion
-                ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, 1, 1)
-                : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, 1, 1);
+                ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b)
+                : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b);
 
             if constexpr (result_is_decimal)
                 return ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
@@ -902,9 +944,9 @@ class FunctionBinaryArithmetic : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
 
-    explicit FunctionBinaryArithmetic(const Context & context_)
+    explicit FunctionBinaryArithmetic(ContextPtr context_)
     :   context(context_),
         check_decimal_overflow(decimalCheckArithmeticOverflow(context))
     {}
@@ -918,7 +960,7 @@ public:
         return getReturnTypeImplStatic(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, const Context & context)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
@@ -947,7 +989,7 @@ public:
                 new_arguments[i].type = arguments[i];
 
             /// Interval argument must be second.
-            if (WhichDataType(new_arguments[1].type).isDateOrDateTime())
+            if (isDate(new_arguments[1].type) || isDateTime(new_arguments[1].type) || isDateTime64(new_arguments[1].type))
                 std::swap(new_arguments[0], new_arguments[1]);
 
             /// Change interval argument to its representation
@@ -1286,7 +1328,7 @@ public:
         });
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         assert(2 == types.size() && 2 == values.size());
 
@@ -1303,8 +1345,8 @@ public:
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                     auto type = std::make_shared<ResultDataType>();
-                    auto * lval = nativeCast(b, types[0], values[0](), type);
-                    auto * rval = nativeCast(b, types[1], values[1](), type);
+                    auto * lval = nativeCast(b, types[0], values[0], type);
+                    auto * rval = nativeCast(b, types[1], values[1], type);
                     result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
                     return true;
                 }
@@ -1319,18 +1361,18 @@ public:
 };
 
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
-class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
+class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>
 {
 public:
-    using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>;
+    using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>;
     using Monotonicity = typename Base::Monotonicity;
 
     static FunctionPtr create(
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        const Context & context)
+        ContextPtr context)
     {
         return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context);
     }
@@ -1339,7 +1381,7 @@ public:
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        const Context & context_)
+        ContextPtr context_)
         : Base(context_), left(left_), right(right_), return_type(return_type_)
     {
     }
@@ -1488,52 +1530,52 @@ private:
     DataTypePtr return_type;
 };
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
-class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolverImpl
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
+class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionOverloadResolverImplPtr create(const Context & context)
+    static FunctionOverloadResolverPtr create(ContextPtr context)
     {
         return std::make_unique<BinaryArithmeticOverloadResolver>(context);
     }
 
-    explicit BinaryArithmeticOverloadResolver(const Context & context_) : context(context_) {}
+    explicit BinaryArithmeticOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isVariadic() const override { return false; }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2
             && ((arguments[0].column && isColumnConst(*arguments[0].column))
                 || (arguments[1].column && isColumnConst(*arguments[1].column))))
         {
-            return std::make_unique<DefaultFunction>(
-                FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments>::create(
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(
+                FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(
                     arguments[0], arguments[1], return_type, context),
-                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         }
 
-        return std::make_unique<DefaultFunction>(
-            FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>::create(context),
-            ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(
+            FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(context),
+            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
             return_type);
     }
 
-    DataTypePtr getReturnType(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception(
                 "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) + ", should be 2",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>::getReturnTypeImplStatic(arguments, context);
+        return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::getReturnTypeImplStatic(arguments, context);
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 }

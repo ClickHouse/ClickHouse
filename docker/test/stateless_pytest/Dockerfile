@@ -5,7 +5,11 @@ RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
         python3-pip \
         python3-setuptools \
-        python3-wheel
+        python3-wheel \
+        brotli \
+        netcat-openbsd \
+        postgresql-client \
+        zstd
 
 RUN python3 -m pip install \
     wheel \
@@ -15,7 +19,10 @@ RUN python3 -m pip install \
     pytest-randomly \
     pytest-rerunfailures \
     pytest-timeout \
-    pytest-xdist
+    pytest-xdist \
+    pandas \
+    numpy \
+    scipy
 
 CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \

@@ -258,7 +258,7 @@ TEST(NumberTraits, Others)
     ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfFloatingPointDivision<DB::UInt16, DB::Int16>::Type()), "Float64");
     ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfFloatingPointDivision<DB::UInt32, DB::Int16>::Type()), "Float64");
     ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfIntegerDivision<DB::UInt8, DB::Int16>::Type()), "Int8");
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfModulo<DB::UInt32, DB::Int8>::Type()), "Int8");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfModulo<DB::UInt32, DB::Int8>::Type()), "UInt8");
 }
 
 

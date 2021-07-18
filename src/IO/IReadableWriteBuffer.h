@@ -17,7 +17,7 @@ struct IReadableWriteBuffer
         return getReadBufferImpl();
     }
 
-    virtual ~IReadableWriteBuffer() {}
+    virtual ~IReadableWriteBuffer() = default;
 
 protected:
 

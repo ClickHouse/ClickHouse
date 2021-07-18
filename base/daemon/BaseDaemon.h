@@ -85,7 +85,7 @@ public:
     template <class T>
     void writeToGraphite(const std::string & key, const T & value, const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME, time_t timestamp = 0, const std::string & custom_root_path = "")
     {
-        auto writer = getGraphiteWriter(config_name);
+        auto *writer = getGraphiteWriter(config_name);
         if (writer)
             writer->write(key, value, timestamp, custom_root_path);
     }
@@ -93,7 +93,7 @@ public:
     template <class T>
     void writeToGraphite(const GraphiteWriter::KeyValueVector<T> & key_vals, const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME, time_t timestamp = 0, const std::string & custom_root_path = "")
     {
-        auto writer = getGraphiteWriter(config_name);
+        auto *writer = getGraphiteWriter(config_name);
         if (writer)
             writer->write(key_vals, timestamp, custom_root_path);
     }
@@ -101,7 +101,7 @@ public:
     template <class T>
     void writeToGraphite(const GraphiteWriter::KeyValueVector<T> & key_vals, const std::chrono::system_clock::time_point & current_time, const std::string & custom_root_path)
     {
-        auto writer = getGraphiteWriter();
+        auto *writer = getGraphiteWriter();
         if (writer)
             writer->write(key_vals, std::chrono::system_clock::to_time_t(current_time), custom_root_path);
     }
@@ -160,6 +160,8 @@ protected:
     static std::optional<std::reference_wrapper<Daemon>> tryGetInstance();
 
     virtual std::string getDefaultCorePath() const;
+
+    virtual std::string getDefaultConfigFileName() const;
 
     std::optional<DB::StatusFile> pid_file;
 

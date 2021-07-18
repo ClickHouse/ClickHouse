@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -34,7 +34,7 @@ class FunctionArraySlice : public IFunction
 {
 public:
     static constexpr auto name = "arraySlice";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArraySlice>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArraySlice>(); }
 
     String getName() const override { return name; }
 
@@ -119,7 +119,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, static_cast<size_t>(offset - 1));
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, static_cast<size_t>(-offset));
+                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, -static_cast<size_t>(offset));
             }
             else if (isColumnConst(*length_column))
             {
@@ -127,7 +127,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, static_cast<size_t>(offset - 1), length);
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, static_cast<size_t>(-offset), length);
+                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, -static_cast<size_t>(offset), length);
             }
             else
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *offset_column, *length_column);

@@ -22,6 +22,8 @@ struct ExternalResultDescription
         vtInt64,
         vtFloat32,
         vtFloat64,
+        vtEnum8,
+        vtEnum16,
         vtString,
         vtDate,
         vtDateTime,

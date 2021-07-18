@@ -16,7 +16,7 @@ NamesAndTypesList StorageSystemBuildOptions::getNamesAndTypes()
     };
 }
 
-void StorageSystemBuildOptions::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemBuildOptions::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
 #if !defined(ARCADIA_BUILD)
     for (auto * it = auto_config_build; *it; it += 2)

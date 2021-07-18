@@ -1978,3 +1978,333 @@ example_mode_aes_256_ofb_datatype_Enum8_key_64_iv_64 = r"""'D2'"""
 
 example_mode_aes_256_ofb_datatype_Enum16_key_64_iv_64 = r"""'D2EE'"""
 
+example_mode_aes_128_ecb_datatype_NullableString_key_16_iv_None = r"""'7C51909F95C1E9B886A3487CD3EBED69'"""
+
+example_mode_aes_128_ecb_datatype_NullableStringNull_key_16_iv_None = r"""'\\N'"""
+
+example_mode_aes_128_ecb_datatype_NullableFixedString_key_16_iv_None = r"""'2320D8B0C3FF2AF0C808CE333688FEE4'"""
+
+example_mode_aes_128_ecb_datatype_NullableFixedStringNull_key_16_iv_None = r"""'\\N'"""
+
+example_mode_aes_128_ecb_datatype_NullableString_key_24_iv_None = r"""'697175286BC73A26C572DBD9480738F3'"""
+
+example_mode_aes_128_ecb_datatype_NullableStringNull_key_24_iv_None = r"""'\\N'"""
+
+example_mode_aes_128_ecb_datatype_NullableFixedString_key_24_iv_None = r"""'824777897B48FB42AE19EBF2835AE5BA'"""
+
+example_mode_aes_128_ecb_datatype_NullableFixedStringNull_key_24_iv_None = r"""'\\N'"""
+
+example_mode_aes_192_ecb_datatype_NullableString_key_24_iv_None = r"""'1AE38A541D466EDFED572EE839B0907F'"""
+
+example_mode_aes_192_ecb_datatype_NullableStringNull_key_24_iv_None = r"""'\\N'"""
+
+example_mode_aes_192_ecb_datatype_NullableFixedString_key_24_iv_None = r"""'145EF1DA49622900B742743B4114C3F8'"""
+
+example_mode_aes_192_ecb_datatype_NullableFixedStringNull_key_24_iv_None = r"""'\\N'"""
+
+example_mode_aes_192_ecb_datatype_NullableString_key_32_iv_None = r"""'851106E40808E28682DAC1AD840A7E92'"""
+
+example_mode_aes_192_ecb_datatype_NullableStringNull_key_32_iv_None = r"""'\\N'"""
+
+example_mode_aes_192_ecb_datatype_NullableFixedString_key_32_iv_None = r"""'24268978B72821002456FF2204B0F9B9'"""
+
+example_mode_aes_192_ecb_datatype_NullableFixedStringNull_key_32_iv_None = r"""'\\N'"""
+
+example_mode_aes_256_ecb_datatype_NullableString_key_32_iv_None = r"""'C91184ED1E67F0CDED89B097D5D3B130'"""
+
+example_mode_aes_256_ecb_datatype_NullableStringNull_key_32_iv_None = r"""'\\N'"""
+
+example_mode_aes_256_ecb_datatype_NullableFixedString_key_32_iv_None = r"""'BB44E0A5A23B06C6F78D05CF12E4A304'"""
+
+example_mode_aes_256_ecb_datatype_NullableFixedStringNull_key_32_iv_None = r"""'\\N'"""
+
+example_mode_aes_256_ecb_datatype_NullableString_key_64_iv_None = r"""'7492B9A2D0E86DAF1DBCAEDBAD9E3D7E'"""
+
+example_mode_aes_256_ecb_datatype_NullableStringNull_key_64_iv_None = r"""'\\N'"""
+
+example_mode_aes_256_ecb_datatype_NullableFixedString_key_64_iv_None = r"""'F2FACC4703F559D74555D10CA4850F40'"""
+
+example_mode_aes_256_ecb_datatype_NullableFixedStringNull_key_64_iv_None = r"""'\\N'"""
+
+example_mode_aes_128_cbc_datatype_NullableString_key_16_iv_None = r"""'7C51909F95C1E9B886A3487CD3EBED69'"""
+
+example_mode_aes_128_cbc_datatype_NullableStringNull_key_16_iv_None = r"""'\\N'"""
+
+example_mode_aes_128_cbc_datatype_NullableFixedString_key_16_iv_None = r"""'2320D8B0C3FF2AF0C808CE333688FEE4'"""
+
+example_mode_aes_128_cbc_datatype_NullableFixedStringNull_key_16_iv_None = r"""'\\N'"""
+
+example_mode_aes_192_cbc_datatype_NullableString_key_24_iv_None = r"""'1AE38A541D466EDFED572EE839B0907F'"""
+
+example_mode_aes_192_cbc_datatype_NullableStringNull_key_24_iv_None = r"""'\\N'"""
+
+example_mode_aes_192_cbc_datatype_NullableFixedString_key_24_iv_None = r"""'145EF1DA49622900B742743B4114C3F8'"""
+
+example_mode_aes_192_cbc_datatype_NullableFixedStringNull_key_24_iv_None = r"""'\\N'"""
+
+example_mode_aes_256_cbc_datatype_NullableString_key_32_iv_None = r"""'C91184ED1E67F0CDED89B097D5D3B130'"""
+
+example_mode_aes_256_cbc_datatype_NullableStringNull_key_32_iv_None = r"""'\\N'"""
+
+example_mode_aes_256_cbc_datatype_NullableFixedString_key_32_iv_None = r"""'BB44E0A5A23B06C6F78D05CF12E4A304'"""
+
+example_mode_aes_256_cbc_datatype_NullableFixedStringNull_key_32_iv_None = r"""'\\N'"""
+
+example_mode_aes_128_cbc_datatype_NullableString_key_16_iv_16 = r"""'D017D171B3865D6EA347E14167261F41'"""
+
+example_mode_aes_128_cbc_datatype_NullableStringNull_key_16_iv_16 = r"""'\\N'"""
+
+example_mode_aes_128_cbc_datatype_NullableFixedString_key_16_iv_16 = r"""'ECE42AF0000893B1D1A43993506376A4'"""
+
+example_mode_aes_128_cbc_datatype_NullableFixedStringNull_key_16_iv_16 = r"""'\\N'"""
+
+example_mode_aes_128_cbc_datatype_NullableString_key_24_iv_24 = r"""'73C9874744984892250CCCEC8541D690'"""
+
+example_mode_aes_128_cbc_datatype_NullableStringNull_key_24_iv_24 = r"""'\\N'"""
+
+example_mode_aes_128_cbc_datatype_NullableFixedString_key_24_iv_24 = r"""'C55AC3DA9276DBF066AC408BFCF011DD'"""
+
+example_mode_aes_128_cbc_datatype_NullableFixedStringNull_key_24_iv_24 = r"""'\\N'"""
+
+example_mode_aes_192_cbc_datatype_NullableString_key_24_iv_16 = r"""'A3DB45D129A5C9FDB5ED66E782B28BD2'"""
+
+example_mode_aes_192_cbc_datatype_NullableStringNull_key_24_iv_16 = r"""'\\N'"""
+
+example_mode_aes_192_cbc_datatype_NullableFixedString_key_24_iv_16 = r"""'0A8E8BA80EB490740B91937D4A5FF84C'"""
+
+example_mode_aes_192_cbc_datatype_NullableFixedStringNull_key_24_iv_16 = r"""'\\N'"""
+
+example_mode_aes_192_cbc_datatype_NullableString_key_32_iv_32 = r"""'508551DA505F6538F90DC607423CFAD4'"""
+
+example_mode_aes_192_cbc_datatype_NullableStringNull_key_32_iv_32 = r"""'\\N'"""
+
+example_mode_aes_192_cbc_datatype_NullableFixedString_key_32_iv_32 = r"""'723C4EB7399AE6F019109651B376A111'"""
+
+example_mode_aes_192_cbc_datatype_NullableFixedStringNull_key_32_iv_32 = r"""'\\N'"""
+
+example_mode_aes_256_cbc_datatype_NullableString_key_32_iv_16 = r"""'5E22454D9AC4F1A47B04E2FD98A76140'"""
+
+example_mode_aes_256_cbc_datatype_NullableStringNull_key_32_iv_16 = r"""'\\N'"""
+
+example_mode_aes_256_cbc_datatype_NullableFixedString_key_32_iv_16 = r"""'4A3A13D0807C29D4FA9CAEE6B9A67E7D'"""
+
+example_mode_aes_256_cbc_datatype_NullableFixedStringNull_key_32_iv_16 = r"""'\\N'"""
+
+example_mode_aes_256_cbc_datatype_NullableString_key_64_iv_64 = r"""'4CE9C9AFDC1E1E1EF2D1F4C141CE1874'"""
+
+example_mode_aes_256_cbc_datatype_NullableStringNull_key_64_iv_64 = r"""'\\N'"""
+
+example_mode_aes_256_cbc_datatype_NullableFixedString_key_64_iv_64 = r"""'5547B945A6810130CFC689C22530FA26'"""
+
+example_mode_aes_256_cbc_datatype_NullableFixedStringNull_key_64_iv_64 = r"""'\\N'"""
+
+example_mode_aes_128_cfb128_datatype_NullableString_key_16_iv_None = r"""'21'"""
+
+example_mode_aes_128_cfb128_datatype_NullableStringNull_key_16_iv_None = r"""'\\N'"""
+
+example_mode_aes_128_cfb128_datatype_NullableFixedString_key_16_iv_None = r"""'21DF'"""
+
+example_mode_aes_128_cfb128_datatype_NullableFixedStringNull_key_16_iv_None = r"""'\\N'"""
+
+example_mode_aes_192_cfb128_datatype_NullableString_key_24_iv_None = r"""'36'"""
+
+example_mode_aes_192_cfb128_datatype_NullableStringNull_key_24_iv_None = r"""'\\N'"""
+
+example_mode_aes_192_cfb128_datatype_NullableFixedString_key_24_iv_None = r"""'36B7'"""
+
+example_mode_aes_192_cfb128_datatype_NullableFixedStringNull_key_24_iv_None = r"""'\\N'"""
+
+example_mode_aes_256_cfb128_datatype_NullableString_key_32_iv_None = r"""'81'"""
+
+example_mode_aes_256_cfb128_datatype_NullableStringNull_key_32_iv_None = r"""'\\N'"""
+
+example_mode_aes_256_cfb128_datatype_NullableFixedString_key_32_iv_None = r"""'818E'"""
+
+example_mode_aes_256_cfb128_datatype_NullableFixedStringNull_key_32_iv_None = r"""'\\N'"""
+
+example_mode_aes_128_cfb128_datatype_NullableString_key_16_iv_16 = r"""'03'"""
+
+example_mode_aes_128_cfb128_datatype_NullableStringNull_key_16_iv_16 = r"""'\\N'"""
+
+example_mode_aes_128_cfb128_datatype_NullableFixedString_key_16_iv_16 = r"""'0388'"""
+
+example_mode_aes_128_cfb128_datatype_NullableFixedStringNull_key_16_iv_16 = r"""'\\N'"""
+
+example_mode_aes_128_cfb128_datatype_NullableString_key_24_iv_24 = r"""'6A'"""
+
+example_mode_aes_128_cfb128_datatype_NullableStringNull_key_24_iv_24 = r"""'\\N'"""
+
+example_mode_aes_128_cfb128_datatype_NullableFixedString_key_24_iv_24 = r"""'6A77'"""
+
+example_mode_aes_128_cfb128_datatype_NullableFixedStringNull_key_24_iv_24 = r"""'\\N'"""
+
+example_mode_aes_192_cfb128_datatype_NullableString_key_24_iv_16 = r"""'59'"""
+
+example_mode_aes_192_cfb128_datatype_NullableStringNull_key_24_iv_16 = r"""'\\N'"""
+
+example_mode_aes_192_cfb128_datatype_NullableFixedString_key_24_iv_16 = r"""'59C7'"""
+
+example_mode_aes_192_cfb128_datatype_NullableFixedStringNull_key_24_iv_16 = r"""'\\N'"""
+
+example_mode_aes_192_cfb128_datatype_NullableString_key_32_iv_32 = r"""'00'"""
+
+example_mode_aes_192_cfb128_datatype_NullableStringNull_key_32_iv_32 = r"""'\\N'"""
+
+example_mode_aes_192_cfb128_datatype_NullableFixedString_key_32_iv_32 = r"""'00A0'"""
+
+example_mode_aes_192_cfb128_datatype_NullableFixedStringNull_key_32_iv_32 = r"""'\\N'"""
+
+example_mode_aes_256_cfb128_datatype_NullableString_key_32_iv_16 = r"""'58'"""
+
+example_mode_aes_256_cfb128_datatype_NullableStringNull_key_32_iv_16 = r"""'\\N'"""
+
+example_mode_aes_256_cfb128_datatype_NullableFixedString_key_32_iv_16 = r"""'5858'"""
+
+example_mode_aes_256_cfb128_datatype_NullableFixedStringNull_key_32_iv_16 = r"""'\\N'"""
+
+example_mode_aes_256_cfb128_datatype_NullableString_key_64_iv_64 = r"""'E2'"""
+
+example_mode_aes_256_cfb128_datatype_NullableStringNull_key_64_iv_64 = r"""'\\N'"""
+
+example_mode_aes_256_cfb128_datatype_NullableFixedString_key_64_iv_64 = r"""'E2EE'"""
+
+example_mode_aes_256_cfb128_datatype_NullableFixedStringNull_key_64_iv_64 = r"""'\\N'"""
+
+example_mode_aes_128_ofb_datatype_NullableString_key_16_iv_None = r"""'21'"""
+
+example_mode_aes_128_ofb_datatype_NullableStringNull_key_16_iv_None = r"""'\\N'"""
+
+example_mode_aes_128_ofb_datatype_NullableFixedString_key_16_iv_None = r"""'21DF'"""
+
+example_mode_aes_128_ofb_datatype_NullableFixedStringNull_key_16_iv_None = r"""'\\N'"""
+
+example_mode_aes_192_ofb_datatype_NullableString_key_24_iv_None = r"""'36'"""
+
+example_mode_aes_192_ofb_datatype_NullableStringNull_key_24_iv_None = r"""'\\N'"""
+
+example_mode_aes_192_ofb_datatype_NullableFixedString_key_24_iv_None = r"""'36B7'"""
+
+example_mode_aes_192_ofb_datatype_NullableFixedStringNull_key_24_iv_None = r"""'\\N'"""
+
+example_mode_aes_256_ofb_datatype_NullableString_key_32_iv_None = r"""'81'"""
+
+example_mode_aes_256_ofb_datatype_NullableStringNull_key_32_iv_None = r"""'\\N'"""
+
+example_mode_aes_256_ofb_datatype_NullableFixedString_key_32_iv_None = r"""'818E'"""
+
+example_mode_aes_256_ofb_datatype_NullableFixedStringNull_key_32_iv_None = r"""'\\N'"""
+
+example_mode_aes_128_ofb_datatype_NullableString_key_16_iv_16 = r"""'03'"""
+
+example_mode_aes_128_ofb_datatype_NullableStringNull_key_16_iv_16 = r"""'\\N'"""
+
+example_mode_aes_128_ofb_datatype_NullableFixedString_key_16_iv_16 = r"""'0388'"""
+
+example_mode_aes_128_ofb_datatype_NullableFixedStringNull_key_16_iv_16 = r"""'\\N'"""
+
+example_mode_aes_128_ofb_datatype_NullableString_key_24_iv_24 = r"""'6A'"""
+
+example_mode_aes_128_ofb_datatype_NullableStringNull_key_24_iv_24 = r"""'\\N'"""
+
+example_mode_aes_128_ofb_datatype_NullableFixedString_key_24_iv_24 = r"""'6A77'"""
+
+example_mode_aes_128_ofb_datatype_NullableFixedStringNull_key_24_iv_24 = r"""'\\N'"""
+
+example_mode_aes_192_ofb_datatype_NullableString_key_24_iv_16 = r"""'59'"""
+
+example_mode_aes_192_ofb_datatype_NullableStringNull_key_24_iv_16 = r"""'\\N'"""
+
+example_mode_aes_192_ofb_datatype_NullableFixedString_key_24_iv_16 = r"""'59C7'"""
+
+example_mode_aes_192_ofb_datatype_NullableFixedStringNull_key_24_iv_16 = r"""'\\N'"""
+
+example_mode_aes_192_ofb_datatype_NullableString_key_32_iv_32 = r"""'00'"""
+
+example_mode_aes_192_ofb_datatype_NullableStringNull_key_32_iv_32 = r"""'\\N'"""
+
+example_mode_aes_192_ofb_datatype_NullableFixedString_key_32_iv_32 = r"""'00A0'"""
+
+example_mode_aes_192_ofb_datatype_NullableFixedStringNull_key_32_iv_32 = r"""'\\N'"""
+
+example_mode_aes_256_ofb_datatype_NullableString_key_32_iv_16 = r"""'58'"""
+
+example_mode_aes_256_ofb_datatype_NullableStringNull_key_32_iv_16 = r"""'\\N'"""
+
+example_mode_aes_256_ofb_datatype_NullableFixedString_key_32_iv_16 = r"""'5858'"""
+
+example_mode_aes_256_ofb_datatype_NullableFixedStringNull_key_32_iv_16 = r"""'\\N'"""
+
+example_mode_aes_256_ofb_datatype_NullableString_key_64_iv_64 = r"""'E2'"""
+
+example_mode_aes_256_ofb_datatype_NullableStringNull_key_64_iv_64 = r"""'\\N'"""
+
+example_mode_aes_256_ofb_datatype_NullableFixedString_key_64_iv_64 = r"""'E2EE'"""
+
+example_mode_aes_256_ofb_datatype_NullableFixedStringNull_key_64_iv_64 = r"""'\\N'"""
+
+example_mode_aes_128_ecb_datatype_LowCardinalityFixedString_key_16_iv_None = r"""'2320D8B0C3FF2AF0C808CE333688FEE4'"""
+
+example_mode_aes_128_ecb_datatype_LowCardinalityFixedString_key_24_iv_None = r"""'824777897B48FB42AE19EBF2835AE5BA'"""
+
+example_mode_aes_192_ecb_datatype_LowCardinalityFixedString_key_24_iv_None = r"""'145EF1DA49622900B742743B4114C3F8'"""
+
+example_mode_aes_192_ecb_datatype_LowCardinalityFixedString_key_32_iv_None = r"""'24268978B72821002456FF2204B0F9B9'"""
+
+example_mode_aes_256_ecb_datatype_LowCardinalityFixedString_key_32_iv_None = r"""'BB44E0A5A23B06C6F78D05CF12E4A304'"""
+
+example_mode_aes_256_ecb_datatype_LowCardinalityFixedString_key_64_iv_None = r"""'F2FACC4703F559D74555D10CA4850F40'"""
+
+example_mode_aes_128_cbc_datatype_LowCardinalityFixedString_key_16_iv_None = r"""'2320D8B0C3FF2AF0C808CE333688FEE4'"""
+
+example_mode_aes_192_cbc_datatype_LowCardinalityFixedString_key_24_iv_None = r"""'145EF1DA49622900B742743B4114C3F8'"""
+
+example_mode_aes_256_cbc_datatype_LowCardinalityFixedString_key_32_iv_None = r"""'BB44E0A5A23B06C6F78D05CF12E4A304'"""
+
+example_mode_aes_128_cbc_datatype_LowCardinalityFixedString_key_16_iv_16 = r"""'ECE42AF0000893B1D1A43993506376A4'"""
+
+example_mode_aes_128_cbc_datatype_LowCardinalityFixedString_key_24_iv_24 = r"""'C55AC3DA9276DBF066AC408BFCF011DD'"""
+
+example_mode_aes_192_cbc_datatype_LowCardinalityFixedString_key_24_iv_16 = r"""'0A8E8BA80EB490740B91937D4A5FF84C'"""
+
+example_mode_aes_192_cbc_datatype_LowCardinalityFixedString_key_32_iv_32 = r"""'723C4EB7399AE6F019109651B376A111'"""
+
+example_mode_aes_256_cbc_datatype_LowCardinalityFixedString_key_32_iv_16 = r"""'4A3A13D0807C29D4FA9CAEE6B9A67E7D'"""
+
+example_mode_aes_256_cbc_datatype_LowCardinalityFixedString_key_64_iv_64 = r"""'5547B945A6810130CFC689C22530FA26'"""
+
+example_mode_aes_128_cfb128_datatype_LowCardinalityFixedString_key_16_iv_None = r"""'21DF'"""
+
+example_mode_aes_192_cfb128_datatype_LowCardinalityFixedString_key_24_iv_None = r"""'36B7'"""
+
+example_mode_aes_256_cfb128_datatype_LowCardinalityFixedString_key_32_iv_None = r"""'818E'"""
+
+example_mode_aes_128_cfb128_datatype_LowCardinalityFixedString_key_16_iv_16 = r"""'0388'"""
+
+example_mode_aes_128_cfb128_datatype_LowCardinalityFixedString_key_24_iv_24 = r"""'6A77'"""
+
+example_mode_aes_192_cfb128_datatype_LowCardinalityFixedString_key_24_iv_16 = r"""'59C7'"""
+
+example_mode_aes_192_cfb128_datatype_LowCardinalityFixedString_key_32_iv_32 = r"""'00A0'"""
+
+example_mode_aes_256_cfb128_datatype_LowCardinalityFixedString_key_32_iv_16 = r"""'5858'"""
+
+example_mode_aes_256_cfb128_datatype_LowCardinalityFixedString_key_64_iv_64 = r"""'E2EE'"""
+
+example_mode_aes_128_ofb_datatype_LowCardinalityFixedString_key_16_iv_None = r"""'21DF'"""
+
+example_mode_aes_192_ofb_datatype_LowCardinalityFixedString_key_24_iv_None = r"""'36B7'"""
+
+example_mode_aes_256_ofb_datatype_LowCardinalityFixedString_key_32_iv_None = r"""'818E'"""
+
+example_mode_aes_128_ofb_datatype_LowCardinalityFixedString_key_16_iv_16 = r"""'0388'"""
+
+example_mode_aes_128_ofb_datatype_LowCardinalityFixedString_key_24_iv_24 = r"""'6A77'"""
+
+example_mode_aes_192_ofb_datatype_LowCardinalityFixedString_key_24_iv_16 = r"""'59C7'"""
+
+example_mode_aes_192_ofb_datatype_LowCardinalityFixedString_key_32_iv_32 = r"""'00A0'"""
+
+example_mode_aes_256_ofb_datatype_LowCardinalityFixedString_key_32_iv_16 = r"""'5858'"""
+
+example_mode_aes_256_ofb_datatype_LowCardinalityFixedString_key_64_iv_64 = r"""'E2EE'"""
+

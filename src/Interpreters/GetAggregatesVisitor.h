@@ -31,6 +31,12 @@ public:
     {
         if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
             return false;
+        if (auto * select = node->as<ASTSelectQuery>())
+        {
+            // We don't analysis WITH statement because it might contain useless aggregates
+            if (child == select->with())
+                return false;
+        }
         if (auto * func = node->as<ASTFunction>())
         {
             if (isAggregateFunction(*func))

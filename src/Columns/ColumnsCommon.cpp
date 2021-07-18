@@ -17,13 +17,17 @@ namespace DB
 static UInt64 toBits64(const Int8 * bytes64)
 {
     static const __m128i zero16 = _mm_setzero_si128();
-    return static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64)), zero16)))
-        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 16)), zero16)))
-           << 16)
-        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 32)), zero16)))
-           << 32)
-        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16)))
-           << 48);
+    UInt64 res =
+        static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64)), zero16)))
+        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 16)), zero16))) << 16)
+        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 32)), zero16))) << 32)
+        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48);
+
+    return ~res;
 }
 #endif
 
@@ -49,7 +53,7 @@ size_t countBytesInFilter(const UInt8 * filt, size_t sz)
 #endif
 
     for (; pos < end; ++pos)
-        count += *pos > 0;
+        count += *pos != 0;
 
     return count;
 }
@@ -82,7 +86,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 #endif
 
     for (; pos < end; ++pos)
-        count += (*pos & ~*pos2) > 0;
+        count += (*pos & ~*pos2) != 0;
 
     return count;
 }
@@ -232,9 +236,10 @@ namespace
 
         while (filt_pos < filt_end_aligned)
         {
-            const auto mask = _mm_movemask_epi8(_mm_cmpgt_epi8(
+            UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
                 _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
                 zero_vec));
+            mask = ~mask;
 
             if (mask == 0)
             {

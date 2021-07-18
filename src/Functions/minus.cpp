@@ -19,7 +19,7 @@ struct MinusImpl
             using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
             using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;
 
-            return bigint_cast<Result>(bigint_cast<CastA>(a)) - bigint_cast<Result>(bigint_cast<CastB>(b));
+            return static_cast<Result>(static_cast<CastA>(a)) - static_cast<Result>(static_cast<CastB>(b));
         }
         else
             return static_cast<Result>(a) - b;

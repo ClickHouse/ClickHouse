@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
-
 
 namespace ProfileEvents
 {
@@ -57,6 +57,17 @@ struct QueryLogElement
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
+    std::set<String> query_projections;
+
+    std::unordered_set<String> used_aggregate_functions;
+    std::unordered_set<String> used_aggregate_function_combinators;
+    std::unordered_set<String> used_database_engines;
+    std::unordered_set<String> used_data_type_families;
+    std::unordered_set<String> used_dictionaries;
+    std::unordered_set<String> used_formats;
+    std::unordered_set<String> used_functions;
+    std::unordered_set<String> used_storages;
+    std::unordered_set<String> used_table_functions;
 
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
@@ -64,13 +75,16 @@ struct QueryLogElement
 
     ClientInfo client_info;
 
+    String log_comment;
+
     std::vector<UInt64> thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
 
     static std::string name() { return "QueryLog"; }
 
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);

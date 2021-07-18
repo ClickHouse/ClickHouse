@@ -12,6 +12,8 @@ using FunctionToMinute = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMinu
 void registerFunctionToMinute(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToMinute>();
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToMinute>("MINUTE", FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 from testflows.core import *
 
@@ -23,11 +24,7 @@ xfails = {
     "connection protocols/starttls with custom port":
      [(Fail, "it seems that starttls is not enabled by default on custom plain-text ports in LDAP server")],
     "connection protocols/tls cipher suite":
-     [(Fail, "can't get it to work")],
-    "external user directory/user authentications/valid verification cooldown value ldap unavailable":
-     [(Fail, "flaky, ask Vitaly Zakaznikov, Telegram @vzakaznikov")],
-    "user authentications/rbac=True/verification cooldown/verification cooldown performance":
-     [(Fail, "flaky, ask Vitaly Zakaznikov, Telegram @vzakaznikov")]
+     [(Fail, "can't get it to work")]
 }
 
 @TestFeature
@@ -43,17 +40,19 @@ xfails = {
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """ClickHouse integration with LDAP regression module.
     """
+    top().terminating = False
     nodes = {
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
     }
 
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
-        self.context.cluster = cluster
+    if stress is not None:
+        self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
 
-        if stress is not None or not hasattr(self.context, "stress"):
-            self.context.stress = stress
-        if parallel is not None or not hasattr(self.context, "parallel"):
-            self.context.parallel = parallel
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), "ldap_authentication_env")) as cluster:
+        self.context.cluster = cluster
 
         Scenario(run=load("ldap.authentication.tests.sanity", "scenario"))
         Scenario(run=load("ldap.authentication.tests.multiple_servers", "scenario"))

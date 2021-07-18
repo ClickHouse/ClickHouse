@@ -12,6 +12,8 @@ using ArenaPtr = std::shared_ptr<Arena>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class ActionsDAG;
+
 enum class TotalsMode;
 
 /** Takes blocks after grouping, with non-finalized aggregate functions.
@@ -37,7 +39,7 @@ public:
     Status prepare() override;
     void work() override;
 
-    static Block transformHeader(Block block, const ExpressionActionsPtr & expression, bool final);
+    static Block transformHeader(Block block, const ActionsDAG * expression, bool final);
 
 protected:
     void transform(Chunk & chunk) override;
@@ -68,7 +70,7 @@ private:
     /// They are added or not added to the current_totals, depending on the totals_mode.
     Chunk overflow_aggregates;
 
-    /// Here, total values are accumulated. After the work is finished, they will be placed in IBlockInputStream::totals.
+    /// Here, total values are accumulated. After the work is finished, they will be placed in totals.
     MutableColumns current_totals;
 };
 

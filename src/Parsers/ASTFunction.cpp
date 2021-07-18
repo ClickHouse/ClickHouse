@@ -1,7 +1,10 @@
 #include <Parsers/ASTFunction.h>
 
+#include <Common/quoteString.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/NumberTraits.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -11,11 +14,30 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
 
+
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNEXPECTED_EXPRESSION;
+}
+
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
+    appendColumnNameImpl(ostr, nullptr);
+}
+
+void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings & settings) const
+{
+    appendColumnNameImpl(ostr, &settings);
+}
+
+void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings * settings) const
+{
+    if (name == "view")
+        throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
+
     writeString(name, ostr);
 
     if (parameters)
@@ -25,29 +47,48 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         {
             if (it != parameters->children.begin())
                 writeCString(", ", ostr);
-            (*it)->appendColumnName(ostr);
+
+            if (settings)
+                (*it)->appendColumnName(ostr, *settings);
+            else
+                (*it)->appendColumnName(ostr);
         }
         writeChar(')', ostr);
     }
 
     writeChar('(', ostr);
     if (arguments)
+    {
         for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
         {
             if (it != arguments->children.begin())
                 writeCString(", ", ostr);
-            (*it)->appendColumnName(ostr);
+
+            if (settings)
+                (*it)->appendColumnName(ostr, *settings);
+            else
+                (*it)->appendColumnName(ostr);
         }
+    }
+
     writeChar(')', ostr);
 
     if (is_window_function)
     {
-        writeCString(" OVER (", ostr);
-        FormatSettings settings{ostr, true /* one_line */};
-        FormatState state;
-        FormatStateStacked frame;
-        appendWindowDescription(settings, state, frame);
-        writeCString(")", ostr);
+        writeCString(" OVER ", ostr);
+        if (!window_name.empty())
+        {
+            ostr << window_name;
+        }
+        else
+        {
+            FormatSettings format_settings{ostr, true /* one_line */};
+            FormatState state;
+            FormatStateStacked frame;
+            writeCString("(", ostr);
+            window_definition->formatImpl(format_settings, state, frame);
+            writeCString(")", ostr);
+        }
     }
 }
 
@@ -65,22 +106,10 @@ ASTPtr ASTFunction::clone() const
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
 
-    if (window_name)
+    if (window_definition)
     {
-        res->window_name = window_name->clone();
-        res->children.push_back(res->window_name);
-    }
-
-    if (window_partition_by)
-    {
-        res->window_partition_by = window_partition_by->clone();
-        res->children.push_back(res->window_partition_by);
-    }
-
-    if (window_order_by)
-    {
-        res->window_order_by = window_order_by->clone();
-        res->children.push_back(res->window_order_by);
+        res->window_definition = window_definition->clone();
+        res->children.push_back(res->window_definition);
     }
 
     return res;
@@ -217,27 +246,41 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (0 == strcmp(name.c_str(), func[0]))
+                if (strcasecmp(name.c_str(), func[0]) != 0)
                 {
-                    if (frame.need_parens)
-                        settings.ostr << '(';
-
-                    settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
-
-                    /** A particularly stupid case. If we have a unary minus before a literal that is a negative number
-                        * "-(-1)" or "- -1", this can not be formatted as `--1`, since this will be interpreted as a comment.
-                        * Instead, add a space.
-                        * PS. You can not just ask to add parentheses - see formatImpl for ASTLiteral.
-                        */
-                    if (name == "negate" && arguments->children[0]->as<ASTLiteral>())
-                        settings.ostr << ' ';
-
-                    arguments->formatImpl(settings, state, nested_need_parens);
-                    written = true;
-
-                    if (frame.need_parens)
-                        settings.ostr << ')';
+                    continue;
                 }
+
+                const auto * literal = arguments->children[0]->as<ASTLiteral>();
+                const auto * function = arguments->children[0]->as<ASTFunction>();
+                bool negate = name == "negate";
+                // negate always requires parentheses, otherwise -(-1) will be printed as --1
+                bool negate_need_parens = negate && (literal || (function && function->name == "negate"));
+                // We don't need parentheses around a single literal.
+                bool need_parens = !literal && frame.need_parens && !negate_need_parens;
+
+                // do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
+                if (negate_need_parens)
+                    nested_need_parens.need_parens = false;
+
+                if (need_parens)
+                    settings.ostr << '(';
+
+                settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
+
+                if (negate_need_parens)
+                    settings.ostr << '(';
+
+                arguments->formatImpl(settings, state, nested_need_parens);
+                written = true;
+
+                if (negate_need_parens)
+                    settings.ostr << ')';
+
+                if (need_parens)
+                    settings.ostr << ')';
+
+                break;
             }
         }
 
@@ -327,10 +370,40 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
-                /// It can be printed in a form of 'x.1' only if right hand side is unsigned integer literal.
-                if (const auto * lit = arguments->children[1]->as<ASTLiteral>())
+                // fuzzer sometimes may inserts tupleElement() created from ASTLiteral:
+                //
+                //     Function_tupleElement, 0xx
+                //     -ExpressionList_, 0xx
+                //     --Literal_Int64_255, 0xx
+                //     --Literal_Int64_100, 0xx
+                //
+                // And in this case it will be printed as "255.100", which
+                // later will be parsed as float, and formatting will be
+                // inconsistent.
+                //
+                // So instead of printing it as regular tuple,
+                // let's print it as ExpressionList instead (i.e. with ", " delimiter).
+                bool tuple_arguments_valid = true;
+                const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
+                const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
+
+                if (lit_left)
                 {
-                    if (lit->value.getType() == Field::Types::UInt64)
+                    Field::Types::Which type = lit_left->value.getType();
+                    if (type != Field::Types::Tuple && type != Field::Types::Array)
+                    {
+                        tuple_arguments_valid = false;
+                    }
+                }
+
+                // It can be printed in a form of 'x.1' only if right hand side
+                // is an unsigned integer lineral. We also allow nonnegative
+                // signed integer literals, because the fuzzer sometimes inserts
+                // them, and we want to have consistent formatting.
+                if (tuple_arguments_valid && lit_right)
+                {
+                    if (isInt64OrUInt64FieldType(lit_right->value.getType())
+                        && lit_right->value.get<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';
@@ -428,14 +501,14 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
         if (!written && 0 == strcmp(name.c_str(), "map"))
         {
-            settings.ostr << (settings.hilite ? hilite_operator : "") << '{' << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_operator : "") << "map(" << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
                     settings.ostr << ", ";
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
-            settings.ostr << (settings.hilite ? hilite_operator : "") << '}' << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
             written = true;
         }
     }
@@ -487,44 +560,16 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         return;
     }
 
-    settings.ostr << " OVER (";
-    appendWindowDescription(settings, state, nested_dont_need_parens);
-    settings.ostr << ")";
-}
-
-std::string ASTFunction::getWindowDescription() const
-{
-    WriteBufferFromOwnString ostr;
-    FormatSettings settings{ostr, true /* one_line */};
-    FormatState state;
-    FormatStateStacked frame;
-    appendWindowDescription(settings, state, frame);
-    return ostr.str();
-}
-
-void ASTFunction::appendWindowDescription(const FormatSettings & settings,
-    FormatState & state, FormatStateStacked frame) const
-{
-    if (!is_window_function)
+    settings.ostr << " OVER ";
+    if (!window_name.empty())
     {
-        return;
+        settings.ostr << backQuoteIfNeed(window_name);
     }
-
-    if (window_partition_by)
+    else
     {
-        settings.ostr << "PARTITION BY ";
-        window_partition_by->formatImpl(settings, state, frame);
-    }
-
-    if (window_partition_by && window_order_by)
-    {
-        settings.ostr << " ";
-    }
-
-    if (window_order_by)
-    {
-        settings.ostr << "ORDER BY ";
-        window_order_by->formatImpl(settings, state, frame);
+        settings.ostr << "(";
+        window_definition->formatImpl(settings, state, frame);
+        settings.ostr << ")";
     }
 }
 

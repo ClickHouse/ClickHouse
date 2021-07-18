@@ -11,10 +11,9 @@
                     <max>10</max>
                 </max_execution_time>
 
-                <!-- Not ready for production -->
-                <compile_expressions>
-                    <readonly />
-                </compile_expressions>
+                <max_memory_usage>
+                    <max>10G</max>
+                </max_memory_usage>
             </constraints>
         </default>
     </profiles>

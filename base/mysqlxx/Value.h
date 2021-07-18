@@ -25,7 +25,7 @@ class ResultBase;
 
 /** Represents a single value read from MySQL.
   * It doesn't owns the value. It's just a wrapper of a pair (const char *, size_t).
-  * If the UseQueryResult/StoreQueryResult or Connection is destroyed,
+  * If the UseQueryResult or Connection is destroyed,
   *  or you have read the next Row while using UseQueryResult, then the object is invalidated.
   * Allows to transform (parse) the value to various data types:
   * - with getUInt(), getString(), ... (recommended);

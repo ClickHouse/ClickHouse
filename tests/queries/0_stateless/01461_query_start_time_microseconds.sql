@@ -6,12 +6,18 @@ WITH (
       (
           SELECT query_start_time_microseconds
           FROM system.query_log
+          WHERE current_database = currentDatabase()
+            AND query like 'SELECT \'01461_query%'
+            AND event_date >= yesterday()
           ORDER BY query_start_time DESC
           LIMIT 1
       ) AS time_with_microseconds,
       (
           SELECT query_start_time
           FROM system.query_log
+          WHERE current_database = currentDatabase()
+            AND query like 'SELECT \'01461_query%'
+            AND event_date >= yesterday()
           ORDER BY query_start_time DESC
           LIMIT 1
       ) AS t)
@@ -24,12 +30,18 @@ WITH (
       (
           SELECT query_start_time_microseconds
           FROM system.query_thread_log
+          WHERE current_database = currentDatabase()
+            AND query like 'SELECT \'01461_query%'
+            AND event_date >= yesterday()
           ORDER BY query_start_time DESC
           LIMIT 1
       ) AS time_with_microseconds,
       (
           SELECT query_start_time
           FROM system.query_thread_log
+          WHERE current_database = currentDatabase()
+            AND query like 'SELECT \'01461_query%'
+            AND event_date >= yesterday()
           ORDER BY query_start_time DESC
           LIMIT 1
       ) AS t)

@@ -8,13 +8,12 @@
 namespace DB
 {
 
-MergeListElement::MergeListElement(const std::string & database_, const std::string & table_, const FutureMergedMutatedPart & future_part)
-    : database{database_}
-    , table{table_}
+MergeListElement::MergeListElement(const StorageID & table_id_, const FutureMergedMutatedPart & future_part)
+    : table_id{table_id_}
     , partition_id{future_part.part_info.partition_id}
     , result_part_name{future_part.name}
     , result_part_path{future_part.path}
-    , result_data_version{future_part.part_info.getDataVersion()}
+    , result_part_info{future_part.part_info}
     , num_parts{future_part.parts.size()}
     , thread_id{getThreadId()}
     , merge_type{future_part.merge_type}
@@ -33,13 +32,25 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
     if (!future_part.parts.empty())
     {
         source_data_version = future_part.parts[0]->info.getDataVersion();
-        is_mutation = (result_data_version != source_data_version);
+        is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
     /// Each merge is executed into separate background processing pool thread
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
     {
+        /// From the query context it will be ("for thread") memory tracker with VariableContext::Thread level,
+        /// which does not have any limits and sampling settings configured.
+        /// And parent for this memory tracker should be ("(for query)") with VariableContext::Process level,
+        /// that has limits and sampling configured.
+        MemoryTracker * parent;
+        if (background_thread_memory_tracker->level == VariableContext::Thread &&
+            (parent = background_thread_memory_tracker->getParent()) &&
+            parent != &total_memory_tracker)
+        {
+            background_thread_memory_tracker = parent;
+        }
+
         background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
         background_thread_memory_tracker->setParent(&memory_tracker);
     }
@@ -48,8 +59,8 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
 MergeInfo MergeListElement::getInfo() const
 {
     MergeInfo res;
-    res.database = database;
-    res.table = table;
+    res.database = table_id.getDatabaseName();
+    res.table = table_id.getTableName();
     res.result_part_name = result_part_name;
     res.result_part_path = result_part_path;
     res.partition_id = partition_id;

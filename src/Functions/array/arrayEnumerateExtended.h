@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -30,7 +30,7 @@ template <typename Derived>
 class FunctionArrayEnumerateExtended : public IFunction
 {
 public:
-    static FunctionPtr create(const Context &) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 
@@ -352,6 +352,9 @@ bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
         key_sizes[j] = columns[j]->sizeOfValueIfFixed();
         keys_bytes += key_sizes[j];
     }
+
+    if (keys_bytes > 16)
+        return false;
 
     executeMethod<MethodFixed>(offsets, columns, key_sizes, nullptr, res_values);
     return true;

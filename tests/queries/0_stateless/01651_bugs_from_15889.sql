@@ -8,7 +8,8 @@ INSERT INTO xp SELECT '2020-01-01', number, '' FROM numbers(100000);
 
 CREATE TABLE xp_d AS xp ENGINE = Distributed(test_shard_localhost, currentDatabase(), xp);
 
-SELECT count(7 = (SELECT number FROM numbers(0) ORDER BY number ASC NULLS FIRST LIMIT 7)) FROM xp_d PREWHERE toYYYYMM(A) GLOBAL IN (SELECT NULL = (SELECT number FROM numbers(1) ORDER BY number DESC NULLS LAST LIMIT 1), toYYYYMM(min(A)) FROM xp_d) WHERE B > NULL; -- { serverError 20 }
+-- FIXME: this query spontaneously returns either 8 or 20 error code. Looks like it's potentially flaky.
+-- SELECT count(7 = (SELECT number FROM numbers(0) ORDER BY number ASC NULLS FIRST LIMIT 7)) FROM xp_d PREWHERE toYYYYMM(A) GLOBAL IN (SELECT NULL = (SELECT number FROM numbers(1) ORDER BY number DESC NULLS LAST LIMIT 1), toYYYYMM(min(A)) FROM xp_d) WHERE B > NULL; -- { serverError 8 }
 
 SELECT count() FROM xp_d WHERE A GLOBAL IN (SELECT NULL); -- { serverError 53 }
 
@@ -45,13 +46,13 @@ SYSTEM FLUSH LOGS;
 WITH concat(addressToLine(arrayJoin(trace) AS addr), '#') AS symbol
 SELECT count() > 7
 FROM trace_log AS t
-WHERE (query_id = 
+WHERE (query_id =
 (
     SELECT
         [NULL, NULL, NULL, NULL, 0.00009999999747378752, NULL, NULL, NULL, NULL, NULL],
         query_id
     FROM system.query_log
-    WHERE (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
+    WHERE current_database = currentDatabase() AND (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
     ORDER BY event_time DESC
     LIMIT 1
 )) AND (symbol LIKE '%Source%');
@@ -60,13 +61,13 @@ WHERE (query_id =
 WITH addressToSymbol(arrayJoin(trace)) AS symbol
 SELECT count() > 0
 FROM trace_log AS t
-WHERE greaterOrEquals(event_date, ignore(ignore(ignore(NULL, '')), 256), yesterday()) AND (trace_type = 'Memory') AND (query_id = 
+WHERE greaterOrEquals(event_date, ignore(ignore(ignore(NULL, '')), 256), yesterday()) AND (trace_type = 'Memory') AND (query_id =
 (
     SELECT
         ignore(ignore(ignore(ignore(65536)), ignore(65537), ignore(2)), ''),
         query_id
     FROM system.query_log
-    WHERE (event_date >= yesterday()) AND (query LIKE '%test memory profiler%')
+    WHERE current_database = currentDatabase() AND (event_date >= yesterday()) AND (query LIKE '%test memory profiler%')
     ORDER BY event_time DESC
     LIMIT 1
 )); -- { serverError 42 }
@@ -79,14 +80,16 @@ WITH (
     (
         SELECT query_start_time_microseconds
         FROM system.query_log
+        WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
-    ) AS time_with_microseconds, 
+    ) AS time_with_microseconds,
     (
         SELECT
             inf,
             query_start_time
         FROM system.query_log
+        WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS t)
@@ -96,17 +99,18 @@ WITH (
     (
         SELECT query_start_time_microseconds
         FROM system.query_log
+        WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
-    ) AS time_with_microseconds, 
+    ) AS time_with_microseconds,
     (
         SELECT query_start_time
         FROM system.query_log
+        WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS t)
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', '');
 
-
-
-
+set joined_subquery_requires_alias=0;
+SELECT number, number / 2 AS n, j1, j2 FROM remote('127.0.0.{2,3}', system.numbers) GLOBAL ANY LEFT JOIN (SELECT number / 3 AS n, number AS j1, 'Hello' AS j2 FROM system.numbers LIMIT 1048577) USING (n) LIMIT 10 format Null;

@@ -37,6 +37,8 @@ class ServerThread(threading.Thread):
         self.tcps_port = port_base + 4
         self.https_port = port_base + 5
         self.odbc_port = port_base + 6
+        self.proxy_port = port_base + 7
+        self.postgresql_port = port_base + 8
 
         self._args = [
             '--config-file={config_path}'.format(config_path=self.server_config),
@@ -44,6 +46,8 @@ class ServerThread(threading.Thread):
             '--tcp_port={tcp_port}'.format(tcp_port=self.tcp_port),
             '--http_port={http_port}'.format(http_port=self.http_port),
             '--interserver_http_port={inter_port}'.format(inter_port=self.inter_port),
+            '--tcp_with_proxy_port={proxy_port}'.format(proxy_port=self.proxy_port),
+            '--postgresql_port={psql_port}'.format(psql_port=self.postgresql_port),
             # TODO: SSL certificate is not specified '--tcp_port_secure={tcps_port}'.format(tcps_port=self.tcps_port),
         ]
 
@@ -73,11 +77,11 @@ class ServerThread(threading.Thread):
                     time.sleep(ServerThread.DEFAULT_SERVER_DELAY)
                     s = socket.create_connection(('localhost', self.tcp_port), ServerThread.DEFAULT_CONNECTION_TIMEOUT)
                     s.sendall(b'G')  # trigger expected "bad" HELLO response
-                    print('Successful server response:', s.recv(1024))  # FIXME: read whole buffered response
+                    s.recv(1024)  # FIXME: read whole buffered response
                     s.shutdown(socket.SHUT_RDWR)
                     s.close()
-                except Exception as e:
-                    print('Failed to connect to server:', e, file=sys.stderr)
+                except Exception:
+                    # Failed to connect to server - try again
                     continue
                 else:
                     break
@@ -96,6 +100,10 @@ class ServerThread(threading.Thread):
 
         self._lock.release()
 
+        if not retries:
+            print('Failed to start server', file=sys.stderr)
+            return
+
         while self._proc.returncode is None:
             self._proc.communicate()
 
@@ -110,7 +118,7 @@ class ServerThread(threading.Thread):
         if self._proc.returncode is None:
             self._proc.terminate()
         self.join()
-        print('Stop clickhouse-server')
+        print('Stopped clickhouse-server')
 
 
 ServerThread.DEFAULT_SERVER_CONFIG = \
@@ -283,6 +291,34 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
                  </replica>
              </shard>
          </test_cluster_with_incorrect_pw>
+
+         <test_cluster_one_shard_two_replicas>
+           <shard>
+               <replica>
+                   <host>127.0.0.1</host>
+                   <port>{tcp_port}</port>
+               </replica>
+               <replica>
+                   <host>127.0.0.2</host>
+                   <port>{tcp_port}</port>
+               </replica>
+           </shard>
+        </test_cluster_one_shard_two_replicas>
+
+        <test_cluster_two_replicas_different_databases>
+            <shard>
+                <replica>
+                    <default_database>shard_0</default_database>
+                    <host>localhost</host>
+                    <port>{tcp_port}</port>
+                </replica>
+                <replica>
+                    <default_database>shard_1</default_database>
+                    <host>localhost</host>
+                    <port>{tcp_port}</port>
+                </replica>
+            </shard>
+        </test_cluster_two_replicas_different_databases>
     </remote_servers>
 
     <storage_configuration>
@@ -296,6 +332,10 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
     <zookeeper>
         <implementation>testkeeper</implementation>
     </zookeeper>
+
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
 
     <part_log>
         <database>system</database>
@@ -1111,6 +1151,136 @@ ServerThread.DEFAULT_DICTIONARIES_CONFIG = \
                 <null_value>0</null_value>
             </attribute>
         </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>simple_executable_cache_dictionary_no_implicit_key</name>
+        <structure>
+            <id>
+                <name>id</name>
+                <type>UInt64</type>
+            </id>
+
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "1\tValue"</command>
+                <format>TabSeparated</format>
+                <implicit_key>false</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <cache>
+                <size_in_cells>10000</size_in_cells>
+            </cache>
+        </layout>
+        <lifetime>300</lifetime>
+    </dictionary>
+
+    <dictionary>
+        <name>simple_executable_cache_dictionary_implicit_key</name>
+        <structure>
+            <id>
+                <name>id</name>
+                <type>UInt64</type>
+            </id>
+
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "Value"</command>
+                <format>TabSeparated</format>
+                <implicit_key>true</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <cache>
+                <size_in_cells>10000</size_in_cells>
+            </cache>
+        </layout>
+        <lifetime>300</lifetime>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_executable_cache_dictionary_no_implicit_key</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>id</name>
+                    <type>UInt64</type>
+                    <null_value></null_value>
+                </attribute>
+                <attribute>
+                    <name>id_key</name>
+                    <type>String</type>
+                    <null_value></null_value>
+                </attribute>
+            </key>
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "1\tFirstKey\tValue"</command>
+                <format>TabSeparated</format>
+                <implicit_key>false</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <complex_key_cache>
+                <size_in_cells>10000</size_in_cells>
+            </complex_key_cache>
+        </layout>
+        <lifetime>300</lifetime>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_executable_cache_dictionary_implicit_key</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>id</name>
+                    <type>UInt64</type>
+                    <null_value></null_value>
+                </attribute>
+                <attribute>
+                    <name>id_key</name>
+                    <type>String</type>
+                    <null_value></null_value>
+                </attribute>
+            </key>
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "Value"</command>
+                <format>TabSeparated</format>
+                <implicit_key>true</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <complex_key_cache>
+                <size_in_cells>10000</size_in_cells>
+            </complex_key_cache>
+        </layout>
+        <lifetime>300</lifetime>
     </dictionary>
 </yandex>
 """

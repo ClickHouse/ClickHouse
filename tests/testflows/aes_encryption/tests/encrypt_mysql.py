@@ -109,6 +109,43 @@ def invalid_parameters(self):
 
 @TestOutline(Scenario)
 @Requirements(
+    RQ_SRS008_AES_Functions_InvalidParameters("1.0")
+)
+@Examples("data_type, value", [
+    ("UInt8", "toUInt8('1')"),
+    ("UInt16", "toUInt16('1')"),
+    ("UInt32", "toUInt32('1')"),
+    ("UInt64", "toUInt64('1')"),
+    ("Int8", "toInt8('1')"),
+    ("Int16", "toInt16('1')"),
+    ("Int32", "toInt32('1')"),
+    ("Int64", "toInt64('1')"),
+    ("Float32", "toFloat32('1.0')"),
+    ("Float64", "toFloat64('1.0')"),
+    ("Decimal32", "toDecimal32(2, 4)"),
+    ("Decimal64", "toDecimal64(2, 4)"),
+    ("Decimal128", "toDecimal128(2, 4)"),
+    ("UUID", "toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')"),
+    ("Date", "toDate('2020-01-01')"),
+    ("DateTime", "toDateTime('2020-01-01 20:01:02')"),
+    ("DateTime64", "toDateTime64('2020-01-01 20:01:02.123', 3)"),
+    ("Array", "[1,2]"),
+    ("Tuple", "(1,'a')"),
+    ("IPv4", "toIPv4('171.225.130.45')"),
+    ("IPv6", "toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001')"),
+    ("Enum8", r"CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)')"),
+    ("Enum16", r"CAST('a', 'Enum16(\'a\' = 1, \'b\' = 2)')")
+])
+def invalid_plaintext_data_type(self, data_type, value):
+    """Check that aes_encrypt_mysql function returns an error if the
+    plaintext parameter has invalid data type.
+    """
+    with When("I try to encrypt plaintext with invalid data type", description=f"{data_type} with value {value}"):
+        aes_encrypt_mysql(plaintext=value, key="'0123456789123456'", mode="'aes-128-cbc'", iv="'0123456789123456'",
+            exitcode=43, message="DB::Exception: Illegal type of argument")
+
+@TestOutline(Scenario)
+@Requirements(
     RQ_SRS008_AES_MySQL_Encrypt_Function_Key_Length_TooShortError("1.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_Key_Length_TooLong("1.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_InitializationVector_Length_TooShortError("1.0"),
@@ -265,7 +302,7 @@ def syntax(self):
 
 @TestScenario
 @Requirements(
-    RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_PlainText("1.0"),
+    RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_PlainText("2.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode("1.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_ValuesFormat("1.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Values("1.0")

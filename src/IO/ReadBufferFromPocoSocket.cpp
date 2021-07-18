@@ -1,20 +1,28 @@
 #include <Poco/Net/NetException.h>
 
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/TimeoutSetter.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 
 
 namespace ProfileEvents
 {
     extern const Event NetworkReceiveElapsedMicroseconds;
+    extern const Event NetworkReceiveBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric NetworkReceive;
 }
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
@@ -28,23 +36,18 @@ bool ReadBufferFromPocoSocket::nextImpl()
     ssize_t bytes_read = 0;
     Stopwatch watch;
 
-    int flags = 0;
-    if (async_callback)
-        flags |= MSG_DONTWAIT;
-
     /// Add more details to exceptions.
     try
     {
-        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
+        CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkReceive);
 
-        /// If async_callback is specified, and read is blocking, run async_callback and try again later.
+        /// If async_callback is specified, and read will block, run async_callback and try again later.
         /// It is expected that file descriptor may be polled externally.
         /// Note that receive timeout is not checked here. External code should check it while polling.
-        while (bytes_read < 0 && async_callback && errno == EAGAIN)
-        {
-            async_callback(socket);
-            bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
-        }
+        while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ))
+            async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), socket_description);
+
+        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
     }
     catch (const Poco::Net::NetException & e)
     {
@@ -64,6 +67,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
 
     /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one
     ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
 
     if (bytes_read)
         working_buffer.resize(bytes_read);
@@ -74,13 +78,22 @@ bool ReadBufferFromPocoSocket::nextImpl()
 }
 
 ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size), socket(socket_), peer_address(socket.peerAddress())
+    : BufferWithOwnMemory<ReadBuffer>(buf_size)
+    , socket(socket_)
+    , peer_address(socket.peerAddress())
+    , socket_description("socket (" + peer_address.toString() + ")")
 {
 }
 
-bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds)
+bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds) const
 {
-    return available() || socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
+    if (available())
+        return true;
+
+    Stopwatch watch;
+    bool res = socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
+    ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
+    return res;
 }
 
 }

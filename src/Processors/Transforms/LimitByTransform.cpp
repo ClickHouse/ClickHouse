@@ -33,13 +33,13 @@ void LimitByTransform::transform(Chunk & chunk)
 
     for (UInt64 row = 0; row < num_rows; ++row)
     {
-        UInt128 key(0, 0);
+        UInt128 key{};
         SipHash hash;
 
         for (auto position : key_positions)
             columns[position]->updateHashWithValue(row, hash);
 
-        hash.get128(key.low, key.high);
+        hash.get128(key);
 
         auto count = keys_counts[key]++;
         if (count >= group_offset

@@ -2,7 +2,7 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/RolesOrUsersSet.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/lexical_cast.hpp>
 #include <chrono>
@@ -31,6 +31,8 @@ struct Quota : public IAccessEntity
     enum ResourceType
     {
         QUERIES,        /// Number of queries.
+        QUERY_SELECTS,  /// Number of select queries.
+        QUERY_INSERTS,  /// Number of inserts queries.
         ERRORS,         /// Number of queries with exceptions.
         RESULT_ROWS,    /// Number of rows returned as result.
         RESULT_BYTES,   /// Number of bytes returned as result.
@@ -43,7 +45,7 @@ struct Quota : public IAccessEntity
 
     struct ResourceTypeInfo
     {
-        const char * const raw_name;
+        const char * const raw_name = "";
         const String name;    /// Lowercased with underscores, e.g. "result_rows".
         const String keyword; /// Uppercased with spaces, e.g. "RESULT ROWS".
         const bool output_as_float = false;
@@ -152,6 +154,16 @@ inline const Quota::ResourceTypeInfo & Quota::ResourceTypeInfo::get(ResourceType
             static const auto info = make_info("QUERIES", 1);
             return info;
         }
+        case Quota::QUERY_SELECTS:
+        {
+            static const auto info = make_info("QUERY_SELECTS", 1);
+            return info;
+        }
+        case Quota::QUERY_INSERTS:
+        {
+            static const auto info = make_info("QUERY_INSERTS", 1);
+            return info;
+        }
         case Quota::ERRORS:
         {
             static const auto info = make_info("ERRORS", 1);
@@ -207,7 +219,7 @@ inline const Quota::KeyTypeInfo & Quota::KeyTypeInfo::get(KeyType type)
         {
             for (const auto & token : tokens)
             {
-                for (auto kt : ext::range(KeyType::MAX))
+                for (auto kt : collections::range(KeyType::MAX))
                 {
                     if (KeyTypeInfo::get(kt).name == token)
                     {

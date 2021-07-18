@@ -30,6 +30,8 @@
     M(OpenFileForWrite, "Number of files open for writing") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
+    M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
+    M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(SendScalars, "Number of connections that are sending data for scalars to remote servers.") \
     M(SendExternalTables, "Number of connections that are sending data for external tables to remote servers. External tables are used to implement GLOBAL IN and GLOBAL JOIN operators with distributed subqueries.") \
     M(QueryThread, "Number of query processing threads") \
@@ -52,9 +54,10 @@
     M(RWLockActiveWriters, "Number of threads holding write lock in a table RWLock.") \
     M(GlobalThread, "Number of threads in global thread pool.") \
     M(GlobalThreadActive, "Number of threads in global thread pool running a task.") \
-    M(LocalThread, "Number of threads in local thread pools. Should be similar to GlobalThreadActive.") \
+    M(LocalThread, "Number of threads in local thread pools. The threads in local thread pools are taken from the global thread pool.") \
     M(LocalThreadActive, "Number of threads in local thread pools running a task.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
+    M(BrokenDistributedFilesToInsert, "Number of files for asynchronous insertion into Distributed tables that has been marked as broken. This metric will starts from 0 on start. Number of files for every shard is summed.") \
     M(TablesToDropQueueSize, "Number of dropped tables, that are waiting for background data removal.") \
     M(MaxDDLEntryID, "Max processed DDL entry of DDLWorker.") \
     M(PartsTemporary, "The part is generating now, it is not in data_parts list.") \
@@ -63,6 +66,11 @@
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
+    M(PartsWide, "Wide parts.") \
+    M(PartsCompact, "Compact parts.") \
+    M(PartsInMemory, "In-memory parts.") \
+    M(MMappedFiles, "Total number of mmapped files.") \
+    M(MMappedFileBytes, "Sum size of mmapped file regions.") \
 
 namespace CurrentMetrics
 {

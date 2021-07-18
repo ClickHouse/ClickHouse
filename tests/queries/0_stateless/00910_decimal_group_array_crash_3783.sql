@@ -28,7 +28,7 @@ SELECT `time`, groupArray((sensor_id, volume)) AS groupArr FROM (
     WHERE received_at BETWEEN '2018-12-12 00:00:00' AND '2018-12-30 00:00:00'
     GROUP BY `time`,sensor_id
     ORDER BY `time`
-) GROUP BY `time`;
+) GROUP BY `time` ORDER BY `time`;
 
 DROP TABLE sensor_value;
 
@@ -59,4 +59,4 @@ select s.a, s.b, max(s.dt1) dt1, s.c, s.d, s.f, s.i, max(s.dt2) dt2 from (
         , toDecimal128(268.970000000000, 12)   f
         , toDecimal128(0.000000000000, 12)     i
         , toDateTime('2018-11-02 00:00:00', 'Europe/Moscow')    dt2
-) s group by s.a, s.b, s.c, s.d, s.f, s.i;
+) s group by s.a, s.b, s.c, s.d, s.f, s.i ORDER BY s.a, s.b, s.c, s.d, s.f, s.i;

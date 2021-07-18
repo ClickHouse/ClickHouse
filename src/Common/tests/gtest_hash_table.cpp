@@ -5,10 +5,16 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/Hash.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <gtest/gtest.h>
+
+
+using namespace DB;
+
 
 /// To test dump functionality without using other hashes that can change
 template <typename T>
@@ -18,12 +24,12 @@ struct DummyHash
 };
 
 template<typename HashTable>
-std::set<typename HashTable::value_type> convertToSet(const HashTable& table)
+std::set<std::string> convertToSet(const HashTable & table)
 {
-    std::set<typename HashTable::value_type> result;
+    std::set<std::string> result;
 
     for (auto v: table)
-        result.emplace(v.getValue());
+        result.emplace(toString(v.getValue()));
 
     return result;
 }
@@ -91,8 +97,8 @@ TEST(HashTable, Iteration)
     cont.insert(2);
     cont.insert(3);
 
-    std::set<int> expected = {1, 2, 3};
-    std::set<int> actual = convertToSet(cont);
+    std::set<std::string> expected = {"1", "2", "3"};
+    std::set<std::string> actual = convertToSet(cont);
 
     ASSERT_EQ(actual, expected);
 }
@@ -251,14 +257,14 @@ TEST(HashTable, SerializationDeserialization)
         cont.insert(2);
         cont.insert(3);
 
-        DB::WriteBufferFromOwnString wb;
+        WriteBufferFromOwnString wb;
         cont.writeText(wb);
 
         std::string expected = "3,1,2,3";
 
         ASSERT_EQ(wb.str(), expected);
 
-        DB::ReadBufferFromString rb(expected);
+        ReadBufferFromString rb(expected);
 
         Cont deserialized;
         deserialized.readText(rb);
@@ -273,10 +279,10 @@ TEST(HashTable, SerializationDeserialization)
         cont.insert(2);
         cont.insert(3);
 
-        DB::WriteBufferFromOwnString wb;
+        WriteBufferFromOwnString wb;
         cont.write(wb);
 
-        DB::ReadBufferFromString rb(wb.str());
+        ReadBufferFromString rb(wb.str());
 
         Cont deserialized;
         deserialized.read(rb);
@@ -286,23 +292,23 @@ TEST(HashTable, SerializationDeserialization)
         using Cont = HashSet<int, DummyHash<int>, HashTableGrower<1>>;
         Cont cont;
 
-        DB::WriteBufferFromOwnString wb;
+        WriteBufferFromOwnString wb;
         cont.writeText(wb);
 
         std::string expected = "0";
         ASSERT_EQ(wb.str(), expected);
 
-        DB::ReadBufferFromString rb(expected);
+        ReadBufferFromString rb(expected);
 
         Cont deserialized;
         deserialized.readText(rb);
         ASSERT_EQ(convertToSet(cont), convertToSet(deserialized));
     }
     {
-        using Cont = HashSet<DB::UInt128, DB::UInt128TrivialHash>;
+        using Cont = HashSet<UInt128, UInt128TrivialHash>;
         Cont cont;
 
-        DB::WriteBufferFromOwnString wb;
+        WriteBufferFromOwnString wb;
         cont.write(wb);
 
         std::string expected;
@@ -310,10 +316,58 @@ TEST(HashTable, SerializationDeserialization)
 
         ASSERT_EQ(wb.str(), expected);
 
-        DB::ReadBufferFromString rb(expected);
+        ReadBufferFromString rb(expected);
 
         Cont deserialized;
         deserialized.read(rb);
         ASSERT_EQ(convertToSet(cont), convertToSet(deserialized));
+    }
+}
+
+template <typename T>
+struct IdentityHash
+{
+    size_t operator()(T x) const { return x; }
+};
+
+struct OneElementResizeGrower
+{
+    /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
+    static constexpr auto performs_linear_probing_with_single_step = true;
+
+    static constexpr size_t initial_count = 1;
+
+    size_t bufSize() const { return buf_size; }
+
+    size_t place(size_t x) const { return x % buf_size; }
+
+    size_t next(size_t pos) const { return (pos + 1) % buf_size; }
+
+    bool overflow(size_t elems) const { return elems >= buf_size; }
+
+    void increaseSize() { ++buf_size; }
+
+    void set(size_t) { }
+
+    void setBufSize(size_t buf_size_) { buf_size = buf_size_; }
+
+    size_t buf_size = initial_count;
+};
+
+TEST(HashTable, Resize)
+{
+    {
+        /// Test edge case if after resize all cells are resized in end of buf and will take half of
+        /// hash table place.
+        using HashSet = HashSet<int, IdentityHash<int>, OneElementResizeGrower>;
+        HashSet cont;
+
+        cont.insert(3);
+        cont.insert(1);
+
+        std::set<std::string> expected = {"1", "3"};
+        std::set<std::string> actual = convertToSet(cont);
+
+        ASSERT_EQ(actual, expected);
     }
 }

@@ -43,33 +43,35 @@ public:
     void finalize() override;
 
 private:
-    ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type);
+    ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type, const std::string & column_name);
 
     /// ConvertFunc is needed for type UInt8, because firstly UInt8 (char8_t) must be
     /// converted to unsigned char (bugprone-signed-char-misuse in clang).
     template <typename NumberType, typename NumberVectorBatch, typename ConvertFunc>
-    void writeNumbers(orc::ColumnVectorBatch * orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap, ConvertFunc convert);
+    void writeNumbers(orc::ColumnVectorBatch & orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap, ConvertFunc convert);
 
     /// ConvertFunc is needed to convert ClickHouse Int128 to ORC Int128.
     template <typename Decimal, typename DecimalVectorBatch, typename ConvertFunc>
-    void writeDecimals(orc::ColumnVectorBatch * orc_column, const IColumn & column, DataTypePtr & type,
+    void writeDecimals(orc::ColumnVectorBatch & orc_column, const IColumn & column, DataTypePtr & type,
                         const PaddedPODArray<UInt8> * null_bytemap, ConvertFunc convert);
 
     template <typename ColumnType>
-    void writeStrings(orc::ColumnVectorBatch * orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap);
+    void writeStrings(orc::ColumnVectorBatch & orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap);
 
     /// ORC column TimestampVectorBatch stores only seconds and nanoseconds,
     /// GetSecondsFunc and GetNanosecondsFunc are needed to extract them from DataTime type.
     template <typename ColumnType, typename GetSecondsFunc, typename GetNanosecondsFunc>
-    void writeDateTimes(orc::ColumnVectorBatch * orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap,
+    void writeDateTimes(orc::ColumnVectorBatch & orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap,
                         GetSecondsFunc get_seconds, GetNanosecondsFunc get_nanoseconds);
 
-    void writeColumn(orc::ColumnVectorBatch * orc_column, const IColumn & column, DataTypePtr & type, const PaddedPODArray<UInt8> * null_bytemap);
+    void writeColumn(orc::ColumnVectorBatch & orc_column, const IColumn & column, DataTypePtr & type, const PaddedPODArray<UInt8> * null_bytemap);
 
     /// These two functions are needed to know maximum nested size of arrays to
     /// create an ORC Batch with the appropriate size
     size_t getColumnSize(const IColumn & column, DataTypePtr & type);
     size_t getMaxColumnSize(Chunk & chunk);
+
+    void prepareWriter();
 
     const FormatSettings format_settings;
     ORCOutputStream output_stream;

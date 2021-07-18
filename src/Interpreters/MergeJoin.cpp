@@ -76,6 +76,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
     return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
 }
 
+/// Get first and last row from sorted block
 Block extractMinMax(const Block & block, const Block & keys)
 {
     if (block.rows() == 0)
@@ -86,7 +87,7 @@ Block extractMinMax(const Block & block, const Block & keys)
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        const auto & src_column = block.getByName(keys.getByPosition(i).name);
+        const auto & src_column = block.getByName(min_max.getByPosition(i).name);
 
         columns[i]->insertFrom(*src_column.column, 0);
         columns[i]->insertFrom(*src_column.column, block.rows() - 1);
@@ -398,7 +399,8 @@ bool joinEquals(const Block & left_block, const Block & right_block, const Block
 }
 
 template <bool copy_left>
-void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, MutableColumns & right_columns,
+void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
+                      const Block & right_block, MutableColumns & right_columns,
                       size_t start, size_t end)
 {
     if (end <= start)
@@ -408,9 +410,10 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, M
     if constexpr (copy_left)
         copyLeftRange(left_block, left_columns, start, rows_to_add);
 
-    /// append nulls
-    for (auto & column : right_columns)
-        column->insertManyDefaults(rows_to_add);
+    for (size_t i = 0; i < right_columns.size(); ++i)
+    {
+        JoinCommon::addDefaultValues(*right_columns[i], right_block.getByPosition(i).type, rows_to_add);
+    }
 }
 
 }
@@ -461,8 +464,15 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
                             ErrorCodes::PARAMETER_OUT_OF_BOUND);
     }
 
+    for (const auto & right_key : table_join->keyNamesRight())
+    {
+        if (right_sample_block.getByName(right_key).type->lowCardinality())
+            lowcard_right_keys.push_back(right_key);
+    }
+
     table_join->splitAdditionalColumns(right_sample_block, right_table_keys, right_columns_to_add);
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
+    JoinCommon::removeLowCardinalityInplace(right_sample_block, table_join->keyNamesRight());
 
     const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
@@ -483,6 +493,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
             left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
 }
 
+/// Has to be called even if totals are empty
 void MergeJoin::setTotals(const Block & totals_block)
 {
     totals = totals_block;
@@ -490,11 +501,6 @@ void MergeJoin::setTotals(const Block & totals_block)
 
     if (is_right || is_full)
         used_rows_bitmap = std::make_shared<RowBitmaps>(getRightBlocksCount());
-}
-
-void MergeJoin::joinTotals(Block & block) const
-{
-    JoinCommon::joinTotals(totals, right_columns_to_add, table_join->keyNamesRight(), block);
 }
 
 void MergeJoin::mergeRightBlocks()
@@ -602,10 +608,18 @@ bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
 
 void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
+    Names lowcard_keys = lowcard_right_keys;
     if (block)
     {
         JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
         materializeBlockInplace(block);
+
+        for (const auto & column_name : table_join->keyNamesLeft())
+        {
+            if (block.getByName(column_name).type->lowCardinality())
+                lowcard_keys.push_back(column_name);
+        }
+
         JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft(), false);
 
         sortBlock(block, left_sort_description);
@@ -641,14 +655,20 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     if (!not_processed && left_blocks_buffer)
         not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
 
+    for (const auto & column_name : lowcard_keys)
+    {
+        if (!block.has(column_name))
+            continue;
+        if (auto & col = block.getByName(column_name); !col.type->lowCardinality())
+            JoinCommon::changeLowCardinalityInplace(col);
+    }
+
     JoinCommon::restoreLowCardinalityInplace(block);
 }
 
 template <bool in_memory, bool is_all>
 void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    //std::shared_lock lock(rwlock);
-
     size_t rows_to_reserve = is_left ? block.rows() : 0;
     MutableColumns left_columns = makeMutableColumns(block, (is_all ? rows_to_reserve : 0));
     MutableColumns right_columns = makeMutableColumns(right_columns_to_add, rows_to_reserve);
@@ -696,8 +716,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
         }
 
         left_cursor.nextN(left_key_tail);
-        joinInequalsLeft<is_all>(block, left_columns, right_columns, left_cursor.position(), left_cursor.end());
-        //left_cursor.nextN(left_cursor.end() - left_cursor.position());
+        joinInequalsLeft<is_all>(block, left_columns, right_columns_to_add, right_columns, left_cursor.position(), left_cursor.end());
 
         changeLeftColumns(block, std::move(left_columns));
         addRightColumns(block, std::move(right_columns));
@@ -773,7 +792,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
         Range range = left_cursor.getNextEqualRange(right_cursor);
 
-        joinInequalsLeft<is_all>(left_block, left_columns, right_columns, left_unequal_position, range.left_start);
+        joinInequalsLeft<is_all>(left_block, left_columns, right_columns_to_add, right_columns, left_unequal_position, range.left_start);
 
         if (range.empty())
             break;
@@ -928,7 +947,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStream input(flushed_right_blocks[pos]->path(), right_sample_block);
+            TemporaryFileStream input(flushed_right_blocks[pos]->path(), materializeBlock(right_sample_block));
             return std::make_shared<Block>(input.block_in->read());
         };
 
@@ -1029,7 +1048,10 @@ private:
             }
 
             if (rows_added >= max_block_size)
+            {
+                ++block_number;
                 break;
+            }
         }
 
         return rows_added;

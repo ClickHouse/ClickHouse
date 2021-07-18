@@ -17,7 +17,7 @@ def dns_cache_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=dns_cache, flags=TE,
+        Suite(run=dns_cache,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in dns_cache.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -38,7 +38,7 @@ def dns_cache_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=dns_cache, flags=TE,
+        Suite(run=dns_cache,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in dns_cache.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -48,6 +48,7 @@ def dns_cache_privileges_granted_via_role(self, node=None):
     RQ_SRS_006_RBAC_Privileges_System_DropCache_DNS("1.0"),
 )
 @Examples("privilege",[
+    ("ALL",),
     ("SYSTEM",),
     ("SYSTEM DROP CACHE",),
     ("SYSTEM DROP DNS CACHE",),
@@ -65,11 +66,19 @@ def dns_cache(self, privilege, grant_target_name, user_name, node=None):
         node = self.context.node
 
     with Scenario("SYSTEM DROP DNS CACHE without privilege"):
-        with When("I check the user is unable to execute SYSTEM DROP DNS CACHE"):
+
+        with When("I grant the user NONE privilege"):
+            node.query(f"GRANT NONE TO {grant_target_name}")
+
+        with And("I grant the user USAGE privilege"):
+            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+        with Then("I check the user is unable to execute SYSTEM DROP DNS CACHE"):
             node.query("SYSTEM DROP DNS CACHE", settings = [("user", f"{user_name}")],
                 exitcode=exitcode, message=message)
 
     with Scenario("SYSTEM DROP DNS CACHE with privilege"):
+
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -77,6 +86,7 @@ def dns_cache(self, privilege, grant_target_name, user_name, node=None):
             node.query("SYSTEM DROP DNS CACHE", settings = [("user", f"{user_name}")])
 
     with Scenario("SYSTEM DROP DNS CACHE with revoked privilege"):
+
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -99,7 +109,7 @@ def mark_cache_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=mark_cache, flags=TE,
+        Suite(run=mark_cache,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in mark_cache.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -120,7 +130,7 @@ def mark_cache_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=mark_cache, flags=TE,
+        Suite(run=mark_cache,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in mark_cache.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -130,6 +140,7 @@ def mark_cache_privileges_granted_via_role(self, node=None):
     RQ_SRS_006_RBAC_Privileges_System_DropCache_Mark("1.0"),
 )
 @Examples("privilege",[
+    ("ALL",),
     ("SYSTEM",),
     ("SYSTEM DROP CACHE",),
     ("SYSTEM DROP MARK CACHE",),
@@ -147,11 +158,19 @@ def mark_cache(self, privilege, grant_target_name, user_name, node=None):
         node = self.context.node
 
     with Scenario("SYSTEM DROP MARK CACHE without privilege"):
-        with When("I check the user is unable to execute SYSTEM DROP MARK CACHE"):
+
+        with When("I grant the user NONE privilege"):
+            node.query(f"GRANT NONE TO {grant_target_name}")
+
+        with And("I grant the user USAGE privilege"):
+            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+        with Then("I check the user is unable to execute SYSTEM DROP MARK CACHE"):
             node.query("SYSTEM DROP MARK CACHE", settings = [("user", f"{user_name}")],
                 exitcode=exitcode, message=message)
 
     with Scenario("SYSTEM DROP MARK CACHE with privilege"):
+
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -159,6 +178,7 @@ def mark_cache(self, privilege, grant_target_name, user_name, node=None):
             node.query("SYSTEM DROP MARK CACHE", settings = [("user", f"{user_name}")])
 
     with Scenario("SYSTEM DROP MARK CACHE with revoked privilege"):
+
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -181,7 +201,7 @@ def uncompressed_cache_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=uncompressed_cache, flags=TE,
+        Suite(run=uncompressed_cache,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in uncompressed_cache.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -202,7 +222,7 @@ def uncompressed_cache_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=uncompressed_cache, flags=TE,
+        Suite(run=uncompressed_cache,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in uncompressed_cache.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -212,6 +232,7 @@ def uncompressed_cache_privileges_granted_via_role(self, node=None):
     RQ_SRS_006_RBAC_Privileges_System_DropCache_Uncompressed("1.0"),
 )
 @Examples("privilege",[
+    ("ALL",),
     ("SYSTEM",),
     ("SYSTEM DROP CACHE",),
     ("SYSTEM DROP UNCOMPRESSED CACHE",),
@@ -229,11 +250,19 @@ def uncompressed_cache(self, privilege, grant_target_name, user_name, node=None)
         node = self.context.node
 
     with Scenario("SYSTEM DROP UNCOMPRESSED CACHE without privilege"):
-        with When("I check the user is unable to execute SYSTEM DROP UNCOMPRESSED CACHE"):
+
+        with When("I grant the user NONE privilege"):
+            node.query(f"GRANT NONE TO {grant_target_name}")
+
+        with And("I grant the user USAGE privilege"):
+            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+        with Then("I check the user is unable to execute SYSTEM DROP UNCOMPRESSED CACHE"):
             node.query("SYSTEM DROP UNCOMPRESSED CACHE", settings = [("user", f"{user_name}")],
                 exitcode=exitcode, message=message)
 
     with Scenario("SYSTEM DROP UNCOMPRESSED CACHE with privilege"):
+
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -241,6 +270,7 @@ def uncompressed_cache(self, privilege, grant_target_name, user_name, node=None)
             node.query("SYSTEM DROP UNCOMPRESSED CACHE", settings = [("user", f"{user_name}")])
 
     with Scenario("SYSTEM DROP UNCOMPRESSED CACHE with revoked privilege"):
+
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -255,6 +285,8 @@ def uncompressed_cache(self, privilege, grant_target_name, user_name, node=None)
 @Name("system drop cache")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_DropCache("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SYSTEM DROP CACHE.

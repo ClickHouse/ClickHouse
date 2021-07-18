@@ -33,6 +33,7 @@ void registerFunctionAsinh(FunctionFactory & factory);
 void registerFunctionAcosh(FunctionFactory & factory);
 void registerFunctionAtanh(FunctionFactory & factory);
 void registerFunctionPow(FunctionFactory & factory);
+void registerFunctionSign(FunctionFactory & factory);
 
 
 void registerFunctionsMath(FunctionFactory & factory)
@@ -68,6 +69,7 @@ void registerFunctionsMath(FunctionFactory & factory)
     registerFunctionAcosh(factory);
     registerFunctionAtanh(factory);
     registerFunctionPow(factory);
+    registerFunctionSign(factory);
 }
 
 }

@@ -91,3 +91,6 @@ def test_system_replicated_fetches(started_cluster):
     for elem in fetches_result:
         assert elem['elapsed'] >= prev_elapsed, "Elapsed time decreasing prev {}, next {}? It's a bug".format(prev_elapsed, elem['elapsed'])
         prev_elapsed = elem['elapsed']
+
+    node1.query("DROP TABLE IF EXISTS t SYNC")
+    node2.query("DROP TABLE IF EXISTS t SYNC")

@@ -7,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/StreamSocket.h>
-#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
@@ -46,9 +45,7 @@ private:
     String password;
 
     bool connected = false;
-    UInt32 client_capability_flags = 0;
-
-    uint8_t seq = 0;
+    MySQLWireContext mysql_context;
     const UInt8 charset_utf8 = 33;
     const String mysql_native_password = "mysql_native_password";
 

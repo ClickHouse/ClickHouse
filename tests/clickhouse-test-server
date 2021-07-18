@@ -60,6 +60,7 @@ if [ "$DATA_DIR_PATTERN" != "$DATA_DIR" ]; then
     cat ${CONFIG_SERVER_DIR}/ints_dictionary.xml | sed -e s!9000!$CLICKHOUSE_PORT_TCP! > $DATA_DIR/etc/ints_dictionary.xml
     cat ${CONFIG_SERVER_DIR}/strings_dictionary.xml | sed -e s!9000!$CLICKHOUSE_PORT_TCP! > $DATA_DIR/etc/strings_dictionary.xml
     cat ${CONFIG_SERVER_DIR}/decimals_dictionary.xml | sed -e s!9000!$CLICKHOUSE_PORT_TCP! > $DATA_DIR/etc/decimals_dictionary.xml
+    cat ${CONFIG_SERVER_DIR}/executable_pool_dictionary.xml | sed -e s!9000!$CLICKHOUSE_PORT_TCP! > $DATA_DIR/etc/executable_pool_dictionary.xml
 fi
 
 CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${CLICKHOUSE_EXTRACT} --config=$CLICKHOUSE_CONFIG"}

@@ -5,7 +5,7 @@ from aes_encryption.requirements import *
 @TestFeature
 @Name("mysql")
 @Requirements(
-    RQ_SRS008_AES_Functions_Compatability_MySQL("1.0")
+    RQ_SRS008_AES_Functions_Compatibility_MySQL("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check encryption functions usage compatibility with MySQL.

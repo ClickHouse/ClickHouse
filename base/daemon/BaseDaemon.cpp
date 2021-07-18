@@ -21,13 +21,11 @@
 #include <fstream>
 #include <sstream>
 #include <memory>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/PatternFormatter.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
@@ -59,6 +57,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
+#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
@@ -70,6 +69,7 @@
 #endif
 #include <ucontext.h>
 
+namespace fs = std::filesystem;
 
 DB::PipeFDs signal_pipe;
 
@@ -152,7 +152,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        sleepForSeconds(10);
+        sleepForSeconds(20);  /// FIXME: use some feedback from threads that process stacktrace
         call_default_signal_handler(sig);
     }
 
@@ -230,10 +230,10 @@ public:
             }
             else
             {
-                siginfo_t info;
-                ucontext_t context;
+                siginfo_t info{};
+                ucontext_t context{};
                 StackTrace stack_trace(NoCapture{});
-                UInt32 thread_num;
+                UInt32 thread_num{};
                 std::string query_id;
                 DB::ThreadStatus * thread_ptr{};
 
@@ -311,7 +311,8 @@ private:
         if (stack_trace.getSize())
         {
             /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
-            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
+            /// NOTE: This still require memory allocations and mutex lock inside logger.
+            ///       BTW we can also print it to stderr using write syscalls.
 
             std::stringstream bare_stacktrace;
             bare_stacktrace << "Stack trace:";
@@ -324,7 +325,7 @@ private:
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
         String calculated_binary_hash = getHashOfLoadedBinaryHex();
         if (daemon.stored_binary_hash.empty())
@@ -415,7 +416,9 @@ static void sanitizerDeathCallback()
     else
         log_message = "Terminate called without an active exception";
 
-    static const size_t buf_size = 1024;
+    /// POSIX.1 says that write(2)s of less than PIPE_BUF bytes must be atomic - man 7 pipe
+    /// And the buffer should not be too small because our exception messages can be large.
+    static constexpr size_t buf_size = PIPE_BUF;
 
     if (log_message.size() > buf_size - 16)
         log_message.resize(buf_size - 16);
@@ -434,11 +437,11 @@ static void sanitizerDeathCallback()
 
 static std::string createDirectory(const std::string & file)
 {
-    auto path = Poco::Path(file).makeParent();
-    if (path.toString().empty())
+    fs::path path = fs::path(file).parent_path();
+    if (path.empty())
         return "";
-    Poco::File(path).createDirectories();
-    return path.toString();
+    fs::create_directories(path);
+    return path;
 };
 
 
@@ -446,7 +449,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 {
     try
     {
-        Poco::File(path).createDirectories();
+        fs::create_directories(path);
         return true;
     }
     catch (...)
@@ -465,9 +468,9 @@ void BaseDaemon::reloadConfiguration()
       *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", "config.xml");
+    config_path = config().getString("config-file", getDefaultConfigFileName());
     DB::ConfigProcessor config_processor(config_path, false, true);
-    config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+    config_processor.setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
@@ -513,21 +516,28 @@ std::string BaseDaemon::getDefaultCorePath() const
     return "/opt/cores/";
 }
 
+std::string BaseDaemon::getDefaultConfigFileName() const
+{
+    return "config.xml";
+}
+
 void BaseDaemon::closeFDs()
 {
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
-    Poco::File proc_path{"/dev/fd"};
+    fs::path proc_path{"/dev/fd"};
 #else
-    Poco::File proc_path{"/proc/self/fd"};
+    fs::path proc_path{"/proc/self/fd"};
 #endif
-    if (proc_path.isDirectory()) /// Hooray, proc exists
+    if (fs::is_directory(proc_path)) /// Hooray, proc exists
     {
-        std::vector<std::string> fds;
-        /// in /proc/self/fd directory filenames are numeric file descriptors
-        proc_path.list(fds);
-        for (const auto & fd_str : fds)
+        /// in /proc/self/fd directory filenames are numeric file descriptors.
+        /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
+        std::vector<int> fds;
+        for (const auto & path : fs::directory_iterator(proc_path))
+            fds.push_back(DB::parse<int>(path.path().filename()));
+
+        for (const auto & fd : fds)
         {
-            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
         }
@@ -561,6 +571,7 @@ void debugIncreaseOOMScore()
     {
         DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
         buf.write(new_score.c_str(), new_score.size());
+        buf.close();
     }
     catch (const Poco::Exception & e)
     {
@@ -588,9 +599,9 @@ void BaseDaemon::initialize(Application & self)
     {
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
-        std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
+        std::string path = fs::path(config().getString("application.path")).replace_filename("");
         if (0 != chdir(current_dir.c_str()))
-            throw Poco::Exception("Cannot change directory to " + current_dir);
+            throw Poco::Exception("Cannot change directory to " + path);
     }
 
     reloadConfiguration();
@@ -640,7 +651,7 @@ void BaseDaemon::initialize(Application & self)
 
     std::string log_dir;
     if (!log_path.empty())
-        log_dir = Poco::Path(log_path).setFileName("").toString();
+        log_dir = fs::path(log_path).replace_filename("");
 
     /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
       * Some libraries write to stderr in case of errors in debug mode,
@@ -704,8 +715,7 @@ void BaseDaemon::initialize(Application & self)
 
         tryCreateDirectories(&logger(), core_path);
 
-        Poco::File cores = core_path;
-        if (!(cores.exists() && cores.isDirectory()))
+        if (!(fs::exists(core_path) && fs::is_directory(core_path)))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
             tryCreateDirectories(&logger(), core_path);
@@ -794,7 +804,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     /// Setup signal handlers.
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
-    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler, &handled_signals);
+    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, &handled_signals);
     addSignalHandler({SIGHUP, SIGUSR1}, closeLogsSignalHandler, &handled_signals);
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, &handled_signals);
 
@@ -997,7 +1007,7 @@ void BaseDaemon::setupWatchdog()
         if (errno == ECHILD)
         {
             logger().information("Child process no longer exists.");
-            _exit(status);
+            _exit(WEXITSTATUS(status));
         }
 
         if (WIFEXITED(status))
@@ -1031,7 +1041,7 @@ void BaseDaemon::setupWatchdog()
 
         /// Automatic restart is not enabled but you can play with it.
 #if 1
-        _exit(status);
+        _exit(WEXITSTATUS(status));
 #else
         logger().information("Will restart.");
         if (argv0)

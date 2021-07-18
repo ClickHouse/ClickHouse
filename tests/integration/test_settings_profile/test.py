@@ -46,7 +46,7 @@ def reset_after_test():
 
 
 def test_smoke():
-    # Set settings and constraints via CREATE SETTINGS PROFILE ... TO user 
+    # Set settings and constraints via CREATE SETTINGS PROFILE ... TO user
     instance.query(
         "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin")
     assert instance.query(
@@ -194,13 +194,13 @@ def test_show_profiles():
 
     assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE xyz\n"
     assert instance.query(
-        "SHOW CREATE SETTINGS PROFILE default") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n"
+        "SHOW CREATE SETTINGS PROFILE default") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n"
     assert instance.query(
-        "SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n" \
+        "SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n" \
                                    "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n" \
                                    "CREATE SETTINGS PROFILE xyz\n"
 
-    expected_access = "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n" \
+    expected_access = "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n" \
                       "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n" \
                       "CREATE SETTINGS PROFILE xyz\n"
     assert expected_access in instance.query("SHOW ACCESS")
@@ -210,7 +210,7 @@ def test_allow_ddl():
     assert "it's necessary to have grant" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
     assert "it's necessary to have grant" in instance.query_and_get_error("GRANT CREATE ON tbl TO robin", user="robin")
     assert "DDL queries are prohibited" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log", settings={"allow_ddl": 0})
-    
+
     instance.query("GRANT CREATE ON tbl TO robin")
     instance.query("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
     instance.query("DROP TABLE tbl")

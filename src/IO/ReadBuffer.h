@@ -55,13 +55,19 @@ public:
       */
     bool next()
     {
+        assert(!hasPendingData());
+        assert(position() <= working_buffer.end());
+
         bytes += offset();
         bool res = nextImpl();
         if (!res)
-            working_buffer.resize(0);
-
-        pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+            working_buffer = Buffer(pos, pos);
+        else
+            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
         nextimpl_working_buffer_offset = 0;
+
+        assert(position() <= working_buffer.end());
+
         return res;
     }
 
@@ -72,7 +78,7 @@ public:
             next();
     }
 
-    virtual ~ReadBuffer() {}
+    virtual ~ReadBuffer() = default;
 
 
     /** Unlike std::istream, it returns true if all data was read
@@ -128,13 +134,25 @@ public:
         tryIgnore(std::numeric_limits<size_t>::max());
     }
 
-    /** Reads a single byte. */
-    bool ALWAYS_INLINE read(char & c)
+    /// Peeks a single byte.
+    bool ALWAYS_INLINE peek(char & c)
     {
         if (eof())
             return false;
-        c = *pos++;
+        c = *pos;
         return true;
+    }
+
+    /// Reads a single byte.
+    bool ALWAYS_INLINE read(char & c)
+    {
+        if (peek(c))
+        {
+            ++pos;
+            return true;
+        }
+
+        return false;
     }
 
     void ALWAYS_INLINE readStrict(char & c)
@@ -192,7 +210,7 @@ private:
       */
     virtual bool nextImpl() { return false; }
 
-    [[noreturn]] void throwReadAfterEOF()
+    [[noreturn]] static void throwReadAfterEOF()
     {
         throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
     }
@@ -200,6 +218,40 @@ private:
 
 
 using ReadBufferPtr = std::shared_ptr<ReadBuffer>;
+
+/// Due to inconsistencies in ReadBuffer-family interfaces:
+///  - some require to fully wrap underlying buffer and own it,
+///  - some just wrap the reference without ownership,
+/// we need to be able to wrap reference-only buffers with movable transparent proxy-buffer.
+/// The uniqueness of such wraps is responsibility of the code author.
+inline std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & buf)
+{
+    class ReadBufferWrapper : public ReadBuffer
+    {
+        public:
+            explicit ReadBufferWrapper(ReadBuffer & buf_) : ReadBuffer(buf_.position(), 0), buf(buf_)
+            {
+                working_buffer = Buffer(buf.position(), buf.buffer().end());
+            }
+
+        private:
+            ReadBuffer & buf;
+
+            bool nextImpl() override
+            {
+                buf.position() = position();
+
+                if (!buf.next())
+                    return false;
+
+                working_buffer = buf.buffer();
+
+                return true;
+            }
+    };
+
+    return std::make_unique<ReadBufferWrapper>(buf);
+}
 
 
 }

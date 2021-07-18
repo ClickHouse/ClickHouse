@@ -11,6 +11,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -32,6 +33,8 @@ namespace ErrorCodes
   * - a histogram (that is, value -> number), consisting of two parts
   * -- for values from 0 to 1023 - in increments of 1;
   * -- for values from 1024 to 30,000 - in increments of 16;
+  *
+  * NOTE: 64-bit integer weight can overflow, see also QantileExactWeighted.h::get()
   */
 
 #define TINY_MAX_ELEMS 31
@@ -396,9 +399,9 @@ namespace detail
         /// Get the value of the `level` quantile. The level must be between 0 and 1.
         UInt16 get(double level) const
         {
-            UInt64 pos = std::ceil(count * level);
+            double pos = std::ceil(count * level);
 
-            UInt64 accumulated = 0;
+            double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())
@@ -422,9 +425,9 @@ namespace detail
             const auto * indices_end = indices + size;
             const auto * index = indices;
 
-            UInt64 pos = std::ceil(count * levels[*index]);
+            double pos = std::ceil(count * levels[*index]);
 
-            UInt64 accumulated = 0;
+            double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())

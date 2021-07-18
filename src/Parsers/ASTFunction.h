@@ -32,14 +32,8 @@ public:
     // pointers of proper type (see e.g. IAST::set), but this is not compatible
     // with the visitor interface.
 
-    // ASTIdentifier
-    ASTPtr window_name;
-
-    // ASTExpressionList
-    ASTPtr window_partition_by;
-
-    // ASTExpressionList of
-    ASTPtr window_order_by;
+    String window_name;
+    ASTPtr window_definition;
 
     /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
     bool no_empty_args = false;
@@ -55,14 +49,15 @@ public:
 
     ASTPtr toLiteral() const;  // Try to convert functions like Array or Tuple to a literal form.
 
-    void appendWindowDescription(const FormatSettings & settings,
-        FormatState & state, FormatStateStacked frame) const;
-
     std::string getWindowDescription() const;
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
+    void appendColumnNameImpl(WriteBuffer & ostr, const Settings & settings) const override;
+
+private:
+    void appendColumnNameImpl(WriteBuffer & ostr, const Settings * settings) const;
 };
 
 

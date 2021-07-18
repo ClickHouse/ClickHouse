@@ -14,21 +14,31 @@ namespace
 {
 
 /// Wrapper to allow mixed lists of nested and normal types.
-class ParserNestedTableOrExpression : public IParserBase
+/// Parameters are either:
+/// - Nested table elements;
+/// - Enum element in form of 'a' = 1;
+/// - literal;
+/// - another data type (or identifier)
+class ParserDataTypeArgument : public IParserBase
 {
-    private:
-        const char * getName() const override { return "data type or expression"; }
-        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-        {
-            ParserNestedTable parser1;
+private:
+    const char * getName() const override { return "data type argument"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        ParserNestedTable nested_parser;
+        ParserDataType data_type_parser;
+        ParserLiteral literal_parser;
 
-            if (parser1.parse(pos, node, expected))
-                return true;
+        const char * operators[] = {"=", "equals", nullptr};
+        ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());
 
-            ParserExpression parser2;
+        if (pos->type == TokenType::BareWord && std::string_view(pos->begin, pos->size()) == "Nested")
+            return nested_parser.parse(pos, node, expected);
 
-            return parser2.parse(pos, node, expected);
-        }
+        return enum_parser.parse(pos, node, expected)
+            || literal_parser.parse(pos, node, expected)
+            || data_type_parser.parse(pos, node, expected);
+    }
 };
 
 }
@@ -104,7 +114,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ParserList args_parser(std::make_unique<ParserNestedTableOrExpression>(), std::make_unique<ParserToken>(TokenType::Comma));
+    ParserList args_parser(std::make_unique<ParserDataTypeArgument>(), std::make_unique<ParserToken>(TokenType::Comma));
     ASTPtr expr_list_args;
 
     if (!args_parser.parse(pos, expr_list_args, expected))

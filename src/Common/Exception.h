@@ -24,8 +24,10 @@ namespace DB
 class Exception : public Poco::Exception
 {
 public:
+    using FramePointers = std::vector<void *>;
+
     Exception() = default;
-    Exception(const std::string & msg, int code);
+    Exception(const std::string & msg, int code, bool remote_ = false);
     Exception(const std::string & msg, const Exception & nested, int code);
 
     Exception(int code, const std::string & message)
@@ -61,12 +63,19 @@ public:
         extendedMessage(message);
     }
 
+    /// Used to distinguish local exceptions from the one that was received from remote node.
+    void setRemoteException(bool remote_ = true) { remote = remote_; }
+    bool isRemoteException() const { return remote; }
+
     std::string getStackTraceString() const;
+    /// Used for system.errors
+    FramePointers getStackFramePointers() const;
 
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
 #endif
+    bool remote = false;
 
     const char * className() const throw() override { return "DB::Exception"; }
 };
@@ -110,9 +119,7 @@ public:
     template <typename ...Args>
     ParsingException(int code, const std::string & fmt, Args&&... args)
         : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
-    {
-        Exception::message(Exception::message() + "{}");
-    }
+    {}
 
 
     std::string displayText() const

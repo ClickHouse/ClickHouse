@@ -1,0 +1,86 @@
+DROP queries and also a cleanup before the test
+CREATE queries
+SET queries
+ALTER TABLE queries
+SYSTEM queries
+SHOW queries
+GRANT queries
+REVOKE queries
+Misc queries
+ACTUAL LOG CONTENT:
+Select	SELECT \'DROP queries and also a cleanup before the test\';
+Drop	DROP DATABASE IF EXISTS sqllt SYNC;
+	DROP USER IF EXISTS sqllt_user;
+	DROP ROLE IF EXISTS sqllt_role;
+	DROP POLICY IF EXISTS sqllt_policy ON sqllt.table, sqllt.view, sqllt.dictionary;
+	DROP ROW POLICY IF EXISTS sqllt_row_policy ON sqllt.table, sqllt.view, sqllt.dictionary;
+	DROP QUOTA IF EXISTS sqllt_quota;
+	DROP SETTINGS PROFILE IF EXISTS sqllt_settings_profile;
+Select	SELECT \'CREATE queries\';
+Create	CREATE DATABASE sqllt;
+Create	CREATE TABLE sqllt.table\n(\n    i UInt8, s String\n)\nENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();
+Create	CREATE VIEW sqllt.view AS SELECT i, s FROM sqllt.table;
+Create	CREATE DICTIONARY sqllt.dictionary (key UInt64, value UInt64) PRIMARY KEY key SOURCE(CLICKHOUSE(DB \'sqllt\' TABLE \'table\' HOST \'localhost\' PORT 9001)) LIFETIME(0) LAYOUT(FLAT());
+	CREATE USER sqllt_user IDENTIFIED WITH PLAINTEXT_PASSWORD BY \'password\';
+	CREATE ROLE sqllt_role;
+	CREATE POLICY sqllt_policy ON sqllt.table, sqllt.view, sqllt.dictionary AS PERMISSIVE TO ALL;
+	CREATE POLICY sqllt_row_policy ON sqllt.table, sqllt.view, sqllt.dictionary AS PERMISSIVE TO ALL;
+	CREATE QUOTA sqllt_quota KEYED BY user_name TO sqllt_role;
+	CREATE SETTINGS PROFILE sqllt_settings_profile SETTINGS interactive_delay = 200000;
+Grant	GRANT sqllt_role TO sqllt_user;
+Select	SELECT \'SET queries\';
+	SET log_profile_events=false;
+	SET DEFAULT ROLE sqllt_role TO sqllt_user;
+Select	-- SET ROLE sqllt_role; -- tests are executed by user `default` which is defined in XML and is impossible to update.\n\nSELECT \'ALTER TABLE queries\';
+Alter	ALTER TABLE sqllt.table ADD COLUMN new_col UInt32 DEFAULT 123456789;
+Alter	ALTER TABLE sqllt.table COMMENT COLUMN new_col \'dummy column with a comment\';
+Alter	ALTER TABLE sqllt.table CLEAR COLUMN new_col;
+Alter	ALTER TABLE sqllt.table MODIFY COLUMN new_col DateTime DEFAULT \'2015-05-18 07:40:13\';
+Alter	ALTER TABLE sqllt.table MODIFY COLUMN new_col REMOVE COMMENT;
+Alter	ALTER TABLE sqllt.table RENAME COLUMN new_col TO the_new_col;
+Alter	ALTER TABLE sqllt.table DROP COLUMN the_new_col;
+Alter	ALTER TABLE sqllt.table UPDATE i = i + 1 WHERE 1;
+Alter	ALTER TABLE sqllt.table DELETE WHERE i > 65535;
+Select	-- not done, seems to hard, so I\'ve skipped queries of ALTER-X, where X is:\n-- PARTITION\n-- ORDER BY\n-- SAMPLE BY\n-- INDEX\n-- CONSTRAINT\n-- TTL\n-- USER\n-- QUOTA\n-- ROLE\n-- ROW POLICY\n-- SETTINGS PROFILE\n\nSELECT \'SYSTEM queries\';
+System	SYSTEM FLUSH LOGS;
+System	SYSTEM STOP MERGES sqllt.table
+System	SYSTEM START MERGES sqllt.table
+System	SYSTEM STOP TTL MERGES sqllt.table
+System	SYSTEM START TTL MERGES sqllt.table
+System	SYSTEM STOP MOVES sqllt.table
+System	SYSTEM START MOVES sqllt.table
+System	SYSTEM STOP FETCHES sqllt.table
+System	SYSTEM START FETCHES sqllt.table
+System	SYSTEM STOP REPLICATED SENDS sqllt.table
+System	SYSTEM START REPLICATED SENDS sqllt.table
+Select	-- SYSTEM RELOAD DICTIONARY sqllt.dictionary; -- temporary out of order: Code: 210, Connection refused (localhost:9001) (version 21.3.1.1)\n-- DROP REPLICA\n-- haha, no\n-- SYSTEM KILL;\n-- SYSTEM SHUTDOWN;\n\n-- Since we don\'t really care about the actual output, suppress it with `FORMAT Null`.\nSELECT \'SHOW queries\';
+	SHOW CREATE TABLE sqllt.table FORMAT Null;
+	SHOW CREATE DICTIONARY sqllt.dictionary FORMAT Null;
+	SHOW DATABASES LIKE \'sqllt\' FORMAT Null;
+	SHOW TABLES FROM sqllt FORMAT Null;
+	SHOW DICTIONARIES FROM sqllt FORMAT Null;
+	SHOW GRANTS FORMAT Null;
+	SHOW GRANTS FOR sqllt_user FORMAT Null;
+	SHOW CREATE USER sqllt_user FORMAT Null;
+	SHOW CREATE ROLE sqllt_role FORMAT Null;
+	SHOW CREATE POLICY sqllt_policy FORMAT Null;
+	SHOW CREATE ROW POLICY sqllt_row_policy FORMAT Null;
+	SHOW CREATE QUOTA sqllt_quota FORMAT Null;
+	SHOW CREATE SETTINGS PROFILE sqllt_settings_profile FORMAT Null;
+Select	SELECT \'GRANT queries\';
+Grant	GRANT SELECT ON sqllt.table TO sqllt_user;
+Grant	GRANT DROP ON sqllt.view TO sqllt_user;
+Select	SELECT \'REVOKE queries\';
+Revoke	REVOKE SELECT ON sqllt.table FROM sqllt_user;
+Revoke	REVOKE DROP ON sqllt.view FROM sqllt_user;
+Select	SELECT \'Misc queries\';
+	DESCRIBE TABLE sqllt.table FORMAT Null;
+	CHECK TABLE sqllt.table FORMAT Null;
+Drop	DETACH TABLE sqllt.table;
+Create	ATTACH TABLE sqllt.table;
+Rename	RENAME TABLE sqllt.table TO sqllt.table_new;
+Rename	RENAME TABLE sqllt.table_new TO sqllt.table;
+Drop	TRUNCATE TABLE sqllt.table;
+Drop	DROP TABLE sqllt.table SYNC;
+	SET log_comment=\'\';
+DROP queries and also a cleanup after the test

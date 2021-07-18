@@ -9,7 +9,7 @@ class Connection;
 class Query;
 
 
-/** Базовый класс для UseQueryResult и StoreQueryResult.
+/** Базовый класс для UseQueryResult.
   * Содержит общую часть реализации,
   * Ссылается на Connection. Если уничтожить Connection, то пользоваться ResultBase и любым результатом нельзя.
   * Использовать объект можно только для результата одного запроса!

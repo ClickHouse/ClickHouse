@@ -28,7 +28,7 @@ EXISTS t_01048; -- Does not work for temporary tables. Maybe have to fix.
 EXISTS TABLE t_01048;
 EXISTS DICTIONARY t_01048;
 
-CREATE DICTIONARY db_01048.t_01048 (k UInt64, v String) PRIMARY KEY k LAYOUT(FLAT()) SOURCE(HTTP(URL 'http://example.test/' FORMAT TSV)) LIFETIME(1000);
+CREATE DICTIONARY db_01048.t_01048 (k UInt64, v String) PRIMARY KEY k LAYOUT(FLAT()) SOURCE(HTTP(URL 'http://example.test/' FORMAT 'TSV')) LIFETIME(1000);
 EXISTS db_01048.t_01048;
 EXISTS TABLE db_01048.t_01048; -- Dictionaries are tables as well. But not all tables are dictionaries.
 EXISTS DICTIONARY db_01048.t_01048;

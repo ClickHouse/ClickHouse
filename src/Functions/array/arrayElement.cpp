@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -12,6 +12,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
@@ -41,7 +42,7 @@ class FunctionArrayElement : public IFunction
 {
 public:
     static constexpr auto name = "arrayElement";
-    static FunctionPtr create(const Context & context);
+    static FunctionPtr create(ContextPtr context);
 
     String getName() const override;
 
@@ -108,6 +109,9 @@ private:
         const Field & index, PaddedPODArray<UInt64> & matched_idxs);
 
     static bool matchKeyToIndexString(const IColumn & data, const Offsets & offsets,
+        const ColumnsWithTypeAndName & arguments, PaddedPODArray<UInt64> & matched_idxs);
+
+    static bool matchKeyToIndexFixedString(const IColumn & data, const Offsets & offsets,
         const ColumnsWithTypeAndName & arguments, PaddedPODArray<UInt64> & matched_idxs);
 
     static bool matchKeyToIndexStringConst(const IColumn & data, const Offsets & offsets,
@@ -231,7 +235,7 @@ struct ArrayElementNumImpl
                 if (builder)
                     builder.update(j);
             }
-            else if (index < 0 && static_cast<size_t>(-index) <= array_size)
+            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
             {
                 size_t j = offsets[i] + index;
                 result[i] = data[j];
@@ -329,7 +333,7 @@ struct ArrayElementStringImpl
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
-            else if (index < 0 && static_cast<size_t>(-index) <= array_size)
+            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
                 adjusted_index = array_size + index;
             else
                 adjusted_index = array_size;    /// means no element should be taken
@@ -427,7 +431,7 @@ struct ArrayElementGenericImpl
                 if (builder)
                     builder.update(j);
             }
-            else if (index < 0 && static_cast<size_t>(-index) <= array_size)
+            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
             {
                 size_t j = offsets[i] + index;
                 result.insertFrom(data, j);
@@ -449,7 +453,7 @@ struct ArrayElementGenericImpl
 }
 
 
-FunctionPtr FunctionArrayElement::create(const Context &)
+FunctionPtr FunctionArrayElement::create(ContextPtr)
 {
     return std::make_shared<FunctionArrayElement>();
 }
@@ -472,11 +476,24 @@ ColumnPtr FunctionArrayElement::executeNumberConst(
     auto col_res = ColumnVector<DataType>::create();
 
     if (index.getType() == Field::Types::UInt64)
+    {
         ArrayElementNumImpl<DataType>::template vectorConst<false>(
             col_nested->getData(), col_array->getOffsets(), safeGet<UInt64>(index) - 1, col_res->getData(), builder);
+    }
     else if (index.getType() == Field::Types::Int64)
+    {
+        /// Cast to UInt64 before negation allows to avoid undefined behaviour for negation of the most negative number.
+        /// NOTE: this would be undefined behaviour in C++ sense, but nevertheless, compiler cannot see it on user provided data,
+        /// and generates the code that we want on supported CPU architectures (overflow in sense of two's complement arithmetic).
+        /// This is only needed to avoid UBSan report.
+
+        /// Negative array indices work this way:
+        /// arr[-1] is the element at offset 0 from the last
+        /// arr[-2] is the element at offset 1 from the last and so on.
+
         ArrayElementNumImpl<DataType>::template vectorConst<true>(
-            col_nested->getData(), col_array->getOffsets(), -safeGet<Int64>(index) - 1, col_res->getData(), builder);
+            col_nested->getData(), col_array->getOffsets(), -(UInt64(safeGet<Int64>(index)) + 1), col_res->getData(), builder);
+    }
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
@@ -534,7 +551,7 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
             col_nested->getChars(),
             col_array->getOffsets(),
             col_nested->getOffsets(),
-            -safeGet<Int64>(index) - 1,
+            -(UInt64(safeGet<Int64>(index)) + 1),
             col_res->getChars(),
             col_res->getOffsets(),
             builder);
@@ -588,7 +605,7 @@ ColumnPtr FunctionArrayElement::executeGenericConst(
             col_nested, col_array->getOffsets(), safeGet<UInt64>(index) - 1, *col_res, builder);
     else if (index.getType() == Field::Types::Int64)
         ArrayElementGenericImpl::vectorConst<true>(
-            col_nested, col_array->getOffsets(), -safeGet<Int64>(index) - 1, *col_res, builder);
+            col_nested, col_array->getOffsets(), -(UInt64(safeGet<Int64>(index) + 1)), *col_res, builder);
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
@@ -639,7 +656,7 @@ ColumnPtr FunctionArrayElement::executeConst(const ColumnsWithTypeAndName & argu
             if (builder)
                 builder.update(j);
         }
-        else if (index < 0 && static_cast<size_t>(-index) <= array_size)
+        else if (index < 0 && -static_cast<size_t>(index) <= array_size)
         {
             size_t j = array_size + index;
             res->insertFrom(array_elements, j);
@@ -754,6 +771,19 @@ struct MatcherString
     }
 };
 
+struct MatcherFixedString
+{
+    const ColumnFixedString & data;
+    const ColumnFixedString & index;
+
+    bool match(size_t row_data, size_t row_index) const
+    {
+        auto data_ref = data.getDataAt(row_data);
+        auto index_ref = index.getDataAt(row_index);
+        return memequalSmallAllowOverflow15(index_ref.data, index_ref.size, data_ref.data, data_ref.size);
+    }
+};
+
 struct MatcherStringConst
 {
     const ColumnString & data;
@@ -850,6 +880,23 @@ bool FunctionArrayElement::matchKeyToIndexString(
     return true;
 }
 
+bool FunctionArrayElement::matchKeyToIndexFixedString(
+    const IColumn & data, const Offsets & offsets,
+    const ColumnsWithTypeAndName & arguments, PaddedPODArray<UInt64> & matched_idxs)
+{
+    const auto * index_string = checkAndGetColumn<ColumnFixedString>(arguments[1].column.get());
+    if (!index_string)
+        return false;
+
+    const auto * data_string = checkAndGetColumn<ColumnFixedString>(&data);
+    if (!data_string)
+        return false;
+
+    MatcherFixedString matcher{*data_string, *index_string};
+    executeMatchKeyToIndex(offsets, matched_idxs, matcher);
+    return true;
+}
+
 template <typename DataType>
 bool FunctionArrayElement::matchKeyToIndexNumberConst(
     const IColumn & data, const Offsets & offsets,
@@ -859,10 +906,18 @@ bool FunctionArrayElement::matchKeyToIndexNumberConst(
     if (!data_numeric)
         return false;
 
-    if (index.getType() != Field::Types::UInt64 && index.getType() != Field::Types::Int64)
+    std::optional<DataType> index_as_integer;
+    Field::dispatch([&](const auto & value)
+    {
+        using FieldType = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<FieldType, DataType> || (is_integer_v<FieldType> && std::is_convertible_v<FieldType, DataType>))
+            index_as_integer = static_cast<DataType>(value);
+    }, index);
+
+    if (!index_as_integer)
         return false;
 
-    MatcherNumberConst<DataType> matcher{data_numeric->getData(), get<DataType>(index)};
+    MatcherNumberConst<DataType> matcher{data_numeric->getData(), *index_as_integer};
     executeMatchKeyToIndex(offsets, matched_idxs, matcher);
     return true;
 }
@@ -893,11 +948,18 @@ bool FunctionArrayElement::matchKeyToIndex(
         || matchKeyToIndexNumber<UInt16>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<UInt32>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<UInt64>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt128>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt256>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int8>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int16>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int32>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int64>(data, offsets, arguments, matched_idxs)
-        || matchKeyToIndexString(data, offsets, arguments, matched_idxs);
+        || matchKeyToIndexNumber<Int128>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<Int256>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt256>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UUID>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexString(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexFixedString(data, offsets, arguments, matched_idxs);
 }
 
 bool FunctionArrayElement::matchKeyToIndexConst(
@@ -908,10 +970,15 @@ bool FunctionArrayElement::matchKeyToIndexConst(
         || matchKeyToIndexNumberConst<UInt16>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<UInt32>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<UInt64>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UInt128>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UInt256>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int8>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int16>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int32>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int64>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<Int128>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<Int256>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UUID>(data, offsets, index, matched_idxs)
         || matchKeyToIndexStringConst(data, offsets, index, matched_idxs);
 }
 
@@ -936,7 +1003,7 @@ ColumnPtr FunctionArrayElement::executeMap(
     {
         if (input_rows_count > 0 && !matchKeyToIndex(keys_data, offsets, arguments, indices_data))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal types of arguments: {}, {} for function ",
+                "Illegal types of arguments: {}, {} for function {}",
                 arguments[0].type->getName(), arguments[1].type->getName(), getName());
     }
     else

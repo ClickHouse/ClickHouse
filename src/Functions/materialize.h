@@ -1,6 +1,8 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -11,7 +13,7 @@ class FunctionMaterialize : public IFunction
 {
 public:
     static constexpr auto name = "materialize";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionMaterialize>();
     }
@@ -26,6 +28,13 @@ public:
     {
         return name;
     }
+
+    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override
+    {
+        return true;
+    }
+
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {

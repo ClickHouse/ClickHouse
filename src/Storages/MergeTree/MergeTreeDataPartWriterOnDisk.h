@@ -132,6 +132,9 @@ protected:
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
 
+    using SerializationsMap = std::unordered_map<String, SerializationPtr>;
+    SerializationsMap serializations;
+
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
     DataTypes index_types;

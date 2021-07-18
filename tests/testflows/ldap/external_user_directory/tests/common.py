@@ -12,21 +12,6 @@ from ldap.authentication.tests.common import change_user_password_in_ldap, chang
 from ldap.authentication.tests.common import create_ldap_servers_config_content
 from ldap.authentication.tests.common import randomword
 
-def join(tasks, timeout):
-    """Join async tasks by waiting for their completion.
-    """
-    task_exc = None
-
-    for task in tasks:
-        try:
-            task.get(timeout=timeout)
-        except Exception as exc:
-            if task_exc is None:
-                task_exc = exc
-
-    if task_exc is not None:
-        raise task_exc
-
 @contextmanager
 def table(name, create_statement, on_cluster=False):
     node = current().context.node
@@ -77,7 +62,7 @@ def verify_ldap_user_exists(server, username, password):
     with By("searching LDAP database"):
         ldap_node = current().context.cluster.node(server)
         r = ldap_node.command(
-            f"ldapwhoami -H ldap://localhost -D 'cn={username},ou=users,dc=company,dc=com' -w {password}")
+            f"ldapwhoami -H ldap://localhost -D 'cn={user_name},ou=users,dc=company,dc=com' -w {password}")
         assert r.exitcode == 0, error()
 
 def create_ldap_external_user_directory_config_content(server=None, roles=None, **kwargs):
@@ -96,7 +81,10 @@ def create_entries_ldap_external_user_directory_config_content(entries, config_d
         <user_directories>
             <ldap>
                 <server>my_ldap_server</server>
-                <user_template>my_user</user_template>
+                <roles>
+                    <my_local_role1 />
+                    <my_local_role2 />
+                </roles>
             </ldap>
         </user_directories>
     ```
@@ -130,7 +118,7 @@ def create_entries_ldap_external_user_directory_config_content(entries, config_d
 
     return Config(content, path, name, uid, "config.xml")
 
-def invalid_ldap_external_user_directory_config(server, roles, message, tail=20, timeout=60, config=None):
+def invalid_ldap_external_user_directory_config(server, roles, message, tail=30, timeout=60, config=None):
     """Check that ClickHouse errors when trying to load invalid LDAP external user directory
     configuration file.
     """

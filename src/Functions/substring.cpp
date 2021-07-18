@@ -4,7 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/GatherUtils/Sinks.h>
@@ -36,7 +36,7 @@ class FunctionSubstring : public IFunction
 {
 public:
     static constexpr auto name = is_utf8 ? "substringUTF8" : "substring";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionSubstring>();
     }
@@ -91,9 +91,11 @@ public:
             if (column_start_const)
             {
                 if (start_value > 0)
-                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), start_value - 1);
+                    sliceFromLeftConstantOffsetUnbounded(
+                        source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1));
                 else if (start_value < 0)
-                    sliceFromRightConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), -start_value);
+                    sliceFromRightConstantOffsetUnbounded(
+                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value));
                 else
                     throw Exception("Indices in strings are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
             }
@@ -105,9 +107,11 @@ public:
             if (column_start_const && column_length_const)
             {
                 if (start_value > 0)
-                    sliceFromLeftConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), start_value - 1, length_value);
+                    sliceFromLeftConstantOffsetBounded(
+                        source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1), length_value);
                 else if (start_value < 0)
-                    sliceFromRightConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), -start_value, length_value);
+                    sliceFromRightConstantOffsetBounded(
+                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value), length_value);
                 else
                     throw Exception("Indices in strings are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
             }

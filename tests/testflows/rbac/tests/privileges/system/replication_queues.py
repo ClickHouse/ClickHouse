@@ -17,7 +17,7 @@ def replicated_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=check_replicated_privilege, flags=TE,
+        Suite(run=check_replicated_privilege,
             examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in check_replicated_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -38,13 +38,14 @@ def replicated_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=check_replicated_privilege, flags=TE,
+        Suite(run=check_replicated_privilege,
             examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in check_replicated_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege on",[
+    ("ALL", "*.*"),
     ("SYSTEM", "*.*"),
     ("SYSTEM REPLICATION QUEUES", "table"),
     ("SYSTEM STOP REPLICATION QUEUES", "table"),
@@ -59,8 +60,8 @@ def check_replicated_privilege(self, privilege, on, grant_target_name, user_name
     if node is None:
         node = self.context.node
 
-    Suite(test=start_replication_queues, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name)
-    Suite(test=stop_replication_queues, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name)
+    Suite(test=start_replication_queues)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name)
+    Suite(test=stop_replication_queues)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name)
 
 @TestSuite
 def start_replication_queues(self, privilege, on, grant_target_name, user_name, node=None):
@@ -77,11 +78,19 @@ def start_replication_queues(self, privilege, on, grant_target_name, user_name, 
     with table(node, table_name, "ReplicatedMergeTree-sharded_cluster"):
 
         with Scenario("SYSTEM START REPLICATION QUEUES without privilege"):
-            with When("I check the user can't start sends"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't start sends"):
                 node.query(f"SYSTEM START REPLICATION QUEUES {table_name}", settings = [("user", f"{user_name}")],
                     exitcode=exitcode, message=message)
 
         with Scenario("SYSTEM START REPLICATION QUEUES with privilege"):
+
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -89,6 +98,7 @@ def start_replication_queues(self, privilege, on, grant_target_name, user_name, 
                 node.query(f"SYSTEM START REPLICATION QUEUES {table_name}", settings = [("user", f"{user_name}")])
 
         with Scenario("SYSTEM START REPLICATION QUEUES with revoked privilege"):
+
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -114,11 +124,19 @@ def stop_replication_queues(self, privilege, on, grant_target_name, user_name, n
     with table(node, table_name, "ReplicatedMergeTree-sharded_cluster"):
 
         with Scenario("SYSTEM STOP REPLICATION QUEUES without privilege"):
-            with When("I check the user can't stop sends"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't stop sends"):
                 node.query(f"SYSTEM STOP REPLICATION QUEUES {table_name}", settings = [("user", f"{user_name}")],
                     exitcode=exitcode, message=message)
 
         with Scenario("SYSTEM STOP REPLICATION QUEUES with privilege"):
+
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -126,6 +144,7 @@ def stop_replication_queues(self, privilege, on, grant_target_name, user_name, n
                 node.query(f"SYSTEM STOP REPLICATION QUEUES {table_name}", settings = [("user", f"{user_name}")])
 
         with Scenario("SYSTEM STOP REPLICATION QUEUES with revoked privilege"):
+
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -140,6 +159,8 @@ def stop_replication_queues(self, privilege, on, grant_target_name, user_name, n
 @Name("system replication queues")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_ReplicationQueues("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SYSTEM REPLICATION QUEUES.
