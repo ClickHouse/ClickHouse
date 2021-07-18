@@ -58,6 +58,7 @@ def kinit_no_keytab(self, node, principal="kerberos_user", lifetime_option="-l 1
         node.cmd(f"kadmin -w pwd -q \"add_principal -pw pwd {principal}\"")
         node.cmd(f"echo pwd | kinit {lifetime_option} {principal}")
         yield
+        
     finally:
         node.cmd("kdestroy")
 
@@ -71,6 +72,7 @@ def create_server_principal(self, node):
         node.cmd(f"kadmin -w pwd -q \"add_principal -randkey HTTP/kerberos_env_{node.name}_1.krbnet\"")
         node.cmd(f"kadmin -w pwd -q \"ktadd -k /etc/krb5.keytab HTTP/kerberos_env_{node.name}_1.krbnet\"")
         yield
+
     finally:
         node.cmd("kdestroy")
         node.cmd("rm /etc/krb5.keytab")
@@ -85,6 +87,7 @@ def save_file_state(self, node, filename):
             with open(filename, 'r') as f:
                 a = f.read()
         yield
+
     finally:
         with Finally("I restore initial state"):
             with open(filename, 'w') as f:
@@ -107,6 +110,7 @@ def temp_erase(self, node, filename=None):
                 f.write("<yandex></yandex>\n")
             node.restart()
             yield
+
     finally:
         with Finally("I restore initial file state"):
             with open(filename, 'w') as f:
