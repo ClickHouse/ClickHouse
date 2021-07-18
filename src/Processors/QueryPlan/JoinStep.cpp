@@ -70,7 +70,7 @@ FilledJoinStep::FilledJoinStep(const DataStream & input_stream_, JoinPtr join_, 
 void FilledJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     bool default_totals = false;
-    if (!pipeline.hasTotals() && join->hasTotals())
+    if (!pipeline.hasTotals() && join->getTotals())
     {
         pipeline.addDefaultTotals();
         default_totals = true;
