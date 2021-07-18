@@ -781,10 +781,8 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
     current_roles.clear();
     use_default_roles = true;
 
-    UserPtr new_user = getAccessControlManager().read<User>(new_user_id);
-    String user_default_database = new_user->default_database;
-    if (!user_default_database.empty())
-        setCurrentDatabase(user_default_database);
+    if (auto user = getUser(); user && !user->default_database.empty())
+        setCurrentDatabase(user->default_database);
 
     setSettings(*access->getDefaultSettings());
 }
