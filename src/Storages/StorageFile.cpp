@@ -9,6 +9,7 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -301,9 +302,6 @@ public:
     {
         if (storage->use_table_fd)
         {
-            unique_lock = std::unique_lock(storage->rwlock, getLockTimeout(context));
-            if (!unique_lock)
-                throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
             storage->table_fd_was_used = true;
         }
         else
@@ -512,10 +510,9 @@ Pipe StorageFile::read(
                 {
                     throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
                 }
-                if (lseek(this_ptr->table_fd, this_ptr->table_fd_init_offset, SEEK_SET) < 0)
-                {
-                    throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-                }
+                ReadBufferFromFileDescriptorPRead table_fd_seek(this_ptr->table_fd);
+                off_t new_pos = table_fd_seek.seek(this_ptr->table_fd_init_offset, SEEK_SET);
+                lseek(this_ptr->table_fd, this_ptr->table_fd_init_offset, new_pos);
             }
             else
             {
