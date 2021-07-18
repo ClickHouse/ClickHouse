@@ -82,10 +82,8 @@ namespace
             query->grantees->use_keyword_any = true;
         }
 
-        if (!user.default_database.empty())
-        {
-            query->default_database = user.default_database;
-        }
+        query->default_database = user.default_database;
+
         return query;
     }
 

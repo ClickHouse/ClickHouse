@@ -197,10 +197,7 @@ namespace
         }
 
         String default_database = config.getString(user_config + ".default_database", "");
-        if (!default_database.empty())
-        {
-            user->default_database = default_database;
-        }
+        user->default_database = default_database;
 
         return user;
     }
