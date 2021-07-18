@@ -46,7 +46,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNRECOGNIZED_ARGUMENTS;
-    extern const int INVALID_USAGE_OF_INPUT;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -588,7 +588,9 @@ bool IClient::processMultiQuery(const String & all_queries_text)
 
         // Report error.
         if (have_error)
+        {
             reportQueryError();
+        }
 
         // Stop processing queries if needed.
         if (have_error && !ignore_error)
@@ -740,6 +742,45 @@ void IClient::runInteractive()
 }
 
 
+void IClient::runNonInteractive()
+{
+    String text;
+
+    if (!queries_files.empty())
+    {
+        /// Read all queries into `text`.
+        for (const auto & queries_file : queries_files)
+        {
+            for (const auto & interleave_file : interleave_queries_files)
+                if (!processFile(interleave_file))
+                    return;
+
+            if (!processFile(queries_file))
+                return;
+        }
+
+        return;
+    }
+
+    if (config().has("query"))
+    {
+        text = config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
+    }
+    else
+    {
+        /// If 'query' parameter is not set, read a query from stdin.
+        /// The query is read entirely into memory (streaming is disabled).
+        ReadBufferFromFileDescriptor in(STDIN_FILENO);
+        readStringUntilEOF(text, in);
+    }
+
+    if (query_fuzzer_runs)
+        processWithFuzzing(text);
+    else
+        processQueryText(text);
+}
+
+
 void IClient::clearTerminal()
 {
     /// Clear from cursor until end of screen.
@@ -814,9 +855,6 @@ int IClient::main(const std::vector<std::string> & /*args*/)
 
 void IClient::init(int argc, char ** argv)
 {
-    shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
-
     namespace po = boost::program_options;
 
     /// Don't parse options with Poco library, we prefer neat boost::program_options.

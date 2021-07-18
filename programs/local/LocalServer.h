@@ -21,6 +21,12 @@ class LocalServer : public IClient, public Loggers
 public:
     LocalServer();
 
+    ~LocalServer() override
+    {
+        if (global_context)
+            global_context->shutdown(); /// required for properly exception handling
+    }
+
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
       * This query will be executed first, before queries passed through --query argument
@@ -39,7 +45,6 @@ private:
     void setupUsers();
 
     void cleanup();
-
 
 protected:
     void processMainImplException(const Exception & e) override;
@@ -71,7 +76,15 @@ protected:
 
     bool supportPasswordOption() const override { return false; }
 
-    std::optional<std::filesystem::path> temporary_directory_to_delete;
+    bool processFile(const String & file) override
+    {
+        auto text = getInitialCreateTableQuery();
+        String queries_from_file;
+        ReadBufferFromFile in(file);
+        readStringUntilEOF(queries_from_file, in);
+        text += queries_from_file;
+        return processMultiQuery(text);
+    }
 
 private:
     ContextMutablePtr query_context;
@@ -79,6 +92,8 @@ private:
     std::exception_ptr exception;
 
     void processQuery(const String & query, std::exception_ptr exception);
+
+    std::optional<std::filesystem::path> temporary_directory_to_delete;
 };
 
 }
