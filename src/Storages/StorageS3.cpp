@@ -63,11 +63,13 @@ static const String PARTITION_ID_WILDCARD = "{_partition_id}";
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
+    extern const int CANNOT_PARSE_TEXT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNEXPECTED_EXPRESSION;
     extern const int S3_ERROR;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 class StorageS3Source::DisclosedGlobIterator::Impl
 {
