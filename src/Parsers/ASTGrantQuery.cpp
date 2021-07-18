@@ -105,7 +105,7 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach_mode ? "ATTACH " : "")
                   << (settings.hilite ? IAST::hilite_none : "");
 
-    if (!is_revoke && is_replace)
+    if (!is_revoke && (replace_access || replace_granted_roles))
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (settings.hilite ? hilite_none : "");
 
     settings.ostr << (is_revoke ? " REVOKE" : " GRANT");

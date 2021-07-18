@@ -7,7 +7,7 @@ SELECT 'A';
 SHOW GRANTS FOR test_user_01999;
 
 GRANT SELECT ON db1.* TO test_user_01999;
-GRANT SHOW ON db2.table TO test_user_01999;
+GRANT SHOW ON db2.tb2 TO test_user_01999;
 
 SELECT 'B';
 SHOW GRANTS FOR test_user_01999;
@@ -35,5 +35,26 @@ SELECT 'G';
 REPLACE GRANT USAGE ON *.* TO test_user_01999;
 SHOW GRANTS FOR test_user_01999;
 
-DROP USER test_user_01999;
+SELECT 'H';
+DROP ROLE IF EXISTS test_role_01999;
+CREATE role test_role_01999;
+GRANT test_role_01999 to test_user_01999;
+GRANT SELECT ON db1.tb1 TO test_user_01999;
+SHOW GRANTS FOR test_user_01999;
 
+SELECT 'I';
+REPLACE GRANT NONE ON *.* TO test_user_01999;
+SHOW GRANTS FOR test_user_01999;
+
+SELECT 'J';
+GRANT SHOW ON db8.* TO test_user_01999;
+SHOW GRANTS FOR test_user_01999;
+
+SELECT 'K';
+REPLACE GRANT NONE TO test_user_01999;
+SHOW GRANTS FOR test_user_01999;
+
+DROP USER IF EXISTS test_user_01999;
+DROP ROLE IF EXISTS test_role_01999;
+
+SELECT 'L';

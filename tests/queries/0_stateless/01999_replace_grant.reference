@@ -2,7 +2,7 @@ CREATE USER test_user_01999
 A
 B
  GRANT SELECT ON db1.* TO test_user_01999
- GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES ON db2.table TO test_user_01999
+ GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES ON db2.tb2 TO test_user_01999
 C
  GRANT SELECT(col1) ON db3.table TO test_user_01999
 D
@@ -15,3 +15,14 @@ E
 F
  GRANT SELECT ON all.* TO test_user_01999
 G
+H
+ GRANT SELECT ON db1.tb1 TO test_user_01999
+ GRANT test_role_01999 TO test_user_01999
+I
+ GRANT test_role_01999 TO test_user_01999
+J
+ GRANT SHOW ON db8.* TO test_user_01999
+ GRANT test_role_01999 TO test_user_01999
+K
+ GRANT SHOW ON db8.* TO test_user_01999
+L
