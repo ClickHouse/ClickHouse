@@ -1538,6 +1538,7 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     if ((which_old_type.isInt() && !which_new_type.isInt())
         || (which_old_type.isUInt() && !which_new_type.isUInt())
         || (which_old_type.isDate() && !which_new_type.isDate())
+        || (which_old_type.isDate32() && !which_new_type.isDate32())
         || (which_old_type.isDateTime() && !which_new_type.isDateTime())
         || (which_old_type.isFloat() && !which_new_type.isFloat()))
     {
