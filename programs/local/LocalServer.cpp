@@ -384,8 +384,12 @@ int LocalServer::childMainImpl()
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
+    shared_context = Context::createShared();
+    global_context = Context::createGlobal(shared_context.get());
+
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
+
     tryInitPath();
 
     std::optional<StatusFile> status;
@@ -470,6 +474,9 @@ int LocalServer::childMainImpl()
     {
         attachSystemTables(global_context);
     }
+
+    if (!is_interactive)
+        is_multiquery = true;
 
     /// we can't mutate global_context (can lead to races, as it was already passed to some background threads)
     /// so we can't reuse it safely as a query context and need a copy here

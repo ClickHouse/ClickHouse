@@ -38,18 +38,12 @@ public:
 
     void init(int argc, char ** argv);
 
-    ~IClient() override
-    {
-        if (global_context)
-            global_context->shutdown(); /// required for properly exception handling
-    }
-
-
 protected:
     NameSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж",
                          "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
+    bool is_multiquery = false;
 
     bool need_render_progress = true;
     bool written_first_block = false;
@@ -80,6 +74,9 @@ protected:
 
     /// Path to a file containing command history.
     String history_file;
+
+    /// If not empty, run queries from these files before processing every file from 'queries_files'.
+    std::vector<std::string> interleave_queries_files;
 
     String home_path;
 
@@ -144,6 +141,8 @@ protected:
 
     void runInteractive();
 
+    void runNonInteractive();
+
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
 
     void resetOutput();
@@ -201,6 +200,9 @@ protected:
     virtual bool splitQueries() const { return false; }
 
     virtual bool processWithFuzzing(const String &) { return true; }
+
+    /// Process single file from non-interactive mode.
+    virtual bool processFile(const String & file) = 0;
 
 private:
 
