@@ -24,7 +24,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `attr_names` — имя столбца словаря, [Строковый литерал](../syntax.md#syntax-string-literal), или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких имен.
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
+-   `id_expr` — значение ключа словаря.  [Выражение](../../sql-reference/syntax.md#syntax-expressions) возвращает значение словаря ключ-значение или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
 -   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_names`, или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких выражений.
 
 **Возвращаемое значение**
@@ -237,7 +237,7 @@ dictHas('dict_name', id)
 **Аргументы**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
+-   `id_expr` — значение ключа словаря.  [Выражение](../../sql-reference/syntax.md#syntax-expressions) возвращает значение словаря ключ-значение или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
 
 **Возвращаемое значение**
 
@@ -337,7 +337,7 @@ SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers 
 
 ## dictGetDescendant {#dictgetdescendant}
 
-Возвращает всех потомков, как если бы функция [dictGetChildren](#dictgetchildren) была выполнена `level` раз рекурсивно.  
+Возвращает всех потомков, как если бы функция [dictGetChildren](#dictgetchildren) была выполнена `level` раз рекурсивно.
 
 **Синтаксис**
 
