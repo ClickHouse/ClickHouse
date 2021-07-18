@@ -581,6 +581,7 @@ SOURCE(MYSQL(
         <db>default</db>
         <table>ids</table>
         <where>id=10</where>
+        <secure>1</secure>
     </clickhouse>
 </source>
 ```
@@ -596,7 +597,8 @@ SOURCE(CLICKHOUSE(
     db 'default'
     table 'ids'
     where 'id=10'
-))
+    secure 1
+));
 ```
 
 Поля настройки:
@@ -609,6 +611,7 @@ SOURCE(CLICKHOUSE(
 -   `table` — имя таблицы.
 -   `where` — условие выбора. Может отсутствовать.
 -   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external-dicts-dict-lifetime.md).
+-   `secure` - флаг, разрешающий или не разрешающий защищенное SSL-соединение.
 
 ### MongoDB {#dicts-external_dicts_dict_sources-mongodb}
 
