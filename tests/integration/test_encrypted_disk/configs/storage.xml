@@ -25,7 +25,7 @@
                 <type>encrypted</type>
                 <disk>disk_local</disk>
                 <path>encrypted/</path>
-                <key>abcdefghijklmnop</key>
+                <key_hex>109105c600c12066f82f1a4dbb41a08e</key_hex>
             </disk_local_encrypted>
         </disks>
         <policies>
