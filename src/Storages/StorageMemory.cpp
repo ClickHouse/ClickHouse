@@ -1,8 +1,6 @@
 #include <cassert>
 #include <Common/Exception.h>
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>

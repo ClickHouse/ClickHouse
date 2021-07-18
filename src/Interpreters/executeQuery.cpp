@@ -875,13 +875,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             res.finish_callback = std::move(finish_callback);
             res.exception_callback = std::move(exception_callback);
-
-            if (!internal && res.in)
-            {
-                WriteBufferFromOwnString msg_buf;
-                res.in->dumpTree(msg_buf);
-                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query pipeline:\n{}", msg_buf.str());
-            }
         }
     }
     catch (...)
