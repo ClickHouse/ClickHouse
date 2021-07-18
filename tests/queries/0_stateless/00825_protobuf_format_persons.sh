@@ -27,7 +27,7 @@ CREATE TABLE persons_00825 (uuid UUID,
                             photo Nullable(String),
                             phoneNumber Nullable(FixedString(13)),
                             isOnline UInt8,
-                            visitTime Nullable(DateTime),
+                            visitTime Nullable(DateTime('Europe/Moscow')),
                             age UInt8,
                             zodiacSign Enum16('aries'=321, 'taurus'=420, 'gemini'=521, 'cancer'=621, 'leo'=723, 'virgo'=823,
                                               'libra'=923, 'scorpius'=1023, 'sagittarius'=1122, 'capricorn'=1222, 'aquarius'=120,
@@ -43,7 +43,7 @@ CREATE TABLE persons_00825 (uuid UUID,
                             randomBigNumber Int64,
                             measureUnits Nested(unit  String, coef Float32),
                             nestiness_a_b_c_d Nullable(UInt32),
-                            \`nestiness_a_B.c_E\` Array(UInt32)
+                            "nestiness_a_B.c_E" Array(UInt32)
                            ) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO persons_00825 VALUES (toUUID('a7522158-3d41-4b77-ad69-6c598ee55c49'), 'Ivan', 'Petrov', 'male', toDate('1980-12-29'), 'png', '+74951234567', 1, toDateTime('2019-01-05 18:45:00', 'Europe/Moscow'), 38, 'capricorn', ['Yesterday', 'Flowers'], [255, 0, 0], 'Moscow', [55.753215, 37.622504], 3.14, 214.10, 0.1, 5.8, 17060000000, ['meter', 'centimeter', 'kilometer'], [1, 0.01, 1000], 500, [501, 502]);
