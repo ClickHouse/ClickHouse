@@ -231,6 +231,19 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
         auto [required_columns, required_pre_columns, should_reorder] =
             getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info, check_columns);
 
+        if (predict_block_size_bytes)
+        {
+            const auto & required_column_names = required_columns.getNames();
+            const auto & required_pre_column_names = required_pre_columns.getNames();
+            NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
+            complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
+
+            per_part_size_predictor.emplace_back(std::make_unique<MergeTreeBlockSizePredictor>(
+                part.data_part, Names(complete_column_names.begin(), complete_column_names.end()), sample_block));
+        }
+        else
+            per_part_size_predictor.emplace_back(nullptr);
+
         /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
         const auto & required_column_names = required_columns.getNames();
         per_part_column_name_set.emplace_back(required_column_names.begin(), required_column_names.end());
@@ -240,14 +253,6 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
         per_part_should_reorder.push_back(should_reorder);
 
         parts_with_idx.push_back({ part.data_part, part.part_index_in_query });
-
-        if (predict_block_size_bytes)
-        {
-            per_part_size_predictor.emplace_back(std::make_unique<MergeTreeBlockSizePredictor>(
-                part.data_part, column_names, sample_block));
-        }
-        else
-            per_part_size_predictor.emplace_back(nullptr);
     }
 
     return per_part_sum_marks;
