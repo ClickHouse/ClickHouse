@@ -71,10 +71,19 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 {
     auto type_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
-    /// If one of the types is Nullable, we apply aggregate function combinator "Null".
+    auto with_original_parameters = getImpl(name, type_without_low_cardinality, parameters, out_properties, false);
 
-    if (std::any_of(type_without_low_cardinality.begin(), type_without_low_cardinality.end(),
-        [](const auto & type) { return type->isNullable(); }))
+    // If one of the types is Nullable, we apply aggregate function combinator "Null".
+    // Pure window functions are not real aggregate functions. Applying
+    // combinators doesn't make sense for them, they must handle the
+    // nullability themselves. Another special case is functions from Nothing
+    // that are rewritten to AggregateFunctionNothing, in this case
+    // nested_function is nullptr.
+    if (!(with_original_parameters
+            && with_original_parameters->isOnlyWindowFunction())
+         && std::any_of(type_without_low_cardinality.begin(),
+            type_without_low_cardinality.end(),
+            [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
@@ -90,23 +99,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         AggregateFunctionPtr nested_function = getImpl(
             name, nested_types, nested_parameters, out_properties, has_null_arguments);
 
-        // Pure window functions are not real aggregate functions. Applying
-        // combinators doesn't make sense for them, they must handle the
-        // nullability themselves. Another special case is functions from Nothing
-        // that are rewritten to AggregateFunctionNothing, in this case
-        // nested_function is nullptr.
-        if (nested_function && nested_function->isOnlyWindowFunction())
-        {
-            return nested_function;
-        }
-
         return combinator->transformAggregateFunction(nested_function, out_properties, type_without_low_cardinality, parameters);
     }
 
-    auto res = getImpl(name, type_without_low_cardinality, parameters, out_properties, false);
-    if (!res)
+    if (!with_original_parameters)
         throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
-    return res;
+    return with_original_parameters;
 }
 
 

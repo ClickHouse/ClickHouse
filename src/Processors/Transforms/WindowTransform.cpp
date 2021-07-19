@@ -1475,10 +1475,10 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        if (!getLeastSupertype({argument_types[0], argument_types[2]}))
+        if (!argument_types[0]->equals(*argument_types[2]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The default value type '{}' is not convertible to the argument type '{}'",
+                "The default value type '{}' is not the same as the argument type '{}'",
                 argument_types[2]->getName(),
                 argument_types[0]->getName());
         }
@@ -1491,8 +1491,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         }
     }
 
-    DataTypePtr getReturnType() const override
-    { return argument_types[0]; }
+    DataTypePtr getReturnType() const override { return argument_types[0]; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
