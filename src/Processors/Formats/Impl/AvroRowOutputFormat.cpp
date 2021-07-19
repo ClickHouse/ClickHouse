@@ -67,10 +67,8 @@ public:
 
     bool isStringAsString(const String & column_name)
     {
-        return RE2::FullMatch(column_name, string_to_string_regexp);
+        return RE2::PartialMatch(column_name, string_to_string_regexp);
     }
-
-    ~AvroSerializerTraits() = default;
 
 private:
     const RE2 string_to_string_regexp;
