@@ -351,17 +351,20 @@ Chunk DDLQueryStatusSource::generate()
     }
 }
 
-void DDLQueryStatusSource::work()
+IProcessor::Status DDLQueryStatusSource::prepare()
 {
-    SourceWithProgress::work();
-
     if (finished)
     {
         bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
 
         if (first_exception && throw_if_error_on_host)
             output.pushException(std::make_exception_ptr(*first_exception));
+
+        output.finish();
+        return Status::Finished;
     }
+    else
+        return SourceWithProgress::prepare();
 }
 
 Strings DDLQueryStatusSource::getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)
