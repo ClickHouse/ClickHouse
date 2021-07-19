@@ -358,7 +358,12 @@ IProcessor::Status DDLQueryStatusSource::prepare()
         bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
 
         if (first_exception && throw_if_error_on_host)
+        {
+            if (!output.canPush())
+                return Status::PortFull;
+
             output.pushException(std::make_exception_ptr(*first_exception));
+        }
 
         output.finish();
         return Status::Finished;
