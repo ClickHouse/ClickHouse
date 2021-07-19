@@ -375,9 +375,13 @@ void Block::setColumn(size_t position, ColumnWithTypeAndName && column)
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Block::setColumn(), max position {}",
                         position, toString(data.size()));
 
-    data[position].name = std::move(column.name);
-    data[position].type = std::move(column.type);
-    data[position].column = std::move(column.column);
+    if (data[position].name != column.name)
+    {
+        index_by_name.erase(data[position].name);
+        index_by_name.emplace(column.name, position);
+    }
+
+    data[position] = std::move(column);
 }
 
 
@@ -436,7 +440,7 @@ Block Block::sortColumns() const
     Block sorted_block;
 
     /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
-    std::vector<decltype(index_by_name.begin())> sorted_index_by_name(index_by_name.size());
+    std::vector<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
     {
         size_t i = 0;
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)

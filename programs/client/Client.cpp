@@ -26,6 +26,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
 #include <Poco/Util/Application.h>
+#include <Columns/ColumnString.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
@@ -301,26 +302,9 @@ private:
         }
         catch (const Exception & e)
         {
-            bool print_stack_trace = config().getBool("stacktrace", false);
+            bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
 
-            std::string text = e.displayText();
-
-            /** If exception is received from server, then stack trace is embedded in message.
-              * If exception is thrown on client, then stack trace is in separate field.
-              */
-
-            auto embedded_stack_trace_pos = text.find("Stack trace");
-            if (std::string::npos != embedded_stack_trace_pos && !print_stack_trace)
-                text.resize(embedded_stack_trace_pos);
-
-            std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
-
-            /// Don't print the stack trace on the client if it was logged on the server.
-            /// Also don't print the stack trace in case of network errors.
-            if (print_stack_trace && e.code() != ErrorCodes::NETWORK_ERROR && std::string::npos == embedded_stack_trace_pos)
-            {
-                std::cerr << "Stack trace:" << std::endl << e.getStackTraceString();
-            }
+            std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
             return e.code() ? e.code() : -1;
@@ -487,6 +471,52 @@ private:
     }
 #endif
 
+    /// Make query to get all server warnings
+    std::vector<String> loadWarningMessages()
+    {
+        std::vector<String> messages;
+        connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */, QueryProcessingStage::Complete);
+        while (true)
+        {
+            Packet packet = connection->receivePacket();
+            switch (packet.type)
+            {
+                case Protocol::Server::Data:
+                    if (packet.block)
+                    {
+                        const ColumnString & column = typeid_cast<const ColumnString &>(*packet.block.getByPosition(0).column);
+
+                        size_t rows = packet.block.rows();
+                        for (size_t i = 0; i < rows; ++i)
+                            messages.emplace_back(column.getDataAt(i).toString());
+                    }
+                    continue;
+
+                case Protocol::Server::Progress:
+                    continue;
+                case Protocol::Server::ProfileInfo:
+                    continue;
+                case Protocol::Server::Totals:
+                    continue;
+                case Protocol::Server::Extremes:
+                    continue;
+                case Protocol::Server::Log:
+                    continue;
+
+                case Protocol::Server::Exception:
+                    packet.exception->rethrow();
+                    return messages;
+
+                case Protocol::Server::EndOfStream:
+                    return messages;
+
+                default:
+                    throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                        packet.type, connection->getDescription());
+            }
+        }
+    }
+
     int mainImpl()
     {
         UseSSL use_ssl;
@@ -565,6 +595,26 @@ private:
                 suggest->load(connection_parameters, config().getInt("suggestion_limit"));
             }
 
+            /// Load Warnings at the beginning of connection
+            if (!config().has("no-warnings"))
+            {
+                try
+                {
+                    std::vector<String> messages = loadWarningMessages();
+                    if (!messages.empty())
+                    {
+                        std::cout << "Warnings:" << std::endl;
+                        for (const auto & message : messages)
+                            std::cout << "* " << message << std::endl;
+                    }
+                    std::cout << std::endl;
+                }
+                catch (...)
+                {
+                    /// Ignore exception
+                }
+            }
+
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
@@ -633,17 +683,10 @@ private:
                 }
                 catch (const Exception & e)
                 {
-                    // We don't need to handle the test hints in the interactive
-                    // mode.
-                    std::cerr << std::endl
-                              << "Exception on client:" << std::endl
-                              << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+                    /// We don't need to handle the test hints in the interactive mode.
 
-                    if (config().getBool("stacktrace", false))
-                        std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
-
-                    std::cerr << std::endl;
-
+                    bool print_stack_trace = config().getBool("stacktrace", false);
+                    std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
                     client_exception = std::make_unique<Exception>(e);
                 }
 
@@ -940,18 +983,11 @@ private:
     {
         if (server_exception)
         {
-            std::string text = server_exception->displayText();
-            auto embedded_stack_trace_pos = text.find("Stack trace");
-            if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
-            {
-                text.resize(embedded_stack_trace_pos);
-            }
+            bool print_stack_trace = config().getBool("stacktrace", false);
             std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-                      << "Code: " << server_exception->code() << ". " << text << std::endl;
+                << getExceptionMessage(*server_exception, print_stack_trace, true) << std::endl;
             if (is_interactive)
-            {
                 std::cerr << std::endl;
-            }
         }
 
         if (client_exception)
@@ -1410,8 +1446,7 @@ private:
                 {
                     // Just report it, we'll terminate below.
                     fmt::print(stderr,
-                        "Error while reconnecting to the server: Code: {}: {}\n",
-                        getCurrentExceptionCode(),
+                        "Error while reconnecting to the server: {}\n",
                         getCurrentExceptionMessage(true));
 
                     assert(!connection->isConnected());
@@ -2529,6 +2564,7 @@ public:
             ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
+            ("no-warnings", "disable warnings when client connects to server")
         ;
 
         Settings cmd_settings;
@@ -2596,8 +2632,7 @@ public:
             }
             catch (const Exception & e)
             {
-                std::string text = e.displayText();
-                std::cerr << "Code: " << e.code() << ". " << text << std::endl;
+                std::cerr << getExceptionMessage(e, false) << std::endl;
                 std::cerr << "Table №" << i << std::endl << std::endl;
                 /// Avoid the case when error exit code can possibly overflow to normal (zero).
                 auto exit_code = e.code() % 256;
@@ -2689,6 +2724,8 @@ public:
             config().setBool("highlight", options["highlight"].as<bool>());
         if (options.count("history_file"))
             config().setString("history_file", options["history_file"].as<std::string>());
+        if (options.count("no-warnings"))
+            config().setBool("no-warnings", true);
 
         if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
         {
@@ -2740,8 +2777,7 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     }
     catch (const DB::Exception & e)
     {
-        std::string text = e.displayText();
-        std::cerr << "Code: " << e.code() << ". " << text << std::endl;
+        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         return 1;
     }
     catch (...)

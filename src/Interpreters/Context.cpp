@@ -1198,26 +1198,22 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraints(const SettingChange & change) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->check(settings, change);
+    getSettingsConstraints()->check(settings, change);
 }
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->check(settings, changes);
+    getSettingsConstraints()->check(settings, changes);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->check(settings, changes);
+    getSettingsConstraints()->check(settings, changes);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->clamp(settings, changes);
+    getSettingsConstraints()->clamp(settings, changes);
 }
 
 std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
@@ -2725,20 +2721,6 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
         const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
-}
-
-void Context::setMySQLProtocolContext(MySQLWireContext * mysql_context)
-{
-    assert(session_context.lock().get() == this);
-    assert(!mysql_protocol_context);
-    assert(mysql_context);
-    mysql_protocol_context = mysql_context;
-}
-
-MySQLWireContext * Context::getMySQLProtocolContext() const
-{
-    assert(!mysql_protocol_context || session_context.lock().get());
-    return mysql_protocol_context;
 }
 
 }
