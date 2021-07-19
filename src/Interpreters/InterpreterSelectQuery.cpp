@@ -609,7 +609,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     query_info.query = query_ptr;
     query_info.has_window = query_analyzer->hasWindow();
-    if (storage)
+    if (storage && !options.only_analyze)
     {
         auto & query = getSelectQuery();
         query_analyzer->makeSetsForIndex(query.where());
