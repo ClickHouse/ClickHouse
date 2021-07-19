@@ -128,7 +128,7 @@ Ninja - система запуска сборочных задач.
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Проверьте версию CMake: `cmake --version`. Если версия меньше 3.3, то установите новую версию с сайта https://cmake.org/download/
+Проверьте версию CMake: `cmake --version`. Если версия меньше 3.12, то установите новую версию с сайта https://cmake.org/download/
 
 ## Необязательные внешние библиотеки {#neobiazatelnye-vneshnie-biblioteki}
 
