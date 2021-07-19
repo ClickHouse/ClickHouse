@@ -7,7 +7,6 @@
 #include <DataStreams/IBlockInputStream.h>
 
 
-
 namespace zkutil
 {
     class ZooKeeper;
