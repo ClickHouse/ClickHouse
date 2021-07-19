@@ -47,8 +47,6 @@ private:
 
     std::pair<String, UInt16> parseHostAndPort(const String & host_id) const;
 
-    Block getSampleBlock(ContextPtr context, bool hosts_to_wait);
-
     String node_path;
     ContextPtr context;
     Stopwatch watch;
