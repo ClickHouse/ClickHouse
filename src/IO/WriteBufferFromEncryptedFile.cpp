@@ -11,6 +11,7 @@ using InitVector = FileEncryption::InitVector;
 WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
     size_t buffer_size_,
     std::unique_ptr<WriteBufferFromFileBase> out_,
+    FileEncryption::Algorithm encryption_algorithm_,
     const String & key_,
     const InitVector & init_vector_,
     size_t old_file_size)
@@ -18,7 +19,7 @@ WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
     , out(std::move(out_))
     , iv(init_vector_)
     , flush_iv(!old_file_size)
-    , encryptor(key_, init_vector_)
+    , encryptor(encryption_algorithm_, key_, init_vector_)
 {
     encryptor.setOffset(old_file_size);
 }
