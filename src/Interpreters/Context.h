@@ -179,6 +179,8 @@ private:
     std::optional<UUID> user_id;
     std::vector<UUID> current_roles;
     bool use_default_roles = false;
+    std::vector<UUID> current_profiles;
+    std::vector<UUID> enabled_profiles;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
     String current_database;
@@ -381,6 +383,10 @@ public:
     boost::container::flat_set<UUID> getCurrentRoles() const;
     boost::container::flat_set<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
+
+    void setCurrentProfile(const String & profile_name_);
+    std::vector<UUID> getCurrentProfiles() const;
+    std::vector<UUID> getEnabledProfiles() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -819,7 +825,7 @@ private:
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;
 
-    void setProfile(const String & profile);
+    void setCurrentProfileImpl(const String & profile, bool internal);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 

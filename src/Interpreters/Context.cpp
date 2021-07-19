@@ -42,6 +42,7 @@
 #include <Access/User.h>
 #include <Access/Credentials.h>
 #include <Access/SettingsProfile.h>
+#include <Access/SettingsProfilesInfo.h>
 #include <Access/SettingsConstraints.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
@@ -76,6 +77,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <common/removeDuplicates.h>
 #include <filesystem>
 
 
@@ -801,7 +803,10 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
     current_roles.clear();
     use_default_roles = true;
 
-    setSettings(*access->getDefaultSettings());
+    auto profile_info = access->getDefaultProfilesInfo();
+    current_profiles = profile_info->profiles;
+    enabled_profiles = profile_info->profiles_including_implicit;
+    applySettingsChanges(profile_info->settings);
 }
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
@@ -936,19 +941,44 @@ std::optional<QuotaUsage> Context::getQuotaUsage() const
 }
 
 
-void Context::setProfile(const String & profile_name)
+void Context::setCurrentProfile(const String & profile_name)
 {
-    SettingsChanges profile_settings_changes = *getAccessControlManager().getProfileSettings(profile_name);
+    setCurrentProfileImpl(profile_name, false);
+}
+
+void Context::setCurrentProfileImpl(const String & profile_name, bool internal)
+{
+    auto lock = getLock();
+    auto profile_info = getAccessControlManager().getSettingsProfileInfo(profile_name);
     try
     {
-        checkSettingsConstraints(profile_settings_changes);
+        checkSettingsConstraints(profile_info->settings);
     }
     catch (Exception & e)
     {
         e.addMessage(", while trying to set settings profile {}", profile_name);
         throw;
     }
-    applySettingsChanges(profile_settings_changes);
+    applySettingsChanges(profile_info->settings);
+    if (internal)
+        current_profiles.clear();
+    else
+        current_profiles = profile_info->profiles;
+    enabled_profiles.insert(enabled_profiles.end(), profile_info->profiles_including_implicit.begin(), profile_info->profiles_including_implicit.end());
+    removeDuplicatesWithoutSortingKeepLast(enabled_profiles);
+}
+
+
+std::vector<UUID> Context::getCurrentProfiles() const
+{
+    auto lock = getLock();
+    return current_profiles;
+}
+
+std::vector<UUID> Context::getEnabledProfiles() const
+{
+    auto lock = getLock();
+    return enabled_profiles;
 }
 
 
@@ -1147,7 +1177,7 @@ void Context::setSetting(const StringRef & name, const String & value)
     auto lock = getLock();
     if (name == "profile")
     {
-        setProfile(value);
+        setCurrentProfile(value);
         return;
     }
     settings.set(std::string_view{name}, value);
@@ -1162,7 +1192,7 @@ void Context::setSetting(const StringRef & name, const Field & value)
     auto lock = getLock();
     if (name == "profile")
     {
-        setProfile(value.safeGet<String>());
+        setCurrentProfile(value.safeGet<String>());
         return;
     }
     settings.set(std::string_view{name}, value);
@@ -2409,13 +2439,13 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     getAccessControlManager().setDefaultProfileName(shared->default_profile_name);
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
-    setProfile(shared->system_profile_name);
+    setCurrentProfileImpl(shared->system_profile_name, /* internal = */ true);
 
     applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());
-    buffer_context->setProfile(shared->buffer_profile_name);
+    buffer_context->setCurrentProfileImpl(shared->buffer_profile_name, /* internal = */ true);
 }
 
 String Context::getDefaultProfileName() const

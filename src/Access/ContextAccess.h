@@ -20,9 +20,11 @@ struct EnabledRolesInfo;
 class EnabledRoles;
 class EnabledRowPolicies;
 class EnabledQuota;
+struct SettingsProfilesInfo;
 class EnabledSettings;
 struct QuotaUsage;
 struct Settings;
+class SettingsChanges;
 class SettingsConstraints;
 class AccessControlManager;
 class IAST;
@@ -84,17 +86,14 @@ public:
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
 
-    /// Returns the default settings, i.e. the settings to apply on user's login.
-    std::shared_ptr<const Settings> getDefaultSettings() const;
-
-    /// Returns the settings' constraints.
+    /// Returns the default settings, i.e. the settings which should be applied on user's login.
+    SettingsChanges getDefaultSettings() const;
+    std::shared_ptr<const SettingsProfilesInfo> getDefaultProfilesInfo() const;
     std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
 
     /// Returns the current access rights.
     std::shared_ptr<const AccessRights> getAccessRights() const;
     std::shared_ptr<const AccessRights> getAccessRightsWithImplicit() const;
-
-    Strings getCurrentProfileNames() const;
 
     /// Checks if a specified access is granted, and throws an exception if not.
     /// Empty database means the current database.

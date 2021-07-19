@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Access/EnabledSettings.h>
-#include <Core/UUID.h>
-#include <common/types.h>
 #include <common/scope_guard.h>
 #include <map>
 #include <unordered_map>
@@ -13,8 +11,7 @@ namespace DB
 class AccessControlManager;
 struct SettingsProfile;
 using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;
-class SettingsProfileElements;
-class EnabledSettings;
+struct SettingsProfilesInfo;
 
 
 /// Reads and caches all the settings profiles.
@@ -32,8 +29,8 @@ public:
         const boost::container::flat_set<UUID> & enabled_roles,
         const SettingsProfileElements & settings_from_enabled_roles_);
 
-    std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name);
-    String getProfileName(const UUID & profile_id) const;
+    std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const UUID & profile_id);
+    std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const String & profile_name);
 
 private:
     void ensureAllProfilesRead();
@@ -41,7 +38,8 @@ private:
     void profileRemoved(const UUID & profile_id);
     void mergeSettingsAndConstraints();
     void mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const;
-    void substituteProfiles(SettingsProfileElements & elements) const;
+    void substituteProfiles(SettingsProfileElements & elements, std::vector<UUID> & substituted_profiles, std::unordered_map<UUID, String> & names_of_substituted_profiles) const;
+    std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfoNoLock(const UUID & profile_id);
 
     const AccessControlManager & manager;
     std::unordered_map<UUID, SettingsProfilePtr> all_profiles;
@@ -50,7 +48,7 @@ private:
     scope_guard subscription;
     std::map<EnabledSettings::Params, std::weak_ptr<EnabledSettings>> enabled_settings;
     std::optional<UUID> default_profile_id;
-    std::unordered_map<UUID, std::shared_ptr<const SettingsChanges>> settings_for_profiles;
+    std::unordered_map<UUID, std::shared_ptr<const SettingsProfilesInfo>> profile_infos_cache;
     mutable std::mutex mutex;
 };
 }
