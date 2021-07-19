@@ -37,24 +37,24 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     }
 
     /// Each merge is executed into separate background processing pool thread
-    background_thread_memory_tracker = CurrentThread::getMemoryTracker();
-    if (background_thread_memory_tracker)
-    {
-        /// From the query context it will be ("for thread") memory tracker with VariableContext::Thread level,
-        /// which does not have any limits and sampling settings configured.
-        /// And parent for this memory tracker should be ("(for query)") with VariableContext::Process level,
-        /// that has limits and sampling configured.
-        MemoryTracker * parent;
-        if (background_thread_memory_tracker->level == VariableContext::Thread &&
-            (parent = background_thread_memory_tracker->getParent()) &&
-            parent != &total_memory_tracker)
-        {
-            background_thread_memory_tracker = parent;
-        }
+    // background_thread_memory_tracker = CurrentThread::getMemoryTracker();
+    // if (background_thread_memory_tracker)
+    // {
+    //     /// From the query context it will be ("for thread") memory tracker with VariableContext::Thread level,
+    //     /// which does not have any limits and sampling settings configured.
+    //     /// And parent for this memory tracker should be ("(for query)") with VariableContext::Process level,
+    //     /// that has limits and sampling configured.
+    //     MemoryTracker * parent;
+    //     if (background_thread_memory_tracker->level == VariableContext::Thread &&
+    //         (parent = background_thread_memory_tracker->getParent()) &&
+    //         parent != &total_memory_tracker)
+    //     {
+    //         background_thread_memory_tracker = parent;
+    //     }
 
-        background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
-        background_thread_memory_tracker->setParent(&memory_tracker);
-    }
+    //     background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
+    //     background_thread_memory_tracker->setParent(&memory_tracker);
+    // }
 }
 
 MergeInfo MergeListElement::getInfo() const
@@ -91,12 +91,12 @@ MergeInfo MergeListElement::getInfo() const
     return res;
 }
 
-MergeListElement::~MergeListElement()
-{
+MergeListElement::~MergeListElement() = default;
+
     /// Unplug memory_tracker from current background processing pool thread
 
-    if (background_thread_memory_tracker)
-        background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
-}
+    // if (background_thread_memory_tracker)
+    //     background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
+
 
 }
