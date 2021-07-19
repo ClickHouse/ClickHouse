@@ -237,7 +237,7 @@ dictHas('dict_name', id)
 **Аргументы**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря.  [Выражение](../../sql-reference/syntax.md#syntax-expressions) возвращает значение словаря ключ-значение или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
+-   `id_expr` — значение ключа словаря.  [Expression](../../sql-reference/syntax.md#syntax-expressions) возвращает пару "ключ-значение" словаря или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
 
 **Возвращаемое значение**
 
