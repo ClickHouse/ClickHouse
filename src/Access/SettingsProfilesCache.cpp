@@ -162,37 +162,33 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
 
 void SettingsProfilesCache::substituteProfiles(SettingsProfileElements & elements) const
 {
+    /// We should substitute profiles in reversive order because the same profile can occur
+    /// in `elements` multiple times (with some other settings in between) and in this case
+    /// the last occurrence should override all the previous ones.
     boost::container::flat_set<UUID> already_substituted;
-    for (size_t i = 0; i != elements.size();)
+    size_t i = elements.size();
+    while (i != 0)
     {
-        auto & element = elements[i];
+        auto & element = elements[--i];
         if (!element.parent_profile)
-        {
-            ++i;
             continue;
-        }
 
-        auto parent_profile_id = *element.parent_profile;
+        auto profile_id = *element.parent_profile;
         element.parent_profile.reset();
-        if (already_substituted.count(parent_profile_id))
-        {
-            ++i;
+        if (already_substituted.count(profile_id))
             continue;
-        }
 
-        already_substituted.insert(parent_profile_id);
-        auto parent_profile = all_profiles.find(parent_profile_id);
-        if (parent_profile == all_profiles.end())
-        {
-            ++i;
+        auto profile_it = all_profiles.find(profile_id);
+        if (profile_it == all_profiles.end())
             continue;
-        }
 
-        const auto & parent_profile_elements = parent_profile->second->elements;
-        elements.insert(elements.begin() + i, parent_profile_elements.begin(), parent_profile_elements.end());
+        const auto & profile = profile_it->second;
+        const auto & profile_elements = profile->elements;
+        elements.insert(elements.begin() + i, profile_elements.begin(), profile_elements.end());
+        i += profile_elements.size();
+        already_substituted.insert(profile_id);
     }
 }
-
 
 std::shared_ptr<const EnabledSettings> SettingsProfilesCache::getEnabledSettings(
     const UUID & user_id,
