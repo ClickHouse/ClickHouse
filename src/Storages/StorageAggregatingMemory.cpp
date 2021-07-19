@@ -435,12 +435,26 @@ Pipe StorageAggregatingMemory::read(
     // TODO implement O(1) read by aggregation key
     auto filter_key = getFilterKeys(aggregator_transform->params, query_info);
 
-    std::shared_lock locK(rwlock);
+    std::shared_lock lock(rwlock);
 
     auto prepared_data = aggregator_transform->aggregator.prepareVariantsToMerge(many_data->variants);
     auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
 
-    ProcessorPtr source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
+    ProcessorPtr source;
+    
+    if (filter_key.has_value())
+    {
+        ColumnRawPtrs key_columns(filter_key->raw_key_columns.size());
+        for (size_t i = 0; i < key_columns.size(); ++i)
+            key_columns[i] = filter_key->raw_key_columns[i].get();
+
+        Block block = aggregator_transform->aggregator.readBlockByFilterKeys(prepared_data_ptr, key_columns);
+
+        Chunk chunk(block.getColumns(), block.rows());
+        source = std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk));
+    } else {
+        source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
+    }
 
     StoragePtr mergable_storage = StorageSource::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), source);
 
