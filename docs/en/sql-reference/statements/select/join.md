@@ -111,9 +111,9 @@ There are two ways to execute join involving distributed tables:
 
 Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](../../../sql-reference/operators/in.md#select-distributed-subqueries) section.
 
-## Implicit Type Conversion {implicit-type-conversion}
+## Implicit Type Conversion {#implicit-type-conversion}
 
-`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion.
+`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for “join keys”.
 
 **Example**
 
