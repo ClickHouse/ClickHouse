@@ -106,6 +106,8 @@ bool MergeFromLogEntryTask::execute()
 
 bool MergeFromLogEntryTask::executeImpl()
 {
+    // auto guard = MemoryTrackerSwitcher(&entry->memory_tracker);
+
     switch (state)
     {
         case State::NEED_PREPARE :

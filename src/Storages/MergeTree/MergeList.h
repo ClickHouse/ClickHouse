@@ -56,6 +56,18 @@ struct FutureMergedMutatedPart;
 using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
 using FutureMergedMutatedPartConstPtr = std::shared_ptr<const FutureMergedMutatedPart>;
 
+
+class MemoryTrackerSwitcher
+{
+public:
+    explicit MemoryTrackerSwitcher(MemoryTracker * memory_tracker_ptr);
+    ~MemoryTrackerSwitcher();
+private:
+    MemoryTracker * background_thread_memory_tracker;
+    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
+};
+
+
 struct MergeListElement : boost::noncopyable
 {
     const StorageID table_id;
@@ -89,8 +101,6 @@ struct MergeListElement : boost::noncopyable
     std::atomic<UInt64> columns_written{};
 
     MemoryTracker memory_tracker{VariableContext::Process};
-    MemoryTracker * background_thread_memory_tracker;
-    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
 
     UInt64 thread_id;
     MergeType merge_type;

@@ -9,6 +9,39 @@
 namespace DB
 {
 
+
+MemoryTrackerSwitcher::MemoryTrackerSwitcher(MemoryTracker * memory_tracker_ptr)
+{
+    // Each merge is executed into separate background processing pool thread
+    background_thread_memory_tracker = CurrentThread::getMemoryTracker();
+    if (background_thread_memory_tracker)
+    {
+        /// From the query context it will be ("for thread") memory tracker with VariableContext::Thread level,
+        /// which does not have any limits and sampling settings configured.
+        /// And parent for this memory tracker should be ("(for query)") with VariableContext::Process level,
+        /// that has limits and sampling configured.
+        MemoryTracker * parent;
+        if (background_thread_memory_tracker->level == VariableContext::Thread &&
+            (parent = background_thread_memory_tracker->getParent()) &&
+            parent != &total_memory_tracker)
+        {
+            background_thread_memory_tracker = parent;
+        }
+
+        background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
+        background_thread_memory_tracker->setParent(memory_tracker_ptr);
+    }
+}
+
+
+MemoryTrackerSwitcher::~MemoryTrackerSwitcher()
+{
+    // Unplug memory_tracker from current background processing pool thread
+
+    if (background_thread_memory_tracker)
+        background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
+}
+
 MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part)
     : table_id{table_id_}
     , partition_id{future_part->part_info.partition_id}
@@ -35,26 +68,6 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         source_data_version = future_part->parts[0]->info.getDataVersion();
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
-
-    /// Each merge is executed into separate background processing pool thread
-    // background_thread_memory_tracker = CurrentThread::getMemoryTracker();
-    // if (background_thread_memory_tracker)
-    // {
-    //     /// From the query context it will be ("for thread") memory tracker with VariableContext::Thread level,
-    //     /// which does not have any limits and sampling settings configured.
-    //     /// And parent for this memory tracker should be ("(for query)") with VariableContext::Process level,
-    //     /// that has limits and sampling configured.
-    //     MemoryTracker * parent;
-    //     if (background_thread_memory_tracker->level == VariableContext::Thread &&
-    //         (parent = background_thread_memory_tracker->getParent()) &&
-    //         parent != &total_memory_tracker)
-    //     {
-    //         background_thread_memory_tracker = parent;
-    //     }
-
-    //     background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
-    //     background_thread_memory_tracker->setParent(&memory_tracker);
-    // }
 }
 
 MergeInfo MergeListElement::getInfo() const
@@ -92,11 +105,6 @@ MergeInfo MergeListElement::getInfo() const
 }
 
 MergeListElement::~MergeListElement() = default;
-
-    /// Unplug memory_tracker from current background processing pool thread
-
-    // if (background_thread_memory_tracker)
-    //     background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
 
 
 }

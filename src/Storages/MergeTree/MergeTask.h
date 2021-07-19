@@ -27,11 +27,11 @@ public:
     virtual ~BackgroundTask() = default;
 
     bool operator> (const BackgroundTask & rhs) const
-     {
-         return priority > rhs.priority;
-     }
+    {
+        return priority > rhs.priority;
+    }
 
-     UInt64 getPriority() const { return priority; }
+    UInt64 getPriority() const { return priority; }
 
 private:
     int priority = 0;

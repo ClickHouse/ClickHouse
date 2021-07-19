@@ -11,6 +11,7 @@ namespace DB
 
 bool MergePlainMergeTreeTask::execute()
 {
+
     switch (state)
     {
         case State::NEED_PREPARE :
@@ -21,6 +22,7 @@ bool MergePlainMergeTreeTask::execute()
         }
         case State::NEED_EXECUTE :
         {
+            auto guard = MemoryTrackerSwitcher(&(*merge_list_entry)->memory_tracker);
             try
             {
                 if (merge_task->execute()) {
@@ -38,6 +40,8 @@ bool MergePlainMergeTreeTask::execute()
         }
         case State::NEED_FINISH :
         {
+            auto guard = MemoryTrackerSwitcher(&(*merge_list_entry)->memory_tracker);
+
             finish();
             return false;
         }
@@ -53,6 +57,8 @@ void MergePlainMergeTreeTask::prepare()
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
     merge_list_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_part);
+
+    auto guard = MemoryTrackerSwitcher(&(*merge_list_entry)->memory_tracker);
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
