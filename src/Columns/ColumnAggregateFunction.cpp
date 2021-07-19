@@ -55,12 +55,12 @@ static std::string getTypeString(const AggregateFunctionPtr & func)
 
 
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_)
-    : func(func_), type_string(getTypeString(func))
+    : func(func_), type_string(getTypeString(func)), not_destroy_states(false)
 {
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
-    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
+    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func)), not_destroy_states(false)
 {
 
 }
@@ -671,7 +671,8 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
     : COWHelper<IColumn, ColumnAggregateFunction>(src_),
     foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end()),
+    not_destroy_states(false)
 {
 }
 
