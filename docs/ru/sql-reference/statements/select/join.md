@@ -113,9 +113,9 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 Будьте аккуратны при использовании `GLOBAL`. За дополнительной информацией обращайтесь в раздел [Распределенные подзапросы](../../../sql-reference/operators/in.md#select-distributed-subqueries).
 
-## Неявные преобразования типов {implicit-type-conversion}
+## Неявные преобразования типов {#implicit-type-conversion}
 
-Запросы `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN` и `FULL JOIN` поддерживают неявные преобразования типов.
+Запросы `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN` и `FULL JOIN` поддерживают неявные преобразования типов для ключей соединения.
 
 **Пример**
 
