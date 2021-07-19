@@ -149,8 +149,20 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
         /// N times more interruptions
         thread_status->query_profiled_enabled = false;
+
         if (running_group)
+        {
             thread_status->setupState(running_group);
+        }
+        else
+        {
+            /// If the materialized view is executed outside of a query, for example as a result of SYSTEM FLUSH LOGS or
+            /// SYSTEM FLUSH DISTRIBUTED ..., we can't attach to any thread group to report metrics.
+            /// Instead we at least report to the main memory tracker so that its limits are enforced
+            if (DB::MainThreadStatus::get())
+                thread_status->memory_tracker.setParent(&total_memory_tracker);
+        }
+
 
         QueryViewsLogElement::ViewRuntimeStats runtime_stats{
             target_name,
