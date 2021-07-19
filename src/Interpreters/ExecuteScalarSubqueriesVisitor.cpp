@@ -1,7 +1,6 @@
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
 #include <Columns/ColumnTuple.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
@@ -17,6 +16,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+
 
 namespace DB
 {
