@@ -3,6 +3,7 @@
 import random
 import time
 from multiprocessing.dummy import Pool
+from multiprocessing import TimeoutError
 import datetime
 
 import pytest
@@ -23,6 +24,7 @@ node3 = cluster.add_instance('node3', macros={"shard": 1, "replica": 1}, **node_
 node4 = cluster.add_instance('node4', macros={"shard": 1, "replica": 2}, **node_options)
 nodes = [node1, node2, node3, node4]
 
+THREAD_POOL_SIZE = 15
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -40,44 +42,48 @@ def drop_table(nodes, table_name):
         node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
 
 
-def create_table(nodes, table_name, with_storage_policy=False, with_time_column=False,
-                 with_ttl_move=False, with_ttl_delete=False):
-    extra_columns = ""
+def create_table(nodes, table_name,
+                 with_storage_policy=False,
+                 with_time_column=False,
+                 with_ttl_move=False,
+                 with_ttl_delete=False):
     settings = []
 
+    query_text = """
+        CREATE TABLE {table_name}
+            (
+                num UInt32,
+                num2 UInt32 DEFAULT num + 1{extra_columns}
+            )
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table_name}', '{replica}')
+            ORDER BY num PARTITION BY num % 100
+        """
+    if with_ttl_move:
+        query_text += """
+            TTL time + INTERVAL (num2 % 1) SECOND TO DISK 'external'
+        """
+    if with_ttl_delete:
+        query_text += """
+            TTL time + INTERVAL (num2 % 1) SECOND DELETE
+        """
+        settings.append("merge_with_ttl_timeout = 1")
+
+    if with_storage_policy:
+        settings.append("storage_policy='default_with_external'")
+
+    if settings:
+        query_text += """
+            SETTINGS {}
+        """.format(", ".join(settings))
+
+    extra_columns = ""
+    if with_time_column:
+        extra_columns = """,
+                time DateTime
+            """
+
     for node in nodes:
-        sql = """
-            CREATE TABLE {table_name}
-                (
-                    num UInt32,
-                    num2 UInt32 DEFAULT num + 1{extra_columns}
-                )
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table_name}', '{replica}')
-                ORDER BY num PARTITION BY num % 100
-            """
-        if with_ttl_move:
-            sql += """
-                TTL time + INTERVAL (num2 % 1) SECOND TO DISK 'external'
-            """
-        if with_ttl_delete:
-            sql += """
-                TTL time + INTERVAL (num2 % 1) SECOND DELETE
-            """
-            settings.append("merge_with_ttl_timeout = 1")
-
-        if with_storage_policy:
-            settings.append("storage_policy='default_with_external'")
-
-        if settings:
-            sql += """
-                SETTINGS {}
-            """.format(", ".join(settings))
-
-        if with_time_column:
-            extra_columns = """,
-                    time DateTime
-                """
-        node.query(sql.format(table_name=table_name, replica=node.name, extra_columns=extra_columns))
+        node.query(query_text.format(table_name=table_name, replica=node.name, extra_columns=extra_columns))
 
 
 def create_distributed_table(node, table_name):
@@ -154,26 +160,33 @@ def select(node, table_name, col_name="num", expected_result=None, iterations=1,
             break
 
 
-def rename_column(node, table_name, name, new_name, iterations=1, ignore_exception=False):
-    for i in range(iterations):
+def rename_column(node, table_name, name, new_name, retries=1, ignore_error=False):
+    error_occured = None
+    for i in range(retries):
         try:
             node.query("ALTER TABLE {table_name} RENAME COLUMN {name} to {new_name}".format(
                 table_name=table_name, name=name, new_name=new_name
             ))
+            return
         except QueryRuntimeException as ex:
-            if not ignore_exception:
-                raise
+            error_occured = ex
+
+    if not ignore_error and error_occured:
+        raise error_occured
 
 
-def rename_column_on_cluster(node, table_name, name, new_name, iterations=1, ignore_exception=False):
-    for i in range(iterations):
+def rename_column_on_cluster(node, table_name, name, new_name, retries=1, ignore_error=False):
+    for i in range(retries):
         try:
             node.query("ALTER TABLE {table_name} ON CLUSTER test_cluster RENAME COLUMN {name} to {new_name}".format(
                 table_name=table_name, name=name, new_name=new_name
             ))
+            return
         except QueryRuntimeException as ex:
-            if not ignore_exception:
-                raise
+            error_occured = ex
+
+    if not ignore_error and error_occured:
+        raise error_occured
 
 
 def alter_move(node, table_name, iterations=1, ignore_exception=False):
@@ -188,6 +201,24 @@ def alter_move(node, table_name, iterations=1, ignore_exception=False):
                 raise
 
 
+def wait_tasks(tasks, timeout=240):
+    timeout_error = None
+    for n, task in enumerate(tasks, 1):
+        try:
+            task.get(timeout=timeout)
+        except TimeoutError as ex:
+            # let's wait other tasks, and raise exception later
+            # it will be easier to figure out which tasks are heavy and debug and fix test
+            print("Timeout on waiting task {n}(/{total})".format(n=n, total=len(tasks)))
+            timeout_error = ex
+        except:
+            print("Error on waiting task {n}(/{total})".format(n=n, total=len(tasks)))
+            raise
+
+    if timeout_error:
+        raise timeout_error
+
+
 def test_rename_parallel_same_node(started_cluster):
     table_name = "test_rename_parallel_same_node"
     drop_table(nodes, table_name)
@@ -195,14 +226,13 @@ def test_rename_parallel_same_node(started_cluster):
         create_table(nodes, table_name)
         insert(node1, table_name, 1000)
 
-        p = Pool(15)
+        p = Pool(THREAD_POOL_SIZE)
         tasks = []
-        for i in range(1):
-            tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node1, table_name, "foo2", "foo3", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node1, table_name, "foo3", "num2", 5, True)))
-        for task in tasks:
-            task.get(timeout=240)
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "foo2", "foo3", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "foo3", "num2", 5, True)))
+
+        wait_tasks(tasks)
 
         # rename column back to original
         rename_column(node1, table_name, "foo3", "num2", 1, True)
@@ -221,14 +251,13 @@ def test_rename_parallel(started_cluster):
         create_table(nodes, table_name)
         insert(node1, table_name, 1000)
 
-        p = Pool(15)
+        p = Pool(THREAD_POOL_SIZE)
         tasks = []
-        for i in range(1):
-            tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 5, True)))
-        for task in tasks:
-            task.get(timeout=240)
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 5, True)))
+
+        wait_tasks(tasks)
 
         # rename column back to original
         rename_column(node1, table_name, "foo3", "num2", 1, True)
@@ -251,17 +280,16 @@ def test_rename_with_parallel_select(started_cluster):
         select(node2, table_name, "num2", "999\n", poll=30)
         select(node3, table_name, "num2", "999\n", poll=30)
 
-        p = Pool(15)
+        p = Pool(THREAD_POOL_SIZE)
         tasks = []
-        for i in range(1):
-            tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 5, True)))
-            tasks.append(p.apply_async(select, (node1, table_name, "foo3", "999\n", 5, True)))
-            tasks.append(p.apply_async(select, (node2, table_name, "num2", "999\n", 5, True)))
-            tasks.append(p.apply_async(select, (node3, table_name, "foo2", "999\n", 5, True)))
-        for task in tasks:
-            task.get(timeout=240)
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 5, True)))
+        tasks.append(p.apply_async(select, (node1, table_name, "foo3", "999\n", 5, True)))
+        tasks.append(p.apply_async(select, (node2, table_name, "num2", "999\n", 5, True)))
+        tasks.append(p.apply_async(select, (node3, table_name, "foo2", "999\n", 5, True)))
+
+        wait_tasks(tasks)
 
         # rename column back to original name
         rename_column(node1, table_name, "foo3", "num2", 1, True)
@@ -280,17 +308,16 @@ def test_rename_with_parallel_insert(started_cluster):
         create_table(nodes, table_name)
         insert(node1, table_name, 1000)
 
-        p = Pool(15)
+        p = Pool(THREAD_POOL_SIZE)
         tasks = []
-        for i in range(1):
-            tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 5, True)))
-            tasks.append(p.apply_async(insert, (node1, table_name, 100, ["num", "foo3"], 5, True)))
-            tasks.append(p.apply_async(insert, (node2, table_name, 100, ["num", "num2"], 5, True)))
-            tasks.append(p.apply_async(insert, (node3, table_name, 100, ["num", "foo2"], 5, True)))
-        for task in tasks:
-            task.get(timeout=240)
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 5, True)))
+        tasks.append(p.apply_async(insert, (node1, table_name, 100, ["num", "foo3"], 5, True)))
+        tasks.append(p.apply_async(insert, (node2, table_name, 100, ["num", "num2"], 5, True)))
+        tasks.append(p.apply_async(insert, (node3, table_name, 100, ["num", "foo2"], 5, True)))
+
+        wait_tasks(tasks)
 
         # rename column back to original
         rename_column(node1, table_name, "foo3", "num2", 1, True)
@@ -321,7 +348,7 @@ def test_rename_with_parallel_merges(started_cluster):
                     print("Got an exception while optimizing table", ex)
 
         print("Creating pool")
-        p = Pool(15)
+        p = Pool(THREAD_POOL_SIZE)
         tasks = []
         tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 2, True)))
         tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 2, True)))
@@ -331,8 +358,7 @@ def test_rename_with_parallel_merges(started_cluster):
         tasks.append(p.apply_async(merge_parts, (node3, table_name, 2)))
 
         print("Waiting for tasks", datetime.datetime.now())
-        for task in tasks:
-            task.get(timeout=240)
+        wait_tasks(tasks)
         print("Finished waiting", datetime.datetime.now())
 
         print("Renaming columns", datetime.datetime.now())
@@ -356,15 +382,14 @@ def test_rename_with_parallel_slow_insert(started_cluster):
         create_table(nodes, table_name)
         insert(node1, table_name, 1000)
 
-        p = Pool(15)
+        p = Pool(THREAD_POOL_SIZE)
         tasks = []
         tasks.append(p.apply_async(insert, (node1, table_name, 10000, ["num", "num2"], 1, False, True)))
         tasks.append(p.apply_async(insert, (node1, table_name, 10000, ["num", "num2"], 1, True, True)))  # deduplicated
         time.sleep(0.5)
         tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2")))
 
-        for task in tasks:
-            task.get(timeout=240)
+        wait_tasks(tasks)
 
         insert(node1, table_name, 100, ["num", "foo2"])
 
@@ -386,15 +411,14 @@ def test_rename_with_parallel_slow_select(started_cluster):
         create_table(nodes, table_name)
         insert(node1, table_name, 1000)
 
-        p = Pool(15)
+        p = Pool(THREAD_POOL_SIZE)
         tasks = []
 
         tasks.append(p.apply_async(select, (node1, table_name, "num2", "999\n", 1, True, True)))
         time.sleep(0.5)
         tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2")))
 
-        for task in tasks:
-            task.get(timeout=240)
+        wait_tasks(tasks)
 
         insert(node1, table_name, 100, ["num", "foo2"])
 
@@ -416,7 +440,7 @@ def test_rename_with_parallel_moves(started_cluster):
         create_table(nodes, table_name, with_storage_policy=True)
         insert(node1, table_name, 1000)
 
-        p = Pool(15)
+        p = Pool(THREAD_POOL_SIZE)
         tasks = []
 
         tasks.append(p.apply_async(alter_move, (node1, table_name, 20, True)))
@@ -426,8 +450,7 @@ def test_rename_with_parallel_moves(started_cluster):
         tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 20, True)))
         tasks.append(p.apply_async(rename_column, (node3, table_name, "num3", "num2", 20, True)))
 
-        for task in tasks:
-            task.get(timeout=240)
+        wait_tasks(tasks)
 
         # rename column back to original
         rename_column(node1, table_name, "foo2", "num2", 1, True)
@@ -445,22 +468,21 @@ def test_rename_with_parallel_ttl_move(started_cluster):
     table_name = 'test_rename_with_parallel_ttl_move'
     try:
         create_table(nodes, table_name, with_storage_policy=True, with_time_column=True, with_ttl_move=True)
-        rename_column(node1, table_name, "time", "time2", 1, False)
-        rename_column(node1, table_name, "time2", "time", 1, False)
+        rename_column(node1, table_name, "time", "time2", 1)
+        rename_column(node1, table_name, "time2", "time", 1)
 
-        p = Pool(15)
+        p = Pool(THREAD_POOL_SIZE)
         tasks = []
 
         tasks.append(p.apply_async(insert, (node1, table_name, 10000, ["num", "num2"], 1, False, False, True, 0, True)))
         time.sleep(5)
-        rename_column(node1, table_name, "time", "time2", 1, False)
+        rename_column(node1, table_name, "time", "time2", 1)
         time.sleep(4)
         tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 20, True)))
         tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 20, True)))
         tasks.append(p.apply_async(rename_column, (node3, table_name, "num3", "num2", 20, True)))
 
-        for task in tasks:
-            task.get(timeout=240)
+        wait_tasks(tasks)
 
         # check some parts got moved
         assert "external" in set(node1.query(
@@ -481,27 +503,26 @@ def test_rename_with_parallel_ttl_delete(started_cluster):
     table_name = 'test_rename_with_parallel_ttl_delete'
     try:
         create_table(nodes, table_name, with_time_column=True, with_ttl_delete=True)
-        rename_column(node1, table_name, "time", "time2", 1, False)
-        rename_column(node1, table_name, "time2", "time", 1, False)
+        rename_column(node1, table_name, "time", "time2")
+        rename_column(node1, table_name, "time2", "time")
 
         def merge_parts(node, table_name, iterations=1):
             for i in range(iterations):
                 node.query("OPTIMIZE TABLE {}".format(table_name))
 
-        p = Pool(15)
-        tasks = []
+        p = Pool(THREAD_POOL_SIZE)
 
+        tasks = []
         tasks.append(p.apply_async(insert, (node1, table_name, 10000, ["num", "num2"], 1, False, False, True, 0, True)))
         time.sleep(15)
-        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 20, True)))
-        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 20, True)))
-        tasks.append(p.apply_async(rename_column, (node3, table_name, "num3", "num2", 20, True)))
-        tasks.append(p.apply_async(merge_parts, (node1, table_name, 20)))
-        tasks.append(p.apply_async(merge_parts, (node2, table_name, 20)))
-        tasks.append(p.apply_async(merge_parts, (node3, table_name, 20)))
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node3, table_name, "num3", "num2", 5, True)))
+        tasks.append(p.apply_async(merge_parts, (node1, table_name, 3)))
+        tasks.append(p.apply_async(merge_parts, (node2, table_name, 3)))
+        tasks.append(p.apply_async(merge_parts, (node3, table_name, 3)))
 
-        for task in tasks:
-            task.get(timeout=240)
+        wait_tasks(tasks)
 
         # rename column back to original
         rename_column(node1, table_name, "foo2", "num2", 1, True)
@@ -534,26 +555,25 @@ def test_rename_distributed_parallel_insert_and_select(started_cluster):
         create_distributed_table(node1, table_name)
         insert(node1, table_name, 1000)
 
-        p = Pool(15)
+        p = Pool(THREAD_POOL_SIZE)
         tasks = []
-        for i in range(1):
-            tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'num2', 'foo2', 3, True)))
-            tasks.append(
-                p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'num2', 'foo2', 3, True)))
-            tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'foo2', 'foo3', 3, True)))
-            tasks.append(
-                p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'foo2', 'foo3', 3, True)))
-            tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'foo3', 'num2', 3, True)))
-            tasks.append(
-                p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'foo3', 'num2', 3, True)))
-            tasks.append(p.apply_async(insert, (node1, table_name, 10, ["num", "foo3"], 5, True)))
-            tasks.append(p.apply_async(insert, (node2, table_name, 10, ["num", "num2"], 5, True)))
-            tasks.append(p.apply_async(insert, (node3, table_name, 10, ["num", "foo2"], 5, True)))
-            tasks.append(p.apply_async(select, (node1, table_name, "foo2", None, 5, True)))
-            tasks.append(p.apply_async(select, (node2, table_name, "foo3", None, 5, True)))
-            tasks.append(p.apply_async(select, (node3, table_name, "num2", None, 5, True)))
-        for task in tasks:
-            task.get(timeout=240)
+        tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'num2', 'foo2', 3, True)))
+        tasks.append(
+            p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'num2', 'foo2', 3, True)))
+        tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'foo2', 'foo3', 3, True)))
+        tasks.append(
+            p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'foo2', 'foo3', 3, True)))
+        tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'foo3', 'num2', 3, True)))
+        tasks.append(
+            p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'foo3', 'num2', 3, True)))
+        tasks.append(p.apply_async(insert, (node1, table_name, 10, ["num", "foo3"], 5, True)))
+        tasks.append(p.apply_async(insert, (node2, table_name, 10, ["num", "num2"], 5, True)))
+        tasks.append(p.apply_async(insert, (node3, table_name, 10, ["num", "foo2"], 5, True)))
+        tasks.append(p.apply_async(select, (node1, table_name, "foo2", None, 5, True)))
+        tasks.append(p.apply_async(select, (node2, table_name, "foo3", None, 5, True)))
+        tasks.append(p.apply_async(select, (node3, table_name, "num2", None, 5, True)))
+
+        wait_tasks(tasks)
 
         rename_column_on_cluster(node1, table_name, 'foo2', 'num2', 1, True)
         rename_column_on_cluster(node1, '%s_replicated' % table_name, 'foo2', 'num2', 1, True)
