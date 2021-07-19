@@ -1,5 +1,5 @@
-clickhouse (21.7.4.1) unstable; urgency=low
+clickhouse (21.7.5.1) unstable; urgency=low
 
   * Modified source code
 
- -- clickhouse-release <clickhouse-release@yandex-team.ru>  Wed, 14 Jul 2021 13:15:05 +0300
+ -- clickhouse-release <clickhouse-release@yandex-team.ru>  Mon, 19 Jul 2021 14:38:34 +0300
