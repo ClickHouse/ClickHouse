@@ -38,7 +38,7 @@ public:
 
     String getName() const override { return "DDLQueryStatus"; }
     Chunk generate() override;
-    void work() override;
+    Status prepare() override;
 
 private:
     static Strings getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path);
