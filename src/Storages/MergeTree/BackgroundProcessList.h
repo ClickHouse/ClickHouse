@@ -66,8 +66,7 @@ protected:
 public:
 
     using Entry = BackgroundProcessListEntry<ListElement, Info>;
-    /// TODO: return to unique_ptr
-    using EntryPtr = std::shared_ptr<Entry>;
+    using EntryPtr = std::unique_ptr<Entry>;
 
     template <typename... Args>
     EntryPtr insert(Args &&... args)

@@ -105,7 +105,7 @@ struct MergeListElement : boost::noncopyable
 };
 
 using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
-using MergeListEntryPtr = std::shared_ptr<MergeListEntry>;
+using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
 
 /** Maintains a list of currently running merges.
   * For implementation of system.merges table.

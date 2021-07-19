@@ -596,8 +596,8 @@ bool MergeTask::execute()
         case MergeTaskState::NEED_PREPARE:
         {
             prepare();
-            state = MergeTaskState::NEED_EXECUTE_HORIZONTAL;
 
+            state = MergeTaskState::NEED_EXECUTE_HORIZONTAL;
             return true;
         }
         case MergeTaskState::NEED_EXECUTE_HORIZONTAL:
@@ -753,20 +753,6 @@ void MergeTask::createMergedStream()
     blocks_are_granules_size = (chosen_merge_algorithm == MergeAlgorithm::Vertical);
 
     UInt64 merge_block_size = data_settings->merge_max_block_size;
-
-
-    //std::cerr << "merging_params.mode " << merging_params.mode << std::endl;
-
-    // for (auto & col : merging_params.columns_to_sum) {
-        //std::cerr << col << std::endl;
-    // }
-
-    //std::cerr << "version column " << merging_params.version_column << std::endl;
-
-
-    //std::cerr << header.dumpStructure() << std::endl;
-
-    //std::cerr << "chosen merge algorithm " << toString(chosen_merge_algorithm) << std::endl;
 
     switch (merging_params.mode)
     {

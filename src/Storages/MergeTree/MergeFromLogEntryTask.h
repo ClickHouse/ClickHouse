@@ -46,6 +46,9 @@ private:
     /// This is important not to execute the same merge in parallel
     ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry;
     ReplicatedMergeTreeLogEntry::Ptr entry;
+
+    MergeList::EntryPtr merge_entry{nullptr};
+
     StorageReplicatedMergeTree & storage;
     Poco::Logger * log;
 

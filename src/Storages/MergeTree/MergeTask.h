@@ -39,7 +39,6 @@ private:
 
 
 class MergeTask;
-
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
 
 /**
@@ -72,6 +71,28 @@ enum class VecticalMergeOneColumnState
     NEED_FINISH
 };
 
+
+/**
+ * Overview of the merge algorithm
+ *
+ * Each merge is executed sequentially block by block.
+ * The main idea is to make a merge not a subroutine which is executed
+ * in a thread pool and may occupy a thread for a period of time,
+ * but to make a merge a coroutine which can suspend the execution
+ * in some points and then resume the execution from this point.
+ *
+ * A perfect point where to suspend the execution is after the work over a block is finished.
+ * The task itself will be executed via MergeExecutor.
+ *
+ * The interface of the task is simple.
+ * The main method is `execute()` which will return true, if the task wants to be executed again and false otherwise.
+ *
+ * With this kind of task we can give a merge a priority.
+ * A priority is simple - the lower the size of the merge, the higher priority.
+ * So, if ClickHouse wants to merge some really big parts into a bigger part,
+ * then it will be executed for a long time, because the result of the merge is not really needed immediately.
+ * It is better to merge small parts as soon as possible.
+*/
 class MergeTask
 {
 public:
@@ -160,7 +181,6 @@ private:
 
     FutureMergedMutatedPartPtr future_part;
     StorageMetadataPtr metadata_snapshot;
-    /// MergeEntry lives in a list in global context, so it is safe to save only reference to it.
     MergeList::Entry & merge_entry;
     TableLockHolder & holder;
     time_t time_of_merge;

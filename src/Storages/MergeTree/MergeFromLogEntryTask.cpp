@@ -368,12 +368,12 @@ bool MergeFromLogEntryTask::prepare()
     auto table_id = storage.getStorageID();
 
     /// Add merge to list
-    MergeList::EntryPtr merge_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_merged_part);
+    merge_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_merged_part);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
-    write_part_log = [this, stopwatch = *stopwatch_ptr, entry = entry, merge_entry = merge_entry] (const ExecutionStatus & execution_status)
+    write_part_log = [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
