@@ -353,6 +353,9 @@ Chunk DDLQueryStatusSource::generate()
 
 IProcessor::Status DDLQueryStatusSource::prepare()
 {
+    /// This method is overloaded to throw exception after all data is read.
+    /// Exception is pushed into pipe (instead of simply being thrown) to ensure the order of data processing and exception.
+
     if (finished)
     {
         bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
