@@ -52,7 +52,7 @@ FROM <left_table>
 - [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
 - [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
 
-### Использование ASOF JOIN {#asof-join-usage}
+## Использование ASOF JOIN {#asof-join-usage}
 
 `ASOF JOIN` применим в том случае, когда необходимо объединять записи, которые не имеют точного совпадения.
 
@@ -104,7 +104,7 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 Чтобы задать значение строгости по умолчанию, используйте сессионный параметр [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
 
-#### Распределённый JOIN {#global-join}
+## Распределённый JOIN {#global-join}
 
 Есть два пути для выполнения соединения с участием распределённых таблиц:
 
@@ -187,9 +187,9 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 
 ### Ограничения по памяти {#memory-limitations}
 
-По умолчанию ClickHouse использует алгоритм [hash join](https://ru.wikipedia.org/wiki/Алгоритм_соединения_хешированием). ClickHouse берет правую таблицу и создает для нее хеш-таблицу в оперативной памяти. После некоторого порога потребления памяти ClickHouse переходит к алгоритму [merge join](https://ru.wikipedia.org/wiki/Алгоритм_соединения_слиянием_сортированных_списков). Описание алгоритмов `join` см. в настройке [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm).
+По умолчанию ClickHouse использует алгоритм [hash join](https://ru.wikipedia.org/wiki/Алгоритм_соединения_хешированием). ClickHouse берет правую таблицу и создает для нее хеш-таблицу в оперативной памяти. После некоторого порога потребления памяти ClickHouse переходит к алгоритму [merge join](https://ru.wikipedia.org/wiki/Алгоритм_соединения_слиянием_сортированных_списков). Описание алгоритмов `JOIN` см. в настройке [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm).
 
-Если вы хотите ограничить потребление памяти во время выполнения операции `join`, используйте настройки:
+Если вы хотите ограничить потребление памяти во время выполнения операции `JOIN`, используйте настройки:
 
 -   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — ограничивает количество строк в хеш-таблице.
 -   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — ограничивает размер хеш-таблицы.

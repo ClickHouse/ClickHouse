@@ -515,10 +515,10 @@ Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
 
 Possible values:
 
-- 'hash' — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
-- 'partial_merge' — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
-- 'prefer_partial_merge' — ClickHouse always tries to use `merge` join if possible.
-- 'auto' — ClickHouse tries to change `hash` join to `merge` join on the fly to avoid out of memory.
+- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
+- `partial_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
+- `prefer_partial_merge` — ClickHouse always tries to use `merge` join if possible.
+- `auto` — ClickHouse tries to change `hash` join to `merge` join on the fly to avoid out of memory.
 
 Default value: `hash`.
 
