@@ -103,12 +103,9 @@ ASTPtr ASTGrantQuery::clone() const
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach_mode ? "ATTACH " : "")
+                  << (settings.hilite ? hilite_keyword : "") << ((!is_revoke && (replace_access || replace_granted_roles)) ? "REPLACE " : "") << (settings.hilite ? hilite_none : "")
+                  << (settings.hilite ? hilite_keyword : "") << (is_revoke ? "REVOKE" : "GRANT")
                   << (settings.hilite ? IAST::hilite_none : "");
-
-    if (!is_revoke && (replace_access || replace_granted_roles))
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (settings.hilite ? hilite_none : "");
-
-    settings.ostr << (is_revoke ? " REVOKE" : " GRANT");
 
     if (!access_rights_elements.sameOptions())
         throw Exception("Elements of an ASTGrantQuery are expected to have the same options", ErrorCodes::LOGICAL_ERROR);
