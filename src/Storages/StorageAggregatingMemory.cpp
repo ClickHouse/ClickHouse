@@ -51,7 +51,7 @@ public:
 
         bool failed;
 
-        Data(Aggregator::Params params_)
+        explicit Data(Aggregator::Params params_)
             : params(params_),
               raw_key_columns(params.keys_size),
               header(params.getHeader(true)),

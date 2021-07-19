@@ -1258,9 +1258,9 @@ private:
 
     template <typename Method, typename Table>
     void convertToBlockImplByFilterKeys(
-        Method & method,
+        Method &,
         Table & data,
-        MutableColumns & key_columns,
+        MutableColumns & mutable_keys,
         MutableColumns & final_aggregate_columns,
         Arena * arena,
         const ColumnRawPtrs & filter_keys) const;
