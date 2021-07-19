@@ -977,6 +977,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             if (!is_partition_affected)
             {
                 /// Shall not create a new part, but will do that later if mutation with higher version appear.
+                /// This is needed in order to not produce excessive mutations of non-related parts.
                 auto block_range = std::make_pair(part->info.min_block, part->info.max_block);
                 updated_version_by_block_range[block_range] = current_mutations_by_version.rbegin()->first;
                 are_some_mutations_for_some_parts_skipped = true;
