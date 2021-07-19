@@ -16,6 +16,24 @@ class WriteBuffer;
 namespace FileEncryption
 {
 
+/// Encryption algorithm.
+/// We chose to use CTR cipther algorithms because they have the following features which are important for us:
+/// - No right padding, so we can append encrypted files without deciphering;
+/// - One byte is always ciphered as one byte, so we get random access to encrypted files easily.
+enum class Algorithm
+{
+    AES_128_CTR, /// Size of key is 16 bytes.
+    AES_192_CTR, /// Size of key is 24 bytes.
+    AES_256_CTR, /// Size of key is 32 bytes.
+};
+
+String toString(Algorithm algorithm);
+void parseFromString(Algorithm & algorithm, const String & str);
+
+/// Throws an exception if a specified key size doesn't correspond a specified encryption algorithm.
+void checkKeySize(Algorithm algorithm, size_t key_size);
+
+
 /// Initialization vector. Its size is always 16 bytes.
 class InitVector
 {
@@ -51,17 +69,12 @@ private:
     UInt128 counter = 0;
 };
 
-
 /// Encrypts or decrypts data.
 class Encryptor
 {
 public:
-    /// The `key` should have length 128 or 192 or 256.
-    /// According to the key's length aes_128_ctr or aes_192_ctr or aes_256_ctr will be used for encryption.
-    /// We chose to use CTR cipther algorithms because they have the following features which are important for us:
-    /// - No right padding, so we can append encrypted files without deciphering;
-    /// - One byte is always ciphered as one byte, so we get random access to encrypted files easily.
-    Encryptor(const String & key_, const InitVector & iv_);
+    /// The `key` should have size 16 or 24 or 32 bytes depending on which `algorithm` is specified.
+    Encryptor(Algorithm algorithm_, const String & key_, const InitVector & iv_);
 
     /// Sets the current position in the data stream from the very beginning of data.
     /// It affects how the data will be encrypted or decrypted because
@@ -82,16 +95,11 @@ public:
 private:
     const String key;
     const InitVector init_vector;
-    const EVP_CIPHER * evp_cipher;
+    const EVP_CIPHER * const evp_cipher;
 
     /// The current position in the data stream from the very beginning of data.
     size_t offset = 0;
 };
-
-
-/// Checks whether a passed key length is supported, i.e.
-/// whether its length is 128 or 192 or 256 bits (16 or 24 or 32 bytes).
-bool isKeyLengthSupported(size_t key_length);
 
 }
 }
