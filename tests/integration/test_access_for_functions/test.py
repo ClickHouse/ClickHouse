@@ -1,0 +1,47 @@
+import pytest
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
+
+cluster = ClickHouseCluster(__file__)
+instance = cluster.add_instance('instance')
+
+
+@pytest.fixture(scope="module", autouse=True)
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+
+    finally:
+        cluster.shutdown()
+
+
+@pytest.fixture(autouse=True)
+def cleanup_after_test():
+    try:
+        yield
+    finally:
+        instance.query("DROP USER IF EXISTS A")
+        instance.query("DROP USER IF EXISTS B")
+
+
+def test_merge():
+    create_function_query = "CREATE FUNCTION MySum AS (a, b) -> a + b"
+
+    instance.query("CREATE USER A")
+    instance.query("CREATE USER B")
+    assert "it's necessary to have grant CREATE FUNCTION ON *.*" in instance.query_and_get_error(create_function_query, user = 'A')
+
+    instance.query("GRANT CREATE FUNCTION on *.* TO A")
+    
+    instance.query(create_function_query.format, user = 'A')
+    assert instance.query("SELECT MySum(1, 2)") == "3"
+
+    assert "it's necessary to have grant DROP FUNCTION ON *.*" in instance.query("DROP FUNCTION MySum", user = 'B')
+
+    instance.query("GRANT DROP FUNCTION ON *.* TO B")
+    instance.query("DROP FUNCTION MySum", user = 'B')
+    assert "Unknown function MySum" in instance.query("SELECT MySum(1, 2)")
+
+    instance.query("REVOKE CREATE FUNCTION ON default FROM A")
+    assert "it's necessary to have grant CREATE FUNCTION ON *.*" in instance.query_and_get_error(create_function_query, user = 'A')
