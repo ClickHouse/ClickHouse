@@ -1,3 +1,5 @@
+#include <Access/ContextAccess.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
@@ -16,6 +18,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
+    getContext()->checkAccess(AccessType::CREATE_FUNCTION);
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & create_function_query = query_ptr->as<ASTCreateFunctionQuery &>();
     validateFunction(create_function_query.function_core, create_function_query.function_name);

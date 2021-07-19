@@ -7,11 +7,12 @@ namespace DB
 {
 
 class ASTCreateFunctionQuery;
+class Context;
 
-class InterpreterCreateFunctionQuery : public IInterpreter, WithContext
+class InterpreterCreateFunctionQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterCreateFunctionQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
+    InterpreterCreateFunctionQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 
