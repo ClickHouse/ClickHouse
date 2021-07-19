@@ -32,6 +32,8 @@ public:
     virtual const UInt64 * tryGetSavedHash() const = 0;
 
     size_t size() const override { return getNestedNotNullableColumn()->size(); }
+    virtual bool isEmpty() const = 0;
+    virtual void insertWithGetTransIndex(const IColumn & src, size_t start, size_t length, std::unordered_map<UInt64, UInt64>& trans) = 0;
 
     /// Appends new value at the end of column (column's size is increased by 1).
     /// Is used to transform raw strings to Blocks (for example, inside input format parsers)

@@ -3,6 +3,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <IO/ReadBuffer.h>
 #include <Common/PODArray.h>
+#include <Columns/ColumnLowCardinality.h>
 
 
 namespace Poco { class Logger; }
@@ -58,7 +59,7 @@ class ColumnGathererStream : public IBlockInputStream
 public:
     ColumnGathererStream(
         const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
-        size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
+        bool enable_low_cardinality_merge_new_algo_ = true, size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
 
     String getName() const override { return "ColumnGatherer"; }
 
@@ -71,6 +72,7 @@ public:
     /// for use in implementations of IColumn::gather()
     template <typename Column>
     void gather(Column & column_res);
+    void gatherLowCardinality(ColumnLowCardinality &col);
 
 private:
     /// Cache required fields
@@ -80,6 +82,9 @@ private:
         size_t pos = 0;
         size_t size = 0;
         Block block;
+        // used for low cardinality column
+        using ReverseIndex = std::unordered_map<UInt64, UInt64>;
+        ReverseIndex index_map;
 
         void update(const String & name)
         {
@@ -96,11 +101,13 @@ private:
 
     std::vector<Source> sources;
     ReadBuffer & row_sources_buf;
+    bool enable_low_cardinality_merge_new_algo;
 
     size_t block_preferred_size;
 
     Source * source_to_fully_copy = nullptr;
     Block output_block;
+    MutableColumnPtr cardinalityDict = nullptr;
 
     Poco::Logger * log;
 };

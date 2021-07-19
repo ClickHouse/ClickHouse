@@ -1066,7 +1066,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             }
 
             rows_sources_read_buf.seek(0, 0);
-            ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
+            bool enable_new_algo = data.getContext()->getSettingsRef().enable_low_cardinality_merge_new_algo && (data.getContext()->getSettingsRef().max_rows_low_cardinality_merge_new_algo > rows_written);
+
+            ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf, enable_new_algo);
 
             MergedColumnOnlyOutputStream column_to(
                 new_data_part,

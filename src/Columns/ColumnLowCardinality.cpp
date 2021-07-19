@@ -146,6 +146,54 @@ void ColumnLowCardinality::insertDefault()
     idx.insertPosition(getDictionary().getDefaultValueIndex());
 }
 
+void ColumnLowCardinality::mergeGatherColumn(const IColumn &src, std::unordered_map<UInt64, UInt64> &reverseIndex)
+{
+    const auto * low_src = typeid_cast<const ColumnLowCardinality *>(&src);
+    if (dictionary.getColumnUnique().isEmpty())
+    {
+        dictionary.getColumnUnique().uniqueInsertRangeFrom(*low_src->getDictionary().getNestedColumn()->getPtr(), 0, low_src->getDictionary().size());
+        return ;
+    }
+
+    dictionary.getColumnUnique().insertWithGetTransIndex(*low_src->getDictionary().getNestedColumn()->getPtr(), 0, low_src->getDictionary().size(), reverseIndex);
+}
+
+void ColumnLowCardinality::loadDictionaryFrom(const IColumn &src)
+{
+    const auto * low_src = typeid_cast<const ColumnLowCardinality *>(&src);
+
+    if (!low_src)
+        throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+    dictionary.getColumnUnique().uniqueInsertRangeFrom(*low_src->getDictionary().getNestedColumn()->getPtr(), 0, low_src->getDictionary().size());
+}
+
+void ColumnLowCardinality::insertIndexFrom(const IColumn &src, size_t n)
+{
+    const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
+
+    if (!low_cardinality_src)
+        throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+    size_t position = low_cardinality_src->getIndexes().getUInt(n);
+    idx.insertPosition(position);
+}
+
+void ColumnLowCardinality::insertIndexRangeFrom(const IColumn &src, size_t start, size_t length)
+{
+    const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
+
+    if (!low_cardinality_src)
+        throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+    idx.insertPositionsRange(low_cardinality_src->getIndexes(), start, length);
+}
+
+void ColumnLowCardinality::transformIndex(std::unordered_map<UInt64, UInt64> &trans, size_t max_size)
+{
+    idx.transformIndex(trans, max_size);
+}
+
 void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
 {
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
@@ -275,7 +323,7 @@ void ColumnLowCardinality::updateHashFast(SipHash & hash) const
 
 void ColumnLowCardinality::gather(ColumnGathererStream & gatherer)
 {
-    gatherer.gather(*this);
+    gatherer.gatherLowCardinality(*this);
 }
 
 MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
@@ -594,6 +642,39 @@ size_t ColumnLowCardinality::Index::getSizeOfIndexType(const IColumn & column, s
 
     throw Exception("Unexpected indexes type for ColumnLowCardinality. Expected UInt, got " + column.getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
+}
+
+void ColumnLowCardinality::Index::transformIndex(std::unordered_map<UInt64, UInt64> &trans, size_t max_size)
+{
+    for (auto const& it : trans)
+    {
+        while (it.second > getMaxPositionForCurrentType())
+            expandType();
+    }
+
+    auto transform = [&](auto x)
+    {
+        using CurIndexType = decltype(x);
+        auto & data = getPositionsData<CurIndexType>();
+        size_t size = data.size();
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            const auto it = trans.find(data[i]);
+            if (it != trans.end())
+            {
+                auto ind = trans[data[i]];
+                data[i] = ind;
+            }
+
+            if (data[i] > max_size)
+                throw Exception("Index overflow max size:" + std::to_string(max_size) + " ind:" + std::to_string(data[i]), ErrorCodes::ILLEGAL_COLUMN);
+        }
+    };
+
+    callForType(std::move(transform), size_of_type);
+
+    checkSizeOfType();
 }
 
 void ColumnLowCardinality::Index::attachPositions(ColumnPtr positions_)

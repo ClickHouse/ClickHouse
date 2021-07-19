@@ -60,6 +60,8 @@ public:
                                                                      size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
     size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
+    bool isEmpty() const override { return (column_holder->size() > numSpecialValues()); }
+    void insertWithGetTransIndex(const IColumn & src, size_t start, size_t length, std::unordered_map<UInt64, UInt64>& trans) override;
 
     size_t getDefaultValueIndex() const override { return 0; }
     size_t getNullValueIndex() const override;
@@ -296,6 +298,51 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
         throw Exception("ColumnUnique can't contain null values.", ErrorCodes::LOGICAL_ERROR);
 
     return 0;
+}
+
+template <typename ColumnType>
+void ColumnUnique<ColumnType>::insertWithGetTransIndex(const IColumn & src, size_t start, size_t length,
+                                                        std::unordered_map<UInt64, UInt64>& trans)
+{
+    const ColumnType * src_column;
+    const NullMap * null_map = nullptr;
+    if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(src))
+    {
+        src_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
+        null_map = &nullable_column->getNullMapData();
+    }
+    else
+        src_column = typeid_cast<const ColumnType *>(&src);
+
+    if (src_column == nullptr)
+        throw Exception("Invalid column type for ColumnUnique::insertWithGetTransIndex. Expected " + column_holder->getName() +
+                        ", got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+    auto column = getRawColumnPtr();
+    for (size_t row = start; row < length; ++row)
+    {
+        if (null_map && (*null_map)[row])
+            continue;
+        else if (column->compareAt(getNestedTypeDefaultValueIndex(), row, *src_column, 1) == 0)
+            continue;
+        else
+        {
+            auto ref = src_column->getDataAt(row);
+            auto insertion_point = reverse_index.getInsertionPoint(ref);
+
+            if (insertion_point == reverse_index.lastInsertionPoint()) // new key
+            {
+                reverse_index.insert(ref);
+                trans[row] = insertion_point;
+            }
+            else if (insertion_point != row) // two different dict
+            {
+                trans[row] = insertion_point;
+            }
+        }
+    }
+
+    updateNullMask();
 }
 
 template <typename ColumnType>

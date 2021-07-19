@@ -1,4 +1,5 @@
 #pragma once
+#include <unordered_map>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnUnique.h>
 #include <Common/typeid_cast.h>
@@ -78,6 +79,12 @@ public:
 
     void insert(const Field & x) override;
     void insertDefault() override;
+
+    void mergeGatherColumn(const IColumn &src, std::unordered_map<UInt64, UInt64> &trans);
+    void loadDictionaryFrom(const IColumn & src);
+    void insertIndexFrom(const IColumn & src, size_t n);
+    void insertIndexRangeFrom(const IColumn & src, size_t start, size_t length);
+    void transformIndex(std::unordered_map<UInt64, UInt64>& trans, size_t max_size);
 
     void insertFrom(const IColumn & src, size_t n) override;
     void insertFromFullColumn(const IColumn & src, size_t n);
@@ -271,6 +278,7 @@ public:
 
         void updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const;
 
+        void transformIndex(std::unordered_map<UInt64, UInt64>& trans, size_t max_size);
     private:
         WrappedPtr positions;
         size_t size_of_type = 0;
