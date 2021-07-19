@@ -18,6 +18,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
+#include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 namespace DB
@@ -136,11 +137,9 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                     type = makeNullable(type);
                 }
 
-                /// Interpret subquery with empty result as Null literal
-                auto ast_new = makeASTFunction(
-                    "CAST",
-                    std::make_unique<ASTLiteral>(Null()),
-                    std::make_unique<ASTLiteral>(type->getName()));
+                ASTPtr ast_new = std::make_shared<ASTLiteral>(Null());
+                ast_new = addTypeConversionToAST(std::move(ast_new), type->getName());
+
                 ast_new->setAlias(ast->tryGetAlias());
                 ast = std::move(ast_new);
                 return;
