@@ -68,9 +68,7 @@ Multiple addresses can be comma-separated. In this case, ClickHouse will use dis
 example01-01-1,example01-02-1
 ```
 
-<a name="globs-in-addresses"></a>
-
-**Globs in Addresses**
+## Globs in Addresses {globs-in-addresses}
 
 Patterns in curly brackets `{ }` are used to generate a set of shards and to specify replicas. If there are multiple pairs of curly brackets, then the direct product of the corresponding sets is generated. 
 The following pattern types are supported.
@@ -81,7 +79,7 @@ The following pattern types are supported.
 - {*a*|*b*} - Any number of variants separated by a `|`. The pattern specifies replicas. For instance, `example01-{1|2}` generates replicas `example01-1` and `example01-2`.
 
 The query will be sent to the first healthy replica. However, the replicas are iterated in the order currently set in the [load_balancing](../../operations/settings/settings.md#settings-load_balancing) setting. 
-The number of generated addresses is limited by [table_function_remote_max_addresses](../../operations/settings/settings.md#settings-table_function_remote_max_addresses) setting.
+The number of generated addresses is limited by [table_function_remote_max_addresses](../../operations/settings/settings.md#table_function_remote_max_addresses) setting.
 
 **Examples**
 
