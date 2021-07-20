@@ -58,10 +58,10 @@ struct CountEqualAction
 namespace Impl
 {
 template <
-    class ConcreteAction,
+    typename ConcreteAction,
     bool RightArgIsConstant = false,
-    class IntegralInitial = UInt64,
-    class IntegralResult = UInt64>
+    typename IntegralInitial = UInt64,
+    typename IntegralResult = UInt64>
 struct Main
 {
 private:
@@ -94,13 +94,13 @@ private:
     }
 
     /// LowCardinality
-    static bool compare(const IColumn & left, const Result& right, size_t i, size_t)
+    static bool compare(const IColumn & left, const Result & right, size_t i, size_t)
     {
         return left.getUInt(i) == right;
     }
 
     /// Generic
-    static bool compare(const IColumn& left, const IColumn& right, size_t i, size_t j)
+    static bool compare(const IColumn & left, const IColumn & right, size_t i, size_t j)
     {
         return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
     }
@@ -109,7 +109,7 @@ private:
 
     static constexpr bool hasNull(const NullMap * const null_map, size_t i) noexcept { return (*null_map)[i]; }
 
-    template <size_t Case, class Data, class Target>
+    template <size_t Case, typename Data, typename Target>
     static void process(
         const Data & data, const ArrOffsets & offsets, const Target & target, ResultArr & result,
         [[maybe_unused]] const NullMap * const null_map_data,
@@ -148,7 +148,7 @@ private:
                         continue;
                 }
                 else if (!compare(data, target, current_offset + j, i))
-                        continue;
+                    continue;
 
                 ConcreteAction::apply(current, j);
 
@@ -162,7 +162,7 @@ private:
     }
 
 public:
-    template <class Data, class Target>
+    template <typename Data, typename Target>
     static void vector(
         const Data & data,
         const ArrOffsets & offsets,
@@ -183,7 +183,7 @@ public:
 };
 
 /// When the 2nd function argument is a NULL value.
-template <class ConcreteAction>
+template <typename ConcreteAction>
 struct Null
 {
     using ResultType = typename ConcreteAction::ResultType;
@@ -227,7 +227,7 @@ struct Null
     }
 };
 
-template <class ConcreteAction>
+template <typename ConcreteAction>
 struct String
 {
 private:
@@ -350,7 +350,7 @@ public:
 };
 }
 
-template <class ConcreteAction, class Name>
+template <typename ConcreteAction, typename Name>
 class FunctionArrayIndex : public IFunction
 {
 public:
@@ -565,7 +565,7 @@ private:
      * Integral s = {s1, s2, ...}
      * (s1, s1, s2, ...), (s2, s1, s2, ...), (s3, s1, s2, ...)
      */
-    template <class ...Integral>
+    template <typename... Integral>
     static inline ColumnPtr executeIntegral(const ColumnsWithTypeAndName & arguments)
     {
         const ColumnArray * const left = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
@@ -590,14 +590,14 @@ private:
         return nullptr;
     }
 
-    template <class ...Integral>
+    template <typename... Integral>
     static inline bool executeIntegral(ExecutionData& data)
     {
         return (executeIntegralExpanded<Integral, Integral...>(data) || ...);
     }
 
     /// Invoke executeIntegralImpl with such parameters: (A, other1), (A, other2), ...
-    template <class A, class ...Other>
+    template <typename A, typename... Other>
     static inline bool executeIntegralExpanded(ExecutionData& data)
     {
         return (executeIntegralImpl<A, Other>(data) || ...);
@@ -608,7 +608,7 @@ private:
      * second argument, namely, the @e value, so it's possible to invoke the <tt>has(Array(Int8), UInt64)</tt> e.g.
      * so we have to check all possible variants for #Initial and #Resulting types.
      */
-    template <class Initial, class Resulting>
+    template <typename Initial, typename Resulting>
     static bool executeIntegralImpl(ExecutionData& data)
     {
         const ColumnVector<Initial> * col_nested = checkAndGetColumn<ColumnVector<Initial>>(&data.left);
@@ -647,7 +647,7 @@ private:
     }
 
     /**
-     * Catches arguments of type LC(T) (left) and U (right).
+     * Catches arguments of type LowCardinality(T) (left) and U (right).
      *
      * The perftests
      * https://clickhouse-test-reports.s3.yandex.net/12550/2d27fa0fa8c198a82bf1fe3625050ccf56695976/integration_tests_(release).html
@@ -726,7 +726,7 @@ private:
 
             return col_result;
         }
-        else if (col_lc->nestedIsNullable()) // LC(Nullable(T)) and U
+        else if (col_lc->nestedIsNullable()) // LowCardinality(Nullable(T)) and U
         {
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality(); // Nullable(T)
             const ColumnNullable& left_nullable = *checkAndGetColumn<ColumnNullable>(left_casted.get());
@@ -746,16 +746,17 @@ private:
                 ? right_nullable->getNestedColumn()
                 : *right_casted.get();
 
-            ExecutionData data = {
+            ExecutionData data =
+            {
                 left_ptr, right_ptr,
                 col_array->getOffsets(),
                 nullptr,
                 {null_map_left_casted, null_map_right_casted}};
 
-            if (dispatchConvertedLCColumns(data))
+            if (dispatchConvertedLowCardinalityColumns(data))
                 return data.result_column;
         }
-        else // LC(T) and U, T not Nullable
+        else // LowCardinality(T) and U, T not Nullable
         {
             if (col_arg.isNullable())
                 return nullptr;
@@ -764,24 +765,25 @@ private:
                 arg_lc && arg_lc->isNullable())
                 return nullptr;
 
-            // LC(T) and U (possibly LC(V))
+            // LowCardinality(T) and U (possibly LowCardinality(V))
 
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality();
             const ColumnPtr right_casted = col_arg.convertToFullColumnIfLowCardinality();
 
-            ExecutionData data = {
+            ExecutionData data =
+            {
                 *left_casted.get(), *right_casted.get(), col_array->getOffsets(),
                 nullptr, {null_map_data, null_map_item}
             };
 
-            if (dispatchConvertedLCColumns(data))
+            if (dispatchConvertedLowCardinalityColumns(data))
                 return data.result_column;
         }
 
         return nullptr;
     }
 
-    static bool dispatchConvertedLCColumns(ExecutionData& data)
+    static bool dispatchConvertedLowCardinalityColumns(ExecutionData & data)
     {
         if (data.left.isNumeric() && data.right.isNumeric()) // ColumnArrays
             return executeIntegral<INTEGRAL_TPL_PACK>(data);

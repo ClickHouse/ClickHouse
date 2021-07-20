@@ -49,15 +49,23 @@ MAX_RETRIES = 3
 
 class Terminated(KeyboardInterrupt):
     pass
+
 def signal_handler(sig, frame):
     raise Terminated(f'Terminated with {sig} signal')
 
 def stop_tests():
-    # send signal to all processes in group to avoid hung check triggering
-    # (to avoid terminating clickhouse-test itself, the signal should be ignored)
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
-    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    global stop_tests_triggered_lock
+    global stop_tests_triggered
+
+    with stop_tests_triggered_lock:
+        if not stop_tests_triggered.is_set():
+            stop_tests_triggered.set()
+
+            # send signal to all processes in group to avoid hung check triggering
+            # (to avoid terminating clickhouse-test itself, the signal should be ignored)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
 def json_minify(string):
     """
@@ -328,18 +336,20 @@ def colored(text, args, color=None, on_color=None, attrs=None):
         return text
 
 
-SERVER_DIED = False
-exit_code = 0
 stop_time = None
+exit_code = multiprocessing.Value("i", 0)
+server_died = multiprocessing.Event()
+stop_tests_triggered_lock = multiprocessing.Lock()
+stop_tests_triggered = multiprocessing.Event()
 queue = multiprocessing.Queue(maxsize=1)
 restarted_tests = []  # (test, stderr)
 
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
     all_tests, num_tests, suite, suite_dir, suite_tmp_dir = all_tests_with_params
-    global exit_code
-    global SERVER_DIED
     global stop_time
+    global exit_code
+    global server_died
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=['bold'])
     CL_SQUARE_BRACKET = colored("]", args, attrs=['bold'])
@@ -381,7 +391,7 @@ def run_tests_array(all_tests_with_params):
             else:
                 break
 
-        if SERVER_DIED:
+        if server_died.is_set():
             stop_tests()
             break
 
@@ -443,7 +453,7 @@ def run_tests_array(all_tests_with_params):
                         if failed_to_check or clickhouse_proc.returncode != 0:
                             failures += 1
                             print("Server does not respond to health check")
-                            SERVER_DIED = True
+                            server_died.set()
                             stop_tests()
                             break
 
@@ -481,7 +491,7 @@ def run_tests_array(all_tests_with_params):
                             if MAX_RETRIES < counter:
                                 if args.replicated_database:
                                     if DISTRIBUTED_DDL_TIMEOUT_MSG in stderr:
-                                        SERVER_DIED = True
+                                        server_died.set()
                                 break
 
                         if proc.returncode != 0:
@@ -496,10 +506,10 @@ def run_tests_array(all_tests_with_params):
 
                             # Stop on fatal errors like segmentation fault. They are sent to client via logs.
                             if ' <Fatal> ' in stderr:
-                                SERVER_DIED = True
+                                server_died.set()
 
                             if testcase_args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
-                                SERVER_DIED = True
+                                server_died.set()
 
                             if os.path.isfile(stdout_file):
                                 status += ", result:\n\n"
@@ -585,7 +595,7 @@ def run_tests_array(all_tests_with_params):
             f" {skipped_total} tests skipped. {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
             f' ({multiprocessing.current_process().name}).',
             args, "red", attrs=["bold"]))
-        exit_code = 1
+        exit_code.value = 1
     else:
         print(colored(f"\n{passed_total} tests passed. {skipped_total} tests skipped."
             f" {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
@@ -751,7 +761,7 @@ def do_run_tests(jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_test
 
 
 def main(args):
-    global SERVER_DIED
+    global server_died
     global stop_time
     global exit_code
     global server_logs_level
@@ -858,7 +868,7 @@ def main(args):
 
     total_tests_run = 0
     for suite in sorted(os.listdir(base_dir), key=sute_key_func):
-        if SERVER_DIED:
+        if server_died.is_set():
             break
 
         suite_dir = os.path.join(base_dir, suite)
@@ -958,8 +968,7 @@ def main(args):
             else:
                 print(bt)
 
-
-            exit_code = 1
+            exit_code.value = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
@@ -976,7 +985,7 @@ def main(args):
     else:
         print("All tests have finished.")
 
-    sys.exit(exit_code)
+    sys.exit(exit_code.value)
 
 
 def find_binary(name):

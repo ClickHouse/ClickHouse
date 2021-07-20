@@ -47,6 +47,7 @@ struct StorageSnapshot
     }
 
     NamesAndTypesList getColumns(const GetColumnsOptions & options) const;
+    NamesAndTypesList getColumnsByNames(const GetColumnsOptions & options, const Names & names) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;
@@ -60,6 +61,9 @@ struct StorageSnapshot
     void addProjection(const ProjectionDescription * projection_) const { projection = projection_; }
 
     StorageMetadataPtr getMetadataForQuery() const { return (projection ? projection->metadata : metadata); }
+
+private:
+    NamesAndTypesList addVirtualsAndObjects(const GetColumnsOptions & options, NamesAndTypesList columns_list) const;
 };
 
 using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;

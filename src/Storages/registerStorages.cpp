@@ -67,6 +67,11 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageExternalDistributed(StorageFactory & factory);
 #endif
 
+#if USE_SQLITE
+void registerStorageSQLite(StorageFactory & factory);
+#endif
+
+
 void registerStorages()
 {
     auto & factory = StorageFactory::instance();
@@ -127,6 +132,10 @@ void registerStorages()
 
     #if USE_MYSQL || USE_LIBPQXX
     registerStorageExternalDistributed(factory);
+    #endif
+
+    #if USE_SQLITE
+    registerStorageSQLite(factory);
     #endif
 }
 

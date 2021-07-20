@@ -30,7 +30,6 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -68,7 +67,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/JoiningTransform.h>
 
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
@@ -285,6 +283,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     checkStackSize();
 
     query_info.ignore_projections = options.ignore_projections;
+    query_info.is_projection_query = options.is_projection_query;
 
     initSettings();
     const Settings & settings = context->getSettingsRef();
@@ -313,7 +312,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         ApplyWithSubqueryVisitor().visit(query_ptr);
     }
 
-    JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery());
+    JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols);
 
     bool got_storage_from_query = false;
     if (!has_input && !storage)
@@ -391,6 +390,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
 
+        if (storage && !query.final() && storage->needRewriteQueryWithFinal(syntax_analyzer_result->requiredSourceColumns()))
+            query.setFinal();
+
         /// Save scalar sub queries's results in the query context
         if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
@@ -403,7 +405,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && query.where() && !query.prewhere())
+        if (try_move_to_prewhere && storage && storage->supportsPrewhere() && query.where() && !query.prewhere())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
@@ -579,9 +581,9 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
     ///
-    /// But if we ignore aggregation, plan header does not match result_header.
+    /// But if it's a projection query, plan header does not match result_header.
     /// TODO: add special stage for InterpreterSelectQuery?
-    if (!options.ignore_aggregation && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+    if (!options.is_projection_query && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
@@ -612,19 +614,21 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     query_info.query = query_ptr;
     query_info.has_window = query_analyzer->hasWindow();
-
     if (storage && !options.only_analyze)
     {
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
 
-        /// TODO how can we make IN index work if we cache parts before selecting a projection?
-        /// XXX Used for IN set index analysis. Is this a proper way?
         if (query_info.projection)
-        {
-            metadata_snapshot->selected_projection = query_info.projection->desc;
             storage_snapshot->addProjection(query_info.projection->desc);
-        }
+
+        auto & query = getSelectQuery();
+        query_analyzer->makeSetsForIndex(query.where());
+        query_analyzer->makeSetsForIndex(query.prewhere());
+        query_info.sets = query_analyzer->getPreparedSets();
     }
+
+    if (storage && !options.only_analyze)
+        from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
 
     /// Do I need to perform the first part of the pipeline?
     /// Running on remote servers during distributed processing or if query is not distributed.
@@ -1888,8 +1892,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        // TODO figure out how to make set for projections
-        query_info.sets = query_analyzer->getPreparedSets();
         auto & prewhere_info = analysis_result.prewhere_info;
 
         if (prewhere_info)
@@ -2016,7 +2018,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     expression_before_aggregation->setStepDescription("Before GROUP BY");
     query_plan.addStep(std::move(expression_before_aggregation));
 
-    if (options.ignore_aggregation)
+    if (options.is_projection_query)
         return;
 
     const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;

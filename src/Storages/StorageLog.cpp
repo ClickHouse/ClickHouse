@@ -17,7 +17,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
@@ -29,6 +28,7 @@
 #include <Processors/Pipe.h>
 
 #include <cassert>
+#include <chrono>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -660,7 +660,8 @@ Pipe StorageLog::read(
     auto lock_timeout = getLockTimeout(context);
     loadMarks(lock_timeout);
 
-    auto all_columns = storage_snapshot->metadata->getColumns().getAllWithSubcolumns().addTypes(column_names);
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
     all_columns = Nested::convertToSubcolumns(all_columns);
 
     std::shared_lock lock(rwlock, lock_timeout);
@@ -719,6 +720,34 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr contex
     return file_checker.check();
 }
 
+
+IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
+{
+    std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    ColumnSizeByName column_sizes;
+    FileChecker::Map file_sizes = file_checker.getFileSizes();
+
+    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
+    {
+        ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
+        {
+            String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+            ColumnSize & size = column_sizes[column.name];
+            auto it = files.find(stream_name);
+            if (it != files.end())
+                size.data_compressed += file_sizes[fileName(it->second.data_file_path)];
+        };
+
+        ISerialization::SubstreamPath substream_path;
+        auto serialization = column.type->getDefaultSerialization();
+        serialization->enumerateStreams(stream_callback, substream_path);
+    }
+
+    return column_sizes;
+}
 
 void registerStorageLog(StorageFactory & factory)
 {
