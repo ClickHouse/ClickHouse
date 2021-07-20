@@ -606,8 +606,8 @@ private:
                         std::cout << "Warnings:" << std::endl;
                         for (const auto & message : messages)
                             std::cout << "* " << message << std::endl;
+                        std::cout << std::endl;
                     }
-                    std::cout << std::endl;
                 }
                 catch (...)
                 {
