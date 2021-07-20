@@ -2,7 +2,6 @@
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTask.h>
-#include <Storages/MergeTree/MergeExecutor.h>
 #include <Common/ThreadPool.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <pcg_random.hpp>
@@ -33,8 +32,7 @@ struct BackgroundTaskSchedulingSettings
 /// background pools. When it receives new job it will execute new task in corresponding pool.
 enum class PoolType
 {
-    MERGE,
-    MUTATE,
+    MERGE_MUTATE,
     MOVE,
     FETCH,
 };
@@ -79,8 +77,6 @@ private:
     /// no new jobs.
     std::atomic<size_t> no_work_done_count{0};
 
-    /// Pool for merges
-    MergeExecutor pool_for_merges;
     /// Pools where we execute background jobs
     std::unordered_map<PoolType, ThreadPool> pools;
 
@@ -105,11 +101,11 @@ public:
     /// Finish execution: deactivate background task and wait already scheduled jobs
     void finish();
 
+    /// Execute mergetask
+    void executeMerge(BackgroundTaskPtr merge_task);
+
     /// Executes job in a nested pool
     void execute(JobAndPool job_and_pool);
-
-    /// Execute mergetask
-    void execute(BackgroundTaskPtr merge_task);
 
     /// Just call finish
     virtual ~IBackgroundJobExecutor();
@@ -127,6 +123,11 @@ protected:
     virtual bool scheduleJob() = 0;
 
 private:
+
+    void executeImpl(auto job, PoolType pool_type);
+
+    void executeMergeJob(BackgroundTaskPtr merge_task);
+
     /// Function that executes in background scheduling pool
     void backgroundTaskFunction();
     /// Recalculate timeouts when we have to check for a new job

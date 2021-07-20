@@ -22,20 +22,10 @@ IBackgroundJobExecutor::IBackgroundJobExecutor(
     : WithContext(global_context_)
     , sleep_settings(sleep_settings_)
     , rng(randomSeed())
-    , pool_for_merges(16)
 {
     for (const auto & pool_config : pools_configs_)
     {
         const auto max_pool_size = pool_config.get_max_pool_size();
-
-        if (pool_config.pool_type == PoolType::MERGE)
-        {
-            pool_for_merges.setMaxThreads(max_pool_size);
-            pool_for_merges.setQueueSize(max_pool_size);
-            pool_for_merges.setMaxFreeThreads(0);
-            continue;
-        }
-
         pools.try_emplace(pool_config.pool_type, max_pool_size, 0, max_pool_size, false);
         pools_configs.emplace(pool_config.pool_type, pool_config);
     }
@@ -94,10 +84,10 @@ bool incrementMetricIfLessThanMax(std::atomic<Int64> & atomic_value, Int64 max_v
 
 }
 
-void IBackgroundJobExecutor::execute(JobAndPool job_and_pool)
+void IBackgroundJobExecutor::executeImpl(auto job, PoolType pool_type)
 try
 {
-    auto & pool_config = pools_configs[job_and_pool.pool_type];
+    auto & pool_config = pools_configs[pool_type];
     const auto max_pool_size = pool_config.get_max_pool_size();
 
     /// If corresponding pool is not full increment metric and assign new job
@@ -106,36 +96,10 @@ try
         try /// this try required because we have to manually decrement metric
         {
             /// Synchronize pool size, because config could be reloaded
-            pools[job_and_pool.pool_type].setMaxThreads(max_pool_size);
-            pools[job_and_pool.pool_type].setQueueSize(max_pool_size);
+            pools[pool_type].setMaxThreads(max_pool_size);
+            pools[pool_type].setQueueSize(max_pool_size);
 
-            pools[job_and_pool.pool_type].scheduleOrThrowOnError([this, pool_config, job{std::move(job_and_pool.job)}] ()
-            {
-                try /// We don't want exceptions in background pool
-                {
-                    bool job_success = job();
-                    /// Job done, decrement metric and reset no_work counter
-                    CurrentMetrics::values[pool_config.tasks_metric]--;
-
-                    if (job_success)
-                    {
-                        /// Job done, new empty space in pool, schedule background task
-                        runTaskWithoutDelay();
-                    }
-                    else
-                    {
-                        /// Job done, but failed, schedule with backoff
-                        scheduleTask(/* with_backoff = */ true);
-                    }
-
-                }
-                catch (...)
-                {
-                    CurrentMetrics::values[pool_config.tasks_metric]--;
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                    scheduleTask(/* with_backoff = */ true);
-                }
-            });
+            job();
             /// We've scheduled task in the background pool and when it will finish we will be triggered again. But this task can be
             /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselves here.
             runTaskWithoutDelay();
@@ -160,11 +124,75 @@ catch (...) /// Exception while we looking for a task, reschedule
 }
 
 
-void IBackgroundJobExecutor::execute(BackgroundTaskPtr merge_task)
+void IBackgroundJobExecutor::executeMergeJob(BackgroundTaskPtr merge_task)
 {
-    /// TODO: try catch
-    pool_for_merges.schedule(merge_task);
-    scheduleTask(/* with_backoff = */ false);
+    auto & pool_for_merges = pools[PoolType::MERGE_MUTATE];
+
+    const auto priority = merge_task->getPriority();
+    pool_for_merges.scheduleOrThrow([this, merge_task]()
+    {
+        auto pool_config = pools_configs[PoolType::MERGE_MUTATE];
+        try
+        {
+            if (merge_task->execute())
+            {
+                executeMergeJob(merge_task);
+            }
+            else
+            {
+                CurrentMetrics::values[pool_config.tasks_metric]--;
+                runTaskWithoutDelay();
+            }
+        }
+        catch (...)
+        {
+            CurrentMetrics::values[pool_config.tasks_metric]--;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            scheduleTask(/* with_backoff = */ true);
+        }
+    }, priority);
+}
+
+
+void IBackgroundJobExecutor::executeMerge(BackgroundTaskPtr merge_task)
+{
+    executeImpl([this, merge_task]() { executeMergeJob(merge_task); }, PoolType::MERGE_MUTATE);
+}
+
+
+void IBackgroundJobExecutor::execute(JobAndPool job_and_pool)
+{
+    executeImpl([this, job_and_pool]()
+    {
+        auto pool_config = pools_configs[job_and_pool.pool_type];
+        pools[job_and_pool.pool_type].scheduleOrThrowOnError([this, pool_config, job = std::move(job_and_pool.job)] ()
+        {
+            try /// We don't want exceptions in background pool
+            {
+                bool job_success = job();
+                /// Job done, decrement metric and reset no_work counter
+                CurrentMetrics::values[pool_config.tasks_metric]--;
+
+                if (job_success)
+                {
+                    /// Job done, new empty space in pool, schedule background task
+                    runTaskWithoutDelay();
+                }
+                else
+                {
+                    /// Job done, but failed, schedule with backoff
+                    scheduleTask(/* with_backoff = */ true);
+                }
+
+            }
+            catch (...)
+            {
+                CurrentMetrics::values[pool_config.tasks_metric]--;
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                scheduleTask(/* with_backoff = */ true);
+            }
+        });
+    }, job_and_pool.pool_type);
 }
 
 
@@ -189,7 +217,6 @@ void IBackgroundJobExecutor::finish()
         scheduling_task->deactivate();
         for (auto & [pool_type, pool] : pools)
             pool.wait();
-        pool_for_merges.wait();
     }
 }
 
@@ -219,13 +246,7 @@ BackgroundJobsExecutor::BackgroundJobsExecutor(
         global_context_->getBackgroundProcessingTaskSchedulingSettings(),
         {PoolConfig
             {
-                .pool_type = PoolType::MERGE,
-                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
-                .tasks_metric = CurrentMetrics::BackgroundPoolTask
-            },
-        PoolConfig
-            {
-                .pool_type = PoolType::MUTATE,
+                .pool_type = PoolType::MERGE_MUTATE,
                 .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
                 .tasks_metric = CurrentMetrics::BackgroundPoolTask
             },

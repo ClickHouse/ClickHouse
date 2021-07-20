@@ -2971,16 +2971,15 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecuto
     else if (job_type == LogEntry::MERGE_PARTS)
     {
         auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry, *this);
-        executor.execute(task);
+        executor.executeMerge(task);
         return true;
     }
     else
     {
-        /// Execute in common pool. For now it is MUTATE pool
         executor.execute({[this, selected_entry] () mutable
         {
             return processQueueEntry(selected_entry);
-        }, PoolType::MUTATE});
+        }, PoolType::MERGE_MUTATE});
         return true;
     }
 }

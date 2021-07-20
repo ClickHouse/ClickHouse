@@ -37,6 +37,8 @@ private:
     int priority = 0;
 };
 
+using BackgroundTaskPtr = std::shared_ptr<BackgroundTask>;
+
 
 class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
@@ -51,7 +53,7 @@ using MergeTaskPtr = std::shared_ptr<MergeTask>;
  * in some points and then resume the execution from this point.
  *
  * A perfect point where to suspend the execution is after the work over a block is finished.
- * The task itself will be executed via MergeExecutor.
+ * The task itself will be executed via BackgroundJobExecutor.
  *
  * The interface of the task is simple.
  * The main method is `execute()` which will return true, if the task wants to be executed again and false otherwise.

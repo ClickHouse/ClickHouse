@@ -1008,7 +1008,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
     if (merge_entry)
     {
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock);
-        executor.execute(task);
+        executor.executeMerge(task);
         return true;
     }
     if (mutate_entry)
@@ -1016,7 +1016,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
         executor.execute({[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
         {
             return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-        }, PoolType::MUTATE});
+        }, PoolType::MERGE_MUTATE});
         return true;
     }
     else if (auto cmp_lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
@@ -1031,7 +1031,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
             clearOldMutations();
             clearEmptyParts();
             return true;
-        }, PoolType::MUTATE}); // FIXME
+        }, PoolType::MERGE_MUTATE});
         return true;
     }
     return false;
