@@ -68,7 +68,7 @@ public:
             const_cast<const Block *>(this)->findByName(name));
     }
 
-    const ColumnWithTypeAndName* findByName(const std::string & name) const;
+    const ColumnWithTypeAndName * findByName(const std::string & name) const;
 
     ColumnWithTypeAndName & getByName(const std::string & name)
     {

@@ -78,7 +78,7 @@ def wait_for_delete_hdfs_objects(cluster, expected, num_tries=30):
     while num_tries > 0:
         num_hdfs_objects = len(fs.listdir('/clickhouse'))
         if num_hdfs_objects == expected:
-            break;
+            break
         num_tries -= 1
         time.sleep(1)
     assert(len(fs.listdir('/clickhouse')) == expected)

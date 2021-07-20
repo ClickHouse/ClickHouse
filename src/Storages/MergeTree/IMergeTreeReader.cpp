@@ -33,6 +33,7 @@ IMergeTreeReader::IMergeTreeReader(
     : data_part(data_part_)
     , avg_value_size_hints(avg_value_size_hints_)
     , columns(columns_)
+    , part_columns(data_part->getColumns())
     , uncompressed_cache(uncompressed_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
@@ -41,15 +42,15 @@ IMergeTreeReader::IMergeTreeReader(
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
-    auto part_columns = data_part->getColumns();
     if (settings.convert_nested_to_subcolumns)
     {
         columns = Nested::convertToSubcolumns(columns);
         part_columns = Nested::collect(part_columns);
     }
 
-    for (const NameAndTypePair & column_from_part : part_columns)
-        columns_from_part[column_from_part.name] = column_from_part.type;
+    columns_from_part.set_empty_key(StringRef());
+    for (const auto & column_from_part : part_columns)
+        columns_from_part.emplace(column_from_part.name, &column_from_part.type);
 }
 
 IMergeTreeReader::~IMergeTreeReader() = default;
@@ -226,18 +227,19 @@ NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & requ
     if (it == columns_from_part.end())
         return required_column;
 
+    const auto & type = *it->second;
     if (required_column.isSubcolumn())
     {
         auto subcolumn_name = required_column.getSubcolumnName();
-        auto subcolumn_type = it->second->tryGetSubcolumnType(subcolumn_name);
+        auto subcolumn_type = type->tryGetSubcolumnType(subcolumn_name);
 
         if (!subcolumn_type)
             return required_column;
 
-        return {it->first, subcolumn_name, it->second, subcolumn_type};
+        return {String(it->first), subcolumn_name, type, subcolumn_type};
     }
 
-    return {it->first, it->second};
+    return {String(it->first), type};
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns)

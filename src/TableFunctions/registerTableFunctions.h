@@ -42,6 +42,10 @@ void registerTableFunctionMySQL(TableFunctionFactory & factory);
 void registerTableFunctionPostgreSQL(TableFunctionFactory & factory);
 #endif
 
+#if USE_SQLITE
+void registerTableFunctionSQLite(TableFunctionFactory & factory);
+#endif
+
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
 
 void registerTableFunctions();

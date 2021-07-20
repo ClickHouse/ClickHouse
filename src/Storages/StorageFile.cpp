@@ -15,7 +15,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
@@ -363,7 +362,7 @@ public:
                 }
                 else
                 {
-                    nested_buffer = std::make_unique<ReadBufferFromFile>(current_path);
+                    nested_buffer = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
                     method = chooseCompressionMethod(current_path, storage->compression_method);
                 }
 

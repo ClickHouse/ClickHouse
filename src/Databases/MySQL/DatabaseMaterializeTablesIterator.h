@@ -30,7 +30,7 @@ public:
     UUID uuid() const override { return nested_iterator->uuid(); }
 
     DatabaseMaterializeTablesIterator(DatabaseTablesIteratorPtr nested_iterator_, const IDatabase * database_)
-        : nested_iterator(std::move(nested_iterator_)), database(database_)
+        : IDatabaseTablesIterator(database_->getDatabaseName()), nested_iterator(std::move(nested_iterator_)), database(database_)
     {
     }
 

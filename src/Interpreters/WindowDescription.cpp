@@ -1,6 +1,7 @@
 #include <Interpreters/WindowDescription.h>
 
 #include <Core/Field.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
@@ -99,7 +100,7 @@ void WindowFrame::checkValid() const
                 && begin_offset.get<Int64>() < INT_MAX))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given.",
+                "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
                 toString(type),
                 applyVisitor(FieldVisitorToString(), begin_offset),
                 Field::Types::toString(begin_offset.getType()));
@@ -112,7 +113,7 @@ void WindowFrame::checkValid() const
                 && end_offset.get<Int64>() < INT_MAX))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given.",
+                "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
                 toString(type),
                 applyVisitor(FieldVisitorToString(), end_offset),
                 Field::Types::toString(end_offset.getType()));
@@ -160,7 +161,8 @@ void WindowFrame::checkValid() const
         bool begin_less_equal_end;
         if (begin_preceding && end_preceding)
         {
-            begin_less_equal_end = begin_offset >= end_offset;
+            /// we can't compare Fields using operator<= if fields have different types
+            begin_less_equal_end = applyVisitor(FieldVisitorAccurateLessOrEqual(), end_offset, begin_offset);
         }
         else if (begin_preceding && !end_preceding)
         {
@@ -172,7 +174,7 @@ void WindowFrame::checkValid() const
         }
         else /* if (!begin_preceding && !end_preceding) */
         {
-            begin_less_equal_end = begin_offset <= end_offset;
+            begin_less_equal_end = applyVisitor(FieldVisitorAccurateLessOrEqual(), begin_offset, end_offset);
         }
 
         if (!begin_less_equal_end)
