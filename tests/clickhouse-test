@@ -416,13 +416,13 @@ def run_tests_array(all_tests_with_params):
             status = ''
             if not is_concurrent:
                 sys.stdout.flush()
-                sys.stdout.write("{0:72}".format(name + ": "))
+                sys.stdout.write("{0:72}".format(removesuffix(name, ".gen", ".sql") + ": "))
                 # This flush is needed so you can see the test name of the long
                 # running test before it will finish. But don't do it in parallel
                 # mode, so that the lines don't mix.
                 sys.stdout.flush()
             else:
-                status = "{0:72}".format(name + ": ")
+                status = "{0:72}".format(removesuffix(name, ".gen", ".sql") + ": ")
 
             if args.skip and any(s in name for s in args.skip):
                 status += MSG_SKIPPED + " - skip\n"
@@ -442,6 +442,9 @@ def run_tests_array(all_tests_with_params):
                     or 'deadlock' in name
                     or 'race' in name):
                 status += MSG_SKIPPED + " - no long\n"
+                skipped_total += 1
+            elif not USE_JINJA and ext.endswith("j2"):
+                status += MSG_SKIPPED + " - no jinja\n"
                 skipped_total += 1
             else:
                 disabled_file = os.path.join(suite_dir, name) + '.disabled'
@@ -470,7 +473,6 @@ def run_tests_array(all_tests_with_params):
                     reference_file = get_reference_file(suite_dir, name)
                     stdout_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
-
 
                     testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
                     proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
@@ -831,8 +833,6 @@ def get_selected_tests(suite_dir, patterns):
         if patterns and not any(re.search(pattern, test_name) for pattern in patterns):
             continue
         if USE_JINJA and test_name.endswith(".gen.sql"):
-            continue
-        if not USE_JINJA and test_name.endswith(".j2"):
             continue
         test_name = render_test_template(j2env, suite_dir, test_name)
         yield test_name
