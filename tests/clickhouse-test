@@ -29,6 +29,13 @@ import string
 import multiprocessing
 from contextlib import closing
 
+USE_JINJA = True
+try:
+    import jinja2
+except ImportError:
+    USE_JINJA = False
+    print('WARNING: jinja2 not installed! Template tests will be skipped.')
+
 DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_timeout"
 
 MESSAGES_TO_RETRY = [
@@ -46,6 +53,8 @@ MESSAGES_TO_RETRY = [
 ]
 
 MAX_RETRIES = 3
+
+TEST_FILE_EXTENSIONS = ['.sql', '.sql.j2', '.sh', '.py', '.expect']
 
 class Terminated(KeyboardInterrupt):
     pass
@@ -407,13 +416,13 @@ def run_tests_array(all_tests_with_params):
             status = ''
             if not is_concurrent:
                 sys.stdout.flush()
-                sys.stdout.write("{0:72}".format(name + ": "))
+                sys.stdout.write("{0:72}".format(removesuffix(name, ".gen", ".sql") + ": "))
                 # This flush is needed so you can see the test name of the long
                 # running test before it will finish. But don't do it in parallel
                 # mode, so that the lines don't mix.
                 sys.stdout.flush()
             else:
-                status = "{0:72}".format(name + ": ")
+                status = "{0:72}".format(removesuffix(name, ".gen", ".sql") + ": ")
 
             if args.skip and any(s in name for s in args.skip):
                 status += MSG_SKIPPED + " - skip\n"
@@ -433,6 +442,9 @@ def run_tests_array(all_tests_with_params):
                     or 'deadlock' in name
                     or 'race' in name):
                 status += MSG_SKIPPED + " - no long\n"
+                skipped_total += 1
+            elif not USE_JINJA and ext.endswith("j2"):
+                status += MSG_SKIPPED + " - no jinja\n"
                 skipped_total += 1
             else:
                 disabled_file = os.path.join(suite_dir, name) + '.disabled'
@@ -458,10 +470,9 @@ def run_tests_array(all_tests_with_params):
                             break
 
                     file_suffix = ('.' + str(os.getpid())) if is_concurrent and args.test_runs > 1 else ''
-                    reference_file = os.path.join(suite_dir, name) + '.reference'
+                    reference_file = get_reference_file(suite_dir, name)
                     stdout_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
-
 
                     testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
                     proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
@@ -535,7 +546,7 @@ def run_tests_array(all_tests_with_params):
                             status += " - having exception:\n{}\n".format(
                                 '\n'.join(stdout.split('\n')[:100]))
                             status += 'Database: ' + testcase_args.testcase_database
-                        elif not os.path.isfile(reference_file):
+                        elif reference_file is None:
                             status += MSG_UNKNOWN
                             status += print_test_time(total_time)
                             status += " - no reference file\n"
@@ -760,6 +771,97 @@ def do_run_tests(jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_test
         return num_tests
 
 
+def is_test_from_dir(suite_dir, case):
+    case_file = os.path.join(suite_dir, case)
+    # We could also test for executable files (os.access(case_file, os.X_OK),
+    # but it interferes with 01610_client_spawn_editor.editor, which is invoked
+    # as a query editor in the test, and must be marked as executable.
+    return os.path.isfile(case_file) and any(case_file.endswith(suppotred_ext) for suppotred_ext in TEST_FILE_EXTENSIONS)
+
+
+def removesuffix(text, *suffixes):
+    """
+    Added in python 3.9
+    https://www.python.org/dev/peps/pep-0616/
+
+    This version can work with severtal possible suffixes
+    """
+    for suffix in suffixes:
+        if suffix and text.endswith(suffix):
+            return text[:-len(suffix)]
+    return text
+
+
+def render_test_template(j2env, suite_dir, test_name):
+    """
+    Render template for test and reference file if needed
+    """
+
+    if j2env is None:
+        return test_name
+
+    test_base_name = removesuffix(test_name, ".sql.j2", ".sql")
+
+    reference_file_name = test_base_name  + ".reference.j2"
+    reference_file_path = os.path.join(suite_dir, reference_file_name)
+    if os.path.isfile(reference_file_path):
+        tpl = j2env.get_template(reference_file_name)
+        tpl.stream().dump(os.path.join(suite_dir, test_base_name) + ".gen.reference")
+
+    if test_name.endswith(".sql.j2"):
+        tpl = j2env.get_template(test_name)
+        generated_test_name = test_base_name + ".gen.sql"
+        tpl.stream().dump(os.path.join(suite_dir, generated_test_name))
+        return generated_test_name
+
+    return test_name
+
+
+def get_selected_tests(suite_dir, patterns):
+    """
+    Find all files with tests, filter, render templates
+    """
+
+    j2env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(suite_dir),
+        keep_trailing_newline=True,
+    ) if USE_JINJA else None
+
+    for test_name in os.listdir(suite_dir):
+        if not is_test_from_dir(suite_dir, test_name):
+            continue
+        if patterns and not any(re.search(pattern, test_name) for pattern in patterns):
+            continue
+        if USE_JINJA and test_name.endswith(".gen.sql"):
+            continue
+        test_name = render_test_template(j2env, suite_dir, test_name)
+        yield test_name
+
+
+def get_tests_list(suite_dir, patterns, test_runs, sort_key):
+    """
+    Return list of tests file names to run
+    """
+
+    all_tests = list(get_selected_tests(suite_dir, patterns))
+    all_tests = all_tests * test_runs
+    all_tests.sort(key=sort_key)
+    return all_tests
+
+
+def get_reference_file(suite_dir, name):
+    """
+    Returns reference file name for specified test
+    """
+
+    name = removesuffix(name, ".gen")
+    for ext in ['.reference', '.gen.reference']:
+        reference_file = os.path.join(suite_dir, name) + ext
+        if os.path.isfile(reference_file):
+            return reference_file
+    return None
+
+
 def main(args):
     global server_died
     global stop_time
@@ -844,14 +946,6 @@ def main(args):
         create_common_database(args, args.database)
     create_common_database(args, "test")
 
-    def is_test_from_dir(suite_dir, case):
-        case_file = os.path.join(suite_dir, case)
-        (_, ext) = os.path.splitext(case)
-        # We could also test for executable files (os.access(case_file, os.X_OK),
-        # but it interferes with 01610_client_spawn_editor.editor, which is invoked
-        # as a query editor in the test, and must be marked as executable.
-        return os.path.isfile(case_file) and (ext in ['.sql', '.sh', '.py', '.expect'])
-
     def sute_key_func(item):
         if args.order == 'random':
             return random.random()
@@ -911,12 +1005,7 @@ def main(args):
                 except ValueError:
                     return 99997
 
-            all_tests = os.listdir(suite_dir)
-            all_tests = [case for case in all_tests if is_test_from_dir(suite_dir, case)]
-            if args.test:
-                all_tests = [t for t in all_tests if any(re.search(r, t) for r in args.test)]
-            all_tests = all_tests * args.test_runs
-            all_tests.sort(key=key_func)
+            all_tests = get_tests_list(suite_dir, args.test, args.test_runs, key_func)
 
             jobs = args.jobs
             parallel_tests = []
