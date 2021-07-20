@@ -165,7 +165,7 @@ Default value: `1000`.
 
 ##  glob_expansion_max_elements  {#glob_expansion_max_elements }
 
-Sets the maximum number of addresses generated from patterns for external storages and table functions except the `remote` function.
+Sets the maximum number of addresses generated from patterns for external storages and table functions (like [url](../../sql-reference/table-functions/url.md)) except the `remote` function.
 
 Possible values:
 
