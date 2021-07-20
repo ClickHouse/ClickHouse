@@ -1,6 +1,5 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance')
@@ -34,7 +33,7 @@ def test_merge():
 
     instance.query("GRANT CREATE FUNCTION on *.* TO A")
     
-    instance.query(create_function_query.format, user = 'A')
+    instance.query(create_function_query, user = 'A')
     assert instance.query("SELECT MySum(1, 2)") == "3"
 
     assert "it's necessary to have grant DROP FUNCTION ON *.*" in instance.query("DROP FUNCTION MySum", user = 'B')
