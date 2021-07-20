@@ -267,6 +267,8 @@ Chunk DDLQueryStatusSource::generate()
 
         if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)
         {
+            timeout_exceeded = true;
+
             size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
             size_t num_active_hosts = current_active_hosts.size();
 
@@ -274,10 +276,13 @@ Chunk DDLQueryStatusSource::generate()
                                                 "There are {} unfinished hosts ({} of them are currently active), "
                                                 "they are going to execute the query in background";
             if (throw_on_timeout)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, msg_format,
-                                node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+            {
+                if (!first_exception)
+                    first_exception = std::make_unique<Exception>(ErrorCodes::TIMEOUT_EXCEEDED, msg_format,
+                        node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+                return {};
+            }
 
-            timeout_exceeded = true;
             LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
 
             NameSet unfinished_hosts = waiting_hosts;
@@ -308,9 +313,13 @@ Chunk DDLQueryStatusSource::generate()
 
         if (!zookeeper->exists(node_path))
         {
-            throw Exception(ErrorCodes::UNFINISHED,
-                "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
-                " since it was finished (or its lifetime is expired)", node_path);
+            /// Paradoxically, this exception will be throw even in case of "never_throw" mode.
+
+            if (!first_exception)
+                first_exception = std::make_unique<Exception>(ErrorCodes::UNFINISHED,
+                    "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
+                    " since it was finished (or its lifetime is expired)", node_path);
+            return {};
         }
 
         Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "finished"));
@@ -332,8 +341,11 @@ Chunk DDLQueryStatusSource::generate()
 
             auto [host, port] = parseHostAndPort(host_id);
 
-            if (status.code != 0 && !first_exception)
+            if (status.code != 0 && !first_exception
+                && context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW)
+            {
                 first_exception = std::make_unique<Exception>(status.code, "There was an error on [{}:{}]: {}", host, port, status.message);
+            }
 
             ++num_hosts_finished;
 
@@ -358,9 +370,7 @@ IProcessor::Status DDLQueryStatusSource::prepare()
 
     if (finished)
     {
-        bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
-
-        if (first_exception && throw_if_error_on_host)
+        if (first_exception)
         {
             if (!output.canPush())
                 return Status::PortFull;
