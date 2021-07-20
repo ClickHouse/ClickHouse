@@ -10,6 +10,7 @@ PEERDIR(
 
 SRCS(
     AccessControlManager.cpp
+    AccessEntityIO.cpp
     AccessRights.cpp
     AccessRightsElement.cpp
     AllowedClientHosts.cpp
