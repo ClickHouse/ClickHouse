@@ -379,8 +379,8 @@ settings max_block_size = 3;
 -- careful with auto-application of Null combinator
 select lagInFrame(toNullable(1)) over ();
 select lagInFrameOrNull(1) over (); -- { serverError 36 }
--- this should give the same error as `select max(Null::Nullable(Nothing))`
-select intDiv(1, NULL) x, toTypeName(x), max(x) over (); -- { serverError 43 }
+-- this is the same as `select max(Null::Nullable(Nothing))`
+select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
 -- to make lagInFrame return null for out-of-frame rows, cast the argument to
 -- Nullable; otherwise, it returns default values.
 SELECT
