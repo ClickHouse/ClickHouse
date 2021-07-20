@@ -295,7 +295,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             element.grant_option = true;
     }
 
-    if (is_replace && elements.size() > 0)
+    if (is_replace && !elements.empty())
     {
         replace_access = true;
         bool new_access = false;
