@@ -779,7 +779,7 @@ def is_test_from_dir(suite_dir, case):
     return os.path.isfile(case_file) and any(case_file.endswith(suppotred_ext) for suppotred_ext in TEST_FILE_EXTENSIONS)
 
 
-def removesuffix(str, *suffixes):
+def removesuffix(text, *suffixes):
     """
     Added in python 3.9
     https://www.python.org/dev/peps/pep-0616/
@@ -787,9 +787,9 @@ def removesuffix(str, *suffixes):
     This version can work with severtal possible suffixes
     """
     for suffix in suffixes:
-        if suffix and str.endswith(suffix):
-            return str[:-len(suffix)]
-    return str
+        if suffix and text.endswith(suffix):
+            return text[:-len(suffix)]
+    return text
 
 
 def render_test_template(j2env, suite_dir, test_name):
