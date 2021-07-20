@@ -16,6 +16,8 @@ public:
 
     BlockIO execute() override;
 
+    void setInternal(bool internal_);
+
 private:
     static void validateFunction(ASTPtr function, const String & name);
     static void getIdentifiers(ASTPtr node, std::set<String> & identifiers);
@@ -23,6 +25,9 @@ private:
 
 private:
     ASTPtr query_ptr;
+
+    /// Is this an internal query - not from the user.
+    bool internal = false;
 };
 
 }

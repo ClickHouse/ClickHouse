@@ -156,6 +156,7 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
+    UserDefinedObjectsOnDisk.cpp
     WindowDescription.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp

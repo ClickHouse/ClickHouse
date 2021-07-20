@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/UserDefinedObjectsOnDisk.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -23,6 +24,19 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     auto & create_function_query = query_ptr->as<ASTCreateFunctionQuery &>();
     validateFunction(create_function_query.function_core, create_function_query.function_name);
     FunctionFactory::instance().registerUserDefinedFunction(create_function_query);
+    if (!internal)
+    {
+        try
+        {
+            UserDefinedObjectsOnDisk::instance().storeUserDefinedFunction(getContext(), create_function_query);
+        }
+        catch (Exception & e)
+        {
+            FunctionFactory::instance().unregisterUserDefinedFunction(create_function_query.function_name);
+            e.addMessage(fmt::format("while storing user defined function {} on disk", backQuote(create_function_query.function_name)));
+            throw;
+        }
+    }
     return {};
 }
 
@@ -74,5 +88,9 @@ void InterpreterCreateFunctionQuery::validateFunctionRecursiveness(ASTPtr node, 
     }
 }
 
+void InterpreterCreateFunctionQuery::setInternal(bool internal_)
+{
+    internal = internal_;
+}
 
 }
