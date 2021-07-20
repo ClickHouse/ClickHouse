@@ -113,7 +113,7 @@ Be careful when using `GLOBAL`. For more information, see the [Distributed subqu
 
 ## Implicit Type Conversion {#implicit-type-conversion}
 
-`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for “join keys”.
+`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for "join keys". However the query can not be executed, if join keys from the left and the right tables cannot be converted to a single type (for example, there is no common data type for `UInt64` and `Int64`, or for `String` and `Int`).
 
 **Example**
 
