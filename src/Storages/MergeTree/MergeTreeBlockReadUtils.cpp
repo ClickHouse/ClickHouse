@@ -35,16 +35,16 @@ bool injectRequiredColumnsRecursively(
     /// stages.
     checkStackSize();
 
-    if (storage_columns.hasPhysicalOrSubcolumn(column_name))
+    auto column_in_storage = storage_columns.tryGetColumnOrSubcolumn(ColumnsDescription::AllPhysical, column_name);
+    if (column_in_storage)
     {
-        auto column_in_storage = storage_columns.getPhysicalOrSubcolumn(column_name);
-        auto column_name_in_part = column_in_storage.getNameInStorage();
+        auto column_name_in_part = column_in_storage->getNameInStorage();
         if (alter_conversions.isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
         auto column_in_part = NameAndTypePair(
-            column_name_in_part, column_in_storage.getSubcolumnName(),
-            column_in_storage.getTypeInStorage(), column_in_storage.type);
+            column_name_in_part, column_in_storage->getSubcolumnName(),
+            column_in_storage->getTypeInStorage(), column_in_storage->type);
 
         /// column has files and hence does not require evaluation
         if (part->hasColumnFiles(column_in_part))
@@ -93,7 +93,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
     for (size_t i = 0; i < columns.size(); ++i)
     {
         /// We are going to fetch only physical columns
-        if (!storage_columns.hasPhysicalOrSubcolumn(columns[i]))
+        if (!storage_columns.hasColumnOrSubcolumn(ColumnsDescription::AllPhysical, columns[i]))
             throw Exception("There is no physical column or subcolumn " + columns[i] + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
@@ -310,9 +310,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (check_columns)
     {
-        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllWithSubcolumns();
-        result.pre_columns = physical_columns.addTypes(pre_column_names);
-        result.columns = physical_columns.addTypes(column_names);
+        const auto & columns = metadata_snapshot->getColumns();
+        result.pre_columns = columns.getByNames(ColumnsDescription::All, pre_column_names, true);
+        result.columns = columns.getByNames(ColumnsDescription::All, column_names, true);
     }
     else
     {
