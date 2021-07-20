@@ -1,8 +1,7 @@
 DROP TABLE IF EXISTS t_json;
 
 CREATE TABLE t_json(id UInt64, data Object('JSON'))
-ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0;
+ENGINE = MergeTree ORDER BY tuple();
 
 SYSTEM STOP MERGES t_json;
 

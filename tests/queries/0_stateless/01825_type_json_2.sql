@@ -1,8 +1,7 @@
 DROP TABLE IF EXISTS t_json_2;
 
 CREATE TABLE t_json_2(id UInt64, data Object('JSON'))
-ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0;
+ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_json_2 FORMAT JSONEachRow {"id": 1, "data": {"k1": 1, "k2" : 2}} {"id": 2, "data": {"k2": 3, "k3" : 4}};
 
