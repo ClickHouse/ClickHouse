@@ -26,6 +26,8 @@ public:
     }
 
     DataTypePtr operator() (const Null & x) const;
+    DataTypePtr operator() (const NegativeInfinity & x) const;
+    DataTypePtr operator() (const PositiveInfinity & x) const;
     DataTypePtr operator() (const UInt64 & x) const;
     DataTypePtr operator() (const UInt128 & x) const;
     DataTypePtr operator() (const Int64 & x) const;

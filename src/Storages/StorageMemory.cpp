@@ -1,8 +1,6 @@
 #include <cassert>
 #include <Common/Exception.h>
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
@@ -34,7 +32,8 @@ public:
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
         : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
-        , column_names_and_types(storage_snapshot->metadata->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
+        , column_names_and_types(storage_snapshot->getColumnsByNames(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))

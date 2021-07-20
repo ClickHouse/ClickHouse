@@ -36,16 +36,16 @@ bool injectRequiredColumnsRecursively(
     /// stages.
     checkStackSize();
 
-    if (storage_columns.hasPhysicalOrSubcolumn(column_name))
+    auto column_in_storage = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    if (column_in_storage)
     {
-        auto column_in_storage = storage_columns.getPhysicalOrSubcolumn(column_name);
-        auto column_name_in_part = column_in_storage.getNameInStorage();
+        auto column_name_in_part = column_in_storage->getNameInStorage();
         if (alter_conversions.isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
         auto column_in_part = NameAndTypePair(
-            column_name_in_part, column_in_storage.getSubcolumnName(),
-            column_in_storage.getTypeInStorage(), column_in_storage.type);
+            column_name_in_part, column_in_storage->getSubcolumnName(),
+            column_in_storage->getTypeInStorage(), column_in_storage->type);
 
         /// column has files and hence does not require evaluation
         if (part->hasColumnFiles(column_in_part))
@@ -101,7 +101,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
         }
 
         /// We are going to fetch only physical columns
-        if (!storage_columns.hasPhysicalOrSubcolumn(columns[i]))
+        if (!storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, columns[i]))
             throw Exception("There is no physical column or subcolumn " + columns[i] + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
@@ -318,11 +318,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (check_columns)
     {
-        auto all_columns = storage_snapshot->getColumns(
-            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects());
-
-        result.pre_columns = all_columns.addTypes(pre_column_names);
-        result.columns = all_columns.addTypes(column_names);
+        auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects();
+        result.pre_columns = storage_snapshot->getColumnsByNames(options, pre_column_names);
+        result.columns = storage_snapshot->getColumnsByNames(options, column_names);
     }
     else
     {

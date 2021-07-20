@@ -5,7 +5,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -31,6 +30,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+
 
 namespace ProfileEvents
 {
@@ -136,7 +136,8 @@ class BufferSource : public SourceWithProgress
 public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageSnapshotPtr & storage_snapshot)
         : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
-        , column_names_and_types(storage_snapshot->metadata->getColumns().getAllWithSubcolumns().addTypes(column_names_))
+        , column_names_and_types(storage_snapshot->getColumnsByNames(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
         , buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
@@ -245,8 +246,8 @@ void StorageBuffer::read(
         {
             const auto & dest_columns = destination_metadata_snapshot->getColumns();
             const auto & our_columns = metadata_snapshot->getColumns();
-            return dest_columns.hasPhysicalOrSubcolumn(column_name) &&
-                   dest_columns.getPhysicalOrSubcolumn(column_name).type->equals(*our_columns.getPhysicalOrSubcolumn(column_name).type);
+            auto dest_columm = dest_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+            return dest_columm && dest_columm->type->equals(*our_columns.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name).type);
         });
 
         if (dst_has_same_structure)

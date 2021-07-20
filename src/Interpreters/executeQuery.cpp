@@ -31,6 +31,7 @@
 #include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
 
+#include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
 #include <Access/EnabledQuota.h>
@@ -875,13 +876,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             res.finish_callback = std::move(finish_callback);
             res.exception_callback = std::move(exception_callback);
-
-            if (!internal && res.in)
-            {
-                WriteBufferFromOwnString msg_buf;
-                res.in->dumpTree(msg_buf);
-                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query pipeline:\n{}", msg_buf.str());
-            }
         }
     }
     catch (...)
@@ -948,7 +942,9 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     ContextMutablePtr context,
-    std::function<void(const String &, const String &, const String &, const String &)> set_result_details)
+    std::function<void(const String &, const String &, const String &, const String &)> set_result_details,
+    const std::optional<FormatSettings> & output_format_settings,
+    std::function<void()> before_finalize_callback)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1019,7 +1015,7 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context->getDefaultFormat();
 
-            auto out = context->getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader());
+            auto out = FormatFactory::instance().getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader(), context, {}, output_format_settings);
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context->getProgressCallback();
@@ -1065,7 +1061,7 @@ void executeQuery(
                     return std::make_shared<MaterializingTransform>(header);
                 });
 
-                auto out = context->getOutputFormatParallelIfPossible(format_name, *out_buf, pipeline.getHeader());
+                auto out = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name, *out_buf, pipeline.getHeader(), context, {}, output_format_settings);
                 out->setAutoFlush();
 
                 /// Save previous progress callback if any. TODO Do it more conveniently.
@@ -1078,6 +1074,8 @@ void executeQuery(
                         previous_progress_callback(progress);
                     out->onProgress(progress);
                 });
+
+                out->setBeforeFinalizeCallback(before_finalize_callback);
 
                 if (set_result_details)
                     set_result_details(

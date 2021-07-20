@@ -36,6 +36,11 @@ StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_stora
     setInMemoryMetadata(in_memory_metadata);
 }
 
+bool StorageMaterializeMySQL::needRewriteQueryWithFinal(const Names & column_names) const
+{
+    return needRewriteQueryWithFinalForStorage(column_names, nested_storage);
+}
+
 Pipe StorageMaterializeMySQL::read(
     const Names & column_names,
     const StorageSnapshotPtr & /*storage_snapshot*/,

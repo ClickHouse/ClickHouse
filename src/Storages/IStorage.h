@@ -272,6 +272,10 @@ public:
         throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
+    /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
+    virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
+
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
       *  from which information can be extracted about how to retrieve data
@@ -551,8 +555,6 @@ public:
     ///
     /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
-
-    virtual NamesAndTypesList extendObjectColumns(const NamesAndTypesList & columns_list, bool /*with_subcolumns*/) const { return columns_list; }
 
     virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const;
 

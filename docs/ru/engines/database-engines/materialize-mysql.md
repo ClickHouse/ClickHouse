@@ -1,3 +1,4 @@
+
 ---
 toc_priority: 29
 toc_title: MaterializeMySQL
@@ -49,6 +50,7 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 | DATE, NEWDATE           | [Date](../../sql-reference/data-types/date.md)               |
 | DATETIME, TIMESTAMP     | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | DATETIME2, TIMESTAMP2   | [DateTime64](../../sql-reference/data-types/datetime64.md)   |
+| ENUM                    | [Enum](../../sql-reference/data-types/enum.md)               |
 | STRING                  | [String](../../sql-reference/data-types/string.md)           |
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
@@ -79,7 +81,9 @@ DDL-запросы в MySQL конвертируются в соответств
 
 - Если в запросе `SELECT` напрямую не указан столбец `_version`, то используется модификатор [FINAL](../../sql-reference/statements/select/from.md#select-from-final). Таким образом, выбираются только строки с `MAX(_version)`.
 
-- Если в запросе `SELECT` напрямую не указан столбец `_sign`, то по умолчанию используется `WHERE _sign=1`. Таким образом, удаленные строки не включаются в результирующий набор. 
+- Если в запросе `SELECT` напрямую не указан столбец `_sign`, то по умолчанию используется `WHERE _sign=1`. Таким образом, удаленные строки не включаются в результирующий набор.
+
+- Результат включает комментарии к столбцам, если они существуют в таблицах базы данных MySQL.
 
 ### Конвертация индексов {#index-conversion}
 

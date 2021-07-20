@@ -46,6 +46,7 @@ public:
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     }
 
+    bool supportsPrewhere() const override { return true; }
 
     bool supportsIndexForIn() const override { return true; }
 

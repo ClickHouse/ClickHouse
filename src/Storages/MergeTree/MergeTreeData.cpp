@@ -107,6 +107,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
@@ -128,12 +129,36 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
-
-static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key)
+static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+
+    if (!check_sample_column_is_correct)
+        return;
+
+    const auto & sampling_key = metadata.getSamplingKey();
+    DataTypePtr sampling_column_type = sampling_key.data_types[0];
+
+    bool is_correct_sample_condition = false;
+    if (sampling_key.data_types.size() == 1)
+    {
+        if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
+            is_correct_sample_condition = true;
+        else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
+            is_correct_sample_condition = true;
+        else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
+            is_correct_sample_condition = true;
+        else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
+            is_correct_sample_condition = true;
+    }
+
+    if (!is_correct_sample_condition)
+        throw Exception(
+            "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
+            + ". Must be one unsigned integer type",
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 }
 
 MergeTreeData::MergeTreeData(
@@ -203,7 +228,8 @@ MergeTreeData::MergeTreeData(
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
         /// This is for backward compatibility.
-        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key);
+        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key,
+                              settings->check_sample_column_is_correct);
     }
 
     checkTTLExpressions(metadata_, metadata_);
@@ -273,19 +299,17 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
-    for (const auto & action : expr.getActions())
-    {
-        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-            throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
+    if (expr.hasArrayJoin())
+        throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
 
-        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            IFunctionBase & func = *action.node->function_base;
-            if (!func.isDeterministic())
-                throw Exception(key_name + " key cannot contain non-deterministic functions, "
-                    "but contains function " + func.getName(),
-                    ErrorCodes::BAD_ARGUMENTS);
-        }
+    try
+    {
+        expr.assertDeterministic();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("for {} key", key_name));
+        throw;
     }
 
     for (const ColumnWithTypeAndName & element : sample_block)
@@ -421,7 +445,6 @@ void MergeTreeData::checkProperties(
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);
-
 }
 
 void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach)
@@ -1091,7 +1114,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 }
 
 
-void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds)
+void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -1100,9 +1123,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
 
     const auto settings = getSettings();
     time_t current_time = time(nullptr);
-    ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
-        ? current_time - custom_directories_lifetime_seconds
-        : current_time - settings->temporary_directories_lifetime.totalSeconds();
+    ssize_t deadline = current_time - custom_directories_lifetime_seconds;
 
     /// Delete temporary directories older than a day.
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
@@ -1520,6 +1541,7 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     if ((which_old_type.isInt() && !which_new_type.isInt())
         || (which_old_type.isUInt() && !which_new_type.isUInt())
         || (which_old_type.isDate() && !which_new_type.isDate())
+        || (which_old_type.isDate32() && !which_new_type.isDate32())
         || (which_old_type.isDateTime() && !which_new_type.isDateTime())
         || (which_old_type.isFloat() && !which_new_type.isFloat()))
     {
@@ -1678,7 +1700,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "ALTER MODIFY SAMPLE BY is not supported for default-partitioned tables created with the old syntax",
                     ErrorCodes::BAD_ARGUMENTS);
 
-            checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key);
+            checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key,
+                                  getSettings()->check_sample_column_is_correct);
         }
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
         {
@@ -2753,19 +2776,17 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 
-            /// We do not check allow_s3_zero_copy_replication here because data may be shared
-            /// when allow_s3_zero_copy_replication turned on and off again
+            /// We do not check allow_remote_fs_zero_copy_replication here because data may be shared
+            /// when allow_remote_fs_zero_copy_replication turned on and off again
 
             original_active_part->force_keep_shared_data = false;
 
-            if (original_active_part->volume->getDisk()->getType() == DiskType::Type::S3)
+            if (original_active_part->volume->getDisk()->supportZeroCopyReplication() &&
+                part_copy->volume->getDisk()->supportZeroCopyReplication() &&
+                original_active_part->getUniqueId() == part_copy->getUniqueId())
             {
-                if (part_copy->volume->getDisk()->getType() == DiskType::Type::S3
-                        && original_active_part->getUniqueId() == part_copy->getUniqueId())
-                {
-                    /// May be when several volumes use the same S3 storage
-                    original_active_part->force_keep_shared_data = true;
-                }
+                /// May be when several volumes use the same S3/HDFS storage
+                original_active_part->force_keep_shared_data = true;
             }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
@@ -3340,20 +3361,25 @@ MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_st
     return res;
 }
 
-std::vector<DetachedPartInfo>
-MergeTreeData::getDetachedParts() const
+std::vector<DetachedPartInfo> MergeTreeData::getDetachedParts() const
 {
     std::vector<DetachedPartInfo> res;
 
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
-        for (auto it = disk->iterateDirectory(fs::path(path) / MergeTreeData::DETACHED_DIR_NAME); it->isValid(); it->next())
-        {
-            res.emplace_back();
-            auto & part = res.back();
+        String detached_path = fs::path(path) / MergeTreeData::DETACHED_DIR_NAME;
 
-            DetachedPartInfo::tryParseDetachedPartName(it->name(), part, format_version);
-            part.disk = disk->getName();
+        /// Note: we don't care about TOCTOU issue here.
+        if (disk->exists(detached_path))
+        {
+            for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
+            {
+                res.emplace_back();
+                auto & part = res.back();
+
+                DetachedPartInfo::tryParseDetachedPartName(it->name(), part, format_version);
+                part.disk = disk->getName();
+            }
         }
     }
     return res;
@@ -3831,16 +3857,20 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
                 if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
-            if (metadata_snapshot->selected_projection
-                && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
-                return true;
+            for (const auto & projection : metadata_snapshot->getProjections())
+            {
+                if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
+                    return true;
+            }
         }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
         if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot))
             return true;
-        if (metadata_snapshot->selected_projection
-            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
-            return true;
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+                return true;
+        }
         return false;
     }
     else
@@ -3849,10 +3879,11 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
-        if (metadata_snapshot->selected_projection
-            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
-            return true;
-
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+                return true;
+        }
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot);
     }
 }
@@ -3891,7 +3922,7 @@ static void selectBestProjection(
         projection_parts,
         candidate.required_columns,
         candidate.desc->metadata,
-        query_info, // TODO syntax_analysis_result set in index
+        query_info,
         query_context,
         settings.max_threads,
         max_added_blocks);
@@ -3928,7 +3959,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 {
     const auto & metadata_snapshot = storage_snapshot->metadata;
     const auto & settings = query_context->getSettingsRef();
-    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections)
+    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
         return false;
 
     const auto & query_ptr = query_info.query;
@@ -3979,13 +4010,11 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             candidate.where_column_name = analysis_result.where_column_name;
             candidate.remove_where_filter = analysis_result.remove_where_filter;
             candidate.before_where = analysis_result.before_where->clone();
-            // std::cerr << fmt::format("before_where_actions = \n{}", candidate.before_where->dumpDAG()) << std::endl;
+
             required_columns = candidate.before_where->foldActionsByProjection(
                 required_columns,
                 projection.sample_block_for_keys,
                 candidate.where_column_name);
-            // std::cerr << fmt::format("before_where_actions = \n{}", candidate.before_where->dumpDAG()) << std::endl;
-            // std::cerr << fmt::format("where_required_columns = \n{}", fmt::join(required_columns, ", ")) << std::endl;
 
             if (required_columns.empty())
                 return false;
@@ -4001,12 +4030,11 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             // required_columns should not contain columns generated by prewhere
             for (const auto & column : prewhere_actions->getResultColumns())
                 required_columns.erase(column.name);
-            // std::cerr << fmt::format("prewhere_actions = \n{}", prewhere_actions->dumpDAG()) << std::endl;
+
             // Prewhere_action should not add missing keys.
             prewhere_required_columns = prewhere_actions->foldActionsByProjection(
                 prewhere_required_columns, projection.sample_block_for_keys, candidate.prewhere_info->prewhere_column_name, false);
-            // std::cerr << fmt::format("prewhere_actions = \n{}", prewhere_actions->dumpDAG()) << std::endl;
-            // std::cerr << fmt::format("prewhere_required_columns = \n{}", fmt::join(prewhere_required_columns, ", ")) << std::endl;
+
             if (prewhere_required_columns.empty())
                 return false;
             candidate.prewhere_info->prewhere_actions = prewhere_actions;
@@ -4016,7 +4044,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                 auto row_level_filter_actions = candidate.prewhere_info->row_level_filter->clone();
                 prewhere_required_columns = row_level_filter_actions->foldActionsByProjection(
                     prewhere_required_columns, projection.sample_block_for_keys, candidate.prewhere_info->row_level_column_name, false);
-                // std::cerr << fmt::format("row_level_filter_required_columns = \n{}", fmt::join(prewhere_required_columns, ", ")) << std::endl;
+
                 if (prewhere_required_columns.empty())
                     return false;
                 candidate.prewhere_info->row_level_filter = row_level_filter_actions;
@@ -4025,11 +4053,9 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             if (candidate.prewhere_info->alias_actions)
             {
                 auto alias_actions = candidate.prewhere_info->alias_actions->clone();
-                // std::cerr << fmt::format("alias_actions = \n{}", alias_actions->dumpDAG()) << std::endl;
                 prewhere_required_columns
                     = alias_actions->foldActionsByProjection(prewhere_required_columns, projection.sample_block_for_keys, {}, false);
-                // std::cerr << fmt::format("alias_actions = \n{}", alias_actions->dumpDAG()) << std::endl;
-                // std::cerr << fmt::format("alias_required_columns = \n{}", fmt::join(prewhere_required_columns, ", ")) << std::endl;
+
                 if (prewhere_required_columns.empty())
                     return false;
                 candidate.prewhere_info->alias_actions = alias_actions;
@@ -4057,7 +4083,6 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
         if (projection.type == ProjectionDescription::Type::Aggregate && analysis_result.need_aggregate && can_use_aggregate_projection)
         {
-            // std::cerr << fmt::format("====== aggregate projection analysis: {} ======", projection.name) << std::endl;
             bool match = true;
             Block aggregates;
             // Let's first check if all aggregates are provided by current projection
@@ -4083,11 +4108,8 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             // needs to provide aggregation keys, and certain children DAG might be substituted by
             // some keys in projection.
             candidate.before_aggregation = analysis_result.before_aggregation->clone();
-            // std::cerr << fmt::format("keys = {}", fmt::join(keys, ", ")) << std::endl;
-            // std::cerr << fmt::format("before_aggregation = \n{}", candidate.before_aggregation->dumpDAG()) << std::endl;
             auto required_columns = candidate.before_aggregation->foldActionsByProjection(keys, projection.sample_block_for_keys);
-            // std::cerr << fmt::format("before_aggregation = \n{}", candidate.before_aggregation->dumpDAG()) << std::endl;
-            // std::cerr << fmt::format("aggregate_required_columns = \n{}", fmt::join(required_columns, ", ")) << std::endl;
+
             if (required_columns.empty() && !keys.empty())
                 continue;
 
@@ -4112,12 +4134,10 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     candidate.required_columns.push_back(aggregate.name);
                 candidates.push_back(std::move(candidate));
             }
-            // std::cerr << fmt::format("====== aggregate projection analysis end: {} ======", projection.name) << std::endl;
         }
 
         if (projection.type == ProjectionDescription::Type::Normal && (analysis_result.hasWhere() || analysis_result.hasPrewhere()))
         {
-            // std::cerr << fmt::format("====== normal projection analysis: {} ======", projection.name) << std::endl;
             const auto & actions
                 = analysis_result.before_aggregation ? analysis_result.before_aggregation : analysis_result.before_order_by;
             NameSet required_columns;
@@ -4129,16 +4149,12 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                 candidate.required_columns = {required_columns.begin(), required_columns.end()};
                 candidates.push_back(std::move(candidate));
             }
-            // std::cerr << fmt::format("====== normal projection analysis end: {} ======", projection.name) << std::endl;
         }
     }
 
     // Let's select the best projection to execute the query.
     if (!candidates.empty())
     {
-        // First build a MergeTreeDataSelectCache to check if a projection is indeed better than base
-        // query_info.merge_tree_data_select_cache = std::make_unique<MergeTreeDataSelectCache>();
-
         std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
         if (settings.select_sequential_consistency)
         {
