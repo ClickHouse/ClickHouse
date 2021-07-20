@@ -6,7 +6,7 @@
 
 我们使用RoaringBitmap实际存储位图对象，当基数小于或等于32时，它使用Set保存。当基数大于32时，它使用RoaringBitmap保存。这也是为什么低基数集的存储更快的原因。
 
-有关RoaringBitmap的更多信息，请参阅：[RoaringBitmap](https://github.com/RoaringBitmap/CRoaring)。
+有关RoaringBitmap的更多信息，请参阅：[呻吟声](https://github.com/RoaringBitmap/CRoaring)。
 
 ## bitmapBuild {#bitmapbuild}
 
@@ -46,7 +46,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapSubsetInRange {#bitmapsubsetinrange}
 
-将位图指定范围（不包含range_end）转换为另一个位图。
+将位图指定范围（不包含range\_end）转换为另一个位图。
 
     bitmapSubsetInRange(bitmap, range_start, range_end)
 
@@ -81,7 +81,7 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,
 **示例**
 
 ``` sql
-SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
 ```
 
     ┌─res───────────────────────┐
@@ -174,7 +174,7 @@ SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS re
     │ [3] │
     └─────┘
 
-## 位图或 {#bitmapor}
+## 位图 {#bitmapor}
 
 为两个位图对象进行或操作，返回一个新的位图对象。
 
@@ -259,7 +259,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapMin {#bitmapmin}
 
-返回一个UInt64类型的数值，表示位图中的最小值。如果位图为空则返回UINT32_MAX。
+返回一个UInt64类型的数值，表示位图中的最小值。如果位图为空则返回UINT32\_MAX。
 
     bitmapMin(bitmap)
 

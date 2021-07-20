@@ -4,8 +4,6 @@
 
 namespace DB
 {
-namespace
-{
 
 template <typename A, typename B>
 struct ModuloOrZeroImpl
@@ -36,9 +34,7 @@ struct ModuloOrZeroImpl
 };
 
 struct NameModuloOrZero { static constexpr auto name = "moduloOrZero"; };
-using FunctionModuloOrZero = BinaryArithmeticOverloadResolver<ModuloOrZeroImpl, NameModuloOrZero>;
-
-}
+using FunctionModuloOrZero = FunctionBinaryArithmetic<ModuloOrZeroImpl, NameModuloOrZero>;
 
 void registerFunctionModuloOrZero(FunctionFactory & factory)
 {

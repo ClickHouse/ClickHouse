@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -12,24 +13,10 @@ namespace DB
 {
 
 class Context;
-class QueryPlan;
-
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
-    const StoragePtr & storage,
-    const StorageMetadataPtr & metadata_snapshot,
-    const std::vector<MutationCommand> & commands,
-    ContextMutablePtr context_copy
-);
-
-ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
-    const MutationCommand & command,
-    const StoragePtr & storage,
-    ContextPtr context
-);
+    StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const std::vector<MutationCommand> & commands, Context context_copy);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -42,7 +29,7 @@ public:
         StoragePtr storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
-        ContextPtr context_,
+        const Context & context_,
         bool can_execute_);
 
     void validate();
@@ -55,28 +42,8 @@ public:
     /// Only changed columns.
     const Block & getUpdatedHeader() const;
 
-    const ColumnDependencies & getColumnDependencies() const;
-
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
-
-    NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
-
-    NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
-
-    struct MutationKind
-    {
-        enum MutationKindEnum
-        {
-            MUTATE_UNKNOWN,
-            MUTATE_INDEX_PROJECTION,
-            MUTATE_OTHER,
-        } mutation_kind = MUTATE_UNKNOWN;
-
-        void set(const MutationKindEnum & kind);
-    };
-
-    MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
 private:
     ASTPtr prepare(bool dry_run);
@@ -84,16 +51,14 @@ private:
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-    QueryPipelinePtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
+    BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
-
-    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
 
     StoragePtr storage;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
-    ContextPtr context;
+    Context context;
     bool can_execute;
     SelectQueryOptions select_limits;
 
@@ -120,7 +85,7 @@ private:
 
     struct Stage
     {
-        explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
+        Stage(const Context & context_) : expressions_chain(context_) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -144,14 +109,6 @@ private:
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
-
-    NameSet materialized_indices;
-    NameSet materialized_projections;
-
-    MutationKind mutation_kind; /// Do we meet any index or projection mutation.
-
-    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
-    ColumnDependencies dependencies;
 };
 
 }

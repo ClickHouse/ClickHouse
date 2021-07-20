@@ -1,4 +1,5 @@
 #include <IO/MySQLPacketPayloadReadBuffer.h>
+#include <sstream>
 
 namespace DB
 {
@@ -26,14 +27,20 @@ bool MySQLPacketPayloadReadBuffer::nextImpl()
         in.readStrict(reinterpret_cast<char *>(&payload_length), 3);
 
         if (payload_length > MAX_PACKET_LENGTH)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                "Received packet with payload larger than max_packet_size: {}", payload_length);
+        {
+            std::ostringstream tmp;
+            tmp << "Received packet with payload larger than max_packet_size: " << payload_length;
+            throw Exception(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+        }
 
         size_t packet_sequence_id = 0;
         in.read(reinterpret_cast<char &>(packet_sequence_id));
         if (packet_sequence_id != sequence_id)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                "Received packet with wrong sequence-id: {}. Expected: {}.", packet_sequence_id, static_cast<unsigned int>(sequence_id));
+        {
+            std::ostringstream tmp;
+            tmp << "Received packet with wrong sequence-id: " << packet_sequence_id << ". Expected: " << static_cast<unsigned int>(sequence_id) << '.';
+            throw Exception(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+        }
         sequence_id++;
 
         if (payload_length == 0)

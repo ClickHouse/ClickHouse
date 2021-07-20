@@ -1,6 +1,6 @@
 ---
-toc_priority: 38
-toc_title: "Словарь"
+toc_priority: 4
+toc_title: Словарь
 ---
 
 # CREATE DICTIONARY {#create-dictionary-query}
@@ -16,7 +16,7 @@ CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME({MIN min_val MAX max_val | max_val})
+LIFETIME([MIN val1] MAX val2)
 ```
 
 Создаёт [внешний словарь](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) с заданной [структурой](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [источником](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [способом размещения в памяти](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) и [периодом обновления](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
@@ -27,4 +27,5 @@ LIFETIME({MIN min_val MAX max_val | max_val})
 
 Смотрите [Внешние словари](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/dictionary) 
 <!--hide-->

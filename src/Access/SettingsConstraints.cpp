@@ -1,7 +1,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControlManager.h>
 #include <Core/Settings.h>
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -17,8 +17,6 @@ namespace ErrorCodes
     extern const int SETTING_CONSTRAINT_VIOLATION;
 }
 
-
-SettingsConstraints::SettingsConstraints() = default;
 
 SettingsConstraints::SettingsConstraints(const AccessControlManager & manager_) : manager(&manager_)
 {
@@ -159,7 +157,23 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     const String & setting_name = change.name;
 
     if (setting_name == "profile")
+    {
+        /// TODO Check profile settings in Context::setProfile(...), not here. It will be backward incompatible.
+        const String & profile_name = change.value.safeGet<String>();
+        const auto & profile_settings_changes = manager->getProfileSettings(profile_name);
+        try
+        {
+            /// NOTE We cannot use CLAMP_ON_VIOLATION here, because we cannot modify elements of profile_settings_changes
+            for (auto change_copy : *profile_settings_changes)
+                checkImpl(current_settings, change_copy, THROW_ON_VIOLATION);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(", while trying to set settings profile " + profile_name);
+            throw;
+        }
         return true;
+    }
 
     bool cannot_cast;
     auto cast_value = [&](const Field & x) -> Field
@@ -201,13 +215,10 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
         }
     };
 
-    if (manager)
-    {
-        if (reaction == THROW_ON_VIOLATION)
-            manager->checkSettingNameIsAllowed(setting_name);
-        else if (!manager->isSettingNameAllowed(setting_name))
-            return false;
-    }
+    if (reaction == THROW_ON_VIOLATION)
+        manager->checkSettingNameIsAllowed(setting_name);
+    else if (!manager->isSettingNameAllowed(setting_name))
+        return false;
 
     Field current_value, new_value;
     if (current_settings.tryGet(setting_name, current_value))

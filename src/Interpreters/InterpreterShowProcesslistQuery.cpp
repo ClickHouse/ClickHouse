@@ -12,7 +12,7 @@ namespace DB
 
 BlockIO InterpreterShowProcesslistQuery::execute()
 {
-    return executeQuery("SELECT * FROM system.processes", getContext(), true);
+    return executeQuery("SELECT * FROM system.processes", context, true);
 }
 
 }

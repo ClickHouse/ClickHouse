@@ -117,8 +117,8 @@ void Connection::connect(const char* db,
     if (!mysql_real_connect(driver.get(), server, user, password, db, port, ifNotEmpty(socket), driver->client_flag))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Sets UTF-8 as default encoding. See https://mariadb.com/kb/en/mysql_set_character_set/
-    if (mysql_set_character_set(driver.get(), "utf8mb4"))
+    /// Sets UTF-8 as default encoding.
+    if (mysql_set_character_set(driver.get(), "UTF8"))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     is_connected = true;

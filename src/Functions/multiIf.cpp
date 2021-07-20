@@ -12,14 +12,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-namespace
-{
 
 /// Function multiIf, which generalizes the function if.
 ///
@@ -31,11 +29,11 @@ namespace
 ///
 /// Additionally the arguments, conditions or branches, support nullable types
 /// and the NULL value, with a NULL condition treated as false.
-class FunctionMultiIf final : public FunctionIfBase
+class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMultiIf>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMultiIf>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -106,7 +104,7 @@ public:
         return getLeastSupertype(types_of_branches);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) const override
     {
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
@@ -127,16 +125,14 @@ public:
         Columns converted_columns_holder;
         converted_columns_holder.reserve(instructions.size());
 
-        const DataTypePtr & return_type = result_type;
+        const DataTypePtr & return_type = block.getByPosition(result).type;
 
         for (size_t i = 0; i < args.size(); i += 2)
         {
             Instruction instruction;
             size_t source_idx = i + 1;
 
-            bool last_else_branch = source_idx == args.size();
-
-            if (last_else_branch)
+            if (source_idx == args.size())
             {
                 /// The last, "else" branch can be treated as a branch with always true condition "else if (true)".
                 --source_idx;
@@ -144,7 +140,7 @@ public:
             }
             else
             {
-                const ColumnWithTypeAndName & cond_col = args[i];
+                const ColumnWithTypeAndName & cond_col = block.getByPosition(args[i]);
 
                 /// We skip branches that are always false.
                 /// If we encounter a branch that is always true, we can finish.
@@ -152,15 +148,13 @@ public:
                 if (cond_col.column->onlyNull())
                     continue;
 
-                if (const auto * column_const = checkAndGetColumn<ColumnConst>(*cond_col.column))
+                if (isColumnConst(*cond_col.column))
                 {
-                    Field value = column_const->getField();
-
+                    Field value = typeid_cast<const ColumnConst &>(*cond_col.column).getField();
                     if (value.isNull())
                         continue;
                     if (value.get<UInt64>() == 0)
                         continue;
-
                     instruction.condition_always_true = true;
                 }
                 else
@@ -172,7 +166,7 @@ public:
                 }
             }
 
-            const ColumnWithTypeAndName & source_col = args[source_idx];
+            const ColumnWithTypeAndName & source_col = block.getByPosition(args[source_idx]);
             if (source_col.type->equals(*return_type))
             {
                 instruction.source = source_col.column.get();
@@ -193,18 +187,8 @@ public:
                 break;
         }
 
-        MutableColumnPtr res = return_type->createColumn();
-
-        /// Special case if first instruction condition is always true and source is constant
-        if (instructions.size() == 1 && instructions.front().source_is_constant
-            && instructions.front().condition_always_true)
-        {
-            auto & instruction = instructions.front();
-            res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
-            return ColumnConst::create(std::move(res), instruction.source->size());
-        }
-
         size_t rows = input_rows_count;
+        MutableColumnPtr res = return_type->createColumn();
 
         for (size_t i = 0; i < rows; ++i)
         {
@@ -237,11 +221,9 @@ public:
             }
         }
 
-        return res;
+        block.getByPosition(result).column = std::move(res);
     }
 };
-
-}
 
 void registerFunctionMultiIf(FunctionFactory & factory)
 {
