@@ -114,7 +114,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionSequenceNextNode(factory);
         registerAggregateFunctionWelchTTest(factory);
         registerAggregateFunctionStudentTTest(factory);
-	    registerAggregateFunctionNothing(factory);
+        registerAggregateFunctionNothing(factory);
 
         registerWindowFunctions(factory);
 
