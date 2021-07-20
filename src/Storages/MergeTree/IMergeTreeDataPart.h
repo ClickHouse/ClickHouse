@@ -1,7 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Core/Block.h>
 #include <common/types.h>
 #include <Core/NamesAndTypes.h>
@@ -19,6 +17,7 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <shared_mutex>
+
 
 namespace zkutil
 {
@@ -378,7 +377,7 @@ public:
 
     void loadProjections(bool require_columns_checksums, bool check_consistency);
 
-    /// Return set of metadat file names without checksums. For example,
+    /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 

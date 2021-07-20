@@ -25,6 +25,8 @@ static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
 }
 
 String FieldVisitorDump::operator() (const Null &) const { return "NULL"; }
+String FieldVisitorDump::operator() (const NegativeInfinity &) const { return "-Inf"; }
+String FieldVisitorDump::operator() (const PositiveInfinity &) const { return "+Inf"; }
 String FieldVisitorDump::operator() (const UInt64 & x) const { return formatQuotedWithPrefix(x, "UInt64_"); }
 String FieldVisitorDump::operator() (const Int64 & x) const { return formatQuotedWithPrefix(x, "Int64_"); }
 String FieldVisitorDump::operator() (const Float64 & x) const { return formatQuotedWithPrefix(x, "Float64_"); }
