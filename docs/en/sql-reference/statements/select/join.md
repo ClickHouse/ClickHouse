@@ -113,18 +113,18 @@ Be careful when using `GLOBAL`. For more information, see the [Distributed subqu
 
 ## Implicit Type Conversion {#implicit-type-conversion}
 
-`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for "join keys". However the query can not be executed, if join keys from the left and the right tables cannot be converted to a single type (for example, there is no common data type for `UInt64` and `Int64`, or for `String` and `Int`).
+`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for "join keys". However the query can not be executed, if join keys from the left and the right tables cannot be converted to a single type (for example, there is no data type that can hold all values from both `UInt64` and `Int64`, or `String` and `Int32`).
 
 **Example**
 
-Consider the table t_1:
+Consider the table `t_1`:
 ```text
 ┌─a─┬─b─┬─toTypeName(a)─┬─toTypeName(b)─┐
 │ 1 │ 1 │ UInt16        │ UInt8         │
 │ 2 │ 2 │ UInt16        │ UInt8         │
 └───┴───┴───────────────┴───────────────┘
 ```
-and the table t_2:
+and the table `t_2`:
 ```text
 ┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
 │ -1 │    1 │ Int16         │ Nullable(Int64) │
@@ -184,7 +184,7 @@ If you need a `JOIN` for joining with dimension tables (these are relatively sma
 
 ### Memory Limitations {#memory-limitations}
 
-By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the right_table and creates a hash table for it in RAM. After some threshold of memory consumption, ClickHouse falls back to [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join algorithm. For `JOIN` algorithms description see the [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm) setting.
+By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the right_table and creates a hash table for it in RAM. If `join_algorithm = 'auto'` is enabled, then after some threshold of memory consumption, ClickHouse falls back to [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join algorithm. For `JOIN` algorithms description see the [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm) setting.
 
 If you need to restrict `JOIN` operation memory consumption use the following settings:
 
