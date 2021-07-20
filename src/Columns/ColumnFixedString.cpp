@@ -53,12 +53,12 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
-    static constexpr size_t SIMD_BYTES = 16;
-
     const UInt8 * pos = chars.data() + index * n;
     const UInt8 * end = pos + n;
-    const UInt8 * end_sse = pos + n / SIMD_BYTES * SIMD_BYTES;
 
+#ifdef __SSE2__
+    static constexpr size_t SIMD_BYTES = 16;
+    const UInt8 * end_sse = pos + n / SIMD_BYTES * SIMD_BYTES;
     const __m128i zero16 = _mm_setzero_si128();
 
     while (pos < end_sse)
@@ -69,6 +69,7 @@ bool ColumnFixedString::isDefaultAt(size_t index) const
 
         pos += SIMD_BYTES;
     }
+#endif
 
     while (pos < end)
     {
