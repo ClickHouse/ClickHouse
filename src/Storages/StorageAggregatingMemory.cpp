@@ -441,7 +441,7 @@ Pipe StorageAggregatingMemory::read(
     auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
 
     ProcessorPtr source;
-    
+
     if (filter_key.has_value())
     {
         ColumnRawPtrs key_columns(filter_key->raw_key_columns.size());
@@ -452,7 +452,9 @@ Pipe StorageAggregatingMemory::read(
 
         Chunk chunk(block.getColumns(), block.rows());
         source = std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk));
-    } else {
+    }
+    else
+    {
         source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
     }
 
