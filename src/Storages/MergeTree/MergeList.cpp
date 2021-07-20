@@ -10,7 +10,7 @@ namespace DB
 {
 
 
-MemoryTrackerSwitcher::MemoryTrackerSwitcher(MemoryTracker * memory_tracker_ptr)
+MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr)
 {
     // Each merge is executed into separate background processing pool thread
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
@@ -34,7 +34,7 @@ MemoryTrackerSwitcher::MemoryTrackerSwitcher(MemoryTracker * memory_tracker_ptr)
 }
 
 
-MemoryTrackerSwitcher::~MemoryTrackerSwitcher()
+MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
 {
     // Unplug memory_tracker from current background processing pool thread
 

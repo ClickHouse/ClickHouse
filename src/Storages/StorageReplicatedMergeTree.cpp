@@ -1568,9 +1568,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             do_fetch = true;
             break;
         case LogEntry::MERGE_PARTS:
-            do_fetch = !tryExecuteMerge(entry);
-            break;
-            // throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
         case LogEntry::MUTATE_PART:
             /// Sometimes it's better to fetch mutated part instead of merging.
             do_fetch = !tryExecutePartMutation(entry);
@@ -1593,10 +1591,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     return true;
 }
 
-bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & /*entry*/)
-{
-    return true;
-}
 
 bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedMergeTree::LogEntry & entry)
 {
@@ -1641,7 +1635,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    ReservationConstPtr reserved_space = reserveSpace(estimated_space_for_result, source_part->volume);
+    ReservationSharedPtr reserved_space = reserveSpace(estimated_space_for_result, source_part->volume);
 
     auto table_lock = lockForShare(
             RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);

@@ -429,7 +429,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     TableLockHolder & holder,
     time_t time_of_merge,
     ContextPtr context,
-    ReservationConstPtr space_reservation,
+    ReservationSharedPtr space_reservation,
     bool deduplicate,
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
@@ -462,7 +462,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     MergeListEntry & merge_entry,
     time_t time_of_mutation,
     ContextPtr context,
-    ReservationConstPtr space_reservation,
+    ReservationSharedPtr space_reservation,
     TableLockHolder & holder)
 {
     checkOperationIsNotCanceled(merge_entry);
@@ -1275,7 +1275,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
     IMergedBlockOutputStream & out,
     time_t time_of_mutation,
     MergeListEntry & merge_entry,
-    ReservationConstPtr space_reservation,
+    ReservationSharedPtr space_reservation,
     TableLockHolder & holder,
     ContextPtr context,
     IMergeTreeDataPart::MinMaxIndex * minmax_idx)
@@ -1439,7 +1439,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     MergeListEntry & merge_entry,
     bool need_remove_expired_values,
     bool need_sync,
-    ReservationConstPtr space_reservation,
+    ReservationSharedPtr space_reservation,
     TableLockHolder & holder,
     ContextPtr context)
 {
@@ -1496,7 +1496,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     MergeListEntry & merge_entry,
     bool need_remove_expired_values,
     bool need_sync,
-    ReservationConstPtr space_reservation,
+    ReservationSharedPtr space_reservation,
     TableLockHolder & holder,
     ContextPtr context)
 {

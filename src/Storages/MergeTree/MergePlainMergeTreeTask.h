@@ -20,7 +20,7 @@ class StorageMergeTree;
 struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPartPtr future_part;
-    ReservationConstPtr reserved_space;
+    ReservationSharedPtr reserved_space;
     StorageMergeTree & storage;
     // Optional tagger to maintain volatile parts for the JBOD balancer
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
@@ -49,17 +49,18 @@ struct MergeMutateSelectedEntry
     {}
 };
 
+using MergeMutateSelectedEntryPtr = std::shared_ptr<MergeMutateSelectedEntry>;
+
 
 class MergePlainMergeTreeTask : public BackgroundTask
 {
-
 public:
     MergePlainMergeTreeTask(
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
-        std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry_,
+        MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder & table_lock_holder_)
         : BackgroundTask(0) // FIXME: equal priority
         , storage(storage_)
@@ -98,6 +99,8 @@ private:
     FutureMergedMutatedPartPtr future_part{nullptr};
     MergeTreeData::MutableDataPartPtr new_part;
     std::unique_ptr<Stopwatch> stopwatch_ptr{nullptr};
+
+    using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
     MergeListEntryPtr merge_list_entry;
 
     std::function<void(const ExecutionStatus &)> write_part_log;

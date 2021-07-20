@@ -17,7 +17,7 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 using Disks = std::vector<DiskPtr>;
 class IReservation;
-using ReservationConstPtr = std::shared_ptr<IReservation>;
+using ReservationSharedPtr = std::shared_ptr<IReservation>;
 using ReservationPtr = std::unique_ptr<IReservation>;
 using Reservations = std::vector<ReservationPtr>;
 
@@ -30,7 +30,7 @@ public:
     virtual const String & getName() const = 0;
     virtual const Volumes & getVolumes() const = 0;
     /// Returns number [0., 1.] -- fraction of free space on disk
-    /// which should be kept with help of background moves
+    /// which should be kept with help of background mov
     virtual double getMoveFactor() const = 0;
     virtual bool isDefaultPolicy() const = 0;
     /// Returns disks ordered by volumes priority

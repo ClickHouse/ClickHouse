@@ -16,9 +16,6 @@
 namespace DB
 {
 
-
-
-
 class MergeProgressCallback;
 
 enum class SelectPartsDecision
@@ -84,12 +81,9 @@ public:
         String * out_disable_reason = nullptr,
         bool optimize_skip_merged_partitions = false);
 
-    /** Merge the parts.
+    /** Creates a task to merge parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space
       *  is approximately proportional to the amount of data already written.
-      *
-      * Creates and returns a temporary part.
-      * To end the merge, call the function renameMergedTemporaryPart.
       *
       * time_of_merge - the time when the merge was assigned.
       * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
@@ -101,7 +95,7 @@ public:
         TableLockHolder & table_lock_holder,
         time_t time_of_merge,
         ContextPtr context,
-        ReservationConstPtr space_reservation,
+        ReservationSharedPtr space_reservation,
         bool deduplicate,
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
@@ -116,7 +110,7 @@ public:
         MergeListEntry & merge_entry,
         time_t time_of_mutation,
         ContextPtr context,
-        ReservationConstPtr space_reservation,
+        ReservationSharedPtr space_reservation,
         TableLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
@@ -201,7 +195,7 @@ private:
         IMergedBlockOutputStream & out,
         time_t time_of_mutation,
         MergeListEntry & merge_entry,
-        ReservationConstPtr space_reservation,
+        ReservationSharedPtr space_reservation,
         TableLockHolder & holder,
         ContextPtr context,
         IMergeTreeDataPart::MinMaxIndex * minmax_idx = nullptr);
@@ -218,7 +212,7 @@ private:
         MergeListEntry & merge_entry,
         bool need_remove_expired_values,
         bool need_sync,
-        ReservationConstPtr space_reservation,
+        ReservationSharedPtr space_reservation,
         TableLockHolder & holder,
         ContextPtr context);
 
@@ -236,7 +230,7 @@ private:
         MergeListEntry & merge_entry,
         bool need_remove_expired_values,
         bool need_sync,
-        ReservationConstPtr space_reservation,
+        ReservationSharedPtr space_reservation,
         TableLockHolder & holder,
         ContextPtr context);
 

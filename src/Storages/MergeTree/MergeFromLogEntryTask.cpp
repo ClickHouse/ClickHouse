@@ -106,7 +106,9 @@ bool MergeFromLogEntryTask::execute()
 
 bool MergeFromLogEntryTask::executeImpl()
 {
-    // auto guard = MemoryTrackerSwitcher(&entry->memory_tracker);
+    MemoryTrackerThreadSwitcherPtr switcher;
+    if (merge_entry)
+        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(&(*merge_entry)->memory_tracker);
 
     switch (state)
     {
@@ -122,7 +124,6 @@ bool MergeFromLogEntryTask::executeImpl()
             if (state == State::SUCCESS)
                 return false;
 
-
             state = State::NEED_EXECUTE_INNER_MERGE;
             return true;
         }
@@ -135,7 +136,6 @@ bool MergeFromLogEntryTask::executeImpl()
                     state = State::NEED_COMMIT;
                     return true;
                 }
-
             }
             catch (...)
             {
@@ -167,15 +167,12 @@ bool MergeFromLogEntryTask::executeImpl()
         }
         case State::CANT_MERGE_NEED_FETCH :
         {
-            // LOG_FATAL(&Poco::Logger::get("abacaba"), "Will execute fetch istead of merge!");
-            /// MAYBE FIXME
             if (storage.executeFetch(*entry))
             {
                 state = State::SUCCESS;
                 return true;
             }
 
-            /// Fetch is ???
             return false;
         }
         case State::SUCCESS :
@@ -325,7 +322,7 @@ bool MergeFromLogEntryTask::prepare()
     }
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
-    ReservationConstPtr reserved_space = storage.balancedReservation(
+    ReservationSharedPtr reserved_space = storage.balancedReservation(
         metadata_snapshot,
         estimated_space_for_merge,
         max_volume_index,
@@ -382,9 +379,6 @@ bool MergeFromLogEntryTask::prepare()
             entry->new_part_name, part, parts, merge_entry.get());
     };
 
-
-
-    /// FIXME: Maybe construct MergeTask here?
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_merged_part,
             metadata_snapshot,
@@ -446,11 +440,11 @@ bool MergeFromLogEntryTask::commit()
     }
 
     /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
-         */
+     */
 
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
-         * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
-         */
+     * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
+     */
     storage.merge_selecting_task->schedule();
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 

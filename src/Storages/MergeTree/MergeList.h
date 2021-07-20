@@ -54,19 +54,22 @@ struct MergeInfo
 
 struct FutureMergedMutatedPart;
 using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
-using FutureMergedMutatedPartConstPtr = std::shared_ptr<const FutureMergedMutatedPart>;
 
-
-class MemoryTrackerSwitcher
+/**
+ * Since merge is executed with multiple threads, this class
+ * switches the parent MemoryTracker to account all the memory used.
+ */
+class MemoryTrackerThreadSwitcher : boost::noncopyable
 {
 public:
-    explicit MemoryTrackerSwitcher(MemoryTracker * memory_tracker_ptr);
-    ~MemoryTrackerSwitcher();
+    explicit MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr);
+    ~MemoryTrackerThreadSwitcher();
 private:
     MemoryTracker * background_thread_memory_tracker;
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
 };
 
+using MemoryTrackerThreadSwitcherPtr = std::unique_ptr<MemoryTrackerThreadSwitcher>;
 
 struct MergeListElement : boost::noncopyable
 {
@@ -115,7 +118,6 @@ struct MergeListElement : boost::noncopyable
 };
 
 using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
-using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
 
 /** Maintains a list of currently running merges.
   * For implementation of system.merges table.

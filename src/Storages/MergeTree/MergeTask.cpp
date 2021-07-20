@@ -1,18 +1,15 @@
 #include "Storages/MergeTree/MergeTask.h"
 
+#include <memory>
+#include <fmt/format.h>
 
 #include <common/logger_useful.h>
 #include "Common/ActionBlocker.h"
 
-#include <fmt/format.h>
-
-
 #include "Storages/MergeTree/MergeTreeData.h"
 #include "Storages/MergeTree/IMergeTreeDataPart.h"
-
 #include "Storages/MergeTree/MergeTreeSequentialSource.h"
 #include "Storages/MergeTree/FutureMergedMutatedPart.h"
-
 #include "Processors/Transforms/ExpressionTransform.h"
 #include "Processors/Merges/MergingSortedTransform.h"
 #include "Processors/Merges/CollapsingSortedTransform.h"
@@ -27,11 +24,6 @@
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
-
-
-
-#include <memory>
-
 
 namespace DB
 {
@@ -196,7 +188,10 @@ void MergeTask::prepare()
         need_remove_expired_values = false;
     }
 
-    implementation = createMergeAlgorithmImplementation();
+    chosen_merge_algorithm = chooseMergeAlgorithm();
+    merge_entry->merge_algorithm.store(chosen_merge_algorithm, std::memory_order_relaxed);
+
+    LOG_DEBUG(log, "Selected MergeAlgorithm: {}", toString(chosen_merge_algorithm));
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
     /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -207,8 +202,40 @@ void MergeTask::prepare()
 
     tmp_disk = context->getTemporaryVolume()->getDisk();
 
+    switch (chosen_merge_algorithm)
+    {
+        case MergeAlgorithm::Horizontal :
+        {
+            merging_columns = storage_columns;
+            merging_column_names = all_column_names;
+            gathering_columns.clear();
+            gathering_column_names.clear();
+            break;
+        }
+        case MergeAlgorithm::Vertical :
+        {
+            tmp_disk->createDirectories(new_part_tmp_path);
+            rows_sources_file_path = new_part_tmp_path + "rows_sources";
+            rows_sources_uncompressed_write_buf = tmp_disk->writeFile(rows_sources_file_path);
+            rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*rows_sources_uncompressed_write_buf);
 
-    implementation->begin();
+            MergeTreeDataPartInMemory::ColumnToSize merged_column_to_size;
+            for (const MergeTreeData::DataPartPtr & part : future_part->parts)
+                part->accumulateColumnSizes(merged_column_to_size);
+
+            column_sizes = ColumnSizeEstimator(
+                std::move(merged_column_to_size),
+                merging_column_names,
+                gathering_column_names);
+
+            if (data.getSettings()->fsync_part_directory)
+                sync_guard = disk->getDirectorySyncGuard(new_part_tmp_path);
+
+            break;
+        }
+        default :
+            throw Exception("Merge algorithm must be chosen", ErrorCodes::LOGICAL_ERROR);
+    }
 
     /// If merge is vertical we cannot calculate it
     blocks_are_granules_size = (chosen_merge_algorithm == MergeAlgorithm::Vertical);
@@ -288,8 +315,6 @@ void MergeTask::finalizeHorizontalPartOfTheMerge()
     const size_t sum_compressed_bytes_upper_bound = merge_entry->total_size_bytes_compressed;
     need_sync = needSyncPart(sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
 }
-
-
 
 
 void MergeTask::prepareVertical()
@@ -818,26 +843,6 @@ void MergeTask::createMergedStream()
 }
 
 
-
-std::unique_ptr<MergeTask::MergeImpl> MergeTask::createMergeAlgorithmImplementation()
-{
-    chosen_merge_algorithm = chooseMergeAlgorithm();
-    merge_entry->merge_algorithm.store(chosen_merge_algorithm, std::memory_order_relaxed);
-
-    LOG_DEBUG(log, "Selected MergeAlgorithm: {}", toString(chosen_merge_algorithm));
-
-    switch (chosen_merge_algorithm)
-    {
-        case MergeAlgorithm::Horizontal :
-            return std::make_unique<HorizontalMergeImpl>(*this);
-        case MergeAlgorithm::Vertical :
-            return std::make_unique<VerticalMergeImpl>(*this);
-        default :
-            throw Exception("Merge algorithm must be chosen", ErrorCodes::LOGICAL_ERROR);
-    }
-
-}
-
 MergeAlgorithm MergeTask::chooseMergeAlgorithm() const
 {
     const size_t sum_rows_upper_bound = merge_entry->total_rows_count;
@@ -871,37 +876,5 @@ MergeAlgorithm MergeTask::chooseMergeAlgorithm() const
 
     return merge_alg;
 }
-
-
-void MergeTask::VerticalMergeImpl::begin()
-{
-    task.tmp_disk->createDirectories(task.new_part_tmp_path);
-    task.rows_sources_file_path = task.new_part_tmp_path + "rows_sources";
-    task.rows_sources_uncompressed_write_buf = task.tmp_disk->writeFile(task.rows_sources_file_path);
-    task.rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*task.rows_sources_uncompressed_write_buf);
-
-    ColumnToSize merged_column_to_size;
-    for (const MergeTreeData::DataPartPtr & part : task.future_part->parts)
-        part->accumulateColumnSizes(merged_column_to_size);
-
-    task.column_sizes = ColumnSizeEstimator(
-        merged_column_to_size, //local variable
-        task.merging_column_names,
-        task.gathering_column_names);
-
-    if (task.data.getSettings()->fsync_part_directory)
-        task.sync_guard = task.disk->getDirectorySyncGuard(task.new_part_tmp_path);
-}
-
-
-
-void MergeTask::HorizontalMergeImpl::begin()
-{
-    task.merging_columns = task.storage_columns;
-    task.merging_column_names = task.all_column_names;
-    task.gathering_columns.clear();
-    task.gathering_column_names.clear();
-}
-
 
 }

@@ -474,9 +474,6 @@ private:
 
     void executeDropRange(const LogEntry & entry);
 
-    /// Do the merge or recommend to make the fetch instead of the merge
-    bool tryExecuteMerge(const LogEntry & entry);
-
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.
     /// New metadata and columns values stored in entry.

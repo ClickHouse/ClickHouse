@@ -42,37 +42,6 @@ class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
 
 /**
- * States of MergeTask state machine.
- * Transitions are from up to down.
- * But for vertical merge there are horizontal part of the merge and vertical part.
- * For horizontal there is horizontal part only.
- */
-enum class MergeTaskState
-{
-    NEED_PREPARE,
-    NEED_EXECUTE_HORIZONTAL,
-    NEED_FINALIZE_HORIZONTAL,
-    NEED_PREPARE_VERTICAL,
-    NEED_EXECUTE_VERTICAL,
-    NEED_FINISH_VERTICAL,
-    NEED_MERGE_MIN_MAX_INDEX,
-
-    NEED_PREPARE_PROJECTIONS,
-    NEED_EXECUTE_PROJECTIONS,
-    NEED_FINISH_PROJECTIONS,
-
-    NEED_FINISH
-};
-
-enum class VecticalMergeOneColumnState
-{
-    NEED_PREPARE,
-    NEED_EXECUTE,
-    NEED_FINISH
-};
-
-
-/**
  * Overview of the merge algorithm
  *
  * Each merge is executed sequentially block by block.
@@ -104,7 +73,7 @@ public:
         TableLockHolder & holder_,
         time_t time_of_merge_,
         ContextPtr context_,
-        ReservationConstPtr space_reservation_,
+        ReservationSharedPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
@@ -140,18 +109,10 @@ public:
     void prepare();
 
 private:
-    class MergeImpl;
-    class VerticalMergeImpl;
-    class HorizontalMergeImpl;
-
-    friend class MergeImpl;
-    friend class VerticalMergeImpl;
-
     void createMergedStream();
 
     MergeAlgorithm chooseMergeAlgorithm() const;
 
-    std::unique_ptr<MergeImpl> createMergeAlgorithmImplementation();
     bool executeHorizontalForBlock();
     void finalizeHorizontalPartOfTheMerge();
     void prepareVertical();
@@ -174,10 +135,37 @@ private:
 
     std::promise<MergeTreeData::MutableDataPartPtr> promise;
 
-    MergeTaskState state{MergeTaskState::NEED_PREPARE};
-    VecticalMergeOneColumnState vertical_merge_one_column_state{VecticalMergeOneColumnState::NEED_PREPARE};
+    /**
+     * States of MergeTask state machine.
+     * Transitions are from up to down.
+     * But for vertical merge there are horizontal part of the merge and vertical part.
+     * For horizontal there is horizontal part only.
+     */
+    enum class MergeTaskState
+    {
+        NEED_PREPARE,
+        NEED_EXECUTE_HORIZONTAL,
+        NEED_FINALIZE_HORIZONTAL,
+        NEED_PREPARE_VERTICAL,
+        NEED_EXECUTE_VERTICAL,
+        NEED_FINISH_VERTICAL,
+        NEED_MERGE_MIN_MAX_INDEX,
 
-    std::unique_ptr<MergeImpl> implementation;
+        NEED_PREPARE_PROJECTIONS,
+        NEED_EXECUTE_PROJECTIONS,
+        NEED_FINISH_PROJECTIONS,
+
+        NEED_FINISH
+    };
+    MergeTaskState state{MergeTaskState::NEED_PREPARE};
+
+    enum class VecticalMergeOneColumnState
+    {
+        NEED_PREPARE,
+        NEED_EXECUTE,
+        NEED_FINISH
+    };
+    VecticalMergeOneColumnState vertical_merge_one_column_state{VecticalMergeOneColumnState::NEED_PREPARE};
 
     FutureMergedMutatedPartPtr future_part;
     StorageMetadataPtr metadata_snapshot;
@@ -186,7 +174,7 @@ private:
     time_t time_of_merge;
     ContextPtr context;
     /// It is necessary, because of projections presense
-    ReservationConstPtr space_reservation;
+    ReservationSharedPtr space_reservation;
     bool deduplicate;
     Names deduplicate_by_columns;
     MergeTreeData::MergingParams merging_params;
@@ -274,39 +262,6 @@ private:
     using MergeTasks = std::deque<MergeTaskPtr>;
     MergeTasks tasks_for_projections;
     MergeTasks::iterator projections_iterator;
-};
-
-
-class MergeTask::MergeImpl
-{
-public:
-    /**
-     * This is used to access private fields of MergeTask class
-     * Not to capture this fields by reference
-    */
-    MergeTask & task;
-    explicit MergeImpl(MergeTask & task_) : task(task_) {}
-
-    virtual void begin() = 0;
-
-    virtual ~MergeImpl() = default;
-};
-
-class MergeTask::VerticalMergeImpl final : public MergeTask::MergeImpl
-{
-public:
-    explicit VerticalMergeImpl(MergeTask & task_) : MergeImpl(task_) {}
-
-    void begin() override;
-};
-
-
-class MergeTask::HorizontalMergeImpl final : public MergeTask::MergeImpl
-{
-public:
-    explicit HorizontalMergeImpl(MergeTask & task_) : MergeImpl(task_) {}
-
-    void begin() override;
 };
 
 /// FIXME

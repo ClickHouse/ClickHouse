@@ -2575,16 +2575,8 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 
         part.reset();
 
-        // LOG_FATAL(&Poco::Logger::get("abacaba"), std::to_string(!((*it)->getState() == DataPartState::Outdated && it->unique())));
-        // LOG_FATAL(&Poco::Logger::get("abacaba"), "Outdated ? " + std::to_string((*it)->getState() == DataPartState::Outdated));
-        // LOG_FATAL(&Poco::Logger::get("abacaba"), "Unique ? " + std::to_string(it->unique()));
-        // LOG_FATAL(&Poco::Logger::get("abacaba"), "Use count ? " + std::to_string(it->use_count()));
-
-
         if (!((*it)->getState() == DataPartState::Outdated && it->unique()))
             return;
-
-        // LOG_FATAL(&Poco::Logger::get("abacaba"), "Here");
 
         modifyPartState(it, DataPartState::Deleting);
         part_to_delete = *it;
