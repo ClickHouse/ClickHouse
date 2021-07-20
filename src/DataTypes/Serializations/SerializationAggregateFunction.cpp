@@ -88,8 +88,7 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
 
     for (size_t i = 0; i < limit; ++i)
     {
-        //AggregateFunctionNothing has no data, so we shouldn't try to get more data.
-        if (function->getName() != "nothing" && istr.eof())
+        if (istr.eof())
             break;
 
         AggregateDataPtr place = arena.alignedAlloc(size_of_state, align_of_state);
