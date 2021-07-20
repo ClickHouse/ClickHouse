@@ -659,7 +659,7 @@ Pipe StorageLog::read(
     auto lock_timeout = getLockTimeout(context);
     loadMarks(lock_timeout);
 
-    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
+    auto all_columns = metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names, true);
     all_columns = Nested::convertToSubcolumns(all_columns);
 
     std::shared_lock lock(rwlock, lock_timeout);
