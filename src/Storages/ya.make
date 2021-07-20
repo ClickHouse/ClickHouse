@@ -32,6 +32,7 @@ SRCS(
     MergeTree/DataPartsExchange.cpp
     MergeTree/DropPartsRanges.cpp
     MergeTree/EphemeralLockInZooKeeper.cpp
+    MergeTree/FutureMergedMutatedPart.cpp
     MergeTree/IMergeTreeDataPart.cpp
     MergeTree/IMergeTreeDataPartWriter.cpp
     MergeTree/IMergeTreeReader.cpp
@@ -39,7 +40,11 @@ SRCS(
     MergeTree/KeyCondition.cpp
     MergeTree/LevelMergeSelector.cpp
     MergeTree/MergeAlgorithm.cpp
+    MergeTree/MergeExecutor.cpp
+    MergeTree/MergeFromLogEntryTask.cpp
     MergeTree/MergeList.cpp
+    MergeTree/MergePlainMergeTreeTask.cpp
+    MergeTree/MergeTask.cpp
     MergeTree/MergeTreeBaseSelectProcessor.cpp
     MergeTree/MergeTreeBlockOutputStream.cpp
     MergeTree/MergeTreeBlockReadUtils.cpp
