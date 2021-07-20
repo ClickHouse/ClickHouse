@@ -864,7 +864,7 @@ Configuration markup:
 
 Required parameters:
 
--   `endpoint` — HDFS endpoint URL in `path`. Endpoint URL should contain a root path to store data.
+-   `endpoint` — HDFS endpoint URL in `path` format. Endpoint URL should contain a root path to store data.
 
 Optional parameters:
 
