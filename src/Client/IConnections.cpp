@@ -19,7 +19,7 @@ struct PocoSocketWrapper : public Poco::Net::SocketImpl
     }
 
     // Do not close fd.
-    ~PocoSocketWrapper() override = default;
+    ~PocoSocketWrapper() override { reset(-1); }
 };
 
 void IConnections::DrainCallback::operator()(int fd, Poco::Timespan, const std::string fd_description) const
