@@ -579,6 +579,14 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
     }
 }
 
+bool Aggregator::hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions)
+{
+    for (auto * inst = aggregate_instructions; inst->that; ++inst)
+        if (inst->has_sparse_arguments)
+            return true;
+    return false;
+}
+
 /** It's interesting - if you remove `noinline`, then gcc for some reason will inline this function, and the performance decreases (~ 10%).
   * (Probably because after the inline of this function, more internal functions no longer be inlined.)
   * Inline does not make sense, since the inner loop is entirely inside this function.
@@ -598,7 +606,7 @@ void NO_INLINE Aggregator::executeImpl(
     if (!no_more_keys)
     {
 #if USE_EMBEDDED_COMPILER
-        if (compiled_aggregate_functions_holder)
+        if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
         {
             executeImplBatch<false, true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
         }
@@ -650,17 +658,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             }
         }
 
-        bool has_sparse = false;
-        for (auto * inst = aggregate_instructions; inst->that; ++inst)
-        {
-            if (inst->has_sparse_arguments)
-            {
-                has_sparse = true;
-                break;
-            }
-        }
-
-        if (!has_arrays && !has_sparse)
+        if (!has_arrays && !hasSparseArguments(aggregate_instructions))
         {
             for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
             {
