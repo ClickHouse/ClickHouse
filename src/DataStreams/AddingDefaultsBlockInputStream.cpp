@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -131,7 +130,7 @@ static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
 AddingDefaultsBlockInputStream::AddingDefaultsBlockInputStream(
     const BlockInputStreamPtr & input,
     const ColumnsDescription & columns_,
-    ContextPtr context_)
+    const Context & context_)
     : columns(columns_)
     , column_defaults(columns.getDefaults())
     , context(context_)
@@ -175,7 +174,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
     auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
     if (dag)
     {
-        auto actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
+        auto actions = std::make_shared<ExpressionActions>(std::move(dag));
         actions->execute(evaluate_block);
     }
 

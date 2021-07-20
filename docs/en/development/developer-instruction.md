@@ -15,7 +15,7 @@ ClickHouse cannot work or build on a 32-bit system. You should acquire access to
 
 To start working with ClickHouse repository you will need a GitHub account.
 
-You probably already have one, but if you do not, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
+You probably already have one, but if you don’t, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
 
 Create a fork of ClickHouse repository. To do that please click on the “fork” button in the upper right corner at https://github.com/ClickHouse/ClickHouse. It will fork your own copy of ClickHouse/ClickHouse to your account.
 
@@ -123,7 +123,7 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
+Next, check the version of CMake: `cmake --version`. If it is below 3.3, you should install a newer version from the website: https://cmake.org/download/.
 
 ## Optional External Libraries {#optional-external-libraries}
 
@@ -131,18 +131,17 @@ ClickHouse uses several external libraries for building. All of them do not need
 
 ## C++ Compiler {#c-compiler}
 
-Compilers Clang starting from version 11 is supported for building ClickHouse.
+Compilers GCC starting from version 10 and Clang version 8 or above are supported for building ClickHouse.
 
-Clang should be used instead of gcc. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
+Official Yandex builds currently use GCC because it generates machine code of slightly better performance (yielding a difference of up to several percent according to our benchmarks). And Clang is more convenient for development usually. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
-On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
+To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
-```bash
-sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
-```
+Check the version of gcc: `gcc --version`. If it is below 10, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/#install-gcc-10.
 
-Mac OS X build is also supported. Just run `brew install llvm`
+Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
+If you decide to use Clang, you can also install `libc++` and `lld`, if you know what it is. Using `ccache` is also recommended.
 
 ## The Building Process {#the-building-process}
 
@@ -153,7 +152,14 @@ Now that you are ready to build ClickHouse we recommend you to create a separate
 
 You can have several different directories (build_release, build_debug, etc.) for different types of build.
 
-While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler.
+While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 10 gcc compiler in this example).
+
+Linux:
+
+    export CC=gcc-10 CXX=g++-10
+    cmake ..
+
+Mac OS X:
 
     export CC=clang CXX=clang++
     cmake ..
@@ -236,8 +242,6 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
 The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
-
-Adding third-party libraries: https://clickhouse.tech/docs/en/development/contrib/#adding-third-party-libraries
 
 Writing tests: https://clickhouse.tech/docs/en/development/tests/
 

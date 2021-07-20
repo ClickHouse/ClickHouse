@@ -34,7 +34,7 @@ fi
 CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
 
 if ! $gosu test -f "$CLICKHOUSE_CONFIG" -a -r "$CLICKHOUSE_CONFIG"; then
-    echo "Configuration file '$CLICKHOUSE_CONFIG' isn't readable by user with id '$USER'"
+    echo "Configuration file '$dir' isn't readable by user with id '$USER'"
     exit 1
 fi
 

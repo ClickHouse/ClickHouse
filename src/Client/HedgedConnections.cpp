@@ -353,11 +353,6 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
         if (offset_states[location.offset].active_connection_count == 0 && !offset_states[location.offset].next_replica_in_process)
             throw NetException("Receive timeout expired", ErrorCodes::SOCKET_TIMEOUT);
     }
-    else if (std::holds_alternative<std::exception_ptr>(res))
-    {
-        finishProcessReplica(replica_state, true);
-        std::rethrow_exception(std::move(std::get<std::exception_ptr>(res)));
-    }
 
     return false;
 }
@@ -367,10 +362,9 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     epoll_event event;
     event.data.fd = -1;
     size_t events_count = 0;
-    bool blocking = !static_cast<bool>(async_callback);
     while (events_count == 0)
     {
-        events_count = epoll.getManyReady(1, &event, blocking);
+        events_count = epoll.getManyReady(1, &event, false);
         if (!events_count && async_callback)
             async_callback(epoll.getFileDescriptor(), 0, epoll.getDescription());
     }

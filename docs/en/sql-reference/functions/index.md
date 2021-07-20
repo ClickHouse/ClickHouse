@@ -6,7 +6,7 @@ toc_title: Introduction
 
 # Functions {#functions}
 
-There are at least\* two types of functions - regular functions (they are just called “functions”) and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function does not depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
+There are at least\* two types of functions - regular functions (they are just called “functions”) and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function doesn’t depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
 
 In this section we discuss regular functions. For aggregate functions, see the section “Aggregate functions”.
 
@@ -14,7 +14,7 @@ In this section we discuss regular functions. For aggregate functions, see the s
 
 ## Strong Typing {#strong-typing}
 
-In contrast to standard SQL, ClickHouse has strong typing. In other words, it does not make implicit conversions between types. Each function works for a specific set of types. This means that sometimes you need to use type conversion functions.
+In contrast to standard SQL, ClickHouse has strong typing. In other words, it doesn’t make implicit conversions between types. Each function works for a specific set of types. This means that sometimes you need to use type conversion functions.
 
 ## Common Subexpression Elimination {#common-subexpression-elimination}
 
@@ -78,9 +78,10 @@ For example, in the query `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h
 -   if a `distributed_table` has at least two shards, the functions ‘g’ and ‘h’ are performed on remote servers, and the function ‘f’ is performed on the requestor server.
 -   if a `distributed_table` has only one shard, all the ‘f’, ‘g’, and ‘h’ functions are performed on this shard’s server.
 
-The result of a function usually does not depend on which server it is performed on. However, sometimes this is important.
+The result of a function usually doesn’t depend on which server it is performed on. However, sometimes this is important.
 For example, functions that work with dictionaries use the dictionary that exists on the server they are running on.
 Another example is the `hostName` function, which returns the name of the server it is running on in order to make `GROUP BY` by servers in a `SELECT` query.
 
 If a function in a query is performed on the requestor server, but you need to perform it on remote servers, you can wrap it in an ‘any’ aggregate function or add it to a key in `GROUP BY`.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/) <!--hide-->

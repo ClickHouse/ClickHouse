@@ -14,12 +14,6 @@
 #include <shared_mutex>
 #include <utility>
 
-namespace zkutil
-{
-    class ZooKeeper;
-    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
-}
-
 namespace DB
 {
 

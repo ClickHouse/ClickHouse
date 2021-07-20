@@ -2,7 +2,6 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/LimitTransform.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -43,7 +42,7 @@ void LimitStep::updateInputStream(DataStream input_stream)
     output_stream = createOutputStream(input_streams.front(), output_stream->header, getDataStreamTraits());
 }
 
-void LimitStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void LimitStep::transformPipeline(QueryPipeline & pipeline)
 {
     auto transform = std::make_shared<LimitTransform>(
         pipeline.getHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description);
@@ -75,14 +74,6 @@ void LimitStep::describeActions(FormatSettings & settings) const
 
         settings.out << '\n';
     }
-}
-
-void LimitStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    map.add("Limit", limit);
-    map.add("Offset", offset);
-    map.add("With Ties", with_ties);
-    map.add("Reads All Data", always_read_till_end);
 }
 
 }

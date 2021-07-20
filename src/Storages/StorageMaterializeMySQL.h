@@ -16,9 +16,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class StorageMaterializeMySQL final : public shared_ptr_helper<StorageMaterializeMySQL>, public StorageProxy
+class StorageMaterializeMySQL final : public ext::shared_ptr_helper<StorageMaterializeMySQL>, public StorageProxy
 {
-    friend struct shared_ptr_helper<StorageMaterializeMySQL>;
+    friend struct ext::shared_ptr_helper<StorageMaterializeMySQL>;
 public:
     String getName() const override { return "MaterializeMySQL"; }
 
@@ -26,9 +26,9 @@ public:
 
     Pipe read(
         const Names & column_names, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info,
-        ContextPtr context, QueryProcessingStage::Enum processed_stage, size_t max_block_size, unsigned num_streams) override;
+        const Context & context, QueryProcessingStage::Enum processed_stage, size_t max_block_size, unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr) override { throwNotAllowed(); }
+    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr &, const Context &) override { throwNotAllowed(); }
 
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
