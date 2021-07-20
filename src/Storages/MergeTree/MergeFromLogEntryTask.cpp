@@ -27,7 +27,6 @@ namespace ErrorCodes
 
 MergeFromLogEntryTask::MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_)
     : BackgroundTask(0), selected_entry(selected_entry_), entry(selected_entry->log_entry), storage(storage_)
-/// FIXME: Equal priority for all task.
 {
     log = storage.log;
 }
@@ -368,6 +367,9 @@ bool MergeFromLogEntryTask::prepare()
 
     /// Add merge to list
     merge_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_merged_part);
+
+    /// Adjust priority of the whole merge
+    setPriority((*merge_entry)->total_size_bytes_compressed);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
     stopwatch_ptr = std::make_unique<Stopwatch>();

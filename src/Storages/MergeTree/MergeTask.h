@@ -31,10 +31,18 @@ public:
         return priority > rhs.priority;
     }
 
-    UInt64 getPriority() const { return priority; }
+    UInt64 getPriority() const
+    {
+        return priority;
+    }
+
+    void setPriority(UInt64 priority_)
+    {
+        priority = priority_;
+    }
 
 private:
-    int priority = 0;
+    UInt64 priority = 0;
 };
 
 using BackgroundTaskPtr = std::shared_ptr<BackgroundTask>;
