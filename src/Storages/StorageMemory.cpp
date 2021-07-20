@@ -1,6 +1,8 @@
 #include <cassert>
 #include <Common/Exception.h>
 
+#include <DataStreams/IBlockInputStream.h>
+
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
@@ -33,7 +35,7 @@ public:
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names_and_types(metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names_, true))
+        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
@@ -162,14 +164,12 @@ StorageMemory::StorageMemory(
     const StorageID & table_id_,
     ColumnsDescription columns_description_,
     ConstraintsDescription constraints_,
-    const String & comment,
     bool compress_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>()), compress(compress_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -261,7 +261,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
 
-    /// When max_threads > 1, the order of returning blocks is uncertain,
+    /// When max_threads > 1, the order of returning blocks is uncentain,
     /// which will lead to inconsistency after updateBlockData.
     auto new_context = Context::createCopy(context);
     new_context->setSetting("max_streams_to_max_threads_ratio", 1);
@@ -356,7 +356,7 @@ void registerStorageMemory(StorageFactory & factory)
         if (has_settings)
             settings.loadFromQuery(*args.storage_def);
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
+        return StorageMemory::create(args.table_id, args.columns, args.constraints, settings.compress);
     },
     {
         .supports_settings = true,
