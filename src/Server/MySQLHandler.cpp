@@ -95,6 +95,7 @@ void MySQLHandler::run()
     connection_context->getClientInfo().interface = ClientInfo::Interface::MYSQL;
     connection_context->setDefaultFormat("MySQLWire");
     connection_context->getClientInfo().connection_id = connection_id;
+    connection_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
