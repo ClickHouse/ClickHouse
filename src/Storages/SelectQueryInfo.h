@@ -156,6 +156,7 @@ struct SelectQueryInfo
     /// If not null, it means we choose a projection to execute current query.
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
+    bool is_projection_query = false;
 };
 
 }

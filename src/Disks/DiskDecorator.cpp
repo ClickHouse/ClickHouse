@@ -206,9 +206,9 @@ void DiskDecorator::startup()
     delegate->startup();
 }
 
-void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context)
+void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)
 {
-    delegate->applyNewSettings(config, context);
+    delegate->applyNewSettings(config, context, config_prefix, map);
 }
 
 }

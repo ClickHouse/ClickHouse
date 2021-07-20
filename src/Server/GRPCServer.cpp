@@ -1150,7 +1150,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", exception.code(), exception.displayText(), exception.getStackTraceString());
+        LOG_ERROR(log, getExceptionMessage(exception, true));
 
         if (responder && !responder_finished)
         {

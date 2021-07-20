@@ -83,11 +83,13 @@ public:
 
     void removeFile(const String & path) override { removeSharedFile(path, false); }
 
-    void removeFileIfExists(const String & path) override;
+    void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
 
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
 
     void removeSharedFile(const String & path, bool keep_in_remote_fs) override;
+
+    void removeSharedFileIfExists(const String & path, bool keep_in_remote_fs) override;
 
     void removeSharedRecursive(const String & path, bool keep_in_remote_fs) override;
 
@@ -116,6 +118,10 @@ public:
     void createHardLink(const String & src_path, const String & dst_path) override;
 
     ReservationPtr reserve(UInt64 bytes) override;
+
+    String getUniqueId(const String & path) const override;
+
+    bool checkUniqueId(const String & id) const override = 0;
 
     virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
 

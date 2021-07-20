@@ -82,6 +82,8 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 - If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not included into the result set.
 
+- The result includes columns comments in case they exist in MySQL database tables.
+
 ### Index Conversion {#index-conversion}
 
 MySQL `PRIMARY KEY` and `INDEX` clauses are converted into `ORDER BY` tuples in ClickHouse tables.

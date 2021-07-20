@@ -41,6 +41,7 @@ SRCS(
     RemoteBlockOutputStream.cpp
     RemoteQueryExecutor.cpp
     RemoteQueryExecutorReadContext.cpp
+    SQLiteBlockInputStream.cpp
     SizeLimits.cpp
     SquashingBlockInputStream.cpp
     SquashingBlockOutputStream.cpp
