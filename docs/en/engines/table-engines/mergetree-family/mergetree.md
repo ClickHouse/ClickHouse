@@ -763,7 +763,7 @@ Configuration markup:
 
 Required parameters:
 
--   `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
+-   `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a root path to store data.
 -   `access_key_id` — S3 access key id.
 -   `secret_access_key` — S3 secret access key.
 
@@ -783,7 +783,6 @@ Optional parameters:
 -   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
 -   `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
-
 
 S3 disk can be configured as `main` or `cold` storage:
 ``` xml
@@ -865,9 +864,8 @@ Configuration markup:
 
 Required parameters:
 
--   `endpoint` — HDFS endpoint URL in `path`. Endpoint URL should contain a bucket and root path to store data. The parameter is used to look up the HDFS configuration for retrieving files.
+-   `endpoint` — HDFS endpoint URL in `path`. Endpoint URL should contain a root path to store data.
 
 Optional parameters:
 
 -   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
--   `thread_pool_size` — The number of threads in the Global Thread pool.
