@@ -1297,6 +1297,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
             field = {index_columns.get(), row, column};
+            // NULL_LAST
+            if (field.isNull())
+                field = PositiveInfinity{};
         };
     }
     else
@@ -1304,6 +1307,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         create_field_ref = [&index](size_t row, size_t column, FieldRef & field)
         {
             index[column]->get(row, field);
+            // NULL_LAST
+            if (field.isNull())
+                field = PositiveInfinity{};
         };
     }
 
@@ -1316,21 +1322,22 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         if (range.end == marks_count && !has_final_mark)
         {
             for (size_t i = 0; i < used_key_size; ++i)
+            {
                 create_field_ref(range.begin, i, index_left[i]);
-
-            return key_condition.mayBeTrueAfter(
-                used_key_size, index_left.data(), primary_key.data_types);
+                index_right[i] = PositiveInfinity{};
+            }
         }
-
-        if (has_final_mark && range.end == marks_count)
-            range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
-
-        for (size_t i = 0; i < used_key_size; ++i)
+        else
         {
-            create_field_ref(range.begin, i, index_left[i]);
-            create_field_ref(range.end, i, index_right[i]);
-        }
+            if (has_final_mark && range.end == marks_count)
+                range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
 
+            for (size_t i = 0; i < used_key_size; ++i)
+            {
+                create_field_ref(range.begin, i, index_left[i]);
+                create_field_ref(range.end, i, index_right[i]);
+            }
+        }
         return key_condition.mayBeTrueInRange(
             used_key_size, index_left.data(), index_right.data(), primary_key.data_types);
     };

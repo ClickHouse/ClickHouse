@@ -149,7 +149,7 @@ void TCPHandler::runImpl()
         if (!DatabaseCatalog::instance().isDatabaseExist(default_database))
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-            LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
+            LOG_ERROR(log, getExceptionMessage(e, true));
             sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
             return;
         }
@@ -422,7 +422,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
+                LOG_ERROR(log, getExceptionMessage(e, true));
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
