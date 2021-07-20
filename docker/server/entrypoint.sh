@@ -72,7 +72,8 @@ do
 
     if [ "$DO_CHOWN" = "1" ]; then
         # ensure proper directories permissions
-        chown -R "$USER:$GROUP" "$dir"
+        if [ "$(stat -c %u "$dir")" != "$USER" ] || [ "$(stat -c %g "$dir")" != "$GROUP" ]; then
+            chown -R "$USER:$GROUP" "$dir"
     elif ! $gosu test -d "$dir" -a -w "$dir" -a -r "$dir"; then
         echo "Necessary directory '$dir' isn't accessible by user with id '$USER'"
         exit 1
