@@ -58,9 +58,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     }
 
     ColumnsDescription res;
-
     auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef());
-    new_context->setSetting("describe_extend_object_types", true);
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     Block sample_block
