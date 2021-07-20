@@ -302,6 +302,9 @@ public:
     {
         if (storage->use_table_fd)
         {
+            shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
+            if (!shared_lock)
+                throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
             storage->table_fd_was_used = true;
         }
         else
@@ -510,9 +513,10 @@ Pipe StorageFile::read(
                 {
                     throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
                 }
-                ReadBufferFromFileDescriptorPRead table_fd_seek(this_ptr->table_fd);
-                off_t new_pos = table_fd_seek.seek(this_ptr->table_fd_init_offset, SEEK_SET);
-                lseek(this_ptr->table_fd, this_ptr->table_fd_init_offset, new_pos);
+                if (lseek(this_ptr->table_fd, this_ptr->table_fd_init_offset, SEEK_SET) < 0)
+                {
+                    throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                }
             }
             else
             {
