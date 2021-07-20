@@ -60,7 +60,7 @@ public:
                                                                      size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
     size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
-    bool isEmpty() const override { return (column_holder->size() > numSpecialValues()); }
+    bool isEmpty() const override { return !(column_holder->size() > numSpecialValues()); }
     void insertWithGetTransIndex(const IColumn & src, size_t start, size_t length, std::unordered_map<UInt64, UInt64>& trans) override;
 
     size_t getDefaultValueIndex() const override { return 0; }
@@ -319,7 +319,7 @@ void ColumnUnique<ColumnType>::insertWithGetTransIndex(const IColumn & src, size
                         ", got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     auto column = getRawColumnPtr();
-    for (size_t row = start; row < length; ++row)
+    for (size_t row = start; row < (length + start); ++row)
     {
         if (null_map && (*null_map)[row])
             continue;
