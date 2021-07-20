@@ -135,34 +135,29 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
 
-        /// We are creating a ThreadStatus per view to store its metrics individually
-        /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
-        /// Later on, before doing any task related to a view, we'll switch to its ThreadStatus, do the work,
-        /// and switch back to the original thread_status.
-        auto * original_thread = current_thread;
-        SCOPE_EXIT({ current_thread = original_thread; });
+        /// If the materialized view is executed outside of a query, for example as a result of SYSTEM FLUSH LOGS or
+        /// SYSTEM FLUSH DISTRIBUTED ..., we can't attach to any thread group and we won't log, so there is no point on collecting metrics
+        std::unique_ptr<ThreadStatus> thread_status = nullptr;
+
         ThreadGroupStatusPtr running_group = current_thread && current_thread->getThreadGroup()
             ? current_thread->getThreadGroup()
             : MainThreadStatus::getInstance().thread_group;
-        auto thread_status = std::make_unique<ThreadStatus>();
-        /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
-        /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
-        /// N times more interruptions
-        thread_status->query_profiled_enabled = false;
-
         if (running_group)
         {
+            /// We are creating a ThreadStatus per view to store its metrics individually
+            /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
+            /// Later on, before doing any task related to a view, we'll switch to its ThreadStatus, do the work,
+            /// and switch back to the original thread_status.
+            auto * original_thread = current_thread;
+            SCOPE_EXIT({ current_thread = original_thread; });
+
+            thread_status = std::make_unique<ThreadStatus>();
+            /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
+            /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
+            /// N times more interruptions
+            thread_status->query_profiled_enabled = false;
             thread_status->setupState(running_group);
         }
-        else
-        {
-            /// If the materialized view is executed outside of a query, for example as a result of SYSTEM FLUSH LOGS or
-            /// SYSTEM FLUSH DISTRIBUTED ..., we can't attach to any thread group to report metrics.
-            /// Instead we at least report to the main memory tracker so that its limits are enforced
-            if (DB::MainThreadStatus::get())
-                thread_status->memory_tracker.setParent(&total_memory_tracker);
-        }
-
 
         QueryViewsLogElement::ViewRuntimeStats runtime_stats{
             target_name,
@@ -344,14 +339,19 @@ void PushingToViewsBlockOutputStream::flush()
 void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & view)
 {
     Stopwatch watch;
-    /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
-    *view.runtime_stats.thread_status->last_rusage = RUsageCounters::current();
-    if (view.runtime_stats.thread_status->taskstats)
-        view.runtime_stats.thread_status->taskstats->reset();
 
     auto * original_thread = current_thread;
     SCOPE_EXIT({ current_thread = original_thread; });
-    current_thread = view.runtime_stats.thread_status.get();
+
+    if (view.runtime_stats.thread_status)
+    {
+        /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
+        *view.runtime_stats.thread_status->last_rusage = RUsageCounters::current();
+        if (view.runtime_stats.thread_status->taskstats)
+            view.runtime_stats.thread_status->taskstats->reset();
+        current_thread = view.runtime_stats.thread_status.get();
+    }
+
 
     try
     {
@@ -418,21 +418,26 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
         view.setException(std::current_exception());
     }
 
-    view.runtime_stats.thread_status->updatePerformanceCounters();
+    if (view.runtime_stats.thread_status)
+        view.runtime_stats.thread_status->updatePerformanceCounters();
     view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
 }
 
 void PushingToViewsBlockOutputStream::processPrefix(ViewInfo & view)
 {
     Stopwatch watch;
-    /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
-    *view.runtime_stats.thread_status->last_rusage = RUsageCounters::current();
-    if (view.runtime_stats.thread_status->taskstats)
-        view.runtime_stats.thread_status->taskstats->reset();
 
     auto * original_thread = current_thread;
     SCOPE_EXIT({ current_thread = original_thread; });
-    current_thread = view.runtime_stats.thread_status.get();
+
+    if (view.runtime_stats.thread_status)
+    {
+        /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
+        *view.runtime_stats.thread_status->last_rusage = RUsageCounters::current();
+        if (view.runtime_stats.thread_status->taskstats)
+            view.runtime_stats.thread_status->taskstats->reset();
+        current_thread = view.runtime_stats.thread_status.get();
+    }
 
     try
     {
@@ -447,7 +452,8 @@ void PushingToViewsBlockOutputStream::processPrefix(ViewInfo & view)
     {
         view.setException(std::current_exception());
     }
-    view.runtime_stats.thread_status->updatePerformanceCounters();
+    if (view.runtime_stats.thread_status)
+        view.runtime_stats.thread_status->updatePerformanceCounters();
     view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
 }
 
@@ -455,14 +461,18 @@ void PushingToViewsBlockOutputStream::processPrefix(ViewInfo & view)
 void PushingToViewsBlockOutputStream::processSuffix(ViewInfo & view)
 {
     Stopwatch watch;
-    /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
-    *view.runtime_stats.thread_status->last_rusage = RUsageCounters::current();
-    if (view.runtime_stats.thread_status->taskstats)
-        view.runtime_stats.thread_status->taskstats->reset();
 
     auto * original_thread = current_thread;
     SCOPE_EXIT({ current_thread = original_thread; });
-    current_thread = view.runtime_stats.thread_status.get();
+
+    if (view.runtime_stats.thread_status)
+    {
+        /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
+        *view.runtime_stats.thread_status->last_rusage = RUsageCounters::current();
+        if (view.runtime_stats.thread_status->taskstats)
+            view.runtime_stats.thread_status->taskstats->reset();
+        current_thread = view.runtime_stats.thread_status.get();
+    }
 
     try
     {
@@ -478,7 +488,8 @@ void PushingToViewsBlockOutputStream::processSuffix(ViewInfo & view)
     {
         view.setException(std::current_exception());
     }
-    view.runtime_stats.thread_status->updatePerformanceCounters();
+    if (view.runtime_stats.thread_status)
+        view.runtime_stats.thread_status->updatePerformanceCounters();
     view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
     if (!view.exception)
     {
@@ -518,7 +529,8 @@ void PushingToViewsBlockOutputStream::logQueryViews()
 
         try
         {
-            view.runtime_stats.thread_status->logToQueryViewsLog(view);
+            if (view.runtime_stats.thread_status)
+                view.runtime_stats.thread_status->logToQueryViewsLog(view);
         }
         catch (...)
         {
