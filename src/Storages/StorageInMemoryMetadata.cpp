@@ -320,23 +320,26 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 {
     Block res;
 
-    auto all_columns = getColumns().getAllWithSubcolumns();
-    std::unordered_map<String, DataTypePtr> columns_map;
-    columns_map.reserve(all_columns.size());
-
-    for (const auto & elem : all_columns)
-        columns_map.emplace(elem.name, elem.type);
+    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
+    virtuals_map.set_empty_key(StringRef());
 
     /// Virtual columns must be appended after ordinary, because user can
     /// override them.
     for (const auto & column : virtuals)
-        columns_map.emplace(column.name, column.type);
+        virtuals_map.emplace(column.name, &column.type);
 
     for (const auto & name : column_names)
     {
-        auto it = columns_map.find(name);
-        if (it != columns_map.end())
-            res.insert({it->second->createColumn(), it->second, it->first});
+        auto column = getColumns().tryGetColumnOrSubcolumn(ColumnsDescription::All, name);
+        if (column)
+        {
+            res.insert({column->type->createColumn(), column->type, column->name});
+        }
+        else if (auto it = virtuals_map.find(name); it != virtuals_map.end())
+        {
+            const auto & type = *it->second;
+            res.insert({type->createColumn(), type, name});
+        }
         else
             throw Exception(
                 "Column " + backQuote(name) + " not found in table " + (storage_id.empty() ? "" : storage_id.getNameForLogs()),
@@ -508,26 +511,31 @@ namespace
 
 void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
 {
-    NamesAndTypesList available_columns = getColumns().getAllPhysicalWithSubcolumns();
-    available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
-
-    const String list_of_columns = listOfColumns(available_columns);
-
     if (column_names.empty())
-        throw Exception("Empty list of columns queried. There are columns: " + list_of_columns, ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
+    {
+        auto list_of_columns = listOfColumns(getColumns().getAllPhysicalWithSubcolumns());
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
+            "Empty list of columns queried. There are columns: {}", list_of_columns);
+    }
 
-    const auto columns_map = getColumnsMap(available_columns);
-
+    const auto virtuals_map = getColumnsMap(virtuals);
     auto unique_names = initUniqueStrings();
+
     for (const auto & name : column_names)
     {
-        if (columns_map.end() == columns_map.find(name))
-            throw Exception(
-                "There is no column with name " + backQuote(name) + " in table " + storage_id.getNameForLogs() + ". There are columns: " + list_of_columns,
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        bool has_column = getColumns().hasColumnOrSubcolumn(ColumnsDescription::AllPhysical, name) || virtuals_map.count(name);
+
+        if (!has_column)
+        {
+            auto list_of_columns = listOfColumns(getColumns().getAllPhysicalWithSubcolumns());
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "There is no column with name {} in table {}. There are columns: {}",
+                backQuote(name), storage_id.getNameForLogs(), list_of_columns);
+        }
 
         if (unique_names.end() != unique_names.find(name))
-            throw Exception("Column " + name + " queried more than once", ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE);
+            throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Column {} queried more than once", name);
+
         unique_names.insert(name);
     }
 }
