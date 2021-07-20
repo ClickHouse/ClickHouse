@@ -87,7 +87,7 @@ SerializationInfoPtr SerializationInfoBuilder::build()
 
 SerializationInfoPtr SerializationInfoBuilder::buildFrom(const SerializationInfo & other)
 {
-    for (auto & [name, column_info] : other.columns)
+    for (const auto & [name, column_info] : other.columns)
     {
         auto it = info->columns.find(name);
         if (it == info->columns.end())
