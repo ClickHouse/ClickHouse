@@ -509,6 +509,23 @@ Possible values:
 
 Default value: `ALL`.
 
+## join_algorithm {#settings-join_algorithm}
+
+Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
+
+Possible values:
+
+- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
+- `partial_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
+- `prefer_partial_merge` — ClickHouse always tries to use `merge` join if possible.
+- `auto` — ClickHouse tries to change `hash` join to `merge` join on the fly to avoid out of memory.
+
+Default value: `hash`.
+
+When using `hash` algorithm the right part of `JOIN` is uploaded into RAM. 
+
+When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to the disk. The `merge` algorithm in ClickHouse differs a bit from the classic realization. First ClickHouse sorts the right table by [join key](../../sql-reference/statements/select/join.md#select-join) in blocks and creates min-max index for sorted blocks. Then it sorts parts of left table by `join key` and joins them over right table. The min-max index is also used to skip unneeded right table blocks.
+
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
 Changes behaviour of join operations with `ANY` strictness.
