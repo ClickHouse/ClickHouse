@@ -2,6 +2,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -902,50 +903,71 @@ private:
     }
 };
 
-class DirectoryMonitorBlockInputStream : public IBlockInputStream
+class DirectoryMonitorSource : public SourceWithProgress
 {
 public:
-    explicit DirectoryMonitorBlockInputStream(const String & file_name)
-        : in(file_name)
-        , decompressing_in(in)
-        , block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION)
-        , log{&Poco::Logger::get("DirectoryMonitorBlockInputStream")}
-    {
-        readDistributedHeader(in, log);
 
-        block_in.readPrefix();
-        first_block = block_in.read();
-        header = first_block.cloneEmpty();
+    struct Data
+    {
+        std::unique_ptr<ReadBufferFromFile> in;
+        std::unique_ptr<CompressedReadBuffer> decompressing_in;
+        std::unique_ptr<NativeBlockInputStream> block_in;
+
+        Poco::Logger * log;
+
+        Block first_block;
+    };
+
+    static Block initData(const String & file_name, Data & data)
+    {
+        data.in = std::make_unique<ReadBufferFromFile>(file_name);
+        data.decompressing_in = std::make_unique<CompressedReadBuffer>(*data.in);
+        data.block_in = std::make_unique<NativeBlockInputStream>(*data.decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+        data.log = &Poco::Logger::get("DirectoryMonitorSource");
+
+        readDistributedHeader(*data.in, data.log);
+
+        data.block_in->readPrefix();
+        data.first_block = data.block_in->read();
+        return data.first_block.cloneEmpty();
     }
 
-    String getName() const override { return "DirectoryMonitor"; }
+    explicit DirectoryMonitorSource(const String & file_name)
+        : SourceWithProgress(initData(file_name, data))
+    {
+    }
+
+    String getName() const override { return "DirectoryMonitorSource"; }
 
 protected:
-    Block getHeader() const override { return header; }
-    Block readImpl() override
+    Chunk generate() override
     {
-        if (first_block)
-            return std::move(first_block);
+        if (data.first_block)
+        {
+            size_t num_rows = data.first_block.rows();
+            Chunk res(data.first_block.getColumns(), num_rows);
+            data.first_block.clear();
+            return res;
+        }
 
-        return block_in.read();
+        auto block = data.block_in->read();
+        if (!block)
+        {
+            data.block_in->readSuffix();
+            return {};
+        }
+
+        size_t num_rows = block.rows();
+        return Chunk(block.getColumns(), num_rows);
     }
 
-    void readSuffix() override { block_in.readSuffix(); }
-
 private:
-    ReadBufferFromFile in;
-    CompressedReadBuffer decompressing_in;
-    NativeBlockInputStream block_in;
-
-    Block first_block;
-    Block header;
-
-    Poco::Logger * log;
+    Data data;
 };
 
-BlockInputStreamPtr StorageDistributedDirectoryMonitor::createStreamFromFile(const String & file_name)
+ProcessorPtr StorageDistributedDirectoryMonitor::createSourceFromFile(const String & file_name)
 {
-    return std::make_shared<DirectoryMonitorBlockInputStream>(file_name);
+    return std::make_shared<DirectoryMonitorSource>(file_name);
 }
 
 bool StorageDistributedDirectoryMonitor::addAndSchedule(size_t file_size, size_t ms)
