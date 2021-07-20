@@ -2,7 +2,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <common/range.h>
@@ -10,6 +9,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "RangeHashedDictionary.h"
+
 
 namespace DB
 {
