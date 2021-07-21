@@ -313,6 +313,7 @@ private:
         }
         catch (...)
         {
+            shutdown = true;
             pool.wait();
             throw;
         }
