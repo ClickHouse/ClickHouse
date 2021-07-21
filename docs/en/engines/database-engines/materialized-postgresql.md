@@ -9,35 +9,33 @@ toc_title: MaterializedPostgreSQL
 
 ``` sql
 CREATE DATABASE test_database
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
 
 SELECT * FROM test_database.postgres_table;
 ```
 
-
 ## Settings {#settings}
 
-1. `materialized_postgresql_max_block_size` - Number of rows collected before flushing data into table. Default: `65536`.
+1. `materialized_postgresql_max_block_size` — Number of rows collected before flushing data into table. Default: `65536`.
 
-2. `materialized_postgresql_tables_list` - List of tables for MaterializedPostgreSQL database engine. Default: `whole database`.
+2. `materialized_postgresql_tables_list` — List of tables for MaterializedPostgreSQL database engine. Default: `whole database`.
 
-3. `materialized_postgresql_allow_automatic_update` - Allow to reload table in the background, when schema changes are detected. Default: `0` (`false`).
+3. `materialized_postgresql_allow_automatic_update` — Allow to reload table in the background, when schema changes are detected. Default: `0` (`false`).
 
 ``` sql
 CREATE DATABASE test_database
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_max_block_size = 65536,
          materialized_postgresql_tables_list = 'table1,table2,table3';
 
 SELECT * FROM test_database.table1;
 ```
 
-
 ## Requirements {#requirements}
 
-- Setting `wal_level`to `logical` and `max_replication_slots` to at least `2` in the postgresql config file.
+-   Setting `wal_level` to `logical` and `max_replication_slots` to at least `2` in the PostgreSQL config file.
 
-- Each replicated table must have one of the following **replica identity**:
+-   Each replicated table must have one of the following **replica identity**:
 
 1. **default** (primary key)
 
@@ -49,9 +47,8 @@ postgres# CREATE unique INDEX postgres_table_index on postgres_table(a, c, e);
 postgres# ALTER TABLE postgres_table REPLICA IDENTITY USING INDEX postgres_table_index;
 ```
 
-
-Primary key is always checked first. If it is absent, then index, defined as replica identity index, is checked.
-If index is used as replica identity, there has to be only one such index in a table.
+The primary key is always checked first. If it is absent, then the index, defined as replica identity index, is checked.
+If the index is used as a replica identity, there has to be only one such index in a table.
 You can check what type is used for a specific table with the following command:
 
 ``` bash
@@ -65,7 +62,6 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-
 ## Warning {#warning}
 
-1. **TOAST** values convertion is not supported. Default value for the data type will be used.
+1. **TOAST** values conversion is not supported. Default value for the data type will be used.
