@@ -2007,7 +2007,7 @@ Default value: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Sleep time for merge selecting when no part selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in large amount of requests to Zookeeper in large-scale clusters.
+Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to Zookeeper in large-scale clusters.
 
 Possible values:
 
