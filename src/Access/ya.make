@@ -35,6 +35,7 @@ SRCS(
     Quota.cpp
     QuotaCache.cpp
     QuotaUsage.cpp
+    ReplicatedAccessStorage.cpp
     Role.cpp
     RoleCache.cpp
     RolesOrUsersSet.cpp
