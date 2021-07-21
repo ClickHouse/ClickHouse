@@ -353,6 +353,11 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
         if (offset_states[location.offset].active_connection_count == 0 && !offset_states[location.offset].next_replica_in_process)
             throw NetException("Receive timeout expired", ErrorCodes::SOCKET_TIMEOUT);
     }
+    else if (std::holds_alternative<std::exception_ptr>(res))
+    {
+        finishProcessReplica(replica_state, true);
+        std::rethrow_exception(std::move(std::get<std::exception_ptr>(res)));
+    }
 
     return false;
 }

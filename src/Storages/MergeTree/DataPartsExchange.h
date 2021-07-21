@@ -50,7 +50,7 @@ private:
         int client_protocol_version,
         const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections = {});
 
-    void sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
+    void sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
@@ -81,8 +81,8 @@ public:
         bool to_detached = false,
         const String & tmp_prefix_ = "",
         std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
-        bool try_use_s3_copy = true,
-        const DiskPtr disk_s3 = nullptr);
+        bool try_zero_copy = true,
+        DiskPtr dest_disk = nullptr);
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
@@ -115,17 +115,17 @@ private:
             const UUID & part_uuid,
             const StorageMetadataPtr & metadata_snapshot,
             ContextPtr context,
-            ReservationPtr reservation,
+            DiskPtr disk,
             PooledReadWriteBufferFromHTTP & in,
             size_t projections,
             ThrottlerPtr throttler);
 
-    MergeTreeData::MutableDataPartPtr downloadPartToS3(
+    MergeTreeData::MutableDataPartPtr downloadPartToDiskRemoteMeta(
             const String & part_name,
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
-            const Disks & disks_s3,
+            DiskPtr disk,
             PooledReadWriteBufferFromHTTP & in,
             ThrottlerPtr throttler);
 

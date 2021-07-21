@@ -13,3 +13,5 @@ select count() over (rows between 1 + 1 preceding and 1 + 1 following) from numb
 5
 4
 3
+-- signed and unsigned in offset do not cause logical error
+select count() over (rows between 2 following and 1 + -1 following) FROM numbers(10); -- { serverError 36 }

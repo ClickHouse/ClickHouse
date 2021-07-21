@@ -43,6 +43,7 @@
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
+#include <Storages/System/StorageSystemWarnings.h>
 #include <Storages/System/StorageSystemDDLWorkerQueue.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -116,6 +117,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     attach<StorageSystemUserDirectories>(system_database, "user_directories");
     attach<StorageSystemPrivileges>(system_database, "privileges");
     attach<StorageSystemErrors>(system_database, "errors");
+    attach<StorageSystemWarnings>(system_database, "warnings");
     attach<StorageSystemDataSkippingIndices>(system_database, "data_skipping_indices");
 #if !defined(ARCADIA_BUILD)
     attach<StorageSystemLicenses>(system_database, "licenses");
