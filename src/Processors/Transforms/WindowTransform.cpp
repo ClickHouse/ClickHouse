@@ -4,6 +4,7 @@
 #include <Common/Arena.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <common/arithmeticOverflow.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ExpressionActions.h>
@@ -965,10 +966,39 @@ void WindowTransform::writeOutCurrentRow()
     }
 }
 
+static void assertSameColumns(const Columns & left_all,
+    const Columns & right_all)
+{
+    assert(left_all.size() == right_all.size());
+
+    for (size_t i = 0; i < left_all.size(); ++i)
+    {
+        const auto * left_column = left_all[i].get();
+        const auto * right_column = right_all[i].get();
+
+        assert(left_column);
+        assert(right_column);
+
+        assert(typeid(*left_column).hash_code()
+            == typeid(*right_column).hash_code());
+
+        fmt::print(stderr, "{}\n", typeid(*left_column).name());
+
+        if (isColumnConst(*left_column))
+        {
+            Field left_value = assert_cast<const ColumnConst &>(*left_column).getField();
+            Field right_value = assert_cast<const ColumnConst &>(*right_column).getField();
+
+            assert(left_value == right_value);
+        }
+    }
+}
+
 void WindowTransform::appendChunk(Chunk & chunk)
 {
 //    fmt::print(stderr, "new chunk, {} rows, finished={}\n", chunk.getNumRows(),
 //        input_is_finished);
+//    fmt::print(stderr, "chunk structure '{}'\n", chunk.dumpStructure());
 
     // First, prepare the new input block and add it to the queue. We might not
     // have it if it's end of data, though.
@@ -1005,6 +1035,12 @@ void WindowTransform::appendChunk(Chunk & chunk)
             block.output_columns.push_back(ws.aggregate_function->getReturnType()
                 ->createColumn());
             block.output_columns.back()->reserve(block.rows);
+        }
+
+        if (blocks.size() > 1)
+        {
+            assertSameColumns(blocks.front().input_columns,
+                blocks.back().input_columns);
         }
     }
 
