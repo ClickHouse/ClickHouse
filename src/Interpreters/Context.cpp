@@ -2703,18 +2703,4 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
     return ignored_part_uuids;
 }
 
-void Context::setMySQLProtocolContext(MySQLWireContext * mysql_context)
-{
-    assert(session_context.lock().get() == this);
-    assert(!mysql_protocol_context);
-    assert(mysql_context);
-    mysql_protocol_context = mysql_context;
-}
-
-MySQLWireContext * Context::getMySQLProtocolContext() const
-{
-    assert(!mysql_protocol_context || session_context.lock().get());
-    return mysql_protocol_context;
-}
-
 }
