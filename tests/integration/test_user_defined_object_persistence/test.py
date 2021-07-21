@@ -25,8 +25,7 @@ def test_persistence():
     assert instance.query("SELECT MySum1(1,2)") == "3\n"
     assert instance.query("SELECT MySum2(1,2)") == "5\n"
 
-    cluster.shutdown()
-    cluster.start()
+    instance.restart_clickhouse()
 
     assert instance.query("SELECT MySum1(1,2)") == "3\n"
     assert instance.query("SELECT MySum2(1,2)") == "5\n"
@@ -34,8 +33,7 @@ def test_persistence():
     instance.query("DROP FUNCTION MySum2")
     instance.query("DROP FUNCTION MySum1")
 
-    cluster.shutdown()
-    cluster.start()
+    instance.restart_clickhouse()
 
     assert "Unknown function MySum1" in instance.query_and_get_error("SELECT MySum1(1, 2)")
     assert "Unknown function MySum2" in instance.query_and_get_error("SELECT MySum2(1, 2)")

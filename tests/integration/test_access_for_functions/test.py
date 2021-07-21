@@ -40,7 +40,7 @@ def test_access_rights_for_funtion():
 
     instance.query("GRANT DROP FUNCTION ON *.* TO B")
     instance.query("DROP FUNCTION MySum", user = 'B')
-    assert "Unknown function MySum" in instance.query("SELECT MySum(1, 2)")
+    assert "Unknown function MySum" in instance.query_and_get_error("SELECT MySum(1, 2)")
 
     instance.query("REVOKE CREATE FUNCTION ON default FROM A")
     assert "it's necessary to have grant CREATE FUNCTION ON *.*" in instance.query_and_get_error(create_function_query, user = 'A')
