@@ -5,6 +5,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -30,7 +31,6 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-
 
 namespace ProfileEvents
 {
@@ -369,14 +369,13 @@ void StorageBuffer::read(
     {
         if (query_info.prewhere_info)
         {
-            auto actions_settings = ExpressionActionsSettings::fromContext(local_context);
             if (query_info.prewhere_info->alias_actions)
             {
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
                     return std::make_shared<ExpressionTransform>(
                         header,
-                        std::make_shared<ExpressionActions>(query_info.prewhere_info->alias_actions, actions_settings));
+                        query_info.prewhere_info->alias_actions);
                 });
             }
 
@@ -386,7 +385,7 @@ void StorageBuffer::read(
                 {
                     return std::make_shared<FilterTransform>(
                             header,
-                            std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter, actions_settings),
+                            query_info.prewhere_info->row_level_filter,
                             query_info.prewhere_info->row_level_column_name,
                             false);
                 });
@@ -396,7 +395,7 @@ void StorageBuffer::read(
             {
                 return std::make_shared<FilterTransform>(
                         header,
-                        std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions, actions_settings),
+                        query_info.prewhere_info->prewhere_actions,
                         query_info.prewhere_info->prewhere_column_name,
                         query_info.prewhere_info->remove_prewhere_column);
             });
