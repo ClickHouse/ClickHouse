@@ -3,7 +3,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>

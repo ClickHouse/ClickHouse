@@ -16,7 +16,7 @@
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>

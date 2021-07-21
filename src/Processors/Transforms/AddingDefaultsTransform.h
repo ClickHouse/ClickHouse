@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ColumnsDescription.h>
 

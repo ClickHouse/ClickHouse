@@ -9,10 +9,7 @@
 namespace DB
 {
 
-// struct StorageInMemoryMetadata;
-// using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-
-/** Prepares an input stream which produce data containing in INSERT query
+/** Prepares a pipe which produce data containing in INSERT query
   * Head of inserting data could be stored in INSERT ast directly
   * Remaining (tail) data could be stored in input_buffer_tail_part
   */

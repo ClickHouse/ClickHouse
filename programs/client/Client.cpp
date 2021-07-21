@@ -59,7 +59,7 @@
 #include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -1962,9 +1962,14 @@ private:
                 return;
             }
 
-            connection->sendData(block);
-            processed_rows += block.rows();
+            if (block)
+            {
+                connection->sendData(block);
+                processed_rows += block.rows();
+            }
         }
+
+        connection->sendData({});
     }
 
 

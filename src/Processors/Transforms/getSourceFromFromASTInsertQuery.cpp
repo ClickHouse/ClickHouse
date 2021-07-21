@@ -5,8 +5,8 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/InputStreamFromASTInsertQuery.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/getSourceFromFromASTInsertQuery.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Processors/Pipe.h>
