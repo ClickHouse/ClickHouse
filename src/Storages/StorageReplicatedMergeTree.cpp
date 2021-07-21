@@ -1665,9 +1665,12 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(
+        auto task = merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, *merge_entry,
             entry.create_time, getContext(), reserved_space, table_lock);
+
+        new_part = executeHere(task);
+
         renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try

@@ -96,13 +96,6 @@ static void extractMergingAndGatheringColumns(
 }
 
 
-static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
-{
-    return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
-        || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
-}
-
-
 void MergeTask::prepare()
 {
     const String tmp_prefix = parent_part ? prefix : "tmp_merge_";

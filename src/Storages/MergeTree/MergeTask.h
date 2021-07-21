@@ -1,12 +1,13 @@
 #pragma once
 
-#include "Storages/MergeTree/MergeProgress.h"
+#include <Storages/MergeTree/BackgroundTask.h>
+#include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include "Storages/MergeTree/ColumnSizeEstimator.h"
-#include "Storages/MergeTree/MergedColumnOnlyOutputStream.h"
+#include <Storages/MergeTree/ColumnSizeEstimator.h>
+#include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
@@ -15,38 +16,6 @@
 
 namespace DB
 {
-
-
-class BackgroundTask
-{
-public:
-    virtual bool execute() = 0;
-
-    explicit BackgroundTask(int priority_) : priority(priority_) {}
-
-    virtual ~BackgroundTask() = default;
-
-    bool operator> (const BackgroundTask & rhs) const
-    {
-        return priority > rhs.priority;
-    }
-
-    UInt64 getPriority() const
-    {
-        return priority;
-    }
-
-    void setPriority(UInt64 priority_)
-    {
-        priority = priority_;
-    }
-
-private:
-    UInt64 priority = 0;
-};
-
-using BackgroundTaskPtr = std::shared_ptr<BackgroundTask>;
-
 
 class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;

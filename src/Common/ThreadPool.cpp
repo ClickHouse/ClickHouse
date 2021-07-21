@@ -26,6 +26,9 @@ namespace CurrentMetrics
 }
 
 
+static thread_local ThreadPool * current_pool;
+
+
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl()
     : ThreadPoolImpl(getNumberOfPhysicalCPUCores())
@@ -195,6 +198,16 @@ ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 }
 
 template <typename Thread>
+ThreadPoolImpl<Thread> * current()
+{
+    if constexpr (std::is_same_v<Thread, std::thread>)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Can't use current() method with GlobalPool object");
+    else
+        return current_pool;
+}
+
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::finalize()
 {
     {
@@ -230,6 +243,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
     DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_all_threads(
         std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
+
+    if constexpr (std::is_same_v<Thread, ThreadFromGlobalPool>)
+        current_pool = this;
 
     while (true)
     {

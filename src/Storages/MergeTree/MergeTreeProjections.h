@@ -29,7 +29,7 @@ using MergeTreeProjectionConditionPtr = std::shared_ptr<IMergeTreeProjectionCond
 
 struct IMergeTreeProjection
 {
-    IMergeTreeProjection(const ProjectionDescription & projection_) : projection(projection_) { }
+    explicit IMergeTreeProjection(const ProjectionDescription & projection_) : projection(projection_) { }
 
     virtual ~IMergeTreeProjection() = default;
 

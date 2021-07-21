@@ -13,6 +13,8 @@
 #include <Common/ThreadStatus.h>
 #include <common/scope_guard.h>
 
+class ThreadFromGlobalPool;
+
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
   * - catches exceptions and rethrows on wait.
@@ -75,6 +77,8 @@ public:
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
     size_t getMaxThreads() const;
+
+    static ThreadPoolImpl<Thread> * current();
 
 private:
     mutable std::mutex mutex;
@@ -156,7 +160,7 @@ public:
 class ThreadFromGlobalPool
 {
 public:
-    ThreadFromGlobalPool() {}
+    ThreadFromGlobalPool() = default;
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
@@ -231,3 +235,8 @@ private:
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
+
+inline ThreadPool * current()
+{
+    return ThreadPool::current();
+}

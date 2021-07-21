@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <Storages/MergeTree/BackgroundTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>

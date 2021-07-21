@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 
 
@@ -103,7 +104,7 @@ public:
         const String & prefix = "");
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
-    MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
+    MutateTaskPtr mutatePartToTemporaryPart(
         FutureMergedMutatedPartPtr future_part,
         const StorageMetadataPtr & metadata_snapshot,
         const MutationCommands & commands,
@@ -126,6 +127,8 @@ private:
     /** Select all parts belonging to the same partition.
       */
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
+
+    friend class MutateTask;
 
     /** Split mutation commands into two parts:
       * First part should be executed by mutations interpreter.
@@ -186,53 +189,6 @@ private:
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & materialized_projections,
         const MergeTreeData::DataPartPtr & source_part);
-
-    void writeWithProjections(
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeProjections & projections_to_build,
-        BlockInputStreamPtr mutating_stream,
-        IMergedBlockOutputStream & out,
-        time_t time_of_mutation,
-        MergeListEntry & merge_entry,
-        ReservationSharedPtr space_reservation,
-        TableLockHolder & holder,
-        ContextPtr context,
-        IMergeTreeDataPart::MinMaxIndex * minmax_idx = nullptr);
-
-    /// Override all columns of new part using mutating_stream
-    void mutateAllPartColumns(
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeIndices & skip_indices,
-        const MergeTreeProjections & projections_to_build,
-        BlockInputStreamPtr mutating_stream,
-        time_t time_of_mutation,
-        const CompressionCodecPtr & compression_codec,
-        MergeListEntry & merge_entry,
-        bool need_remove_expired_values,
-        bool need_sync,
-        ReservationSharedPtr space_reservation,
-        TableLockHolder & holder,
-        ContextPtr context);
-
-    /// Mutate some columns of source part with mutation_stream
-    void mutateSomePartColumns(
-        const MergeTreeDataPartPtr & source_part,
-        const StorageMetadataPtr & metadata_snapshot,
-        const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-        const std::set<MergeTreeProjectionPtr> & projections_to_recalc,
-        const Block & mutation_header,
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        BlockInputStreamPtr mutating_stream,
-        time_t time_of_mutation,
-        const CompressionCodecPtr & compression_codec,
-        MergeListEntry & merge_entry,
-        bool need_remove_expired_values,
-        bool need_sync,
-        ReservationSharedPtr space_reservation,
-        TableLockHolder & holder,
-        ContextPtr context);
 
     /// Initialize and write to disk new part fields like checksums, columns,
     /// etc.

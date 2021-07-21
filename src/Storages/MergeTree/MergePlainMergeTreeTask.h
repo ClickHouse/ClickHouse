@@ -2,6 +2,7 @@
 
 #include <Common/ThreadPool.h>
 
+#include <Storages/MergeTree/BackgroundTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MutationCommands.h>
 
