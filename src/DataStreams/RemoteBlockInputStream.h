@@ -52,9 +52,6 @@ public:
 
     void setMainTable(StorageID main_table_) { query_executor.setMainTable(std::move(main_table_)); }
 
-    /// Sends query (initiates calculation) before read()
-    void readPrefix() override;
-
     /// Prevent default progress notification because progress' callback is called by its own.
     void progress(const Progress & /*value*/) override {}
 
