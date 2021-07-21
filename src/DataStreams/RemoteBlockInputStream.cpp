@@ -38,11 +38,6 @@ void RemoteBlockInputStream::init()
     query_executor.setLogger(log);
 }
 
-void RemoteBlockInputStream::readPrefix()
-{
-    query_executor.sendQuery();
-}
-
 void RemoteBlockInputStream::cancel(bool kill)
 {
     if (kill)
