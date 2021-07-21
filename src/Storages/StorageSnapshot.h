@@ -1,5 +1,6 @@
 #pragma once
 #include <Storages/StorageInMemoryMetadata.h>
+// #include <sparsehash/dense_hash_map>
 
 namespace DB
 {
@@ -9,6 +10,12 @@ class IStorage;
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using DataPartsVector = std::vector<DataPartPtr>;
+
+// #if !defined(ARCADIA_BUILD)
+//     using NamesAndTypesMap = google::dense_hash_map<StringRef, DataTypePtr, StringRefHash>;
+// #else
+//     using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, DataTypePtr, StringRefHash>;
+// #endif
 
 struct StorageSnapshot
 {
@@ -27,6 +34,7 @@ struct StorageSnapshot
         const StorageMetadataPtr & metadata_)
         : storage(storage_), metadata(metadata_)
     {
+        init();
     }
 
     StorageSnapshot(
@@ -35,6 +43,7 @@ struct StorageSnapshot
         const NameToTypeMap & object_types_)
         : storage(storage_), metadata(metadata_), object_types(object_types_)
     {
+        init();
     }
 
     StorageSnapshot(
@@ -44,6 +53,7 @@ struct StorageSnapshot
         const DataPartsVector & parts_)
         : storage(storage_), metadata(metadata_), object_types(object_types_), parts(parts_)
     {
+        init();
     }
 
     NamesAndTypesList getColumns(const GetColumnsOptions & options) const;
@@ -63,7 +73,10 @@ struct StorageSnapshot
     StorageMetadataPtr getMetadataForQuery() const { return (projection ? projection->metadata : metadata); }
 
 private:
-    NamesAndTypesList addVirtualsAndObjects(const GetColumnsOptions & options, NamesAndTypesList columns_list) const;
+    void init();
+
+    std::unordered_map<String, NameAndTypePair> object_subcolumns;
+    NameToTypeMap virtual_columns;
 };
 
 using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;

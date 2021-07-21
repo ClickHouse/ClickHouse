@@ -722,7 +722,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     auto object_types = MergeTreeData::getObjectTypes(parts, getNamesOfObjectColumns(storage_columns));
     auto storage_snapshot = std::make_shared<StorageSnapshot>(data, metadata_snapshot, object_types, parts);
-    storage_columns = extendObjectColumns(storage_columns, object_types, false);
+    extendObjectColumns(storage_columns, object_types, false);
 
     const auto data_settings = data.getSettings();
 
