@@ -22,22 +22,22 @@ def test_persistence():
     instance.query(create_function_query1)
     instance.query(create_function_query2)
     
-    assert instance.query("SELECT MySum1(1,2)") == "3"
-    assert instance.query("SELECT MySum2(1,2)") == "5"
+    assert instance.query("SELECT MySum1(1,2)") == "3\n"
+    assert instance.query("SELECT MySum2(1,2)") == "5\n"
 
     cluster.shutdown()
     cluster.start()
-    instance = cluster.add_instance('instance')
+    instance1 = cluster.add_instance('instance')
 
-    assert instance.query("SELECT MySum1(1,2)") == "3"
-    assert instance.query("SELECT MySum2(1,2)") == "5"
+    assert instance1.query("SELECT MySum1(1,2)") == "3\n"
+    assert instance1.query("SELECT MySum2(1,2)") == "5\n"
 
-    instance.query("DROP FUNCTION MySum2")
-    instance.query("DROP FUNCTION MySum1")
+    instance1.query("DROP FUNCTION MySum2")
+    instance1.query("DROP FUNCTION MySum1")
 
     cluster.shutdown()
     cluster.start()
-    instance = cluster.add_instance('instance')
+    instance2 = cluster.add_instance('instance')
 
-    assert "Unknown function MySum1" in instance.query("SELECT MySum1(1, 2)")
-    assert "Unknown function MySum2" in instance.query("SELECT MySum2(1, 2)")
+    assert "Unknown function MySum1" in instance2.query("SELECT MySum1(1, 2)")
+    assert "Unknown function MySum2" in instance2.query("SELECT MySum2(1, 2)")

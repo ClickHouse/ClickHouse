@@ -24,7 +24,7 @@ def cleanup_after_test():
         instance.query("DROP USER IF EXISTS B")
 
 
-def test_merge():
+def test_access_rights_for_funtion():
     create_function_query = "CREATE FUNCTION MySum AS (a, b) -> a + b"
 
     instance.query("CREATE USER A")
@@ -34,7 +34,7 @@ def test_merge():
     instance.query("GRANT CREATE FUNCTION on *.* TO A")
     
     instance.query(create_function_query, user = 'A')
-    assert instance.query("SELECT MySum(1, 2)") == "3"
+    assert instance.query("SELECT MySum(1, 2)") == "3\n"
 
     assert "it's necessary to have grant DROP FUNCTION ON *.*" in instance.query("DROP FUNCTION MySum", user = 'B')
 
